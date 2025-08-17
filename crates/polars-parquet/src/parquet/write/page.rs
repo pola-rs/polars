@@ -2,10 +2,10 @@ use std::io::Write;
 
 #[cfg(feature = "async")]
 use futures::{AsyncWrite, AsyncWriteExt};
-use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
+use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
-use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
-use parquet_format_safe::{DictionaryPageHeader, Encoding, PageType};
+use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
+use polars_parquet_format::{DictionaryPageHeader, Encoding, PageType};
 
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -21,15 +21,13 @@ pub(crate) fn is_data_page(page: &PageWriteSpec) -> bool {
 fn maybe_bytes(uncompressed: usize, compressed: usize) -> ParquetResult<(i32, i32)> {
     let uncompressed_page_size: i32 = uncompressed.try_into().map_err(|_| {
         ParquetError::oos(format!(
-            "A page can only contain i32::MAX uncompressed bytes. This one contains {}",
-            uncompressed
+            "A page can only contain i32::MAX uncompressed bytes. This one contains {uncompressed}"
         ))
     })?;
 
     let compressed_page_size: i32 = compressed.try_into().map_err(|_| {
         ParquetError::oos(format!(
-            "A page can only contain i32::MAX compressed bytes. This one contains {}",
-            compressed
+            "A page can only contain i32::MAX compressed bytes. This one contains {compressed}"
         ))
     })?;
 
@@ -41,7 +39,8 @@ pub struct PageWriteSpec {
     pub header: ParquetPageHeader,
     #[allow(dead_code)]
     pub num_values: usize,
-    pub num_rows: Option<usize>,
+    /// The number of actual rows. For non-nested values, this is equal to the number of values.
+    pub num_rows: usize,
     pub header_size: u64,
     pub offset: u64,
     pub bytes_written: u64,
@@ -55,7 +54,9 @@ pub fn write_page<W: Write>(
     compressed_page: &CompressedPage,
 ) -> ParquetResult<PageWriteSpec> {
     let num_values = compressed_page.num_values();
-    let selected_rows = compressed_page.selected_rows();
+    let num_rows = compressed_page
+        .num_rows()
+        .expect("We should have num_rows when we are writing");
 
     let header = match &compressed_page {
         CompressedPage::Data(compressed_page) => assemble_data_page_header(compressed_page),
@@ -88,8 +89,8 @@ pub fn write_page<W: Write>(
         bytes_written,
         compression: compressed_page.compression(),
         statistics,
-        num_rows: selected_rows.map(|x| x.last().unwrap().length),
         num_values,
+        num_rows,
     })
 }
 
@@ -101,7 +102,9 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
     compressed_page: &CompressedPage,
 ) -> ParquetResult<PageWriteSpec> {
     let num_values = compressed_page.num_values();
-    let selected_rows = compressed_page.selected_rows();
+    let num_rows = compressed_page
+        .num_rows()
+        .expect("We should have the num_rows when we are writing");
 
     let header = match &compressed_page {
         CompressedPage::Data(compressed_page) => assemble_data_page_header(compressed_page),
@@ -134,7 +137,7 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
         bytes_written,
         compression: compressed_page.compression(),
         statistics,
-        num_rows: selected_rows.map(|x| x.last().unwrap().length),
+        num_rows,
         num_values,
     })
 }

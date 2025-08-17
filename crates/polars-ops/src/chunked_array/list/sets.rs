@@ -94,7 +94,7 @@ where
                 set2.clear();
                 set2.extend(b);
             }
-            // We could speed this up, but implementing ourselves, but we need to have a clonable
+            // We could speed this up, but implementing ourselves, but we need to have a cloneable
             // iterator as we need 2 passes
             set.extend(a);
             out.extend_buf(set.symmetric_difference(set2).copied())
@@ -102,7 +102,7 @@ where
     }
 }
 
-fn copied_wrapper_opt<T: Copy + ToTotalOrd>(
+fn copied_wrapper_opt<T: Copy + TotalEq + TotalHash>(
     v: Option<&T>,
 ) -> <Option<T> as ToTotalOrd>::TotalOrdItem {
     v.copied().to_total_ord()
@@ -110,6 +110,7 @@ fn copied_wrapper_opt<T: Copy + ToTotalOrd>(
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum SetOperation {
     Intersection,
     Union,
@@ -251,7 +252,7 @@ where
         offsets.push(offset as i64);
     }
     let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
-    let dtype = ListArray::<i64>::default_datatype(values_out.data_type().clone());
+    let dtype = ListArray::<i64>::default_datatype(values_out.dtype().clone());
 
     let values: PrimitiveArray<T> = values_out.into();
     Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
@@ -278,9 +279,6 @@ fn binary(
     let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
     offsets.push(0i64);
 
-    if broadcast_rhs {
-        set2.extend(b);
-    }
     let offsets_slice = if offsets_a.len() > offsets_b.len() {
         offsets_a
     } else {
@@ -290,6 +288,16 @@ fn binary(
     let second_a = offsets_a[1];
     let first_b = offsets_b[0];
     let second_b = offsets_b[1];
+
+    if broadcast_rhs {
+        // set2.extend(b_iter)
+        set2.extend(
+            b.into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize),
+        );
+    }
+
     for i in 1..offsets_slice.len() {
         // If we go OOB we take the first element as we are then broadcasting.
         let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;
@@ -303,7 +311,10 @@ fn binary(
         let offset = if broadcast_rhs {
             // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
             let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
-            let b_iter = b.into_iter();
+            let b_iter = b
+                .into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize);
             set_operation(
                 &mut set,
                 &mut set2,
@@ -314,7 +325,10 @@ fn binary(
                 true,
             )
         } else if broadcast_lhs {
-            let a_iter = a.into_iter();
+            let a_iter = a
+                .into_iter()
+                .skip(first_a as usize)
+                .take(second_a as usize - first_a as usize);
             let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
             set_operation(
                 &mut set,
@@ -346,10 +360,10 @@ fn binary(
 
     if as_utf8 {
         let values = unsafe { values.to_utf8view_unchecked() };
-        let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+        let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
         Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
     } else {
-        let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+        let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
         Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
     }
 }
@@ -364,9 +378,9 @@ fn array_set_operation(
 
     let values_a = a.values();
     let values_b = b.values();
-    assert_eq!(values_a.data_type(), values_b.data_type());
+    assert_eq!(values_a.dtype(), values_b.dtype());
 
-    let dtype = values_b.data_type();
+    let dtype = values_b.dtype();
     let validity = combine_validities_and(a.validity(), b.validity());
 
     match dtype {
@@ -393,7 +407,7 @@ fn array_set_operation(
             polars_bail!(InvalidOperation: "boolean type not yet supported in list 'set' operations")
         },
         _ => {
-            with_match_physical_numeric_type!(dtype.into(), |$T| {
+            with_match_physical_numeric_type!(DataType::from_arrow_dtype(dtype), |$T| {
                 let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
                 let b = values_b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
 
@@ -413,21 +427,13 @@ pub fn list_set_operation(
     let mut a = a.clone();
     let mut b = b.clone();
     if a.len() != b.len() {
-        a = a.rechunk();
-        b = b.rechunk();
+        a.rechunk_mut();
+        b.rechunk_mut();
     }
 
     // We will OOB in the kernel otherwise.
     a.prune_empty_chunks();
     b.prune_empty_chunks();
-
-    // Make categoricals compatible
-    #[cfg(feature = "dtype-categorical")]
-    if let (DataType::Categorical(_, _), DataType::Categorical(_, _)) =
-        (&a.inner_dtype(), &b.inner_dtype())
-    {
-        (a, b) = make_list_categoricals_compatible(a, b)?;
-    }
 
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {

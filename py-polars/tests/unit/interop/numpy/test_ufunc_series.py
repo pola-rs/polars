@@ -148,7 +148,7 @@ def test_generalized_ufunc_missing_data() -> None:
 
     While this particular example isn't necessarily a semantic issue, consider
     a mean() function running on integers: it will give wrong results if the
-    input is missing data, since NumPy has no way to model missing slots.  In
+    input is missing data, since NumPy has no way to model missing slots. In
     the general case, we can't assume the function will handle missing data
     correctly.
     """
@@ -156,7 +156,7 @@ def test_generalized_ufunc_missing_data() -> None:
     s_float = pl.Series("f", [1.0, 2.0, 3.0, None], dtype=pl.Float64)
     with pytest.raises(
         ComputeError,
-        match="Can't pass a Series with missing data to a generalized ufunc",
+        match="can't pass a Series with missing data to a generalized ufunc",
     ):
         add_one(s_float)
 

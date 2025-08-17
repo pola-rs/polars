@@ -4,7 +4,7 @@ use avro_schema::file::Block;
 mod schema;
 pub use schema::to_record;
 mod serialize;
-pub use serialize::{can_serialize, new_serializer, BoxSerializer};
+pub use serialize::{BoxSerializer, can_serialize, new_serializer};
 
 /// consumes a set of [`BoxSerializer`] into an [`Block`].
 /// # Panics

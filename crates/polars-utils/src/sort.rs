@@ -1,11 +1,12 @@
+use std::cmp::Ordering;
 use std::mem::MaybeUninit;
 
 use num_traits::FromPrimitive;
-use rayon::prelude::*;
 use rayon::ThreadPool;
+use rayon::prelude::*;
 
-use crate::total_ord::TotalOrd;
 use crate::IdxSize;
+use crate::total_ord::TotalOrd;
 
 /// This is a perfect sort particularly useful for an arg_sort of an arg_sort
 /// The second arg_sort sorts indices from `0` to `len` so can be just assigned to the
@@ -20,7 +21,7 @@ use crate::IdxSize;
 ///
 /// # Safety
 /// The caller must ensure that the right indexes for `&[(_, IdxSize)]` are integers ranging from `0..idx.len`
-#[cfg(not(target_family = "wasm"))]
+#[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
 pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
     let chunk_size = std::cmp::max(
         idx.len() / pool.current_num_threads(),
@@ -37,17 +38,17 @@ pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &
                 // SAFETY:
                 // idx_location is in bounds by invariant of this function
                 // and we ensured we have at least `idx.len()` capacity
-                *ptr.add(*idx_location as usize) = *idx_val;
+                unsafe { *ptr.add(*idx_location as usize) = *idx_val };
             }
         });
     });
     // SAFETY:
     // all elements are written
-    out.set_len(idx.len());
+    unsafe { out.set_len(idx.len()) };
 }
 
 // wasm alternative with different signature
-#[cfg(target_family = "wasm")]
+#[cfg(all(not(target_os = "emscripten"), target_family = "wasm"))]
 pub unsafe fn perfect_sort(
     pool: &crate::wasm::Pool,
     idx: &[(IdxSize, IdxSize)],
@@ -78,7 +79,7 @@ pub unsafe fn perfect_sort(
 }
 
 unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
-    &mut *(slice as *mut [MaybeUninit<T>] as *mut [T])
+    unsafe { &mut *(slice as *mut [MaybeUninit<T>] as *mut [T]) }
 }
 
 pub fn arg_sort_ascending<'a, T: TotalOrd + Copy + 'a, Idx, I: IntoIterator<Item = T>>(
@@ -90,8 +91,8 @@ where
     Idx: FromPrimitive + Copy,
 {
     // Needed to be able to write back to back in the same buffer.
-    debug_assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<(T, Idx)>());
-    let size = std::mem::size_of::<(T, Idx)>();
+    debug_assert_eq!(align_of::<T>(), align_of::<(T, Idx)>());
+    let size = size_of::<(T, Idx)>();
     let upper_bound = size * n + size;
     scratch.reserve(upper_bound);
     let scratch_slice = unsafe {
@@ -122,5 +123,71 @@ where
         }
 
         &mut scratch_slice_aligned_to_idx[..n]
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Hash)]
+#[repr(transparent)]
+pub struct ReorderWithNulls<T, const DESCENDING: bool, const NULLS_LAST: bool>(pub Option<T>);
+
+impl<T: PartialOrd, const DESCENDING: bool, const NULLS_LAST: bool> PartialOrd
+    for ReorderWithNulls<T, DESCENDING, NULLS_LAST>
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (&self.0, &other.0) {
+            (None, None) => Some(Ordering::Equal),
+            (None, Some(_)) => {
+                if NULLS_LAST {
+                    Some(Ordering::Greater)
+                } else {
+                    Some(Ordering::Less)
+                }
+            },
+            (Some(_), None) => {
+                if NULLS_LAST {
+                    Some(Ordering::Less)
+                } else {
+                    Some(Ordering::Greater)
+                }
+            },
+            (Some(l), Some(r)) => {
+                if DESCENDING {
+                    r.partial_cmp(l)
+                } else {
+                    l.partial_cmp(r)
+                }
+            },
+        }
+    }
+}
+
+impl<T: Ord, const DESCENDING: bool, const NULLS_LAST: bool> Ord
+    for ReorderWithNulls<T, DESCENDING, NULLS_LAST>
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (&self.0, &other.0) {
+            (None, None) => Ordering::Equal,
+            (None, Some(_)) => {
+                if NULLS_LAST {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            },
+            (Some(_), None) => {
+                if NULLS_LAST {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            },
+            (Some(l), Some(r)) => {
+                if DESCENDING {
+                    r.cmp(l)
+                } else {
+                    l.cmp(r)
+                }
+            },
+        }
     }
 }

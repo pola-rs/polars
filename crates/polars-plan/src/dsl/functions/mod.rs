@@ -1,7 +1,6 @@
 //! # Functions
 //!
 //! Functions on expressions that might be useful.
-mod arity;
 #[cfg(feature = "business")]
 mod business;
 #[cfg(feature = "dtype-struct")]
@@ -17,6 +16,7 @@ mod range;
 mod repeat;
 mod selectors;
 mod syntactic_sugar;
+#[cfg(feature = "temporal")]
 mod temporal;
 
 pub use arity::*;
@@ -30,8 +30,6 @@ pub use correlation::*;
 pub use horizontal::*;
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
-#[cfg(feature = "dtype-struct")]
-use polars_core::utils::get_supertype;
 #[cfg(all(feature = "range", feature = "temporal"))]
 pub use range::date_range; // This shouldn't be necessary, but clippy complains about dead code
 #[cfg(all(feature = "range", feature = "dtype-time"))]
@@ -41,6 +39,7 @@ pub use range::*;
 pub use repeat::*;
 pub use selectors::*;
 pub use syntactic_sugar::*;
+#[cfg(feature = "temporal")]
 pub use temporal::*;
 
 #[cfg(feature = "arg_where")]

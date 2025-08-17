@@ -42,9 +42,9 @@ Numeric
     Expr.mod
     Expr.mul
     Expr.neg
+    Expr.pow
     Expr.sub
     Expr.truediv
-    Expr.pow
 
 
 Binary

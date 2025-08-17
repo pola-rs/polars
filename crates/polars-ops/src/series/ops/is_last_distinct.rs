@@ -10,10 +10,10 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
-    if s.len() == 0 {
-        return Ok(BooleanChunked::full_null(s.name(), 0));
+    if s.is_empty() {
+        return Ok(BooleanChunked::full_null(s.name().clone(), 0));
     } else if s.len() == 1 {
-        return Ok(BooleanChunked::new(s.name(), &[true]));
+        return Ok(BooleanChunked::new(s.name().clone(), &[true]));
     }
 
     let s = s.to_physical_repr();
@@ -32,7 +32,7 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_last_distinct(&s);
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_last_distinct_numeric(ca)
@@ -67,8 +67,8 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         let mut first_null_found = false;
         let mut all_found = false;
         let ca = ca.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
-        arr.into_iter()
+        ca.downcast_as_array()
+            .iter()
             .enumerate()
             .rev()
             .find_map(|(idx, val)| match val {
@@ -76,52 +76,38 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
                     first_true_found = true;
                     all_found &= first_true_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 Some(false) if !first_false_found => {
                     first_false_found = true;
                     all_found &= first_false_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 None if !first_null_found => {
                     first_null_found = true;
                     all_found &= first_null_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 _ => None,
             });
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::with_chunk(ca.name(), arr)
+    BooleanChunked::with_chunk(ca.name().clone(), arr)
 }
 
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
-    let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
+    let tmp = ca.rechunk();
+    let arr = tmp.downcast_as_array();
     let mut unique = PlHashSet::new();
-    let mut new_ca: BooleanChunked = arr
-        .into_iter()
+    arr.iter()
         .rev()
         .map(|opt_v| unique.insert(opt_v))
         .collect_reversed::<NoNull<BooleanChunked>>()
-        .into_inner();
-    new_ca.rename(ca.name());
-    new_ca
+        .into_inner()
+        .with_name(ca.name().clone())
 }
 
 fn is_last_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
@@ -130,17 +116,15 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
-    let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
+    let tmp = ca.rechunk();
+    let arr = tmp.downcast_as_array();
     let mut unique = PlHashSet::new();
-    let mut new_ca: BooleanChunked = arr
-        .into_iter()
+    arr.iter()
         .rev()
         .map(|opt_v| unique.insert(opt_v.to_total_ord()))
         .collect_reversed::<NoNull<BooleanChunked>>()
-        .into_inner();
-    new_ca.rename(ca.name());
-    new_ca
+        .into_inner()
+        .with_name(ca.name().clone())
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -157,7 +141,7 @@ fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(s.name(), arr))
+    Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
 }
 
 fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
@@ -173,5 +157,5 @@ fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(ca.name(), arr))
+    Ok(BooleanChunked::with_chunk(ca.name().clone(), arr))
 }

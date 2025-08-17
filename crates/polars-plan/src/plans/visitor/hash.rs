@@ -5,8 +5,8 @@ use polars_utils::arena::Arena;
 
 use super::*;
 use crate::plans::{AExpr, IR};
-use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
+use crate::prelude::aexpr::traverse_and_hash_aexpr;
 
 impl IRNode {
     pub(crate) fn hashable_and_cmp<'a>(
@@ -74,29 +74,28 @@ impl Hash for HashableEqLP<'_> {
                 predicate.traverse_and_hash(self.expr_arena, state);
             },
             IR::Scan {
-                paths,
+                sources,
                 file_info: _,
                 hive_parts: _,
                 predicate,
                 output_schema: _,
                 scan_type,
-                file_options,
+                unified_scan_args,
             } => {
                 // We don't have to traverse the schema, hive partitions etc. as they are derivative from the paths.
                 scan_type.hash(state);
-                paths.hash(state);
+                sources.hash(state);
                 hash_option_expr(predicate, self.expr_arena, state);
-                file_options.hash(state);
+                unified_scan_args.hash(state);
             },
             IR::DataFrameScan {
                 df,
                 schema: _,
                 output_schema,
-                filter: selection,
+                ..
             } => {
                 (Arc::as_ptr(df) as usize).hash(state);
                 output_schema.hash(state);
-                hash_option_expr(selection, self.expr_arena, state);
             },
             IR::SimpleProjection { columns, input: _ } => {
                 columns.hash(state);
@@ -109,13 +108,6 @@ impl Hash for HashableEqLP<'_> {
             } => {
                 hash_exprs(expr, self.expr_arena, state);
                 options.hash(state);
-            },
-            IR::Reduce {
-                input: _,
-                exprs,
-                schema: _,
-            } => {
-                hash_exprs(exprs, self.expr_arena, state);
             },
             IR::Sort {
                 input: _,
@@ -187,15 +179,19 @@ impl Hash for HashableEqLP<'_> {
                 }
             },
             IR::Sink { input: _, payload } => {
-                payload.hash(state);
+                payload.traverse_and_hash(self.expr_arena, state);
             },
-            IR::Cache {
-                input: _,
-                id,
-                cache_hits,
-            } => {
+            IR::SinkMultiple { .. } => {},
+            IR::Cache { input: _, id } => {
                 id.hash(state);
-                cache_hits.hash(state);
+            },
+            #[cfg(feature = "merge_sorted")]
+            IR::MergeSorted {
+                input_left: _,
+                input_right: _,
+                key,
+            } => {
+                key.hash(state);
             },
             IR::Invalid => unreachable!(),
         }
@@ -254,22 +250,22 @@ impl HashableEqLP<'_> {
             ) => expr_ir_eq(l, r, self.expr_arena),
             (
                 IR::Scan {
-                    paths: pl,
+                    sources: pl,
                     file_info: _,
                     hive_parts: _,
                     predicate: pred_l,
                     output_schema: _,
                     scan_type: stl,
-                    file_options: ol,
+                    unified_scan_args: ol,
                 },
                 IR::Scan {
-                    paths: pr,
+                    sources: pr,
                     file_info: _,
                     hive_parts: _,
                     predicate: pred_r,
                     output_schema: _,
                     scan_type: str,
-                    file_options: or,
+                    unified_scan_args: or,
                 },
             ) => {
                 pl == pr
@@ -282,19 +278,13 @@ impl HashableEqLP<'_> {
                     df: dfl,
                     schema: _,
                     output_schema: s_l,
-                    filter: sl,
                 },
                 IR::DataFrameScan {
                     df: dfr,
                     schema: _,
                     output_schema: s_r,
-                    filter: sr,
                 },
-            ) => {
-                Arc::as_ptr(dfl) == Arc::as_ptr(dfr)
-                    && s_l == s_r
-                    && opt_expr_ir_eq(sl, sr, self.expr_arena)
-            },
+            ) => std::ptr::eq(Arc::as_ptr(dfl), Arc::as_ptr(dfr)) && s_l == s_r,
             (
                 IR::SimpleProjection {
                     input: _,

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    InvalidOperationError,
+    ShapeError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -45,6 +52,12 @@ def test_str_slice_expr() -> None:
     # negative length is not allowed
     with pytest.raises(InvalidOperationError):
         df.select(pl.col("a").str.slice(0, -1))
+
+
+def test_str_slice_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.slice(pl.Series([1, 2])))
 
 
 @pytest.mark.parametrize(
@@ -108,6 +121,12 @@ def test_str_head_expr() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_str_head_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.head(pl.Series([1, 2])))
+
+
 @pytest.mark.parametrize(
     ("input", "n", "output"),
     [
@@ -169,6 +188,12 @@ def test_str_tail_expr() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_str_tail_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.tail(pl.Series([1, 2])))
+
+
 def test_str_slice_multibyte() -> None:
     ref = "你好世界"
     s = pl.Series([ref])
@@ -203,6 +228,12 @@ def test_str_contains() -> None:
     s = pl.Series(["messi", "ronaldo", "ibrahimovic"])
     expected = pl.Series([True, False, False])
     assert_series_equal(s.str.contains("mes"), expected)
+
+
+def test_str_contains_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.contains(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
 def test_count_match_literal() -> None:
@@ -331,6 +362,12 @@ def test_str_find_escaped_chars() -> None:
     )
 
 
+def test_str_find_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.find(pl.Series(["a", "b"])))  # type: ignore [arg-type]
+
+
 def test_hex_decode_return_dtype() -> None:
     data = {"a": ["68656c6c6f", "776f726c64"]}
     expr = pl.col("a").str.decode("hex")
@@ -413,6 +450,17 @@ def test_str_to_integer() -> None:
         hex.str.to_integer(base=16)
 
 
+@pytest.mark.parametrize("strict", [False, True])
+def test_str_to_integer_invalid_base(strict: bool) -> None:
+    numbers = pl.Series(["1", "ZZZ", "-ABCZZZ", None])
+    with pytest.raises(ComputeError):
+        numbers.str.to_integer(base=100, strict=strict)
+
+    df = pl.DataFrame({"str": numbers, "base": [0, 1, 100, None]})
+    with pytest.raises(ComputeError):
+        df.select(pl.col("str").str.to_integer(base=pl.col("base"), strict=strict))
+
+
 def test_str_to_integer_base_expr() -> None:
     df = pl.DataFrame(
         {"str": ["110", "ff00", "234", None, "130"], "base": [2, 16, 10, 8, None]}
@@ -424,7 +472,7 @@ def test_str_to_integer_base_expr() -> None:
     # test strict raise
     df = pl.DataFrame({"str": ["110", "ff00", "cafe", None], "base": [2, 10, 10, 8]})
 
-    with pytest.raises(ComputeError, match="failed for 2 value"):
+    with pytest.raises(ComputeError):
         df.select(pl.col("str").str.to_integer(base="base"))
 
 
@@ -453,6 +501,100 @@ def test_str_to_integer_base_literal() -> None:
             pl.col("bin").str.to_integer(base=2),
             pl.col("hex").str.to_integer(base=16),
         )
+
+
+def test_str_to_integer_dtype() -> None:
+    lf = pl.LazyFrame(
+        {
+            "str": ["1111111", "7f", "127", None, "42"],
+            "base": [2, 16, 10, 8, None],
+        }
+    )
+    out = lf.select(
+        i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8),
+        i16=pl.col("str").str.to_integer(base="base", dtype=pl.Int16),
+        i32=pl.col("str").str.to_integer(base="base", dtype=pl.Int32),
+        i64=pl.col("str").str.to_integer(base="base", dtype=pl.Int64),
+        u8=pl.col("str").str.to_integer(base="base", dtype=pl.UInt8),
+        u16=pl.col("str").str.to_integer(base="base", dtype=pl.UInt16),
+        u32=pl.col("str").str.to_integer(base="base", dtype=pl.UInt32),
+        u64=pl.col("str").str.to_integer(base="base", dtype=pl.UInt64),
+        default=pl.col("str").str.to_integer(base="base"),
+    ).collect()
+
+    expected = pl.DataFrame(
+        {
+            "i8": [127, 127, 127, None, None],
+            "i16": [127, 127, 127, None, None],
+            "i32": [127, 127, 127, None, None],
+            "i64": [127, 127, 127, None, None],
+            "u8": [127, 127, 127, None, None],
+            "u16": [127, 127, 127, None, None],
+            "u32": [127, 127, 127, None, None],
+            "u64": [127, 127, 127, None, None],
+            "default": [127, 127, 127, None, None],
+        },
+        schema={
+            "i8": pl.Int8,
+            "i16": pl.Int16,
+            "i32": pl.Int32,
+            "i64": pl.Int64,
+            "u8": pl.UInt8,
+            "u16": pl.UInt16,
+            "u32": pl.UInt32,
+            "u64": pl.UInt64,
+            "default": pl.Int64,
+        },
+    )
+    assert lf.collect_schema() == lf.collect().schema
+    assert_frame_equal(out, expected)
+
+
+def test_str_to_integer_large() -> None:
+    df = pl.DataFrame(
+        {
+            "str": [
+                "-6129899454972456276923959272",
+                "1A44E53BFEBA967E6682FBB0",
+                "10100110111110110101110100000100110010101111000100011000000100010101010101101011111111101000",
+                None,
+                "7798994549724957734429272",
+            ],
+            "base": [10, 16, 2, 8, None],
+        }
+    )
+    out = df.select(i128=pl.col("str").str.to_integer(base="base", dtype=pl.Int128))
+    expected = pl.DataFrame(
+        {
+            "i128": [
+                -6129899454972456276923959272,
+                8129899739726392769273592752,
+                3229899454972495776923959272,
+                None,
+                None,
+            ]
+        },
+        schema={"i128": pl.Int128},
+    )
+    assert_frame_equal(out, expected)
+
+    # test strict raise
+    df = pl.DataFrame(
+        {
+            "i128": [
+                "612989945497245627692395927261298994549724562769239592726129899454972456276923959272",
+                "1A44E53BFEBA967E6682FBB0",
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "7798994549724957734429272",
+                None,
+                "7798994549724957734429272",
+            ],
+            "base": [10, 2, 16, 10, 8, None],
+        }
+    )
+
+    with pytest.raises(ComputeError):
+        df.select(pl.col("i128").str.to_integer(base="base", dtype=pl.Int128))
 
 
 def test_str_strip_chars_expr() -> None:
@@ -508,6 +650,12 @@ def test_str_strip_chars() -> None:
     assert_series_equal(s.str.strip_chars(" hwo"), expected)
 
 
+def test_str_strip_chars_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_chars(pl.Series(["a", "b"])))
+
+
 def test_str_strip_chars_start() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
@@ -520,6 +668,12 @@ def test_str_strip_chars_start() -> None:
     assert_series_equal(s.str.strip_chars_start("hw "), expected)
 
 
+def test_str_strip_chars_start_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_chars_start(pl.Series(["a", "b"])))
+
+
 def test_str_strip_chars_end() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series([" hello", "world"])
@@ -530,6 +684,12 @@ def test_str_strip_chars_end() -> None:
 
     expected = pl.Series([" he", "wor"])
     assert_series_equal(s.str.strip_chars_end("odl \t"), expected)
+
+
+def test_str_strip_chars_end_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_chars_end(pl.Series(["a", "b"])))
 
 
 def test_str_strip_whitespace() -> None:
@@ -572,6 +732,12 @@ def test_str_strip_prefix_suffix_expr() -> None:
     }
 
 
+def test_str_strip_prefix_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_prefix(pl.Series(["a", "b"])))
+
+
 def test_str_strip_suffix() -> None:
     s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", "", None])
     expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", "", None])
@@ -579,6 +745,12 @@ def test_str_strip_suffix() -> None:
     # test null literal
     expected = pl.Series([None, None, None, None, None, None], dtype=pl.String)
     assert_series_equal(s.str.strip_suffix(pl.lit(None, dtype=pl.String)), expected)
+
+
+def test_str_strip_suffix_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_suffix(pl.Series(["a", "b"])))
 
 
 def test_str_split() -> None:
@@ -640,10 +812,8 @@ def test_json_decode_nested_struct() -> None:
         '[{"key_1": "a2", "key_2": 2}]',
         '[{"key_1": "a3", "key_2": 3, "key_3": "c"}]',
     ]
-    df = pl.DataFrame({"json_str": json})
-    df_parsed = df.with_columns(
-        pl.col("json_str").str.json_decode().alias("parsed_list_json")
-    )
+    s = pl.Series("json_str", json)
+    s_parsed = s.str.json_decode().rename("parsed_list_json")
 
     expected_dtype = pl.List(
         pl.Struct(
@@ -654,9 +824,9 @@ def test_json_decode_nested_struct() -> None:
             ]
         )
     )
-    assert df_parsed.get_column("parsed_list_json").dtype == expected_dtype
+    assert s_parsed.dtype == expected_dtype
 
-    key_1_values = df_parsed.select(
+    key_1_values = s_parsed.to_frame().select(
         pl.col("parsed_list_json")
         .list.get(0)
         .struct.field("key_1")
@@ -683,8 +853,8 @@ def test_json_decode_primitive_to_list_11053() -> None:
     )
 
     output = df.select(
-        pl.col("json").str.json_decode(schema).alias("casted_json")
-    ).unnest("casted_json")
+        pl.col("json").str.json_decode(schema).alias("decoded_json")
+    ).unnest("decoded_json")
     expected = pl.DataFrame({"col1": [["123"], ["xyz"]], "col2": [["123"], None]})
     assert_frame_equal(output, expected)
 
@@ -721,6 +891,12 @@ def test_json_path_match() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_str_json_path_match_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises((ShapeError, ComputeError)):
+        df.select(pl.col("num").str.json_path_match(pl.Series(["a", "b"])))
 
 
 def test_extract_regex() -> None:
@@ -857,6 +1033,52 @@ def test_contains_expr() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("pattern", "case_insensitive", "expected"),
+    [
+        (["me"], False, True),
+        (["Me"], False, False),
+        (["Me"], True, True),
+        (pl.Series(["me", "they"]), False, True),
+        (pl.Series(["Me", "they"]), False, False),
+        (pl.Series(["Me", "they"]), True, True),
+        (["me", "they"], False, True),
+        (["Me", "they"], False, False),
+        (["Me", "they"], True, True),
+    ],
+)
+def test_contains_any(
+    pattern: pl.Series | list[str],
+    case_insensitive: bool,
+    expected: bool,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.contains_any(pattern, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.contains_any(
+                pattern, ascii_case_insensitive=case_insensitive
+            )
+        )["text"].item()
+    )
+    # frame filter
+    assert int(expected) == len(
+        df.filter(
+            pl.col("text").str.contains_any(
+                pattern, ascii_case_insensitive=case_insensitive
+            )
+        )
+    )
+
+
 def test_replace() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
@@ -955,6 +1177,66 @@ def test_replace_all() -> None:
     )
 
 
+def test_replace_all_literal_no_caputures() -> None:
+    # When using literal = True, capture groups should be disabled
+
+    # Single row code path in Rust
+    df = pl.DataFrame({"text": ["I found <amt> yesterday."], "amt": ["$1"]})
+    df = df.with_columns(
+        pl.col("text")
+        .str.replace_all("<amt>", pl.col("amt"), literal=True)
+        .alias("text2")
+    )
+    assert df.get_column("text2")[0] == "I found $1 yesterday."
+
+    # Multi-row code path in Rust
+    df2 = pl.DataFrame(
+        {
+            "text": ["I found <amt> yesterday.", "I lost <amt> yesterday."],
+            "amt": ["$1", "$2"],
+        }
+    )
+    df2 = df2.with_columns(
+        pl.col("text")
+        .str.replace_all("<amt>", pl.col("amt"), literal=True)
+        .alias("text2")
+    )
+    assert df2.get_column("text2")[0] == "I found $1 yesterday."
+    assert df2.get_column("text2")[1] == "I lost $2 yesterday."
+
+
+def test_replace_literal_no_caputures() -> None:
+    # When using literal = True, capture groups should be disabled
+
+    # Single row code path in Rust
+    df = pl.DataFrame({"text": ["I found <amt> yesterday."], "amt": ["$1"]})
+    df = df.with_columns(
+        pl.col("text").str.replace("<amt>", pl.col("amt"), literal=True).alias("text2")
+    )
+    assert df.get_column("text2")[0] == "I found $1 yesterday."
+
+    # Multi-row code path in Rust
+    # A string shorter than 32 chars,
+    # and one longer than 32 chars to test both sub-paths
+    df2 = pl.DataFrame(
+        {
+            "text": [
+                "I found <amt> yesterday.",
+                "I lost <amt> yesterday and this string is longer than 32 characters.",
+            ],
+            "amt": ["$1", "$2"],
+        }
+    )
+    df2 = df2.with_columns(
+        pl.col("text").str.replace("<amt>", pl.col("amt"), literal=True).alias("text2")
+    )
+    assert df2.get_column("text2")[0] == "I found $1 yesterday."
+    assert (
+        df2.get_column("text2")[1]
+        == "I lost $2 yesterday and this string is longer than 32 characters."
+    )
+
+
 def test_replace_expressions() -> None:
     df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
     out = df.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
@@ -969,6 +1251,146 @@ def test_replace_expressions() -> None:
     assert out.to_dict(as_series=False) == {
         "foo": ["value bla valuevalue asd", "xyz valuet"]
     }
+
+
+@pytest.mark.parametrize(
+    ("pattern", "replacement", "case_insensitive", "expected"),
+    [
+        (["say"], "", False, "Tell me what you want"),
+        (["me"], ["them"], False, "Tell them what you want"),
+        (["who"], ["them"], False, "Tell me what you want"),
+        (["me", "you"], "it", False, "Tell it what it want"),
+        (["Me", "you"], "it", False, "Tell me what it want"),
+        (["me", "you"], ["it"], False, "Tell it what it want"),
+        (["me", "you"], ["you", "me"], False, "Tell you what me want"),
+        (["me", "You", "them"], "it", False, "Tell it what you want"),
+        (["Me", "you"], "it", True, "Tell it what it want"),
+        (["me", "YOU"], ["you", "me"], True, "Tell you what me want"),
+        (pl.Series(["me", "YOU"]), ["you", "me"], False, "Tell you what you want"),
+        (pl.Series(["me", "YOU"]), ["you", "me"], True, "Tell you what me want"),
+    ],
+)
+def test_replace_many(
+    pattern: pl.Series | list[str],
+    replacement: pl.Series | list[str] | str,
+    case_insensitive: bool,
+    expected: str,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.replace_many(pattern, replacement, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.replace_many(
+                pattern,
+                replacement,
+                ascii_case_insensitive=case_insensitive,
+            )
+        ).item()
+    )
+
+
+def test_replace_many_groupby() -> None:
+    df = pl.DataFrame(
+        {
+            "x": ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
+            "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        }
+    )
+    out = df.group_by("g").agg(pl.col.x.str.replace_many(pl.col.x.head(2), ""))
+    expected = pl.DataFrame(
+        {
+            "g": [0, 1, 2],
+            "x": [["", "", "c"], ["", "", "f"], ["", "", "i"]],
+        }
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("mapping", "case_insensitive", "expected"),
+    [
+        ({}, False, "Tell me what you want"),
+        ({"me": "them"}, False, "Tell them what you want"),
+        ({"who": "them"}, False, "Tell me what you want"),
+        ({"me": "it", "you": "it"}, False, "Tell it what it want"),
+        ({"Me": "it", "you": "it"}, False, "Tell me what it want"),
+        ({"me": "you", "you": "me"}, False, "Tell you what me want"),
+        ({}, True, "Tell me what you want"),
+        ({"Me": "it", "you": "it"}, True, "Tell it what it want"),
+        ({"me": "you", "YOU": "me"}, True, "Tell you what me want"),
+    ],
+)
+def test_replace_many_mapping(
+    mapping: dict[str, str],
+    case_insensitive: bool,
+    expected: str,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.replace_many(mapping, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.replace_many(
+                mapping,
+                ascii_case_insensitive=case_insensitive,
+            )
+        ).item()
+    )
+
+
+def test_replace_many_invalid_inputs() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+
+    # Ensure a string as the first argument is parsed as a column name.
+    with pytest.raises(ColumnNotFoundError, match="me"):
+        df.select(pl.col("text").str.replace_many("me", "you"))
+
+    with pytest.raises(InvalidOperationError):
+        df.select(pl.col("text").str.replace_many(1, 2))
+
+    with pytest.raises(InvalidOperationError):
+        df.select(pl.col("text").str.replace_many([1], [2]))
+
+    with pytest.raises(InvalidOperationError):
+        df.select(pl.col("text").str.replace_many(["me"], None))
+
+    with pytest.raises(TypeError):
+        df.select(pl.col("text").str.replace_many(["me"]))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected the same amount of patterns as replacement strings",
+    ):
+        df.select(pl.col("text").str.replace_many(["a"], ["b", "c"]))
+
+    s = df.to_series()
+
+    with pytest.raises(ColumnNotFoundError, match="me"):
+        s.str.replace_many("me", "you")  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        df.select(pl.col("text").str.replace_many(["me"]))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected the same amount of patterns as replacement strings",
+    ):
+        s.str.replace_many(["a"], ["b", "c"])
 
 
 def test_extract_all_count() -> None:
@@ -1073,7 +1495,10 @@ def test_extract_groups() -> None:
 
     assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
         as_series=False
-    ) == {"iso_code": [{"iso_code": None}, {"iso_code": None}]}
+    ) == {"iso_code": [{}, {}]}
+
+    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
+    assert q.collect_schema() == q.collect().schema
 
     assert df.select(
         pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
@@ -1098,7 +1523,7 @@ def test_extract_groups() -> None:
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
         {
-            "a": ["hamburger", "nuts", "lollypop", None],
+            "a": ["hamburger_with_tomatoes", "nuts", "lollypop", None],
             "sub": ["ham", "ts", None, "anything"],
         }
     )
@@ -1399,23 +1824,52 @@ def test_splitn_expr() -> None:
 def test_titlecase() -> None:
     df = pl.DataFrame(
         {
-            "sing": [
+            "misc": [
                 "welcome to my world",
-                "THERE'S NO TURNING BACK",
                 "double  space",
                 "and\ta\t tab",
+                "by jean-paul sartre, 'esq'",
+                "SOMETIMES/life/gives/you/a/2nd/chance",
+            ],
+        }
+    )
+    expected = [
+        "Welcome To My World",
+        "Double  Space",
+        "And\tA\t Tab",
+        "By Jean-Paul Sartre, 'Esq'",
+        "Sometimes/Life/Gives/You/A/2nd/Chance",
+    ]
+    actual = df.select(pl.col("misc").str.to_titlecase()).to_series()
+    for ex, act in zip(expected, actual):
+        assert ex == act, f"{ex} != {act}"
+
+    df = pl.DataFrame(
+        {
+            "quotes": [
+                "'e.t. phone home'",
+                "you talkin' to me?",
+                "i feel the need--the need for speed",
+                "to infinity,and BEYOND!",
+                "say 'what' again!i dare you - I\u00a0double-dare you!",
+                "What.we.got.here... is#failure#to#communicate",
             ]
         }
     )
-
-    assert df.select(pl.col("sing").str.to_titlecase()).to_dict(as_series=False) == {
-        "sing": [
-            "Welcome To My World",
-            "There's No Turning Back",
-            "Double  Space",
-            "And\tA\t Tab",
-        ]
-    }
+    expected_str = [
+        "'E.T. Phone Home'",
+        "You Talkin' To Me?",
+        "I Feel The Need--The Need For Speed",
+        "To Infinity,And Beyond!",
+        "Say 'What' Again!I Dare You - I\u00a0Double-Dare You!",
+        "What.We.Got.Here... Is#Failure#To#Communicate",
+    ]
+    expected_py = [s.title() for s in df["quotes"].to_list()]
+    for ex_str, ex_py, act in zip(
+        expected_str, expected_py, df["quotes"].str.to_titlecase()
+    ):
+        assert ex_str == act, f"{ex_str} != {act}"
+        assert ex_py == act, f"{ex_py} != {act}"
 
 
 def test_string_replace_with_nulls_10124() -> None:
@@ -1471,7 +1925,7 @@ def test_string_reverse() -> None:
 
 
 @pytest.mark.parametrize(
-    ("data", "expected_dat"),
+    ("data", "expected_data"),
     [
         (["", None, "a"], ["", None, "b"]),
         ([None, None, "a"], [None, None, "b"]),
@@ -1481,30 +1935,26 @@ def test_string_reverse() -> None:
     ],
 )
 def test_replace_lit_n_char_13385(
-    data: list[str | None], expected_dat: list[str | None]
+    data: list[str | None], expected_data: list[str | None]
 ) -> None:
     s = pl.Series(data, dtype=pl.String)
     res = s.str.replace("a", "b", literal=True)
-    expected_s = pl.Series(expected_dat, dtype=pl.String)
+    expected_s = pl.Series(expected_data, dtype=pl.String)
     assert_series_equal(res, expected_s)
 
 
 def test_extract_many() -> None:
-    df = pl.DataFrame({"values": ["discontent"]})
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
     patterns = ["winter", "disco", "onte", "discontent"]
-    assert (
-        df.with_columns(
-            pl.col("values")
-            .str.extract_many(patterns, overlapping=False)
-            .alias("matches"),
-            pl.col("values")
-            .str.extract_many(patterns, overlapping=True)
-            .alias("matches_overlapping"),
-        )
+    assert df.with_columns(
+        pl.col("values").str.extract_many(patterns, overlapping=False).alias("matches"),
+        pl.col("values")
+        .str.extract_many(patterns, overlapping=True)
+        .alias("matches_overlapping"),
     ).to_dict(as_series=False) == {
-        "values": ["discontent"],
-        "matches": [["disco"]],
-        "matches_overlapping": [["disco", "onte", "discontent"]],
+        "values": ["discontent", "foobar"],
+        "matches": [["disco"], []],
+        "matches_overlapping": [["disco", "onte", "discontent"], []],
     }
 
     # many patterns
@@ -1518,6 +1968,148 @@ def test_extract_many() -> None:
         }
     )
 
+    # extract_many
     assert df.select(pl.col("values").str.extract_many("patterns")).to_dict(
         as_series=False
     ) == {"values": [["disco"], ["rhap", "ody"]]}
+
+    # find_many
+    f1 = df.select(pl.col("values").str.find_many("patterns"))
+    f2 = df["values"].str.find_many(df["patterns"])
+
+    assert_series_equal(f1["values"], f2)
+    assert f2.to_list() == [[0], [0, 5]]
+
+
+def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
+    assert_series_equal(
+        pl.Series(["null", "null"]).str.json_decode(infer_schema_length=1),
+        pl.Series([None, None]),
+    )
+
+    with pytest.raises(ComputeError):
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=1)
+
+    assert_series_equal(
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=2),
+        pl.Series([None, 1]),
+    )
+
+
+def test_json_decode_struct_schema() -> None:
+    with pytest.raises(ComputeError, match="extra field in struct data: b"):
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            infer_schema_length=1
+        )
+
+    assert_series_equal(
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            infer_schema_length=2
+        ),
+        pl.Series([{"a": 1, "b": None}, {"a": 2, "b": 2}]),
+    )
+
+    # If the schema was explicitly given, then we ignore extra fields.
+    # TODO: There should be a `columns=` parameter to this.
+    assert_series_equal(
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            dtype=pl.Struct({"a": pl.Int64})
+        ),
+        pl.Series([{"a": 1}, {"a": 2}]),
+    )
+
+
+def test_escape_regex() -> None:
+    df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+    result_df = df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
+    expected_df = pl.DataFrame(
+        {
+            "text": ["abc", "def", None, "abc(\\w+)"],
+            "escaped": ["abc", "def", None, "abc\\(\\\\w\\+\\)"],
+        }
+    )
+
+    assert_frame_equal(result_df, expected_df)
+    assert_series_equal(result_df["escaped"], expected_df["escaped"])
+
+
+@pytest.mark.parametrize(
+    ("form", "expected_data"),
+    [
+        ("NFC", ["01²", "ＫＡＤＯＫＡＷＡ"]),  # noqa: RUF001
+        ("NFD", ["01²", "ＫＡＤＯＫＡＷＡ"]),  # noqa: RUF001
+        ("NFKC", ["012", "KADOKAWA"]),
+        ("NFKD", ["012", "KADOKAWA"]),
+    ],
+)
+def test_string_normalize(form: Any, expected_data: list[str | None]) -> None:
+    s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"], dtype=pl.String)  # noqa: RUF001
+    res = s.str.normalize(form)
+    expected_s = pl.Series(expected_data, dtype=pl.String)
+    assert_series_equal(res, expected_s)
+
+
+def test_string_normalize_wrong_input() -> None:
+    with pytest.raises(ValueError, match="`form` must be one of"):
+        pl.Series(["01²"], dtype=pl.String).str.normalize("foobar")  # type: ignore[arg-type]
+
+
+def test_to_integer_unequal_lengths_22034() -> None:
+    s = pl.Series("a", ["1", "2", "3"], pl.String)
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.str.to_integer(base=pl.Series([4, 5, 5, 4]))
+
+
+def test_broadcast_self() -> None:
+    s = pl.Series("a", ["3"], pl.String)
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="strict integer parsing failed"
+    ):
+        s.str.to_integer(base=pl.Series([2, 2, 3, 4]))
+
+
+def test_strptime_unequal_length_22018() -> None:
+    s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.str.strptime(
+            pl.Datetime, "%Y-%m-%d %H:%M%#z", ambiguous=pl.Series(["a", "b", "d"])
+        )
+
+
+@pytest.mark.parametrize("inclusive", [False, True])
+def test_str_split_unequal_length_22018(inclusive: bool) -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series(["a-c", "x-y"]).str.split(
+            pl.Series(["-", "/", "+"]), inclusive=inclusive
+        )
+
+
+def test_str_split_self_broadcast() -> None:
+    assert_series_equal(
+        pl.Series(["a-/c"]).str.split(pl.Series(["-", "/", "+"])),
+        pl.Series([["a", "/c"], ["a-", "c"], ["a-/c"]]),
+    )
+
+
+def test_replace_many_mapping_in_list() -> None:
+    assert_series_equal(
+        pl.Series([["a", "b"]]).list.eval(
+            pl.element().replace_strict({"a": 1, "b": 2})
+        ),
+        pl.Series([[1, 2]]),
+    )
+
+
+def test_str_replace_n_zero_23570() -> None:
+    # more than 32 bytes
+    abc_long = "abc " * 20 + "abc"
+    df = pl.DataFrame(
+        {"a": [abc_long, "abc abc abc", "abc ghi"], "b": ["jkl", "pqr", "xyz"]}
+    )
+    expected = df
+
+    out = df.with_columns(pl.col("a").str.replace("abc", "XYZ", n=0))
+    assert_frame_equal(out, expected)
+
+    out = df.with_columns(pl.col("a").str.replace("abc", pl.col("b"), n=0))
+    assert_frame_equal(out, expected)

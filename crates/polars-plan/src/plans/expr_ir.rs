@@ -2,35 +2,56 @@ use std::borrow::Borrow;
 use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
+use std::sync::OnceLock;
+
+use polars_utils::format_pl_smallstr;
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::constants::{get_len_name, LITERAL_NAME};
+use crate::constants::{get_len_name, get_literal_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum OutputName {
     /// No not yet set.
     #[default]
     None,
     /// The most left-hand-side literal will be the output name.
-    LiteralLhs(ColumnName),
+    LiteralLhs(PlSmallStr),
     /// The most left-hand-side column will be the output name.
-    ColumnLhs(ColumnName),
-    /// Rename the output as `ColumnName`.
-    Alias(ColumnName),
+    ColumnLhs(PlSmallStr),
+    /// Rename the output as `PlSmallStr`.
+    Alias(PlSmallStr),
     #[cfg(feature = "dtype-struct")]
     /// A struct field.
-    Field(ColumnName),
+    Field(PlSmallStr),
 }
 
 impl OutputName {
-    fn unwrap(&self) -> &ColumnName {
+    pub fn get(&self) -> Option<&PlSmallStr> {
         match self {
-            OutputName::Alias(name) => name,
-            OutputName::ColumnLhs(name) => name,
-            OutputName::LiteralLhs(name) => name,
+            OutputName::Alias(name) => Some(name),
+            OutputName::ColumnLhs(name) => Some(name),
+            OutputName::LiteralLhs(name) => Some(name),
             #[cfg(feature = "dtype-struct")]
-            OutputName::Field(name) => name,
-            OutputName::None => panic!("no output name set"),
+            OutputName::Field(name) => Some(name),
+            OutputName::None => None,
+        }
+    }
+
+    pub fn unwrap(&self) -> &PlSmallStr {
+        self.get().expect("no output name set")
+    }
+
+    pub fn into_inner(self) -> Option<PlSmallStr> {
+        match self {
+            OutputName::Alias(name) => Some(name),
+            OutputName::ColumnLhs(name) => Some(name),
+            OutputName::LiteralLhs(name) => Some(name),
+            #[cfg(feature = "dtype-struct")]
+            OutputName::Field(name) => Some(name),
+            OutputName::None => None,
         }
     }
 
@@ -39,13 +60,25 @@ impl OutputName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct ExprIR {
     /// Output name of this expression.
     output_name: OutputName,
+    /// Output dtype of this expression
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node,
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    output_dtype: OnceLock<DataType>,
+}
+
+impl Eq for ExprIR {}
+
+impl PartialEq for ExprIR {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node && self.output_name == other.output_name
+    }
 }
 
 impl Borrow<Node> for ExprIR {
@@ -54,16 +87,36 @@ impl Borrow<Node> for ExprIR {
     }
 }
 
+impl Borrow<Node> for &ExprIR {
+    fn borrow(&self) -> &Node {
+        &self.node
+    }
+}
+
 impl ExprIR {
     pub fn new(node: Node, output_name: OutputName) -> Self {
         debug_assert!(!output_name.is_none());
-        ExprIR { output_name, node }
+        ExprIR {
+            output_name,
+            node,
+            output_dtype: OnceLock::new(),
+        }
+    }
+
+    pub fn with_dtype(self, dtype: DataType) -> Self {
+        let _ = self.output_dtype.set(dtype);
+        self
+    }
+
+    pub(crate) fn set_dtype(&mut self, dtype: DataType) {
+        self.output_dtype = OnceLock::from(dtype);
     }
 
     pub fn from_node(node: Node, arena: &Arena<AExpr>) -> Self {
         let mut out = Self {
             node,
             output_name: OutputName::None,
+            output_dtype: OnceLock::new(),
         };
         out.node = node;
         for (_, ae) in arena.iter(node) {
@@ -74,9 +127,9 @@ impl ExprIR {
                 },
                 AExpr::Literal(lv) => {
                     if let LiteralValue::Series(s) = lv {
-                        out.output_name = OutputName::LiteralLhs(s.name().into());
+                        out.output_name = OutputName::LiteralLhs(s.name().clone());
                     } else {
-                        out.output_name = OutputName::LiteralLhs(LITERAL_NAME.into());
+                        out.output_name = OutputName::LiteralLhs(get_literal_name().clone());
                     }
                     break;
                 },
@@ -85,14 +138,13 @@ impl ExprIR {
                 } => {
                     match function {
                         #[cfg(feature = "dtype-struct")]
-                        FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => {
+                        IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)) => {
                             out.output_name = OutputName::Field(name.clone());
                         },
                         _ => {
                             if input.is_empty() {
-                                out.output_name = OutputName::LiteralLhs(ColumnName::from(
-                                    format!("{}", function),
-                                ));
+                                out.output_name =
+                                    OutputName::LiteralLhs(format_pl_smallstr!("{}", function));
                             } else {
                                 out.output_name = input[0].output_name.clone();
                             }
@@ -100,21 +152,17 @@ impl ExprIR {
                     }
                     break;
                 },
-                AExpr::AnonymousFunction { input, options, .. } => {
+                AExpr::AnonymousFunction { input, fmt_str, .. } => {
                     if input.is_empty() {
-                        out.output_name = OutputName::LiteralLhs(ColumnName::from(options.fmt_str));
+                        out.output_name = OutputName::LiteralLhs(fmt_str.as_ref().clone());
                     } else {
                         out.output_name = input[0].output_name.clone();
                     }
                     break;
                 },
-                AExpr::Len => out.output_name = OutputName::LiteralLhs(get_len_name()),
-                AExpr::Alias(_, _) => {
-                    // Should be removed during conversion.
-                    #[cfg(debug_assertions)]
-                    {
-                        unreachable!()
-                    }
+                AExpr::Len => {
+                    out.output_name = OutputName::LiteralLhs(get_len_name());
+                    break;
                 },
                 _ => {},
             }
@@ -139,48 +187,51 @@ impl ExprIR {
 
     pub(crate) fn set_node(&mut self, node: Node) {
         self.node = node;
+        self.output_dtype = OnceLock::new();
     }
 
-    #[cfg(feature = "cse")]
-    pub(crate) fn set_alias(&mut self, name: ColumnName) {
+    pub(crate) fn set_alias(&mut self, name: PlSmallStr) {
         self.output_name = OutputName::Alias(name)
     }
 
-    pub(crate) fn output_name_inner(&self) -> &OutputName {
+    pub fn with_alias(&self, name: PlSmallStr) -> Self {
+        Self {
+            output_name: OutputName::Alias(name),
+            node: self.node,
+            output_dtype: self.output_dtype.clone(),
+        }
+    }
+
+    pub(crate) fn set_columnlhs(&mut self, name: PlSmallStr) {
+        debug_assert!(matches!(
+            self.output_name,
+            OutputName::ColumnLhs(_) | OutputName::None
+        ));
+        self.output_name = OutputName::ColumnLhs(name)
+    }
+
+    pub fn output_name_inner(&self) -> &OutputName {
         &self.output_name
     }
 
-    pub(crate) fn output_name_arc(&self) -> &Arc<str> {
+    pub fn output_name(&self) -> &PlSmallStr {
         self.output_name.unwrap()
-    }
-
-    pub fn output_name(&self) -> &str {
-        self.output_name_arc().as_ref()
     }
 
     pub fn to_expr(&self, expr_arena: &Arena<AExpr>) -> Expr {
         let out = node_to_expr(self.node, expr_arena);
 
         match &self.output_name {
-            OutputName::Alias(name) => out.alias(name.as_ref()),
+            OutputName::Alias(name) if expr_arena.get(self.node).to_name(expr_arena) != name => {
+                out.alias(name.clone())
+            },
             _ => out,
         }
     }
 
-    pub fn get_alias(&self) -> Option<&ColumnName> {
+    pub fn get_alias(&self) -> Option<&PlSmallStr> {
         match &self.output_name {
             OutputName::Alias(name) => Some(name),
-            _ => None,
-        }
-    }
-
-    /// Gets any name except one deriving from `Column`.
-    pub(crate) fn get_non_projected_name(&self) -> Option<&ColumnName> {
-        match &self.output_name {
-            OutputName::Alias(name) => Some(name),
-            #[cfg(feature = "dtype-struct")]
-            OutputName::Field(name) => Some(name),
-            OutputName::LiteralLhs(name) => Some(name),
             _ => None,
         }
     }
@@ -202,6 +253,31 @@ impl ExprIR {
         if let Some(alias) = self.get_alias() {
             alias.hash(state)
         }
+    }
+
+    pub fn is_scalar(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_scalar_ae(self.node, expr_arena)
+    }
+
+    pub fn dtype(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<&DataType> {
+        match self.output_dtype.get() {
+            Some(dtype) => Ok(dtype),
+            None => {
+                let dtype = expr_arena.get(self.node).to_dtype(schema, expr_arena)?;
+                let _ = self.output_dtype.set(dtype);
+                Ok(self.output_dtype.get().unwrap())
+            },
+        }
+    }
+
+    pub fn field(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<Field> {
+        let dtype = self.dtype(schema, expr_arena)?;
+        let name = self.output_name();
+        Ok(Field::new(name.clone(), dtype.clone()))
+    }
+
+    pub fn into_inner(self) -> (Node, OutputName) {
+        (self.node, self.output_name)
     }
 }
 
@@ -227,20 +303,20 @@ impl From<&ExprIR> for Node {
     }
 }
 
-pub(crate) fn name_to_expr_ir(name: &str, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    let name = ColumnName::from(name);
+pub(crate) fn name_to_expr_ir(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> ExprIR {
     let node = expr_arena.add(AExpr::Column(name.clone()));
     ExprIR::new(node, OutputName::ColumnLhs(name))
 }
 
-pub(crate) fn names_to_expr_irs<I: IntoIterator<Item = S>, S: AsRef<str>>(
-    names: I,
-    expr_arena: &mut Arena<AExpr>,
-) -> Vec<ExprIR> {
+pub(crate) fn names_to_expr_irs<I, S>(names: I, expr_arena: &mut Arena<AExpr>) -> Vec<ExprIR>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<PlSmallStr>,
+{
     names
         .into_iter()
         .map(|name| {
-            let name = name.as_ref();
+            let name = name.into();
             name_to_expr_ir(name, expr_arena)
         })
         .collect()

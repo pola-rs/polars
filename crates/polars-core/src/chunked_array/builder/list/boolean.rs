@@ -7,7 +7,7 @@ pub struct ListBooleanChunkedBuilder {
 }
 
 impl ListBooleanChunkedBuilder {
-    pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableBooleanArray::with_capacity(values_capacity);
         let builder = LargeListBooleanBuilder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(DataType::Boolean)));

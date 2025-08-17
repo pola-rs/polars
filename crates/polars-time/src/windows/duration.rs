@@ -6,15 +6,14 @@ use std::ops::{Mul, Neg};
 use arrow::legacy::kernels::{Ambiguous, NonExistent};
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
-    NANOSECONDS,
+    MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_us_to_datetime,
 };
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::datatypes::DataType;
-use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
-    PolarsResult,
+    PolarsResult, TimeZone, datetime_to_timestamp_ms, datetime_to_timestamp_ns,
+    datetime_to_timestamp_us, polars_bail,
 };
 use polars_error::polars_ensure;
 #[cfg(feature = "serde")]
@@ -25,10 +24,11 @@ use super::calendar::{
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
-use crate::windows::calendar::{is_leap_year, DAYS_PER_MONTH};
+use crate::windows::calendar::{DAYS_PER_MONTH, is_leap_year};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Duration {
     // the number of months for the duration
     months: i64,
@@ -80,7 +80,7 @@ impl Display for Duration {
             write!(f, "-")?
         }
         if self.months > 0 {
-            write!(f, "{}m", self.months)?
+            write!(f, "{}mo", self.months)?
         }
         if self.weeks > 0 {
             write!(f, "{}w", self.weeks)?
@@ -91,11 +91,11 @@ impl Display for Duration {
         if self.nsecs > 0 {
             let secs = self.nsecs / NANOSECONDS;
             if secs * NANOSECONDS == self.nsecs {
-                write!(f, "{}s", secs)?
+                write!(f, "{secs}s")?
             } else {
                 let us = self.nsecs / 1_000;
                 if us * 1_000 == self.nsecs {
-                    write!(f, "{}us", us)?
+                    write!(f, "{us}us")?
                 } else {
                     write!(f, "{}ns", self.nsecs)?
                 }
@@ -153,7 +153,7 @@ impl Duration {
     /// # Panics
     /// If the given str is invalid for any reason.
     pub fn parse(duration: &str) -> Self {
-        Self::_parse(duration, false)
+        Self::try_parse(duration).unwrap()
     }
 
     #[doc(hidden)]
@@ -161,23 +161,31 @@ impl Duration {
     /// units (such as 'year', 'minutes', etc.) and whitespace, as
     /// well as being case-insensitive.
     pub fn parse_interval(interval: &str) -> Self {
+        Self::try_parse_interval(interval).unwrap()
+    }
+
+    pub fn try_parse(duration: &str) -> PolarsResult<Self> {
+        Self::_parse(duration, false)
+    }
+
+    pub fn try_parse_interval(interval: &str) -> PolarsResult<Self> {
         Self::_parse(&interval.to_ascii_lowercase(), true)
     }
 
-    fn _parse(s: &str, as_interval: bool) -> Self {
+    fn _parse(s: &str, as_interval: bool) -> PolarsResult<Self> {
         let s = if as_interval { s.trim_start() } else { s };
 
         let parse_type = if as_interval { "interval" } else { "duration" };
         let num_minus_signs = s.matches('-').count();
         if num_minus_signs > 1 {
-            panic!("{} string can only have a single minus sign", parse_type)
+            polars_bail!(InvalidOperation: "{} string can only have a single minus sign", parse_type);
         }
         if num_minus_signs > 0 {
             if as_interval {
                 // TODO: intervals need to support per-element minus signs
-                panic!("minus signs are not currently supported in interval strings")
+                polars_bail!(InvalidOperation: "minus signs are not currently supported in interval strings");
             } else if !s.starts_with('-') {
-                panic!("only a single minus sign is allowed, at the front of the string")
+                polars_bail!(InvalidOperation: "only a single minus sign is allowed, at the front of the string");
             }
         }
         let mut months = 0;
@@ -208,15 +216,16 @@ impl Duration {
         // reserve capacity for the longest valid unit ("microseconds")
         let mut unit = String::with_capacity(12);
         let mut parsed_int = false;
+        let mut last_ch_opt: Option<char> = None;
 
         while let Some((i, mut ch)) = iter.next() {
             if !ch.is_ascii_digit() {
-                let n = s[start..i].parse::<i64>().unwrap_or_else(|_| {
-                    panic!(
+                let Ok(n) = s[start..i].parse::<i64>() else {
+                    polars_bail!(InvalidOperation:
                         "expected leading integer in the {} string, found {}",
                         parse_type, ch
-                    )
-                });
+                    );
+                };
 
                 loop {
                     match ch {
@@ -233,10 +242,10 @@ impl Duration {
                     }
                 }
                 if unit.is_empty() {
-                    panic!(
+                    polars_bail!(InvalidOperation:
                         "expected a unit to follow integer in the {} string '{}'",
                         parse_type, s
-                    )
+                    );
                 }
                 match &*unit {
                     // matches that are allowed for both duration/interval
@@ -270,32 +279,38 @@ impl Duration {
                         "year" | "years" => months += n * 12,
                         _ => {
                             let valid_units = "'year', 'month', 'quarter', 'week', 'day', 'hour', 'minute', 'second', 'millisecond', 'microsecond', 'nanosecond'";
-                            panic!("unit: '{unit}' not supported; available units include: {} (and their plurals)", valid_units)
+                            polars_bail!(InvalidOperation: "unit: '{unit}' not supported; available units include: {} (and their plurals)", valid_units);
                         },
                     },
                     _ => {
-                        panic!("unit: '{unit}' not supported; available units are: 'y', 'mo', 'q', 'w', 'd', 'h', 'm', 's', 'ms', 'us', 'ns'")
+                        polars_bail!(InvalidOperation: "unit: '{unit}' not supported; available units are: 'y', 'mo', 'q', 'w', 'd', 'h', 'm', 's', 'ms', 'us', 'ns'");
                     },
                 }
                 unit.clear();
             }
+            last_ch_opt = Some(ch);
         }
-        Duration {
-            nsecs: nsecs.abs(),
-            days: days.abs(),
-            weeks: weeks.abs(),
+        if let Some(last_ch) = last_ch_opt {
+            if last_ch.is_ascii_digit() {
+                polars_bail!(InvalidOperation:
+                    "expected a unit to follow integer in the {} string '{}'",
+                    parse_type, s
+                );
+            }
+        };
+
+        Ok(Duration {
             months: months.abs(),
+            weeks: weeks.abs(),
+            days: days.abs(),
+            nsecs: nsecs.abs(),
             negative,
             parsed_int,
-        }
+        })
     }
 
     fn to_positive(v: i64) -> (bool, i64) {
-        if v < 0 {
-            (true, -v)
-        } else {
-            (false, v)
-        }
+        if v < 0 { (true, -v) } else { (false, v) }
     }
 
     /// Normalize the duration within the interval.
@@ -432,8 +447,8 @@ impl Duration {
         self.nsecs == 0
     }
 
-    pub fn is_constant_duration(&self, time_zone: Option<&str>) -> bool {
-        if time_zone.is_none() || time_zone == Some("UTC") {
+    pub fn is_constant_duration(&self, time_zone: Option<&TimeZone>) -> bool {
+        if time_zone.is_none() || time_zone == Some(&TimeZone::UTC) {
             self.months == 0
         } else {
             // For non-native, non-UTC time zones, 1 calendar day is not
@@ -716,7 +731,7 @@ impl Duration {
             original_dt_local.year() as i64,
             original_dt_local.month() as i64,
         );
-        let total = (year * 12) + (month - 1);
+        let total = ((year - 1970) * 12) + (month - 1);
         let mut remainder_months = total % self.months;
         if remainder_months < 0 {
             remainder_months += self.months
@@ -819,7 +834,7 @@ impl Duration {
                 )
             },
             _ => {
-                polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
+                polars_bail!(ComputeError: "cannot mix month, week, day, and sub-daily units for this operation")
             },
         }
     }
@@ -862,7 +877,7 @@ impl Duration {
 
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
-        t: i64,
+        mut t: i64,
         tz: Option<&Tz>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
@@ -874,7 +889,6 @@ impl Duration {
         J: Fn(NaiveDateTime) -> i64,
     {
         let d = self;
-        let mut new_t = t;
 
         if d.months > 0 {
             let ts = match tz {
@@ -886,7 +900,7 @@ impl Duration {
                 _ => timestamp_to_datetime(t),
             };
             let dt = Self::add_month(ts, d.months, d.negative);
-            new_t = match tz {
+            t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => datetime_to_timestamp(
@@ -903,12 +917,11 @@ impl Duration {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    new_t =
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
-                    new_t += if d.negative { -t_weeks } else { t_weeks };
-                    new_t = datetime_to_timestamp(
+                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    t += if d.negative { -t_weeks } else { t_weeks };
+                    t = datetime_to_timestamp(
                         try_localize_datetime(
-                            timestamp_to_datetime(new_t),
+                            timestamp_to_datetime(t),
                             tz,
                             Ambiguous::Raise,
                             NonExistent::Raise,
@@ -916,7 +929,7 @@ impl Duration {
                         .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                     );
                 },
-                _ => new_t += if d.negative { -t_weeks } else { t_weeks },
+                _ => t += if d.negative { -t_weeks } else { t_weeks },
             };
         }
 
@@ -926,12 +939,11 @@ impl Duration {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    new_t =
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
-                    new_t += if d.negative { -t_days } else { t_days };
-                    new_t = datetime_to_timestamp(
+                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    t += if d.negative { -t_days } else { t_days };
+                    t = datetime_to_timestamp(
                         try_localize_datetime(
-                            timestamp_to_datetime(new_t),
+                            timestamp_to_datetime(t),
                             tz,
                             Ambiguous::Raise,
                             NonExistent::Raise,
@@ -939,11 +951,11 @@ impl Duration {
                         .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                     );
                 },
-                _ => new_t += if d.negative { -t_days } else { t_days },
+                _ => t += if d.negative { -t_days } else { t_days },
             };
         }
 
-        Ok(new_t)
+        Ok(t)
     }
 
     pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
@@ -1018,7 +1030,7 @@ fn new_datetime(
 
 pub fn ensure_is_constant_duration(
     duration: Duration,
-    time_zone: Option<&str>,
+    time_zone: Option<&TimeZone>,
     variable_name: &str,
 ) -> PolarsResult<()> {
     polars_ensure!(duration.is_constant_duration(time_zone),
@@ -1031,12 +1043,12 @@ pub fn ensure_is_constant_duration(
     Ok(())
 }
 
-pub fn ensure_duration_matches_data_type(
+pub fn ensure_duration_matches_dtype(
     duration: Duration,
-    data_type: &DataType,
+    dtype: &DataType,
     variable_name: &str,
 ) -> PolarsResult<()> {
-    match data_type {
+    match dtype {
         DataType::Int64 | DataType::UInt64 | DataType::Int32 | DataType::UInt32 => {
             polars_ensure!(duration.parsed_int || duration.is_zero(),
                 InvalidOperation: "`{}` duration must be a parsed integer (i.e. use '2i', not '2d') when working with a numeric column", variable_name);
@@ -1046,7 +1058,7 @@ pub fn ensure_duration_matches_data_type(
                 InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
         },
         _ => {
-            polars_bail!(InvalidOperation: "unsupported data type: {} for `{}`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time", data_type, variable_name)
+            polars_bail!(InvalidOperation: "unsupported data type: {} for temporal/index column, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time", dtype)
         },
     }
     Ok(())
@@ -1107,6 +1119,12 @@ mod test {
         assert_eq!(format!("{duration}"), expected);
         let duration = Duration::parse("1h5000ns");
         let expected = "3600000005us";
+        assert_eq!(format!("{duration}"), expected);
+        let duration = Duration::parse("3mo");
+        let expected = "3mo";
+        assert_eq!(format!("{duration}"), expected);
+        let duration = Duration::parse_interval("4 weeks");
+        let expected = "4w";
         assert_eq!(format!("{duration}"), expected);
     }
 }

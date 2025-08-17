@@ -1,4 +1,4 @@
-use parquet_format_safe::Statistics as ParquetStatistics;
+use polars_parquet_format::Statistics as ParquetStatistics;
 
 use crate::parquet::error::{ParquetError, ParquetResult};
 
@@ -13,14 +13,14 @@ pub struct BooleanStatistics {
 impl BooleanStatistics {
     pub fn deserialize(v: &ParquetStatistics) -> ParquetResult<Self> {
         if let Some(ref v) = v.max_value {
-            if v.len() != std::mem::size_of::<bool>() {
+            if v.len() != size_of::<bool>() {
                 return Err(ParquetError::oos(
                     "The max_value of statistics MUST be plain encoded",
                 ));
             }
         };
         if let Some(ref v) = v.min_value {
-            if v.len() != std::mem::size_of::<bool>() {
+            if v.len() != size_of::<bool>() {
                 return Err(ParquetError::oos(
                     "The min_value of statistics MUST be plain encoded",
                 ));
@@ -49,8 +49,10 @@ impl BooleanStatistics {
             distinct_count: self.distinct_count,
             max_value: self.max_value.map(|x| vec![x as u8]),
             min_value: self.min_value.map(|x| vec![x as u8]),
-            min: None,
             max: None,
+            min: None,
+            is_max_value_exact: None,
+            is_min_value_exact: None,
         }
     }
 }

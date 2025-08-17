@@ -3,13 +3,15 @@ use either::Either;
 use super::specification::try_check_offsets_bounds;
 use super::{Array, GenericBinaryArray, Splitable};
 use crate::array::iterator::NonNullValuesIter;
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -19,10 +21,9 @@ mod mutable_values;
 pub use mutable_values::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
-
-#[cfg(feature = "arrow_rs")]
-mod data;
+use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`BinaryArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<Vec<u8>>>`.
 /// It implements [`Array`].
@@ -52,11 +53,11 @@ mod data;
 ///
 /// # Safety
 /// The following invariants hold:
-/// * Two consecutives `offsets` casted (`as`) to `usize` are valid slices of `values`.
+/// * Two consecutive `offsets` cast (`as`) to `usize` are valid slices of `values`.
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
 pub struct BinaryArray<O: Offset> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     offsets: OffsetsBuffer<O>,
     values: Buffer<u8>,
     validity: Option<Bitmap>,
@@ -69,11 +70,11 @@ impl<O: Offset> BinaryArray<O> {
     /// This function returns an error iff:
     /// * The last offset is not equal to the values' length.
     /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Binary` or `LargeBinary`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Binary` or `LargeBinary`.
     /// # Implementation
     /// This function is `O(1)`
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
@@ -82,17 +83,17 @@ impl<O: Offset> BinaryArray<O> {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
 
-        if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
+        if dtype.to_physical_type() != Self::default_dtype().to_physical_type() {
             polars_bail!(ComputeError: "BinaryArray can only be initialized with DataType::Binary or DataType::LargeBinary")
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity,
@@ -105,13 +106,13 @@ impl<O: Offset> BinaryArray<O> {
     ///
     /// The invariants must be valid (see try_new).
     pub unsafe fn new_unchecked(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
     ) -> Self {
         Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity,
@@ -130,12 +131,12 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Returns an iterator of `Option<&[u8]>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<O>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<'_, O>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
-    pub fn values_iter(&self) -> BinaryValueIter<O> {
+    pub fn values_iter(&self) -> BinaryValueIter<'_, O> {
         BinaryValueIter::new(self)
     }
 
@@ -188,8 +189,8 @@ impl<O: Offset> BinaryArray<O> {
 
     /// Returns the [`ArrowDataType`] of this array.
     #[inline]
-    pub fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    pub fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     /// Returns the values of this [`BinaryArray`].
@@ -246,12 +247,12 @@ impl<O: Offset> BinaryArray<O> {
     #[must_use]
     pub fn into_inner(self) -> (ArrowDataType, OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
         let Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity,
         } = self;
-        (data_type, offsets, values, validity)
+        (dtype, offsets, values, validity)
     }
 
     /// Try to convert this `BinaryArray` to a `MutableBinaryArray`
@@ -262,33 +263,33 @@ impl<O: Offset> BinaryArray<O> {
             match bitmap.into_mut() {
                 // SAFETY: invariants are preserved
                 Left(bitmap) => Left(BinaryArray::new(
-                    self.data_type,
+                    self.dtype,
                     self.offsets,
                     self.values,
                     Some(bitmap),
                 )),
                 Right(mutable_bitmap) => match (self.values.into_mut(), self.offsets.into_mut()) {
                     (Left(values), Left(offsets)) => Left(BinaryArray::new(
-                        self.data_type,
+                        self.dtype,
                         offsets,
                         values,
                         Some(mutable_bitmap.into()),
                     )),
                     (Left(values), Right(offsets)) => Left(BinaryArray::new(
-                        self.data_type,
+                        self.dtype,
                         offsets.into(),
                         values,
                         Some(mutable_bitmap.into()),
                     )),
                     (Right(values), Left(offsets)) => Left(BinaryArray::new(
-                        self.data_type,
+                        self.dtype,
                         offsets,
                         values.into(),
                         Some(mutable_bitmap.into()),
                     )),
                     (Right(values), Right(offsets)) => Right(
                         MutableBinaryArray::try_new(
-                            self.data_type,
+                            self.dtype,
                             offsets,
                             values,
                             Some(mutable_bitmap),
@@ -300,38 +301,32 @@ impl<O: Offset> BinaryArray<O> {
         } else {
             match (self.values.into_mut(), self.offsets.into_mut()) {
                 (Left(values), Left(offsets)) => {
-                    Left(BinaryArray::new(self.data_type, offsets, values, None))
+                    Left(BinaryArray::new(self.dtype, offsets, values, None))
                 },
-                (Left(values), Right(offsets)) => Left(BinaryArray::new(
-                    self.data_type,
-                    offsets.into(),
-                    values,
-                    None,
-                )),
-                (Right(values), Left(offsets)) => Left(BinaryArray::new(
-                    self.data_type,
-                    offsets,
-                    values.into(),
-                    None,
-                )),
-                (Right(values), Right(offsets)) => Right(
-                    MutableBinaryArray::try_new(self.data_type, offsets, values, None).unwrap(),
-                ),
+                (Left(values), Right(offsets)) => {
+                    Left(BinaryArray::new(self.dtype, offsets.into(), values, None))
+                },
+                (Right(values), Left(offsets)) => {
+                    Left(BinaryArray::new(self.dtype, offsets, values.into(), None))
+                },
+                (Right(values), Right(offsets)) => {
+                    Right(MutableBinaryArray::try_new(self.dtype, offsets, values, None).unwrap())
+                },
             }
         }
     }
 
     /// Creates an empty [`BinaryArray`], i.e. whose `.len` is zero.
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        Self::new(data_type, OffsetsBuffer::new(), Buffer::new(), None)
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        Self::new(dtype, OffsetsBuffer::new(), Buffer::new(), None)
     }
 
     /// Creates an null [`BinaryArray`], i.e. whose `.null_count() == .len()`.
     #[inline]
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
         unsafe {
             Self::new_unchecked(
-                data_type,
+                dtype,
                 Offsets::new_zeroed(length).into(),
                 Buffer::new(),
                 Some(Bitmap::new_zeroed(length)),
@@ -340,7 +335,7 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Returns the default [`ArrowDataType`], `DataType::Binary` or `DataType::LargeBinary`
-    pub fn default_data_type() -> ArrowDataType {
+    pub fn default_dtype() -> ArrowDataType {
         if O::IS_LARGE {
             ArrowDataType::LargeBinary
         } else {
@@ -350,12 +345,12 @@ impl<O: Offset> BinaryArray<O> {
 
     /// Alias for unwrapping [`Self::try_new`]
     pub fn new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
     ) -> Self {
-        Self::try_new(data_type, offsets, values, validity).unwrap()
+        Self::try_new(dtype, offsets, values, validity).unwrap()
     }
 
     /// Returns a [`BinaryArray`] from an iterator of trusted length.
@@ -463,13 +458,13 @@ impl<O: Offset> Splitable for BinaryArray<O> {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offsets: lhs_offsets,
                 values: self.values.clone(),
                 validity: lhs_validity,
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offsets: rhs_offsets,
                 values: self.values.clone(),
                 validity: rhs_validity,

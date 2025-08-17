@@ -1,326 +1,503 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::datatypes::{ArrowDataType, IntervalUnit, TimeUnit};
-use arrow::match_integer_type;
-use arrow::types::{days_ms, i256};
-use ethnum::I256;
-use polars_error::{polars_bail, PolarsResult};
-
-use super::utils::PageDictArrayDecoder;
-use super::{
-    binary, boolean, fixed_size_binary, null, primitive, BasicDecompressor, CompressedPagesIter,
-    ParquetResult,
+use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
+use arrow::bitmap::Bitmap;
+use arrow::datatypes::{
+    ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
+    DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
-use crate::parquet::error::ParquetError;
+use arrow::types::{NativeType, days_ms, i256};
+use ethnum::I256;
+use polars_compute::cast::CastOptionsImpl;
+
+use super::utils::filter::Filter;
+use super::{
+    BasicDecompressor, InitNested, NestedState, boolean, fixed_size_binary, null, primitive,
+};
+use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::{
     PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
 use crate::parquet::types::int96_to_i64_ns;
-use crate::read::deserialize::binview::{self, BinViewDecoder};
+use crate::read::ParquetError;
+use crate::read::deserialize::binview;
+use crate::read::deserialize::categorical::CategoricalDecoder;
 use crate::read::deserialize::utils::PageDecoder;
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
-/// `data_type` with a maximum of `num_rows` elements.
-pub fn page_iter_to_array<'a, I: CompressedPagesIter + 'a>(
-    pages: BasicDecompressor<I>,
+/// `dtype` with a maximum of `num_rows` elements.
+pub fn page_iter_to_array(
+    pages: BasicDecompressor,
     type_: &PrimitiveType,
-    data_type: ArrowDataType,
-    num_rows: usize,
-) -> PolarsResult<Box<dyn Array>> {
+    field: Field,
+    filter: Option<Filter>,
+    init_nested: Option<Vec<InitNested>>,
+) -> ParquetResult<(Option<NestedState>, Box<dyn Array>, Bitmap)> {
     use ArrowDataType::*;
 
     let physical_type = &type_.physical_type;
     let logical_type = &type_.logical_type;
+    let dtype = field.dtype;
 
-    Ok(match (physical_type, data_type.to_logical_type()) {
-        (_, Null) => null::iter_to_arrays(pages, data_type, num_rows),
-        (PhysicalType::Boolean, Boolean) => {
-            PageDecoder::new(pages, data_type, boolean::BooleanDecoder)?.collect_n(num_rows)?
-        },
+    Ok(match (physical_type, dtype.to_logical_type()) {
+        (_, Null) => PageDecoder::new(&field.name, pages, dtype, null::NullDecoder, init_nested)?
+            .collect_boxed(filter)?,
+        (PhysicalType::Boolean, Boolean) => PageDecoder::new(
+            &field.name,
+            pages,
+            dtype,
+            boolean::BooleanDecoder,
+            init_nested,
+        )?
+        .collect_boxed(filter)?,
         (PhysicalType::Int32, UInt8) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i32, u8, _>::cast_as(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int32, UInt16) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i32, u16, _>::cast_as(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int32, UInt32) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i32, u32, _>::cast_as(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int64, UInt32) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i64, u32, _>::cast_as(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int32, Int8) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i32, i8, _>::cast_as(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int32, Int16) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i32, i16, _>::cast_as(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int32, Int32 | Date32 | Time32(_)) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i32, _, _>::unit(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int64 | PhysicalType::Int96, Timestamp(time_unit, _)) => {
             let time_unit = *time_unit;
             return timestamp(
+                &field.name,
                 pages,
                 physical_type,
                 logical_type,
-                data_type,
-                num_rows,
+                dtype,
+                filter,
                 time_unit,
+                init_nested,
             );
         },
         (PhysicalType::FixedLenByteArray(_), FixedSizeBinary(_)) => {
-            let size = FixedSizeBinaryArray::get_size(&data_type);
+            let size = FixedSizeBinaryArray::get_size(&dtype);
 
-            PageDecoder::new(pages, data_type, fixed_size_binary::BinaryDecoder { size })?
-                .collect_n(num_rows)?
+            PageDecoder::new(
+                &field.name,
+                pages,
+                dtype,
+                fixed_size_binary::BinaryDecoder { size },
+                init_nested,
+            )?
+            .collect_boxed(filter)?
         },
         (PhysicalType::FixedLenByteArray(12), Interval(IntervalUnit::YearMonth)) => {
             // @TODO: Make a separate decoder for this
 
             let n = 12;
-            let array = PageDecoder::new(
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
             )?
-            .collect_n(num_rows)?;
+            .collect(filter)?;
 
             let values = array
-                .as_any()
-                .downcast_ref::<FixedSizeBinaryArray>()
-                .unwrap()
                 .values()
                 .chunks_exact(n)
                 .map(|value: &[u8]| i32::from_le_bytes(value[..4].try_into().unwrap()))
                 .collect::<Vec<_>>();
             let validity = array.validity().cloned();
 
-            Box::new(PrimitiveArray::<i32>::try_new(
-                data_type.clone(),
-                values.into(),
-                validity,
-            )?)
+            (
+                nested,
+                PrimitiveArray::<i32>::try_new(dtype.clone(), values.into(), validity)?.to_boxed(),
+                ptm,
+            )
         },
         (PhysicalType::FixedLenByteArray(12), Interval(IntervalUnit::DayTime)) => {
             // @TODO: Make a separate decoder for this
 
             let n = 12;
-            let array = PageDecoder::new(
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
             )?
-            .collect_n(num_rows)?;
+            .collect(filter)?;
 
             let values = array
-                .as_any()
-                .downcast_ref::<FixedSizeBinaryArray>()
-                .unwrap()
                 .values()
                 .chunks_exact(n)
                 .map(super::super::convert_days_ms)
                 .collect::<Vec<_>>();
             let validity = array.validity().cloned();
 
-            Box::new(PrimitiveArray::<days_ms>::try_new(
-                data_type.clone(),
-                values.into(),
-                validity,
-            )?)
+            (
+                nested,
+                PrimitiveArray::<days_ms>::try_new(dtype.clone(), values.into(), validity)?
+                    .to_boxed(),
+                ptm,
+            )
+        },
+        (PhysicalType::FixedLenByteArray(16), Int128) => {
+            let n = 16;
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::FixedSizeBinary(n),
+                fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let (_, values, validity) = array.into_inner();
+            let values = values
+                .try_transmute()
+                .expect("this should work since the parquet decoder has alignment constraints");
+
+            (
+                nested,
+                PrimitiveArray::<i128>::try_new(dtype.clone(), values, validity)?.to_boxed(),
+                ptm,
+            )
         },
         (PhysicalType::Int32, Decimal(_, _)) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i32, i128, _>::cast_into(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int64, Decimal(_, _)) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i64, i128, _>::cast_into(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) if *n > 16 => {
-            polars_bail!(ComputeError:
+            return Err(ParquetError::not_supported(format!(
                 "not implemented: can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
-            )
+            )));
         },
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) => {
             // @TODO: Make a separate decoder for this
 
             let n = *n;
 
-            let array = PageDecoder::new(
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
             )?
-            .collect_n(num_rows)?;
+            .collect(filter)?;
 
             let values = array
-                .as_any()
-                .downcast_ref::<FixedSizeBinaryArray>()
-                .unwrap()
                 .values()
                 .chunks_exact(n)
                 .map(|value: &[u8]| super::super::convert_i128(value, n))
                 .collect::<Vec<_>>();
             let validity = array.validity().cloned();
 
-            Box::new(PrimitiveArray::<i128>::try_new(
-                data_type.clone(),
-                values.into(),
-                validity,
-            )?)
+            (
+                nested,
+                PrimitiveArray::<i128>::try_new(dtype.clone(), values.into(), validity)?.to_boxed(),
+                ptm,
+            )
         },
         (PhysicalType::Int32, Decimal256(_, _)) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::closure(|x: i32| i256(I256::new(x as i128))),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int64, Decimal256(_, _)) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::closure(|x: i64| i256(I256::new(x as i128))),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 16 => {
             // @TODO: Make a separate decoder for this
 
             let n = *n;
 
-            let array = PageDecoder::new(
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
             )?
-            .collect_n(num_rows)?;
+            .collect(filter)?;
 
             let values = array
-                .as_any()
-                .downcast_ref::<FixedSizeBinaryArray>()
-                .unwrap()
                 .values()
                 .chunks_exact(n)
                 .map(|value: &[u8]| i256(I256::new(super::super::convert_i128(value, n))))
                 .collect::<Vec<_>>();
             let validity = array.validity().cloned();
 
-            Box::new(PrimitiveArray::<i256>::try_new(
-                data_type.clone(),
-                values.into(),
-                validity,
-            )?)
+            (
+                nested,
+                PrimitiveArray::<i256>::try_new(dtype.clone(), values.into(), validity)?.to_boxed(),
+                ptm,
+            )
         },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 32 => {
             // @TODO: Make a separate decoder for this
 
             let n = *n;
 
-            let array = PageDecoder::new(
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
             )?
-            .collect_n(num_rows)?;
+            .collect(filter)?;
 
             let values = array
-                .as_any()
-                .downcast_ref::<FixedSizeBinaryArray>()
-                .unwrap()
                 .values()
                 .chunks_exact(n)
                 .map(super::super::convert_i256)
                 .collect::<Vec<_>>();
             let validity = array.validity().cloned();
 
-            Box::new(PrimitiveArray::<i256>::try_new(
-                data_type.clone(),
-                values.into(),
-                validity,
-            )?)
+            (
+                nested,
+                PrimitiveArray::<i256>::try_new(dtype.clone(), values.into(), validity)?.to_boxed(),
+                ptm,
+            )
         },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n > 32 => {
-            polars_bail!(ComputeError:
-                "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}"
-            )
+            return Err(ParquetError::not_supported(format!(
+                "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}",
+            )));
         },
         (PhysicalType::Int32, Date64) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::closure(|x: i32| i64::from(x) * 86400000),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int64, Date64) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i64, _, _>::unit(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Int64, Int64 | Time64(_) | Duration(_)) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i64, _, _>::unit(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
+
         (PhysicalType::Int64, UInt64) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
+            dtype,
             primitive::IntDecoder::<i64, u64, _>::cast_as(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
+
+        // Float16
+        (PhysicalType::FixedLenByteArray(2), Float32) => {
+            // @NOTE: To reduce code bloat, we just use the FixedSizeBinary decoder.
+
+            let (nested, mut fsb_array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::FixedSizeBinary(2),
+                fixed_size_binary::BinaryDecoder { size: 2 },
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let validity = fsb_array.take_validity();
+            let values = fsb_array.values().as_slice();
+            assert_eq!(values.len() % 2, 0);
+            let values = values.chunks_exact(2);
+            let values = values
+                .map(|v| {
+                    // SAFETY: We know that `v` is always of size two.
+                    let le_bytes: [u8; 2] = unsafe { v.try_into().unwrap_unchecked() };
+                    let v = arrow::types::f16::from_le_bytes(le_bytes);
+                    v.to_f32()
+                })
+                .collect();
+
+            (
+                nested,
+                PrimitiveArray::<f32>::new(dtype, values, validity).to_boxed(),
+                ptm,
+            )
+        },
+
         (PhysicalType::Float, Float32) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
-            primitive::PrimitiveDecoder::<f32, _, _>::unit(),
+            dtype,
+            primitive::FloatDecoder::<f32, _, _>::unit(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         (PhysicalType::Double, Float64) => PageDecoder::new(
+            &field.name,
             pages,
-            data_type,
-            primitive::PrimitiveDecoder::<f64, _, _>::unit(),
+            dtype,
+            primitive::FloatDecoder::<f64, _, _>::unit(),
+            init_nested,
         )?
-        .collect_n(num_rows)?,
+        .collect_boxed(filter)?,
         // Don't compile this code with `i32` as we don't use this in polars
         (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
-            PageDecoder::new(pages, data_type, binary::BinaryDecoder::<i64>::default())?
-                .collect_n(num_rows)?
+            let is_string = matches!(dtype, LargeUtf8);
+            PageDecoder::new(
+                &field.name,
+                pages,
+                dtype,
+                binview::BinViewDecoder { is_string },
+                init_nested,
+            )?
+            .collect(filter)?
         },
+        (_, Binary | Utf8) => unreachable!(),
         (PhysicalType::ByteArray, BinaryView | Utf8View) => {
-            PageDecoder::new(pages, data_type, binview::BinViewDecoder::default())?
-                .collect_n(num_rows)?
+            let is_string = matches!(dtype, Utf8View);
+            PageDecoder::new(
+                &field.name,
+                pages,
+                dtype,
+                binview::BinViewDecoder { is_string },
+                init_nested,
+            )?
+            .collect(filter)?
         },
-        (_, Dictionary(key_type, _, _)) => {
-            return match_integer_type!(key_type, |$K| {
-                dict_read::<$K, _>(pages, physical_type, logical_type, data_type, num_rows).map(|v| Box::new(v) as Box<_>)
-            }).map_err(Into::into)
+        (_, Dictionary(key_type, value_type, _)) => {
+            // @NOTE: This should only hit in two cases:
+            // - Polars enum's and categorical's
+            // - Int -> String which can be turned into categoricals
+            assert_eq!(value_type.as_ref(), &ArrowDataType::Utf8View);
+
+            if field.metadata.is_some_and(|md| {
+                md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
+                    || md.contains_key(DTYPE_ENUM_VALUES_NEW)
+                    || md.contains_key(DTYPE_CATEGORICAL_NEW)
+                    || md.contains_key(DTYPE_CATEGORICAL_LEGACY)
+            }) && matches!(
+                key_type,
+                IntegerType::UInt8 | IntegerType::UInt16 | IntegerType::UInt32
+            ) {
+                match key_type {
+                    IntegerType::UInt8 => PageDecoder::new(
+                        &field.name,
+                        pages,
+                        dtype,
+                        CategoricalDecoder::<u8>::new(),
+                        init_nested,
+                    )?
+                    .collect_boxed(filter)?,
+                    IntegerType::UInt16 => PageDecoder::new(
+                        &field.name,
+                        pages,
+                        dtype,
+                        CategoricalDecoder::<u16>::new(),
+                        init_nested,
+                    )?
+                    .collect_boxed(filter)?,
+                    IntegerType::UInt32 => PageDecoder::new(
+                        &field.name,
+                        pages,
+                        dtype,
+                        CategoricalDecoder::<u32>::new(),
+                        init_nested,
+                    )?
+                    .collect_boxed(filter)?,
+                    _ => unreachable!(),
+                }
+            } else {
+                let (nested, array, ptm) = PageDecoder::new(
+                    &field.name,
+                    pages,
+                    ArrowDataType::Utf8View,
+                    binview::BinViewDecoder::new_string(),
+                    init_nested,
+                )?
+                .collect(filter)?;
+
+                (
+                    nested,
+                    polars_compute::cast::cast(array.as_ref(), &dtype, CastOptionsImpl::default())
+                        .unwrap(),
+                    ptm,
+                )
+            }
         },
         (from, to) => {
-            polars_bail!(ComputeError:
-                "not implemented: reading parquet type {from:?} to {to:?} still not implemented"
-            )
+            return Err(ParquetError::not_supported(format!(
+                "reading parquet type {from:?} to {to:?} still not implemented",
+            )));
         },
     })
 }
@@ -394,229 +571,85 @@ pub fn int96_to_i64_s(value: [u32; 3]) -> i64 {
     day_seconds + seconds
 }
 
-fn timestamp<I: CompressedPagesIter>(
-    pages: BasicDecompressor<I>,
+#[expect(clippy::too_many_arguments)]
+fn timestamp(
+    field_name: &str,
+    pages: BasicDecompressor,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
-    data_type: ArrowDataType,
-    num_rows: usize,
+    dtype: ArrowDataType,
+    filter: Option<Filter>,
     time_unit: TimeUnit,
-) -> PolarsResult<Box<dyn Array>> {
+    nested: Option<Vec<InitNested>>,
+) -> ParquetResult<(Option<NestedState>, Box<dyn Array>, Bitmap)> {
     if physical_type == &PhysicalType::Int96 {
         return match time_unit {
-            TimeUnit::Nanosecond => Ok(PageDecoder::new(
+            TimeUnit::Nanosecond => PageDecoder::new(
+                field_name,
                 pages,
-                data_type,
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
+                dtype,
+                primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
+                nested,
             )?
-            .collect_n(num_rows)?),
-            TimeUnit::Microsecond => Ok(PageDecoder::new(
+            .collect_boxed(filter),
+            TimeUnit::Microsecond => PageDecoder::new(
+                field_name,
                 pages,
-                data_type,
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
+                dtype,
+                primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
+                nested,
             )?
-            .collect_n(num_rows)?),
-            TimeUnit::Millisecond => Ok(PageDecoder::new(
+            .collect_boxed(filter),
+            TimeUnit::Millisecond => PageDecoder::new(
+                field_name,
                 pages,
-                data_type,
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
+                dtype,
+                primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
+                nested,
             )?
-            .collect_n(num_rows)?),
-            TimeUnit::Second => Ok(PageDecoder::new(
+            .collect_boxed(filter),
+            TimeUnit::Second => PageDecoder::new(
+                field_name,
                 pages,
-                data_type,
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
+                dtype,
+                primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
+                nested,
             )?
-            .collect_n(num_rows)?),
+            .collect_boxed(filter),
         };
     };
 
     if physical_type != &PhysicalType::Int64 {
-        polars_bail!(ComputeError:
-            "not implemented: can't decode a timestamp from a non-int64 parquet type",
-        );
+        return Err(ParquetError::not_supported(
+            "can't decode a timestamp from a non-int64 parquet type",
+        ));
     }
-
-    let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
-    Ok(match (factor, is_multiplier) {
-        (1, _) => PageDecoder::new(pages, data_type, primitive::IntDecoder::<i64, _, _>::unit())?
-            .collect_n(num_rows)?,
-        (a, true) => PageDecoder::new(
-            pages,
-            data_type,
-            primitive::IntDecoder::closure(|x: i64| x * a),
-        )?
-        .collect_n(num_rows)?,
-        (a, false) => PageDecoder::new(
-            pages,
-            data_type,
-            primitive::IntDecoder::closure(|x: i64| x / a),
-        )?
-        .collect_n(num_rows)?,
-    })
-}
-
-fn timestamp_dict<K: DictionaryKey, I: CompressedPagesIter>(
-    pages: BasicDecompressor<I>,
-    physical_type: &PhysicalType,
-    logical_type: &Option<PrimitiveLogicalType>,
-    data_type: ArrowDataType,
-    num_rows: usize,
-    time_unit: TimeUnit,
-) -> ParquetResult<DictionaryArray<K>> {
-    if physical_type == &PhysicalType::Int96 {
-        let logical_type = PrimitiveLogicalType::Timestamp {
-            unit: ParquetTimeUnit::Nanoseconds,
-            is_adjusted_to_utc: false,
-        };
-        let (factor, is_multiplier) = unify_timestamp_unit(&Some(logical_type), time_unit);
-        return match (factor, is_multiplier) {
-            (a, true) => PageDictArrayDecoder::<_, K, _>::new(
-                pages,
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x) * a),
-            )?
-            .collect_n(num_rows),
-            (a, false) => PageDictArrayDecoder::<_, K, _>::new(
-                pages,
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x) / a),
-            )?
-            .collect_n(num_rows),
-        };
-    };
 
     let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
     match (factor, is_multiplier) {
-        (a, true) => PageDictArrayDecoder::<_, K, _>::new(
+        (1, _) => PageDecoder::new(
+            field_name,
             pages,
-            data_type,
-            primitive::PrimitiveDecoder::closure(|x: i64| x * a),
+            dtype,
+            primitive::IntDecoder::<i64, _, _>::unit(),
+            nested,
         )?
-        .collect_n(num_rows),
-        (a, false) => PageDictArrayDecoder::<_, K, _>::new(
+        .collect_boxed(filter),
+        (a, true) => PageDecoder::new(
+            field_name,
             pages,
-            data_type,
-            primitive::PrimitiveDecoder::closure(|x: i64| x / a),
+            dtype,
+            primitive::IntDecoder::closure(|x: i64| x * a),
+            nested,
         )?
-        .collect_n(num_rows),
+        .collect_boxed(filter),
+        (a, false) => PageDecoder::new(
+            field_name,
+            pages,
+            dtype,
+            primitive::IntDecoder::closure(|x: i64| x / a),
+            nested,
+        )?
+        .collect_boxed(filter),
     }
-}
-
-fn dict_read<K: DictionaryKey, I: CompressedPagesIter>(
-    iter: BasicDecompressor<I>,
-    physical_type: &PhysicalType,
-    logical_type: &Option<PrimitiveLogicalType>,
-    data_type: ArrowDataType,
-    num_rows: usize,
-) -> ParquetResult<DictionaryArray<K>> {
-    use ArrowDataType::*;
-    let values_data_type = if let Dictionary(_, v, _) = &data_type {
-        v.as_ref()
-    } else {
-        panic!()
-    };
-
-    Ok(match (physical_type, values_data_type.to_logical_type()) {
-        (PhysicalType::Int32, UInt8) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::Int32, UInt16) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::Int32, UInt32) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::Int64, UInt64) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i64, u64, _>::cast_as(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::Int32, Int8) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::Int32, Int16) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::Int32, Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth)) => {
-            PageDictArrayDecoder::<_, K, _>::new(
-                iter,
-                data_type,
-                primitive::PrimitiveDecoder::<i32, _, _>::unit(),
-            )?
-            .collect_n(num_rows)?
-        },
-
-        (PhysicalType::Int64, Timestamp(time_unit, _)) => {
-            let time_unit = *time_unit;
-            return timestamp_dict::<K, _>(
-                iter,
-                physical_type,
-                logical_type,
-                data_type,
-                num_rows,
-                time_unit,
-            );
-        },
-
-        (PhysicalType::Int64, Int64 | Date64 | Time64(_) | Duration(_)) => {
-            PageDictArrayDecoder::<_, K, _>::new(
-                iter,
-                data_type,
-                primitive::PrimitiveDecoder::<i64, _, _>::unit(),
-            )?
-            .collect_n(num_rows)?
-        },
-        (PhysicalType::Float, Float32) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<f32, _, _>::unit(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::Double, Float64) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<f64, _, _>::unit(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::ByteArray, LargeUtf8 | LargeBinary) => PageDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            binary::BinaryDecoder::<i64>::default(),
-        )?
-        .collect_n(num_rows)?,
-        (PhysicalType::ByteArray, Utf8View | BinaryView) => {
-            PageDictArrayDecoder::<_, K, _>::new(iter, data_type, BinViewDecoder::default())?
-                .collect_n(num_rows)?
-        },
-        (PhysicalType::FixedLenByteArray(size), FixedSizeBinary(_)) => {
-            PageDictArrayDecoder::<_, K, _>::new(
-                iter,
-                data_type,
-                fixed_size_binary::BinaryDecoder { size: *size },
-            )?
-            .collect_n(num_rows)?
-        },
-        other => {
-            return Err(ParquetError::FeatureNotSupported(format!(
-                "Reading dictionaries of type {other:?}"
-            )));
-        },
-    })
 }

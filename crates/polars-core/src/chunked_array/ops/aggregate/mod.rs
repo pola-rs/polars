@@ -2,14 +2,12 @@
 mod quantile;
 mod var;
 
-use std::ops::Add;
-
-use arrow::compute;
-use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
+use polars_compute::rolling::QuantileMethod;
+use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
 use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
@@ -17,7 +15,6 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
-use crate::chunked_array::metadata::MetadataEnv;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
@@ -45,8 +42,7 @@ pub trait ChunkAggSeries {
 
 fn sum<T>(array: &PrimitiveArray<T>) -> T
 where
-    T: NumericNative + NativeType,
-    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd> + compute::aggregate::Sum<T>,
+    T: NumericNative + NativeType + WrappingSum,
 {
     if array.null_count() == array.len() {
         return T::default();
@@ -69,16 +65,15 @@ where
             }
         }
     } else {
-        compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
+        wrapping_sum_arr(array)
     }
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: WrappingSum,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
@@ -88,6 +83,10 @@ where
         )
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.downcast_iter().map(float_sum::sum_arr_as_f64).sum()
+    }
+
     fn min(&self) -> Option<T::Native> {
         if self.null_count() == self.len() {
             return None;
@@ -95,7 +94,7 @@ where
 
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = self.first_non_null().unwrap();
                 unsafe { self.get_unchecked(idx) }
@@ -108,13 +107,7 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
-        };
-
-        if MetadataEnv::experimental_enabled() {
-            self.interior_mut_metadata().set_min_value(result);
         }
-
-        result
     }
 
     fn max(&self) -> Option<T::Native> {
@@ -123,9 +116,9 @@ where
         }
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                let idx = if T::get_dtype().is_float() {
+                let idx = if T::get_static_dtype().is_float() {
                     float_arg_max_sorted_ascending(self)
                 } else {
                     self.last_non_null().unwrap()
@@ -134,7 +127,7 @@ where
                 unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Descending => {
-                let idx = if T::get_dtype().is_float() {
+                let idx = if T::get_static_dtype().is_float() {
                     float_arg_max_sorted_descending(self)
                 } else {
                     self.first_non_null().unwrap()
@@ -146,13 +139,7 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
-        };
-
-        if MetadataEnv::experimental_enabled() {
-            self.interior_mut_metadata().set_max_value(result);
         }
-
-        result
     }
 
     fn min_max(&self) -> Option<(T::Native, T::Native)> {
@@ -161,11 +148,11 @@ where
         }
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
                 let max = {
-                    let idx = if T::get_dtype().is_float() {
+                    let idx = if T::get_static_dtype().is_float() {
                         float_arg_max_sorted_ascending(self)
                     } else {
                         self.last_non_null().unwrap()
@@ -178,7 +165,7 @@ where
             IsSorted::Descending => {
                 let min = unsafe { self.get_unchecked(self.last_non_null().unwrap()) };
                 let max = {
-                    let idx = if T::get_dtype().is_float() {
+                    let idx = if T::get_static_dtype().is_float() {
                         float_arg_max_sorted_descending(self)
                     } else {
                         self.first_non_null().unwrap()
@@ -198,31 +185,15 @@ where
                         MinMax::max_ignore_nan(max1, max2),
                     )
                 }),
-        };
-
-        if MetadataEnv::experimental_enabled() {
-            let (min, max) = match result {
-                Some((min, max)) => (Some(min), Some(max)),
-                None => (None, None),
-            };
-
-            let mut md = self.interior_mut_metadata();
-
-            md.set_min_value(min);
-            md.set_max_value(max);
         }
-
-        result
     }
 
     fn mean(&self) -> Option<f64> {
-        if self.null_count() == self.len() {
+        let count = self.len() - self.null_count();
+        if count == 0 {
             return None;
         }
-
-        let len = (self.len() - self.null_count()) as f64;
-        let sum: f64 = self.downcast_iter().map(float_sum::sum_arr_as_f64).sum();
-        Some(sum / len)
+        Some(self._sum_as_f64() / count as f64)
     }
 }
 
@@ -250,11 +221,7 @@ impl BooleanChunked {
             return None;
         }
         if nc == 0 {
-            if self.all() {
-                Some(true)
-            } else {
-                Some(false)
-            }
+            if self.all() { Some(true) } else { Some(false) }
         } else {
             // we can unwrap as we already checked empty and all null above
             if (self.sum().unwrap() + nc as IdxSize) == len as IdxSize {
@@ -269,11 +236,7 @@ impl BooleanChunked {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
-        if self.any() {
-            Some(true)
-        } else {
-            Some(false)
-        }
+        if self.any() { Some(true) } else { Some(false) }
     }
     pub fn mean(&self) -> Option<f64> {
         if self.is_empty() || self.null_count() == self.len() {
@@ -288,24 +251,22 @@ impl BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: WrappingSum,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
-    ChunkedArray<T>: IntoSeries,
 {
     fn sum_reduce(&self) -> Scalar {
         let v: Option<T::Native> = self.sum();
-        Scalar::new(T::get_dtype(), v.into())
+        Scalar::new(T::get_static_dtype(), v.into())
     }
 
     fn max_reduce(&self) -> Scalar {
         let v = ChunkAgg::max(self);
-        Scalar::new(T::get_dtype(), v.into())
+        Scalar::new(T::get_static_dtype(), v.into())
     }
 
     fn min_reduce(&self) -> Scalar {
         let v = ChunkAgg::min(self);
-        Scalar::new(T::get_dtype(), v.into())
+        Scalar::new(T::get_static_dtype(), v.into())
     }
 
     fn prod_reduce(&self) -> Scalar {
@@ -316,7 +277,7 @@ where
                 prod = prod * *v
             }
         }
-        Scalar::new(T::get_dtype(), prod.into())
+        Scalar::new(T::get_static_dtype(), prod.into())
     }
 }
 
@@ -363,16 +324,10 @@ impl VarAggSeries for Float64Chunked {
 impl<T> QuantileAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Ord,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
+    T::Native: Ord + WrappingSum,
 {
-    fn quantile_reduce(
-        &self,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, interpol)?;
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float64, v.into()))
     }
 
@@ -383,12 +338,8 @@ where
 }
 
 impl QuantileAggSeries for Float32Chunked {
-    fn quantile_reduce(
-        &self,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, interpol)?;
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float32, v.into()))
     }
 
@@ -399,12 +350,8 @@ impl QuantileAggSeries for Float32Chunked {
 }
 
 impl QuantileAggSeries for Float64Chunked {
-    fn quantile_reduce(
-        &self,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, interpol)?;
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float64, v.into()))
     }
 
@@ -481,87 +428,90 @@ impl StringChunked {
 impl ChunkAggSeries for StringChunked {
     fn max_reduce(&self) -> Scalar {
         let av: AnyValue = self.max_str().into();
-        Scalar::new(DataType::String, av.into_static().unwrap())
+        Scalar::new(DataType::String, av.into_static())
     }
     fn min_reduce(&self) -> Scalar {
         let av: AnyValue = self.min_str().into();
-        Scalar::new(DataType::String, av.into_static().unwrap())
+        Scalar::new(DataType::String, av.into_static())
     }
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl CategoricalChunked {
-    fn min_categorical(&self) -> Option<&str> {
+impl<T: PolarsCategoricalType> CategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
+{
+    fn min_categorical(&self) -> Option<CatSize> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
         if self.uses_lexical_ordering() {
-            // Fast path where all categories are used
-            if self._can_fast_unique() {
-                self.get_rev_map().get_categories().min_ignore_nan_kernel()
-            } else {
-                let rev_map = self.get_rev_map();
-                // SAFETY:
-                // Indices are in bounds
-                self.physical()
-                    .iter()
-                    .flat_map(|opt_el: Option<u32>| {
-                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
-                    })
-                    .min()
-            }
+            let mapping = self.get_mapping();
+            let s = self
+                .physical()
+                .iter()
+                .flat_map(|opt_cat| {
+                    Some(unsafe { mapping.cat_to_str_unchecked(opt_cat?.as_cat()) })
+                })
+                .min();
+            mapping.get_cat(s.unwrap())
         } else {
-            // SAFETY:
-            // Indices are in bounds
-            self.physical()
-                .min()
-                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
+            Some(self.physical().min()?.as_cat())
         }
     }
 
-    fn max_categorical(&self) -> Option<&str> {
+    fn max_categorical(&self) -> Option<CatSize> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
         if self.uses_lexical_ordering() {
-            // Fast path where all categories are used
-            if self._can_fast_unique() {
-                self.get_rev_map().get_categories().max_ignore_nan_kernel()
-            } else {
-                let rev_map = self.get_rev_map();
-                // SAFETY:
-                // Indices are in bounds
-                self.physical()
-                    .iter()
-                    .flat_map(|opt_el: Option<u32>| {
-                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
-                    })
-                    .max()
-            }
+            let mapping = self.get_mapping();
+            let s = self
+                .physical()
+                .iter()
+                .flat_map(|opt_cat| {
+                    Some(unsafe { mapping.cat_to_str_unchecked(opt_cat?.as_cat()) })
+                })
+                .max();
+            mapping.get_cat(s.unwrap())
         } else {
-            // SAFETY:
-            // Indices are in bounds
-            self.physical()
-                .max()
-                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
+            Some(self.physical().max()?.as_cat())
         }
     }
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl ChunkAggSeries for CategoricalChunked {
+impl<T: PolarsCategoricalType> ChunkAggSeries for CategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
+{
     fn min_reduce(&self) -> Scalar {
-        let av: AnyValue = self.min_categorical().into();
-        Scalar::new(DataType::String, av.into_static().unwrap())
+        let Some(min) = self.min_categorical() else {
+            return Scalar::new(self.dtype().clone(), AnyValue::Null);
+        };
+        let av = match self.dtype() {
+            DataType::Enum(_, mapping) => AnyValue::EnumOwned(min, mapping.clone()),
+            DataType::Categorical(_, mapping) => AnyValue::CategoricalOwned(min, mapping.clone()),
+            _ => unreachable!(),
+        };
+        Scalar::new(self.dtype().clone(), av)
     }
+
     fn max_reduce(&self) -> Scalar {
-        let av: AnyValue = self.max_categorical().into();
-        Scalar::new(DataType::String, av.into_static().unwrap())
+        let Some(max) = self.max_categorical() else {
+            return Scalar::new(self.dtype().clone(), AnyValue::Null);
+        };
+        let av = match self.dtype() {
+            DataType::Enum(_, mapping) => AnyValue::EnumOwned(max, mapping.clone()),
+            DataType::Categorical(_, mapping) => AnyValue::CategoricalOwned(max, mapping.clone()),
+            _ => unreachable!(),
+        };
+        Scalar::new(self.dtype().clone(), av)
     }
 }
 
 impl BinaryChunked {
-    pub(crate) fn max_binary(&self) -> Option<&[u8]> {
+    pub fn max_binary(&self) -> Option<&[u8]> {
         if self.is_empty() {
             return None;
         }
@@ -585,7 +535,7 @@ impl BinaryChunked {
         }
     }
 
-    pub(crate) fn min_binary(&self) -> Option<&[u8]> {
+    pub fn min_binary(&self) -> Option<&[u8]> {
         if self.is_empty() {
             return None;
         }
@@ -616,11 +566,11 @@ impl ChunkAggSeries for BinaryChunked {
     }
     fn max_reduce(&self) -> Scalar {
         let av: AnyValue = self.max_binary().into();
-        Scalar::new(self.dtype().clone(), av.into_static().unwrap())
+        Scalar::new(self.dtype().clone(), av.into_static())
     }
     fn min_reduce(&self) -> Scalar {
         let av: AnyValue = self.min_binary().into();
-        Scalar::new(self.dtype().clone(), av.into_static().unwrap())
+        Scalar::new(self.dtype().clone(), av.into_static())
     }
 }
 
@@ -629,16 +579,19 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
+    use polars_compute::rolling::QuantileMethod;
+
     use crate::prelude::*;
 
     #[test]
+    #[cfg(not(miri))]
     fn test_var() {
         // Validated with numpy. Note that numpy uses ddof as an argument which
         // influences results. The default ddof=0, we chose ddof=1, which is
         // standard in statistics.
-        let ca1 = Int32Chunked::new("", &[5, 8, 9, 5, 0]);
+        let ca1 = Int32Chunked::new(PlSmallStr::EMPTY, &[5, 8, 9, 5, 0]);
         let ca2 = Int32Chunked::new(
-            "",
+            PlSmallStr::EMPTY,
             &[
                 Some(5),
                 None,
@@ -660,11 +613,11 @@ mod test {
 
     #[test]
     fn test_agg_float() {
-        let ca1 = Float32Chunked::new("a", &[1.0, f32::NAN]);
-        let ca2 = Float32Chunked::new("b", &[f32::NAN, 1.0]);
+        let ca1 = Float32Chunked::new(PlSmallStr::from_static("a"), &[1.0, f32::NAN]);
+        let ca2 = Float32Chunked::new(PlSmallStr::from_static("b"), &[f32::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
-        let ca1 = Float64Chunked::new("a", &[1.0, f64::NAN]);
-        let ca2 = Float64Chunked::from_slice("b", &[f64::NAN, 1.0]);
+        let ca1 = Float64Chunked::new(PlSmallStr::from_static("a"), &[1.0, f64::NAN]);
+        let ca2 = Float64Chunked::from_slice(PlSmallStr::from_static("b"), &[f64::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         println!("{:?}", (ca1.min(), ca2.min()))
     }
@@ -672,12 +625,12 @@ mod test {
     #[test]
     fn test_median() {
         let ca = UInt32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[Some(2), Some(1), None, Some(3), Some(5), None, Some(4)],
         );
         assert_eq!(ca.median(), Some(3.0));
         let ca = UInt32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[
                 None,
                 Some(7),
@@ -694,7 +647,7 @@ mod test {
         assert_eq!(ca.median(), Some(4.0));
 
         let ca = Float32Chunked::from_slice(
-            "",
+            PlSmallStr::EMPTY,
             &[
                 0.166189, 0.166559, 0.168517, 0.169393, 0.175272, 0.233167, 0.238787, 0.266562,
                 0.26903, 0.285792, 0.292801, 0.293429, 0.301706, 0.308534, 0.331489, 0.346095,
@@ -707,7 +660,7 @@ mod test {
 
     #[test]
     fn test_mean() {
-        let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
+        let ca = Float32Chunked::new(PlSmallStr::EMPTY, &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
         assert_eq!(
             ca.into_series()
@@ -718,7 +671,7 @@ mod test {
             1.5
         );
         // all null values case
-        let ca = Float32Chunked::full_null("", 3);
+        let ca = Float32Chunked::full_null(PlSmallStr::EMPTY, 3);
         assert_eq!(ca.mean(), None);
         assert_eq!(
             ca.into_series().mean_reduce().value().extract::<f32>(),
@@ -728,92 +681,103 @@ mod test {
 
     #[test]
     fn test_quantile_all_null() {
-        let test_f32 = Float32Chunked::from_slice_options("", &[None, None, None]);
-        let test_i32 = Int32Chunked::from_slice_options("", &[None, None, None]);
-        let test_f64 = Float64Chunked::from_slice_options("", &[None, None, None]);
-        let test_i64 = Int64Chunked::from_slice_options("", &[None, None, None]);
+        let test_f32 = Float32Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
+        let test_i32 = Int32Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
+        let test_f64 = Float64Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
+        let test_i64 = Int64Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
 
-        let interpol_options = vec![
-            QuantileInterpolOptions::Nearest,
-            QuantileInterpolOptions::Lower,
-            QuantileInterpolOptions::Higher,
-            QuantileInterpolOptions::Midpoint,
-            QuantileInterpolOptions::Linear,
+        let methods = vec![
+            QuantileMethod::Nearest,
+            QuantileMethod::Lower,
+            QuantileMethod::Higher,
+            QuantileMethod::Midpoint,
+            QuantileMethod::Linear,
+            QuantileMethod::Equiprobable,
         ];
 
-        for interpol in interpol_options {
-            assert_eq!(test_f32.quantile(0.9, interpol).unwrap(), None);
-            assert_eq!(test_i32.quantile(0.9, interpol).unwrap(), None);
-            assert_eq!(test_f64.quantile(0.9, interpol).unwrap(), None);
-            assert_eq!(test_i64.quantile(0.9, interpol).unwrap(), None);
+        for method in methods {
+            assert_eq!(test_f32.quantile(0.9, method).unwrap(), None);
+            assert_eq!(test_i32.quantile(0.9, method).unwrap(), None);
+            assert_eq!(test_f64.quantile(0.9, method).unwrap(), None);
+            assert_eq!(test_i64.quantile(0.9, method).unwrap(), None);
         }
     }
 
     #[test]
     fn test_quantile_single_value() {
-        let test_f32 = Float32Chunked::from_slice_options("", &[Some(1.0)]);
-        let test_i32 = Int32Chunked::from_slice_options("", &[Some(1)]);
-        let test_f64 = Float64Chunked::from_slice_options("", &[Some(1.0)]);
-        let test_i64 = Int64Chunked::from_slice_options("", &[Some(1)]);
+        let test_f32 = Float32Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1.0)]);
+        let test_i32 = Int32Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1)]);
+        let test_f64 = Float64Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1.0)]);
+        let test_i64 = Int64Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1)]);
 
-        let interpol_options = vec![
-            QuantileInterpolOptions::Nearest,
-            QuantileInterpolOptions::Lower,
-            QuantileInterpolOptions::Higher,
-            QuantileInterpolOptions::Midpoint,
-            QuantileInterpolOptions::Linear,
+        let methods = vec![
+            QuantileMethod::Nearest,
+            QuantileMethod::Lower,
+            QuantileMethod::Higher,
+            QuantileMethod::Midpoint,
+            QuantileMethod::Linear,
+            QuantileMethod::Equiprobable,
         ];
 
-        for interpol in interpol_options {
-            assert_eq!(test_f32.quantile(0.5, interpol).unwrap(), Some(1.0));
-            assert_eq!(test_i32.quantile(0.5, interpol).unwrap(), Some(1.0));
-            assert_eq!(test_f64.quantile(0.5, interpol).unwrap(), Some(1.0));
-            assert_eq!(test_i64.quantile(0.5, interpol).unwrap(), Some(1.0));
+        for method in methods {
+            assert_eq!(test_f32.quantile(0.5, method).unwrap(), Some(1.0));
+            assert_eq!(test_i32.quantile(0.5, method).unwrap(), Some(1.0));
+            assert_eq!(test_f64.quantile(0.5, method).unwrap(), Some(1.0));
+            assert_eq!(test_i64.quantile(0.5, method).unwrap(), Some(1.0));
         }
     }
 
     #[test]
     fn test_quantile_min_max() {
-        let test_f32 =
-            Float32Chunked::from_slice_options("", &[None, Some(1f32), Some(5f32), Some(1f32)]);
-        let test_i32 =
-            Int32Chunked::from_slice_options("", &[None, Some(1i32), Some(5i32), Some(1i32)]);
-        let test_f64 =
-            Float64Chunked::from_slice_options("", &[None, Some(1f64), Some(5f64), Some(1f64)]);
-        let test_i64 =
-            Int64Chunked::from_slice_options("", &[None, Some(1i64), Some(5i64), Some(1i64)]);
+        let test_f32 = Float32Chunked::from_slice_options(
+            PlSmallStr::EMPTY,
+            &[None, Some(1f32), Some(5f32), Some(1f32)],
+        );
+        let test_i32 = Int32Chunked::from_slice_options(
+            PlSmallStr::EMPTY,
+            &[None, Some(1i32), Some(5i32), Some(1i32)],
+        );
+        let test_f64 = Float64Chunked::from_slice_options(
+            PlSmallStr::EMPTY,
+            &[None, Some(1f64), Some(5f64), Some(1f64)],
+        );
+        let test_i64 = Int64Chunked::from_slice_options(
+            PlSmallStr::EMPTY,
+            &[None, Some(1i64), Some(5i64), Some(1i64)],
+        );
 
-        let interpol_options = vec![
-            QuantileInterpolOptions::Nearest,
-            QuantileInterpolOptions::Lower,
-            QuantileInterpolOptions::Higher,
-            QuantileInterpolOptions::Midpoint,
-            QuantileInterpolOptions::Linear,
+        let methods = vec![
+            QuantileMethod::Nearest,
+            QuantileMethod::Lower,
+            QuantileMethod::Higher,
+            QuantileMethod::Midpoint,
+            QuantileMethod::Linear,
+            QuantileMethod::Equiprobable,
         ];
 
-        for interpol in interpol_options {
-            assert_eq!(test_f32.quantile(0.0, interpol).unwrap(), test_f32.min());
-            assert_eq!(test_f32.quantile(1.0, interpol).unwrap(), test_f32.max());
+        for method in methods {
+            assert_eq!(test_f32.quantile(0.0, method).unwrap(), test_f32.min());
+            assert_eq!(test_f32.quantile(1.0, method).unwrap(), test_f32.max());
 
             assert_eq!(
-                test_i32.quantile(0.0, interpol).unwrap().unwrap(),
+                test_i32.quantile(0.0, method).unwrap().unwrap(),
                 test_i32.min().unwrap() as f64
             );
             assert_eq!(
-                test_i32.quantile(1.0, interpol).unwrap().unwrap(),
+                test_i32.quantile(1.0, method).unwrap().unwrap(),
                 test_i32.max().unwrap() as f64
             );
 
-            assert_eq!(test_f64.quantile(0.0, interpol).unwrap(), test_f64.min());
-            assert_eq!(test_f64.quantile(1.0, interpol).unwrap(), test_f64.max());
-            assert_eq!(test_f64.quantile(0.5, interpol).unwrap(), test_f64.median());
+            assert_eq!(test_f64.quantile(0.0, method).unwrap(), test_f64.min());
+            assert_eq!(test_f64.quantile(1.0, method).unwrap(), test_f64.max());
+            assert_eq!(test_f64.quantile(0.5, method).unwrap(), test_f64.median());
 
             assert_eq!(
-                test_i64.quantile(0.0, interpol).unwrap().unwrap(),
+                test_i64.quantile(0.0, method).unwrap().unwrap(),
                 test_i64.min().unwrap() as f64
             );
             assert_eq!(
-                test_i64.quantile(1.0, interpol).unwrap().unwrap(),
+                test_i64.quantile(1.0, method).unwrap().unwrap(),
                 test_i64.max().unwrap() as f64
             );
         }
@@ -822,81 +786,65 @@ mod test {
     #[test]
     fn test_quantile() {
         let ca = UInt32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[Some(2), Some(1), None, Some(3), Some(5), None, Some(4)],
         );
 
         assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Nearest).unwrap(),
+            ca.quantile(0.1, QuantileMethod::Nearest).unwrap(),
             Some(1.0)
         );
         assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Nearest).unwrap(),
+            ca.quantile(0.9, QuantileMethod::Nearest).unwrap(),
             Some(5.0)
         );
         assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Nearest).unwrap(),
+            ca.quantile(0.6, QuantileMethod::Nearest).unwrap(),
             Some(3.0)
         );
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Lower).unwrap(),
-            Some(1.0)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Lower).unwrap(),
-            Some(4.0)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Lower).unwrap(),
-            Some(3.0)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Lower).unwrap(), Some(1.0));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Lower).unwrap(), Some(4.0));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Lower).unwrap(), Some(3.0));
+
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Higher).unwrap(), Some(2.0));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Higher).unwrap(), Some(5.0));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Higher).unwrap(), Some(4.0));
 
         assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Higher).unwrap(),
-            Some(2.0)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Higher).unwrap(),
-            Some(5.0)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Higher).unwrap(),
-            Some(4.0)
-        );
-
-        assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Midpoint).unwrap(),
+            ca.quantile(0.1, QuantileMethod::Midpoint).unwrap(),
             Some(1.5)
         );
         assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Midpoint).unwrap(),
+            ca.quantile(0.9, QuantileMethod::Midpoint).unwrap(),
             Some(4.5)
         );
         assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Midpoint).unwrap(),
+            ca.quantile(0.6, QuantileMethod::Midpoint).unwrap(),
             Some(3.5)
         );
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Linear).unwrap(),
-            Some(1.4)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Linear).unwrap(),
-            Some(4.6)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Linear).unwrap(), Some(1.4));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Linear).unwrap(), Some(4.6));
         assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Linear)
-                .unwrap()
-                .unwrap()
-                - 3.4)
-                .abs()
-                < 0.0000001
+            (ca.quantile(0.6, QuantileMethod::Linear).unwrap().unwrap() - 3.4).abs() < 0.0000001
+        );
+
+        assert_eq!(
+            ca.quantile(0.15, QuantileMethod::Equiprobable).unwrap(),
+            Some(1.0)
+        );
+        assert_eq!(
+            ca.quantile(0.25, QuantileMethod::Equiprobable).unwrap(),
+            Some(2.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileMethod::Equiprobable).unwrap(),
+            Some(3.0)
         );
 
         let ca = UInt32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[
                 None,
                 Some(7),
@@ -912,68 +860,54 @@ mod test {
         );
 
         assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Nearest).unwrap(),
+            ca.quantile(0.1, QuantileMethod::Nearest).unwrap(),
             Some(2.0)
         );
         assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Nearest).unwrap(),
+            ca.quantile(0.9, QuantileMethod::Nearest).unwrap(),
             Some(6.0)
         );
         assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Nearest).unwrap(),
+            ca.quantile(0.6, QuantileMethod::Nearest).unwrap(),
             Some(5.0)
         );
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Lower).unwrap(),
-            Some(1.0)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Lower).unwrap(),
-            Some(6.0)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Lower).unwrap(),
-            Some(4.0)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Lower).unwrap(), Some(1.0));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Lower).unwrap(), Some(6.0));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Lower).unwrap(), Some(4.0));
+
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Higher).unwrap(), Some(2.0));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Higher).unwrap(), Some(7.0));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Higher).unwrap(), Some(5.0));
 
         assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Higher).unwrap(),
-            Some(2.0)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Higher).unwrap(),
-            Some(7.0)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Higher).unwrap(),
-            Some(5.0)
-        );
-
-        assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Midpoint).unwrap(),
+            ca.quantile(0.1, QuantileMethod::Midpoint).unwrap(),
             Some(1.5)
         );
         assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Midpoint).unwrap(),
+            ca.quantile(0.9, QuantileMethod::Midpoint).unwrap(),
             Some(6.5)
         );
         assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Midpoint).unwrap(),
+            ca.quantile(0.6, QuantileMethod::Midpoint).unwrap(),
             Some(4.5)
         );
 
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Linear).unwrap(), Some(1.6));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Linear).unwrap(), Some(6.4));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Linear).unwrap(), Some(4.6));
+
         assert_eq!(
-            ca.quantile(0.1, QuantileInterpolOptions::Linear).unwrap(),
-            Some(1.6)
+            ca.quantile(0.14, QuantileMethod::Equiprobable).unwrap(),
+            Some(1.0)
         );
         assert_eq!(
-            ca.quantile(0.9, QuantileInterpolOptions::Linear).unwrap(),
-            Some(6.4)
+            ca.quantile(0.15, QuantileMethod::Equiprobable).unwrap(),
+            Some(2.0)
         );
         assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Linear).unwrap(),
-            Some(4.6)
+            ca.quantile(0.6, QuantileMethod::Equiprobable).unwrap(),
+            Some(5.0)
         );
     }
 }

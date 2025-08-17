@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ from polars.plugins import (
 )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_register_plugin_function_invalid_plugin_path(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     plugin_path = tmp_path / "lib.so"
@@ -44,26 +45,36 @@ def test_serialize_kwargs(input: dict[str, Any] | None, expected: bytes) -> None
     assert _serialize_kwargs(input) == expected
 
 
-@pytest.mark.write_disk()
-def test_resolve_plugin_path(tmp_path: Path) -> None:
+@pytest.mark.write_disk
+@pytest.mark.parametrize("use_abs_path", [True, False])
+def test_resolve_plugin_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    use_abs_path: bool,
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    (tmp_path / "lib1.so").touch()
-    (tmp_path / "__init__.py").touch()
+    mock_venv = tmp_path / ".venv"
+    mock_venv.mkdir(exist_ok=True)
+    mock_venv_lib = mock_venv / "lib"
+    mock_venv_lib.mkdir(exist_ok=True)
+    (mock_venv_lib / "lib1.so").touch()
+    (mock_venv_lib / "__init__.py").touch()
 
-    expected = tmp_path / "lib1.so"
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(sys, "prefix", str(mock_venv))
+        expected_full_path = mock_venv_lib / "lib1.so"
+        expected_relative_path = expected_full_path.relative_to(mock_venv)
 
-    result = _resolve_plugin_path(tmp_path)
-    assert result == expected
-    result = _resolve_plugin_path(tmp_path / "lib1.so")
-    assert result == expected
-    result = _resolve_plugin_path(str(tmp_path))
-    assert result == expected
-    result = _resolve_plugin_path(str(tmp_path / "lib1.so"))
-    assert result == expected
+        if use_abs_path:
+            result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
+            assert result == expected_full_path
+        else:
+            result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
+            assert result == expected_relative_path
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_resolve_plugin_path_raises(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     (tmp_path / "__init__.py").touch()
@@ -72,7 +83,7 @@ def test_resolve_plugin_path_raises(tmp_path: Path) -> None:
         _resolve_plugin_path(tmp_path)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
@@ -89,7 +100,7 @@ def test_is_dynamic_lib(path: Path, expected: bool, tmp_path: Path) -> None:
     assert _is_dynamic_lib(full_path) is expected
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_is_dynamic_lib_dir(tmp_path: Path) -> None:
     path = Path("lib.so")
     full_path = tmp_path / path

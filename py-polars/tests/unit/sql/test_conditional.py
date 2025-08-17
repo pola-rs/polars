@@ -10,7 +10,7 @@ from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
@@ -34,6 +34,24 @@ def test_case_when() -> None:
             "v2": [101, 202, 303, 404],
             "v3": ["odd", "even", "odd", "even"],
         }
+
+
+@pytest.mark.parametrize("else_clause", ["ELSE NULL ", ""])
+def test_case_when_optional_else(else_clause: str) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6, 7],
+            "b": [7, 6, 5, 4, 3, 2, 1],
+            "c": [3, 4, 0, 3, 4, 1, 1],
+        }
+    )
+    query = f"""
+        SELECT
+          AVG(CASE WHEN a <= b THEN c {else_clause}END) AS conditional_mean
+          FROM self
+    """
+    res = df.sql(query)
+    assert res.to_dict(as_series=False) == {"conditional_mean": [2.5]}
 
 
 def test_control_flow(foods_ipc_path: Path) -> None:

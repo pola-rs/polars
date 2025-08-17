@@ -1,18 +1,19 @@
 // see https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
 use polars_utils::aliases::*;
-#[cfg(feature = "serde_types")]
+use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::super::Repetition;
 use super::{
-    spec, FieldInfo, GroupConvertedType, GroupLogicalType, PhysicalType, PrimitiveConvertedType,
-    PrimitiveLogicalType,
+    FieldInfo, GroupConvertedType, GroupLogicalType, PhysicalType, PrimitiveConvertedType,
+    PrimitiveLogicalType, spec,
 };
 use crate::parquet::error::ParquetResult;
 
 /// The complete description of a parquet column
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct PrimitiveType {
     /// The fields' generic information
     pub field_info: FieldInfo,
@@ -26,7 +27,7 @@ pub struct PrimitiveType {
 
 impl PrimitiveType {
     /// Helper method to create an optional field with no logical or converted types.
-    pub fn from_physical(name: String, physical_type: PhysicalType) -> Self {
+    pub fn from_physical(name: PlSmallStr, physical_type: PhysicalType) -> Self {
         let field_info = FieldInfo {
             name,
             repetition: Repetition::Optional,
@@ -44,7 +45,7 @@ impl PrimitiveType {
 /// Representation of a Parquet type describing primitive and nested fields,
 /// including the top-level schema of the parquet file.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum ParquetType {
     PrimitiveType(PrimitiveType),
     GroupType {
@@ -114,7 +115,7 @@ impl ParquetType {
 
 /// Constructors
 impl ParquetType {
-    pub(crate) fn new_root(name: String, fields: Vec<ParquetType>) -> Self {
+    pub(crate) fn new_root(name: PlSmallStr, fields: Vec<ParquetType>) -> Self {
         let field_info = FieldInfo {
             name,
             repetition: Repetition::Optional,
@@ -129,7 +130,7 @@ impl ParquetType {
     }
 
     pub fn from_converted(
-        name: String,
+        name: PlSmallStr,
         fields: Vec<ParquetType>,
         repetition: Repetition,
         converted_type: Option<GroupConvertedType>,
@@ -152,15 +153,21 @@ impl ParquetType {
     /// # Error
     /// Errors iff the combination of physical, logical and converted type is not valid.
     pub fn try_from_primitive(
-        name: String,
+        name: PlSmallStr,
         physical_type: PhysicalType,
         repetition: Repetition,
         converted_type: Option<PrimitiveConvertedType>,
         logical_type: Option<PrimitiveLogicalType>,
         id: Option<i32>,
     ) -> ParquetResult<Self> {
-        spec::check_converted_invariants(&physical_type, &converted_type)?;
-        spec::check_logical_invariants(&physical_type, &logical_type)?;
+        // LogicalType has replaced the ConvertedType and there are certain LogicalType's that do
+        // not have a good counterpart in ConvertedType (e.g. Timestamp::Nanos). Therefore, we only
+        // check the ConvertedType if no LogicalType is given. This would signify a lot older
+        // Parquet file which could not have these new unsupported ConvertedTypes.
+        match logical_type {
+            None => spec::check_converted_invariants(&physical_type, &converted_type)?,
+            Some(logical_type) => spec::check_logical_invariants(&physical_type, logical_type)?,
+        }
 
         let field_info = FieldInfo {
             name,
@@ -178,12 +185,12 @@ impl ParquetType {
 
     /// Helper method to create a [`ParquetType::PrimitiveType`] optional field
     /// with no logical or converted types.
-    pub fn from_physical(name: String, physical_type: PhysicalType) -> Self {
+    pub fn from_physical(name: PlSmallStr, physical_type: PhysicalType) -> Self {
         ParquetType::PrimitiveType(PrimitiveType::from_physical(name, physical_type))
     }
 
     pub fn from_group(
-        name: String,
+        name: PlSmallStr,
         repetition: Repetition,
         converted_type: Option<GroupConvertedType>,
         logical_type: Option<GroupLogicalType>,

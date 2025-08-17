@@ -1,6 +1,6 @@
 // Bridges structs from thrift-generated code to rust enums.
 
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::thrift_format::{
@@ -13,7 +13,7 @@ use crate::parquet::error::ParquetError;
 
 /// The repetition of a parquet field
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Repetition {
     /// When the field has no null values
     Required,
@@ -47,7 +47,7 @@ impl From<Repetition> for FieldRepetitionType {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Compression {
     Uncompressed,
     Snappy,
@@ -200,7 +200,7 @@ impl Default for GzipLevel {
 
 impl CompressionLevel<u8> for GzipLevel {
     const MINIMUM_LEVEL: u8 = 0;
-    const MAXIMUM_LEVEL: u8 = 10;
+    const MAXIMUM_LEVEL: u8 = 9;
 }
 
 impl GzipLevel {
@@ -436,7 +436,7 @@ impl DataPageHeaderExt for DataPageHeaderV2 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum TimeUnit {
     Milliseconds,
     Microseconds,
@@ -465,7 +465,7 @@ impl From<TimeUnit> for ParquetTimeUnit {
 
 /// Enum of all valid logical integer types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum IntegerType {
     Int8,
     Int16,
@@ -478,7 +478,7 @@ pub enum IntegerType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PrimitiveLogicalType {
     String,
     Enum,
@@ -497,10 +497,11 @@ pub enum PrimitiveLogicalType {
     Json,
     Bson,
     Uuid,
+    Float16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum GroupLogicalType {
     Map,
     List,
@@ -575,6 +576,7 @@ impl TryFrom<ParquetLogicalType> for PrimitiveLogicalType {
             ParquetLogicalType::JSON(_) => PrimitiveLogicalType::Json,
             ParquetLogicalType::BSON(_) => PrimitiveLogicalType::Bson,
             ParquetLogicalType::UUID(_) => PrimitiveLogicalType::Uuid,
+            ParquetLogicalType::FLOAT16(_) => PrimitiveLogicalType::Float16,
             _ => return Err(ParquetError::oos("LogicalType value out of range")),
         })
     }
@@ -629,6 +631,7 @@ impl From<PrimitiveLogicalType> for ParquetLogicalType {
             PrimitiveLogicalType::Json => ParquetLogicalType::JSON(Default::default()),
             PrimitiveLogicalType::Bson => ParquetLogicalType::BSON(Default::default()),
             PrimitiveLogicalType::Uuid => ParquetLogicalType::UUID(Default::default()),
+            PrimitiveLogicalType::Float16 => ParquetLogicalType::FLOAT16(Default::default()),
         }
     }
 }

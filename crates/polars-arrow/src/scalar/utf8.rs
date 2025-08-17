@@ -45,7 +45,7 @@ impl<O: Offset> Scalar for Utf8Scalar<O> {
     }
 
     #[inline]
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         if O::IS_LARGE {
             &ArrowDataType::LargeUtf8
         } else {

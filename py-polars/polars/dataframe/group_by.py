@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterable
+from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_renamed_function
+from polars._utils.deprecation import deprecated
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
     from datetime import timedelta
 
     from polars import DataFrame
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         IntoExpr,
         Label,
-        RollingInterpolationMethod,
+        QuantileMethod,
         SchemaDict,
         StartBy,
     )
@@ -24,6 +25,11 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 class GroupBy:
@@ -35,7 +41,7 @@ class GroupBy:
         *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool,
         **named_by: IntoExpr,
-    ):
+    ) -> None:
         """
         Utility class for performing a group by operation over the given DataFrame.
 
@@ -93,13 +99,17 @@ class GroupBy:
         │ b   ┆ 3   │
         └─────┴─────┘
         """
+        # Every group gather can trigger a rechunk, so do early.
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        self.df = self.df.rechunk()
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(F.first().agg_groups().alias(temp_col))
-            .collect(no_optimization=True)
-        ).rechunk()
+            .collect(optimizations=QueryOptFlags.none())
+        )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
@@ -222,11 +232,13 @@ class GroupBy:
         │ b   ┆ 5     ┆ 10.0           │
         └─────┴───────┴────────────────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(*aggs, **named_aggs)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def map_groups(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
@@ -297,10 +309,10 @@ class GroupBy:
             msg = "cannot call `map_groups` when grouping by an expression"
             raise TypeError(msg)
 
+        by_strs: list[str] = self.by  # type: ignore[assignment]
+
         return self.df.__class__._from_pydf(
-            self.df._df.group_by_map_groups(
-                list(self.by), function, self.maintain_order
-            )
+            self.df._df.group_by_map_groups(by_strs, function, self.maintain_order)
         )
 
     def head(self, n: int = 5) -> DataFrame:
@@ -348,11 +360,13 @@ class GroupBy:
         │ c       ┆ 2   │
         └─────────┴─────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .head(n)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags._eager())
         )
 
     def tail(self, n: int = 5) -> DataFrame:
@@ -400,11 +414,13 @@ class GroupBy:
         │ c       ┆ 4   │
         └─────────┴─────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .tail(n)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def all(self) -> DataFrame:
@@ -465,7 +481,7 @@ class GroupBy:
             len_expr = len_expr.alias(name)
         return self.agg(len_expr)
 
-    @deprecate_renamed_function("len", version="0.20.5")
+    @deprecated("`GroupBy.count` was renamed; use `GroupBy.len` instead")
     def count(self) -> DataFrame:
         """
         Return the number of rows in each group.
@@ -533,7 +549,7 @@ class GroupBy:
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "b": [0.5, 0.5, 4, 10, 14, 13],
         ...         "c": [True, True, True, False, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
@@ -547,7 +563,7 @@ class GroupBy:
         ╞════════╪═════╪══════╪═══════╡
         │ Apple  ┆ 3   ┆ 10.0 ┆ false │
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 5   ┆ 14.0 ┆ true  │
+        │ Banana ┆ 5   ┆ 13.0 ┆ true  │
         └────────┴─────┴──────┴───────┘
         """
         return self.agg(F.all().last())
@@ -689,7 +705,7 @@ class GroupBy:
         return self.agg(F.all().n_unique())
 
     def quantile(
-        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+        self, quantile: float, interpolation: QuantileMethod = "nearest"
     ) -> DataFrame:
         """
         Compute the quantile per group.
@@ -698,7 +714,7 @@ class GroupBy:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -721,7 +737,7 @@ class GroupBy:
         │ Orange ┆ 2.0 ┆ 0.5  │
         │ Banana ┆ 5.0 ┆ 14.0 │
         └────────┴─────┴──────┘
-        """
+        """  # noqa: W505
         return self.agg(F.all().quantile(quantile, interpolation=interpolation))
 
     def sum(self) -> DataFrame:
@@ -770,7 +786,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
-    ):
+    ) -> None:
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
@@ -782,6 +798,8 @@ class RollingGroupBy:
         self.group_by = group_by
 
     def __iter__(self) -> Self:
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
@@ -793,7 +811,7 @@ class RollingGroupBy:
                 group_by=self.group_by,
             )
             .agg(F.first().agg_groups().alias(temp_col))
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
@@ -830,6 +848,8 @@ class RollingGroupBy:
             Additional aggregations, specified as keyword arguments.
             The resulting columns will be renamed to the keyword used.
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .rolling(
@@ -840,7 +860,7 @@ class RollingGroupBy:
                 group_by=self.group_by,
             )
             .agg(*aggs, **named_aggs)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def map_groups(
@@ -872,6 +892,8 @@ class RollingGroupBy:
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .rolling(
@@ -882,7 +904,7 @@ class RollingGroupBy:
                 group_by=self.group_by,
             )
             .map_groups(function, schema)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
 
@@ -907,7 +929,7 @@ class DynamicGroupBy:
         label: Label,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
-    ):
+    ) -> None:
         every = parse_as_duration_string(every)
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
@@ -924,6 +946,8 @@ class DynamicGroupBy:
         self.start_by = start_by
 
     def __iter__(self) -> Self:
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
@@ -939,7 +963,7 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .agg(F.first().agg_groups().alias(temp_col))
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
@@ -976,6 +1000,8 @@ class DynamicGroupBy:
             Additional aggregations, specified as keyword arguments.
             The resulting columns will be renamed to the keyword used.
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by_dynamic(
@@ -990,7 +1016,7 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .agg(*aggs, **named_aggs)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def map_groups(
@@ -1022,6 +1048,8 @@ class DynamicGroupBy:
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by_dynamic(
@@ -1035,5 +1063,5 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .map_groups(function, schema)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )

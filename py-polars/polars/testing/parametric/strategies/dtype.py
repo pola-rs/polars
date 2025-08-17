@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Collection, Sequence
+from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
@@ -35,9 +35,11 @@ from polars.datatypes import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
+
     from hypothesis.strategies import DrawFn, SearchStrategy
 
-    from polars._typing import CategoricalOrdering, PolarsDataType, TimeUnit
+    from polars._typing import PolarsDataType, TimeUnit
     from polars.datatypes import DataTypeClass
 
 
@@ -231,8 +233,7 @@ def _instantiate_flat_dtype(
         time_unit = draw(_time_units())
         return Duration(time_unit)
     elif dtype == Categorical:
-        ordering = draw(_categorical_orderings())
-        return Categorical(ordering)
+        return Categorical()
     elif dtype == Enum:
         n_categories = draw(
             st.integers(min_value=1, max_value=_DEFAULT_ENUM_CATEGORIES_LIMIT)
@@ -327,14 +328,13 @@ def _time_units() -> SearchStrategy[TimeUnit]:
 
 def _time_zones() -> SearchStrategy[str]:
     """Create a strategy for generating valid time zones."""
+    # Not available when building docs, so just import here.
+    from polars._plr import _known_timezones
+
+    chrono_known_tz = set(_known_timezones())
     return st.timezone_keys(allow_prefix=False).filter(
-        lambda tz: tz not in {"Factory", "localtime"}
+        lambda tz: tz not in {"Factory", "localtime"} and tz in chrono_known_tz
     )
-
-
-def _categorical_orderings() -> SearchStrategy[CategoricalOrdering]:
-    """Create a strategy for generating valid ordering types for categorical data."""
-    return st.sampled_from(["physical", "lexical"])
 
 
 @st.composite

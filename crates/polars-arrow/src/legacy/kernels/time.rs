@@ -6,9 +6,10 @@ use chrono::{LocalResult, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
 use polars_error::PolarsResult;
-use polars_error::{polars_bail, PolarsError};
+use polars_error::{PolarsError, polars_bail};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 pub enum Ambiguous {
     Earliest,
@@ -32,8 +33,10 @@ impl FromStr for Ambiguous {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[strum(serialize_all = "snake_case")]
 pub enum NonExistent {
     Null,
     Raise,

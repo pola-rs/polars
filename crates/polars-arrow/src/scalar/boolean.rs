@@ -33,7 +33,7 @@ impl Scalar for BooleanScalar {
     }
 
     #[inline]
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         &ArrowDataType::Boolean
     }
 }

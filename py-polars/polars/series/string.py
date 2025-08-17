@@ -2,23 +2,40 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function
+import polars._reexport as pl
+import polars.functions as F
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
+from polars._utils.various import no_default
+from polars._utils.wrap import wrap_s
+from polars.datatypes import Int64
+from polars.datatypes.classes import Datetime
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    import sys
+    from collections.abc import Mapping
+
     from polars import Expr, Series
+    from polars._plr import PySeries
     from polars._typing import (
         Ambiguous,
         IntoExpr,
         IntoExprColumn,
         PolarsDataType,
+        PolarsIntegerType,
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
+        UnicodeForm,
     )
-    from polars.polars import PySeries
+    from polars._utils.various import NoDefault
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 @expr_dispatch
@@ -27,7 +44,7 @@ class StringNameSpace:
 
     _accessor = "str"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def to_date(
@@ -82,8 +99,8 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        ambiguous: Ambiguous | Series = "raise",
-    ) -> Series:
+        ambiguous: Ambiguous | pl.Series = "raise",
+    ) -> pl.Series:
         """
         Convert a String column into a Datetime column.
 
@@ -141,6 +158,38 @@ class StringNameSpace:
                 2020-01-01 02:00:00 UTC
         ]
         """
+        if format is None and time_zone is None:
+            if isinstance(ambiguous, str):
+                ambiguous_s = pl.Series([ambiguous])
+            else:
+                ambiguous_s = ambiguous
+
+            return wrap_s(
+                self._s.str_to_datetime_infer(
+                    time_unit,
+                    strict,
+                    exact,
+                    ambiguous_s._s,
+                )
+            )
+        else:
+            ambiguous_expr = F.lit(ambiguous)
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(
+                    F.col(s.name).str.to_datetime(
+                        format,
+                        time_unit=time_unit,
+                        time_zone=time_zone,
+                        strict=strict,
+                        exact=exact,
+                        cache=cache,
+                        ambiguous=ambiguous_expr,
+                    )
+                )
+                .to_series()
+            )
 
     def to_time(
         self,
@@ -265,20 +314,61 @@ class StringNameSpace:
                 2001-07-08
         ]
         """
+        if format is None and (
+            dtype is Datetime
+            or (isinstance(dtype, Datetime) and dtype.time_zone is None)
+        ):
+            time_unit = None
+            if isinstance(dtype, Datetime):
+                time_unit = dtype.time_unit
 
+            return self.to_datetime(
+                time_unit=time_unit,
+                strict=strict,
+                exact=exact,
+                cache=cache,
+                ambiguous=ambiguous,
+            )
+        else:
+            ambiguous_expr = F.lit(ambiguous)
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(
+                    F.col(s.name).str.strptime(
+                        dtype,
+                        format,
+                        strict=strict,
+                        exact=exact,
+                        cache=cache,
+                        ambiguous=ambiguous_expr,
+                    )
+                )
+                .to_series()
+            )
+
+    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
+        *,
+        scale: int | None = None,
     ) -> Series:
         """
         Convert a String column into a Decimal column.
 
-        This method infers the needed parameters `precision` and `scale`.
+        This method infers the needed parameters `precision` and `scale` if not
+        given.
+
+        .. versionchanged:: 1.20.0
+            Parameter `inference_length` should now be passed as a keyword argument.
 
         Parameters
         ----------
         inference_length
             Number of elements to parse to determine the `precision` and `scale`
+        scale
+            Number of digits after the comma to use for the decimals.
 
         Examples
         --------
@@ -298,6 +388,17 @@ class StringNameSpace:
             143.90
         ]
         """
+        if scale is not None:
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(F.col(s.name).str.to_decimal(scale=scale))
+                .to_series()
+            )
+        else:
+            return wrap_s(
+                self._s.str_to_decimal_infer(inference_length=inference_length)
+            )
 
     def len_bytes(self) -> Series:
         """
@@ -376,7 +477,7 @@ class StringNameSpace:
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
-        Check if strings in Series contain a substring that matches a regex.
+        Check if the string contains a substring that matches a pattern.
 
         Parameters
         ----------
@@ -440,9 +541,9 @@ class StringNameSpace:
 
     def find(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
-    ) -> Expr:
+    ) -> Series:
         """
-        Return the index of the first substring in Series strings matching a pattern.
+        Return the bytes offset of the first substring matching a pattern.
 
         If the pattern is not found, returns None.
 
@@ -480,11 +581,11 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
 
         Examples
         --------
-        >>> s = pl.Series("txt", ["Crab", "Lobster", None, "Crustaceon"])
+        >>> s = pl.Series("txt", ["Crab", "Lobster", None, "Crustacean"])
 
         Find the index of the first substring matching a regex pattern:
 
@@ -524,7 +625,7 @@ class StringNameSpace:
         ]
         """
 
-    def ends_with(self, suffix: str | Expr) -> Series:
+    def ends_with(self, suffix: str | Expr | None) -> Series:
         """
         Check if string values end with a substring.
 
@@ -535,7 +636,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         starts_with : Check if string values start with a substring.
 
         Examples
@@ -562,7 +663,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         ends_with : Check if string values end with a substring.
 
         Examples
@@ -672,13 +773,22 @@ class StringNameSpace:
                 {2,false}
         ]
         """
+        if dtype is not None:
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(F.col(s.name).str.json_decode(dtype))
+                .to_series()
+            )
+
+        return wrap_s(self._s.str_json_decode(infer_schema_length))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
-        Extract the first match of json string with provided JSONPath expression.
+        Extract the first match of JSON string with provided JSONPath expression.
 
-        Throw errors if encounter invalid json strings.
-        All return value will be casted to String regardless of the original value.
+        Throw errors if encounter invalid JSON strings.
+        All return values will be cast to String regardless of the original value.
 
         Documentation on JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
@@ -1105,13 +1215,46 @@ class StringNameSpace:
 
         Notes
         -----
-        The dollar sign (`$`) is a special character related to capture groups.
-        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+        * To modify regular expression behaviour (such as case-sensitivity) with flags,
+          use the inline `(?iLmsuxU)` syntax. (See the regex crate's section on
+          `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+          for additional information about the use of inline expression modifiers).
 
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
-        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
-        for additional information about the use of inline expression modifiers.
+        * The dollar sign (`$`) is a special character related to capture groups; if you
+          want to replace some target pattern with characters that include a literal `$`
+          you should escape it by doubling it up as `$$`, or set `literal=True` if you
+          do not need a full regular expression pattern match. Otherwise, you will be
+          referencing a (potentially non-existent) capture group.
+
+          If not escaped, the `$0` in the replacement value (below) represents a capture
+          group:
+
+          .. code-block:: python
+
+              >>> s = pl.Series("cents", ["000.25", "00.50", "0.75"])
+              >>> s.str.replace(r"^(0+)\.", "$0.")
+              shape: (3,)
+              Series: 'cents' [str]
+              [
+                "000..25"
+                "00..50"
+                "0..75"
+              ]
+
+          To have `$` represent a literal value, it should be doubled-up as `$$`
+          (or, for simpler find/replace operations, set `literal=True` if you do
+          not require a full regular expression match):
+
+          .. code-block:: python
+
+              >>> s.str.replace(r"^(0+)\.", "$$0.")
+              shape: (3,)
+              Series: 'cents' [str]
+              [
+                "$0.25"
+                "$0.50"
+                "$0.75"
+              ]
 
         Examples
         --------
@@ -1124,24 +1267,24 @@ class StringNameSpace:
             "abc456"
         ]
 
-        Capture groups are supported. Use `${1}` in the `value` string to refer to the
-        first capture group in the `pattern`, `${2}` to refer to the second capture
-        group, and so on. You can also use named capture groups.
+        Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
+        to the first capture group in the `pattern`, `$2` or `${2}` to refer to the
+        second capture group, and so on. You can also use *named* capture groups.
 
         >>> s = pl.Series(["hat", "hut"])
         >>> s.str.replace("h(.)t", "b${1}d")
         shape: (2,)
         Series: '' [str]
         [
-                "bad"
-                "bud"
+            "bad"
+            "bud"
         ]
         >>> s.str.replace("h(?<vowel>.)t", "b${vowel}d")
         shape: (2,)
         Series: '' [str]
         [
-                "bad"
-                "bud"
+            "bad"
+            "bud"
         ]
 
         Apply case-insensitive string replacement using the `(?i)` flag.
@@ -1177,13 +1320,31 @@ class StringNameSpace:
 
         Notes
         -----
-        The dollar sign (`$`) is a special character related to capture groups.
-        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+        * To modify regular expression behaviour (such as case-sensitivity) with flags,
+          use the inline `(?iLmsuxU)` syntax. (See the regex crate's section on
+          `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+          for additional information about the use of inline expression modifiers).
 
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
-        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
-        for additional information about the use of inline expression modifiers.
+        * The dollar sign (`$`) is a special character related to capture groups; if you
+          want to replace some target pattern with characters that include a literal `$`
+          you should escape it by doubling it up as `$$`, or set `literal=True` if you
+          do not need a full regular expression pattern match. Otherwise, you will be
+          referencing a (potentially non-existent) capture group.
+
+          In the example below we need to double up `$` (to represent a literal dollar
+          sign, and then refer to the capture group using `$n` or `${n}`, hence the
+          three consecutive `$` characters in the replacement value:
+
+          .. code-block:: python
+
+              >>> s = pl.Series("cost", ["#12.34", "#56.78"])
+              >>> s.str.replace_all(r"#(\d+)", "$$${1}").alias("cost_usd")
+              shape: (2,)
+              Series: 'cost_usd' [str]
+              [
+                  "$12.34"
+                  "$56.78"
+              ]
 
         Examples
         --------
@@ -1196,24 +1357,24 @@ class StringNameSpace:
             "abc456"
         ]
 
-        Capture groups are supported. Use `${1}` in the `value` string to refer to the
-        first capture group in the `pattern`, `${2}` to refer to the second capture
-        group, and so on. You can also use named capture groups.
+        Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
+        to the first capture group in the `pattern`, `$2` or `${2}` to refer to the
+        second capture group, and so on. You can also use *named* capture groups.
 
         >>> s = pl.Series(["hat", "hut"])
         >>> s.str.replace_all("h(.)t", "b${1}d")
         shape: (2,)
         Series: '' [str]
         [
-                "bad"
-                "bud"
+            "bad"
+            "bud"
         ]
         >>> s.str.replace_all("h(?<vowel>.)t", "b${vowel}d")
         shape: (2,)
         Series: '' [str]
         [
-                "bad"
-                "bud"
+            "bad"
+            "bud"
         ]
 
         Apply case-insensitive string replacement using the `(?i)` flag.
@@ -1229,7 +1390,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -1264,7 +1425,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars_start(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove leading characters.
 
@@ -1298,7 +1459,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars_end(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove trailing characters.
 
@@ -1382,15 +1543,15 @@ class StringNameSpace:
         ]
         """
 
-    def pad_start(self, length: int, fill_char: str = " ") -> Series:
+    def pad_start(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -1413,15 +1574,15 @@ class StringNameSpace:
         ]
         """
 
-    def pad_end(self, length: int, fill_char: str = " ") -> Series:
+    def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the end of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -1447,14 +1608,14 @@ class StringNameSpace:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
-        A sign prefix (`-`) is handled by inserting the padding after the sign
-        character rather than before.
+        A sign prefix (`-`) is handled by inserting the padding after the sign character
+        rather than before.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
 
         See Also
         --------
@@ -1481,7 +1642,7 @@ class StringNameSpace:
 
     def to_lowercase(self) -> Series:
         """
-        Modify the strings to their lowercase equivalent.
+        Modify strings to their lowercase equivalent.
 
         Examples
         --------
@@ -1497,7 +1658,7 @@ class StringNameSpace:
 
     def to_uppercase(self) -> Series:
         """
-        Modify the strings to their uppercase equivalent.
+        Modify strings to their uppercase equivalent.
 
         Examples
         --------
@@ -1513,17 +1674,31 @@ class StringNameSpace:
 
     def to_titlecase(self) -> Series:
         """
-        Modify the strings to their titlecase equivalent.
+        Modify strings to their titlecase equivalent.
+
+        Notes
+        -----
+        This is a form of case transform where the first letter of each word is
+        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        characters define the word boundaries.
 
         Examples
         --------
-        >>> s = pl.Series("sing", ["welcome to my world", "THERE'S NO TURNING BACK"])
+        >>> s = pl.Series(
+        ...     "quotes",
+        ...     [
+        ...         "'e.t. phone home'",
+        ...         "you talkin' to me?",
+        ...         "to infinity,and BEYOND!",
+        ...     ],
+        ... )
         >>> s.str.to_titlecase()
-        shape: (2,)
-        Series: 'sing' [str]
+        shape: (3,)
+        Series: 'quotes' [str]
         [
-            "Welcome To My World"
-            "There's No Turning Back"
+            "'E.T. Phone Home'"
+            "You Talkin' To Me?"
+            "To Infinity,And Beyond!"
         ]
         """
 
@@ -1718,22 +1893,21 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_function(
-        'Use `.str.split("").explode()` instead.'
-        " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use when/then/otherwise"
-        " to handle the empty list before exploding.",
-        version="0.20.31",
+    @deprecated(
+        '`Series.str.explode` is deprecated; use `Series.str.split("").explode()` instead. '
+        "Note that empty strings will result in null instead of being preserved. To get "
+        "the exact same behavior, split first and then use a `pl.when...then...otherwise` "
+        "expression to handle the empty list before exploding. "
     )
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use `.str.split("").explode()` instead.
-            Note that empty strings will result in null instead of being preserved.
-            To get the exact same behavior, split first and then use when/then/otherwise
-            to handle the empty list before exploding.
+            Use the `.str.split("").explode()` method instead. Note that empty strings
+            will result in null instead of being preserved. To get the exact same
+            behavior, split first and then use a `pl.when...then...otherwise`
+            expression to handle the empty list before exploding.
 
         Returns
         -------
@@ -1756,9 +1930,15 @@ class StringNameSpace:
         ]
         """
 
-    def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
+    def to_integer(
+        self,
+        *,
+        base: int | IntoExprColumn = 10,
+        dtype: PolarsIntegerType = Int64,
+        strict: bool = True,
+    ) -> Series:
         """
-        Convert an String column into an Int64 column with base radix.
+        Convert an String column into a column of dtype with base radix.
 
         Parameters
         ----------
@@ -1766,6 +1946,9 @@ class StringNameSpace:
             Positive integer or expression which is the base of the string
             we are parsing.
             Default: 10.
+        dtype
+            Polars integer type to cast to.
+            Default: :class:`Int64`.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1773,14 +1956,14 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            Series of data.
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.to_integer(base=2, strict=False)
+        >>> s.str.to_integer(base=2, dtype=pl.Int32, strict=False)
         shape: (4,)
-        Series: 'bin' [i64]
+        Series: 'bin' [i32]
         [
                 6
                 5
@@ -1804,18 +1987,23 @@ class StringNameSpace:
         self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
     ) -> Series:
         """
-        Use the aho-corasick algorithm to find matches.
+        Use the Aho-Corasick algorithm to find matches.
 
-        This version determines if any of the patterns find a match.
+        Determines if any of the patterns are contained in the string.
 
         Parameters
         ----------
         patterns
             String patterns to search.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
 
         Examples
         --------
@@ -1840,28 +2028,39 @@ class StringNameSpace:
 
     def replace_many(
         self,
-        patterns: Series | list[str],
-        replace_with: Series | list[str] | str,
+        patterns: Series | list[str] | Mapping[str, str],
+        replace_with: Series | list[str] | str | NoDefault = no_default,
         *,
         ascii_case_insensitive: bool = False,
     ) -> Series:
         """
-        Use the aho-corasick algorithm to replace many matches.
+        Use the Aho-Corasick algorithm to replace many matches.
 
         Parameters
         ----------
         patterns
             String patterns to search and replace.
+            Also accepts a mapping of patterns to their replacement as syntactic sugar
+            for `replace_many(pl.Series(mapping.keys()), pl.Series(mapping.values()))`.
         replace_with
             Strings to replace where a pattern was a match.
-            This can be broadcasted. So it supports many:one and many:many.
+            Length must match the length of `patterns` or have length 1. This can be
+            broadcasted, so it supports many:one and many:many.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
+
         Examples
         --------
+        Replace many patterns by passing lists of equal length to the `patterns` and
+        `replace_with` parameters.
+
         >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> s = pl.Series(
         ...     "lyrics",
@@ -1879,6 +2078,49 @@ class StringNameSpace:
             "Tell you what me want, what me really really want"
             "Can me feel the love tonight"
         ]
+
+        Broadcast a replacement for many patterns by passing a sequence of length 1 to
+        the `replace_with` parameter.
+
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> s.str.replace_many(["me", "you", "they"], [""])
+        shape: (3,)
+        Series: 'lyrics' [str]
+        [
+            "Everybody wants to rule the world"
+            "Tell  what  want, what  really really want"
+            "Can  feel the love tonight"
+        ]
+
+        Passing a mapping with patterns and replacements is also supported as syntactic
+        sugar.
+
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> mapping = {"me": "you", "you": "me", "want": "need"}
+        >>> s.str.replace_many(mapping)
+        shape: (3,)
+        Series: 'lyrics' [str]
+        [
+            "Everybody needs to rule the world"
+            "Tell you what me need, what me really really need"
+            "Can me feel the love tonight"
+        ]
         """
 
     @unstable()
@@ -1890,18 +2132,23 @@ class StringNameSpace:
         overlapping: bool = False,
     ) -> Series:
         """
-        Use the aho-corasick algorithm to extract many matches.
+        Use the Aho-Corasick algorithm to extract many matches.
 
         Parameters
         ----------
         patterns
             String patterns to search.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
 
         Examples
         --------
@@ -1914,6 +2161,78 @@ class StringNameSpace:
             ["disco", "onte", "discontent"]
         ]
 
+        """
+
+    @unstable()
+    def find_many(
+        self,
+        patterns: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
+        overlapping: bool = False,
+    ) -> Series:
+        """
+        Use the Aho-Corasick algorithm to find all matches.
+
+        The function returns the byte offset of the start of each match.
+        The return type will be `List<UInt32>`
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case-insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+        overlapping
+            Whether matches may overlap.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> df = pl.DataFrame({"values": ["discontent"]})
+        >>> patterns = ["winter", "disco", "onte", "discontent"]
+        >>> df.with_columns(
+        ...     pl.col("values")
+        ...     .str.extract_many(patterns, overlapping=False)
+        ...     .alias("matches"),
+        ...     pl.col("values")
+        ...     .str.extract_many(patterns, overlapping=True)
+        ...     .alias("matches_overlapping"),
+        ... )
+        shape: (1, 3)
+        ┌────────────┬───────────┬─────────────────────────────────┐
+        │ values     ┆ matches   ┆ matches_overlapping             │
+        │ ---        ┆ ---       ┆ ---                             │
+        │ str        ┆ list[str] ┆ list[str]                       │
+        ╞════════════╪═══════════╪═════════════════════════════════╡
+        │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
+        └────────────┴───────────┴─────────────────────────────────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "values": ["discontent", "rhapsody"],
+        ...         "patterns": [
+        ...             ["winter", "disco", "onte", "discontent"],
+        ...             ["rhap", "ody", "coalesce"],
+        ...         ],
+        ...     }
+        ... )
+        >>> df.select(pl.col("values").str.find_many("patterns"))
+        shape: (2, 1)
+        ┌───────────┐
+        │ values    │
+        │ ---       │
+        │ list[u32] │
+        ╞═══════════╡
+        │ [0]       │
+        │ [0, 5]    │
+        └───────────┘
         """
 
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:
@@ -1951,10 +2270,9 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_function(
-        "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
-        " is an empty string instead of a hyphen.",
-        version="1.0.0",
+    @deprecated(
+        "`Series.str.concat` is deprecated; use `Series.str.join` instead. Note also "
+        "that the default `delimiter` for `str.join` is an empty string, not a hyphen."
     )
     def concat(
         self, delimiter: str | None = None, *, ignore_nulls: bool = True
@@ -1995,3 +2313,55 @@ class StringNameSpace:
             null
         ]
         """
+
+    def escape_regex(self) -> Series:
+        r"""
+        Returns string values with all regular expression meta characters escaped.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Examples
+        --------
+        >>> pl.Series(["abc", "def", None, "abc(\\w+)"]).str.escape_regex()
+        shape: (4,)
+        Series: '' [str]
+        [
+            "abc"
+            "def"
+            null
+            "abc\(\\w\+\)"
+        ]
+        """
+
+    def normalize(self, form: UnicodeForm = "NFC") -> Series:
+        """
+        Returns the Unicode normal form of the string values.
+
+        This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        Parameters
+        ----------
+        form : {'NFC', 'NFKC', 'NFD', 'NFKD'}
+            Unicode form to use.
+
+        Examples
+        --------
+        >>> s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"])
+        >>> s.str.normalize("NFC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "01²"
+                "ＫＡＤＯＫＡＷＡ"
+        ]
+        >>> s.str.normalize("NFKC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "012"
+                "KADOKAWA"
+        ]
+        """  # noqa: RUF002

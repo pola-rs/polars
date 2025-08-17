@@ -12,8 +12,8 @@ from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:
     from polars import Series
+    from polars._plr import PySeries
     from polars._typing import PolarsDataType
-    from polars.polars import PySeries
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -64,7 +64,7 @@ def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str,
     """Create lookup of potential Expr methods (in the given namespace)."""
     # dummy Expr object that we can introspect
     expr = pl.Expr()
-    expr._pyexpr = None
+    expr._pyexpr = None  # type: ignore[assignment]
 
     # optional indirection to "expr.str", "expr.dt", etc
     if namespace is not None:
@@ -100,8 +100,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
         s = wrap_s(self._s)
         expr = F.col(s.name)
-        namespace = getattr(self, "_accessor", None)
-        if namespace is not None:
+        if (namespace := getattr(self, "_accessor", None)) is not None:
             expr = getattr(expr, namespace)
         f = getattr(expr, func.__name__)
         return s.to_frame().select_seq(f(*args, **kwargs)).to_series()
@@ -175,3 +174,18 @@ def get_ffi_func(
     ffi_name = dtype_to_ffiname(dtype)
     fname = name.replace("<>", ffi_name)
     return getattr(obj, fname, None)
+
+
+def _with_no_check_length(func: Callable[..., Any]) -> Any:
+    from polars._plr import check_length
+
+    # Catch any error so that we can be sure that we always restore length checks
+    try:
+        check_length(False)
+        result = func()
+        check_length(True)
+    except Exception:
+        check_length(True)
+        raise
+    else:
+        return result

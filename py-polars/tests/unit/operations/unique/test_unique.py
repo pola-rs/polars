@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_unique_predicate_pd() -> None:
@@ -37,15 +42,14 @@ def test_unique_predicate_pd() -> None:
     for maintain_order in (True, False):
         for keep in ("first", "last", "any", "none"):
             q = (
-                lf.unique("x", maintain_order=maintain_order, keep=keep)  # type: ignore[arg-type]
+                lf.unique("x", maintain_order=maintain_order, keep=keep)
                 .filter(pl.col("x") == "abc")
                 .filter(pl.col("z"))
             )
-            plan = q.explain()
-            assert r'FILTER col("z")' in plan
-            # We can push filters if they only depend on the subset columns of unique()
-            assert r'SELECTION: [(col("x")) == (String(abc))]' in plan
-            assert_frame_equal(q.collect(predicate_pushdown=False), q.collect())
+            assert_frame_equal(
+                q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+                q.collect(),
+            )
 
 
 def test_unique_on_list_df() -> None:
@@ -91,8 +95,9 @@ def test_unique() -> None:
     assert_frame_equal(result, expected)
 
     s0 = pl.Series("a", [1, 2, None, 2])
-    # test if the null is included
-    assert s0.unique().to_list() == [None, 1, 2]
+    expected_s = pl.Series("a", [1, 2, None])
+    assert_series_equal(s0.unique(maintain_order=True), expected_s)
+    assert_series_equal(s0.unique(maintain_order=False), expected_s, check_order=False)
 
 
 def test_struct_unique_df() -> None:
@@ -107,24 +112,27 @@ def test_struct_unique_df() -> None:
 
 
 def test_sorted_unique_dates() -> None:
-    assert (
+    out = (
         pl.DataFrame(
             [pl.Series("dt", [date(2015, 6, 24), date(2015, 6, 23)], dtype=pl.Date)]
         )
         .sort("dt")
-        .unique()
-    ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
+        .unique(maintain_order=False)
+    )
+    expected = pl.DataFrame({"dt": [date(2015, 6, 23), date(2015, 6, 24)]})
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
-def test_unique_null() -> None:
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_unique_null(maintain_order: bool) -> None:
     s0 = pl.Series([])
-    assert_series_equal(s0.unique(), s0)
+    assert_series_equal(s0.unique(maintain_order=maintain_order), s0)
 
     s1 = pl.Series([None])
-    assert_series_equal(s1.unique(), s1)
+    assert_series_equal(s1.unique(maintain_order=maintain_order), s1)
 
     s2 = pl.Series([None, None])
-    assert_series_equal(s2.unique(), s1)
+    assert_series_equal(s2.unique(maintain_order=maintain_order), s1)
 
 
 @pytest.mark.parametrize(
@@ -132,7 +140,7 @@ def test_unique_null() -> None:
     [
         ([], []),
         (["a", "b", "b", "c"], ["a", "b", "c"]),
-        (["a", "b", "b", None], ["a", "b", None]),
+        ([None, "a", "b", "b"], [None, "a", "b"]),
     ],
 )
 def test_unique_categorical(input: list[str | None], output: list[str | None]) -> None:
@@ -140,6 +148,10 @@ def test_unique_categorical(input: list[str | None], output: list[str | None]) -
     result = s.unique(maintain_order=True)
     expected = pl.Series(output, dtype=pl.Categorical)
     assert_series_equal(result, expected)
+
+    result = s.unique(maintain_order=False)
+    expected = pl.Series(output, dtype=pl.Categorical)
+    assert_series_equal(result, expected, check_order=False)
 
 
 def test_unique_with_null() -> None:
@@ -154,3 +166,132 @@ def test_unique_with_null() -> None:
         {"a": [1, 2, 3, 4], "b": ["a", "b", "c", "c"], "c": [None, None, None, None]}
     )
     assert_frame_equal(df.unique(maintain_order=True), expected_df)
+
+
+@pytest.mark.parametrize(
+    ("input_json_data", "input_schema", "subset"),
+    [
+        ({"ID": [], "Name": []}, {"ID": pl.Int64, "Name": pl.String}, "id"),
+        ({"ID": [], "Name": []}, {"ID": pl.Int64, "Name": pl.String}, ["age", "place"]),
+        (
+            {"ID": [1, 2, 1, 2], "Name": ["foo", "bar", "baz", "baa"]},
+            {"ID": pl.Int64, "Name": pl.String},
+            "id",
+        ),
+        (
+            {"ID": [1, 2, 1, 2], "Name": ["foo", "bar", "baz", "baa"]},
+            {"ID": pl.Int64, "Name": pl.String},
+            ["age", "place"],
+        ),
+    ],
+)
+def test_unique_with_bad_subset(
+    input_json_data: dict[str, list[Any]],
+    input_schema: dict[str, PolarsDataType],
+    subset: str | list[str],
+) -> None:
+    df = pl.DataFrame(input_json_data, schema=input_schema)
+
+    with pytest.raises(ColumnNotFoundError, match="not found"):
+        df.unique(subset=subset)
+
+
+def test_categorical_unique_19409() -> None:
+    df = pl.DataFrame({"x": [str(n % 50) for n in range(127)]}).cast(pl.Categorical)
+    uniq = df.unique()
+    assert uniq.height == 50
+    assert uniq.null_count().item() == 0
+    assert set(uniq["x"]) == set(df["x"])
+
+
+def test_categorical_updated_revmap_unique_20233() -> None:
+    s = pl.Series("a", ["A"], pl.Categorical)
+
+    s = (
+        pl.select(a=pl.when(True).then(pl.lit("C", pl.Categorical)))
+        .select(a=pl.when(True).then(pl.lit("D", pl.Categorical)))
+        .to_series()
+    )
+
+    assert_series_equal(s.unique(), pl.Series("a", ["D"], pl.Categorical))
+
+
+def test_unique_check_order_20480() -> None:
+    df = pl.DataFrame(
+        [
+            {
+                "key": "some_key",
+                "value": "second",
+                "number": 2,
+            },
+            {
+                "key": "some_key",
+                "value": "first",
+                "number": 1,
+            },
+        ]
+    )
+    assert (
+        df.lazy()
+        .sort("key", "number")
+        .unique(subset="key", keep="first")
+        .collect()["number"]
+        .item()
+        == 1
+    )
+
+
+def test_predicate_pushdown_unique() -> None:
+    q = (
+        pl.LazyFrame({"id": [1, 2, 3]})
+        .with_columns(pl.date(2024, 1, 1) + pl.duration(days=pl.Series([1, 2, 3])))  # type: ignore[arg-type]
+        .unique()
+    )
+
+    print(q.filter(pl.col("id").is_in([1, 2, 3])).explain())
+    assert not q.filter(pl.col("id").is_in([1, 2, 3])).explain().startswith("FILTER")
+    assert q.filter(pl.col("id").sum() == pl.col("id")).explain().startswith("FILTER")
+
+
+def test_unique_enum_19338() -> None:
+    for data in [
+        {"enum": ["A"]},
+        [{"enum": "A"}],
+    ]:
+        df = pl.DataFrame(data, schema={"enum": pl.Enum(["A", "B", "C"])})
+        result = df.select(pl.col("enum").unique())
+        expected = pl.DataFrame(
+            {"enum": ["A"]}, schema={"enum": pl.Enum(["A", "B", "C"])}
+        )
+        assert_frame_equal(result, expected)
+
+
+def test_unique_nan_12950() -> None:
+    df = pl.DataFrame({"x": float("nan")})
+    result = df.unique()
+    assert_frame_equal(result, df)
+
+
+def test_unique_lengths_21654() -> None:
+    for n in range(0, 1000, 37):
+        df = pl.DataFrame({"x": pl.int_range(n, eager=True)})
+        assert df.unique().height == n
+
+
+def test_unique_keep_last_with_slice_22470() -> None:
+    lf = pl.LazyFrame({"x": [0, 1, 2, 3, 4, 5, 6, 7, 3, 4, 5, 6, 7, 8, 9, 10]})
+    result = lf.unique(keep="last", maintain_order=True).slice(3, 4).collect()
+    expected = pl.DataFrame({"x": [3, 4, 5, 6]})
+    assert_frame_equal(result, expected)
+
+
+def test_unique_booleans_22753() -> None:
+    assert_series_equal(
+        pl.Series([None, None, True] + [None] * 128).slice(3).unique(),
+        pl.Series([None], dtype=pl.Boolean()),
+    )
+
+    assert_series_equal(
+        pl.Series([None, None, True]).head(2).unique(),
+        pl.Series([None], dtype=pl.Boolean()),
+    )

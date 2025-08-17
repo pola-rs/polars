@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - crates/**
-      - docs/src/rust/**
+      - docs/source/src/rust/**
       - examples/**
+      - pyo3-polars/**
+      - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
       - Cargo.toml
@@ -15,8 +17,10 @@ on:
       - main
     paths:
       - crates/**
-      - docs/src/rust/**
+      - docs/source/src/rust/**
       - examples/**
+      - pyo3-polars/**
+      - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
       - Cargo.toml

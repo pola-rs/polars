@@ -9,20 +9,33 @@ repository = { workspace = true }
 description = "Private utils for the Polars DataFrame library"
 
 [dependencies]
-polars-error = { workspace = true }
-
-ahash = { workspace = true }
+bincode = { workspace = true, optional = true }
 bytemuck = { workspace = true }
+bytes = { workspace = true }
+compact_str = { workspace = true }
+either = { workspace = true }
+flate2 = { workspace = true, default-features = true, optional = true }
+foldhash = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
+libc = { workspace = true }
 memmap = { workspace = true, optional = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
+polars-error = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rand = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
-smartstring = { workspace = true }
+regex = { workspace = true }
+rmp-serde = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+serde_stacker = { workspace = true, optional = true }
+slotmap = { workspace = true }
 stacker = { workspace = true }
-sysinfo = { version = "0.30", default-features = false, optional = true }
+sysinfo = { version = "0.33", default-features = false, features = ["system"], optional = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -34,3 +47,19 @@ version_check = { workspace = true }
 mmap = ["memmap"]
 bigidx = []
 nightly = []
+ir_serde = ["serde"]
+serde = [
+  "dep:serde",
+  "serde/derive",
+  "dep:rmp-serde",
+  "dep:bincode",
+  "dep:flate2",
+  "dep:serde_json",
+  "dep:serde_stacker",
+  "uuid/serde",
+]
+dsl-schema = ["dep:schemars"]
+python = ["pyo3", "polars-error/python"]
+
+[lints]
+workspace = true

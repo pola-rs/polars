@@ -8,7 +8,7 @@ use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
 
 pub struct InMemorySinkNode {
-    morsels_per_pipe: Mutex<Vec<Vec<Morsel>>>,
+    morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, DataFrame)>>>,
     schema: Arc<Schema>,
 }
 
@@ -23,10 +23,15 @@ impl InMemorySinkNode {
 
 impl ComputeNode for InMemorySinkNode {
     fn name(&self) -> &str {
-        "in_memory_sink"
+        "in-memory-sink"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(send.is_empty());
         assert!(recv.len() == 1);
 
@@ -35,6 +40,7 @@ impl ComputeNode for InMemorySinkNode {
         if recv[0] != PortState::Done {
             recv[0] = PortState::Ready;
         }
+        Ok(())
     }
 
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {
@@ -44,13 +50,13 @@ impl ComputeNode for InMemorySinkNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.len() == 1 && send.is_empty());
-        let receivers = recv[0].take().unwrap().parallel();
+        assert!(recv_ports.len() == 1 && send_ports.is_empty());
+        let receivers = recv_ports[0].take().unwrap().parallel();
 
         for mut recv in receivers {
             let slf = &*self;
@@ -58,7 +64,7 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
-                    morsels.push(morsel);
+                    morsels.push((morsel.seq(), morsel.into_df()));
                 }
 
                 slf.morsels_per_pipe.lock().push(morsels);

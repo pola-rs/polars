@@ -1,7 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
 use super::Bitmap;
+use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
 use crate::bitmap::MutableBitmap;
 use crate::trusted_len::TrustedLen;
 
@@ -12,7 +12,7 @@ pub(crate) fn push_bitchunk<T: BitChunk>(buffer: &mut Vec<u8>, value: T) {
 
 /// Creates a [`Vec<u8>`] from a [`TrustedLen`] of [`BitChunk`].
 pub fn chunk_iter_to_vec<T: BitChunk, I: TrustedLen<Item = T>>(iter: I) -> Vec<u8> {
-    let cap = iter.size_hint().0 * std::mem::size_of::<T>();
+    let cap = iter.size_hint().0 * size_of::<T>();
     let mut buffer = Vec::with_capacity(cap);
     for v in iter {
         push_bitchunk(&mut buffer, v)
@@ -24,7 +24,7 @@ fn chunk_iter_to_vec_and_remainder<T: BitChunk, I: TrustedLen<Item = T>>(
     iter: I,
     remainder: T,
 ) -> Vec<u8> {
-    let cap = (iter.size_hint().0 + 1) * std::mem::size_of::<T>();
+    let cap = (iter.size_hint().0 + 1) * size_of::<T>();
     let mut buffer = Vec::with_capacity(cap);
     for v in iter {
         push_bitchunk(&mut buffer, v)
@@ -185,8 +185,7 @@ where
 pub(crate) fn align(bitmap: &Bitmap, new_offset: usize) -> Bitmap {
     let length = bitmap.len();
 
-    let bitmap: Bitmap = std::iter::repeat(false)
-        .take(new_offset)
+    let bitmap: Bitmap = std::iter::repeat_n(false, new_offset)
         .chain(bitmap.iter())
         .collect();
 
@@ -300,6 +299,22 @@ pub fn intersects_with_mut(lhs: &MutableBitmap, rhs: &MutableBitmap) -> bool {
     )
 }
 
+pub fn num_edges(lhs: &Bitmap) -> usize {
+    if lhs.is_empty() {
+        return 0;
+    }
+
+    // @TODO: If is probably quite inefficient to do it like this because now either one is not
+    // aligned. Maybe, we can implement a smarter way to do this.
+    binary_fold(
+        &unsafe { lhs.clone().sliced_unchecked(0, lhs.len() - 1) },
+        &unsafe { lhs.clone().sliced_unchecked(1, lhs.len() - 1) },
+        |l, r| (l ^ r).count_ones() as usize,
+        0,
+        |acc, v| acc + v,
+    )
+}
+
 /// Compute `out[i] = if selector[i] { truthy[i] } else { falsy }`.
 pub fn select_constant(selector: &Bitmap, truthy: &Bitmap, falsy: bool) -> Bitmap {
     let falsy_mask: u64 = if falsy {
@@ -322,7 +337,7 @@ impl PartialEq for Bitmap {
     }
 }
 
-impl<'a, 'b> BitOr<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitOr<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitor(self, rhs: &'b Bitmap) -> Bitmap {
@@ -330,7 +345,7 @@ impl<'a, 'b> BitOr<&'b Bitmap> for &'a Bitmap {
     }
 }
 
-impl<'a, 'b> BitAnd<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitAnd<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitand(self, rhs: &'b Bitmap) -> Bitmap {
@@ -338,7 +353,7 @@ impl<'a, 'b> BitAnd<&'b Bitmap> for &'a Bitmap {
     }
 }
 
-impl<'a, 'b> BitXor<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitXor<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitxor(self, rhs: &'b Bitmap) -> Bitmap {
@@ -351,5 +366,49 @@ impl Not for &Bitmap {
 
     fn not(self) -> Bitmap {
         unary(self, |a| !a)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::bitmap::proptest::bitmap;
+
+    fn two_equal_length_bitmaps() -> impl Strategy<Value = (Bitmap, Bitmap)> {
+        (1..=250usize).prop_flat_map(|length| {
+            (
+                bitmap(length..300),
+                bitmap(length..300),
+                0..length,
+                0..length,
+            )
+                .prop_flat_map(move |(lhs, rhs, lhs_offset, rhs_offset)| {
+                    (0..usize::min(length - lhs_offset, length - rhs_offset)).prop_map(
+                        move |slice_length| {
+                            (
+                                lhs.clone().sliced(lhs_offset, slice_length),
+                                rhs.clone().sliced(rhs_offset, slice_length),
+                            )
+                        },
+                    )
+                })
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn test_num_intersections_with(
+            (lhs, rhs) in two_equal_length_bitmaps()
+        ) {
+            let kernel_out = num_intersections_with(&lhs, &rhs);
+            let mut reference_out = 0;
+            for (l, r) in lhs.iter().zip(rhs.iter()) {
+                reference_out += usize::from(l & r);
+            }
+
+            prop_assert_eq!(kernel_out, reference_out);
+        }
     }
 }

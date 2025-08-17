@@ -5,7 +5,7 @@ from typing import Any
 from polars._utils.polars_version import get_polars_version
 
 try:
-    from polars.polars import __build__
+    from polars._plr import __build__
 except ImportError:
     __build__ = {}
 

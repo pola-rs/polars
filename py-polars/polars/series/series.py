@@ -3,6 +3,8 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+import sys
+from collections.abc import Iterable, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
@@ -11,13 +13,8 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Generator,
-    Iterable,
     Literal,
-    Mapping,
     NoReturn,
-    Sequence,
     Union,
     overload,
 )
@@ -40,8 +37,8 @@ from polars._utils.convert import (
     timedelta_to_int,
 )
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_series_item_by_key
@@ -51,11 +48,13 @@ from polars._utils.various import (
     _is_generator,
     no_default,
     parse_version,
+    qualified_type_name,
+    require_same_type,
     scale_bytes,
     sphinx_accessor,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_df
+from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     Array,
     Boolean,
@@ -87,13 +86,15 @@ from polars.datatypes import (
 )
 from polars.datatypes._utils import dtype_to_init_repr
 from polars.dependencies import (
-    _HVPLOT_AVAILABLE,
+    _ALTAIR_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
-    hvplot,
+    _check_for_torch,
+    altair,
     import_optional,
+    torch,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -105,20 +106,22 @@ from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
 from polars.series.list import ListNameSpace
+from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PySeries
+    from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    import sys
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        import polars._plr as plr
+
+    from collections.abc import Collection, Generator, Mapping
 
     import jax
     import numpy.typing as npt
-    import torch
-    from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -137,24 +140,32 @@ if TYPE_CHECKING:
         NumericLiteral,
         PolarsDataType,
         PythonLiteral,
+        QuantileMethod,
         RankMethod,
-        RollingInterpolationMethod,
+        RoundMode,
         SearchSortedSide,
         SeriesBuffers,
         SingleIndexSelector,
         SizeUnit,
         TemporalLiteral,
     )
-    from polars._utils.various import (
-        NoDefault,
-    )
+    from polars._utils.various import NoDefault
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
+
 elif BUILDING_SPHINX_DOCS:
-    property = sphinx_accessor
+    # note: we assign this way to work around an autocomplete issue in ipython/jedi
+    # (ref: https://github.com/davidhalter/jedi/issues/2057)
+    current_module = sys.modules[__name__]
+    current_module.property = sphinx_accessor
 
 ArrayLike = Union[
     Sequence[Any],
@@ -172,7 +183,7 @@ ArrayLike = Union[
 @expr_dispatch
 class Series:
     """
-    A Series represents a single column in a polars DataFrame.
+    A Series represents a single column in a Polars DataFrame.
 
     Parameters
     ----------
@@ -248,7 +259,8 @@ class Series:
     ]
     """
 
-    _s: PySeries = None
+    # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
+    _s: PySeries = None  # type: ignore[assignment]
     _accessors: ClassVar[set[str]] = {
         "arr",
         "cat",
@@ -268,7 +280,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         # If 'Unknown' treat as None to trigger type inference
         if dtype == Unknown:
             dtype = None
@@ -326,6 +338,13 @@ class Series:
             if dtype is not None:
                 self._s = self.cast(dtype, strict=strict)._s
 
+        elif _check_for_torch(values) and isinstance(values, torch.Tensor):
+            self._s = numpy_to_pyseries(
+                name, values.numpy(force=False), strict=strict, nan_to_null=nan_to_null
+            )
+            if dtype is not None:
+                self._s = self.cast(dtype, strict=strict)._s
+
         elif _check_for_pyarrow(values) and isinstance(
             values, (pa.Array, pa.ChunkedArray)
         ):
@@ -336,7 +355,7 @@ class Series:
         ):
             self._s = pandas_to_pyseries(name, values, dtype=dtype, strict=strict)
 
-        elif _is_generator(values):
+        elif not hasattr(values, "__arrow_c_stream__") and _is_generator(values):
             self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif isinstance(values, Series):
@@ -377,11 +396,12 @@ class Series:
                 raise ValueError(msg)
 
     @classmethod
-    @deprecate_function(
-        "use _import_arrow_from_c; if you are using an extension, please compile it with latest 'pyo3-polars'",
-        version="1.3",
+    @deprecated(
+        "`_import_from_c` is deprecated; use `_import_arrow_from_c` instead. If "
+        "you are using an extension, please compile it with the latest 'pyo3-polars'"
     )
     def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
+        # `_import_from_c` was deprecated in 1.3
         return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
 
     @classmethod
@@ -404,6 +424,10 @@ class Series:
         garbage collect the heap pointer, but not its contents.
         """
         return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
+
+    @classmethod
+    def _import(cls, pointer: int) -> Self:
+        return cls._from_pyseries(PySeries._import(pointer))
 
     def _export_arrow_to_c(self, out_ptr: int, out_schema_ptr: int) -> None:
         """
@@ -429,7 +453,7 @@ class Series:
 
         Leaking
         If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak.  This is a low-level function intended for
+        array memory will leak. This is a low-level function intended for
         expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
@@ -564,12 +588,15 @@ class Series:
         This method is mainly intended for use with the dataframe interchange protocol.
         """
         if isinstance(data, Series):
-            data = [data._s]
+            data_lst = [data._s]
         else:
-            data = [s._s for s in data]
+            data_lst = [s._s for s in data]
+        validity_series: plr.PySeries | None = None
         if validity is not None:
-            validity = validity._s
-        return cls._from_pyseries(PySeries._from_buffers(dtype, data, validity))
+            validity_series = validity._s
+        return cls._from_pyseries(
+            PySeries._from_buffers(dtype, data_lst, validity_series)
+        )
 
     @staticmethod
     def _newest_compat_level() -> int:
@@ -578,7 +605,7 @@ class Series:
 
         This is for pyo3-polars.
         """
-        return CompatLevel._newest()._version  # type: ignore[attr-defined]
+        return CompatLevel._newest()._version
 
     @property
     def dtype(self) -> DataType:
@@ -667,32 +694,80 @@ class Series:
     def __len__(self) -> int:
         return self.len()
 
-    def __and__(self, other: Any) -> Self:
+    @overload
+    def __and__(self, other: Expr) -> Expr: ...
+
+    @overload
+    def __and__(self, other: Any) -> Series: ...
+
+    def __and__(self, other: Any) -> Expr | Series:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) & other
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitand(other._s))
 
-    def __rand__(self, other: Any) -> Series:
+    @overload
+    def __rand__(self, other: Expr) -> Expr: ...
+
+    @overload
+    def __rand__(self, other: Any) -> Series: ...
+
+    def __rand__(self, other: Any) -> Expr | Series:
+        if isinstance(other, pl.Expr):
+            return other & F.lit(self)
         if not isinstance(other, Series):
             other = Series([other])
         return other & self
 
-    def __or__(self, other: Any) -> Self:
+    @overload
+    def __or__(self, other: Expr) -> Expr: ...
+
+    @overload
+    def __or__(self, other: Any) -> Series: ...
+
+    def __or__(self, other: Any) -> Expr | Series:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) | other
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitor(other._s))
 
-    def __ror__(self, other: Any) -> Series:
+    @overload
+    def __ror__(self, other: Expr) -> Expr: ...
+
+    @overload
+    def __ror__(self, other: Any) -> Series: ...
+
+    def __ror__(self, other: Any) -> Expr | Series:
+        if isinstance(other, pl.Expr):
+            return other | F.lit(self)
         if not isinstance(other, Series):
             other = Series([other])
         return other | self
 
-    def __xor__(self, other: Any) -> Self:
+    @overload
+    def __xor__(self, other: Expr) -> Expr: ...
+
+    @overload
+    def __xor__(self, other: Any) -> Series: ...
+
+    def __xor__(self, other: Any) -> Expr | Series:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) ^ other
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitxor(other._s))
 
-    def __rxor__(self, other: Any) -> Series:
+    @overload
+    def __rxor__(self, other: Expr) -> Expr: ...
+
+    @overload
+    def __rxor__(self, other: Any) -> Series: ...
+
+    def __rxor__(self, other: Any) -> Expr | Series:
+        if isinstance(other, pl.Expr):
+            return other ^ F.lit(self)
         if not isinstance(other, Series):
             other = Series([other])
         return other ^ self
@@ -721,7 +796,7 @@ class Series:
                 # Use local time zone info
                 time_zone = self.dtype.time_zone  # type: ignore[attr-defined]
                 if str(other.tzinfo) != str(time_zone):
-                    msg = f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
+                    msg = f"datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
                     raise TypeError(msg)
                 time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
             else:
@@ -763,12 +838,15 @@ class Series:
 
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op)(other._s))
-
+        try:
+            f = get_ffi_func(op + "_<>", self.dtype, self._s)
+        except NotImplementedError:
+            f = None
+        if f is None:
+            msg = f"Series of type {self.dtype} does not have {op} operator"
+            raise NotImplementedError(msg)
         if other is not None:
             other = maybe_cast(other, self.dtype)
-        f = get_ffi_func(op + "_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
 
         return self._from_pyseries(f(other))
 
@@ -776,30 +854,28 @@ class Series:
     def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __eq__(self, other: Any) -> Series: ...
+    def __eq__(self, other: object) -> Series: ...
 
-    def __eq__(self, other: Any) -> Series | Expr:
+    def __eq__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __ne__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __ne__(self, other: Any) -> Series: ...
+    def __ne__(self, other: object) -> Series: ...
 
-    def __ne__(self, other: Any) -> Series | Expr:
+    def __ne__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
 
     @overload
-    def __gt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __gt__(self, other: Expr) -> Expr: ...
 
     @overload
     def __gt__(self, other: Any) -> Series: ...
@@ -811,8 +887,7 @@ class Series:
         return self._comp(other, "gt")
 
     @overload
-    def __lt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __lt__(self, other: Expr) -> Expr: ...
 
     @overload
     def __lt__(self, other: Any) -> Series: ...
@@ -824,8 +899,7 @@ class Series:
         return self._comp(other, "lt")
 
     @overload
-    def __ge__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __ge__(self, other: Expr) -> Expr: ...
 
     @overload
     def __ge__(self, other: Any) -> Series: ...
@@ -837,8 +911,7 @@ class Series:
         return self._comp(other, "gt_eq")
 
     @overload
-    def __le__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __le__(self, other: Expr) -> Expr: ...
 
     @overload
     def __le__(self, other: Any) -> Series: ...
@@ -850,8 +923,7 @@ class Series:
         return self._comp(other, "lt_eq")
 
     @overload
-    def le(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def le(self, other: Expr) -> Expr: ...
 
     @overload
     def le(self, other: Any) -> Series: ...
@@ -861,8 +933,7 @@ class Series:
         return self.__le__(other)
 
     @overload
-    def lt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def lt(self, other: Expr) -> Expr: ...
 
     @overload
     def lt(self, other: Any) -> Series: ...
@@ -872,8 +943,7 @@ class Series:
         return self.__lt__(other)
 
     @overload
-    def eq(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def eq(self, other: Expr) -> Expr: ...
 
     @overload
     def eq(self, other: Any) -> Series: ...
@@ -883,8 +953,7 @@ class Series:
         return self.__eq__(other)
 
     @overload
-    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def eq_missing(self, other: Expr) -> Expr: ...
 
     @overload
     def eq_missing(self, other: Any) -> Series: ...
@@ -893,7 +962,7 @@ class Series:
         """
         Method equivalent of equality operator `series == other` where `None == None`.
 
-        This differs from the standard `ne` where null values are propagated.
+        This differs from the standard `eq` where null values are propagated.
 
         Parameters
         ----------
@@ -931,8 +1000,7 @@ class Series:
         return self.to_frame().select(F.col(self.name).eq_missing(other)).to_series()
 
     @overload
-    def ne(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ne(self, other: Expr) -> Expr: ...
 
     @overload
     def ne(self, other: Any) -> Series: ...
@@ -942,8 +1010,7 @@ class Series:
         return self.__ne__(other)
 
     @overload
-    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ne_missing(self, other: Expr) -> Expr: ...
 
     @overload
     def ne_missing(self, other: Any) -> Series: ...
@@ -990,8 +1057,7 @@ class Series:
         return self.to_frame().select(F.col(self.name).ne_missing(other)).to_series()
 
     @overload
-    def ge(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ge(self, other: Expr) -> Expr: ...
 
     @overload
     def ge(self, other: Any) -> Series: ...
@@ -1001,8 +1067,7 @@ class Series:
         return self.__ge__(other)
 
     @overload
-    def gt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def gt(self, other: Expr) -> Expr: ...
 
     @overload
     def gt(self, other: Any) -> Series: ...
@@ -1055,40 +1120,56 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload
-    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
-        ...
+    def __add__(self, other: DataFrame) -> DataFrame: ...
 
     @overload
-    def __add__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __add__(self, other: Expr) -> Expr: ...
 
     @overload
     def __add__(self, other: Any) -> Self: ...
 
-    def __add__(self, other: Any) -> Self | DataFrame | Expr:
+    def __add__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, str):
             other = Series("", [other])
         elif isinstance(other, pl.DataFrame):
             return other + self
         elif isinstance(other, pl.Expr):
             return F.lit(self) + other
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) + other).to_series()
         return self._arithmetic(other, "add", "add_<>")
 
     @overload
-    def __sub__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __sub__(self, other: Expr) -> Expr: ...
 
     @overload
     def __sub__(self, other: Any) -> Self: ...
 
-    def __sub__(self, other: Any) -> Self | Expr:
+    def __sub__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) - other
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) - other).to_series()
         return self._arithmetic(other, "sub", "sub_<>")
 
+    def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
+        """
+        Convert leaf dtype the to given primitive datatype.
+
+        This is equivalent to logic in DataType::cast_leaf() in Rust.
+        """
+
+        def convert_to_primitive(dtype: PolarsDataType) -> PolarsDataType:
+            if isinstance(dtype, Array):
+                return Array(convert_to_primitive(dtype.inner), shape=dtype.shape)
+            if isinstance(dtype, List):
+                return List(convert_to_primitive(dtype.inner))
+            return leaf_dtype
+
+        return self.cast(convert_to_primitive(self.dtype))
+
     @overload
-    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __truediv__(self, other: Expr) -> Expr: ...
 
     @overload
     def __truediv__(self, other: Any) -> Series: ...
@@ -1096,19 +1177,31 @@ class Series:
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) / other
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
+            return self.to_frame().select(F.col(self.name) / other).to_series()
 
-        # this branch is exactly the floordiv function without rounding the floats
-        if self.dtype.is_float() or self.dtype == Decimal:
-            return self._arithmetic(other, "div", "div_<>")
+        self = (
+            self
+            if (
+                self.dtype.is_float()
+                or self.dtype.is_decimal()
+                or isinstance(self.dtype, (List, Array, Duration))
+                or (
+                    isinstance(other, Series) and isinstance(other.dtype, (List, Array))
+                )
+            )
+            else self._recursive_cast_to_dtype(Float64())
+        )
 
-        return self.cast(Float64) / other
+        return self._arithmetic(other, "div", "div_<>")
 
     @overload
-    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __floordiv__(self, other: Expr) -> Expr: ...
 
     @overload
     def __floordiv__(self, other: Any) -> Series: ...
@@ -1119,6 +1212,8 @@ class Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) // other).to_series()
 
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
@@ -1128,12 +1223,10 @@ class Series:
         return self.not_()
 
     @overload
-    def __mul__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __mul__(self, other: Expr) -> Expr: ...
 
     @overload
-    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
-        ...
+    def __mul__(self, other: DataFrame) -> DataFrame: ...
 
     @overload
     def __mul__(self, other: Any) -> Series: ...
@@ -1141,17 +1234,20 @@ class Series:
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) * other
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
+            return self.to_frame().select(F.col(self.name) * other).to_series()
         elif isinstance(other, pl.DataFrame):
             return other * self
         else:
             return self._arithmetic(other, "mul", "mul_<>")
 
     @overload
-    def __mod__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __mod__(self, other: Expr) -> Expr: ...
 
     @overload
     def __mod__(self, other: Any) -> Series: ...
@@ -1162,6 +1258,8 @@ class Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before applying modulo on datelike dtypes"
             raise TypeError(msg)
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) % other).to_series()
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> Series:
@@ -1171,11 +1269,15 @@ class Series:
         return self._arithmetic(other, "rem", "rem_<>_rhs")
 
     def __radd__(self, other: Any) -> Series:
-        if isinstance(other, str):
-            return (other + self.to_frame()).to_series()
+        if isinstance(other, str) or (
+            isinstance(other, (int, float)) and self.dtype.is_decimal()
+        ):
+            return self.to_frame().select(other + F.col(self.name)).to_series()
         return self._arithmetic(other, "add", "add_<>_rhs")
 
     def __rsub__(self, other: Any) -> Series:
+        if isinstance(other, (int, float)) and self.dtype.is_decimal():
+            return self.to_frame().select(other - F.col(self.name)).to_series()
         return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __rtruediv__(self, other: Any) -> Series:
@@ -1184,6 +1286,8 @@ class Series:
             raise TypeError(msg)
         if self.dtype.is_float():
             self.__rfloordiv__(other)
+        if isinstance(other, (int, float)) and self.dtype.is_decimal():
+            return self.to_frame().select(other / F.col(self.name)).to_series()
 
         if isinstance(other, int):
             other = float(other)
@@ -1196,16 +1300,24 @@ class Series:
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
+            return self.to_frame().select(other * F.col(self.name)).to_series()
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __pow__(self, exponent: int | float | Series) -> Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
+        return (
+            self.to_frame()
+            .select_seq((other ** F.col(self.name)).alias(self.name))
+            .to_series()
+        )
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
@@ -1243,7 +1355,7 @@ class Series:
             return self.has_nulls()
         return self.implode().list.contains(item).item()
 
-    def __iter__(self) -> Generator[Any, None, None]:
+    def __iter__(self) -> Generator[Any]:
         if self.dtype in (List, Array):
             # TODO: either make a change and return py-native list data here, or find
             #  a faster way to return nested/List series; sequential 'get_index' calls
@@ -1265,7 +1377,31 @@ class Series:
     def __getitem__(
         self, key: SingleIndexSelector | MultiIndexSelector
     ) -> Any | Series:
-        """Get part of the Series as a new Series or scalar."""
+        """
+        Get part of the Series as a new Series or scalar.
+
+        Parameters
+        ----------
+        key
+            Row(s) to select.
+
+        Returns
+        -------
+        Series or scalar, depending on `key`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 4, 2])
+        >>> s[0]
+        1
+        >>> s[0:2]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            4
+        ]
+        """
         return get_series_item_by_key(self, key)
 
     def __setitem__(
@@ -1374,14 +1510,17 @@ class Series:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    args.append(arg.to_physical()._s.to_numpy_view())
+                    phys_arg = arg.to_physical()
+                    if phys_arg._s.n_chunks() > 1:
+                        phys_arg._s.rechunk(in_place=True)
+                    args.append(phys_arg._s.to_numpy_view())  # type: ignore[arg-type]
                 else:
-                    msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
+                    msg = f"unsupported type {qualified_type_name(arg)!r} for {arg!r}"
                     raise TypeError(msg)
 
             # Get minimum dtype needed to be able to cast all input arguments to the
             # same dtype.
-            dtype_char_minimum = np.result_type(*args).char
+            dtype_char_minimum: str = np.result_type(*args).char
 
             # Get all possible output dtypes for ufunc.
             # Input dtypes and output dtypes seem to always match for ufunc.types,
@@ -1413,7 +1552,7 @@ class Series:
                 # Generalized ufuncs will operate on the whole array, so
                 # missing data can corrupt the results.
                 if self.has_nulls():
-                    msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
+                    msg = "can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
                     raise ComputeError(msg)
                 # If the input and output are the same size, e.g. "(n)->(n)" we
                 # can allocate ourselves and save a copy. If they're different,
@@ -1469,7 +1608,7 @@ class Series:
             )
             raise NotImplementedError(msg)
 
-    def __arrow_c_stream__(self, requested_schema: object) -> object:
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
         """
         Export a Series via the Arrow PyCapsule Interface.
 
@@ -1524,6 +1663,11 @@ class Series:
         this function returns the visible size of the buffer, not its total capacity.
 
         FFI buffers are included in this estimation.
+
+        Notes
+        -----
+        For data with Object dtype, the estimated size only reports the pointer
+        size, which is a huge underestimation.
 
         Parameters
         ----------
@@ -1610,11 +1754,12 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `True` values,
-            the output is `None`.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -1652,11 +1797,12 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `False` values,
-            the output is `None`.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -1846,7 +1992,7 @@ class Series:
     def describe(
         self,
         percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
     ) -> DataFrame:
         """
         Quick summary statistics of a Series.
@@ -1859,7 +2005,7 @@ class Series:
         percentiles
             One or more percentiles to include in the summary statistics (if the
             Series has a numeric dtype). All values must be in the range `[0, 1]`.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method used when calculating percentiles.
 
         Notes
@@ -1907,7 +2053,7 @@ class Series:
         │ min        ┆ aa    │
         │ max        ┆ cc    │
         └────────────┴───────┘
-        """
+        """  # noqa: W505
         stats = self.to_frame().describe(
             percentiles=percentiles,
             interpolation=interpolation,
@@ -1921,8 +2067,12 @@ class Series:
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        * Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+          Int64 before summing to prevent overflow issues.
+        * If there are no non-null values, then the output is `0`.
+          If you would prefer empty sums to return `None`, you can
+          use `s.sum() if s.count() else None` instead
+          of `s.sum()`.
 
         Examples
         --------
@@ -1947,6 +2097,13 @@ class Series:
     def product(self) -> int | float:
         """
         Reduce this Series to the product value.
+
+        Notes
+        -----
+        If there are no non-null values, then the output is `1`.
+        If you would prefer empty products to return `None`, you can
+        use `s.product() if s.count() else None` instead
+        of `s.product()`.
 
         Examples
         --------
@@ -2113,7 +2270,7 @@ class Series:
         return self._s.median()
 
     def quantile(
-        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+        self, quantile: float, interpolation: QuantileMethod = "nearest"
     ) -> float | None:
         """
         Get the quantile value of this Series.
@@ -2122,7 +2279,7 @@ class Series:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -2130,11 +2287,15 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.quantile(0.5)
         2.0
-        """
+        """  # noqa: W505
         return self._s.quantile(quantile, interpolation)
 
     def to_dummies(
-        self, *, separator: str = "_", drop_first: bool = False
+        self,
+        *,
+        separator: str = "_",
+        drop_first: bool = False,
+        drop_nulls: bool = False,
     ) -> DataFrame:
         """
         Get dummy/indicator variables.
@@ -2145,6 +2306,8 @@ class Series:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variable being encoded.
+        drop_nulls
+            If there are `None` values in the series, a `null` column is not generated
 
         Examples
         --------
@@ -2173,7 +2336,7 @@ class Series:
         │ 0   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator, drop_first))
+        return wrap_df(self._s.to_dummies(separator, drop_first, drop_nulls))
 
     @unstable()
     def cut(
@@ -2433,11 +2596,10 @@ class Series:
         Parameters
         ----------
         bins
-            Discretizations to make.
-            If None given, we determine the boundaries based on the data.
+            Bin edges. If None given, we determine the edges based on the data.
         bin_count
-            If no bins provided, this will be used to determine
-            the distance of the bins
+            If `bins` is not provided, `bin_count` uniform bins are created that fully
+            encompass the data.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -2451,17 +2613,16 @@ class Series:
         --------
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
-        shape: (5, 3)
+        shape: (4, 3)
         ┌────────────┬─────────────┬───────┐
         │ breakpoint ┆ category    ┆ count │
         │ ---        ┆ ---         ┆ ---   │
         │ f64        ┆ cat         ┆ u32   │
         ╞════════════╪═════════════╪═══════╡
-        │ 0.0        ┆ (-inf, 0.0] ┆ 0     │
-        │ 2.25       ┆ (0.0, 2.25] ┆ 3     │
-        │ 4.5        ┆ (2.25, 4.5] ┆ 2     │
-        │ 6.75       ┆ (4.5, 6.75] ┆ 0     │
-        │ inf        ┆ (6.75, inf] ┆ 2     │
+        │ 2.75       ┆ [1.0, 2.75] ┆ 3     │
+        │ 4.5        ┆ (2.75, 4.5] ┆ 2     │
+        │ 6.25       ┆ (4.5, 6.25] ┆ 0     │
+        │ 8.0        ┆ (6.25, 8.0] ┆ 2     │
         └────────────┴─────────────┴───────┘
         """
         out = (
@@ -2495,25 +2656,25 @@ class Series:
         Parameters
         ----------
         sort
-            Sort the output by count in descending order.
-            If set to `False` (default), the order of the output is random.
+            Sort the output by count, in descending order.
+            If set to `False` (default), the order is non-deterministic.
         parallel
             Execute the computation in parallel.
 
             .. note::
-                This option should likely not be enabled in a group by context,
-                as the computation is already parallelized per group.
+                This option should likely *not* be enabled in a `group_by` context,
+                as the computation will already be parallelized per group.
         name
-            Give the resulting count column a specific name;
-            if `normalize` is True defaults to "proportion",
-            otherwise defaults to "count".
+            Give the resulting count column a specific name; if `normalize` is
+            True this defaults to "proportion", otherwise defaults to "count".
         normalize
-            If true gives relative frequencies of the unique values
+            If True, the count is returned as the relative frequency of unique
+            values normalized to 1.0.
 
         Returns
         -------
         DataFrame
-            Mapping of unique values to their count.
+            Columns map the unique values to their count (or proportion).
 
         Examples
         --------
@@ -2543,12 +2704,21 @@ class Series:
         │ red   ┆ 2   │
         │ green ┆ 1   │
         └───────┴─────┘
+
+        Return the count as a relative frequency, normalized to 1.0:
+        >>> s.value_counts(sort=True, normalize=True, name="fraction")
+        shape: (3, 2)
+        ┌───────┬──────────┐
+        │ color ┆ fraction │
+        │ ---   ┆ ---      │
+        │ str   ┆ f64      │
+        ╞═══════╪══════════╡
+        │ blue  ┆ 0.5      │
+        │ red   ┆ 0.333333 │
+        │ green ┆ 0.166667 │
+        └───────┴──────────┘
         """
-        if name is None:
-            if normalize:
-                name = "proportion"
-            else:
-                name = "count"
+        name = name or ("proportion" if normalize else "count")
         return pl.DataFrame._from_pydf(
             self._s.value_counts(
                 sort=sort, parallel=parallel, name=name, normalize=normalize
@@ -2572,7 +2742,7 @@ class Series:
         ]
         """
 
-    def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> float | None:
         """
         Computes the entropy.
 
@@ -2602,8 +2772,9 @@ class Series:
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def cumulative_eval(
-        self, expr: Expr, *, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, *, min_samples: int = 1, parallel: bool = False
     ) -> Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -2612,11 +2783,14 @@ class Series:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         expr
             Expression to evaluate
-        min_periods
+        min_samples
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
         parallel
@@ -2923,6 +3097,7 @@ class Series:
         >>> a.n_chunks()
         2
         """
+        require_same_type(self, other)
         try:
             self._s.append(other._s)
         except RuntimeError as exc:
@@ -2986,6 +3161,7 @@ class Series:
         >>> a.n_chunks()
         1
         """
+        require_same_type(self, other)
         try:
             self._s.extend(other._s)
         except RuntimeError as exc:
@@ -2995,7 +3171,7 @@ class Series:
                 raise
         return self
 
-    def filter(self, predicate: Series | list[bool]) -> Self:
+    def filter(self, predicate: Series | Iterable[bool]) -> Self:
         """
         Filter elements by a boolean mask.
 
@@ -3021,7 +3197,7 @@ class Series:
                 3
         ]
         """
-        if isinstance(predicate, list):
+        if not isinstance(predicate, Series):
             predicate = Series("", predicate)
         return self._from_pyseries(self._s.filter(predicate._s))
 
@@ -3246,12 +3422,64 @@ class Series:
 
         See Also
         --------
+        top_k_by
         bottom_k
+        bottom_k_by
 
         Examples
         --------
         >>> s = pl.Series("a", [2, 5, 1, 4, 3])
         >>> s.top_k(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            5
+            4
+            3
+        ]
+        """
+
+    def top_k_by(
+        self,
+        by: IntoExpr | Iterable[IntoExpr],
+        k: int = 5,
+        *,
+        reverse: bool | Sequence[bool] = False,
+    ) -> Series:
+        r"""
+        Return the `k` largest elements of the `by` column.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `reverse`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
+
+        This has time complexity:
+
+        .. math:: O(n \log{n})
+
+        Parameters
+        ----------
+        by
+            Column used to determine the largest elements.
+            Accepts expression input. Strings are parsed as column names.
+        k
+            Number of elements to return.
+        reverse
+            Consider the `k` smallest elements of the `by` column (instead of the `k`
+            largest). This can be specified per column by passing a sequence of
+            booleans.
+
+        See Also
+        --------
+        top_k
+        bottom_k
+        bottom_k_by
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2, 5, 1, 4, 3])
+        >>> s.top_k_by("a", 3)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -3267,8 +3495,7 @@ class Series:
 
         Non-null elements are always preferred over null elements. The output is
         not guaranteed to be in any particular order, call :func:`sort` after
-        this function if you wish the output to be sorted. This has time
-        complexity:
+        this function if you wish the output to be sorted.
 
         This has time complexity:
 
@@ -3282,11 +3509,63 @@ class Series:
         See Also
         --------
         top_k
+        top_k_by
+        bottom_k_by
 
         Examples
         --------
         >>> s = pl.Series("a", [2, 5, 1, 4, 3])
         >>> s.bottom_k(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+        """
+
+    def bottom_k_by(
+        self,
+        by: IntoExpr | Iterable[IntoExpr],
+        k: int = 5,
+        *,
+        reverse: bool | Sequence[bool] = False,
+    ) -> Series:
+        r"""
+        Return the `k` smallest elements of the `by` column.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `reverse`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
+
+        This has time complexity:
+
+        .. math:: O(n \log{n})
+
+        Parameters
+        ----------
+        by
+            Column used to determine the smallest elements.
+            Accepts expression input. Strings are parsed as column names.
+        k
+            Number of elements to return.
+        reverse
+            Consider the `k` largest elements of the `by` column( (instead of the `k`
+            smallest). This can be specified per column by passing a sequence of
+            booleans.
+
+        See Also
+        --------
+        top_k
+        top_k_by
+        bottom_k
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2, 5, 1, 4, 3])
+        >>> s.bottom_k_by("a", 3)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -3382,7 +3661,11 @@ class Series:
 
     @overload
     def search_sorted(
-        self, element: NonNestedLiteral | None, side: SearchSortedSide = ...
+        self,
+        element: NonNestedLiteral | None,
+        side: SearchSortedSide = ...,
+        *,
+        descending: bool = ...,
     ) -> int: ...
 
     @overload
@@ -3390,12 +3673,16 @@ class Series:
         self,
         element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
+        *,
+        descending: bool = ...,
     ) -> Series: ...
 
     def search_sorted(
         self,
         element: IntoExpr | np.ndarray[Any, Any] | None,
         side: SearchSortedSide = "any",
+        *,
+        descending: bool = False,
     ) -> int | Series:
         """
         Find indices where elements should be inserted to maintain order.
@@ -3410,6 +3697,9 @@ class Series:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
+        descending
+            Boolean indicating whether the values are descending or not (they
+            are required to be sorted either way).
 
         Examples
         --------
@@ -3445,8 +3735,10 @@ class Series:
                 6
         ]
         """
-        df = F.select(F.lit(self).search_sorted(element, side))
-        if isinstance(element, (list, Series, pl.Expr, np.ndarray)):
+        df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
+        if isinstance(element, (list, Series, pl.Expr)):
+            return df.to_series()
+        elif _check_for_numpy(element) and isinstance(element, np.ndarray):
             return df.to_series()
         else:
             return df.item()
@@ -3522,16 +3814,16 @@ class Series:
         """
         return self._s.has_nulls()
 
-    @deprecate_function(
-        "Use `has_nulls` instead to check for the presence of null values.",
-        version="0.20.30",
+    @deprecated(
+        "`has_validity` is deprecated; use `has_nulls` "
+        "instead to check for the presence of null values."
     )
     def has_validity(self) -> bool:
         """
         Check whether the Series contains one or more null values.
 
         .. deprecated:: 0.20.30
-            Use :meth:`has_nulls` instead.
+            Use the :meth:`has_nulls` method instead.
         """
         return self._s.has_nulls()
 
@@ -3687,7 +3979,7 @@ class Series:
 
     def is_nan(self) -> Series:
         """
-        Returns a boolean Series indicating which values are not NaN.
+        Returns a boolean Series indicating which values are NaN.
 
         Returns
         -------
@@ -3733,9 +4025,19 @@ class Series:
         ]
         """
 
-    def is_in(self, other: Series | Collection[Any]) -> Series:
+    def is_in(
+        self,
+        other: Series | Collection[Any],
+        *,
+        nulls_equal: bool = False,
+    ) -> Series:
         """
         Check if elements of this Series are in the other Series.
+
+        Parameters
+        ----------
+        nulls_equal : bool, default False
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -3745,12 +4047,22 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s2 = pl.Series("b", [2, 4])
+        >>> s2 = pl.Series("b", [2, 4, None])
         >>> s2.is_in(s)
-        shape: (2,)
+        shape: (3,)
         Series: 'b' [bool]
         [
                 true
+                false
+                null
+        ]
+        >>> # when nulls_equal=True, None is treated as a distinct value
+        >>> s2.is_in(s, nulls_equal=True)
+        shape: (3,)
+        Series: 'b' [bool]
+        [
+                true
+                false
                 false
         ]
 
@@ -3948,6 +4260,9 @@ class Series:
         """
         Check whether the Series is equal to another Series.
 
+        .. versionchanged:: 0.20.31
+            The `strict` parameter was renamed `check_dtypes`.
+
         Parameters
         ----------
         other
@@ -3961,7 +4276,7 @@ class Series:
 
         See Also
         --------
-        assert_series_equal
+        polars.testing.assert_series_equal
 
         Examples
         --------
@@ -3972,6 +4287,7 @@ class Series:
         >>> s1.equals(s2)
         False
         """
+        require_same_type(self, other)
         return self._s.equals(
             other._s,
             check_dtypes=check_dtypes,
@@ -3981,7 +4297,7 @@ class Series:
 
     def cast(
         self,
-        dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
+        dtype: type[int | float | str | bool] | PolarsDataType,
         *,
         strict: bool = True,
         wrap_numerical: bool = False,
@@ -4034,7 +4350,14 @@ class Series:
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
         - `List(inner)` -> `List(physical of inner)`
+        - `Array(inner)` -> `Array(physical of inner)`
+        - `Struct(fields)` -> `Struct(physical of fields)`
         - Other data types will be left unchanged.
+
+        Warnings
+        --------
+        The physical representations are an implementation detail
+        and not guaranteed to be stable.
 
         Examples
         --------
@@ -4104,7 +4427,11 @@ class Series:
         1
         """
         opt_s = self._s.rechunk(in_place)
-        return self if in_place else self._from_pyseries(opt_s)
+        if in_place:
+            return self
+        else:
+            assert opt_s is not None
+            return self._from_pyseries(opt_s)
 
     def reverse(self) -> Series:
         """
@@ -4203,6 +4530,64 @@ class Series:
 
         return out
 
+    def is_close(
+        self,
+        other: IntoExpr,
+        *,
+        abs_tol: float = 0.0,
+        rel_tol: float = 1e-09,
+        nans_equal: bool = False,
+    ) -> Series:
+        r"""
+        Get a boolean mask of the values being close to the other values.
+
+        Two values `a` and `b` are considered close if the following condition holds:
+
+        .. math::
+            |a-b| \le max \{ \text{rel_tol} \cdot max \{ |a|, |b| \}, \text{abs_tol} \}
+
+        Parameters
+        ----------
+        abs_tol
+            Absolute tolerance. This is the maximum allowed absolute difference between
+            two values. Must be non-negative.
+        rel_tol
+            Relative tolerance. This is the maximum allowed difference between two
+            values, relative to the larger absolute value. Must be non-negative.
+        nans_equal
+            Whether NaN values should be considered equal.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Notes
+        -----
+            The implementation of this method is symmetric and mirrors the behavior of
+            :meth:`math.isclose`. Specifically note that this behavior is different to
+            :meth:`numpy.isclose`.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", [1.0, 1.2, 1.4, 1.45, 1.6])
+        >>> s.is_close(1.4, abs_tol=0.1)
+        shape: (5,)
+        Series: 's' [bool]
+        [
+            false
+            false
+            true
+            true
+            false
+        ]
+        """
+        return F.select(
+            F.lit(self).is_close(
+                other, abs_tol=abs_tol, rel_tol=rel_tol, nans_equal=nans_equal
+            )
+        ).to_series()
+
     def to_numpy(
         self,
         *,
@@ -4292,7 +4677,7 @@ class Series:
         """  # noqa: W505
         if zero_copy_only is not None:
             issue_deprecation_warning(
-                "The `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
+                "the `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
                 " Use the `allow_copy` parameter instead, which is the inverse of `zero_copy_only`.",
                 version="0.20.10",
             )
@@ -4300,7 +4685,7 @@ class Series:
 
         if use_pyarrow is not None:
             issue_deprecation_warning(
-                "The `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
+                "the `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
                 " Polars now uses its native engine for conversion to NumPy by default."
                 " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
                 version="0.20.28",
@@ -4409,10 +4794,15 @@ class Series:
             srs = self
 
         # we have to build the tensor from a writable array or PyTorch will complain
-        # about it (as writing to readonly array results in undefined behavior)
+        # about it (writing to a readonly array results in undefined behavior)
         numpy_array = srs.to_numpy(writable=True)
-        tensor = torch.from_numpy(numpy_array)
-
+        try:
+            tensor = torch.from_numpy(numpy_array)
+        except TypeError:
+            if self.dtype == List:
+                msg = "cannot convert List dtype to Tensor (use Array dtype instead)"
+                raise TypeError(msg) from None
+            raise
         # note: named tensors are currently experimental
         # tensor.rename(self.name)
         return tensor
@@ -4423,6 +4813,9 @@ class Series:
         Return the underlying Arrow array.
 
         If the Series contains only a single chunk this operation is zero copy.
+
+        .. versionchanged:: 1.24
+            The `future` parameter was renamed `compat_level`.
 
         Parameters
         ----------
@@ -4442,11 +4835,15 @@ class Series:
           3
         ]
         """
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = False  # type: ignore[assignment]
+            compat_level_py = False
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
-        return self._s.to_arrow(compat_level)
+            compat_level_py = compat_level._version
+        else:
+            msg = f"`compat_level` has invalid type: {qualified_type_name(compat_level)!r}"
+            raise TypeError(msg)
+        return self._s.to_arrow(compat_level_py)
 
     def to_pandas(
         self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any
@@ -4540,7 +4937,7 @@ class Series:
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
-        Convert Series to instantiatable string representation.
+        Convert Series to instantiable string representation.
 
         Parameters
         ----------
@@ -4653,7 +5050,8 @@ class Series:
         """
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            msg = f"Series of type {self.dtype} can not be set"
+            raise NotImplementedError(msg)
         return self._from_pyseries(f(filter._s, value))
 
     def scatter(
@@ -4706,7 +5104,8 @@ class Series:
         └─────────┘
         """
         if not isinstance(indices, Iterable):
-            indices = [indices]  # type: ignore[list-item]
+            index: Any = indices  # Workaround for older NumPy versions
+            indices = [index]
         indices = Series(values=indices)
         if indices.is_empty():
             return self
@@ -4718,6 +5117,27 @@ class Series:
 
         self._s.scatter(indices._s, values._s)
         return self
+
+    def index_of(self, element: IntoExpr) -> int | None:
+        """
+        Get the index of the first occurrence of a value, or ``None`` if it's not found.
+
+        Parameters
+        ----------
+        element
+            Value to find.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, None, 17])
+        >>> s.index_of(17)
+        2
+        >>> s.index_of(None)  # search for a null
+        1
+        >>> s.index_of(55) is None
+        True
+        """
+        return F.select(F.lit(self).index_of(element)).item()
 
     def clear(self, n: int = 0) -> Series:
         """
@@ -4798,14 +5218,14 @@ class Series:
         value
             Value used to fill NaN values.
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
-
         See Also
         --------
         fill_null
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To fill null values, use :func:`fill_null`.
 
         Examples
         --------
@@ -4842,7 +5262,14 @@ class Series:
 
         See Also
         --------
+        backward_fill
         fill_nan
+        forward_fill
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To fill NaN values, use :func:`fill_nan`.
 
         Examples
         --------
@@ -4875,6 +5302,44 @@ class Series:
             "z"
         ]
         """
+
+    def backward_fill(self, limit: int | None = None) -> Series:
+        """
+        Fill missing values with the next non-null value.
+
+        This is an alias of `.fill_null(strategy="backward")`.
+
+        Parameters
+        ----------
+        limit
+            The number of consecutive null values to backward fill.
+
+        See Also
+        --------
+        fill_null
+        forward_fill
+        shift
+        """
+        return self.fill_null(strategy="backward", limit=limit)
+
+    def forward_fill(self, limit: int | None = None) -> Series:
+        """
+        Fill missing values with the last non-null value.
+
+        This is an alias of `.fill_null(strategy="forward")`.
+
+        Parameters
+        ----------
+        limit
+            The number of consecutive null values to forward fill.
+
+        See Also
+        --------
+        backward_fill
+        fill_null
+        shift
+        """
+        return self.fill_null(strategy="forward", limit=limit)
 
     def floor(self) -> Series:
         """
@@ -4914,9 +5379,18 @@ class Series:
         ]
         """
 
-    def round(self, decimals: int = 0) -> Series:
+    def round(self, decimals: int = 0, mode: RoundMode = "half_to_even") -> Series:
         """
         Round underlying floating point data by `decimals` digits.
+
+        The default rounding mode is "half to even" (also known as "bankers' rounding").
+
+        Parameters
+        ----------
+        decimals
+            Number of decimals to round by.
+        mode : {'half_to_even', 'half_away_from_zero'}
+            Rounding mode.
 
         Examples
         --------
@@ -4930,10 +5404,20 @@ class Series:
                 3.9
         ]
 
-        Parameters
-        ----------
-        decimals
-            number of decimals to round by.
+        >>> s = pl.Series([-3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5])
+        >>> s.round(mode="half_to_even")
+        shape: (8,)
+        Series: '' [f64]
+        [
+            -4.0
+            -2.0
+            -2.0
+            -0.0
+            0.0
+            2.0
+            2.0
+            4.0
+        ]
         """
 
     def round_sig_figs(self, digits: int) -> Series:
@@ -4947,14 +5431,14 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series([0.01234, 3.333, 1234.0])
+        >>> s = pl.Series([0.01234, 3.333, 3450.0])
         >>> s.round_sig_figs(2)
         shape: (3,)
         Series: '' [f64]
         [
                 0.012
                 3.3
-                1200.0
+                3500.0
         ]
         """
 
@@ -5001,27 +5485,28 @@ class Series:
 
     def sign(self) -> Series:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
+        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
         >>> s.sign()
-        shape: (5,)
-        Series: 'a' [i64]
+        shape: (6,)
+        Series: 'a' [f64]
         [
-                -1
-                0
-                0
-                1
+                -1.0
+                -0.0
+                0.0
+                1.0
+                NaN
                 null
         ]
         """
@@ -5313,9 +5798,13 @@ class Series:
 
         Notes
         -----
-        If your function is expensive and you don't want it to be called more than
-        once for a given input, consider applying an `@lru_cache` decorator to it.
-        If your data is suitable you may achieve *significant* speedups.
+        * If your function is expensive and you don't want it to be called more than
+          once for a given input, consider applying an `@lru_cache` decorator to it.
+          If your data is suitable you may achieve *significant* speedups.
+
+        * A UDF passed to `map_elements` must be pure, meaning that it cannot modify
+          or depend on state other than its arguments.
+
 
         Examples
         --------
@@ -5342,7 +5831,9 @@ class Series:
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
-            self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
+            self._s.map_elements(
+                function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
+            )
         )
 
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
@@ -5355,8 +5846,8 @@ class Series:
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Fill the resulting null values with this value. Accepts scalar expression
+            input. Non-expression inputs are parsed as literals.
 
         Notes
         -----
@@ -5447,23 +5938,150 @@ class Series:
                 5
         ]
         """
+        require_same_type(self, other)
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
     @unstable()
+    def rolling_min_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling min based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling min with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_min_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            0
+            0
+            1
+            2
+            …
+            18
+            19
+            20
+            21
+            22
+        ]
+        """
+
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
         Apply a rolling min (moving min) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5472,6 +6090,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5479,7 +6100,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5501,20 +6122,146 @@ class Series:
         """
 
     @unstable()
+    def rolling_max_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling max based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling max with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_max_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+        """
+
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_max(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
         Apply a rolling max (moving max) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5523,6 +6270,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5530,7 +6280,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5552,20 +6302,146 @@ class Series:
         """
 
     @unstable()
+    def rolling_mean_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling mean based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling mean with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_mean_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            0.0
+            0.5
+            1.0
+            2.0
+            3.0
+            …
+            19.0
+            20.0
+            21.0
+            22.0
+            23.0
+        ]
+        """
+
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_mean(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
         Apply a rolling mean (moving mean) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5574,6 +6450,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5581,7 +6460,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5603,20 +6482,146 @@ class Series:
         """
 
     @unstable()
+    def rolling_sum_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling sum based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling mean with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_sum_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            3
+            6
+            9
+            …
+            57
+            60
+            63
+            66
+            69
+        ]
+        """
+
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_sum(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
         Apply a rolling sum (moving sum) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5625,6 +6630,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5632,7 +6640,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5654,21 +6662,150 @@ class Series:
         """
 
     @unstable()
+    def rolling_std_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+        ddof: int = 1,
+    ) -> Self:
+        """
+        Compute a rolling standard deviation based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+                2001-01-01 00:00:00
+                2001-01-01 01:00:00
+                2001-01-01 02:00:00
+                2001-01-01 03:00:00
+                2001-01-01 04:00:00
+                …
+                2001-01-01 20:00:00
+                2001-01-01 21:00:00
+                2001-01-01 22:00:00
+                2001-01-01 23:00:00
+                2001-01-02 00:00:00
+        ]
+
+        Compute the rolling std with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_std_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            null
+            0.707107
+            1.0
+            1.0
+            1.0
+            …
+            1.0
+            1.0
+            1.0
+            1.0
+            1.0
+        ]
+        """
+
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_std(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Series:
         """
         Compute a rolling std dev.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5677,6 +6814,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5684,7 +6824,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5709,21 +6849,150 @@ class Series:
         """
 
     @unstable()
+    def rolling_var_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+        ddof: int = 1,
+    ) -> Self:
+        """
+        Compute a rolling variance based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling std with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_std_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            null
+            0.707107
+            1.0
+            1.0
+            1.0
+            …
+            1.0
+            1.0
+            1.0
+            1.0
+            1.0
+        ]
+        """
+
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_var(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Series:
         """
         Compute a rolling variance.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5732,6 +7001,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5739,7 +7011,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5764,13 +7036,14 @@ class Series:
         """
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_map(
         self,
         function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5779,6 +7052,9 @@ class Series:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -5789,7 +7065,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5817,12 +7093,143 @@ class Series:
         """
 
     @unstable()
+    def rolling_median_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling median based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling median with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_median_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            0.0
+            0.5
+            1.0
+            2.0
+            3.0
+            …
+            19.0
+            20.0
+            21.0
+            22.0
+            23.0
+        ]
+        """
+
+    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_median(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5835,6 +7242,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5842,7 +7252,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5865,38 +7275,177 @@ class Series:
         """
 
     @unstable()
-    def rolling_quantile(
+    def rolling_quantile_by(
         self,
-        quantile: float,
-        interpolation: RollingInterpolationMethod = "nearest",
-        window_size: int = 2,
-        weights: list[float] | None = None,
+        by: IntoExpr,
+        window_size: timedelta | str,
         *,
-        min_periods: int | None = None,
-        center: bool = False,
-    ) -> Series:
+        quantile: float,
+        interpolation: QuantileMethod = "nearest",
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
         """
-        Compute a rolling quantile.
+        Compute a rolling quantile based on another series.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        quantile
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
+            Interpolation method.
+        window_size
+            The length of the window. Can be a dynamic
+            temporal size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling quantile with the temporal windows from the second series closed on the right:
+
+        >>> s.rolling_quantile_by(d, "3h", quantile=0.5)
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            0.0
+            1.0
+            1.0
+            2.0
+            3.0
+            …
+            19.0
+            20.0
+            21.0
+            22.0
+            23.0
+        ]
+        """  # noqa: W505
+
+    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    def rolling_quantile(
+        self,
+        quantile: float,
+        interpolation: QuantileMethod = "nearest",
+        window_size: int = 2,
+        weights: list[float] | None = None,
+        *,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Series:
+        """
+        Compute a rolling quantile.
+
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
         window_size
             The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5911,10 +7460,10 @@ class Series:
         [
                 null
                 null
-                1.0
                 2.0
                 3.0
                 4.0
+                6.0
         ]
         >>> s.rolling_quantile(quantile=0.33, interpolation="linear", window_size=3)
         shape: (6,)
@@ -5927,10 +7476,17 @@ class Series:
                 3.66
                 5.32
         ]
-        """
+        """  # noqa: W505
 
     @unstable()
-    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Series:
+    def rolling_skew(
+        self,
+        window_size: int,
+        *,
+        bias: bool = True,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Series:
         """
         Compute a rolling skew.
 
@@ -5947,6 +7503,15 @@ class Series:
             Integer size of the rolling window.
         bias
             If False, the calculations are corrected for statistical bias.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
+
+        See Also
+        --------
+        Series.skew
 
         Examples
         --------
@@ -5964,6 +7529,58 @@ class Series:
 
         >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
         (0.38180177416060584, 0.47033046033698594)
+        """
+
+    @unstable()
+    def rolling_kurtosis(
+        self,
+        window_size: int,
+        *,
+        fisher: bool = True,
+        bias: bool = True,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Series:
+        """
+        Compute a rolling kurtosis.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
+
+        Parameters
+        ----------
+        window_size
+            Integer size of the rolling window.
+        fisher : bool, optional
+            If True, Fisher's definition is used (normal ==> 0.0). If False,
+            Pearson's definition is used (normal ==> 3.0).
+        bias : bool, optional
+            If False, the calculations are corrected for statistical bias.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
+
+        See Also
+        --------
+        Series.kurtosis
+
+        Examples
+        --------
+        >>> pl.Series([1, 4, 2, 9]).rolling_kurtosis(3)
+        shape: (4,)
+        Series: '' [f64]
+        [
+            null
+            null
+            -1.5
+            -1.5
+        ]
         """
 
     def sample(
@@ -6147,7 +7764,9 @@ class Series:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
         """
-        Fill null values using interpolation.
+        Interpolate intermediate values.
+
+        Nulls at the beginning and end of the series remain null.
 
         Parameters
         ----------
@@ -6171,7 +7790,9 @@ class Series:
 
     def interpolate_by(self, by: IntoExpr) -> Series:
         """
-        Fill null values using interpolation based on another column.
+        Interpolate intermediate values with x-coordinate based on another column.
+
+        Nulls at the beginning and end of the series remain null.
 
         Parameters
         ----------
@@ -6406,7 +8027,7 @@ class Series:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If `bias` is False, the calculations are
+        the sample mean. If `bias` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -6449,7 +8070,7 @@ class Series:
         >>> s.kurtosis(fisher=False)
         1.9477376373212048
         >>> s.kurtosis(fisher=False, bias=False)
-        2.1040361802642726
+        2.1040361802642717
         """
         return self._s.kurtosis(fisher, bias)
 
@@ -6683,7 +8304,7 @@ class Series:
         old
             Value or sequence of values to replace.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace_all(old=Series(mapping.keys()), new=Series(mapping.values()))`.
+            `replace_strict(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.
@@ -6872,11 +8493,12 @@ class Series:
         Series: 'a' [i64]
         [
                 2
-                1
                 3
+                1
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_mean(
         self,
         *,
@@ -6885,11 +8507,14 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6904,11 +8529,11 @@ class Series:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -6923,7 +8548,7 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -6964,20 +8589,21 @@ class Series:
         half_life: str | timedelta,
     ) -> Series:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -7040,6 +8666,7 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_std(
         self,
         *,
@@ -7049,11 +8676,14 @@ class Series:
         alpha: float | None = None,
         adjust: bool = True,
         bias: bool = False,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7090,7 +8720,7 @@ class Series:
         bias
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -7124,6 +8754,7 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_var(
         self,
         *,
@@ -7133,11 +8764,14 @@ class Series:
         alpha: float | None = None,
         adjust: bool = True,
         bias: bool = False,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7174,7 +8808,7 @@ class Series:
         bias
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -7215,7 +8849,7 @@ class Series:
         Parameters
         ----------
         value
-            A constant literal value or a unit expressioin with which to extend the
+            A constant literal value or a unit expression with which to extend the
             expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.
@@ -7310,6 +8944,7 @@ class Series:
                 6
         ]
         """
+        return wrap_s(self._s.shrink_dtype())
 
     def get_chunks(self) -> list[Series]:
         """
@@ -7352,6 +8987,122 @@ class Series:
         ]
         """
 
+    def bitwise_count_ones(self) -> Self:
+        """Evaluate the number of set bits."""
+
+    def bitwise_count_zeros(self) -> Self:
+        """Evaluate the number of unset Self."""
+
+    def bitwise_leading_ones(self) -> Self:
+        """Evaluate the number most-significant set bits before seeing an unset bit."""
+
+    def bitwise_leading_zeros(self) -> Self:
+        """Evaluate the number most-significant unset bits before seeing a set bit."""
+
+    def bitwise_trailing_ones(self) -> Self:
+        """Evaluate the number least-significant set bits before seeing an unset bit."""
+
+    def bitwise_trailing_zeros(self) -> Self:
+        """Evaluate the number least-significant unset bits before seeing a set bit."""
+
+    def bitwise_and(self) -> PythonLiteral | None:
+        """Perform an aggregation of bitwise ANDs."""
+        return self._s.bitwise_and()
+
+    def bitwise_or(self) -> PythonLiteral | None:
+        """Perform an aggregation of bitwise ORs."""
+        return self._s.bitwise_or()
+
+    def bitwise_xor(self) -> PythonLiteral | None:
+        """Perform an aggregation of bitwise XORs."""
+        return self._s.bitwise_xor()
+
+    def first(self) -> PythonLiteral | None:
+        """
+        Get the first element of the Series.
+
+        Returns `None` if the Series is empty.
+        """
+        return self._s.first()
+
+    def last(self) -> PythonLiteral | None:
+        """
+        Get the last element of the Series.
+
+        Returns `None` if the Series is empty.
+        """
+        return self._s.last()
+
+    def approx_n_unique(self) -> PythonLiteral | None:
+        """
+        Approximate count of unique values.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+        """
+        return self._s.approx_n_unique()
+
+    def _row_encode(
+        self,
+        *,
+        unordered: bool = False,
+        descending: bool | None = None,
+        nulls_last: bool | None = None,
+    ) -> Series:
+        """Encode to the row encoding."""
+        return (
+            self.to_frame()
+            .select_seq(
+                F.col(self.name)._row_encode(
+                    unordered=unordered, descending=descending, nulls_last=nulls_last
+                )
+            )
+            .to_series()
+        )
+
+    def _row_decode(
+        self,
+        names: Sequence[str],
+        dtypes: Sequence[PolarsDataType],
+        *,
+        unordered: bool = False,
+        descending: Sequence[bool] | None = None,
+        nulls_last: Sequence[bool] | None = None,
+    ) -> Series:
+        """Decode from the row encoding."""
+        return (
+            self.to_frame()
+            .select_seq(
+                F.col(self.name)._row_decode(
+                    names,
+                    dtypes,
+                    unordered=unordered,
+                    descending=descending,
+                    nulls_last=nulls_last,
+                )
+            )
+            .to_series()
+        )
+
+    def repeat_by(self, by: int | IntoExprColumn) -> Self:
+        """
+        Repeat the elements in this Series as specified in the given expression.
+
+        The repeated elements are expanded into a List.
+
+        Parameters
+        ----------
+        by
+            Numeric column that determines how often the values will be repeated.
+            The column will be coerced to UInt32. Give this dtype to make the coercion
+            a no-op.
+
+        Returns
+        -------
+        Expr
+            Expression of data type List, where the inner data type is equal to the
+            original data type.
+        """
+
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 
@@ -7392,7 +9143,7 @@ class Series:
 
     @property
     @unstable()
-    def plot(self) -> hvPlotTabularPolars:
+    def plot(self) -> SeriesPlot:
         """
         Create a plot namespace.
 
@@ -7400,33 +9151,52 @@ class Series:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            is add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
         Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
-        for more information and documentation.
+        Altair:
+
+        - `s.plot.hist(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).mark_bar(tooltip=True).encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
+        - `s.plot.kde(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area(tooltip=True).encode(x=s.name, y='density:Q', **kwargs).interactive()`
+        - for any other attribute `attr`, `s.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr(tooltip=True).encode(x='index', y=s.name, **kwargs).interactive()`
+
+        For configuration, we suggest reading
+        `Chart Configuration <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
+        For example, you can:
+
+        - Change the width/height/title with ``.properties(width=500, height=350, title="My amazing plot")``.
+        - Change the x-axis label rotation with ``.configure_axisX(labelAngle=30)``.
+        - Change the opacity of the points in your scatter plot with ``.configure_point(opacity=.5)``.
 
         Examples
         --------
         Histogram:
 
-        >>> s = pl.Series("values", [1, 4, 2])
+        >>> s = pl.Series([1, 4, 4, 6, 2, 4, 3, 5, 5, 7, 1])
         >>> s.plot.hist()  # doctest: +SKIP
 
-        KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
+        KDE plot:
 
         >>> s.plot.kde()  # doctest: +SKIP
 
-        For more info on what you can pass, you can use ``hvplot.help``:
+        Line plot:
 
-        >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help("hist")  # doctest: +SKIP
-        """
-        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
-            "0.9.1"
-        ):
-            msg = "hvplot>=0.9.1 is required for `.plot`"
+        >>> s.plot.line()  # doctest: +SKIP
+        """  # noqa: W505
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        hvplot.post_patch()
-        return hvplot.plotting.core.hvPlotTabularPolars(self)
+        return SeriesPlot(self)
 
 
 def _resolve_temporal_dtype(

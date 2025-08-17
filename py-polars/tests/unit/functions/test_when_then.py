@@ -8,8 +8,9 @@ from typing import Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import InvalidOperationError, ShapeError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_when_then() -> None:
@@ -216,6 +217,7 @@ def test_when_then_edge_cases_3994() -> None:
     ).to_dict(as_series=False) == {"id": [], "type": []}
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_object_when_then_4702() -> None:
     # please don't ever do this
     x = pl.DataFrame({"Row": [1, 2], "Type": [pl.Date, pl.UInt8]})
@@ -251,7 +253,7 @@ def test_comp_incompatible_enum_dtype() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="conversion from `str` to `enum` failed in column 'literal'",
+        match="conversion from `str` to `enum` failed in column 'scalar'",
     ):
         df.with_columns(
             pl.when(pl.col("a") == "a").then(pl.col("a")).otherwise(pl.lit("c"))
@@ -303,10 +305,12 @@ def test_predicate_broadcast() -> None:
         pl.col("x"),
     ],
 )
+@pytest.mark.parametrize("maintain_order", [False, True])
 def test_single_element_broadcast(
     mask_expr: pl.Expr,
     truthy_expr: pl.Expr,
     falsy_expr: pl.Expr,
+    maintain_order: bool,
 ) -> None:
     df = (
         pl.Series("x", 5 * [1], dtype=pl.Int32)
@@ -317,7 +321,7 @@ def test_single_element_broadcast(
     # Given that the lengths of the mask, truthy and falsy are all either:
     # - Length 1
     # - Equal length to the maximum length of the 3.
-    # This test checks that all length-1 exprs are broadcasted to the max length.
+    # This test checks that all length-1 exprs are broadcast to the max length.
     result = df.select(
         pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
     )
@@ -329,13 +333,13 @@ def test_single_element_broadcast(
     assert_frame_equal(result, expected)
 
     result = (
-        df.group_by(pl.lit(True).alias("key"))
+        df.group_by(pl.lit(True).alias("key"), maintain_order=maintain_order)
         .agg(pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr))
         .drop("key")
     )
     if expected.height > 1:
-        result = result.explode(pl.all())
-    assert_frame_equal(result, expected)
+        result = result.explode(cs.all())
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
 @pytest.mark.parametrize(
@@ -359,7 +363,8 @@ def test_mismatched_height_should_raise(
         df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
 
 
-def test_when_then_output_name_12380() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_when_then_output_name_12380(maintain_order: bool) -> None:
     df = pl.DataFrame(
         {"x": range(5), "y": range(5, 10)}, schema={"x": pl.Int8, "y": pl.Int64}
     ).with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
@@ -374,15 +379,12 @@ def test_when_then_output_name_12380() -> None:
             actual,
         )
         actual = (
-            df.group_by(pl.lit(True).alias("key"))
+            df.group_by(pl.lit(True).alias("key"), maintain_order=maintain_order)
             .agg(ternary_expr)
             .drop("key")
-            .explode(pl.all())
+            .explode(cs.all())
         )
-        assert_frame_equal(
-            expect,
-            actual,
-        )
+        assert_frame_equal(expect, actual, check_row_order=maintain_order)
 
     expect = df.select(pl.col("y").alias("x"))
     for false_expr in (
@@ -404,7 +406,7 @@ def test_when_then_output_name_12380() -> None:
             df.group_by(pl.lit(True).alias("key"))
             .agg(ternary_expr)
             .drop("key")
-            .explode(pl.all())
+            .explode(cs.all())
         )
         assert_frame_equal(
             expect,
@@ -529,7 +531,7 @@ def test_when_then_null_broadcast() -> None:
     )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("len", [1, 10, 100, 500])
 @pytest.mark.parametrize(
     ("dtype", "vals"),
@@ -550,7 +552,13 @@ def test_when_then_null_broadcast() -> None:
             [{"foo": 0, "bar": "1"}, {"foo": 1, "bar": "2"}],
             id="Struct",
         ),
-        pytest.param(pl.Object, ["x", "y"], id="Object"),
+        pytest.param(
+            pl.Object,
+            ["x", "y"],
+            id="Object",
+            marks=pytest.mark.may_fail_cloud,
+            # reason: objects are not allowed in cloud
+        ),
     ],
 )
 @pytest.mark.parametrize("broadcast", list(itertools.product([False, True], repeat=3)))
@@ -597,6 +605,49 @@ def test_when_then_parametric(
             assert ref["if_true"].to_list() == ans["if_true"].to_list()
 
 
+def test_when_then_else_struct_18961() -> None:
+    v1 = [None, {"foo": 0, "bar": "1"}]
+    v2 = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+
+    df = pl.DataFrame({"left": v1, "right": v2, "mask": [False, True]})
+
+    expected = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask).then(pl.col.left).otherwise(pl.col.right.first())
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected == ans
+
+    df = pl.DataFrame({"left": v2, "right": v1, "mask": [True, False]})
+
+    expected = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask).then(pl.col.left.first()).otherwise(pl.col.right)
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected == ans
+
+    df = pl.DataFrame({"left": v1, "right": v2, "mask": [True, False]})
+
+    expected2 = [None, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask)
+            .then(pl.col.left.first())
+            .otherwise(pl.col.right.first())
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected2 == ans
+
+
 def test_when_then_supertype_15975() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -630,3 +681,155 @@ def test_chained_when_no_subclass_17142() -> None:
 
     assert not isinstance(when, pl.Expr)
     assert "<polars.expr.whenthen.ChainedWhen object at" in str(when)
+
+
+def test_when_then_chunked_structs_18673() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("x", [{"a": 1}]),
+            pl.Series("b", [False]),
+        ]
+    )
+
+    df = df.vstack(df)
+
+    # This used to panic
+    assert_frame_equal(
+        df.select(pl.when(pl.col.b).then(pl.first("x")).otherwise(pl.first("x"))),
+        pl.DataFrame({"x": [{"a": 1}, {"a": 1}]}),
+    )
+
+
+some_scalar = pl.Series("a", [{"x": 2}], pl.Struct)
+none_scalar = pl.Series("a", [None], pl.Struct({"x": pl.Int64}))
+column = pl.Series("a", [{"x": 2}, {"x": 2}], pl.Struct)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        (some_scalar, some_scalar),
+        (some_scalar, pl.col.a),
+        (some_scalar, none_scalar),
+        (some_scalar, column),
+        (none_scalar, pl.col.a),
+        (none_scalar, none_scalar),
+        (none_scalar, column),
+        (pl.col.a, pl.col.a),
+        (pl.col.a, column),
+        (column, column),
+    ],
+)
+def test_struct_when_then_broadcasting_combinations_19122(
+    values: tuple[Any, Any],
+) -> None:
+    lv, rv = values
+
+    df = pl.Series("a", [{"x": 1}, {"x": 1}], pl.Struct).to_frame()
+
+    assert_frame_equal(
+        df.select(
+            pl.when(pl.col.a.struct.field("x") == 0).then(lv).otherwise(rv).alias("a")
+        ),
+        df.select(
+            pl.when(pl.col.a.struct.field("x") == 0).then(None).otherwise(rv).alias("a")
+        ),
+    )
+
+    assert_frame_equal(
+        df.select(
+            pl.when(pl.col.a.struct.field("x") != 0).then(rv).otherwise(lv).alias("a")
+        ),
+        df.select(
+            pl.when(pl.col.a.struct.field("x") != 0).then(rv).otherwise(None).alias("a")
+        ),
+    )
+
+
+@pytest.mark.may_fail_cloud  # reason str.to_decimal is an eager construct
+def test_when_then_to_decimal_18375() -> None:
+    df = pl.DataFrame({"a": ["1.23", "4.56"]})
+
+    result = df.with_columns(
+        b=pl.when(False).then(None).otherwise(pl.col("a").str.to_decimal(scale=2)),
+        c=pl.when(True).then(pl.col("a").str.to_decimal(scale=2)),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": ["1.23", "4.56"],
+            "b": ["1.23", "4.56"],
+            "c": ["1.23", "4.56"],
+        },
+        schema={"a": pl.String, "b": pl.Decimal, "c": pl.Decimal},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_when_then_chunked_fill_null_22794() -> None:
+    df = pl.DataFrame(
+        {
+            "node": [{"x": "a", "y": "a"}, {"x": "b", "y": "b"}, {"x": "c", "y": "c"}],
+            "level": [0, 1, 2],
+        }
+    )
+
+    out = pl.concat([df.slice(0, 1), df.slice(1, 1), df.slice(2, 1)]).with_columns(
+        pl.when(level=1).then("node").forward_fill()
+    )
+    expected = pl.DataFrame(
+        {
+            "node": [None, {"x": "b", "y": "b"}, {"x": "b", "y": "b"}],
+            "level": [0, 1, 2],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_when_then_complex_conditional_22959() -> None:
+    df = pl.DataFrame(
+        {"B": [None, "T1", "T2"], "C": [None, None, [1.0]], "E": [None, 2.0, None]}
+    )
+
+    res = df.with_columns(
+        Result=(
+            pl.when(B="T1")
+            .then(pl.struct(X="C", Y="C"))
+            .when(B="T2")
+            .then(pl.struct(X=pl.concat_list([3.0, "E"])))
+        )
+    )
+
+    assert_series_equal(
+        res["Result"],
+        pl.Series(
+            "Result",
+            [None, {"X": None, "Y": None}, {"X": [3.0, None], "Y": None}],
+            pl.Struct({"X": pl.List(pl.Float64), "Y": pl.List(pl.Float64)}),
+        ),
+    )
+
+
+def test_when_then_simplification() -> None:
+    lf = pl.LazyFrame({"a": [12]})
+    assert (
+        """[col("a")]"""
+        in (
+            lf.select(pl.when(True).then(pl.col("a")).otherwise(pl.col("a") * 2))
+        ).explain()
+    )
+    assert (
+        """(col("a")) * (2)"""
+        in (
+            lf.select(pl.when(False).then(pl.col("a")).otherwise(pl.col("a") * 2))
+        ).explain()
+    )
+
+
+def test_when_then_in_group_by_aggregated_22922() -> None:
+    df = pl.DataFrame({"group": ["x", "y", "x", "y"], "value": [1, 2, 3, 4]})
+    out = df.group_by("group", maintain_order=True).agg(
+        expr=pl.when(group="x").then(pl.col.value.max()).first()
+    )
+    expected = pl.DataFrame({"group": ["x", "y"], "expr": [3, None]})
+    assert_frame_equal(out, expected)

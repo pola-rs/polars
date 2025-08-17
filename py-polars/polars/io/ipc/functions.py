@@ -3,12 +3,13 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Sequence
+from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
+    is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
 )
@@ -21,14 +22,20 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PyLazyFrame
-    from polars.polars import read_ipc_schema as _read_ipc_schema
+    from polars._plr import PyDataFrame, PyLazyFrame
+    from polars._plr import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars import DataFrame, DataType, LazyFrame
     from polars._typing import SchemaDict
+    from polars.io.cloud import CredentialProviderFunction
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -51,15 +58,18 @@ def read_ipc(
     See "File or Random Access format" on https://arrow.apache.org/docs/python/ipc.html.
     Arrow IPC files are also known as Feather (v2) files.
 
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
         function, or a `BytesIO` instance). If `fsspec` is installed, it will be used
-        to open remote files.
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        to open remote files. For file-like objects, the stream position may not be
+        updated accordingly after reading.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -88,8 +98,16 @@ def read_ipc(
     -------
     DataFrame
 
+    See Also
+    --------
+    scan_ipc : Lazily read from an IPC file or multiple files via glob patterns.
+
     Warnings
     --------
+    Calling `read_ipc().lazy()` is an antipattern as this forces Polars to materialize
+    a full csv file and therefore cannot push any optimizations into the reader.
+    Therefore always prefer `scan_ipc` if you want to work with `LazyFrame` s.
+
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
     That means that you cannot write to the same filename.
     E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
@@ -111,9 +129,8 @@ def read_ipc(
             raise ValueError(msg)
 
         lf = scan_ipc(
-            source,  # type: ignore[arg-type]
+            source,
             n_rows=n_rows,
-            memory_map=memory_map,
             storage_options=storage_options,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
@@ -188,7 +205,6 @@ def _read_ipc_impl(
             rechunk=rechunk,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            memory_map=memory_map,
         )
         if columns is None:
             df = scan.collect()
@@ -232,15 +248,18 @@ def read_ipc_stream(
 
     See "Streaming format" on https://arrow.apache.org/docs/python/ipc.html.
 
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
         function, or a `BytesIO` instance). If `fsspec` is installed, it will be used
-        to open remote files.
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        to open remote files. For file-like objects, the stream position may not be
+        updated accordingly after reading.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -328,9 +347,8 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance).
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        function, or a `BytesIO` instance). For file-like objects, the stream position
+        may not be updated accordingly after reading.
 
     Returns
     -------
@@ -346,7 +364,16 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ipc(
-    source: str | Path | list[str] | list[Path],
+    source: (
+        str
+        | Path
+        | IO[bytes]
+        | bytes
+        | list[str]
+        | list[Path]
+        | list[IO[bytes]]
+        | list[bytes]
+    ),
     *,
     n_rows: int | None = None,
     cache: bool = True,
@@ -354,6 +381,7 @@ def scan_ipc(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     memory_map: bool = True,
     retries: int = 2,
     file_cache_ttl: int | None = None,
@@ -367,6 +395,10 @@ def scan_ipc(
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
+
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
 
     Parameters
     ----------
@@ -399,6 +431,15 @@ def scan_ipc(
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
     memory_map
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
@@ -426,14 +467,33 @@ def scan_ipc(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
+    sources: list[str] | list[Path] | list[IO[bytes]] | list[bytes] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-        sources = []
-    else:
-        sources = [
-            normalize_filepath(source, check_not_directory=False) for source in source
-        ]
+    elif isinstance(source, list):
+        if is_path_or_str_sequence(source):
+            sources = [
+                normalize_filepath(source, check_not_directory=False)
+                for source in source
+            ]
+        else:
+            sources = source
+
         source = None  # type: ignore[assignment]
+
+    # Memory Mapping is now a no-op
+    _ = memory_map
+
+    credential_provider_builder = _init_credential_provider_builder(
+        credential_provider, source, storage_options, "scan_parquet"
+    )
+    del credential_provider
+
+    if storage_options:
+        storage_options = list(storage_options.items())  # type: ignore[assignment]
+    else:
+        # Handle empty dict input
+        storage_options = None
 
     pylf = PyLazyFrame.new_from_ipc(
         source,
@@ -442,8 +502,8 @@ def scan_ipc(
         cache,
         rechunk,
         parse_row_index_args(row_index_name, row_index_offset),
-        memory_map=memory_map,
         cloud_options=storage_options,
+        credential_provider=credential_provider_builder,
         retries=retries,
         file_cache_ttl=file_cache_ttl,
         hive_partitioning=hive_partitioning,

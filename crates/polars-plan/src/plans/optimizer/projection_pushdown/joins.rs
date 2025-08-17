@@ -8,27 +8,25 @@ fn add_keys_to_accumulated_state(
     expr: Node,
     acc_projections: &mut Vec<ColumnNode>,
     local_projection: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<Arc<str>>,
+    projected_names: &mut PlHashSet<PlSmallStr>,
     expr_arena: &mut Arena<AExpr>,
-    // only for left hand side table we add local names
+    // Only for left hand side table we add local names.
     add_local: bool,
-) -> Option<Arc<str>> {
+) -> Option<PlSmallStr> {
     add_expr_to_accumulated(expr, acc_projections, projected_names, expr_arena);
-    // the projections may do more than simply project.
+    // The projections may do more than simply project.
     // e.g. col("foo").truncate() * col("bar")
     // that means we don't want to execute the projection as that is already done by
     // the JOIN executor
     if add_local {
-        // take the left most name as output name
-        let mut iter = aexpr_to_leaf_names_iter(expr, expr_arena);
-        if let Some(name) = iter.next() {
-            drop(iter);
-            let node = expr_arena.add(AExpr::Column(name.clone()));
+        // return the left most name as output name
+        let names = aexpr_to_leaf_names_iter(expr, expr_arena).collect::<Vec<_>>();
+        let output_name = names.first().cloned();
+        for name in names {
+            let node = expr_arena.add(AExpr::Column(name));
             local_projection.push(ColumnNode(node));
-            Some(name)
-        } else {
-            None
         }
+        output_name
     } else {
         None
     }
@@ -41,16 +39,14 @@ pub(super) fn process_asof_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
-    options: Arc<JoinOptions>,
-    acc_projections: Vec<ColumnNode>,
-    _projected_names: PlHashSet<Arc<str>>,
-    projections_seen: usize,
+    options: Arc<JoinOptionsIR>,
+    ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     join_schema: &Schema,
 ) -> PolarsResult<IR> {
     // n = 0 if no projections, so we don't allocate unneeded
-    let n = acc_projections.len() * 2;
+    let n = ctx.acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);
     let mut pushdown_right = Vec::with_capacity(n);
     let mut names_left = PlHashSet::with_capacity(n);
@@ -69,16 +65,16 @@ pub(super) fn process_asof_join(
     // left_on = "a", right_on = "b
     // will remove the name "b" (it is "a" now). That columns should therefore not
     // be added to a local projection.
-    if !acc_projections.is_empty() {
+    if ctx.has_pushed_down() {
         let schema_left = lp_arena.get(input_left).schema(lp_arena);
         let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
         // make sure that the asof join 'by' columns are projected
         if let (Some(left_by), Some(right_by)) = (&asof_options.left_by, &asof_options.right_by) {
             for name in left_by {
-                let add = _projected_names.contains(name.as_str());
+                let add = ctx.projected_names.contains(name.as_str());
 
-                let node = expr_arena.add(AExpr::Column(ColumnName::from(name.as_str())));
+                let node = expr_arena.add(AExpr::Column(name.clone()));
                 add_keys_to_accumulated_state(
                     node,
                     &mut pushdown_left,
@@ -89,7 +85,7 @@ pub(super) fn process_asof_join(
                 );
             }
             for name in right_by {
-                let node = expr_arena.add(AExpr::Column(ColumnName::from(name.as_str())));
+                let node = expr_arena.add(AExpr::Column(name.clone()));
                 add_keys_to_accumulated_state(
                     node,
                     &mut pushdown_right,
@@ -138,7 +134,7 @@ pub(super) fn process_asof_join(
             };
         }
 
-        for proj in acc_projections {
+        for proj in ctx.acc_projections {
             let add_local = if local_projected_names.is_empty() {
                 true
             } else {
@@ -164,22 +160,11 @@ pub(super) fn process_asof_join(
         }
     }
 
-    proj_pd.pushdown_and_assign(
-        input_left,
-        pushdown_left,
-        names_left,
-        projections_seen,
-        lp_arena,
-        expr_arena,
-    )?;
-    proj_pd.pushdown_and_assign(
-        input_right,
-        pushdown_right,
-        names_right,
-        projections_seen,
-        lp_arena,
-        expr_arena,
-    )?;
+    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.inner);
+    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.inner);
+
+    proj_pd.pushdown_and_assign(input_left, ctx_left, lp_arena, expr_arena)?;
+    proj_pd.pushdown_and_assign(input_right, ctx_right, lp_arena, expr_arena)?;
 
     resolve_join_suffixes(
         input_left,
@@ -200,10 +185,8 @@ pub(super) fn process_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
-    mut options: Arc<JoinOptions>,
-    acc_projections: Vec<ColumnNode>,
-    projected_names: PlHashSet<Arc<str>>,
-    projections_seen: usize,
+    mut options: Arc<JoinOptionsIR>,
+    ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     join_schema: &Schema,
@@ -217,9 +200,7 @@ pub(super) fn process_join(
             left_on,
             right_on,
             options,
-            acc_projections,
-            projected_names,
-            projections_seen,
+            ctx,
             lp_arena,
             expr_arena,
             join_schema,
@@ -227,14 +208,14 @@ pub(super) fn process_join(
     }
 
     // n = 0 if no projections, so we don't allocate unneeded
-    let n = acc_projections.len() * 2;
+    let n = ctx.acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);
     let mut pushdown_right = Vec::with_capacity(n);
     let mut names_left = PlHashSet::with_capacity(n);
     let mut names_right = PlHashSet::with_capacity(n);
     let mut local_projection = Vec::with_capacity(n);
 
-    // if there are no projections we don't have to do anything (all columns are projected)
+    // If there are no projections we don't have to do anything (all columns are projected)
     // otherwise we build local projections to sort out proper column names due to the
     // join operation
     //
@@ -242,7 +223,7 @@ pub(super) fn process_join(
     // left_on = "a", right_on = "b
     // will remove the name "b" (it is "a" now). That columns should therefore not
     // be added to a local projection.
-    if !acc_projections.is_empty() {
+    if ctx.has_pushed_down() {
         let schema_left = lp_arena.get(input_left).schema(lp_arena);
         let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
@@ -251,78 +232,107 @@ pub(super) fn process_join(
         let mut local_projected_names = PlHashSet::new();
 
         // We need the join columns so we push the projection downwards
-        for e in &left_on {
-            if !local_projected_names.insert(e.output_name_arc().clone()) {
-                continue;
+        {
+            let src_columns: &[ExprIR];
+            let pushdown_src: &mut Vec<ColumnNode>;
+            let names_src: &mut PlHashSet<PlSmallStr>;
+            let dest_columns: &[ExprIR];
+            let pushdown_dest: &mut Vec<ColumnNode>;
+            let names_dest: &mut PlHashSet<PlSmallStr>;
+
+            if let JoinType::Right = options.args.how {
+                src_columns = &right_on;
+                pushdown_src = &mut pushdown_right;
+                names_src = &mut names_right;
+                dest_columns = &left_on;
+                pushdown_dest = &mut pushdown_left;
+                names_dest = &mut names_left;
+            } else {
+                src_columns = &left_on;
+                pushdown_src = &mut pushdown_left;
+                names_src = &mut names_left;
+                dest_columns = &right_on;
+                pushdown_dest = &mut pushdown_right;
+                names_dest = &mut names_right;
             }
 
-            let _ = add_keys_to_accumulated_state(
-                e.node(),
-                &mut pushdown_left,
-                &mut local_projection,
-                &mut names_left,
-                expr_arena,
-                true,
-            );
-        }
+            for e in src_columns {
+                if !local_projected_names.insert(e.output_name().clone()) {
+                    // A join can have multiple leaf names, so we must still ensure all leaf names are projected.
+                    if options.args.how.is_ie() {
+                        add_expr_to_accumulated(e.node(), pushdown_src, names_src, expr_arena);
+                    }
 
-        // For left and inner joins we can set `coalesce` to `true` if the rhs key columns are not projected.
-        // This saves a materialization.
-        if !options.args.should_coalesce()
-            && matches!(options.args.how, JoinType::Left | JoinType::Inner)
-        {
-            let mut allow_opt = true;
-            let non_coalesced_key_is_used = right_on.iter().any(|e| {
-                // Inline expressions other than col should not coalesce.
-                if !matches!(expr_arena.get(e.node()), AExpr::Column(_)) {
-                    allow_opt = false;
-                    return true;
+                    continue;
                 }
-                let key_name = e.output_name();
 
-                // If the name is in the lhs table, a suffix is added.
-                let key_name_after_join = if schema_left.contains(key_name) {
-                    Cow::Owned(_join_suffix_name(key_name, options.args.suffix()))
+                let _ = add_keys_to_accumulated_state(
+                    e.node(),
+                    pushdown_src,
+                    &mut local_projection,
+                    names_src,
+                    expr_arena,
+                    true,
+                );
+            }
+
+            // For left and inner joins we can set `coalesce` to `true` if the rhs key columns are not projected.
+            // This saves a materialization.
+            if !options.args.should_coalesce()
+                && matches!(options.args.how, JoinType::Left | JoinType::Inner)
+            {
+                let mut allow_opt = true;
+                let non_coalesced_key_is_used = right_on.iter().any(|e| {
+                    // Inline expressions other than col should not coalesce.
+                    if !matches!(expr_arena.get(e.node()), AExpr::Column(_)) {
+                        allow_opt = false;
+                        return true;
+                    }
+                    let key_name = e.output_name();
+
+                    // If the name is in the lhs table, a suffix is added.
+                    let key_name_after_join = if schema_left.contains(key_name) {
+                        Cow::Owned(_join_suffix_name(key_name, options.args.suffix()))
+                    } else {
+                        Cow::Borrowed(key_name)
+                    };
+
+                    ctx.projected_names.contains(key_name_after_join.as_ref())
+                });
+
+                // If they key is not used, coalesce the columns as that is often cheaper.
+                if !non_coalesced_key_is_used && allow_opt {
+                    let options = Arc::make_mut(&mut options);
+                    options.args.coalesce = JoinCoalesce::CoalesceColumns;
+                }
+            }
+
+            // In non-coalesced joins both columns remain. So `add_local=true` also for the right table
+            let add_local = !options.args.should_coalesce();
+            for e in dest_columns {
+                // In case of full outer joins we also add the columns.
+                // But before we do that we must check if the column wasn't already added by source.
+                let add_local = if add_local {
+                    !local_projected_names.contains(e.output_name())
                 } else {
-                    Cow::Borrowed(key_name)
+                    false
                 };
 
-                projected_names.contains(key_name_after_join.as_ref())
-            });
+                let local_name = add_keys_to_accumulated_state(
+                    e.node(),
+                    pushdown_dest,
+                    &mut local_projection,
+                    names_dest,
+                    expr_arena,
+                    add_local,
+                );
 
-            // If they key is not used, coalesce the columns as that is often cheaper.
-            if !non_coalesced_key_is_used && allow_opt {
-                let options = Arc::make_mut(&mut options);
-                options.args.coalesce = JoinCoalesce::CoalesceColumns;
+                if let Some(local_name) = local_name {
+                    local_projected_names.insert(local_name);
+                }
             }
         }
-
-        // In  both columns remain. So `add_local=true` also for the right table
-        let add_local = !options.args.should_coalesce();
-        for e in &right_on {
-            // In case of full outer joins we also add the columns.
-            // But before we do that we must check if the column wasn't already added by the lhs.
-            let add_local = if add_local {
-                !local_projected_names.contains(e.output_name())
-            } else {
-                false
-            };
-
-            let local_name = add_keys_to_accumulated_state(
-                e.node(),
-                &mut pushdown_right,
-                &mut local_projection,
-                &mut names_right,
-                expr_arena,
-                add_local,
-            );
-
-            if let Some(local_name) = local_name {
-                local_projected_names.insert(local_name);
-            }
-        }
-
-        for proj in acc_projections {
+        for proj in ctx.acc_projections {
             let add_local = if local_projected_names.is_empty() {
                 true
             } else {
@@ -348,22 +358,11 @@ pub(super) fn process_join(
         }
     }
 
-    proj_pd.pushdown_and_assign(
-        input_left,
-        pushdown_left,
-        names_left,
-        projections_seen,
-        lp_arena,
-        expr_arena,
-    )?;
-    proj_pd.pushdown_and_assign(
-        input_right,
-        pushdown_right,
-        names_right,
-        projections_seen,
-        lp_arena,
-        expr_arena,
-    )?;
+    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.inner);
+    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.inner);
+
+    proj_pd.pushdown_and_assign(input_left, ctx_left, lp_arena, expr_arena)?;
+    proj_pd.pushdown_and_assign(input_right, ctx_right, lp_arena, expr_arena)?;
 
     resolve_join_suffixes(
         input_left,
@@ -384,12 +383,12 @@ fn process_projection(
     proj: ColumnNode,
     pushdown_left: &mut Vec<ColumnNode>,
     pushdown_right: &mut Vec<ColumnNode>,
-    names_left: &mut PlHashSet<Arc<str>>,
-    names_right: &mut PlHashSet<Arc<str>>,
+    names_left: &mut PlHashSet<PlSmallStr>,
+    names_right: &mut PlHashSet<PlSmallStr>,
     expr_arena: &mut Arena<AExpr>,
     local_projection: &mut Vec<ColumnNode>,
     add_local: bool,
-    options: &JoinOptions,
+    options: &JoinOptionsIR,
     join_schema: &Schema,
 ) {
     // Path for renamed columns due to the join. The column name of the left table
@@ -416,16 +415,17 @@ fn process_projection(
         // Column name of the projection without any alias.
         let leaf_column_name = column_node_to_name(proj, expr_arena).clone();
 
-        let suffix = options.args.suffix();
+        let suffix = options.args.suffix().as_str();
         // If _right suffix exists we need to push a projection down without this
         // suffix.
         if leaf_column_name.ends_with(suffix) && join_schema.contains(leaf_column_name.as_ref()) {
             // downwards name is the name without the _right i.e. "foo".
             let downwards_name = split_suffix(leaf_column_name.as_ref(), suffix);
+            let downwards_name = PlSmallStr::from_str(downwards_name);
 
-            let downwards_name_column = expr_arena.add(AExpr::Column(Arc::from(downwards_name)));
+            let downwards_name_column = expr_arena.add(AExpr::Column(downwards_name.clone()));
             // project downwards and locally immediately alias to prevent wrong projections
-            if names_right.insert(ColumnName::from(downwards_name)) {
+            if names_right.insert(downwards_name) {
                 pushdown_right.push(ColumnNode(downwards_name_column));
             }
             local_projection.push(proj);
@@ -465,12 +465,12 @@ fn resolve_join_suffixes(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
-    options: Arc<JoinOptions>,
+    options: Arc<JoinOptionsIR>,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     local_projection: &[ColumnNode],
 ) -> PolarsResult<IR> {
-    let suffix = options.args.suffix();
+    let suffix = options.args.suffix().as_str();
     let alp = IRBuilder::new(input_left, expr_arena, lp_arena)
         .join(input_right, left_on, right_on, options.clone())
         .build();
@@ -482,13 +482,13 @@ fn resolve_join_suffixes(
         .map(|proj| {
             let name = column_node_to_name(*proj, expr_arena).clone();
             if name.ends_with(suffix) && schema_after_join.get(&name).is_none() {
-                let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
-                let col = AExpr::Column(ColumnName::from(downstream_name));
+                let downstream_name = &name.as_str()[..name.len() - suffix.len()];
+                let col = AExpr::Column(downstream_name.into());
                 let node = expr_arena.add(col);
                 all_columns = false;
                 ExprIR::new(node, OutputName::Alias(name.clone()))
             } else {
-                ExprIR::new(proj.0, OutputName::ColumnLhs(name.clone()))
+                ExprIR::new(proj.0, OutputName::ColumnLhs(name))
             }
         })
         .collect::<Vec<_>>();
@@ -496,7 +496,7 @@ fn resolve_join_suffixes(
     let builder = IRBuilder::from_lp(alp, expr_arena, lp_arena);
     Ok(if all_columns {
         builder
-            .project_simple(projections.iter().map(|e| e.output_name()))?
+            .project_simple(projections.iter().map(|e| e.output_name().clone()))?
             .build()
     } else {
         builder.project(projections, Default::default()).build()

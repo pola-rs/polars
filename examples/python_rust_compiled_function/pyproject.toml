@@ -1,7 +1,0 @@
-[build-system]
-requires = ["maturin~=1.2.1"]
-build-backend = "maturin"
-
-[project]
-name = "my_polars_functions"
-version = "0.1.0"

@@ -1,17 +1,16 @@
 use std::borrow::Cow;
 
-use polars_core::config::verbose;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::string::Pattern;
-use polars_utils::slice::GetSaferUnchecked;
+use polars_utils::format_pl_smallstr;
 
-use super::options::{CommentPrefix, CsvEncoding, NullValues};
-use super::parser::{is_comment_line, skip_bom, skip_line_ending, SplitLines};
+use super::parser::{SplitLines, is_comment_line, skip_bom, skip_line_ending};
 use super::splitfields::SplitFields;
-use super::CsvReadOptions;
+use super::{CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
+use crate::csv::read::parser::skip_lines_naive;
 use crate::mmap::ReaderBytes;
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 
@@ -31,40 +30,28 @@ impl SchemaInferenceResult {
     ) -> PolarsResult<Self> {
         let parse_options = options.get_parse_options();
 
-        let separator = parse_options.separator;
         let infer_schema_length = options.infer_schema_length;
         let has_header = options.has_header;
         let schema_overwrite_arc = options.schema_overwrite.clone();
         let schema_overwrite = schema_overwrite_arc.as_ref().map(|x| x.as_ref());
         let skip_rows = options.skip_rows;
+        let skip_lines = options.skip_lines;
         let skip_rows_after_header = options.skip_rows_after_header;
-        let comment_prefix = parse_options.comment_prefix.as_ref();
-        let quote_char = parse_options.quote_char;
-        let eol_char = parse_options.eol_char;
-        let null_values = parse_options.null_values.clone();
-        let try_parse_dates = parse_options.try_parse_dates;
         let raise_if_empty = options.raise_if_empty;
-        let mut n_threads = options.n_threads;
-        let decimal_comma = parse_options.decimal_comma;
+        let n_threads = options.n_threads;
 
         let bytes_total = reader_bytes.len();
 
         let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
             reader_bytes,
-            separator,
+            &parse_options,
             infer_schema_length,
             has_header,
             schema_overwrite,
             skip_rows,
+            skip_lines,
             skip_rows_after_header,
-            comment_prefix,
-            quote_char,
-            eol_char,
-            null_values.as_ref(),
-            try_parse_dates,
             raise_if_empty,
-            &mut n_threads,
-            decimal_comma,
         )?;
 
         let this = Self {
@@ -119,7 +106,8 @@ pub fn finish_infer_field_schema(possibilities: &PlHashSet<DataType>) -> DataTyp
 pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // String for them
-    if string.starts_with('"') {
+    let bytes = string.as_bytes();
+    if bytes.len() >= 2 && *bytes.first().unwrap() == b'"' && *bytes.last().unwrap() == b'"' {
         if try_parse_dates {
             #[cfg(feature = "polars-time")]
             {
@@ -130,8 +118,9 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                         },
                         Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
                         Pattern::DatetimeYMDZ => {
-                            DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
+                            DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC))
                         },
+                        Pattern::Time => DataType::Time,
                     },
                     None => DataType::String,
                 }
@@ -163,8 +152,9 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                     },
                     Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
                     Pattern::DatetimeYMDZ => {
-                        DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
+                        DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC))
                     },
+                    Pattern::Time => DataType::Time,
                 },
                 None => DataType::String,
             }
@@ -179,7 +169,7 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
 }
 
 #[inline]
-fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> PolarsResult<Cow<str>> {
+fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> PolarsResult<Cow<'_, str>> {
     Ok(match encoding {
         CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
             .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence"))?
@@ -188,10 +178,14 @@ fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> PolarsResul
     })
 }
 
+fn column_name(i: usize) -> PlSmallStr {
+    format_pl_smallstr!("column_{}", i + 1)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn infer_file_schema_inner(
     reader_bytes: &ReaderBytes,
-    separator: u8,
+    parse_options: &CsvParseOptions,
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
@@ -199,15 +193,8 @@ fn infer_file_schema_inner(
     // on the schema inference
     mut skip_rows: usize,
     skip_rows_after_header: usize,
-    comment_prefix: Option<&CommentPrefix>,
-    quote_char: Option<u8>,
-    eol_char: u8,
-    null_values: Option<&NullValues>,
-    try_parse_dates: bool,
     recursion_count: u8,
     raise_if_empty: bool,
-    n_threads: &mut Option<usize>,
-    decimal_comma: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -216,11 +203,17 @@ fn infer_file_schema_inner(
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
-    let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
+    let bytes = skip_line_ending(skip_bom(reader_bytes), parse_options.eol_char);
     if raise_if_empty {
         polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
     };
-    let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(skip_rows);
+    let mut lines = SplitLines::new(
+        bytes,
+        parse_options.quote_char,
+        parse_options.eol_char,
+        parse_options.comment_prefix.as_ref(),
+    )
+    .skip(skip_rows);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
@@ -229,7 +222,7 @@ fn infer_file_schema_inner(
     let mut first_line = None;
 
     for (i, line) in (&mut lines).enumerate() {
-        if !is_comment_line(line, comment_prefix) {
+        if !is_comment_line(line, parse_options.comment_prefix.as_ref()) {
             first_line = Some(line);
             skip_rows += i;
             break;
@@ -241,7 +234,7 @@ fn infer_file_schema_inner(
     }
 
     // now that we've found the first non-comment line we parse the headers, or we create a header
-    let headers: Vec<String> = if let Some(mut header_line) = first_line {
+    let mut headers: Vec<PlSmallStr> = if let Some(mut header_line) = first_line {
         let len = header_line.len();
         if len > 1 {
             // remove carriage return
@@ -251,7 +244,12 @@ fn infer_file_schema_inner(
             }
         }
 
-        let byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
+        let byterecord = SplitFields::new(
+            header_line,
+            parse_options.separator,
+            parse_options.quote_char,
+            parse_options.eol_char,
+        );
         if has_header {
             let headers = byterecord
                 .map(|(slice, needs_escaping)| {
@@ -272,9 +270,9 @@ fn infer_file_schema_inner(
             for name in &headers {
                 let count = header_names.entry(name.as_ref()).or_insert(0usize);
                 if *count != 0 {
-                    final_headers.push(format!("{}_duplicated_{}", name, *count - 1))
+                    final_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
                 } else {
-                    final_headers.push(name.to_string())
+                    final_headers.push(PlSmallStr::from_str(name))
                 }
                 *count += 1;
             }
@@ -282,53 +280,51 @@ fn infer_file_schema_inner(
         } else {
             byterecord
                 .enumerate()
-                .map(|(i, _s)| format!("column_{}", i + 1))
-                .collect::<Vec<String>>()
+                .map(|(i, _s)| column_name(i))
+                .collect::<Vec<PlSmallStr>>()
         }
     } else if has_header && !bytes.is_empty() && recursion_count == 0 {
         // there was no new line char. So we copy the whole buf and add one
         // this is likely to be cheap as there are no rows.
         let mut buf = Vec::with_capacity(bytes.len() + 2);
         buf.extend_from_slice(bytes);
-        buf.push(eol_char);
+        buf.push(parse_options.eol_char);
 
         return infer_file_schema_inner(
-            &ReaderBytes::Owned(buf),
-            separator,
+            &ReaderBytes::Owned(buf.into()),
+            parse_options,
             max_read_rows,
             has_header,
             schema_overwrite,
             skip_rows,
             skip_rows_after_header,
-            comment_prefix,
-            quote_char,
-            eol_char,
-            null_values,
-            try_parse_dates,
             recursion_count + 1,
             raise_if_empty,
-            n_threads,
-            decimal_comma,
         );
     } else if !raise_if_empty {
-        return Ok((Schema::new(), 0, 0));
+        return Ok((Schema::default(), 0, 0));
     } else {
         polars_bail!(NoData: "empty CSV");
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.
-        lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(skip_rows);
+        lines = SplitLines::new(
+            bytes,
+            parse_options.quote_char,
+            parse_options.eol_char,
+            parse_options.comment_prefix.as_ref(),
+        )
+        .skip(skip_rows);
     }
 
-    let header_length = headers.len();
     // keep track of inferred field types
     let mut column_types: Vec<PlHashSet<DataType>> =
-        vec![PlHashSet::with_capacity(4); header_length];
+        vec![PlHashSet::with_capacity(4); headers.len()];
     // keep track of columns with nulls
-    let mut nulls: Vec<bool> = vec![false; header_length];
+    let mut nulls: Vec<bool> = vec![false; headers.len()];
 
     let mut rows_count = 0;
-    let mut fields = Vec::with_capacity(header_length);
+    let mut fields = Vec::with_capacity(headers.len());
 
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
@@ -359,7 +355,7 @@ fn infer_file_schema_inner(
         }
 
         // line is a comment -> skip
-        if is_comment_line(line, comment_prefix) {
+        if is_comment_line(line, parse_options.comment_prefix.as_ref()) {
             continue;
         }
 
@@ -372,91 +368,110 @@ fn infer_file_schema_inner(
             }
         }
 
-        let mut record = SplitFields::new(line, separator, quote_char, eol_char);
+        let record = SplitFields::new(
+            line,
+            parse_options.separator,
+            parse_options.quote_char,
+            parse_options.eol_char,
+        );
 
-        for i in 0..header_length {
-            if let Some((slice, needs_escaping)) = record.next() {
-                if slice.is_empty() {
-                    unsafe { *nulls.get_unchecked_release_mut(i) = true };
+        for (i, (slice, needs_escaping)) in record.enumerate() {
+            // When `has_header = False` and ``
+            // Increase the schema if the first line didn't have all columns.
+            if i >= headers.len() {
+                if !has_header {
+                    headers.push(column_name(i));
+                    column_types.push(Default::default());
+                    nulls.push(false);
                 } else {
-                    let slice_escaped = if needs_escaping && (slice.len() >= 2) {
-                        &slice[1..(slice.len() - 1)]
-                    } else {
-                        slice
-                    };
-                    let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                    let dtype = match &null_values {
-                        None => Some(infer_field_schema(&s, try_parse_dates, decimal_comma)),
-                        Some(NullValues::AllColumns(names)) => {
-                            if !names.iter().any(|nv| nv == s.as_ref()) {
-                                Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
-                            } else {
-                                None
-                            }
-                        },
-                        Some(NullValues::AllColumnsSingle(name)) => {
-                            if s.as_ref() != name {
-                                Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
-                            } else {
-                                None
-                            }
-                        },
-                        Some(NullValues::Named(names)) => {
-                            // SAFETY:
-                            // we iterate over headers length.
-                            let current_name = unsafe { headers.get_unchecked_release(i) };
-                            let null_name = &names.iter().find(|name| &name.0 == current_name);
+                    break;
+                }
+            }
 
-                            if let Some(null_name) = null_name {
-                                if null_name.1 != s.as_ref() {
-                                    Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
-                                } else {
-                                    None
-                                }
-                            } else {
-                                Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
-                            }
-                        },
-                    };
-                    if let Some(dtype) = dtype {
-                        if matches!(&dtype, DataType::String)
-                            && needs_escaping
-                            && n_threads.unwrap_or(2) > 1
-                        {
-                            // The parser will chunk the file.
-                            // However this will be increasingly unlikely to be correct if there are many
-                            // new line characters in an escaped field. So we set a (somewhat arbitrary)
-                            // upper bound to the number of escaped lines we accept.
-                            // On the chunking side we also have logic to make this more robust.
-                            if slice.iter().filter(|b| **b == eol_char).count() > 8 {
-                                if verbose() {
-                                    eprintln!("falling back to single core reading because of many escaped new line chars.")
-                                }
-                                *n_threads = Some(1);
-                            }
+            if slice.is_empty() {
+                unsafe { *nulls.get_unchecked_mut(i) = true };
+            } else {
+                let slice_escaped = if needs_escaping && (slice.len() >= 2) {
+                    &slice[1..(slice.len() - 1)]
+                } else {
+                    slice
+                };
+                let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
+                let dtype = match &parse_options.null_values {
+                    None => Some(infer_field_schema(
+                        &s,
+                        parse_options.try_parse_dates,
+                        parse_options.decimal_comma,
+                    )),
+                    Some(NullValues::AllColumns(names)) => {
+                        if !names.iter().any(|nv| nv == s.as_ref()) {
+                            Some(infer_field_schema(
+                                &s,
+                                parse_options.try_parse_dates,
+                                parse_options.decimal_comma,
+                            ))
+                        } else {
+                            None
                         }
-                        unsafe { column_types.get_unchecked_release_mut(i).insert(dtype) };
-                    }
+                    },
+                    Some(NullValues::AllColumnsSingle(name)) => {
+                        if s.as_ref() != name.as_str() {
+                            Some(infer_field_schema(
+                                &s,
+                                parse_options.try_parse_dates,
+                                parse_options.decimal_comma,
+                            ))
+                        } else {
+                            None
+                        }
+                    },
+                    Some(NullValues::Named(names)) => {
+                        // SAFETY:
+                        // we iterate over headers length.
+                        let current_name = unsafe { headers.get_unchecked(i) };
+                        let null_name = &names.iter().find(|name| name.0 == current_name);
+
+                        if let Some(null_name) = null_name {
+                            if null_name.1.as_str() != s.as_ref() {
+                                Some(infer_field_schema(
+                                    &s,
+                                    parse_options.try_parse_dates,
+                                    parse_options.decimal_comma,
+                                ))
+                            } else {
+                                None
+                            }
+                        } else {
+                            Some(infer_field_schema(
+                                &s,
+                                parse_options.try_parse_dates,
+                                parse_options.decimal_comma,
+                            ))
+                        }
+                    },
+                };
+                if let Some(dtype) = dtype {
+                    unsafe { column_types.get_unchecked_mut(i).insert(dtype) };
                 }
             }
         }
     }
 
     // build schema from inference results
-    for i in 0..header_length {
+    for i in 0..headers.len() {
         let field_name = &headers[i];
 
         if let Some(schema_overwrite) = schema_overwrite {
             if let Some((_, name, dtype)) = schema_overwrite.get_full(field_name) {
-                fields.push(Field::new(name, dtype.clone()));
+                fields.push(Field::new(name.clone(), dtype.clone()));
                 continue;
             }
 
             // column might have been renamed
             // execute only if schema is complete
-            if schema_overwrite.len() == header_length {
+            if schema_overwrite.len() == headers.len() {
                 if let Some((name, dtype)) = schema_overwrite.get_at_index(i) {
-                    fields.push(Field::new(name, dtype.clone()));
+                    fields.push(Field::new(name.clone(), dtype.clone()));
                     continue;
                 }
             }
@@ -464,47 +479,33 @@ fn infer_file_schema_inner(
 
         let possibilities = &column_types[i];
         let dtype = finish_infer_field_schema(possibilities);
-        fields.push(Field::new(field_name, dtype));
+        fields.push(Field::new(field_name.clone(), dtype));
     }
     // if there is a single line after the header without an eol
     // we copy the bytes add an eol and rerun this function
     // so that the inference is consistent with and without eol char
     if rows_count == 0
         && !reader_bytes.is_empty()
-        && reader_bytes[reader_bytes.len() - 1] != eol_char
+        && reader_bytes[reader_bytes.len() - 1] != parse_options.eol_char
         && recursion_count == 0
     {
         let mut rb = Vec::with_capacity(reader_bytes.len() + 1);
         rb.extend_from_slice(reader_bytes);
-        rb.push(eol_char);
+        rb.push(parse_options.eol_char);
         return infer_file_schema_inner(
-            &ReaderBytes::Owned(rb),
-            separator,
+            &ReaderBytes::Owned(rb.into()),
+            parse_options,
             max_read_rows,
             has_header,
             schema_overwrite,
             skip_rows,
             skip_rows_after_header,
-            comment_prefix,
-            quote_char,
-            eol_char,
-            null_values,
-            try_parse_dates,
             recursion_count + 1,
             raise_if_empty,
-            n_threads,
-            decimal_comma,
         );
     }
 
     Ok((Schema::from_iter(fields), rows_count, end_ptr - start_ptr))
-}
-
-pub(super) fn check_decimal_comma(decimal_comma: bool, separator: u8) -> PolarsResult<()> {
-    if decimal_comma {
-        polars_ensure!(b',' != separator, InvalidOperation: "'decimal_comma' argument cannot be combined with ',' quote char")
-    }
-    Ok(())
 }
 
 /// Infer the schema of a CSV file by reading through the first n rows of the file,
@@ -519,40 +520,41 @@ pub(super) fn check_decimal_comma(decimal_comma: bool, separator: u8) -> PolarsR
 #[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
-    separator: u8,
+    parse_options: &CsvParseOptions,
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
-    // we take &mut because we maybe need to skip more rows dependent
-    // on the schema inference
     skip_rows: usize,
+    skip_lines: usize,
     skip_rows_after_header: usize,
-    comment_prefix: Option<&CommentPrefix>,
-    quote_char: Option<u8>,
-    eol_char: u8,
-    null_values: Option<&NullValues>,
-    try_parse_dates: bool,
     raise_if_empty: bool,
-    n_threads: &mut Option<usize>,
-    decimal_comma: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
-    check_decimal_comma(decimal_comma, separator)?;
-    infer_file_schema_inner(
-        reader_bytes,
-        separator,
-        max_read_rows,
-        has_header,
-        schema_overwrite,
-        skip_rows,
-        skip_rows_after_header,
-        comment_prefix,
-        quote_char,
-        eol_char,
-        null_values,
-        try_parse_dates,
-        0,
-        raise_if_empty,
-        n_threads,
-        decimal_comma,
-    )
+    if skip_lines > 0 {
+        polars_ensure!(skip_rows == 0, InvalidOperation: "only one of 'skip_rows'/'skip_lines' may be set");
+        let bytes = skip_lines_naive(reader_bytes, parse_options.eol_char, skip_lines);
+        let reader_bytes = ReaderBytes::Borrowed(bytes);
+        infer_file_schema_inner(
+            &reader_bytes,
+            parse_options,
+            max_read_rows,
+            has_header,
+            schema_overwrite,
+            skip_rows,
+            skip_rows_after_header,
+            0,
+            raise_if_empty,
+        )
+    } else {
+        infer_file_schema_inner(
+            reader_bytes,
+            parse_options,
+            max_read_rows,
+            has_header,
+            schema_overwrite,
+            skip_rows,
+            skip_rows_after_header,
+            0,
+            raise_if_empty,
+        )
+    }
 }

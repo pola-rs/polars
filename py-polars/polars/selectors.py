@@ -1,60 +1,60 @@
 from __future__ import annotations
 
-from datetime import timezone
+import builtins
+import contextlib
+import datetime as pydatetime
+import sys
+from collections.abc import Collection, Mapping, Sequence
+from decimal import Decimal as PyDecimal
 from functools import reduce
 from operator import or_
 from typing import (
     TYPE_CHECKING,
     Any,
-    Collection,
     Literal,
-    Mapping,
     NoReturn,
-    Sequence,
     overload,
 )
 
+import polars.datatypes.classes as pldt
 from polars import functions as F
 from polars._utils.parse.expr import _parse_inputs_as_iterable
+from polars._utils.unstable import unstable
 from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
     Binary,
     Boolean,
     Categorical,
     Date,
-    Datetime,
-    Decimal,
-    Duration,
-    Object,
     String,
     Time,
     is_polars_dtype,
 )
-from polars.datatypes.group import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
-)
 from polars.expr import Expr
 
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars._plr import PyExpr, PySelector
+
+if sys.version_info >= (3, 10):
+    from types import NoneType
+else:  # pragma: no cover
+    # Define equivalent for older Python versions
+    NoneType = type(None)
+
 if TYPE_CHECKING:
-    import sys
+    from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
-    from polars._typing import PolarsDataType, SelectorType, TimeUnit
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
+    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
 __all__ = [
+    # class
+    "Selector",
+    # functions
     "all",
     "alpha",
     "alphanumeric",
+    "array",
     "binary",
     "boolean",
     "by_dtype",
@@ -68,6 +68,7 @@ __all__ = [
     "digit",
     "duration",
     "ends_with",
+    "enum",
     "exclude",
     "expand_selector",
     "first",
@@ -75,11 +76,14 @@ __all__ = [
     "integer",
     "is_selector",
     "last",
+    "list",
     "matches",
+    "nested",
     "numeric",
     "signed_integer",
     "starts_with",
     "string",
+    "struct",
     "temporal",
     "time",
     "unsigned_integer",
@@ -87,8 +91,7 @@ __all__ = [
 
 
 @overload
-def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overload-overlap]
-    ...
+def is_selector(obj: Selector) -> Literal[True]: ...
 
 
 @overload
@@ -108,13 +111,14 @@ def is_selector(obj: Any) -> bool:
     >>> is_selector(cs.first() | cs.last())
     True
     """
-    # note: don't want to expose the "_selector_proxy_" object
-    return isinstance(obj, _selector_proxy_) and hasattr(obj, "_attrs")
+    return isinstance(obj, Selector)
 
 
+# TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
+#  This should move to IR conversion / Rust.
 def expand_selector(
     target: DataFrame | LazyFrame | Mapping[str, PolarsDataType],
-    selector: SelectorType | Expr,
+    selector: Selector | Expr,
     *,
     strict: bool = True,
 ) -> tuple[str, ...]:
@@ -127,13 +131,13 @@ def expand_selector(
     Parameters
     ----------
     target
-        A polars DataFrame, LazyFrame or schema.
+        A Polars DataFrame, LazyFrame or Schema.
     selector
         An arbitrary polars selector (or compound selector).
     strict
-        Setting False will additionally allow for a broader range of column selection
-        expressions (such as bare columns or use of `.exclude()`) to be expanded, not
-        just the dedicated selectors.
+        Setting False additionally allows for a broader range of column selection
+        expressions (such as bare columns or use of `.exclude()`) to be expanded,
+        not just the dedicated selectors.
 
     Examples
     --------
@@ -158,7 +162,7 @@ def expand_selector(
     >>> cs.expand_selector(df.lazy(), ~(cs.first() | cs.last()))
     ('coly',)
 
-    Expand selector with respect to a standalone schema:
+    Expand selector with respect to a standalone `Schema` dict:
 
     >>> schema = {
     ...     "id": pl.Int64,
@@ -191,7 +195,9 @@ def expand_selector(
     return tuple(target.select(selector).collect_schema())
 
 
-def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:
+# TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
+#  This should move to IR conversion / Rust.
+def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> builtins.list[Any]:
     """
     Internal function that expands any selectors to column names in the given input.
 
@@ -216,7 +222,7 @@ def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:
     """
     items_iter = _parse_inputs_as_iterable(items)
 
-    expanded: list[Any] = []
+    expanded: builtins.list[Any] = []
     for item in items_iter:
         if is_selector(item):
             selector_cols = expand_selector(frame, item)
@@ -245,7 +251,7 @@ def _expand_selector_dicts(
             if tuple_keys:
                 expanded[cols] = value
             else:
-                expanded.update({c: value for c in cols})
+                expanded.update(dict.fromkeys(cols, value))
         else:
             expanded[key] = value
     return expanded
@@ -256,13 +262,14 @@ def _combine_as_selector(
         str
         | Expr
         | PolarsDataType
-        | SelectorType
-        | Collection[str | Expr | PolarsDataType | SelectorType]
+        | Selector
+        | Collection[str | Expr | PolarsDataType | Selector]
     ),
-    *more_items: str | Expr | PolarsDataType | SelectorType,
-) -> SelectorType:
+    *more_items: str | Expr | PolarsDataType | Selector,
+) -> Selector:
     """Create a combined selector from cols, names, dtypes, and/or other selectors."""
-    names, regexes, dtypes, selectors = [], [], [], []  # type: ignore[var-annotated]
+    names, regexes, dtypes = [], [], []
+    selectors: builtins.list[Selector] = []
     for item in (
         *(
             items
@@ -288,15 +295,15 @@ def _combine_as_selector(
 
     selected = []
     if names:
-        selected.append(by_name(*names))
+        selected.append(by_name(*names, require_all=False))
     if dtypes:
         selected.append(by_dtype(*dtypes))
     if regexes:
         selected.append(
             matches(
-                regexes[0]
+                "|".join(f"({rx})" for rx in regexes)
                 if len(regexes) > 1
-                else "|".join(f"({rx})" for rx in regexes)
+                else regexes[0]
             )
         )
     if selectors:
@@ -305,68 +312,194 @@ def _combine_as_selector(
     return reduce(or_, selected)
 
 
-class _selector_proxy_(Expr):
+class Selector(Expr):
     """Base column selector expression/proxy."""
 
-    _attrs: dict[str, Any]
-    _repr_override: str
+    # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
+    _pyselector: PySelector = None  # type: ignore[assignment]
 
-    def __init__(
-        self,
-        expr: Expr,
-        name: str,
-        parameters: dict[str, Any] | None = None,
-    ):
-        self._pyexpr = expr._pyexpr
-        self._attrs = {
-            "params": parameters,
-            "name": name,
-        }
+    @classmethod
+    def _from_pyselector(cls, pyselector: PySelector) -> Selector:
+        slf = cls()
+        slf._pyselector = pyselector
+        slf._pyexpr = PyExpr.new_selector(pyselector)
+        return slf
+
+    def __getstate__(self) -> bytes:
+        return self._pyexpr.__getstate__()
+
+    def __setstate__(self, state: bytes) -> None:
+        self._pyexpr = F.lit(0)._pyexpr  # Initialize with a dummy
+        self._pyexpr.__setstate__(state)
+        self._pyselector = self.meta.as_selector()._pyselector
+
+    def __repr__(self) -> str:
+        return str(Expr._from_pyexpr(self._pyexpr))
 
     def __hash__(self) -> int:
         # note: this is a suitable hash for selectors (but NOT expressions in general),
         # as the repr is guaranteed to be unique across all selector/param permutations
-        return hash(repr(self))
+        return self._pyselector.hash()
 
-    def __invert__(self) -> Self:
-        """Invert the selector."""
-        if is_selector(self):
-            inverted = all() - self
-            inverted._repr_override = f"~{self!r}"
-        else:
-            inverted = ~self.as_expr()
-        return inverted  # type: ignore[return-value]
-
-    def __repr__(self) -> str:
-        if not hasattr(self, "_attrs"):
-            return repr(self.as_expr())
-        elif hasattr(self, "_repr_override"):
-            return self._repr_override
-        else:
-            selector_name, params = self._attrs["name"], self._attrs["params"] or {}
-            set_ops = {"and": "&", "or": "|", "sub": "-", "xor": "^"}
-            if selector_name in set_ops:
-                op = set_ops[selector_name]
-                return "({})".format(f" {op} ".join(repr(p) for p in params.values()))
+    @classmethod
+    def _by_dtype(
+        cls, dtypes: builtins.list[PythonDataType | PolarsDataType]
+    ) -> Selector:
+        selectors = []
+        concrete_dtypes = []
+        for dt in dtypes:
+            if is_polars_dtype(dt):
+                if dt is pldt.Datetime:
+                    selectors += [datetime()]
+                elif isinstance(dt, pldt.Datetime) and dt.time_zone == "*":
+                    selectors += [datetime(time_unit=dt.time_unit, time_zone="*")]
+                elif dt is pldt.Duration:
+                    selectors += [duration()]
+                elif dt is pldt.Categorical:
+                    selectors += [categorical()]
+                elif dt is pldt.Enum:
+                    selectors += [enum()]
+                elif dt is pldt.List:
+                    selectors += [list()]
+                elif dt is pldt.Array:
+                    selectors += [array()]
+                elif dt is pldt.Struct:
+                    selectors += [struct()]
+                elif dt is pldt.Decimal:
+                    selectors += [decimal()]
+                else:
+                    concrete_dtypes += [dt]
+            elif isinstance(dt, type):
+                if dt is int:
+                    selectors += [integer()]
+                elif dt is builtins.float:
+                    selectors += [float()]
+                elif dt is bool:
+                    selectors += [boolean()]
+                elif dt is str:
+                    concrete_dtypes += [pldt.String()]
+                elif dt is bytes:
+                    concrete_dtypes += [pldt.Binary()]
+                elif dt is object:
+                    selectors += [object()]
+                elif dt is NoneType:
+                    concrete_dtypes += [pldt.Null()]
+                elif dt is pydatetime.time:
+                    concrete_dtypes += [pldt.Time()]
+                elif dt is pydatetime.datetime:
+                    selectors += [datetime()]
+                elif dt is pydatetime.timedelta:
+                    selectors += [duration()]
+                elif dt is pydatetime.date:
+                    selectors += [date()]
+                elif dt is PyDecimal:
+                    selectors += [decimal()]
+                elif dt is builtins.list or dt is tuple:
+                    selectors += [list()]
+                else:
+                    input_type = (
+                        input
+                        if type(input) is type
+                        else f"of type {type(input).__name__!r}"
+                    )
+                    input_detail = "" if type(input) is type else f" (given: {input!r})"
+                    msg = f"cannot parse input {input_type} into Polars selector{input_detail}"
+                    raise TypeError(msg) from None
             else:
-                str_params = ", ".join(
-                    (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
-                    for k, v in params.items()
-                ).rstrip(",")
-                return f"cs.{selector_name}({str_params})"
+                input_type = (
+                    input
+                    if type(input) is type
+                    else f"of type {type(input).__name__!r}"
+                )
+                input_detail = "" if type(input) is type else f" (given: {input!r})"
+                msg = f"cannot parse input {input_type} into Polars selector{input_detail}"
+                raise TypeError(msg) from None
 
-    @overload
-    def __sub__(self, other: SelectorType) -> SelectorType: ...
+        dtype_selector = cls._from_pyselector(PySelector.by_dtype(concrete_dtypes))
 
-    @overload
-    def __sub__(self, other: Any) -> SelectorType | Expr: ...
+        if len(selectors) == 0:
+            return dtype_selector
 
-    def __sub__(self, other: Any) -> Expr:
+        selector = selectors[0]
+        for s in selectors[1:]:
+            selector = selector | s
+        if len(concrete_dtypes) == 0:
+            return selector
+        else:
+            return dtype_selector | selector
+
+    @classmethod
+    def _by_name(cls, names: builtins.list[str], *, strict: bool) -> Selector:
+        return cls._from_pyselector(PySelector.by_name(names, strict))
+
+    def __invert__(cls) -> Selector:
+        """Invert the selector."""
+        return all() - cls
+
+    def __add__(self, other: Any) -> Expr:
         if is_selector(other):
-            return _selector_proxy_(
-                self.meta._as_selector().meta._selector_sub(other),
-                parameters={"self": self, "other": other},
-                name="sub",
+            return self.as_expr().__add__(other.as_expr())
+        else:
+            return self.as_expr().__add__(other)
+
+    def __radd__(self, other: Any) -> Expr:
+        if is_selector(other):
+            msg = "unsupported operand type(s) for op: ('Selector' + 'Selector')"
+            raise TypeError(msg)
+        else:
+            return self.as_expr().__radd__(other)
+
+    @overload
+    def __and__(self, other: Selector) -> Selector: ...
+
+    @overload
+    def __and__(self, other: Any) -> Expr: ...
+
+    def __and__(self, other: Any) -> Selector | Expr:
+        if is_column(other):  # @2.0: remove
+            colname = other.meta.output_name()
+            other = by_name(colname)
+        if is_selector(other):
+            return Selector._from_pyselector(
+                PySelector.intersect(self._pyselector, other._pyselector)
+            )
+        else:
+            return self.as_expr().__and__(other)
+
+    def __rand__(self, other: Any) -> Expr:
+        return self.as_expr().__rand__(other)
+
+    @overload
+    def __or__(self, other: Selector) -> Selector: ...
+
+    @overload
+    def __or__(self, other: Any) -> Expr: ...
+
+    def __or__(self, other: Any) -> Selector | Expr:
+        if is_column(other):  # @2.0: remove
+            other = by_name(other.meta.output_name())
+        if is_selector(other):
+            return Selector._from_pyselector(
+                PySelector.union(self._pyselector, other._pyselector)
+            )
+        else:
+            return self.as_expr().__or__(other)
+
+    def __ror__(self, other: Any) -> Expr:
+        if is_column(other):
+            other = by_name(other.meta.output_name())
+        return self.as_expr().__ror__(other)
+
+    @overload
+    def __sub__(self, other: Selector) -> Selector: ...
+
+    @overload
+    def __sub__(self, other: Any) -> Expr: ...
+
+    def __sub__(self, other: Any) -> Selector | Expr:
+        if is_selector(other):
+            return Selector._from_pyselector(
+                PySelector.difference(self._pyselector, other._pyselector)
             )
         else:
             return self.as_expr().__sub__(other)
@@ -376,83 +509,74 @@ class _selector_proxy_(Expr):
         raise TypeError(msg)
 
     @overload
-    def __and__(self, other: SelectorType) -> SelectorType: ...
-
-    @overload
-    def __and__(self, other: Any) -> Expr: ...
-
-    def __and__(self, other: Any) -> SelectorType | Expr:
-        if is_column(other):
-            colname = other.meta.output_name()
-            if self._attrs["name"] == "by_name" and (
-                params := self._attrs["params"]
-            ).get("require_all", True):
-                return by_name(*params["*names"], colname)
-            other = by_name(colname)
-        if is_selector(other):
-            return _selector_proxy_(
-                self.meta._as_selector().meta._selector_and(other),
-                parameters={"self": self, "other": other},
-                name="and",
-            )
-        else:
-            return self.as_expr().__and__(other)
-
-    @overload
-    def __or__(self, other: SelectorType) -> SelectorType: ...
-
-    @overload
-    def __or__(self, other: Any) -> Expr: ...
-
-    def __or__(self, other: Any) -> SelectorType | Expr:
-        if is_column(other):
-            other = by_name(other.meta.output_name())
-        if is_selector(other):
-            return _selector_proxy_(
-                self.meta._as_selector().meta._selector_add(other),
-                parameters={"self": self, "other": other},
-                name="or",
-            )
-        else:
-            return self.as_expr().__or__(other)
-
-    @overload
-    def __xor__(self, other: SelectorType) -> SelectorType: ...
+    def __xor__(self, other: Selector) -> Selector: ...
 
     @overload
     def __xor__(self, other: Any) -> Expr: ...
 
-    def __xor__(self, other: Any) -> SelectorType | Expr:
-        if is_column(other):
+    def __xor__(self, other: Any) -> Selector | Expr:
+        if is_column(other):  # @2.0: remove
             other = by_name(other.meta.output_name())
         if is_selector(other):
-            return _selector_proxy_(
-                self.meta._as_selector().meta._selector_xor(other),
-                parameters={"self": self, "other": other},
-                name="xor",
+            return Selector._from_pyselector(
+                PySelector.exclusive_or(self._pyselector, other._pyselector)
             )
         else:
-            return self.as_expr().__or__(other)
-
-    def __rand__(self, other: Any) -> Expr:
-        if is_column(other):
-            colname = other.meta.output_name()
-            if self._attrs["name"] == "by_name" and (
-                params := self._attrs["params"]
-            ).get("require_all", True):
-                return by_name(colname, *params["*names"])
-            other = by_name(colname)
-        return self.as_expr().__rand__(other)
-
-    def __ror__(self, other: Any) -> Expr:
-        if is_column(other):
-            other = by_name(other.meta.output_name())
-        return self.as_expr().__ror__(other)
+            return self.as_expr().__xor__(other)
 
     def __rxor__(self, other: Any) -> Expr:
-        if is_column(other):
+        if is_column(other):  # @2.0: remove
             other = by_name(other.meta.output_name())
         return self.as_expr().__rxor__(other)
+
+    def exclude(
+        self,
+        columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
+        *more_columns: str | PolarsDataType,
+    ) -> Selector:
+        """
+        Exclude columns from a multi-column expression.
+
+        Only works after a wildcard or regex column selection, and you cannot provide
+        both string column names *and* dtypes (you may prefer to use selectors instead).
+
+        Parameters
+        ----------
+        columns
+            The name or datatype of the column(s) to exclude. Accepts regular expression
+            input. Regular expressions should start with `^` and end with `$`.
+        *more_columns
+            Additional names or datatypes of columns to exclude, specified as positional
+            arguments.
+        """
+        exclude_cols: builtins.list[str] = []
+        exclude_dtypes: builtins.list[PolarsDataType] = []
+        for item in (
+            *(
+                columns
+                if isinstance(columns, Collection) and not isinstance(columns, str)
+                else [columns]
+            ),
+            *more_columns,
+        ):
+            if isinstance(item, str):
+                exclude_cols.append(item)
+            elif is_polars_dtype(item):
+                exclude_dtypes.append(item)
+            else:
+                msg = (
+                    "invalid input for `exclude`"
+                    f"\n\nExpected one or more `str` or `DataType`; found {item!r} instead."
+                )
+                raise TypeError(msg)
+
+        if exclude_cols and exclude_dtypes:
+            msg = "cannot exclude by both column name and dtype; use a selector instead"
+            raise TypeError(msg)
+        elif exclude_dtypes:
+            return self - by_dtype(exclude_dtypes)
+        else:
+            return self - by_name(exclude_cols, require_all=False)
 
     def as_expr(self) -> Expr:
         """
@@ -507,9 +631,9 @@ class _selector_proxy_(Expr):
 def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        rx = f"{re_escape(string)}" if escape else string
+        rx = re_escape(string) if escape else string
     else:
-        strings: list[str] = []
+        strings: builtins.list[str] = []
         for st in string:
             if isinstance(st, Collection) and not isinstance(st, str):  # type: ignore[redundant-expr]
                 strings.extend(st)
@@ -519,7 +643,29 @@ def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     return f"({rx})"
 
 
-def all() -> SelectorType:
+def empty() -> Selector:
+    """
+    Select no columns.
+
+    This is useful for composition with other selectors.
+
+    See Also
+    --------
+    all : Select all columns in the current scope.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> pl.DataFrame({"a": 1, "b": 2}).select(cs.empty())
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
+    """
+    return Selector._from_pyselector(PySelector.empty())
+
+
+def all() -> Selector:
     """
     Select all columns.
 
@@ -566,10 +712,10 @@ def all() -> SelectorType:
     │ 2024-01-01 │
     └────────────┘
     """
-    return _selector_proxy_(F.all(), name="all")
+    return Selector._from_pyselector(PySelector.all())
 
 
-def alpha(ascii_only: bool = False, *, ignore_spaces: bool = False) -> SelectorType:  # noqa: FBT001
+def alpha(ascii_only: bool = False, *, ignore_spaces: bool = False) -> Selector:  # noqa: FBT001
     r"""
     Select all columns with alphabetic names (eg: only letters).
 
@@ -673,18 +819,14 @@ def alpha(ascii_only: bool = False, *, ignore_spaces: bool = False) -> SelectorT
     # note that we need to supply a pattern compatible with the *rust* regex crate
     re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
     re_space = " " if ignore_spaces else ""
-    return _selector_proxy_(
-        F.col(f"^[{re_alpha}{re_space}]+$"),
-        name="alpha",
-        parameters={"ascii_only": ascii_only, "ignore_spaces": ignore_spaces},
-    )
+    return Selector._from_pyselector(PySelector.matches(f"^[{re_alpha}{re_space}]+$"))
 
 
 def alphanumeric(
     ascii_only: bool = False,  # noqa: FBT001
     *,
     ignore_spaces: bool = False,
-) -> SelectorType:
+) -> Selector:
     r"""
     Select all columns with alphanumeric names (eg: only letters and the digits 0-9).
 
@@ -773,14 +915,12 @@ def alphanumeric(
     re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
     re_digit = "0-9" if ascii_only else r"\d"
     re_space = " " if ignore_spaces else ""
-    return _selector_proxy_(
-        F.col(f"^[{re_alpha}{re_digit}{re_space}]+$"),
-        name="alphanumeric",
-        parameters={"ascii_only": ascii_only, "ignore_spaces": ignore_spaces},
+    return Selector._from_pyselector(
+        PySelector.matches(f"^[{re_alpha}{re_digit}{re_space}]+$")
     )
 
 
-def binary() -> SelectorType:
+def binary() -> Selector:
     """
     Select all binary columns.
 
@@ -813,10 +953,10 @@ def binary() -> SelectorType:
     >>> df.select(~cs.binary()).to_dict(as_series=False)
     {'b': ['world'], 'd': [':)']}
     """
-    return _selector_proxy_(F.col(Binary), name="binary")
+    return by_dtype([Binary])
 
 
-def boolean() -> SelectorType:
+def boolean() -> Selector:
     """
     Select all boolean columns.
 
@@ -871,12 +1011,17 @@ def boolean() -> SelectorType:
     │ 4   │
     └─────┘
     """
-    return _selector_proxy_(F.col(Boolean), name="boolean")
+    return by_dtype([Boolean])
 
 
 def by_dtype(
-    *dtypes: PolarsDataType | Collection[PolarsDataType],
-) -> SelectorType:
+    *dtypes: (
+        PolarsDataType
+        | PythonDataType
+        | Iterable[PolarsDataType]
+        | Iterable[PythonDataType]
+    ),
+) -> Selector:
     """
     Select all columns matching the given dtypes.
 
@@ -938,13 +1083,13 @@ def by_dtype(
     │ foo   ┆ -3265500 │
     └───────┴──────────┘
     """
-    all_dtypes: list[PolarsDataType] = []
+    all_dtypes: builtins.list[PolarsDataType | PythonDataType] = []
     for tp in dtypes:
-        if is_polars_dtype(tp):
+        if is_polars_dtype(tp) or isinstance(tp, type):
             all_dtypes.append(tp)
         elif isinstance(tp, Collection):
             for t in tp:
-                if not is_polars_dtype(t):
+                if not (is_polars_dtype(t) or isinstance(t, type)):
                     msg = f"invalid dtype: {t!r}"
                     raise TypeError(msg)
                 all_dtypes.append(t)
@@ -952,12 +1097,12 @@ def by_dtype(
             msg = f"invalid dtype: {tp!r}"
             raise TypeError(msg)
 
-    return _selector_proxy_(
-        F.col(all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
-    )
+    return Selector._by_dtype(all_dtypes)
 
 
-def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
+def by_index(
+    *indices: int | range | Sequence[int | range], require_all: bool = True
+) -> Selector:
     """
     Select all columns matching the given indices (or range objects).
 
@@ -1021,7 +1166,7 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
     │ abc ┆ 0.0 ┆ 10.0 ┆ 20.0 ┆ 30.0 ┆ 40.0 │
     └─────┴─────┴──────┴──────┴──────┴──────┘
 
-    >>> df.select(cs.by_index(0, range(101, 0, -25)))
+    >>> df.select(cs.by_index(0, range(101, 0, -25), require_all=False))
     shape: (1, 5)
     ┌─────┬──────┬──────┬──────┬─────┐
     │ key ┆ c75  ┆ c50  ┆ c25  ┆ c00 │
@@ -1043,7 +1188,7 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
     │ abc ┆ 0.5 ┆ 1.5 ┆ 2.5 ┆ … ┆ 46.5 ┆ 47.5 ┆ 48.5 ┆ 49.5 │
     └─────┴─────┴─────┴─────┴───┴──────┴──────┴──────┴──────┘
     """
-    all_indices: list[int] = []
+    all_indices: builtins.list[int] = []
     for idx in indices:
         if isinstance(idx, (range, Sequence)):
             all_indices.extend(idx)  # type: ignore[arg-type]
@@ -1053,12 +1198,10 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
             msg = f"invalid index value: {idx!r}"
             raise TypeError(msg)
 
-    return _selector_proxy_(
-        F.nth(*all_indices), name="by_index", parameters={"*indices": indices}
-    )
+    return Selector._from_pyselector(PySelector.by_index(all_indices, require_all))
 
 
-def by_name(*names: str | Collection[str], require_all: bool = True) -> SelectorType:
+def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector:
     """
     Select all columns matching the given names.
 
@@ -1112,12 +1255,12 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
     >>> df.select(cs.by_name("baz", "moose", "foo", "bear", require_all=False))
     shape: (2, 2)
     ┌─────┬─────┐
-    │ foo ┆ baz │
+    │ baz ┆ foo │
     │ --- ┆ --- │
-    │ str ┆ f64 │
+    │ f64 ┆ str │
     ╞═════╪═════╡
-    │ x   ┆ 2.0 │
-    │ y   ┆ 5.5 │
+    │ 2.0 ┆ x   │
+    │ 5.5 ┆ y   │
     └─────┴─────┘
 
     Match all columns *except* for those given:
@@ -1147,20 +1290,345 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
             msg = f"invalid name: {nm!r}"
             raise TypeError(msg)
 
-    selector_params: dict[str, Any] = {"*names": all_names}
-    match_cols: list[str] | str = all_names
-    if not require_all:
-        match_cols = f"^({'|'.join(re_escape(nm) for nm in all_names)})$"
-        selector_params["require_all"] = require_all
-
-    return _selector_proxy_(
-        F.col(match_cols),
-        name="by_name",
-        parameters=selector_params,
-    )
+    return Selector._by_name(all_names, strict=require_all)
 
 
-def categorical() -> SelectorType:
+@unstable()
+def enum() -> Selector:
+    """
+    Select all enum columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    categorical : Select all categorical columns.
+    string : Select all string columns (optionally including categoricals).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": ["xx", "yy"],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ...     schema_overrides={"foo": pl.Enum(["xx", "yy"])},
+    ... )
+
+    Select all enum columns:
+
+    >>> df.select(cs.enum())
+    shape: (2, 1)
+    ┌──────┐
+    │ foo  │
+    │ ---  │
+    │ enum │
+    ╞══════╡
+    │ xx   │
+    │ yy   │
+    └──────┘
+
+    Select all columns *except* for those that are enum:
+
+    >>> df.select(~cs.enum())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+    """
+    return Selector._from_pyselector(PySelector.enum_())
+
+
+@unstable()
+def list(inner: None | Selector = None) -> Selector:
+    """
+    Select all list columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    array : Select all array columns.
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [["xx", "yy"], ["x"]],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ... )
+
+    Select all list columns:
+
+    >>> df.select(cs.list())
+    shape: (2, 1)
+    ┌──────────────┐
+    │ foo          │
+    │ ---          │
+    │ list[str]    │
+    ╞══════════════╡
+    │ ["xx", "yy"] │
+    │ ["x"]        │
+    └──────────────┘
+
+    Select all columns *except* for those that are list:
+
+    >>> df.select(~cs.list())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+
+    Select all list columns with a certain matching inner type:
+
+    >>> df.select(cs.list(cs.string()))
+    shape: (2, 1)
+    ┌──────────────┐
+    │ foo          │
+    │ ---          │
+    │ list[str]    │
+    ╞══════════════╡
+    │ ["xx", "yy"] │
+    │ ["x"]        │
+    └──────────────┘
+    >>> df.select(cs.list(cs.integer()))
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
+    """
+    inner_s = inner._pyselector if inner is not None else None
+    return Selector._from_pyselector(PySelector.list(inner_s))
+
+
+@unstable()
+def array(inner: Selector | None = None, *, width: int | None = None) -> Selector:
+    """
+    Select all array columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    list : Select all list columns.
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [["xx", "yy"], ["x", "y"]],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ...     schema_overrides={"foo": pl.Array(pl.String, 2)},
+    ... )
+
+    Select all array columns:
+
+    >>> df.select(cs.array())
+    shape: (2, 1)
+    ┌───────────────┐
+    │ foo           │
+    │ ---           │
+    │ array[str, 2] │
+    ╞═══════════════╡
+    │ ["xx", "yy"]  │
+    │ ["x", "y"]    │
+    └───────────────┘
+
+    Select all columns *except* for those that are array:
+
+    >>> df.select(~cs.array())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+
+    Select all array columns with a certain matching inner type:
+
+    >>> df.select(cs.array(cs.string()))
+    shape: (2, 1)
+    ┌───────────────┐
+    │ foo           │
+    │ ---           │
+    │ array[str, 2] │
+    ╞═══════════════╡
+    │ ["xx", "yy"]  │
+    │ ["x", "y"]    │
+    └───────────────┘
+    >>> df.select(cs.array(cs.integer()))
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
+    >>> df.select(cs.array(width=2))
+    shape: (2, 1)
+    ┌───────────────┐
+    │ foo           │
+    │ ---           │
+    │ array[str, 2] │
+    ╞═══════════════╡
+    │ ["xx", "yy"]  │
+    │ ["x", "y"]    │
+    └───────────────┘
+    >>> df.select(cs.array(width=3))
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
+    """
+    inner_s = inner._pyselector if inner is not None else None
+    return Selector._from_pyselector(PySelector.array(inner_s, width))
+
+
+@unstable()
+def struct() -> Selector:
+    """
+    Select all struct columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    list : Select all list columns.
+    array : Select all array columns.
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [{"a": "xx", "b": "z"}, {"a": "x", "b": "y"}],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ... )
+
+    Select all struct columns:
+
+    >>> df.select(cs.struct())
+    shape: (2, 1)
+    ┌────────────┐
+    │ foo        │
+    │ ---        │
+    │ struct[2]  │
+    ╞════════════╡
+    │ {"xx","z"} │
+    │ {"x","y"}  │
+    └────────────┘
+
+    Select all columns *except* for those that are struct:
+
+    >>> df.select(~cs.struct())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+    """
+    return Selector._from_pyselector(PySelector.struct_())
+
+
+@unstable()
+def nested() -> Selector:
+    """
+    Select all nested columns.
+
+    A nested column is a list, array or struct.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    list : Select all list columns.
+    array : Select all array columns.
+    struct : Select all struct columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [{"a": "xx", "b": "z"}, {"a": "x", "b": "y"}],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...         "wow": [[1, 2], [3]],
+    ...     },
+    ... )
+
+    Select all nested columns:
+
+    >>> df.select(cs.nested())
+    shape: (2, 2)
+    ┌────────────┬───────────┐
+    │ foo        ┆ wow       │
+    │ ---        ┆ ---       │
+    │ struct[2]  ┆ list[i64] │
+    ╞════════════╪═══════════╡
+    │ {"xx","z"} ┆ [1, 2]    │
+    │ {"x","y"}  ┆ [3]       │
+    └────────────┴───────────┘
+
+    Select all columns *except* for those that are nested:
+
+    >>> df.select(~cs.nested())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+    """
+    return Selector._from_pyselector(PySelector.nested())
+
+
+def categorical() -> Selector:
     """
     Select all categorical columns.
 
@@ -1207,10 +1675,10 @@ def categorical() -> SelectorType:
     │ 456 ┆ 5.5 │
     └─────┴─────┘
     """
-    return _selector_proxy_(F.col(Categorical), name="categorical")
+    return Selector._from_pyselector(PySelector.categorical())
 
 
-def contains(*substring: str) -> SelectorType:
+def contains(*substring: str) -> Selector:
     """
     Select columns whose names contain the given literal substring(s).
 
@@ -1279,14 +1747,10 @@ def contains(*substring: str) -> SelectorType:
     escaped_substring = _re_string(substring)
     raw_params = f"^.*{escaped_substring}.*$"
 
-    return _selector_proxy_(
-        F.col(raw_params),
-        name="contains",
-        parameters={"*substring": escaped_substring},
-    )
+    return Selector._from_pyselector(PySelector.matches(raw_params))
 
 
-def date() -> SelectorType:
+def date() -> Selector:
     """
     Select all date columns.
 
@@ -1335,16 +1799,18 @@ def date() -> SelectorType:
     │ 2031-12-31 00:30:00 ┆ 23:59:59 │
     └─────────────────────┴──────────┘
     """
-    return _selector_proxy_(F.col(Date), name="date")
+    return by_dtype([Date])
 
 
 def datetime(
     time_unit: TimeUnit | Collection[TimeUnit] | None = None,
-    time_zone: (str | timezone | Collection[str | timezone | None] | None) = (
+    time_zone: (
+        str | pydatetime.timezone | Collection[str | pydatetime.timezone | None] | None
+    ) = (
         "*",
         None,
     ),
-) -> SelectorType:
+) -> Selector:
     """
     Select all datetime columns, optionally filtering by time unit/zone.
 
@@ -1474,27 +1940,26 @@ def datetime(
     └────────────┘
     """  # noqa: W505
     if time_unit is None:
-        time_unit = ["ms", "us", "ns"]
+        time_unit_lst = ["ms", "us", "ns"]
     else:
-        time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
-
-    if time_zone is None:
-        time_zone = [None]
-    elif time_zone:
-        time_zone = (
-            [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
+        time_unit_lst = (
+            [time_unit] if isinstance(time_unit, str) else builtins.list(time_unit)
         )
 
-    datetime_dtypes = [Datetime(tu, tz) for tu in time_unit for tz in time_zone]
+    time_zone_lst: builtins.list[str | pydatetime.timezone | None]
+    if time_zone is None:
+        time_zone_lst = [None]
+    elif time_zone:
+        time_zone_lst = (
+            [time_zone]
+            if isinstance(time_zone, (str, pydatetime.timezone))
+            else builtins.list(time_zone)
+        )
 
-    return _selector_proxy_(
-        F.col(datetime_dtypes),
-        name="datetime",
-        parameters={"time_unit": time_unit, "time_zone": time_zone},
-    )
+    return Selector._from_pyselector(PySelector.datetime(time_unit_lst, time_zone_lst))
 
 
-def decimal() -> SelectorType:
+def decimal() -> Selector:
     """
     Select all decimal columns.
 
@@ -1544,10 +2009,10 @@ def decimal() -> SelectorType:
     └─────┘
     """
     # TODO: allow explicit selection by scale/precision?
-    return _selector_proxy_(F.col(Decimal), name="decimal")
+    return Selector._from_pyselector(PySelector.decimal())
 
 
-def digit(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
+def digit(ascii_only: bool = False) -> Selector:  # noqa: FBT001
     r"""
     Select all columns having names consisting only of digits.
 
@@ -1635,12 +2100,12 @@ def digit(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     └──────┘
     """
     re_digit = r"[0-9]" if ascii_only else r"\d"
-    return _selector_proxy_(F.col(rf"^{re_digit}+$"), name="digit")
+    return Selector._from_pyselector(PySelector.matches(rf"^{re_digit}+$"))
 
 
 def duration(
     time_unit: TimeUnit | Collection[TimeUnit] | None = None,
-) -> SelectorType:
+) -> Selector:
     """
     Select all duration columns, optionally filtering by time unit.
 
@@ -1739,17 +2204,14 @@ def duration(
     if time_unit is None:
         time_unit = ["ms", "us", "ns"]
     else:
-        time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
+        time_unit = (
+            [time_unit] if isinstance(time_unit, str) else builtins.list(time_unit)
+        )
 
-    duration_dtypes = [Duration(tu) for tu in time_unit]
-    return _selector_proxy_(
-        F.col(duration_dtypes),
-        name="duration",
-        parameters={"time_unit": time_unit},
-    )
+    return Selector._from_pyselector(PySelector.duration(time_unit))
 
 
-def ends_with(*suffix: str) -> SelectorType:
+def ends_with(*suffix: str) -> Selector:
     """
     Select columns that end with the given substring(s).
 
@@ -1818,23 +2280,19 @@ def ends_with(*suffix: str) -> SelectorType:
     escaped_suffix = _re_string(suffix)
     raw_params = f"^.*{escaped_suffix}$"
 
-    return _selector_proxy_(
-        F.col(raw_params),
-        name="ends_with",
-        parameters={"*suffix": escaped_suffix},
-    )
+    return Selector._from_pyselector(PySelector.matches(raw_params))
 
 
 def exclude(
     columns: (
         str
         | PolarsDataType
-        | SelectorType
+        | Selector
         | Expr
-        | Collection[str | PolarsDataType | SelectorType | Expr]
+        | Collection[str | PolarsDataType | Selector | Expr]
     ),
-    *more_columns: str | PolarsDataType | SelectorType | Expr,
-) -> Expr:
+    *more_columns: str | PolarsDataType | Selector | Expr,
+) -> Selector:
     """
     Select all columns except those matching the given columns, datatypes, or selectors.
 
@@ -1892,7 +2350,7 @@ def exclude(
     return ~_combine_as_selector(columns, *more_columns)
 
 
-def first() -> SelectorType:
+def first(*, strict: bool = True) -> Selector:
     """
     Select the first column in the current scope.
 
@@ -1939,10 +2397,10 @@ def first() -> SelectorType:
     │ 456 ┆ 5.5 ┆ 1   │
     └─────┴─────┴─────┘
     """
-    return _selector_proxy_(F.first(), name="first")
+    return Selector._from_pyselector(PySelector.first(strict))
 
 
-def float() -> SelectorType:
+def float() -> Selector:
     """
     Select all float columns.
 
@@ -1992,10 +2450,10 @@ def float() -> SelectorType:
     │ y   ┆ 456 │
     └─────┴─────┘
     """
-    return _selector_proxy_(F.col(FLOAT_DTYPES), name="float")
+    return Selector._from_pyselector(PySelector.float())
 
 
-def integer() -> SelectorType:
+def integer() -> Selector:
     """
     Select all integer columns.
 
@@ -2045,10 +2503,10 @@ def integer() -> SelectorType:
     │ y   ┆ 5.5 │
     └─────┴─────┘
     """
-    return _selector_proxy_(F.col(INTEGER_DTYPES), name="integer")
+    return Selector._from_pyselector(PySelector.integer())
 
 
-def signed_integer() -> SelectorType:
+def signed_integer() -> Selector:
     """
     Select all signed integer columns.
 
@@ -2110,10 +2568,10 @@ def signed_integer() -> SelectorType:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
     """
-    return _selector_proxy_(F.col(SIGNED_INTEGER_DTYPES), name="signed_integer")
+    return Selector._from_pyselector(PySelector.signed_integer())
 
 
-def unsigned_integer() -> SelectorType:
+def unsigned_integer() -> Selector:
     """
     Select all unsigned integer columns.
 
@@ -2177,10 +2635,10 @@ def unsigned_integer() -> SelectorType:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
     """
-    return _selector_proxy_(F.col(UNSIGNED_INTEGER_DTYPES), name="unsigned_integer")
+    return Selector._from_pyselector(PySelector.unsigned_integer())
 
 
-def last() -> SelectorType:
+def last(*, strict: bool = True) -> Selector:
     """
     Select the last column in the current scope.
 
@@ -2227,10 +2685,10 @@ def last() -> SelectorType:
     │ y   ┆ 456 ┆ 5.5 │
     └─────┴─────┴─────┘
     """
-    return _selector_proxy_(F.last(), name="last")
+    return Selector._from_pyselector(PySelector.last(strict))
 
 
-def matches(pattern: str) -> SelectorType:
+def matches(pattern: str) -> Selector:
     """
     Select all columns that match the given regex pattern.
 
@@ -2296,14 +2754,10 @@ def matches(pattern: str) -> SelectorType:
         sfx = ".*$" if not pattern.endswith("$") else ""
         raw_params = f"{pfx}{pattern}{sfx}"
 
-        return _selector_proxy_(
-            F.col(raw_params),
-            name="matches",
-            parameters={"pattern": pattern},
-        )
+        return Selector._from_pyselector(PySelector.matches(raw_params))
 
 
-def numeric() -> SelectorType:
+def numeric() -> Selector:
     """
     Select all numeric columns.
 
@@ -2354,10 +2808,10 @@ def numeric() -> SelectorType:
     │ y   │
     └─────┘
     """
-    return _selector_proxy_(F.col(NUMERIC_DTYPES), name="numeric")
+    return Selector._from_pyselector(PySelector.numeric())
 
 
-def object() -> SelectorType:
+def object() -> Selector:
     """
     Select all object columns.
 
@@ -2410,10 +2864,10 @@ def object() -> SelectorType:
         ],
     }
     """  # noqa: W505
-    return _selector_proxy_(F.col(Object), name="object")
+    return Selector._from_pyselector(PySelector.object())
 
 
-def starts_with(*prefix: str) -> SelectorType:
+def starts_with(*prefix: str) -> Selector:
     """
     Select columns that start with the given substring(s).
 
@@ -2482,16 +2936,12 @@ def starts_with(*prefix: str) -> SelectorType:
     escaped_prefix = _re_string(prefix)
     raw_params = f"^{escaped_prefix}.*$"
 
-    return _selector_proxy_(
-        F.col(raw_params),
-        name="starts_with",
-        parameters={"*prefix": prefix},
-    )
+    return Selector._from_pyselector(PySelector.matches(raw_params))
 
 
-def string(*, include_categorical: bool = False) -> SelectorType:
+def string(*, include_categorical: bool = False) -> Selector:
     """
-    Select all String (and, optionally, Categorical) string columns .
+    Select all String (and, optionally, Categorical) string columns.
 
     See Also
     --------
@@ -2542,18 +2992,14 @@ def string(*, include_categorical: bool = False) -> SelectorType:
     │ yy  ┆ b   ┆ 6   ┆ 7.0  │
     └─────┴─────┴─────┴──────┘
     """
-    string_dtypes: list[PolarsDataType] = [String]
+    string_dtypes: builtins.list[PolarsDataType] = [String]
     if include_categorical:
         string_dtypes.append(Categorical)
 
-    return _selector_proxy_(
-        F.col(string_dtypes),
-        name="string",
-        parameters={"include_categorical": include_categorical},
-    )
+    return by_dtype(string_dtypes)
 
 
-def temporal() -> SelectorType:
+def temporal() -> Selector:
     """
     Select all temporal columns.
 
@@ -2616,10 +3062,10 @@ def temporal() -> SelectorType:
     │ 2.3456 │
     └────────┘
     """
-    return _selector_proxy_(F.col(TEMPORAL_DTYPES), name="temporal")
+    return Selector._from_pyselector(PySelector.temporal())
 
 
-def time() -> SelectorType:
+def time() -> Selector:
     """
     Select all time columns.
 
@@ -2668,4 +3114,4 @@ def time() -> SelectorType:
     │ 2031-12-31 00:30:00 ┆ 2024-08-09 │
     └─────────────────────┴────────────┘
     """
-    return _selector_proxy_(F.col(Time), name="time")
+    return by_dtype([Time])

@@ -1,23 +1,29 @@
 use super::specification::try_check_offsets_bounds;
-use super::{new_empty_array, Array, Splitable};
+use super::{Array, Splitable, new_empty_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
 pub use iterator::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
+use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "proptest")]
+pub mod proptest;
+
+/// Name used for the values array within List/FixedSizeList arrays.
+pub const LIST_VALUES_NAME: PlSmallStr = PlSmallStr::from_static("item");
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
 pub struct ListArray<O: Offset> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     offsets: OffsetsBuffer<O>,
     values: Box<dyn Array>,
     validity: Option<Bitmap>,
@@ -28,14 +34,14 @@ impl<O: Offset> ListArray<O> {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
-    /// * The `data_type`'s inner field's data type is not equal to `values.data_type`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
+    /// * The `dtype`'s inner field's data type is not equal to `values.dtype`.
     /// # Implementation
     /// This function is `O(1)`
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Box<dyn Array>,
         validity: Option<Bitmap>,
@@ -44,19 +50,19 @@ impl<O: Offset> ListArray<O> {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
 
-        let child_data_type = Self::try_get_child(&data_type)?.data_type();
-        let values_data_type = values.data_type();
-        if child_data_type != values_data_type {
-            polars_bail!(ComputeError: "ListArray's child's DataType must match. However, the expected DataType is {child_data_type:?} while it got {values_data_type:?}.");
+        let child_dtype = Self::try_get_child(&dtype)?.dtype();
+        let values_dtype = values.dtype();
+        if child_dtype != values_dtype {
+            polars_bail!(ComputeError: "ListArray's child's DataType must match. However, the expected DataType is {child_dtype:?} while it got {values_dtype:?}.");
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity,
@@ -67,33 +73,33 @@ impl<O: Offset> ListArray<O> {
     ///
     /// # Panics
     /// This function panics iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
-    /// * The `data_type`'s inner field's data type is not equal to `values.data_type`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
+    /// * The `dtype`'s inner field's data type is not equal to `values.dtype`.
     /// # Implementation
     /// This function is `O(1)`
     pub fn new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Box<dyn Array>,
         validity: Option<Bitmap>,
     ) -> Self {
-        Self::try_new(data_type, offsets, values, validity).unwrap()
+        Self::try_new(dtype, offsets, values, validity).unwrap()
     }
 
     /// Returns a new empty [`ListArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        let values = new_empty_array(Self::get_child_type(&data_type).clone());
-        Self::new(data_type, OffsetsBuffer::default(), values, None)
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        let values = new_empty_array(Self::get_child_type(&dtype).clone());
+        Self::new(dtype, OffsetsBuffer::default(), values, None)
     }
 
     /// Returns a new null [`ListArray`].
     #[inline]
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
-        let child = Self::get_child_type(&data_type).clone();
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
+        let child = Self::get_child_type(&dtype).clone();
         Self::new(
-            data_type,
+            dtype,
             Offsets::new_zeroed(length).into(),
             new_empty_array(child),
             Some(Bitmap::new_zeroed(length)),
@@ -184,8 +190,8 @@ impl<O: Offset> ListArray<O> {
 
 impl<O: Offset> ListArray<O> {
     /// Returns a default [`ArrowDataType`]: inner field is named "item" and is nullable
-    pub fn default_datatype(data_type: ArrowDataType) -> ArrowDataType {
-        let field = Box::new(Field::new("item", data_type, true));
+    pub fn default_datatype(dtype: ArrowDataType) -> ArrowDataType {
+        let field = Box::new(Field::new(LIST_VALUES_NAME, dtype, true));
         if O::IS_LARGE {
             ArrowDataType::LargeList(field)
         } else {
@@ -196,21 +202,21 @@ impl<O: Offset> ListArray<O> {
     /// Returns a the inner [`Field`]
     /// # Panics
     /// Panics iff the logical type is not consistent with this struct.
-    pub fn get_child_field(data_type: &ArrowDataType) -> &Field {
-        Self::try_get_child(data_type).unwrap()
+    pub fn get_child_field(dtype: &ArrowDataType) -> &Field {
+        Self::try_get_child(dtype).unwrap()
     }
 
     /// Returns a the inner [`Field`]
     /// # Errors
     /// Panics iff the logical type is not consistent with this struct.
-    pub fn try_get_child(data_type: &ArrowDataType) -> PolarsResult<&Field> {
+    pub fn try_get_child(dtype: &ArrowDataType) -> PolarsResult<&Field> {
         if O::IS_LARGE {
-            match data_type.to_logical_type() {
+            match dtype.to_logical_type() {
                 ArrowDataType::LargeList(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i64> expects DataType::LargeList"),
             }
         } else {
-            match data_type.to_logical_type() {
+            match dtype.to_logical_type() {
                 ArrowDataType::List(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i32> expects DataType::List"),
             }
@@ -220,8 +226,8 @@ impl<O: Offset> ListArray<O> {
     /// Returns a the inner [`ArrowDataType`]
     /// # Panics
     /// Panics iff the logical type is not consistent with this struct.
-    pub fn get_child_type(data_type: &ArrowDataType) -> &ArrowDataType {
-        Self::get_child_field(data_type).data_type()
+    pub fn get_child_type(dtype: &ArrowDataType) -> &ArrowDataType {
+        Self::get_child_field(dtype).dtype()
     }
 }
 
@@ -249,13 +255,13 @@ impl<O: Offset> Splitable for ListArray<O> {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offsets: lhs_offsets,
                 validity: lhs_validity,
                 values: self.values.clone(),
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offsets: rhs_offsets,
                 validity: rhs_validity,
                 values: self.values.clone(),

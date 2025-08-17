@@ -6,11 +6,11 @@ fn test_is_in() -> PolarsResult<()> {
         "x" => [1, 2, 3],
         "y" => ["a", "b", "c"]
     ]?;
-    let s = Series::new("a", ["a", "b"]);
+    let s = Series::new("a".into(), ["a", "b"]);
 
     let out = df
         .lazy()
-        .select([col("y").is_in(lit(s)).alias("isin")])
+        .select([col("y").is_in(lit(s), false).alias("isin")])
         .collect()?;
     assert_eq!(
         Vec::from(out.column("isin")?.bool()?),

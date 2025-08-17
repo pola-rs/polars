@@ -3,6 +3,10 @@
 SHELL=bash
 BASE ?= main
 
+.PHONY: fix
+fix:
+	@$(MAKE) -s -C .. $@
+
 .PHONY: fmt
 fmt:  ## Run rustfmt and dprint
 	cargo fmt --all
@@ -50,6 +54,7 @@ test:  ## Run tests
 		-p polars-plan \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-testing \
 		-p polars-time \
 		-p polars-utils \
 		-- \
@@ -66,6 +71,7 @@ nextest:  ## Run tests with nextest
 		-p polars-plan \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-testing \
 		-p polars-time \
 		-p polars-utils \
 
@@ -79,6 +85,7 @@ test-doc:  ## Run doc examples
 	    -p polars-lazy \
 	    -p polars-io \
 	    -p polars-core \
+		-p polars-testing \
 		-p polars-sql
 
 .PHONY: bench-save
@@ -104,13 +111,16 @@ doctest:  ## Check that documentation builds
 publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-error
 	cargo publish --allow-dirty -p polars-utils
+	cargo publish --allow-dirty -p polars-schema
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-compute
+	cargo publish --allow-dirty -p polars-dtype
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
 	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
+	cargo publish --allow-dirty -p polars-testing
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-parquet
 	cargo publish --allow-dirty -p polars-io
@@ -118,10 +128,11 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-expr
 	cargo publish --allow-dirty -p polars-mem-engine
 	cargo publish --allow-dirty -p polars-stream
-	cargo publish --allow-dirty -p polars-pipe
 	cargo publish --allow-dirty -p polars-lazy
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
+	# This is independent
+	cargo publish --allow-dirty -p polars-python
 
 .PHONY: help
 help:  ## Display this help screen
@@ -130,20 +141,19 @@ help:  ## Display this help screen
 
 .PHONY: check-wasm
 check-wasm:  ## Check wasm build without supported features
-	cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
+	RUSTFLAGS='--cfg getrandom_backend="wasm_js"' cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
 		--each-feature                        \
 		--exclude-features async              \
 		--exclude-features aws                \
 		--exclude-features azure              \
 		--exclude-features cloud              \
-		--exclude-features cloud_write        \
 		--exclude-features decompress         \
-		--exclude-features decompress-fast    \
 		--exclude-features default            \
 		--exclude-features docs-selection     \
 		--exclude-features extract_jsonpath   \
 		--exclude-features fmt                \
 		--exclude-features gcp                \
+		--exclude-features csv                \
 		--exclude-features ipc                \
 		--exclude-features ipc_streaming      \
 		--exclude-features json               \
@@ -151,5 +161,6 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features parquet            \
 		--exclude-features performant         \
 		--exclude-features streaming          \
-		--exclude-features http          	  \
+		--exclude-features http               \
+		--exclude-features full               \
 		--exclude-features test

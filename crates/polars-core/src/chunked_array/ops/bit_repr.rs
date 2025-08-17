@@ -1,4 +1,5 @@
 use arrow::buffer::Buffer;
+use polars_error::feature_gated;
 
 use crate::prelude::*;
 use crate::series::BitRepr;
@@ -8,8 +9,8 @@ use crate::series::BitRepr;
 fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ChunkedArray<T>,
 ) -> ChunkedArray<U> {
-    assert!(std::mem::size_of::<T::Native>() == std::mem::size_of::<U::Native>());
-    assert!(std::mem::align_of::<T::Native>() == std::mem::align_of::<U::Native>());
+    assert!(size_of::<T::Native>() == size_of::<U::Native>());
+    assert!(align_of::<T::Native>() == align_of::<U::Native>());
 
     let chunks = ca.downcast_iter().map(|array| {
         let buf = array.values().clone();
@@ -20,7 +21,7 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
         PrimitiveArray::from_data_default(reinterpreted_buf, array.validity().cloned())
     });
 
-    ChunkedArray::from_chunk_iter(ca.name(), chunks)
+    ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)
 }
 
 /// Reinterprets the type of a [`ListChunked`]. T and U must have the same size
@@ -29,8 +30,8 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
 fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ListChunked,
 ) -> ListChunked {
-    assert!(std::mem::size_of::<T::Native>() == std::mem::size_of::<U::Native>());
-    assert!(std::mem::align_of::<T::Native>() == std::mem::align_of::<U::Native>());
+    assert!(size_of::<T::Native>() == size_of::<U::Native>());
+    assert!(align_of::<T::Native>() == align_of::<U::Native>());
 
     let chunks = ca.downcast_iter().map(|array| {
         let inner_arr = array
@@ -46,14 +47,14 @@ fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
         let pa =
             PrimitiveArray::from_data_default(reinterpreted_buf, inner_arr.validity().cloned());
         LargeListArray::new(
-            DataType::List(Box::new(U::get_dtype())).to_arrow(CompatLevel::newest()),
+            DataType::List(Box::new(U::get_static_dtype())).to_arrow(CompatLevel::newest()),
             array.offsets().clone(),
             pa.to_boxed(),
             array.validity().cloned(),
         )
     });
 
-    ListChunked::from_chunk_iter(ca.name(), chunks)
+    ListChunked::from_chunk_iter(ca.name().clone(), chunks)
 }
 
 #[cfg(all(feature = "reinterpret", feature = "dtype-i16", feature = "dtype-u16"))]
@@ -105,40 +106,58 @@ where
     T: PolarsNumericType,
 {
     fn to_bit_repr(&self) -> BitRepr {
-        let is_large = std::mem::size_of::<T::Native>() == 8;
+        match size_of::<T::Native>() {
+            16 => {
+                feature_gated!("dtype-i128", {
+                    if matches!(self.dtype(), DataType::Int128) {
+                        let ca = self.clone();
+                        // Convince the compiler we are this type. This keeps flags.
+                        return BitRepr::I128(unsafe {
+                            std::mem::transmute::<ChunkedArray<T>, Int128Chunked>(ca)
+                        });
+                    }
 
-        if is_large {
-            if matches!(self.dtype(), DataType::UInt64) {
-                let ca = self.clone();
-                // Convince the compiler we are this type. This keeps flags.
-                return BitRepr::Large(unsafe {
-                    std::mem::transmute::<ChunkedArray<T>, UInt64Chunked>(ca)
-                });
-            }
+                    BitRepr::I128(reinterpret_chunked_array(self))
+                })
+            },
 
-            BitRepr::Large(reinterpret_chunked_array(self))
-        } else {
-            BitRepr::Small(if std::mem::size_of::<T::Native>() == 4 {
-                if matches!(self.dtype(), DataType::UInt32) {
+            8 => {
+                if matches!(self.dtype(), DataType::UInt64) {
                     let ca = self.clone();
-                    // Convince the compiler we are this type. This preserves flags.
-                    return BitRepr::Small(unsafe {
-                        std::mem::transmute::<ChunkedArray<T>, UInt32Chunked>(ca)
+                    // Convince the compiler we are this type. This keeps flags.
+                    return BitRepr::U64(unsafe {
+                        std::mem::transmute::<ChunkedArray<T>, UInt64Chunked>(ca)
                     });
                 }
 
-                reinterpret_chunked_array(self)
-            } else {
-                // SAFETY: an unchecked cast to uint32 (which has no invariants) is
-                // always sound.
-                unsafe {
-                    self.cast_unchecked(&DataType::UInt32)
-                        .unwrap()
-                        .u32()
-                        .unwrap()
-                        .clone()
-                }
-            })
+                BitRepr::U64(reinterpret_chunked_array(self))
+            },
+
+            byte_size => {
+                assert!(byte_size <= 4);
+
+                BitRepr::U32(if byte_size == 4 {
+                    if matches!(self.dtype(), DataType::UInt32) {
+                        let ca = self.clone();
+                        // Convince the compiler we are this type. This preserves flags.
+                        return BitRepr::U32(unsafe {
+                            std::mem::transmute::<ChunkedArray<T>, UInt32Chunked>(ca)
+                        });
+                    }
+
+                    reinterpret_chunked_array(self)
+                } else {
+                    // SAFETY: an unchecked cast to uint32 (which has no invariants) is
+                    // always sound.
+                    unsafe {
+                        self.cast_unchecked(&DataType::UInt32)
+                            .unwrap()
+                            .u32()
+                            .unwrap()
+                            .clone()
+                    }
+                })
+            },
         }
     }
 }
@@ -161,7 +180,7 @@ impl Reinterpret for Int64Chunked {
     }
 
     fn reinterpret_unsigned(&self) -> Series {
-        let BitRepr::Large(b) = self.to_bit_repr() else {
+        let BitRepr::U64(b) = self.to_bit_repr() else {
             unreachable!()
         };
         b.into_series()
@@ -187,7 +206,7 @@ impl Reinterpret for Int32Chunked {
     }
 
     fn reinterpret_unsigned(&self) -> Series {
-        let BitRepr::Small(b) = self.to_bit_repr() else {
+        let BitRepr::U32(b) = self.to_bit_repr() else {
             unreachable!()
         };
         b.into_series()
@@ -257,7 +276,7 @@ impl Float32Chunked {
     where
         F: Fn(&Series) -> Series,
     {
-        let BitRepr::Small(s) = self.to_bit_repr() else {
+        let BitRepr::U32(s) = self.to_bit_repr() else {
             unreachable!()
         };
         let s = s.into_series();
@@ -271,7 +290,7 @@ impl Float64Chunked {
     where
         F: Fn(&Series) -> Series,
     {
-        let BitRepr::Large(s) = self.to_bit_repr() else {
+        let BitRepr::U64(s) = self.to_bit_repr() else {
             unreachable!()
         };
         let s = s.into_series();

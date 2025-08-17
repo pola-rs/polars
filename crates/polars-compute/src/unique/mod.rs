@@ -39,12 +39,15 @@ pub trait RangedUniqueKernel {
     /// Append an `Array`'s values to the `State`
     fn append(&mut self, array: &Self::Array);
 
+    /// Append another state into the `State`
+    fn append_state(&mut self, other: &Self);
+
     /// Consume the state to get the unique elements
     fn finalize_unique(self) -> Self::Array;
     /// Consume the state to get the number of unique elements including null
-    fn finalize_n_unique(self) -> usize;
+    fn finalize_n_unique(&self) -> usize;
     /// Consume the state to get the number of unique elements excluding null
-    fn finalize_n_unique_non_null(self) -> usize;
+    fn finalize_n_unique_non_null(&self) -> usize;
 }
 
 /// A generic unique kernel that selects the generally applicable unique kernel for an `Array`.
@@ -58,7 +61,9 @@ pub trait GenericUniqueKernel {
 }
 
 mod boolean;
+mod dictionary;
 mod primitive;
 
 pub use boolean::BooleanUniqueKernelState;
+pub use dictionary::DictionaryRangedUniqueState;
 pub use primitive::PrimitiveRangedUniqueState;

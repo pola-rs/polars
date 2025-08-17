@@ -1,15 +1,14 @@
 use std::io::Read;
 
-use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
-use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
 use super::super::CONTINUATION_MARKER;
 use super::common::*;
 use super::schema::deserialize_stream_metadata;
 use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
-use crate::datatypes::ArrowSchema;
+use crate::datatypes::{ArrowSchema, Metadata};
 use crate::io::ipc::IpcSchema;
 use crate::record_batch::RecordBatchT;
 
@@ -19,6 +18,9 @@ pub struct StreamMetadata {
     /// The schema that is read from the stream's first message
     pub schema: ArrowSchema,
 
+    /// The custom metadata that is read from the schema
+    pub custom_schema_metadata: Option<Metadata>,
+
     /// The IPC version of the stream
     pub version: arrow_format::ipc::MetadataVersion,
 
@@ -27,7 +29,7 @@ pub struct StreamMetadata {
 }
 
 /// Reads the metadata of the stream
-pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetadata> {
+pub fn read_stream_metadata(reader: &mut dyn std::io::Read) -> PolarsResult<StreamMetadata> {
     // determine metadata length
     let mut meta_size: [u8; 4] = [0; 4];
     reader.read_exact(&mut meta_size)?;
@@ -46,10 +48,7 @@ pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetad
 
     let mut buffer = vec![];
     buffer.try_reserve(length)?;
-    reader
-        .by_ref()
-        .take(length as u64)
-        .read_to_end(&mut buffer)?;
+    reader.take(length as u64).read_to_end(&mut buffer)?;
 
     deserialize_stream_metadata(&buffer)
 }
@@ -93,7 +92,7 @@ fn read_next<R: Read>(
     dictionaries: &mut Dictionaries,
     message_buffer: &mut Vec<u8>,
     data_buffer: &mut Vec<u8>,
-    projection: &Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
+    projection: &Option<ProjectionInfo>,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Option<StreamState>> {
     // determine metadata length
@@ -167,9 +166,9 @@ fn read_next<R: Read>(
 
             let chunk = read_record_batch(
                 batch,
-                &metadata.schema.fields,
+                &metadata.schema,
                 &metadata.ipc_schema,
-                projection.as_ref().map(|x| x.0.as_ref()),
+                projection.as_ref().map(|x| x.columns.as_ref()),
                 None,
                 dictionaries,
                 metadata.version,
@@ -179,7 +178,7 @@ fn read_next<R: Read>(
                 scratch,
             );
 
-            if let Some((_, map, _)) = projection {
+            if let Some(ProjectionInfo { map, .. }) = projection {
                 // re-order according to projection
                 chunk
                     .map(|chunk| apply_projection(chunk, map))
@@ -201,7 +200,7 @@ fn read_next<R: Read>(
 
             read_dictionary(
                 batch,
-                &metadata.schema.fields,
+                &metadata.schema,
                 &metadata.ipc_schema,
                 dictionaries,
                 &mut dict_reader,
@@ -238,7 +237,7 @@ pub struct StreamReader<R: Read> {
     finished: bool,
     data_buffer: Vec<u8>,
     message_buffer: Vec<u8>,
-    projection: Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
+    projection: Option<ProjectionInfo>,
     scratch: Vec<u8>,
 }
 
@@ -249,14 +248,8 @@ impl<R: Read> StreamReader<R> {
     /// encounter a schema.
     /// To check if the reader is done, use `is_finished(self)`
     pub fn new(reader: R, metadata: StreamMetadata, projection: Option<Vec<usize>>) -> Self {
-        let projection = projection.map(|projection| {
-            let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = ArrowSchema {
-                fields,
-                metadata: metadata.schema.metadata.clone(),
-            };
-            (p, h, schema)
-        });
+        let projection =
+            projection.map(|projection| prepare_projection(&metadata.schema, projection));
 
         Self {
             reader,
@@ -279,7 +272,7 @@ impl<R: Read> StreamReader<R> {
     pub fn schema(&self) -> &ArrowSchema {
         self.projection
             .as_ref()
-            .map(|x| &x.2)
+            .map(|x| &x.schema)
             .unwrap_or(&self.metadata.schema)
     }
 

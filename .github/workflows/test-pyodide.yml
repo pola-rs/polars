@@ -1,0 +1,72 @@
+name: Test Pyodide
+
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - py-polars/**
+      - docs/source/src/python/**
+      - crates/**
+      - .github/workflows/test-pyodide.yml
+  push:
+    branches:
+      - main
+    paths:
+      - Cargo.lock
+      - crates/**
+      - docs/source/src/python/**
+      - py-polars/**
+      - .github/workflows/test-pyodide.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0
+  CFLAGS: -fPIC
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test-pyodide:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Disable incompatible features
+        env:
+          # Note: If you change this line, you must also copy the change to `release-python.yml`.
+          FEATURES: csv|ipc|ipc_streaming|parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
+        run: |
+          sed -i 's/serde_json = { workspace = true, optional = true }/serde_json = { workspace = true }/' crates/polars-python/Cargo.toml
+          sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
+          sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
+
+      - name: Setup emsdk
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          # This should match the exact version of Emscripten used by Pyodide
+          version: 3.1.58
+
+      - name: Install LLVM
+        # This should match the major version of LLVM expected by Emscripten
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19
+          echo "EM_LLVM_ROOT=/usr/lib/llvm-19/bin" >> $GITHUB_ENV
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: wasm32-unknown-emscripten
+          args: >
+            --profile dev
+            --manifest-path py-polars/Cargo.toml
+            --interpreter python3.10
+          maturin-version: 1.7.4

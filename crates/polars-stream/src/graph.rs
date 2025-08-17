@@ -1,5 +1,7 @@
-use slotmap::{SecondaryMap, SlotMap};
+use polars_error::PolarsResult;
+use slotmap::{Key, SecondaryMap, SlotMap};
 
+use crate::execute::StreamingExecutionState;
 use crate::nodes::ComputeNode;
 
 slotmap::new_key_type! {
@@ -31,7 +33,7 @@ impl Graph {
     pub fn add_node<N: ComputeNode + 'static>(
         &mut self,
         node: N,
-        inputs: impl IntoIterator<Item = GraphNodeKey>,
+        inputs: impl IntoIterator<Item = (GraphNodeKey, usize)>,
     ) -> GraphNodeKey {
         // Add the GraphNode.
         let node_key = self.nodes.insert(GraphNode {
@@ -41,8 +43,7 @@ impl Graph {
         });
 
         // Create and add pipes that connect input to output.
-        for (recv_port, sender) in inputs.into_iter().enumerate() {
-            let send_port = self.nodes[sender].outputs.len();
+        for (recv_port, (sender, send_port)) in inputs.into_iter().enumerate() {
             let pipe = LogicalPipe {
                 sender,
                 send_port,
@@ -57,17 +58,25 @@ impl Graph {
 
             // And connect input to output.
             self.nodes[node_key].inputs.push(pipe_key);
-            self.nodes[sender].outputs.push(pipe_key);
+            if self.nodes[sender].outputs.len() <= send_port {
+                self.nodes[sender]
+                    .outputs
+                    .resize(send_port + 1, LogicalPipeKey::null());
+            }
+            assert!(self.nodes[sender].outputs[send_port].is_null());
+            self.nodes[sender].outputs[send_port] = pipe_key;
         }
 
         node_key
     }
 
     /// Updates all the nodes' states until a fixed point is reached.
-    pub fn update_all_states(&mut self) {
+    pub fn update_all_states(&mut self, state: &StreamingExecutionState) -> PolarsResult<()> {
         let mut to_update: Vec<_> = self.nodes.keys().collect();
         let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
             self.nodes.keys().map(|k| (k, ())).collect();
+
+        let verbose = std::env::var("POLARS_VERBOSE_STATE_UPDATE").as_deref() == Ok("1");
 
         let mut recv_state = Vec::new();
         let mut send_state = Vec::new();
@@ -82,16 +91,29 @@ impl Graph {
             send_state.extend(node.outputs.iter().map(|o| self.pipes[*o].recv_state));
 
             // Compute the new state of this node given its environment.
-            // eprintln!("updating {}, before: {recv_state:?} {send_state:?}", node.compute.name());
-            node.compute.update_state(&mut recv_state, &mut send_state);
-            // eprintln!("updating {}, after: {recv_state:?} {send_state:?}", node.compute.name());
+            if verbose {
+                eprintln!(
+                    "updating {}, before: {recv_state:?} {send_state:?}",
+                    node.compute.name()
+                );
+            }
+            node.compute
+                .update_state(&mut recv_state, &mut send_state, state)?;
+            if verbose {
+                eprintln!(
+                    "updating {}, after: {recv_state:?} {send_state:?}",
+                    node.compute.name()
+                );
+            }
 
             // Propagate information.
             for (input, state) in node.inputs.iter().zip(recv_state.iter()) {
                 let pipe = &mut self.pipes[*input];
                 if pipe.recv_state != *state {
-                    // eprintln!("transitioning input pipe from {:?} to {state:?}", pipe.recv_state);
-                    assert!(pipe.recv_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
+                    assert!(
+                        pipe.recv_state != PortState::Done,
+                        "implementation error: state transition from Done to Blocked/Ready attempted"
+                    );
                     pipe.recv_state = *state;
                     if scheduled_for_update.insert(pipe.sender, ()).is_none() {
                         to_update.push(pipe.sender);
@@ -102,8 +124,10 @@ impl Graph {
             for (output, state) in node.outputs.iter().zip(send_state.iter()) {
                 let pipe = &mut self.pipes[*output];
                 if pipe.send_state != *state {
-                    // eprintln!("transitioning output pipe from {:?} to {state:?}", pipe.send_state);
-                    assert!(pipe.send_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
+                    assert!(
+                        pipe.send_state != PortState::Done,
+                        "implementation error: state transition from Done to Blocked/Ready attempted"
+                    );
                     pipe.send_state = *state;
                     if scheduled_for_update.insert(pipe.receiver, ()).is_none() {
                         to_update.push(pipe.receiver);
@@ -111,6 +135,7 @@ impl Graph {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -129,14 +154,14 @@ pub struct LogicalPipe {
     pub sender: GraphNodeKey,
     // Output location:
     // graph[x].output[i].send_port == i
-    send_port: usize,
+    pub send_port: usize,
     pub send_state: PortState,
 
     // Node that we receive data from.
     pub receiver: GraphNodeKey,
     // Input location:
     // graph[x].inputs[i].recv_port == i
-    recv_port: usize,
+    pub recv_port: usize,
     pub recv_state: PortState,
 }
 

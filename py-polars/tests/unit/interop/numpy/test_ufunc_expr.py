@@ -33,13 +33,11 @@ def test_ufunc_expr_not_first() -> None:
     out = df.select(
         np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
         (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-        (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
     )
     expected = pl.DataFrame(
         [
             pl.Series("power", [2**1, 2**2, 2**3], dtype=pl.Float64),
             pl.Series("divide_scalar", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
-            pl.Series("divide_array", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(out, expected)
@@ -68,13 +66,11 @@ def test_lazy_ufunc_expr_not_first() -> None:
     out = ldf.select(
         np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
         (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-        (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
     )
     expected = pl.DataFrame(
         [
             pl.Series("power", [2**1, 2**2, 2**3], dtype=pl.Float64),
             pl.Series("divide_scalar", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
-            pl.Series("divide_array", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(out.collect(), expected)
@@ -137,7 +133,7 @@ def test_generalized_ufunc_scalar() -> None:
     numba = pytest.importorskip("numba")
 
     @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
-    def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]
+    def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ANN001
         total = 0
         for value in arr:
             total += value
@@ -154,16 +150,30 @@ def test_generalized_ufunc_scalar() -> None:
     assert custom_sum(df.get_column("values")) == 15
 
     # Indirect call of the gufunc:
-    indirect = df.select(pl.col("values").map_batches(custom_sum, returns_scalar=True))
+    indirect = df.select(
+        pl.col("values").map_batches(
+            custom_sum, returns_scalar=True, return_dtype=pl.self_dtype()
+        )
+    )
     assert_frame_equal(indirect, pl.DataFrame({"values": 15}))
-    indirect = df.select(pl.col("values").map_batches(custom_sum, returns_scalar=False))
+    indirect = df.select(
+        pl.col("values").map_batches(
+            lambda s: pl.Series([custom_sum(s)]),
+            returns_scalar=False,
+            return_dtype=pl.self_dtype(),
+        )
+    )
     assert_frame_equal(indirect, pl.DataFrame({"values": [15]}))
 
     # group_by()
     df = pl.DataFrame({"labels": ["a", "b", "a", "b"], "values": [10, 2, 3, 30]})
     indirect = (
         df.group_by("labels")
-        .agg(pl.col("values").map_batches(custom_sum, returns_scalar=True))
+        .agg(
+            pl.col("values").map_batches(
+                custom_sum, returns_scalar=True, return_dtype=pl.self_dtype()
+            )
+        )
         .sort("labels")
     )
     assert_frame_equal(
@@ -194,6 +204,21 @@ def test_generalized_ufunc() -> None:
 def test_grouped_generalized_ufunc() -> None:
     gufunc_mean = make_gufunc_mean()
     df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [1.0, 2.0, 3.0, 4.0]})
-    result = df.group_by("id").agg(pl.col("values").map_batches(gufunc_mean)).sort("id")
+    result = (
+        df.group_by("id")
+        .agg(pl.col("values").map_batches(gufunc_mean, return_dtype=pl.self_dtype()))
+        .sort("id")
+    )
     expected = pl.DataFrame({"id": ["a", "b"], "values": [[1.5, 2.5], [3.5, 4.5]]})
     assert_frame_equal(result, expected)
+
+
+def test_ufunc_chain() -> None:
+    df = pl.DataFrame(
+        data={"A": [2, 10, 11, 12, 3, 10, 11, 12], "counter": [1, 2, 3, 4, 5, 6, 7, 8]}
+    )
+    result = df.rolling(index_column="counter", period="2i").agg(
+        (np.log(pl.col("A"))).mean().alias("mean_numpy"),
+        (pl.col("A")).log().mean().alias("mean_polars"),
+    )
+    assert_series_equal(result["mean_numpy"], result["mean_polars"].alias("mean_numpy"))

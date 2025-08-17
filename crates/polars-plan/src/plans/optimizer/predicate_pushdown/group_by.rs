@@ -2,7 +2,7 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_group_by(
-    opt: &PredicatePushDown,
+    opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     input: Node,
@@ -10,9 +10,9 @@ pub(super) fn process_group_by(
     aggs: Vec<ExprIR>,
     schema: SchemaRef,
     maintain_order: bool,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     options: Arc<GroupbyOptions>,
-    acc_predicates: PlHashMap<Arc<str>, ExprIR>,
+    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
 
@@ -42,7 +42,6 @@ pub(super) fn process_group_by(
     let key_schema = aexprs_to_schema(
         &keys,
         lp_arena.get(input).schema(lp_arena).as_ref(),
-        Context::Default,
         expr_arena,
     );
 
@@ -51,9 +50,7 @@ pub(super) fn process_group_by(
     for (pred_name, predicate) in acc_predicates {
         // Counts change due to groupby's
         // TODO! handle aliases, so that the predicate that is pushed down refers to the column before alias.
-        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| {
-            matches!(ae, AExpr::Len | AExpr::Alias(_, _))
-        });
+        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| matches!(ae, AExpr::Len));
 
         for name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
             push_down &= key_schema.contains(name.as_ref());

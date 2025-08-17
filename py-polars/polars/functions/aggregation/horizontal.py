@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 import polars.functions as F
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import UInt32
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import Expr
     from polars._typing import IntoExpr
 
@@ -176,7 +177,9 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     return wrap_expr(plr.min_horizontal(pyexprs))
 
 
-def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
+def sum_horizontal(
+    *exprs: IntoExpr | Iterable[IntoExpr], ignore_nulls: bool = True
+) -> Expr:
     """
     Sum all values horizontally across columns.
 
@@ -185,6 +188,9 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     *exprs
         Column(s) to use in the aggregation. Accepts expression input. Strings are
         parsed as column names, other non-expression inputs are parsed as literals.
+    ignore_nulls
+        Ignore null values (default).
+        If set to `False`, any null value in the input will lead to a null output.
 
     Examples
     --------
@@ -208,10 +214,12 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     └─────┴──────┴─────┴─────┘
     """
     pyexprs = parse_into_list_of_expressions(*exprs)
-    return wrap_expr(plr.sum_horizontal(pyexprs))
+    return wrap_expr(plr.sum_horizontal(pyexprs, ignore_nulls))
 
 
-def mean_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
+def mean_horizontal(
+    *exprs: IntoExpr | Iterable[IntoExpr], ignore_nulls: bool = True
+) -> Expr:
     """
     Compute the mean of all values horizontally across columns.
 
@@ -220,6 +228,9 @@ def mean_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     *exprs
         Column(s) to use in the aggregation. Accepts expression input. Strings are
         parsed as column names, other non-expression inputs are parsed as literals.
+    ignore_nulls
+        Ignore null values (default).
+        If set to `False`, any null value in the input will lead to a null output.
 
     Examples
     --------
@@ -243,7 +254,7 @@ def mean_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     └─────┴──────┴─────┴──────┘
     """
     pyexprs = parse_into_list_of_expressions(*exprs)
-    return wrap_expr(plr.mean_horizontal(pyexprs))
+    return wrap_expr(plr.mean_horizontal(pyexprs, ignore_nulls))
 
 
 def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -280,7 +291,8 @@ def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     pyexprs = parse_into_list_of_expressions(*exprs)
     exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
-    # (Expr): use u32 as that will not cast to float as eagerly
-    return F.cum_fold(F.lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
-        "cum_sum"
-    )
+    return F.cum_fold(
+        F.lit(0).cast(F.dtype_of(F.sum_horizontal(list(exprs)))),
+        lambda a, b: a + b,
+        exprs_wrapped,
+    ).alias("cum_sum")

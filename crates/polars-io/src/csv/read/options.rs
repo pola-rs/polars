@@ -1,9 +1,11 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use polars_core::datatypes::DataType;
-use polars_core::schema::{IndexOfSchema, Schema, SchemaRef};
+use polars_core::datatypes::{DataType, Field};
+use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +13,7 @@ use crate::RowIndex;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvReadOptions {
     pub path: Option<PathBuf>,
     // Performance related options
@@ -21,7 +24,7 @@ pub struct CsvReadOptions {
     pub n_rows: Option<usize>,
     pub row_index: Option<RowIndex>,
     // Column-wise options
-    pub columns: Option<Arc<[String]>>,
+    pub columns: Option<Arc<[PlSmallStr]>>,
     pub projection: Option<Arc<Vec<usize>>>,
     pub schema: Option<SchemaRef>,
     pub schema_overwrite: Option<SchemaRef>,
@@ -29,17 +32,21 @@ pub struct CsvReadOptions {
     // CSV-specific options
     pub parse_options: Arc<CsvParseOptions>,
     pub has_header: bool,
-    pub sample_size: usize,
     pub chunk_size: usize,
+    /// Skip rows according to the CSV spec.
     pub skip_rows: usize,
+    /// Skip lines according to newline char (e.g. escaping will be ignored)
+    pub skip_lines: usize,
     pub skip_rows_after_header: usize,
     pub infer_schema_length: Option<usize>,
     pub raise_if_empty: bool,
     pub ignore_errors: bool,
+    pub fields_to_cast: Vec<Field>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvParseOptions {
     pub separator: u8,
     pub quote_char: Option<u8>,
@@ -58,7 +65,7 @@ impl Default for CsvReadOptions {
         Self {
             path: None,
 
-            rechunk: true,
+            rechunk: false,
             n_threads: None,
             low_memory: false,
 
@@ -73,13 +80,14 @@ impl Default for CsvReadOptions {
 
             parse_options: Default::default(),
             has_header: true,
-            sample_size: 1024,
             chunk_size: 1 << 18,
             skip_rows: 0,
+            skip_lines: 0,
             skip_rows_after_header: 0,
             infer_schema_length: Some(100),
             raise_if_empty: true,
             ignore_errors: false,
+            fields_to_cast: vec![],
         }
     }
 }
@@ -94,7 +102,6 @@ impl Default for CsvParseOptions {
             encoding: Default::default(),
             null_values: None,
             missing_is_null: true,
-
             truncate_ragged_lines: false,
             comment_prefix: None,
             try_parse_dates: false,
@@ -145,7 +152,7 @@ impl CsvReadOptions {
     }
 
     /// Which columns to select.
-    pub fn with_columns(mut self, columns: Option<Arc<[String]>>) -> Self {
+    pub fn with_columns(mut self, columns: Option<Arc<[PlSmallStr]>>) -> Self {
         self.columns = columns;
         self
     }
@@ -191,22 +198,25 @@ impl CsvReadOptions {
         self
     }
 
-    /// Sets the number of rows sampled from the file to determine approximately
-    /// how much memory to use for the initial allocation.
-    pub fn with_sample_size(mut self, sample_size: usize) -> Self {
-        self.sample_size = sample_size;
-        self
-    }
-
     /// Sets the chunk size used by the parser. This influences performance.
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
         self.chunk_size = chunk_size;
         self
     }
 
-    /// Number of rows to skip before the header row.
+    /// Start reading after ``skip_rows`` rows. The header will be parsed at this
+    /// offset. Note that we respect CSV escaping/comments when skipping rows.
+    /// If you want to skip by newline char only, use `skip_lines`.
     pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
         self.skip_rows = skip_rows;
+        self
+    }
+
+    /// Start reading after `skip_lines` lines. The header will be parsed at this
+    /// offset. Note that CSV escaping will not be respected when skipping lines.
+    /// If you want to skip valid CSV rows, use ``skip_rows``.
+    pub fn with_skip_lines(mut self, skip_lines: usize) -> Self {
+        self.skip_lines = skip_lines;
         self
     }
 
@@ -216,7 +226,9 @@ impl CsvReadOptions {
         self
     }
 
-    /// Number of rows to use for schema inference. Pass [None] to use all rows.
+    /// Set the number of rows to use when inferring the csv schema.
+    /// The default is 100 rows.
+    /// Setting to [None] will do a full table scan, which is very slow.
     pub fn with_infer_schema_length(mut self, infer_schema_length: Option<usize>) -> Self {
         self.infer_schema_length = infer_schema_length;
         self
@@ -305,7 +317,7 @@ impl CsvParseOptions {
     }
 
     /// Automatically try to parse dates/datetimes and time. If parsing fails,
-    /// columns remain of dtype `[DataType::String]`.
+    /// columns remain of dtype [`DataType::String`].
     pub fn with_try_parse_dates(mut self, try_parse_dates: bool) -> Self {
         self.try_parse_dates = try_parse_dates;
         self
@@ -320,6 +332,7 @@ impl CsvParseOptions {
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum CsvEncoding {
     /// Utf8 encoding.
     #[default]
@@ -330,12 +343,13 @@ pub enum CsvEncoding {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum CommentPrefix {
     /// A single byte character that indicates the start of a comment line.
     Single(u8),
     /// A string that indicates the start of a comment line.
     /// This allows for multiple characters to be used as a comment identifier.
-    Multi(Arc<str>),
+    Multi(PlSmallStr),
 }
 
 impl CommentPrefix {
@@ -345,8 +359,8 @@ impl CommentPrefix {
     }
 
     /// Creates a new `CommentPrefix` for the `Multi` variant.
-    pub fn new_multi(prefix: String) -> Self {
-        CommentPrefix::Multi(Arc::from(prefix.as_str()))
+    pub fn new_multi(prefix: PlSmallStr) -> Self {
+        CommentPrefix::Multi(prefix)
     }
 
     /// Creates a new `CommentPrefix` from a `&str`.
@@ -355,7 +369,7 @@ impl CommentPrefix {
             let c = prefix.as_bytes()[0];
             CommentPrefix::Single(c)
         } else {
-            CommentPrefix::Multi(Arc::from(prefix))
+            CommentPrefix::Multi(PlSmallStr::from_str(prefix))
         }
     }
 }
@@ -368,22 +382,23 @@ impl From<&str> for CommentPrefix {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum NullValues {
     /// A single value that's used for all columns
-    AllColumnsSingle(String),
+    AllColumnsSingle(PlSmallStr),
     /// Multiple values that are used for all columns
-    AllColumns(Vec<String>),
+    AllColumns(Vec<PlSmallStr>),
     /// Tuples that map column names to null value of that column
-    Named(Vec<(String, String)>),
+    Named(Vec<(PlSmallStr, PlSmallStr)>),
 }
 
 impl NullValues {
-    pub(super) fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
+    pub fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
         Ok(match self {
             NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
             NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
             NullValues::Named(v) => {
-                let mut null_values = vec!["".to_string(); schema.len()];
+                let mut null_values = vec![PlSmallStr::from_static(""); schema.len()];
                 for (name, null_value) in v {
                     let i = schema.try_index_of(&name)?;
                     null_values[i] = null_value;
@@ -395,13 +410,13 @@ impl NullValues {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum NullValuesCompiled {
+pub enum NullValuesCompiled {
     /// A single value that's used for all columns
-    AllColumnsSingle(String),
+    AllColumnsSingle(PlSmallStr),
     // Multiple null values that are null for all columns
-    AllColumns(Vec<String>),
+    AllColumns(Vec<PlSmallStr>),
     /// A different null value per column, computed from `NullValues::Named`
-    Columns(Vec<String>),
+    Columns(Vec<PlSmallStr>),
 }
 
 impl NullValuesCompiled {

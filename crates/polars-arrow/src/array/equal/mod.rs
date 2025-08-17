@@ -201,12 +201,12 @@ impl PartialEq<&dyn Array> for MapArray {
 /// * their data types are equal
 /// * each of their items are equal
 pub fn equal(lhs: &dyn Array, rhs: &dyn Array) -> bool {
-    if lhs.data_type() != rhs.data_type() {
+    if lhs.dtype() != rhs.dtype() {
         return false;
     }
 
     use crate::datatypes::PhysicalType::*;
-    match lhs.data_type().to_physical_type() {
+    match lhs.dtype().to_physical_type() {
         Null => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();

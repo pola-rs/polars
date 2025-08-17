@@ -1,9 +1,6 @@
 mod anonymous;
 mod binary;
 mod boolean;
-#[cfg(feature = "dtype-categorical")]
-mod categorical;
-mod dtypes;
 mod null;
 mod primitive;
 
@@ -12,13 +9,12 @@ use arrow::legacy::array::list::AnonymousBuilder;
 use arrow::legacy::array::null::MutableNullArray;
 pub use binary::*;
 pub use boolean::*;
-#[cfg(feature = "dtype-categorical")]
-use categorical::*;
-use dtypes::*;
 pub use null::*;
 pub use primitive::*;
 
 use super::*;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::get_object_builder;
 
 pub trait ListBuilderTrait {
     fn append_opt_series(&mut self, opt_s: Option<&Series>) -> PolarsResult<()> {
@@ -84,58 +80,40 @@ pub fn get_list_builder(
     inner_type_logical: &DataType,
     value_capacity: usize,
     list_capacity: usize,
-    name: &str,
-) -> PolarsResult<Box<dyn ListBuilderTrait>> {
-    match inner_type_logical {
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(Some(rev_map), ordering) => {
-            return Ok(create_categorical_chunked_listbuilder(
-                name,
-                *ordering,
-                list_capacity,
-                value_capacity,
-                rev_map.clone(),
-            ))
-        },
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Enum(Some(rev_map), ordering) => {
-            let list_builder = ListEnumCategoricalChunkedBuilder::new(
-                name,
-                *ordering,
-                list_capacity,
-                value_capacity,
-                (**rev_map).clone(),
-            );
-            return Ok(Box::new(list_builder));
-        },
-        _ => {},
-    }
-
+    name: PlSmallStr,
+) -> Box<dyn ListBuilderTrait> {
     let physical_type = inner_type_logical.to_physical();
 
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => polars_bail!(opq = list_builder, &physical_type),
+        DataType::Object(_) => {
+            let builder = get_object_builder(PlSmallStr::EMPTY, 0).get_list_builder(
+                name,
+                value_capacity,
+                list_capacity,
+            );
+            Box::new(builder)
+        },
         #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+        DataType::Struct(_) => Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
-        ))),
-        DataType::Null => Ok(Box::new(ListNullChunkedBuilder::new(name, list_capacity))),
-        DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+        )),
+        DataType::Null => Box::new(ListNullChunkedBuilder::new(name, list_capacity)),
+        DataType::List(_) => Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
-        ))),
+        )),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(..) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+        DataType::Array(..) => Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
-        ))),
+        )),
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => Ok(Box::new(
+        DataType::Decimal(_, _) => Box::new(
             ListPrimitiveChunkedBuilder::<Int128Type>::new_with_values_type(
                 name,
                 list_capacity,
@@ -143,7 +121,7 @@ pub fn get_list_builder(
                 physical_type,
                 inner_type_logical.clone(),
             ),
-        )),
+        ),
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{
@@ -159,31 +137,31 @@ pub fn get_list_builder(
             macro_rules! get_bool_builder {
                 () => {{
                     let builder =
-                        ListBooleanChunkedBuilder::new(&name, list_capacity, value_capacity);
+                        ListBooleanChunkedBuilder::new(name, list_capacity, value_capacity);
                     Box::new(builder)
                 }};
             }
             macro_rules! get_string_builder {
                 () => {{
                     let builder =
-                        ListStringChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                        ListStringChunkedBuilder::new(name, list_capacity, 5 * value_capacity);
                     Box::new(builder)
                 }};
             }
             macro_rules! get_binary_builder {
                 () => {{
                     let builder =
-                        ListBinaryChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                        ListBinaryChunkedBuilder::new(name, list_capacity, 5 * value_capacity);
                     Box::new(builder)
                 }};
             }
-            Ok(match_dtype_to_logical_apply_macro!(
+            match_dtype_to_logical_apply_macro!(
                 physical_type,
                 get_primitive_builder,
                 get_string_builder,
                 get_binary_builder,
                 get_bool_builder
-            ))
+            )
         },
     }
 }

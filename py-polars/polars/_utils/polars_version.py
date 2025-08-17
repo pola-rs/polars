@@ -1,5 +1,5 @@
 try:
-    import polars.polars as plr
+    import polars._plr as plr
 
     _POLARS_VERSION = plr.__version__
 except ImportError:

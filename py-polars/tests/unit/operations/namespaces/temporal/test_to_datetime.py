@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
 import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn
@@ -46,7 +39,7 @@ FRACTIONS = [
     # "%.f", # alternative which allows any number of digits
     "",
 ]
-TIMEZONES = ["%#z", ""]
+TIMEZONES = ["%z", "%:z", "%:::z", ""]
 DATETIME_PATTERNS = [
     date_format.format(separator, separator) + time_format + fraction + tz
     for separator in SEPARATORS
@@ -55,7 +48,7 @@ DATETIME_PATTERNS = [
     for fraction in FRACTIONS
     if time_format.endswith("%S") or fraction == ""
     for tz in TIMEZONES
-    if date_format.startswith("%Y") and time_format != "" or tz == ""
+    if (date_format.startswith("%Y") and time_format != "") or tz == ""
 ]
 
 
@@ -71,7 +64,9 @@ def test_to_datetime_inferable_formats(fmt: str) -> None:
         .replace("%.3f", ".123")
         .replace("%.6f", ".123456")
         .replace("%.9f", ".123456789")
-        .replace("%#z", "+0100")
+        .replace("%z", "+0100")
+        .replace("%:z", "+01:00")
+        .replace("%:::z", "+01")
     )
 
     pl.Series([time_string]).str.to_datetime(strict=True)
@@ -203,3 +198,94 @@ def test_to_datetime_two_digit_year_17213(
 ) -> None:
     result = pl.Series([inputs]).str.to_date(format=format).item()
     assert result == expected
+
+
+def test_to_datetime_column_input_to_ambiguous() -> None:
+    q = pl.LazyFrame(
+        {
+            "a": ["2020-01-01 01:00Z", "2020-01-01 02:00Z"],
+            "b": ["raise", "earliest"],
+        }
+    ).select(pl.col.a.str.to_datetime("%Y-%m-%d %H:%M%#z", ambiguous=pl.col.b))
+
+    expect = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [
+                    datetime(2020, 1, 1, 1, 0, tzinfo=ZoneInfo(key="UTC")),
+                    datetime(2020, 1, 1, 2, 0, tzinfo=ZoneInfo(key="UTC")),
+                ],
+                dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(q.collect(), expect)
+
+
+def test_to_datetime_fallible_predicate_pushdown() -> None:
+    df = pl.DataFrame({"x": ["2020-10-25 01:00", "X"]})
+
+    c = pl.first()
+
+    expect_fail = [
+        c.str.to_datetime(
+            "%Y-%m-%d %H:%M",
+            time_zone="Europe/London",
+            ambiguous="raise",
+            strict=False,
+        ),
+        c.str.to_datetime(
+            "%Y-%m-%d %H:%M",
+            time_zone="Europe/London",
+            ambiguous="null",
+            strict=True,
+        ),
+        c.str.to_datetime("%Y-%m-%d %H:%M", strict=True),
+    ]
+
+    expect_pass = [
+        c.str.to_datetime(
+            "%Y-%m-%d %H:%M",
+            time_zone="Europe/London",
+            ambiguous="null",
+            strict=False,
+        ),
+        c.str.to_datetime(
+            "%Y-%m-%d %H:%M",
+            time_zone="Europe/London",
+            ambiguous="earliest",
+            strict=False,
+        ),
+        c.str.to_datetime(
+            "%Y-%m-%d %H:%M",
+            time_zone="Europe/London",
+            ambiguous="latest",
+            strict=False,
+        ),
+    ]
+
+    for expr in expect_fail:
+        with pytest.raises(Exception):  # noqa: B017
+            df.select(expr)
+
+    for expr in expect_pass:
+        df.select(expr)
+
+    lf = df.with_columns(false=False).lazy().filter("false")
+
+    for e in expect_pass:
+        q = lf.filter(e.is_not_null())
+        plan = q.explain()
+        assert plan.count("FILTER") == 1
+        assert_frame_equal(
+            q.collect(), q.collect(optimizations=pl.QueryOptFlags.none())
+        )
+
+    for e in expect_fail:
+        q = lf.filter(e.is_not_null())
+        plan = q.explain()
+        assert_frame_equal(
+            q.collect(), q.collect(optimizations=pl.QueryOptFlags.none())
+        )

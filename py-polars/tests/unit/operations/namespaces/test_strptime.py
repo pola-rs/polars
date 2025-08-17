@@ -8,19 +8,16 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperationError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import PolarsTemporalType, TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_str_strptime() -> None:
@@ -152,6 +149,22 @@ def test_to_date_all_inferred_date_patterns(time_string: str, expected: date) ->
 
 
 @pytest.mark.parametrize(
+    ("time_string", "expected"),
+    [
+        ("2024-12-04 09:08:00", datetime(2024, 12, 4, 9, 8, 0)),
+        ("2024-12-4 9:8:0", datetime(2024, 12, 4, 9, 8, 0)),
+        ("2024/12/04 9:8", datetime(2024, 12, 4, 9, 8, 0)),
+        ("4/12/2024 9:8", datetime(2024, 12, 4, 9, 8, 0)),
+    ],
+)
+def test_to_datetime_infer_missing_digit_in_time_16092(
+    time_string: str, expected: datetime
+) -> None:
+    result = pl.Series([time_string]).str.to_datetime()
+    assert result[0] == expected
+
+
+@pytest.mark.parametrize(
     ("value", "attr"),
     [
         ("a", "to_date"),
@@ -161,7 +174,7 @@ def test_to_date_all_inferred_date_patterns(time_string: str, expected: date) ->
     ],
 )
 def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
-    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises((InvalidOperationError, ComputeError)):
         getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
 
 
@@ -637,9 +650,27 @@ def test_strptime_complete_formats(string: str, fmt: str, expected: datetime) ->
 @pytest.mark.parametrize(
     ("data", "format", "expected"),
     [
-        ("05:10:10.074000", "%H:%M:%S%.f", time(5, 10, 10, 74000)),
-        ("05:10:10.074000", "%T%.6f", time(5, 10, 10, 74000)),
-        ("05:10:10.074000", "%H:%M:%S%.3f", time(5, 10, 10, 74000)),
+        ("00:00:00.000005000", "%H:%M:%S%.f", time(0, 0, 0, 5)),
+        ("01:23:10.000500", "%H:%M:%S%.6f", time(1, 23, 10, 500)),
+        ("08:10:11.000", "%H:%M:%S%.3f", time(8, 10, 11)),
+        ("15:50:25", "%T", time(15, 50, 25)),
+        ("22:35", "%R", time(22, 35)),
+    ],
+)
+def test_to_time_inferred(data: str, format: str, expected: time) -> None:
+    df = pl.DataFrame({"tmstr": [data]})
+    expected_df = df.with_columns(tm=pl.Series("tm", values=[expected]))
+    for fmt in (format, None):
+        res = df.with_columns(tm=pl.col("tmstr").str.to_time(fmt))
+        assert_frame_equal(res, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("data", "format", "expected"),
+    [
+        ("05:10:11.740000", "%H:%M:%S%.f", time(5, 10, 11, 740000)),
+        ("13:20:12.000074", "%T%.6f", time(13, 20, 12, 74)),
+        ("21:30:13.007400", "%H:%M:%S%.3f", time(21, 30, 13, 7400)),
     ],
 )
 def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
@@ -742,3 +773,136 @@ def test_out_of_ns_range_no_tu_specified_13592() -> None:
         dtype=pl.Datetime("us"),
     )
     assert_series_equal(result, expected)
+
+
+def test_wrong_format_percent() -> None:
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2019-01-01"]).str.strptime(pl.Date, format="d%")
+
+
+def test_polars_parser_fooled_by_trailing_nonsense_22167() -> None:
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.77756192Z"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%9fcabbagebananapotato"
+        )
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.77756192Z"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%9f#z"
+        )
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.77Z"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%3f#z"
+        )
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.77123Z"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%6f#z"
+        )
+
+
+def test_strptime_empty_input_22214() -> None:
+    s = pl.Series("x", [], pl.String)
+
+    assert s.str.strptime(pl.Time, "%H:%M:%S%.f").is_empty()
+    assert s.str.strptime(pl.Date, "%Y-%m-%d").is_empty()
+    assert s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z").is_empty()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "31/12/2022",
+        "banana",
+        "12-345-678",
+        "12-345-67",
+        "12-345-6789",
+        "123*45*678",
+        "123x45x678",
+        "123x45x678x",
+    ],
+)
+def test_matching_strings_but_different_format_22495(value: str) -> None:
+    s = pl.Series("my_strings", [value])
+    result = s.str.to_date("%Y-%m-%d", strict=False).item()
+    assert result is None
+
+
+def test_date_parse_omit_day_month() -> None:
+    fmt_B = "%Y %B"
+    fmt_b = "%Y %b"
+    df = (
+        pl.select(date=pl.date_range(pl.date(2022, 1, 1), pl.date(2022, 12, 1), "1mo"))
+        .with_columns(
+            strdateB=pl.col("date").dt.strftime(fmt_B),
+            strdateb=pl.col("date").dt.strftime(fmt_b),
+        )
+        .with_columns(
+            round_tripB=pl.col("strdateB").str.strptime(pl.Date, fmt_B),
+            round_tripb=pl.col("strdateb").str.strptime(pl.Date, fmt_b),
+        )
+    )
+    check = df.filter(
+        ~pl.all_horizontal(
+            pl.col("date") == pl.col("round_tripB"),
+            pl.col("date") == pl.col("round_tripb"),
+        )
+    )
+    assert check.height == 0
+
+    s = pl.Series(
+        [
+            "2022 January",
+            "2022 February",
+            "2022 March",
+            "2022 April",
+            "2022 May",
+            "2022 June",
+            "2022 July",
+            "2022 August",
+            "2022 September",
+            "2022 October",
+            "2022 November",
+            "2022 December",
+        ]
+    )
+    result = s.str.strptime(pl.Date, "%Y %B")
+    expected = pl.Series(
+        [
+            date(2022, 1, 1),
+            date(2022, 2, 1),
+            date(2022, 3, 1),
+            date(2022, 4, 1),
+            date(2022, 5, 1),
+            date(2022, 6, 1),
+            date(2022, 7, 1),
+            date(2022, 8, 1),
+            date(2022, 9, 1),
+            date(2022, 10, 1),
+            date(2022, 11, 1),
+            date(2022, 12, 1),
+        ]
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("length", [1, 5])
+def test_eager_inference_on_expr(length: int) -> None:
+    s = pl.Series("a", ["2025-04-06T18:57:42.77123Z"] * length)
+
+    assert_series_equal(
+        s.str.strptime(pl.Datetime),
+        pl.Series(
+            "a",
+            [
+                datetime(
+                    2025, 4, 6, 18, 57, 42, 771230, tzinfo=timezone(timedelta(hours=0))
+                )
+            ]
+            * length,
+        ),
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match="`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data",
+    ):
+        s.to_frame().select(pl.col("a").str.strptime(pl.Datetime))

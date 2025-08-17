@@ -20,45 +20,87 @@ use super::*;
 /// ```
 ///
 /// ```ignore
-/// // select specific column by writing a regular expression that starts with `^` and ends with `$`
+/// // select specific columns by writing a regular expression that starts with `^` and ends with `$`
 /// // only if regex features is activated
 /// col("^foo.*$")
 /// ```
-pub fn col(name: &str) -> Expr {
-    match name {
-        "*" => Expr::Wildcard,
-        _ => Expr::Column(ColumnName::from(name)),
+pub fn col<S>(name: S) -> Expr
+where
+    S: Into<PlSmallStr>,
+{
+    let name = name.into();
+    match name.as_str() {
+        "*" => all().as_expr(),
+        n if is_regex_projection(n) => Expr::Selector(Selector::Matches(name)),
+        _ => Expr::Column(name),
     }
 }
 
-/// Selects all columns. Shorthand for `col("*")`.
-pub fn all() -> Expr {
-    Expr::Wildcard
+/// Selects no columns.
+pub fn empty() -> Selector {
+    Selector::Empty
+}
+
+/// Selects all columns.
+pub fn all() -> Selector {
+    Selector::Wildcard
 }
 
 /// Select multiple columns by name.
-pub fn cols<I: IntoVec<String>>(names: I) -> Expr {
-    let names = names.into_vec();
+pub fn cols<I, S>(names: I) -> Selector
+where
+    I: IntoIterator<Item = S>,
+    S: Into<PlSmallStr>,
+{
+    by_name(names, true)
+}
+
+/// Select multiple columns by dtype.
+pub fn dtype_col(dtype: &DataType) -> DataTypeSelector {
+    DataTypeSelector::AnyOf([dtype.clone()].into())
+}
+
+/// Select multiple columns by dtype.
+pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> DataTypeSelector {
+    let dtypes = dtype.as_ref();
+    DataTypeSelector::AnyOf(dtypes.into())
+}
+
+/// Select multiple columns by dtype.
+pub fn by_name<S: Into<PlSmallStr>, I: IntoIterator<Item = S>>(names: I, strict: bool) -> Selector {
+    let mut selector = None;
+    let _s = &mut selector;
     let names = names
         .into_iter()
-        .map(|v| ColumnName::from(v.as_str()))
-        .collect();
-    Expr::Columns(names)
-}
+        .map(Into::into)
+        .filter_map(|name| match name.as_str() {
+            "*" => {
+                *_s = Some(std::mem::take(_s).map_or(all(), |s| s | all()));
+                None
+            },
+            n if is_regex_projection(n) => {
+                let m = Selector::Matches(name);
+                *_s = Some(std::mem::take(_s).map_or_else(|| m.clone(), |s| s | m.clone()));
+                None
+            },
+            _ => Some(name),
+        })
+        .collect::<Arc<[_]>>();
 
-/// Select multiple columns by dtype.
-pub fn dtype_col(dtype: &DataType) -> Expr {
-    Expr::DtypeColumn(vec![dtype.clone()])
-}
-
-/// Select multiple columns by dtype.
-pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
-    let dtypes = dtype.as_ref().to_vec();
-    Expr::DtypeColumn(dtypes)
+    let no_names = names.is_empty();
+    let names = Selector::ByName { names, strict };
+    if let Some(selector) = selector {
+        if no_names { selector } else { selector | names }
+    } else {
+        names
+    }
 }
 
 /// Select multiple columns by index.
-pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Expr {
-    let indices = indices.as_ref().to_vec();
-    Expr::IndexColumn(Arc::from(indices))
+pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Selector {
+    let indices = indices.as_ref().into();
+    Selector::ByIndex {
+        indices,
+        strict: true,
+    }
 }

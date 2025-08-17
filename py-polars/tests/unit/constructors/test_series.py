@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import re
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
@@ -39,11 +38,7 @@ def test_dtype_array_uses_inner_dtype() -> None:
 
 def test_series_mixed_dtypes_list() -> None:
     values = [[0.1, 1]]
-
-    with pytest.raises(TypeError, match="unexpected value"):
-        pl.Series(values)
-
-    s = pl.Series(values, strict=False)
+    s = pl.Series(values, strict=True)
     assert s.dtype == pl.List(pl.Float64)
     assert s.to_list() == [[0.1, 1.0]]
 
@@ -67,7 +62,7 @@ def test_series_mixed_dtypes_object() -> None:
         pl.Series(values)
 
     s = pl.Series(values, strict=False)
-    assert s.dtype == pl.Object
+    assert s.dtype.is_object()
     assert s.to_list() == values
     assert s[1] == b"foo"
 
@@ -170,13 +165,26 @@ def test_series_init_np_temporal_with_nat_15518() -> None:
     assert_series_equal(result, expected)
 
 
+def test_series_init_pandas_timestamp_18127() -> None:
+    result = pl.Series([pd.Timestamp("2000-01-01T00:00:00.123456789", tz="UTC")])
+    # Note: time unit is not (yet) respected, it should be Datetime('ns', 'UTC').
+    assert result.dtype == pl.Datetime("us", "UTC")
+
+
 def test_series_init_np_2d_zero_zero_shape() -> None:
     arr = np.array([]).reshape(0, 0)
-    with pytest.raises(
-        InvalidOperationError,
-        match=re.escape("cannot reshape empty array into shape (0, 0)"),
-    ):
-        pl.Series(arr)
+    assert_series_equal(
+        pl.Series("a", arr),
+        pl.Series("a", [], pl.Array(pl.Float64, 0)),
+    )
+
+
+def test_series_init_np_2d_empty() -> None:
+    arr = np.array([]).reshape(0, 2)
+    assert_series_equal(
+        pl.Series("a", arr),
+        pl.Series("a", [], pl.Array(pl.Float64, 2)),
+    )
 
 
 def test_list_null_constructor_schema() -> None:

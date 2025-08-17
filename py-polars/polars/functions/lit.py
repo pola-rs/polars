@@ -4,21 +4,22 @@ import contextlib
 import enum
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import polars._reexport as pl
-from polars._utils.convert import (
-    date_to_int,
-    datetime_to_int,
-    time_to_int,
-    timedelta_to_int,
-)
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Duration, Enum, Time
-from polars.dependencies import _check_for_numpy
+from polars.datatypes import Date, Datetime, Duration
+from polars.dependencies import (
+    _check_for_numpy,
+    _check_for_pytz,
+    _check_for_torch,
+    pytz,
+    torch,
+)
 from polars.dependencies import numpy as np
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 
 if TYPE_CHECKING:
@@ -48,11 +49,11 @@ def lit(
     -----
     Expected datatypes:
 
-    - `pl.lit([])` -> empty  Series Float32
-    - `pl.lit([1, 2, 3])` -> Series Int64
-    - `pl.lit([[]])`-> empty  Series List<Null>
-    - `pl.lit([[1, 2, 3]])` -> Series List<i64>
-    - `pl.lit(None)` -> Series Null
+    - `pl.lit([])` -> empty List<Null>
+    - `pl.lit([1, 2, 3])` -> List<i64>
+    - `pl.lit(pl.Series([]))`-> empty Series Null
+    - `pl.lit(pl.Series([1, 2, 3]))` -> Series Int64
+    - `pl.lit(None)` -> Null
 
     Examples
     --------
@@ -78,83 +79,124 @@ def lit(
     time_unit: TimeUnit
 
     if isinstance(value, datetime):
+        if dtype == Date:
+            return wrap_expr(plr.lit(value.date(), allow_object=False, is_scalar=True))
+
+        # parse time unit
         if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
             time_unit = tu  # type: ignore[assignment]
         else:
             time_unit = "us"
 
-        time_zone: str | None = getattr(dtype, "time_zone", None)
-        if (tzinfo := value.tzinfo) is not None:
-            tzinfo_str = str(tzinfo)
-            if time_zone is not None and time_zone != tzinfo_str:
-                msg = f"time zone of dtype ({time_zone!r}) differs from time zone of value ({tzinfo!r})"
+        # parse time zone
+        dtype_tz = getattr(dtype, "time_zone", None)
+        value_tz = value.tzinfo
+        if value_tz is None:
+            tz = dtype_tz
+        else:
+            # value has time zone, but dtype does not: keep value time zone
+            if dtype_tz is None:
+                if isinstance(value_tz, ZoneInfo) or (
+                    _check_for_pytz(value_tz)
+                    and isinstance(value_tz, pytz.tzinfo.BaseTzInfo)
+                    and value_tz.zone is not None
+                ):
+                    # named timezone
+                    tz = str(value_tz)
+                else:
+                    # fixed offset from UTC (eg: +4:00)
+                    value = value.astimezone(timezone.utc)
+                    tz = "UTC"
+
+            # dtype and value both have same time zone
+            elif str(value_tz) == dtype_tz:
+                tz = str(value_tz)
+
+            # given a fixed offset from UTC that matches the dtype tz offset
+            elif hasattr(value_tz, "utcoffset") and getattr(
+                ZoneInfo(dtype_tz).utcoffset(value), "seconds", 0
+            ) == getattr(value_tz.utcoffset(value), "seconds", 1):
+                tz = dtype_tz
+            else:
+                # value has time zone that differs from dtype time zone
+                msg = (
+                    f"time zone of dtype ({dtype_tz!r}) differs from time zone of "
+                    f"value ({value_tz!r})"
+                )
                 raise TypeError(msg)
-            time_zone = tzinfo_str
 
         dt_utc = value.replace(tzinfo=timezone.utc)
-        dt_int = datetime_to_int(dt_utc, time_unit)
-        expr = lit(dt_int).cast(Datetime(time_unit))
-        if time_zone is not None:
+        expr = wrap_expr(plr.lit(dt_utc, allow_object=False, is_scalar=True)).cast(
+            Datetime(time_unit)
+        )
+        if tz is not None:
             expr = expr.dt.replace_time_zone(
-                time_zone, ambiguous="earliest" if value.fold == 0 else "latest"
+                tz, ambiguous="earliest" if value.fold == 0 else "latest"
             )
         return expr
 
     elif isinstance(value, timedelta):
-        if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
-            time_unit = tu  # type: ignore[assignment]
-        else:
-            time_unit = "us"
-
-        td_int = timedelta_to_int(value, time_unit)
-        return lit(td_int).cast(Duration(time_unit))
+        expr = wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
+        if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
+            expr = expr.cast(Duration(tu))
+        return expr
 
     elif isinstance(value, time):
-        time_int = time_to_int(value)
-        return lit(time_int).cast(Time)
+        return wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
 
     elif isinstance(value, date):
-        date_int = date_to_int(value)
-        return lit(date_int).cast(Date)
+        if dtype == Datetime:
+            time_unit = getattr(dtype, "time_unit", "us") or "us"
+            dt_utc = datetime(value.year, value.month, value.day)
+            expr = wrap_expr(plr.lit(dt_utc, allow_object=False, is_scalar=True)).cast(
+                Datetime(time_unit)
+            )
+            if (time_zone := getattr(dtype, "time_zone", None)) is not None:
+                expr = expr.dt.replace_time_zone(str(time_zone))
+            return expr
+        else:
+            return wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
 
     elif isinstance(value, pl.Series):
         value = value._s
-        return wrap_expr(plr.lit(value, allow_object))
+        return wrap_expr(plr.lit(value, allow_object, is_scalar=False))
 
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pl.Series("literal", value, dtype=dtype))
 
+    elif _check_for_torch(value) and isinstance(value, torch.Tensor):
+        return lit(pl.Series("literal", value.numpy(force=False), dtype=dtype))
+
     elif isinstance(value, (list, tuple)):
-        return lit(pl.Series("literal", [value], dtype=dtype))
+        return wrap_expr(
+            plr.lit(
+                pl.Series("literal", [value], dtype=dtype)._s,
+                allow_object,
+                is_scalar=True,
+            )
+        )
 
     elif isinstance(value, enum.Enum):
-        lit_value = value.value
-        if dtype is None and isinstance(value, str):
-            dtype = Enum(m.value for m in type(value))
-        return lit(lit_value, dtype=dtype)
+        return lit(value.value, dtype=dtype)
 
     if dtype:
-        return wrap_expr(plr.lit(value, allow_object)).cast(dtype)
+        return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)
 
-    try:
-        # numpy literals like np.float32(0) have item/dtype
-        item = value.item()
-
-        # numpy item() is py-native datetime/timedelta when units < 'ns'
-        if isinstance(item, (datetime, timedelta)):
+    if _check_for_numpy(value) and isinstance(value, np.generic):
+        # note: the item() is a py-native datetime/timedelta when units < 'ns'
+        if isinstance(item := value.item(), (datetime, timedelta)):
             return lit(item)
 
         # handle 'ns' units
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
             if dtype_name.startswith("datetime64["):
-                time_unit = dtype_name[len("datetime64[") : -1]
+                time_unit = dtype_name[len("datetime64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Datetime(time_unit))
             if dtype_name.startswith("timedelta64["):
-                time_unit = dtype_name[len("timedelta64[") : -1]
+                time_unit = dtype_name[len("timedelta64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Duration(time_unit))
-
-    except AttributeError:
+    else:
         item = value
 
-    return wrap_expr(plr.lit(item, allow_object))
+    return wrap_expr(plr.lit(item, allow_object, is_scalar=True))

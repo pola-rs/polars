@@ -2,11 +2,11 @@
 use std::fmt::{Debug, Formatter, Result, Write};
 
 use super::PrimitiveArray;
-use crate::array::fmt::write_vec;
 use crate::array::Array;
+use crate::array::fmt::write_vec;
 use crate::datatypes::{IntervalUnit, TimeUnit};
 use crate::temporal_conversions;
-use crate::types::{days_ms, i256, months_days_ns, NativeType};
+use crate::types::{NativeType, days_ms, i256, months_days_ns};
 
 macro_rules! dyn_primitive {
     ($array:expr, $ty:ty, $expr:expr) => {{
@@ -22,11 +22,12 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
     array: &'a PrimitiveArray<T>,
 ) -> Box<dyn Fn(&mut F, usize) -> Result + 'a> {
     use crate::datatypes::ArrowDataType::*;
-    match array.data_type().to_logical_type() {
+    match array.dtype().to_logical_type() {
         Int8 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Int16 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Int32 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Int64 => Box::new(|f, index| write!(f, "{}", array.value(index))),
+        Int128 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         UInt8 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         UInt16 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         UInt32 => Box::new(|f, index| write!(f, "{}", array.value(index))),
@@ -56,7 +57,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
         Time64(_) => unreachable!(), // remaining are not valid
         Timestamp(time_unit, tz) => {
             if let Some(tz) = tz {
-                let timezone = temporal_conversions::parse_offset(tz);
+                let timezone = temporal_conversions::parse_offset(tz.as_str());
                 match timezone {
                     Ok(timezone) => {
                         dyn_primitive!(array, i64, |time| {
@@ -65,7 +66,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                     },
                     #[cfg(feature = "chrono-tz")]
                     Err(_) => {
-                        let timezone = temporal_conversions::parse_offset_tz(tz);
+                        let timezone = temporal_conversions::parse_offset_tz(tz.as_str());
                         match timezone {
                             Ok(timezone) => dyn_primitive!(array, i64, |time| {
                                 temporal_conversions::timestamp_to_datetime(
@@ -125,6 +126,26 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
             };
             dyn_primitive!(array, i128, display)
         },
+        Decimal32(_, scale) => {
+            let scale = *scale as u32;
+            let factor = 10i32.pow(scale);
+            let display = move |x: i32| {
+                let base = x / factor;
+                let decimals = (x - base * factor).abs();
+                format!("{base}.{decimals}")
+            };
+            dyn_primitive!(array, i32, display)
+        },
+        Decimal64(_, scale) => {
+            let scale = *scale as u32;
+            let factor = 10i64.pow(scale);
+            let display = move |x: i64| {
+                let base = x / factor;
+                let decimals = (x - base * factor).abs();
+                format!("{base}.{decimals}")
+            };
+            dyn_primitive!(array, i64, display)
+        },
         Decimal256(_, scale) => {
             let scale = *scale as u32;
             let factor = (ethnum::I256::ONE * 10).pow(scale);
@@ -143,7 +164,7 @@ impl<T: NativeType> Debug for PrimitiveArray<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let writer = get_write_value(self);
 
-        write!(f, "{:?}", self.data_type())?;
+        write!(f, "{:?}", self.dtype())?;
         write_vec(f, &*writer, self.validity(), self.len(), "None", false)
     }
 }

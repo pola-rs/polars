@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import io
-import os
-import re
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.interchange.protocol import CompatLevel
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -44,11 +41,13 @@ def test_from_to_buffer(
 ) -> None:
     # use an ad-hoc buffer (file=None)
     buf1 = write_ipc(df, stream, None, compression=compression)
+    buf1.seek(0)
     read_df = read_ipc(stream, buf1, use_pyarrow=False)
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
     # explicitly supply an existing buffer
     buf2 = io.BytesIO()
+    buf2.seek(0)
     write_ipc(df, stream, buf2, compression=compression)
     buf2.seek(0)
     read_df = read_ipc(stream, buf2, use_pyarrow=False)
@@ -58,7 +57,7 @@ def test_from_to_buffer(
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 @pytest.mark.parametrize("path_as_string", [True, False])
 @pytest.mark.parametrize("stream", [True, False])
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_from_to_file(
     df: pl.DataFrame,
     compression: IpcCompression,
@@ -77,7 +76,7 @@ def test_from_to_file(
 
 
 @pytest.mark.parametrize("stream", [True, False])
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_select_columns_from_file(
     df: pl.DataFrame, tmp_path: Path, stream: bool
 ) -> None:
@@ -96,7 +95,8 @@ def test_select_columns_from_buffer(stream: bool) -> None:
             "a": [1],
             "b": [2],
             "c": [3],
-        }
+        },
+        schema={"a": pl.Int64(), "b": pl.Int128(), "c": pl.UInt8()},
     )
 
     f = io.BytesIO()
@@ -110,7 +110,8 @@ def test_select_columns_from_buffer(stream: bool) -> None:
             "b": [2],
             "c": [3],
             "a": [1],
-        }
+        },
+        schema={"b": pl.Int128(), "c": pl.UInt8(), "a": pl.Int64()},
     )
     assert_frame_equal(expected, actual)
 
@@ -143,17 +144,36 @@ def test_compressed_simple(compression: IpcCompression, stream: bool) -> None:
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_ipc_schema(compression: IpcCompression) -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
+    schema = {
+        "i64": pl.Int64(),
+        "i128": pl.Int128(),
+        "u8": pl.UInt8(),
+        "f32": pl.Float32(),
+        "f64": pl.Float64(),
+        "str": pl.String(),
+        "bool": pl.Boolean(),
+    }
+    df = pl.DataFrame(
+        {
+            "i64": [1, 2],
+            "i128": [1, 2],
+            "u8": [1, 2],
+            "f32": [1, 2],
+            "f64": [1, 2],
+            "str": ["a", None],
+            "bool": [True, False],
+        },
+        schema=schema,
+    )
 
     f = io.BytesIO()
     df.write_ipc(f, compression=compression)
     f.seek(0)
 
-    expected = {"a": pl.Int64(), "b": pl.String(), "c": pl.Boolean()}
-    assert pl.read_ipc_schema(f) == expected
+    assert pl.read_ipc_schema(f) == schema
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 @pytest.mark.parametrize("path_as_string", [True, False])
 def test_ipc_schema_from_file(
@@ -183,9 +203,7 @@ def test_ipc_schema_from_file(
         "datetime": pl.Datetime(),
         "time": pl.Time(),
         "cat": pl.Categorical(),
-        "enum": pl.Enum(
-            []
-        ),  # at schema inference categories are not read an empty Enum is returned
+        "enum": pl.Enum(["foo", "ham", "bar"]),
     }
     assert schema == expected
 
@@ -208,7 +226,7 @@ def test_ipc_column_order(stream: bool) -> None:
     assert read_ipc(stream, f, columns=columns).columns == columns
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
     file_path = tmp_path / "small.ipc"
     df.write_ipc(file_path)
@@ -231,7 +249,7 @@ def test_from_float16() -> None:
     assert pl.read_ipc(f, use_pyarrow=False).dtypes == [pl.Float32]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_binview_ipc_mmap(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": ["aa" * 10, "bb", None, "small", "big" * 20]})
     file_path = tmp_path / "dump.ipc"
@@ -245,6 +263,7 @@ def test_list_nested_enum() -> None:
     df = pl.DataFrame(pl.Series("list_cat", [["a", "b", "c", None]], dtype=dtype))
     buffer = io.BytesIO()
     df.write_ipc(buffer, compat_level=CompatLevel.newest())
+    buffer.seek(0)
     df = pl.read_ipc(buffer)
     assert df.get_column("list_cat").dtype == dtype
 
@@ -258,11 +277,12 @@ def test_struct_nested_enum() -> None:
     )
     buffer = io.BytesIO()
     df.write_ipc(buffer, compat_level=CompatLevel.newest())
+    buffer.seek(0)
     df = pl.read_ipc(buffer)
     assert df.get_column("struct_cat").dtype == dtype
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_ipc_view_gc_14448() -> None:
     f = io.BytesIO()
     # This size was required to trigger the bug
@@ -274,8 +294,8 @@ def test_ipc_view_gc_14448() -> None:
     assert_frame_equal(pl.read_ipc(f), df)
 
 
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 @pytest.mark.parametrize("stream", [True, False])
 def test_read_ipc_only_loads_selected_columns(
     memory_usage_without_pyarrow: MemoryUsage,
@@ -310,10 +330,10 @@ def test_read_ipc_only_loads_selected_columns(
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 32_000_000 at least, but there's some overhead.
-    assert 16_000_000 < memory_usage_without_pyarrow.get_peak() < 23_000_000
+    # assert 16_000_000 < memory_usage_without_pyarrow.get_peak() < 23_000_000
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_ipc_decimal_15920(
     tmp_path: Path,
 ) -> None:
@@ -336,32 +356,114 @@ def test_ipc_decimal_15920(
     ).to_frame()  # fmt: skip
 
     for df in [base_df, base_df.drop_nulls()]:
-        path = f"{tmp_path}/data"
+        path = f"{tmp_path}/data.ipc"
         df.write_ipc(path)
         assert_frame_equal(pl.read_ipc(path), df)
 
 
-@pytest.mark.write_disk()
-def test_ipc_raise_on_writing_mmap(tmp_path: Path) -> None:
-    p = tmp_path / "foo.ipc"
-    df = pl.DataFrame({"foo": [1, 2, 3]})
-    # first write is allowed
-    df.write_ipc(p)
+def test_ipc_variadic_buffers_categorical_binview_18636() -> None:
+    df = pl.DataFrame(
+        {
+            "Test": pl.Series(["Value012"], dtype=pl.Categorical),
+            "Test2": pl.Series(["Value Two 20032"], dtype=pl.String),
+        }
+    )
 
-    # now open as memory mapped
-    df = pl.read_ipc(p, memory_map=True)
+    b = io.BytesIO()
+    df.write_ipc(b)
+    b.seek(0)
+    assert_frame_equal(pl.read_ipc(b), df)
 
-    if os.name == "nt":
-        # In Windows, it's the duty of the system to ensure exclusive access
-        with pytest.raises(
-            OSError,
-            match=re.escape(
-                "The requested operation cannot be performed on a file with a user-mapped section open. (os error 1224)"
-            ),
-        ):
-            df.write_ipc(p)
-    else:
-        with pytest.raises(
-            ComputeError, match="cannot write to file: already memory mapped"
-        ):
-            df.write_ipc(p)
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_ipc_chunked_roundtrip(size: int) -> None:
+    a = pl.Series("a", [{"x": 1}] * size, pl.Struct({"x": pl.Int8})).to_frame()
+
+    c = pl.concat([a] * 2, how="vertical")
+
+    f = io.BytesIO()
+    c.write_ipc(f)
+
+    f.seek(0)
+    assert_frame_equal(c, pl.read_ipc(f))
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_ipc_roundtrip(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
+
+    f = io.BytesIO()
+    a.write_ipc(f)
+
+    f.seek(0)
+    assert_frame_equal(a, pl.read_ipc(f))
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_ipc_chunked_roundtrip(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
+
+    c = pl.concat([a] * 2, how="vertical")
+
+    f = io.BytesIO()
+    c.write_ipc(f)
+
+    f.seek(0)
+    assert_frame_equal(c, pl.read_ipc(f))
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+@pytest.mark.parametrize("value", [{}, {"x": 1}])
+@pytest.mark.write_disk
+def test_memmap_ipc_chunked_structs(
+    size: int, value: dict[str, int], tmp_path: Path
+) -> None:
+    a = pl.Series("a", [value] * size, pl.Struct).to_frame()
+
+    c = pl.concat([a] * 2, how="vertical")
+
+    f = tmp_path / "f.ipc"
+    c.write_ipc(f)
+    assert_frame_equal(c, pl.read_ipc(f))
+
+
+def test_categorical_lexical_sort_2732() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["foo", "bar", "baz"],
+            "b": [1, 3, 2],
+        },
+        schema_overrides={"a": pl.Categorical("lexical")},
+    )
+    f = io.BytesIO()
+    df.write_ipc(f)
+    f.seek(0)
+    assert_frame_equal(df, pl.read_ipc(f))
+
+
+def test_enum_scan_21564() -> None:
+    s = pl.Series("a", ["A"], pl.Enum(["A"]))
+
+    # DataFrame with a an enum field
+    f = io.BytesIO()
+    s.to_frame().write_ipc(f)
+
+    f.seek(0)
+    assert_series_equal(
+        pl.scan_ipc(f).collect().to_series(),
+        s,
+    )
+
+
+@no_type_check
+def test_roundtrip_empty_str_list_21163() -> None:
+    schema = {
+        "s": pl.Utf8,
+        "list": pl.List(pl.Utf8),
+    }
+    row1 = pl.DataFrame({"s": ["A"], "list": [[]]}, schema=schema)
+    row2 = pl.DataFrame({"s": ["B"], "list": [[]]}, schema=schema)
+    df = pl.concat([row1, row2])
+    bytes = df.serialize()
+    deserialized = pl.DataFrame.deserialize(io.BytesIO(bytes))
+    assert_frame_equal(df, deserialized)

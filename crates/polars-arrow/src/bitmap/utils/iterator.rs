@@ -176,7 +176,7 @@ impl<'a> BitmapIter<'a> {
         let num_words = n / 64;
 
         if num_words > 0 {
-            assert!(self.bytes.len() >= num_words * std::mem::size_of::<u64>());
+            assert!(self.bytes.len() >= num_words * size_of::<u64>());
 
             bitmap.extend_from_slice(self.bytes, 0, num_words * u64::BITS as usize);
 
@@ -189,7 +189,7 @@ impl<'a> BitmapIter<'a> {
             return;
         }
 
-        assert!(self.bytes.len() >= std::mem::size_of::<u64>());
+        assert!(self.bytes.len() >= size_of::<u64>());
 
         self.word_len = usize::min(self.rest_len, 64);
         self.rest_len -= self.word_len;
@@ -205,7 +205,7 @@ impl<'a> BitmapIter<'a> {
     }
 }
 
-impl<'a> Iterator for BitmapIter<'a> {
+impl Iterator for BitmapIter<'_> {
     type Item = bool;
 
     #[inline]
@@ -238,7 +238,7 @@ impl<'a> Iterator for BitmapIter<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for BitmapIter<'a> {
+impl DoubleEndedIterator for BitmapIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<bool> {
         if self.rest_len > 0 {
@@ -280,7 +280,7 @@ mod tests {
 
             let mut length = 0;
             let mut pattern = Vec::new();
-            for _ in 0..rand::random::<usize>() % 1024 {
+            for _ in 0..rand::random::<u64>() % 1024 {
                 let bs = rand::random::<u8>() % 4;
 
                 let word = match bs {
@@ -296,7 +296,7 @@ mod tests {
                 length += 64;
             }
 
-            for _ in 0..rand::random::<usize>() % 7 {
+            for _ in 0..rand::random::<u64>() % 7 {
                 let b = rand::random::<u8>();
                 pattern.push(b);
                 set_bits += b.count_ones();
@@ -304,7 +304,7 @@ mod tests {
                 length += 8;
             }
 
-            let last_length = rand::random::<usize>() % 8;
+            let last_length = rand::random::<u64>() % 8;
             if last_length != 0 {
                 let b = rand::random::<u8>();
                 pattern.push(b);
@@ -314,12 +314,12 @@ mod tests {
                 length += last_length;
             }
 
-            let mut iter = BitmapIter::new(&pattern, 0, length);
-            let mut bitmap = MutableBitmap::with_capacity(length);
+            let mut iter = BitmapIter::new(&pattern, 0, length as usize);
+            let mut bitmap = MutableBitmap::with_capacity(length as usize);
 
             while iter.num_remaining() > 0 {
                 let len_before = bitmap.len();
-                let n = rand::random::<usize>() % iter.num_remaining();
+                let n = rand::random::<u64>() as usize % iter.num_remaining();
                 iter.collect_n_into(&mut bitmap, n);
 
                 // Ensure we are booking the progress we expect
@@ -339,7 +339,7 @@ mod tests {
         for _ in 0..10_000 {
             let mut length = 0;
             let mut pattern = Vec::new();
-            for _ in 0..rand::random::<usize>() % 1024 {
+            for _ in 0..rand::random::<u64>() % 1024 {
                 let bs = rand::random::<u8>() % 4;
 
                 let word = match bs {
@@ -353,18 +353,18 @@ mod tests {
                 length += 64;
             }
 
-            for _ in 0..rand::random::<usize>() % 7 {
+            for _ in 0..rand::random::<u64>() % 7 {
                 pattern.push(rand::random::<u8>());
                 length += 8;
             }
 
-            let last_length = rand::random::<usize>() % 8;
+            let last_length = rand::random::<u64>() % 8;
             if last_length != 0 {
                 pattern.push(rand::random::<u8>());
                 length += last_length;
             }
 
-            let mut iter = BitmapIter::new(&pattern, 0, length);
+            let mut iter = BitmapIter::new(&pattern, 0, length as usize);
 
             let mut prev_remaining = iter.num_remaining();
             while iter.num_remaining() != 0 {

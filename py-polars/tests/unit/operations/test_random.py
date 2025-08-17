@@ -74,17 +74,17 @@ def test_sample_n_expr() -> None:
     )
 
     out_df = df.sample(pl.Series([3]), seed=0)
-    expected_df = pl.DataFrame({"group": [2, 2, 1], "val": [1, 1, 3]})
+    expected_df = pl.DataFrame({"group": [2, 1, 1], "val": [1, 2, 3]})
     assert_frame_equal(out_df, expected_df)
 
     agg_df = df.group_by("group", maintain_order=True).agg(
         pl.col("val").sample(pl.col("val").max(), seed=0)
     )
-    expected_df = pl.DataFrame({"group": [1, 2], "val": [[1, 2, 3], [1, 1]]})
+    expected_df = pl.DataFrame({"group": [1, 2], "val": [[1, 2, 3], [2, 1]]})
     assert_frame_equal(agg_df, expected_df)
 
     select_df = df.select(pl.col("val").sample(pl.col("val").max(), seed=0))
-    expected_df = pl.DataFrame({"val": [1, 1, 3]})
+    expected_df = pl.DataFrame({"val": [1, 2, 3]})
     assert_frame_equal(select_df, expected_df)
 
 
@@ -116,27 +116,6 @@ def test_sample_series() -> None:
     assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10
 
 
-def test_rank_random_expr() -> None:
-    df = pl.from_dict(
-        {"a": [1] * 5, "b": [1, 2, 3, 4, 5], "c": [200, 100, 100, 50, 100]}
-    )
-
-    df_ranks1 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    df_ranks2 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    assert_frame_equal(df_ranks1, df_ranks2)
-
-
-def test_rank_random_series() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    assert_series_equal(
-        s.rank("random", seed=1), pl.Series("a", [2, 4, 7, 3, 5, 6, 1], dtype=pl.UInt32)
-    )
-
-
 def test_shuffle_expr() -> None:
     # pl.set_random_seed should lead to reproducible results.
     s = pl.Series("a", range(20))
@@ -151,11 +130,11 @@ def test_shuffle_expr() -> None:
 
 def test_shuffle_series() -> None:
     a = pl.Series("a", [1, 2, 3])
-    out = a.shuffle(2)
-    expected = pl.Series("a", [2, 1, 3])
+    out = a.shuffle(1)
+    expected = pl.Series("a", [2, 3, 1])
     assert_series_equal(out, expected)
 
-    out = pl.select(pl.lit(a).shuffle(2)).to_series()
+    out = pl.select(pl.lit(a).shuffle(1)).to_series()
     assert_series_equal(out, expected)
 
 

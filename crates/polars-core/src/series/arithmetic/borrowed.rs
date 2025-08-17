@@ -45,12 +45,15 @@ impl<T: NumOpsDispatchInner> NumOpsDispatch for ChunkedArray<T> {
     }
 }
 
-impl<T> NumOpsDispatchInner for T
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> NumOpsDispatchInner for T {
     fn subtract(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // There will be UB if a ChunkedArray is alive with the wrong datatype.
         // we now only create the potentially wrong dtype for a short time.
@@ -61,6 +64,13 @@ where
         Ok(out.into_series())
     }
     fn add_to(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
@@ -68,6 +78,13 @@ where
         Ok(out.into_series())
     }
     fn multiply(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
@@ -75,6 +92,13 @@ where
         Ok(out.into_series())
     }
     fn divide(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
@@ -82,6 +106,13 @@ where
         Ok(out.into_series())
     }
     fn remainder(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
@@ -114,63 +145,6 @@ impl NumOpsDispatchInner for BooleanType {
     }
 }
 
-#[cfg(feature = "dtype-array")]
-fn array_shape(dt: &DataType, infer: bool) -> Vec<i64> {
-    fn inner(dt: &DataType, buf: &mut Vec<i64>) {
-        if let DataType::Array(_, size) = dt {
-            buf.push(*size as i64)
-        }
-    }
-
-    let mut buf = vec![];
-    if infer {
-        buf.push(-1)
-    }
-    inner(dt, &mut buf);
-    buf
-}
-
-#[cfg(feature = "dtype-array")]
-impl ArrayChunked {
-    fn arithm_helper(
-        &self,
-        rhs: &Series,
-        op: &dyn Fn(Series, Series) -> PolarsResult<Series>,
-    ) -> PolarsResult<Series> {
-        let l_leaf_array = self.clone().into_series().get_leaf_array();
-        let shape = array_shape(self.dtype(), true);
-
-        let r_leaf_array = if rhs.dtype().is_numeric() && rhs.len() == 1 {
-            rhs.clone()
-        } else {
-            polars_ensure!(self.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
-            rhs.get_leaf_array()
-        };
-
-        let out = op(l_leaf_array, r_leaf_array)?;
-        out.reshape_array(&shape)
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl NumOpsDispatchInner for FixedSizeListType {
-    fn add_to(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.add_to(&r))
-    }
-    fn subtract(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.subtract(&r))
-    }
-    fn multiply(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.multiply(&r))
-    }
-    fn divide(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.divide(&r))
-    }
-    fn remainder(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.remainder(&r))
-    }
-}
-
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {
     use num_traits::{CheckedDiv, One, ToPrimitive, Zero};
@@ -186,7 +160,7 @@ pub mod checked {
             lhs: &ChunkedArray<Self>,
             _rhs: T,
         ) -> PolarsResult<Series> {
-            polars_bail!(opq = checked_div_num, lhs.dtype(), Self::get_dtype());
+            polars_bail!(opq = checked_div_num, lhs.dtype(), Self::get_static_dtype());
         }
     }
 
@@ -209,7 +183,6 @@ pub mod checked {
     where
         T: PolarsIntegerType,
         T::Native: CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + Zero + One,
-        ChunkedArray<T>: IntoSeries,
     {
         fn checked_div(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:
@@ -219,13 +192,12 @@ pub mod checked {
             // The ChunkedArray with the wrong dtype is dropped after this operation
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
-            Ok(
+            let ca: ChunkedArray<T> =
                 arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
                     (Some(l), Some(r)) => l.checked_div(&r),
                     _ => None,
-                })
-                .into_series(),
-            )
+                });
+            Ok(ca.into_series())
         }
     }
 
@@ -332,11 +304,7 @@ pub mod checked {
                     .apply(|opt_v| {
                         opt_v.and_then(|v| {
                             let res = rhs.to_f32().unwrap();
-                            if res.is_zero() {
-                                None
-                            } else {
-                                Some(v / res)
-                            }
+                            if res.is_zero() { None } else { Some(v / res) }
                         })
                     })
                     .into_series(),
@@ -346,11 +314,7 @@ pub mod checked {
                     .apply(|opt_v| {
                         opt_v.and_then(|v| {
                             let res = rhs.to_f64().unwrap();
-                            if res.is_zero() {
-                                None
-                            } else {
-                                Some(v / res)
-                            }
+                            if res.is_zero() { None } else { Some(v / res) }
                         })
                     })
                     .into_series(),
@@ -361,30 +325,40 @@ pub mod checked {
     }
 }
 
-pub(crate) fn coerce_lhs_rhs<'a>(
+pub fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> PolarsResult<(Cow<'a, Series>, Cow<'a, Series>)> {
     if let Some(result) = coerce_time_units(lhs, rhs) {
         return Ok(result);
     }
-    let dtype = match (lhs.dtype(), rhs.dtype()) {
-        #[cfg(feature = "dtype-struct")]
-        (DataType::Struct(_), DataType::Struct(_)) => {
-            return Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs)))
-        },
-        _ => try_get_supertype(lhs.dtype(), rhs.dtype())?,
-    };
+    let (left_dtype, right_dtype) = (lhs.dtype(), rhs.dtype());
+    let leaf_super_dtype = try_get_supertype(left_dtype.leaf_dtype(), right_dtype.leaf_dtype())?;
 
-    let left = if lhs.dtype() == &dtype {
+    let mut new_left_dtype = left_dtype.cast_leaf(leaf_super_dtype.clone());
+    let mut new_right_dtype = right_dtype.cast_leaf(leaf_super_dtype);
+
+    // Correct the list and array types
+    //
+    // This also casts Lists <-> Array.
+    if left_dtype.is_list()
+        || right_dtype.is_list()
+        || left_dtype.is_array()
+        || right_dtype.is_array()
+    {
+        new_left_dtype = try_get_supertype(&new_left_dtype, &new_right_dtype)?;
+        new_right_dtype = new_left_dtype.clone();
+    }
+
+    let left = if lhs.dtype() == &new_left_dtype {
         Cow::Borrowed(lhs)
     } else {
-        Cow::Owned(lhs.cast(&dtype)?)
+        Cow::Owned(lhs.cast(&new_left_dtype)?)
     };
-    let right = if rhs.dtype() == &dtype {
+    let right = if rhs.dtype() == &new_right_dtype {
         Cow::Borrowed(rhs)
     } else {
-        Cow::Owned(rhs.cast(&dtype)?)
+        Cow::Owned(rhs.cast(&new_right_dtype)?)
     };
     Ok((left, right))
 }
@@ -460,8 +434,21 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> PolarsResult<Series>>(
             Ok(rhs.try_apply_fields(|rhs| func(s, rhs))?.into_series())
         },
         _ => {
-            let (s, rhs) = align_chunks_binary(s, rhs);
+            let mut s = Cow::Borrowed(s);
+            let mut rhs = Cow::Borrowed(rhs);
+
+            match (s.len(), rhs.len()) {
+                (l, r) if l == r => {},
+                (1, _) => s = Cow::Owned(s.new_from_index(0, rhs.len())),
+                (_, 1) => rhs = Cow::Owned(rhs.new_from_index(0, s.len())),
+                (l, r) => {
+                    polars_bail!(ComputeError: "Struct arithmetic between different lengths {l} != {r}")
+                },
+            };
+            let (s, rhs) = align_chunks_binary(&s, &rhs);
             let mut s = s.into_owned();
+
+            // Expects lengths to be equal.
             s.zip_outer_validity(rhs.as_ref());
 
             let mut rhs_iter = rhs.fields_as_series().into_iter();
@@ -498,6 +485,13 @@ impl Add for &Series {
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.add(b))
             },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list::NumericListOp::add().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::add().execute(self, rhs)
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.add_to(rhs.as_ref())
@@ -515,6 +509,13 @@ impl Sub for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.sub(b))
+            },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list::NumericListOp::sub().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::sub().execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -548,7 +549,14 @@ impl Mul for &Series {
             (_, Duration(_)) => {
                 // swap order
                 let out = rhs.multiply(self)?;
-                Ok(out.with_name(self.name()))
+                Ok(out.with_name(self.name().clone()))
+            },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list::NumericListOp::mul().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::mul().execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -571,19 +579,22 @@ impl Div for &Series {
         use DataType::*;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
-            (Struct(_), Struct(_)) => {
-                _struct_arithmetic(self, rhs, |a, b| a.div(b))
-            },
+            (Struct(_), Struct(_)) => _struct_arithmetic(self, rhs, |a, b| a.div(b)),
             (Duration(_), _) => self.divide(rhs),
-            | (Date, _)
+            (Date, _)
             | (Datetime(_, _), _)
             | (Time, _)
-            // temporal rhs
-            | (_ , Duration(_))
-            | (_ , Time)
-            | (_ , Date)
-            | (_ , Datetime(_, _))
-            => polars_bail!(opq = div, self.dtype(), rhs.dtype()),
+            | (_, Duration(_))
+            | (_, Time)
+            | (_, Date)
+            | (_, Datetime(_, _)) => polars_bail!(opq = div, self.dtype(), rhs.dtype()),
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list::NumericListOp::div().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::div().execute(self, rhs)
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.divide(rhs.as_ref())
@@ -606,6 +617,13 @@ impl Rem for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.rem(b))
+            },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list::NumericListOp::rem().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::rem().execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -640,9 +658,7 @@ where
     fn sub(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! sub {
-            ($ca:expr) => {{
-                $ca.sub(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.sub(rhs).into_series() }};
         }
 
         let out = downcast_as_macro_arg_physical!(s, sub);
@@ -670,9 +686,7 @@ where
     fn add(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! add {
-            ($ca:expr) => {{
-                $ca.add(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.add(rhs).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, add);
         finish_cast(self, out)
@@ -699,9 +713,7 @@ where
     fn div(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! div {
-            ($ca:expr) => {{
-                $ca.div(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.div(rhs).into_series() }};
         }
 
         let out = downcast_as_macro_arg_physical!(s, div);
@@ -745,9 +757,7 @@ where
     fn mul(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! mul {
-            ($ca:expr) => {{
-                $ca.mul(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.mul(rhs).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, mul);
         finish_cast(self, out)
@@ -774,9 +784,7 @@ where
     fn rem(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! rem {
-            ($ca:expr) => {{
-                $ca.rem(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.rem(rhs).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, rem);
         finish_cast(self, out)
@@ -797,11 +805,7 @@ where
 /// We cannot override the left hand side behaviour. So we create a trait LhsNumOps.
 /// This allows for 1.add(&Series)
 ///
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> ChunkedArray<T> {
     /// Apply lhs - self
     #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
@@ -847,9 +851,7 @@ where
     fn sub(self, rhs: &Series) -> Self::Output {
         let s = rhs.to_physical_repr();
         macro_rules! sub {
-            ($rhs:expr) => {{
-                $rhs.lhs_sub(self).into_series()
-            }};
+            ($rhs:expr) => {{ $rhs.lhs_sub(self).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, sub);
 
@@ -858,9 +860,7 @@ where
     fn div(self, rhs: &Series) -> Self::Output {
         let s = rhs.to_physical_repr();
         macro_rules! div {
-            ($rhs:expr) => {{
-                $rhs.lhs_div(self).into_series()
-            }};
+            ($rhs:expr) => {{ $rhs.lhs_div(self).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, div);
 
@@ -873,9 +873,7 @@ where
     fn rem(self, rhs: &Series) -> Self::Output {
         let s = rhs.to_physical_repr();
         macro_rules! rem {
-            ($rhs:expr) => {{
-                $rhs.lhs_rem(self).into_series()
-            }};
+            ($rhs:expr) => {{ $rhs.lhs_rem(self).into_series() }};
         }
 
         let out = downcast_as_macro_arg_physical!(s, rem);
@@ -892,7 +890,7 @@ mod test {
     #[allow(clippy::eq_op)]
     fn test_arithmetic_series() -> PolarsResult<()> {
         // Series +-/* Series
-        let s = Series::new("foo", [1, 2, 3]);
+        let s = Series::new("foo".into(), [1, 2, 3]);
         assert_eq!(
             Vec::from((&s * &s)?.i32().unwrap()),
             [Some(1), Some(4), Some(9)]
@@ -949,9 +947,9 @@ mod test {
             [Some(0), Some(1), Some(1)]
         );
 
-        assert_eq!((&s * &s)?.name(), "foo");
-        assert_eq!((&s * 1).name(), "foo");
-        assert_eq!((1.div(&s)).name(), "foo");
+        assert_eq!((&s * &s)?.name().as_str(), "foo");
+        assert_eq!((&s * 1).name().as_str(), "foo");
+        assert_eq!((1.div(&s)).name().as_str(), "foo");
 
         Ok(())
     }
@@ -959,13 +957,13 @@ mod test {
     #[test]
     #[cfg(feature = "checked_arithmetic")]
     fn test_checked_div() {
-        let s = Series::new("foo", [1i32, 0, 1]);
+        let s = Series::new("foo".into(), [1i32, 0, 1]);
         let out = s.checked_div(&s).unwrap();
         assert_eq!(Vec::from(out.i32().unwrap()), &[Some(1), None, Some(1)]);
         let out = s.checked_div_num(0).unwrap();
         assert_eq!(Vec::from(out.i32().unwrap()), &[None, None, None]);
 
-        let s_f32 = Series::new("float32", [1.0f32, 0.0, 1.0]);
+        let s_f32 = Series::new("float32".into(), [1.0f32, 0.0, 1.0]);
         let out = s_f32.checked_div(&s_f32).unwrap();
         assert_eq!(
             Vec::from(out.f32().unwrap()),
@@ -974,7 +972,7 @@ mod test {
         let out = s_f32.checked_div_num(0.0f32).unwrap();
         assert_eq!(Vec::from(out.f32().unwrap()), &[None, None, None]);
 
-        let s_f64 = Series::new("float64", [1.0f64, 0.0, 1.0]);
+        let s_f64 = Series::new("float64".into(), [1.0f64, 0.0, 1.0]);
         let out = s_f64.checked_div(&s_f64).unwrap();
         assert_eq!(
             Vec::from(out.f64().unwrap()),

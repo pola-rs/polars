@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
+from zoneinfo import ZoneInfo
 
-import numpy as np
 import pytest
 
 import polars as pl
@@ -19,11 +19,7 @@ from tests.unit.conftest import (
 )
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import PolarsDataType
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_arg_true() -> None:
@@ -238,7 +234,7 @@ def test_list_eval_expression() -> None:
     for parallel in [True, False]:
         assert df.with_columns(
             pl.concat_list(["a", "b"])
-            .list.eval(pl.first().rank(), parallel=parallel)
+            .list.eval(pl.element().rank(), parallel=parallel)
             .alias("rank")
         ).to_dict(as_series=False) == {
             "a": [1, 8, 3],
@@ -247,7 +243,7 @@ def test_list_eval_expression() -> None:
         }
 
         assert df["a"].reshape((1, -1)).arr.to_list().list.eval(
-            pl.first(), parallel=parallel
+            pl.element(), parallel=parallel
         ).to_list() == [[1, 8, 3]]
 
 
@@ -290,6 +286,8 @@ def test_power_by_expression() -> None:
     assert out["pow_op_left"].to_list() == [2.0, 4.0, None, 16.0, None, 64.0]
 
 
+@pytest.mark.may_fail_cloud  # reason: chunking
+@pytest.mark.may_fail_auto_streaming
 def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
 
@@ -332,121 +330,6 @@ def test_arr_contains() -> None:
             ["peacock", "mouse", "aardvark"],
         ],
     }
-
-
-def test_rank() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 1, 2, 2, 3],
-        }
-    )
-
-    s = df.select(pl.col("a").rank(method="average").alias("b")).to_series()
-    assert s.to_list() == [1.5, 1.5, 3.5, 3.5, 5.0]
-    assert s.dtype == pl.Float64
-
-    s = df.select(pl.col("a").rank(method="max").alias("b")).to_series()
-    assert s.to_list() == [2, 2, 4, 4, 5]
-    assert s.dtype == pl.get_index_type()
-
-
-def test_rank_so_4109() -> None:
-    # also tests ranks null behavior
-    df = pl.from_dict(
-        {
-            "id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4],
-            "rank": [None, 3, 2, 4, 1, 4, 3, 2, 1, None, 3, 4, 4, 1, None, 3],
-        }
-    ).sort(by=["id", "rank"])
-
-    assert df.group_by("id").agg(
-        [
-            pl.col("rank").alias("original"),
-            pl.col("rank").rank(method="dense").alias("dense"),
-            pl.col("rank").rank(method="average").alias("average"),
-        ]
-    ).to_dict(as_series=False) == {
-        "id": [1, 2, 3, 4],
-        "original": [[None, 2, 3, 4], [1, 2, 3, 4], [None, 1, 3, 4], [None, 1, 3, 4]],
-        "dense": [[None, 1, 2, 3], [1, 2, 3, 4], [None, 1, 2, 3], [None, 1, 2, 3]],
-        "average": [
-            [None, 1.0, 2.0, 3.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [None, 1.0, 2.0, 3.0],
-            [None, 1.0, 2.0, 3.0],
-        ],
-    }
-
-
-def test_rank_string_null_11252() -> None:
-    rank = pl.Series([None, "", "z", None, "a"]).rank()
-    assert rank.to_list() == [None, 1.0, 3.0, None, 2.0]
-
-
-def test_search_sorted() -> None:
-    for seed in [1, 2, 3]:
-        np.random.seed(seed)
-        arr = np.sort(np.random.randn(10) * 100)
-        s = pl.Series(arr)
-
-        for v in range(int(np.min(arr)), int(np.max(arr)), 20):
-            assert np.searchsorted(arr, v) == s.search_sorted(v)
-
-    a = pl.Series([1, 2, 3])
-    b = pl.Series([1, 2, 2, -1])
-    assert a.search_sorted(b).to_list() == [0, 1, 1, 0]
-    b = pl.Series([1, 2, 2, None, 3])
-    assert a.search_sorted(b).to_list() == [0, 1, 1, 0, 2]
-
-    a = pl.Series(["b", "b", "d", "d"])
-    b = pl.Series(["a", "b", "c", "d", "e"])
-    assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
-    assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
-
-    a = pl.Series([1, 1, 4, 4])
-    b = pl.Series([0, 1, 2, 4, 5])
-    assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
-    assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
-
-
-def test_search_sorted_multichunk() -> None:
-    for seed in [1, 2, 3]:
-        np.random.seed(seed)
-        arr = np.sort(np.random.randn(10) * 100)
-        q = len(arr) // 4
-        a, b, c, d = map(
-            pl.Series, (arr[:q], arr[q : 2 * q], arr[2 * q : 3 * q], arr[3 * q :])
-        )
-        s = pl.concat([a, b, c, d], rechunk=False)
-        assert s.n_chunks() == 4
-
-        for v in range(int(np.min(arr)), int(np.max(arr)), 20):
-            assert np.searchsorted(arr, v) == s.search_sorted(v)
-
-    a = pl.concat(
-        [
-            pl.Series([None, None, None], dtype=pl.Int64),
-            pl.Series([None, 1, 1, 2, 3]),
-            pl.Series([4, 4, 5, 6, 7, 8, 8]),
-        ],
-        rechunk=False,
-    )
-    assert a.n_chunks() == 3
-    b = pl.Series([-10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 10, None])
-    left_ref = pl.Series(
-        [4, 4, 4, 6, 7, 8, 10, 11, 12, 13, 15, 0], dtype=pl.get_index_type()
-    )
-    right_ref = pl.Series(
-        [4, 4, 6, 7, 8, 10, 11, 12, 13, 15, 15, 4], dtype=pl.get_index_type()
-    )
-    assert_series_equal(a.search_sorted(b, side="left"), left_ref)
-    assert_series_equal(a.search_sorted(b, side="right"), right_ref)
-
-
-def test_search_sorted_right_nulls() -> None:
-    a = pl.Series([1, 2, None, None])
-    assert a.search_sorted(None, side="left") == 2
-    assert a.search_sorted(None, side="right") == 4
 
 
 def test_logical_boolean() -> None:
@@ -703,7 +586,7 @@ def test_repr_short_expression() -> None:
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
-    expected = "<Expr ['.rename_alias(*.count())'] at "
+    expected = "<Expr ['cs.all().count().prefix(length…'] at "
     assert result == expected
 
 
@@ -715,7 +598,7 @@ def test_repr_long_expression() -> None:
     result = repr(expr).split("0x")[0]
 
     # note the … denoting that there was truncated text
-    expected = "<Expr ['dtype_columns([String]).str.co…'] at "
+    expected = "<Expr ['cs.string().str.count_matches(…'] at "
     assert result == expected
     assert repr(expr).endswith(">")
 
@@ -760,3 +643,22 @@ def test_slice() -> None:
     result = df.select(pl.all().slice(1, 1))
     expected = pl.DataFrame({"a": data["a"][1:2], "b": data["b"][1:2]})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.may_fail_cloud  # reason: shrink_dtype
+def test_function_expr_scalar_identification_18755() -> None:
+    # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
+    with pytest.warns(DeprecationWarning):
+        assert_frame_equal(
+            pl.DataFrame({"a": [1, 2]}).with_columns(
+                pl.lit(5, pl.Int64).shrink_dtype().alias("b")
+            ),
+            pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int64)}),
+        )
+
+
+def test_concat_deprecation() -> None:
+    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+        pl.Series(["foo"]).str.concat()
+    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+        pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())

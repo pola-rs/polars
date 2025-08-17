@@ -1,6 +1,6 @@
 import io
+from collections.abc import Iterator
 from datetime import date, datetime
-from typing import Iterator
 
 import pytest
 
@@ -8,7 +8,6 @@ import polars as pl
 from polars.exceptions import (
     InvalidOperationError,
     SchemaError,
-    StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -137,41 +136,23 @@ def test_transpose_arguments() -> None:
 
 
 def test_transpose_categorical_data() -> None:
-    with pl.StringCache():
-        df = pl.DataFrame(
-            [
-                pl.Series(["a", "b", "c"], dtype=pl.Categorical),
-                pl.Series(["c", "g", "c"], dtype=pl.Categorical),
-                pl.Series(["d", "b", "c"], dtype=pl.Categorical),
-            ]
-        )
-        df_transposed = df.transpose(
-            include_header=False, column_names=["col1", "col2", "col3"]
-        )
-        assert_series_equal(
-            df_transposed.get_column("col1"),
-            pl.Series("col1", ["a", "c", "d"], dtype=pl.Categorical),
-        )
-
-    # Without string Cache only works if they have the same categories in the same order
     df = pl.DataFrame(
         [
-            pl.Series(["a", "b", "c", "c"], dtype=pl.Categorical),
-            pl.Series(["a", "b", "b", "c"], dtype=pl.Categorical),
-            pl.Series(["a", "a", "b", "c"], dtype=pl.Categorical),
+            pl.Series(["a", "b", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["c", "g", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["d", "b", "c", "d"], dtype=pl.Categorical),
         ]
     )
-    df_transposed = df.transpose(
-        include_header=False, column_names=["col1", "col2", "col3", "col4"]
+    df_transposed = df.transpose(include_header=False)
+    expected = pl.DataFrame(
+        [
+            pl.Series(["a", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["b", "g", "b"], dtype=pl.Categorical),
+            pl.Series(["c", "c", "c"], dtype=pl.Categorical),
+            pl.Series(["d", "d", "d"], dtype=pl.Categorical),
+        ]
     )
-
-    with pytest.raises(StringCacheMismatchError):
-        pl.DataFrame(
-            [
-                pl.Series(["a", "b", "c", "c"], dtype=pl.Categorical),
-                pl.Series(["c", "b", "b", "c"], dtype=pl.Categorical),
-            ]
-        ).transpose()
+    assert_frame_equal(df_transposed, expected)
 
 
 def test_transpose_logical_data() -> None:
@@ -210,3 +191,8 @@ def test_transpose_multiple_chunks() -> None:
     df = pl.DataFrame({"a": ["1"]})
     expected = pl.DataFrame({"column_0": ["1"], "column_1": ["1"]})
     assert_frame_equal(df.vstack(df).transpose(), expected)
+
+
+def test_nested_struct_transpose_21923() -> None:
+    df = pl.DataFrame({"x": [{"a": {"b": 1, "c": 2}}]})
+    assert df.transpose().item() == df.item()

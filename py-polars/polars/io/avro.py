@@ -9,7 +9,7 @@ from polars._utils.wrap import wrap_df
 from polars.io._utils import parse_columns_arg
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
     from polars import DataFrame
@@ -29,9 +29,8 @@ def read_avro(
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance).
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        function, or a `BytesIO` instance). For file-like objects, the stream position
+        may not be updated accordingly after reading.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.

@@ -27,7 +27,7 @@ where
 
 /// Returns a count of the unique values in the order of appearance.
 pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
-    if s.dtype().to_physical().is_numeric() {
+    if s.dtype().to_physical().is_primitive_numeric() {
         let s_physical = s.to_physical_repr();
 
         with_match_physical_numeric_polars_type!(s_physical.dtype(), |$T| {
@@ -41,9 +41,9 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
             },
             DataType::Null => {
                 let ca = if s.is_empty() {
-                    IdxCa::new(s.name(), [] as [IdxSize; 0])
+                    IdxCa::new(s.name().clone(), [] as [IdxSize; 0])
                 } else {
-                    IdxCa::new(s.name(), [s.len() as IdxSize])
+                    IdxCa::new(s.name().clone(), [s.len() as IdxSize])
                 };
                 Ok(ca.into_series())
             },

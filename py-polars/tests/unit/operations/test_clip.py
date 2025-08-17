@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def clip_exprs() -> list[pl.Expr]:
     return [
         pl.col("a").clip(pl.col("min"), pl.col("max")).alias("clip"),
@@ -138,3 +139,30 @@ def test_clip_bound_invalid_for_original_dtype() -> None:
         InvalidOperationError, match="conversion from `i32` to `u32` failed"
     ):
         s.clip(-1, 5)
+
+
+def test_clip_decimal() -> None:
+    ser = pl.Series("a", ["1.1", "2.2", "3.3"], pl.Decimal(21, 1))
+
+    result = ser.clip(lower_bound=Decimal("1.5"), upper_bound=Decimal("2.5"))
+    expected = pl.Series("a", ["1.5", "2.2", "2.5"], pl.Decimal(21, 1))
+    assert_series_equal(result, expected)
+
+    result = ser.clip(lower_bound=Decimal("1.5"))
+    expected = pl.Series("a", ["1.5", "2.2", "3.3"], pl.Decimal(21, 1))
+    assert_series_equal(result, expected)
+
+    result = ser.clip(upper_bound=Decimal("2.5"))
+    expected = pl.Series("a", ["1.1", "2.2", "2.5"], pl.Decimal(21, 1))
+    assert_series_equal(result, expected)
+
+
+def test_clip_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2, 3]).clip(lower_bound=pl.Series([1, 2]))
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2, 3]).clip(upper_bound=pl.Series([1, 2]))
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2, 3]).clip(pl.Series([1, 2]), pl.Series([1, 2, 3]))
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2, 3]).clip(pl.Series([1, 2, 3]), pl.Series([1, 2]))

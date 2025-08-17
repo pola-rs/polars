@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 from pathlib import Path
 from uuid import uuid4
@@ -7,6 +9,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.testing import assert_series_equal
 
 
 def test_series_init_instantiated_object() -> None:
@@ -15,6 +18,7 @@ def test_series_init_instantiated_object() -> None:
     assert isinstance(s.dtype, pl.Object)
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_object_empty_filter_5911() -> None:
     df = pl.DataFrame(
         data=[
@@ -34,6 +38,7 @@ def test_object_empty_filter_5911() -> None:
     assert out.shape == (0, 1)
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_object_in_struct() -> None:
     np_a = np.array([1, 2, 3])
     np_b = np.array([4, 5, 6])
@@ -43,6 +48,7 @@ def test_object_in_struct() -> None:
         df.select([pl.struct(["B"])])
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_nullable_object_13538() -> None:
     df = pl.DataFrame(
         data=[
@@ -74,6 +80,29 @@ def test_nullable_object_13538() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming  # dtype is not set
+@pytest.mark.may_fail_cloud  # reason: eager
+def test_nullable_object_17936() -> None:
+    class Custom:
+        value: int
+
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    def mapper(value: int) -> Custom | None:
+        if value == 2:
+            return None
+        return Custom(value)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert df.select(
+        pl.col("a").map_elements(mapper, return_dtype=pl.Object).alias("with_dtype"),
+        pl.col("a").map_elements(mapper).alias("without_dtype"),
+    ).null_count().row(0) == (1, 1)
+
+
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_empty_sort() -> None:
     df = pl.DataFrame(
         data=[
@@ -119,6 +148,15 @@ def test_object_concat() -> None:
     assert catted.to_dict(as_series=False) == {"a": [1, 2, 3, 1, 4, 3]}
 
 
+def test_object_concat_diagonal_14651() -> None:
+    df1 = pl.DataFrame({"a": ["abc"]}, schema={"a": pl.Object})
+    df2 = pl.DataFrame({"b": ["def"]}, schema={"b": pl.Object})
+    result = pl.concat([df1, df2], how="diagonal")
+    assert result.schema == pl.Schema({"a": pl.Object, "b": pl.Object})
+    assert result["a"].to_list() == ["abc", None]
+    assert result["b"].to_list() == [None, "def"]
+
+
 def test_object_row_construction() -> None:
     data = [
         [uuid4()],
@@ -139,6 +177,7 @@ def test_object_apply_to_struct() -> None:
     assert out.dtype == pl.Struct([pl.Field("a", pl.String), pl.Field("b", pl.Int64)])
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_null_obj_str_13512() -> None:
     # https://github.com/pola-rs/polars/issues/13512
 
@@ -165,7 +204,7 @@ def test_null_obj_str_13512() -> None:
 
 def test_format_object_series_14267() -> None:
     s = pl.Series([Path(), Path("abc")])
-    expected = "shape: (2,)\n" "Series: '' [o][object]\n" "[\n" "\t.\n" "\tabc\n" "]"
+    expected = "shape: (2,)\nSeries: '' [o][object]\n[\n\t.\n\tabc\n]"
     assert str(s) == expected
 
 
@@ -190,3 +229,59 @@ def test_raise_list_object() -> None:
     # We don't want to support this. Unsafe enough as it is already.
     with pytest.raises(ValueError):
         pl.Series([[object()]], dtype=pl.List(pl.Object()))
+
+
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
+def test_object_null_slice() -> None:
+    s = pl.Series("x", [1, None, 42], dtype=pl.Object)
+    assert_series_equal(s.is_null(), pl.Series("x", [False, True, False]))
+    assert_series_equal(s.slice(0, 2).is_null(), pl.Series("x", [False, True]))
+    assert_series_equal(s.slice(1, 1).is_null(), pl.Series("x", [True]))
+    assert_series_equal(s.slice(2, 1).is_null(), pl.Series("x", [False]))
+
+
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
+def test_object_sort_scalar_19925() -> None:
+    a = object()
+    assert pl.DataFrame({"a": [0], "obj": [a]}).sort("a")["obj"].item() == a
+
+
+def test_object_estimated_size() -> None:
+    df = pl.DataFrame(
+        [
+            ["3", "random python object, not a string"],
+        ],
+        schema={"name": pl.String, "ob": pl.Object},
+        orient="row",
+    )
+
+    # is a huge underestimation
+    assert df.estimated_size() == 9
+
+
+def test_object_polars_dtypes_20572() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Date(),
+            "b": pl.Decimal(5, 1),
+            "c": pl.Int64(),
+            "d": pl.Object(),
+            "e": pl.String(),
+        }
+    )
+    assert all(dt.is_object() for dt in df.schema.dtypes())
+
+
+def test_err_nested_object() -> None:
+    a = object()
+    df = pl.DataFrame({"obj": [a]})
+
+    def mapper(x: object) -> list[object]:
+        return [x]
+
+    # cannot infer datatype
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("obj").map_elements(mapper))
+
+    with pytest.raises(ValueError):
+        df.select(pl.col("obj").map_elements(mapper, return_dtype=pl.List(pl.Object)))

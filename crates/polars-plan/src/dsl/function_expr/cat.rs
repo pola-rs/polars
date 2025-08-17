@@ -1,19 +1,20 @@
 use super::*;
-use crate::map;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum CategoricalFunction {
     GetCategories,
-}
-
-impl CategoricalFunction {
-    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        use CategoricalFunction::*;
-        match self {
-            GetCategories => mapper.with_dtype(DataType::String),
-        }
-    }
+    #[cfg(feature = "strings")]
+    LenBytes,
+    #[cfg(feature = "strings")]
+    LenChars,
+    #[cfg(feature = "strings")]
+    StartsWith(String),
+    #[cfg(feature = "strings")]
+    EndsWith(String),
+    #[cfg(feature = "strings")]
+    Slice(i64, Option<usize>),
 }
 
 impl Display for CategoricalFunction {
@@ -21,17 +22,18 @@ impl Display for CategoricalFunction {
         use CategoricalFunction::*;
         let s = match self {
             GetCategories => "get_categories",
+            #[cfg(feature = "strings")]
+            LenBytes => "len_bytes",
+            #[cfg(feature = "strings")]
+            LenChars => "len_chars",
+            #[cfg(feature = "strings")]
+            StartsWith(_) => "starts_with",
+            #[cfg(feature = "strings")]
+            EndsWith(_) => "ends_with",
+            #[cfg(feature = "strings")]
+            Slice(_, _) => "slice",
         };
         write!(f, "cat.{s}")
-    }
-}
-
-impl From<CategoricalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn from(func: CategoricalFunction) -> Self {
-        use CategoricalFunction::*;
-        match func {
-            GetCategories => map!(get_categories),
-        }
     }
 }
 
@@ -39,12 +41,4 @@ impl From<CategoricalFunction> for FunctionExpr {
     fn from(func: CategoricalFunction) -> Self {
         FunctionExpr::Categorical(func)
     }
-}
-
-fn get_categories(s: &Series) -> PolarsResult<Series> {
-    // categorical check
-    let ca = s.categorical()?;
-    let rev_map = ca.get_rev_map();
-    let arr = rev_map.get_categories().clone().boxed();
-    Series::try_from((ca.name(), arr))
 }

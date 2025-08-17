@@ -1,17 +1,64 @@
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
+use std::time::Duration;
 
 use bitflags::bitflags;
-use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
+use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::unique_id::UniqueId;
 
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, GroupsProxy>>>;
+
+#[derive(Default)]
+pub struct WindowCache {
+    groups: RwLock<PlHashMap<String, GroupPositions>>,
+    join_tuples: RwLock<PlHashMap<String, Arc<ChunkJoinOptIds>>>,
+    map_idx: RwLock<PlHashMap<String, Arc<IdxCa>>>,
+}
+
+impl WindowCache {
+    pub(crate) fn clear(&self) {
+        let mut g = self.groups.write().unwrap();
+        g.clear();
+        let mut g = self.join_tuples.write().unwrap();
+        g.clear();
+    }
+
+    pub fn get_groups(&self, key: &str) -> Option<GroupPositions> {
+        let g = self.groups.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_groups(&self, key: String, groups: GroupPositions) {
+        let mut g = self.groups.write().unwrap();
+        g.insert(key, groups);
+    }
+
+    pub fn get_join(&self, key: &str) -> Option<Arc<ChunkJoinOptIds>> {
+        let g = self.join_tuples.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_join(&self, key: String, join_tuples: Arc<ChunkJoinOptIds>) {
+        let mut g = self.join_tuples.write().unwrap();
+        g.insert(key, join_tuples);
+    }
+
+    pub fn get_map(&self, key: &str) -> Option<Arc<IdxCa>> {
+        let g = self.map_idx.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_map(&self, key: String, idx: Arc<IdxCa>) {
+        let mut g = self.map_idx.write().unwrap();
+        g.insert(key, idx);
+    }
+}
 
 bitflags! {
     #[repr(transparent)]
@@ -23,9 +70,6 @@ bitflags! {
         const CACHE_WINDOW_EXPR = 0x02;
         /// Indicates the expression has a window function
         const HAS_WINDOW = 0x04;
-        /// If set, the expression is evaluated in the
-        /// streaming engine.
-        const IN_STREAMING = 0x08;
     }
 }
 
@@ -55,23 +99,27 @@ impl From<u8> for StateFlags {
     }
 }
 
-type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
+struct CachedValue {
+    /// The number of times the cache will still be read.
+    /// Zero means that there will be no more reads and the cache can be dropped.
+    remaining_hits: AtomicI64,
+    df: DataFrame,
+}
 
 /// State/ cache that is maintained during the Execution of the physical plan.
+#[derive(Clone)]
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
-    pub schema_cache: RwLock<Option<SchemaRef>>,
-    /// Used by Window Expression to prevent redundant grouping
-    pub group_tuples: GroupsProxyCache,
-    /// Used by Window Expression to prevent redundant joins
-    pub join_tuples: JoinTuplesCache,
+    df_cache: Arc<RwLock<PlHashMap<UniqueId, Arc<CachedValue>>>>,
+    pub schema_cache: Arc<RwLock<Option<SchemaRef>>>,
+    /// Used by Window Expressions to cache intermediate state
+    pub window_cache: Arc<WindowCache>,
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
-    pub flags: AtomicU8,
+    pub flags: RelaxedCell<u8>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
     node_timer: Option<NodeTimer>,
-    stop: Arc<AtomicBool>,
+    stop: Arc<RelaxedCell<bool>>,
 }
 
 impl ExecutionState {
@@ -83,19 +131,18 @@ impl ExecutionState {
         Self {
             df_cache: Default::default(),
             schema_cache: Default::default(),
-            group_tuples: Default::default(),
-            join_tuples: Default::default(),
+            window_cache: Default::default(),
             branch_idx: 0,
-            flags: AtomicU8::new(StateFlags::init().as_u8()),
+            flags: RelaxedCell::from(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
             node_timer: None,
-            stop: Arc::new(AtomicBool::new(false)),
+            stop: Arc::new(RelaxedCell::from(false)),
         }
     }
 
     /// Toggle this to measure execution times.
-    pub fn time_nodes(&mut self) {
-        self.node_timer = Some(NodeTimer::new())
+    pub fn time_nodes(&mut self, start: std::time::Instant) {
+        self.node_timer = Some(NodeTimer::new(start))
     }
     pub fn has_node_timer(&self) -> bool {
         self.node_timer.is_some()
@@ -105,13 +152,26 @@ impl ExecutionState {
         self.node_timer.unwrap().finish()
     }
 
+    // Timings should be a list of (start, end, name) where the start
+    // and end are raw durations since the query start as nanoseconds.
+    pub fn record_raw_timings(&self, timings: &[(u64, u64, String)]) {
+        for &(start, end, ref name) in timings {
+            self.node_timer.as_ref().unwrap().store_duration(
+                Duration::from_nanos(start),
+                Duration::from_nanos(end),
+                name.to_string(),
+            );
+        }
+    }
+
     // This is wrong when the U64 overflows which will never happen.
     pub fn should_stop(&self) -> PolarsResult<()> {
-        polars_ensure!(!self.stop.load(Ordering::Relaxed), ComputeError: "query interrupted");
+        try_raise_keyboard_interrupt();
+        polars_ensure!(!self.stop.load(), ComputeError: "query interrupted");
         Ok(())
     }
 
-    pub fn cancel_token(&self) -> Arc<AtomicBool> {
+    pub fn cancel_token(&self) -> Arc<RelaxedCell<bool>> {
         self.stop.clone()
     }
 
@@ -135,10 +195,9 @@ impl ExecutionState {
         Self {
             df_cache: self.df_cache.clone(),
             schema_cache: Default::default(),
-            group_tuples: Default::default(),
-            join_tuples: Default::default(),
+            window_cache: Default::default(),
             branch_idx: self.branch_idx,
-            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
+            flags: self.flags.clone(),
             ext_contexts: self.ext_contexts.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
@@ -162,50 +221,68 @@ impl ExecutionState {
         lock.clone()
     }
 
-    pub fn get_df_cache(&self, key: usize, cache_hits: u32) -> CachedValue {
-        let mut guard = self.df_cache.lock().unwrap();
-        guard
-            .entry(key)
-            .or_insert_with(|| Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new())))
-            .clone()
+    pub fn set_df_cache(&self, id: &UniqueId, df: DataFrame, cache_hits: u32) {
+        if self.verbose() {
+            eprintln!("CACHE SET: cache id: {id}");
+        }
+
+        let value = Arc::new(CachedValue {
+            remaining_hits: AtomicI64::new(cache_hits as i64),
+            df,
+        });
+
+        let prev = self.df_cache.write().unwrap().insert(*id, value);
+        assert!(prev.is_none(), "duplicate set cache: {id}");
     }
 
-    pub fn remove_df_cache(&self, key: usize) {
-        let mut guard = self.df_cache.lock().unwrap();
-        let _ = guard.remove(&key).unwrap();
+    pub fn get_df_cache(&self, id: &UniqueId) -> DataFrame {
+        let guard = self.df_cache.read().unwrap();
+        let value = guard.get(id).expect("cache not prefilled");
+        let remaining = value.remaining_hits.fetch_sub(1, Ordering::Relaxed);
+        if remaining < 0 {
+            panic!("cache used more times than expected: {id}");
+        }
+        if self.verbose() {
+            eprintln!("CACHE HIT: cache id: {id}");
+        }
+        if remaining == 1 {
+            drop(guard);
+            let value = self.df_cache.write().unwrap().remove(id).unwrap();
+            if self.verbose() {
+                eprintln!("CACHE DROP: cache id: {id}");
+            }
+            Arc::into_inner(value).unwrap().df
+        } else {
+            value.df.clone()
+        }
     }
 
     /// Clear the cache used by the Window expressions
     pub fn clear_window_expr_cache(&self) {
-        {
-            let mut lock = self.group_tuples.write().unwrap();
-            lock.clear();
-        }
-        let mut lock = self.join_tuples.lock().unwrap();
-        lock.clear();
+        self.window_cache.clear();
     }
 
     fn set_flags(&self, f: &dyn Fn(StateFlags) -> StateFlags) {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags: StateFlags = self.flags.load().into();
         let flags = f(flags);
-        self.flags.store(flags.as_u8(), Ordering::Relaxed);
+        self.flags.store(flags.as_u8());
     }
 
     /// Indicates that window expression's [`GroupTuples`] may be cached.
     pub fn cache_window(&self) -> bool {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags: StateFlags = self.flags.load().into();
         flags.contains(StateFlags::CACHE_WINDOW_EXPR)
     }
 
     /// Indicates that window expression's [`GroupTuples`] may be cached.
     pub fn has_window(&self) -> bool {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags: StateFlags = self.flags.load().into();
         flags.contains(StateFlags::HAS_WINDOW)
     }
 
     /// More verbose logging
     pub fn verbose(&self) -> bool {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags: StateFlags = self.flags.load().into();
         flags.contains(StateFlags::VERBOSE)
     }
 
@@ -234,22 +311,5 @@ impl ExecutionState {
 impl Default for ExecutionState {
     fn default() -> Self {
         ExecutionState::new()
-    }
-}
-
-impl Clone for ExecutionState {
-    /// clones, but clears no state.
-    fn clone(&self) -> Self {
-        Self {
-            df_cache: self.df_cache.clone(),
-            schema_cache: self.schema_cache.read().unwrap().clone().into(),
-            group_tuples: self.group_tuples.clone(),
-            join_tuples: self.join_tuples.clone(),
-            branch_idx: self.branch_idx,
-            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
-            ext_contexts: self.ext_contexts.clone(),
-            node_timer: self.node_timer.clone(),
-            stop: self.stop.clone(),
-        }
     }
 }

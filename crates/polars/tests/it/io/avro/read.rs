@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use apache_avro::types::{Record, Value};
 use apache_avro::{Codec, Days, Duration, Millis, Months, Schema as AvroSchema, Writer};
 use arrow::array::*;
@@ -54,28 +56,32 @@ pub(super) fn schema() -> (AvroSchema, ArrowSchema) {
     }
 "#;
 
-    let schema = ArrowSchema::from(vec![
-        Field::new("a", ArrowDataType::Int64, false),
-        Field::new("b", ArrowDataType::Utf8, false),
-        Field::new("c", ArrowDataType::Int32, false),
-        Field::new("date", ArrowDataType::Date32, false),
-        Field::new("d", ArrowDataType::Binary, false),
-        Field::new("e", ArrowDataType::Float64, false),
-        Field::new("f", ArrowDataType::Boolean, false),
-        Field::new("g", ArrowDataType::Utf8, true),
+    let schema = ArrowSchema::from_iter([
+        Field::new("a".into(), ArrowDataType::Int64, false),
+        Field::new("b".into(), ArrowDataType::Utf8, false),
+        Field::new("c".into(), ArrowDataType::Int32, false),
+        Field::new("date".into(), ArrowDataType::Date32, false),
+        Field::new("d".into(), ArrowDataType::Binary, false),
+        Field::new("e".into(), ArrowDataType::Float64, false),
+        Field::new("f".into(), ArrowDataType::Boolean, false),
+        Field::new("g".into(), ArrowDataType::Utf8, true),
         Field::new(
-            "h",
-            ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))),
+            "h".into(),
+            ArrowDataType::List(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int32,
+                true,
+            ))),
             false,
         ),
         Field::new(
-            "i",
-            ArrowDataType::Struct(vec![Field::new("e", ArrowDataType::Float64, false)]),
+            "i".into(),
+            ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
             false,
         ),
         Field::new(
-            "nullable_struct",
-            ArrowDataType::Struct(vec![Field::new("e", ArrowDataType::Float64, false)]),
+            "nullable_struct".into(),
+            ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
             true,
         ),
     ]);
@@ -105,23 +111,27 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
         Utf8Array::<i32>::from([Some("foo"), None]).boxed(),
         array.into_box(),
         StructArray::new(
-            ArrowDataType::Struct(vec![Field::new("e", ArrowDataType::Float64, false)]),
+            ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
+            2,
             vec![PrimitiveArray::<f64>::from_slice([1.0, 2.0]).boxed()],
             None,
         )
         .boxed(),
         StructArray::new(
-            ArrowDataType::Struct(vec![Field::new("e", ArrowDataType::Float64, false)]),
+            ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
+            2,
             vec![PrimitiveArray::<f64>::from_slice([1.0, 0.0]).boxed()],
             Some([true, false].into()),
         )
         .boxed(),
     ];
 
-    RecordBatchT::try_new(columns).unwrap()
+    let (_, schema) = schema();
+
+    RecordBatchT::try_new(2, Arc::new(schema), columns).unwrap()
 }
 
-pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
+pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, Box<apache_avro::Error>> {
     let (avro, _) = schema();
     // a writer needs a schema and something to write to
     let mut writer = Writer::with_codec(&avro, Vec::new(), codec);
@@ -187,7 +197,7 @@ pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
     );
     record.put("nullable_struct", Value::Union(0, Box::new(Value::Null)));
     writer.append(record)?;
-    writer.into_inner()
+    writer.into_inner().map_err(Box::new)
 }
 
 pub(super) fn read_avro(
@@ -199,16 +209,14 @@ pub(super) fn read_avro(
     let metadata = read_metadata(file)?;
     let schema = read::infer_schema(&metadata.record)?;
 
-    let mut reader = read::Reader::new(file, metadata, schema.fields.clone(), projection.clone());
+    let mut reader = read::Reader::new(file, metadata, schema.clone(), projection.clone());
 
     let schema = if let Some(projection) = projection {
-        let fields = schema
-            .fields
-            .into_iter()
+        schema
+            .into_iter_values()
             .zip(projection.iter())
             .filter_map(|x| if *x.1 { Some(x.0) } else { None })
-            .collect::<Vec<_>>();
-        ArrowSchema::from(fields)
+            .collect()
     } else {
         schema
     };
@@ -246,31 +254,36 @@ fn read_snappy() -> PolarsResult<()> {
 #[test]
 fn test_projected() -> PolarsResult<()> {
     let expected = data();
-    let (_, expected_schema) = schema();
+    let expected_schema = expected.schema();
 
     let avro = write_avro(Codec::Null).unwrap();
 
-    for i in 0..expected_schema.fields.len() {
-        let mut projection = vec![false; expected_schema.fields.len()];
+    for i in 0..expected_schema.len() {
+        let mut projection = vec![false; expected_schema.len()];
         projection[i] = true;
 
-        let expected = expected
+        let length = expected.first().map_or(0, |arr| arr.len());
+        let (expected_schema_2, expected_arrays) = expected.clone().into_schema_and_arrays();
+        let expected_schema_2 = expected_schema_2
+            .as_ref()
             .clone()
-            .into_arrays()
             .into_iter()
             .zip(projection.iter())
             .filter_map(|x| if *x.1 { Some(x.0) } else { None })
             .collect();
-        let expected = RecordBatchT::new(expected);
-
-        let expected_fields = expected_schema
-            .clone()
-            .fields
+        let expected_arrays = expected_arrays
             .into_iter()
             .zip(projection.iter())
             .filter_map(|x| if *x.1 { Some(x.0) } else { None })
-            .collect::<Vec<_>>();
-        let expected_schema = ArrowSchema::from(expected_fields);
+            .collect();
+        let expected = RecordBatchT::new(length, Arc::new(expected_schema_2), expected_arrays);
+
+        let expected_schema = expected_schema
+            .clone()
+            .into_iter_values()
+            .zip(projection.iter())
+            .filter_map(|x| if *x.1 { Some(x.0) } else { None })
+            .collect();
 
         let (result, schema) = read_avro(&avro, Some(projection))?;
 
@@ -297,9 +310,13 @@ fn schema_list() -> (AvroSchema, ArrowSchema) {
     }
 "#;
 
-    let schema = ArrowSchema::from(vec![Field::new(
-        "h",
-        ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, false))),
+    let schema = ArrowSchema::from_iter([Field::new(
+        "h".into(),
+        ArrowDataType::List(Box::new(Field::new(
+            "item".into(),
+            ArrowDataType::Int32,
+            false,
+        ))),
         false,
     )]);
 
@@ -311,17 +328,23 @@ pub(super) fn data_list() -> RecordBatchT<Box<dyn Array>> {
 
     let mut array = MutableListArray::<i32, MutablePrimitiveArray<i32>>::new_from(
         Default::default(),
-        ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, false))),
+        ArrowDataType::List(Box::new(Field::new(
+            "item".into(),
+            ArrowDataType::Int32,
+            false,
+        ))),
         0,
     );
     array.try_extend(data).unwrap();
 
+    let length = array.len();
+    let (_, schema) = schema_list();
     let columns = vec![array.into_box()];
 
-    RecordBatchT::try_new(columns).unwrap()
+    RecordBatchT::try_new(length, Arc::new(schema), columns).unwrap()
 }
 
-pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
+pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, Box<apache_avro::Error>> {
     let (avro, _) = schema_list();
     // a writer needs a schema and something to write to
     let mut writer = Writer::with_codec(&avro, Vec::new(), codec);
@@ -344,11 +367,11 @@ pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
 fn test_list() -> PolarsResult<()> {
     let avro = write_list(Codec::Null).unwrap();
     let expected = data_list();
-    let (_, expected_schema) = schema_list();
+    let expected_schema = expected.schema();
 
     let (result, schema) = read_avro(&avro, None)?;
 
-    assert_eq!(schema, expected_schema);
+    assert_eq!(&schema, expected_schema);
     assert_eq!(result, expected);
     Ok(())
 }

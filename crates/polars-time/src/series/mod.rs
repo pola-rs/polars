@@ -1,5 +1,7 @@
-use std::ops::{Deref, Div};
+use std::ops::Div;
 
+use arrow::temporal_conversions::{MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY};
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 
 use crate::chunkedarray::*;
@@ -86,9 +88,32 @@ pub trait TemporalMethods: AsSeries {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| ca.weekday()),
+            DataType::Date => s.date().map(|ca| {
+                // Closed formula to find weekday, no need to go via Chrono.
+                // The 4 comes from the fact that 1970-01-01 was a Thursday.
+                // We do an extra `+ 7` then `% 7` to ensure the result is non-negative.
+                unary_elementwise_values(ca.physical(), |t| (((t - 4) % 7 + 7) % 7 + 1) as i8)
+            }),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.weekday()),
+            DataType::Datetime(time_unit, time_zone) => s.datetime().map(|ca| {
+                match time_zone.as_deref().map(|x| x.as_str()) {
+                    Some("UTC") | None => {
+                        // fastpath!
+                        // Same idea as above, but we need to subtract 1 for dates
+                        // before 1970-01-01 with non-zero sub-daily components.
+                        let divisor = match time_unit {
+                            TimeUnit::Milliseconds => MILLISECONDS_IN_DAY,
+                            TimeUnit::Microseconds => MICROSECONDS_IN_DAY,
+                            TimeUnit::Nanoseconds => NANOSECONDS_IN_DAY,
+                        };
+                        unary_elementwise_values(ca.physical(), |t| {
+                            let t = t / divisor - ((t < 0 && t % divisor != 0) as i64);
+                            (((t - 4) % 7 + 7) % 7 + 1) as i8
+                        })
+                    },
+                    _ => ca.weekday(),
+                }
+            }),
             dt => polars_bail!(opq = weekday, dt),
         }
     }
@@ -226,19 +251,46 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
+    /// Returns the number of days in the month of the underlying NaiveDateTime
+    /// representation.
+    fn days_in_month(&self) -> PolarsResult<Int8Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.days_in_month()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.days_in_month()),
+            dt => polars_bail!(opq = days_in_month, dt),
+        }
+    }
+
     /// Convert Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     fn to_string(&self, format: &str) -> PolarsResult<Series> {
         let s = self.as_series();
         match s.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| Ok(ca.to_string(format)?.into_series()))?,
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => s
-                .datetime()
-                .map(|ca| Ok(ca.to_string(format)?.into_series()))?,
+            DataType::Datetime(_, _) => {
+                let format = get_strftime_format(format, s.dtype())?;
+                s.datetime()
+                    .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
+            },
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let format = get_strftime_format(format, s.dtype())?;
+                s.date()
+                    .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
+            },
             #[cfg(feature = "dtype-time")]
-            DataType::Time => s.time().map(|ca| ca.to_string(format).into_series()),
+            DataType::Time => {
+                let format = get_strftime_format(format, s.dtype())?;
+                s.time()
+                    .map(|ca| ca.to_string(format.as_str()).into_series())
+            },
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => s
+                .duration()
+                .map(|ca| Ok(ca.to_string(format)?.into_series()))?,
             dt => polars_bail!(opq = to_string, dt),
         }
     }
@@ -259,7 +311,7 @@ pub trait TemporalMethods: AsSeries {
             polars_bail!(opq = timestamp, s.dtype());
         } else {
             s.cast(&DataType::Datetime(tu, None))
-                .map(|s| s.datetime().unwrap().deref().clone())
+                .map(|s| s.datetime().unwrap().physical().clone())
         }
     }
 }

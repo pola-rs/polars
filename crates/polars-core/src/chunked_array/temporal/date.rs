@@ -15,7 +15,8 @@ impl DateChunked {
     pub fn as_date_iter(&self) -> impl TrustedLen<Item = Option<NaiveDate>> + '_ {
         // SAFETY: we know the iterators len
         unsafe {
-            self.downcast_iter()
+            self.physical()
+                .downcast_iter()
                 .flat_map(|iter| {
                     iter.into_iter()
                         .map(|opt_v| opt_v.copied().map(date32_to_date))
@@ -25,20 +26,26 @@ impl DateChunked {
     }
 
     /// Construct a new [`DateChunked`] from an iterator over [`NaiveDate`].
-    pub fn from_naive_date<I: IntoIterator<Item = NaiveDate>>(name: &str, v: I) -> Self {
+    pub fn from_naive_date<I: IntoIterator<Item = NaiveDate>>(name: PlSmallStr, v: I) -> Self {
         let unit = v.into_iter().map(naive_date_to_date).collect::<Vec<_>>();
-        Int32Chunked::from_vec(name, unit).into()
+        Int32Chunked::from_vec(name, unit).into_date()
     }
 
     /// Convert from Date into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
+        let format = if format == "iso" || format == "iso:strict" {
+            "%F"
+        } else {
+            format
+        };
         let datefmt_f = |ndt: NaiveDate| ndt.format(format);
-        self.try_apply_into_string_amortized(|val, buf| {
-            let ndt = date32_to_date(val);
-            write!(buf, "{}", datefmt_f(ndt))
-        })
-        .map_err(|_| polars_err!(ComputeError: "cannot format Date with format '{}'", format))
+        self.physical()
+            .try_apply_into_string_amortized(|val, buf| {
+                let ndt = date32_to_date(val);
+                write!(buf, "{}", datefmt_f(ndt))
+            })
+            .map_err(|_| polars_err!(ComputeError: "cannot format Date with format '{}'", format))
     }
 
     /// Convert from Date into String with the given format.
@@ -51,10 +58,10 @@ impl DateChunked {
 
     /// Construct a new [`DateChunked`] from an iterator over optional [`NaiveDate`].
     pub fn from_naive_date_options<I: IntoIterator<Item = Option<NaiveDate>>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
     ) -> Self {
         let unit = v.into_iter().map(|opt| opt.map(naive_date_to_date));
-        Int32Chunked::from_iter_options(name, unit).into()
+        Int32Chunked::from_iter_options(name, unit).into_date()
     }
 }

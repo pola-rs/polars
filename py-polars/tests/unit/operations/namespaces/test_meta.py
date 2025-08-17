@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import re
+from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -11,17 +13,6 @@ from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def test_meta_pop_and_cmp() -> None:
-    e = pl.col("foo").alias("bar")
-
-    first = e.meta.pop()[0]
-    assert first.meta == pl.col("foo")
-    assert first.meta != pl.col("bar")
-
-    assert first.meta.eq(pl.col("foo"))
-    assert first.meta.ne(pl.col("bar"))
 
 
 def test_root_and_output_names() -> None:
@@ -46,7 +37,9 @@ def test_root_and_output_names() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="cannot determine output column without a context for this expression",
+        match=re.escape(
+            "unable to find root column name for expr 'cs.all()' when calling 'output_name'"
+        ),
     ):
         pl.all().name.suffix("_").meta.output_name()
 
@@ -123,6 +116,34 @@ def test_is_column_selection(
         assert not expr.meta.is_column_selection()
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        1234,
+        567.89,
+        float("inf"),
+        date.today(),
+        datetime.now(),
+        time(10, 30, 45),
+        timedelta(hours=-24),
+        ["x", "y", "z"],
+        pl.Series([None, None]),
+        [[10, 20], [30, 40]],
+        "this is the way",
+    ],
+)
+def test_is_literal(value: Any) -> None:
+    e = pl.lit(value)
+    assert e.meta.is_literal()
+
+    e = pl.lit(value).alias("foo")
+    assert not e.meta.is_literal()
+
+    e = pl.lit(value).alias("foo")
+    assert e.meta.is_literal(allow_aliasing=True)
+
+
 def test_meta_is_regex_projection() -> None:
     e = pl.col("^.*$").name.suffix("_foo")
     assert e.meta.is_regex_projection()
@@ -146,6 +167,15 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         assert result.strip() == tree_fmt.strip()
 
 
+def test_meta_show_graph(namespace_files_path: Path) -> None:
+    e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
+    dot = e.meta.show_graph(show=False, raw_output=True)
+    assert dot is not None
+    assert len(dot) > 0
+    # Don't check output contents since this creates a maintenance burden
+    # Assume output check in test_meta_tree_format is enough
+
+
 def test_literal_output_name() -> None:
     e = pl.lit(1)
     assert e.meta.output_name() == "literal"
@@ -155,3 +185,16 @@ def test_literal_output_name() -> None:
 
     e = pl.lit(pl.Series([1, 2, 3]))
     assert e.meta.output_name() == ""
+
+
+def test_struct_field_output_name_24003() -> None:
+    assert pl.col("ball").struct.field("radius").meta.output_name() == "radius"
+
+
+def test_selector_by_name_single() -> None:
+    assert cs.by_name("foo").meta.output_name() == "foo"
+
+
+def test_selector_by_name_multiple() -> None:
+    with pytest.raises(ComputeError):
+        cs.by_name(["foo", "bar"]).meta.output_name()

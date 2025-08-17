@@ -5,7 +5,12 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SchemaError,
+    ShapeError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -68,6 +73,12 @@ def test_int_range_eager() -> None:
     result = pl.int_range(0, 3, eager=True)
     expected = pl.Series("literal", [0, 1, 2])
     assert_series_equal(result, expected)
+
+
+def test_int_range_lazy() -> None:
+    lf = pl.select(n=pl.int_range(8, 0, -2), eager=False)
+    expected = pl.LazyFrame({"n": [8, 6, 4, 2]})
+    assert_frame_equal(lf, expected)
 
 
 def test_int_range_schema() -> None:
@@ -158,17 +169,11 @@ def test_int_range_input_shape_empty() -> None:
     empty = pl.Series(dtype=pl.Time)
     single = pl.Series([5])
 
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(empty, single, eager=True)
-    with pytest.raises(
-        ComputeError, match="`end` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(single, empty, eager=True)
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(empty, empty, eager=True)
 
 
@@ -176,17 +181,11 @@ def test_int_range_input_shape_multiple_values() -> None:
     single = pl.Series([5])
     multiple = pl.Series([10, 15])
 
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(multiple, single, eager=True)
-    with pytest.raises(
-        ComputeError, match="`end` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(single, multiple, eager=True)
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(multiple, multiple, eager=True)
 
 
@@ -204,14 +203,14 @@ def test_int_range_null_input() -> None:
 
 def test_int_range_invalid_conversion() -> None:
     with pytest.raises(
-        InvalidOperationError, match="conversion from `i32` to `u32` failed"
+        InvalidOperationError, match="conversion from `i128` to `u32` failed"
     ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.UInt32))
 
 
 def test_int_range_non_integer_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
+        SchemaError, match="non-integer `dtype` passed to `int_range`: 'f64'"
     ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]
 
@@ -261,7 +260,7 @@ def test_int_ranges_broadcasting() -> None:
 # https://github.com/pola-rs/polars/issues/15307
 def test_int_range_non_int_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_range`: String"
+        SchemaError, match="non-integer `dtype` passed to `int_range`: 'str'"
     ):
         pl.int_range(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
 
@@ -269,6 +268,21 @@ def test_int_range_non_int_dtype() -> None:
 # https://github.com/pola-rs/polars/issues/15307
 def test_int_ranges_non_int_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_ranges`: String"
+        SchemaError, match="non-integer `dtype` passed to `int_ranges`: 'str'"
     ):
         pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
+
+
+# https://github.com/pola-rs/polars/issues/22640
+def test_int_ranges_non_numeric_input_should_error() -> None:
+    df = pl.DataFrame(
+        {
+            "start": ["a", "b"],
+            "end": ["c", "d"],
+        }
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError) as excinfo:
+        _ = df.select(pl.int_ranges("start", "end"))
+
+    assert "conversion from `str` to `i64` failed" in str(excinfo.value)

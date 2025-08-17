@@ -15,7 +15,7 @@ where
         } else {
             self.into_iter().rev().collect_trusted()
         };
-        out.rename(self.name());
+        out.rename(self.name().clone());
 
         match self.is_sorted_flag() {
             IsSorted::Ascending => out.set_sorted_flag(IsSorted::Descending),
@@ -31,8 +31,11 @@ macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse for $ca_type {
             fn reverse(&self) -> Self {
+                if self.is_empty() {
+                    return self.clone();
+                };
                 let mut ca: Self = self.into_iter().rev().collect_trusted();
-                ca.rename(self.name());
+                ca.rename(self.name().clone());
                 ca
             }
         }
@@ -51,7 +54,7 @@ impl ChunkReverse for BinaryChunked {
 
             unsafe {
                 let arr = BinaryViewArray::new_unchecked(
-                    arr.data_type().clone(),
+                    arr.dtype().clone(),
                     views.into(),
                     arr.data_buffers().clone(),
                     arr.validity().map(|bitmap| bitmap.iter().rev().collect()),
@@ -60,13 +63,16 @@ impl ChunkReverse for BinaryChunked {
                 )
                 .boxed();
                 BinaryChunked::from_chunks_and_dtype_unchecked(
-                    self.name(),
+                    self.name().clone(),
                     vec![arr],
                     self.dtype().clone(),
                 )
             }
         } else {
-            let ca = IdxCa::from_vec("", (0..self.len() as IdxSize).rev().collect());
+            let ca = IdxCa::from_vec(
+                PlSmallStr::EMPTY,
+                (0..self.len() as IdxSize).rev().collect(),
+            );
             unsafe { self.take_unchecked(&ca) }
         }
     }
@@ -81,15 +87,15 @@ impl ChunkReverse for StringChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkReverse for ArrayChunked {
     fn reverse(&self) -> Self {
-        if !self.inner_dtype().is_numeric() {
+        if !self.inner_dtype().is_primitive_numeric() {
             todo!("reverse for FixedSizeList with non-numeric dtypes not yet supported")
         }
         let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
+        let arr = ca.downcast_as_array();
         let values = arr.values().as_ref();
 
         let mut builder =
-            get_fixed_size_list_builder(ca.inner_dtype(), ca.len(), ca.width(), ca.name())
+            get_fixed_size_list_builder(ca.inner_dtype(), ca.len(), ca.width(), ca.name().clone())
                 .expect("not yet supported");
 
         // SAFETY, we are within bounds
@@ -117,6 +123,12 @@ impl ChunkReverse for ArrayChunked {
 impl<T: PolarsObject> ChunkReverse for ObjectChunked<T> {
     fn reverse(&self) -> Self {
         // SAFETY: we know we don't go out of bounds.
-        unsafe { self.take_unchecked(&(0..self.len() as IdxSize).rev().collect_ca("")) }
+        unsafe {
+            self.take_unchecked(
+                &(0..self.len() as IdxSize)
+                    .rev()
+                    .collect_ca(PlSmallStr::EMPTY),
+            )
+        }
     }
 }

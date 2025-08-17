@@ -1,8 +1,8 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::legacy::kernels::set::set_at_nulls;
 use bytemuck::Zeroable;
-use num_traits::{Bounded, NumCast, One, Zero};
-use polars_utils::iter::EnumerateIdxTrait;
+use num_traits::{NumCast, One, Zero};
+use polars_utils::itertools::Itertools;
 
 use crate::prelude::*;
 
@@ -19,8 +19,6 @@ impl Series {
     /// * Max fill (replace None with the maximum of the whole array)
     /// * Zero fill (replace None with the value zero)
     /// * One fill (replace None with the value one)
-    /// * MinBound fill (replace with the minimum of that data type)
-    /// * MaxBound fill (replace with the maximum of that data type)
     ///
     /// *NOTE: If you want to fill the Nones with a value use the
     /// [`fill_null` operation on `ChunkedArray<T>`](crate::chunked_array::ops::ChunkFillNullValue)*.
@@ -30,7 +28,7 @@ impl Series {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example() -> PolarsResult<()> {
-    ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
+    ///     let s = Column::new("some_missing".into(), &[Some(1), None, Some(2)]);
     ///
     ///     let filled = s.fill_null(FillNullStrategy::Forward(None))?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
@@ -53,12 +51,6 @@ impl Series {
     ///     let filled = s.fill_null(FillNullStrategy::One)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_null(FillNullStrategy::MinBound)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(-2147483648), Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::MaxBound)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2147483647), Some(2)]);
-    ///
     ///     Ok(())
     /// }
     /// example();
@@ -74,8 +66,6 @@ impl Series {
                         | FillNullStrategy::Backward(_)
                         | FillNullStrategy::Max
                         | FillNullStrategy::Min
-                        | FillNullStrategy::MaxBound
-                        | FillNullStrategy::MinBound
                         | FillNullStrategy::Mean
                 ))
         {
@@ -85,14 +75,23 @@ impl Series {
         let physical_type = self.dtype().to_physical();
 
         match strategy {
-            FillNullStrategy::Forward(None) if !physical_type.is_numeric() => {
+            FillNullStrategy::Forward(None) if !physical_type.is_primitive_numeric() => {
                 fill_forward_gather(self)
             },
             FillNullStrategy::Forward(Some(limit)) => fill_forward_gather_limit(self, limit),
-            FillNullStrategy::Backward(None) if !physical_type.is_numeric() => {
+            FillNullStrategy::Backward(None) if !physical_type.is_primitive_numeric() => {
                 fill_backward_gather(self)
             },
             FillNullStrategy::Backward(Some(limit)) => fill_backward_gather_limit(self, limit),
+            #[cfg(feature = "dtype-decimal")]
+            FillNullStrategy::One if self.dtype().is_decimal() => {
+                let ca = self.decimal().unwrap();
+                let precision = ca.precision();
+                let scale = ca.scale();
+                let fill_value = 10i128.pow(scale as u32);
+                let phys = ca.physical().fill_null_with_values(fill_value)?;
+                Ok(phys.into_decimal_unchecked(precision, scale).into_series())
+            },
             _ => {
                 let logical_type = self.dtype();
                 let s = self.to_physical_repr();
@@ -108,7 +107,7 @@ impl Series {
                         let ca = s.binary().unwrap();
                         fill_null_binary(ca, strategy).map(|ca| ca.into_series())
                     },
-                    dt if dt.is_numeric() => {
+                    dt if dt.is_primitive_numeric() => {
                         with_match_physical_numeric_polars_type!(dt, |$T| {
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                                 fill_null_numeric(ca, strategy).map(|ca| ca.into_series())
@@ -118,7 +117,7 @@ impl Series {
                         polars_bail!(InvalidOperation: "fill null strategy not yet supported for dtype: {}", dt)
                     },
                 }?;
-                unsafe { out.cast_unchecked(logical_type) }
+                unsafe { out.from_physical_unchecked(logical_type) }
             },
         }
     }
@@ -142,14 +141,14 @@ where
 
     // Compute bitmask.
     let num_start_nulls = ca.first_non_null().unwrap_or(ca.len());
-    let mut bm = MutableBitmap::with_capacity(ca.len());
+    let mut bm = BitmapBuilder::with_capacity(ca.len());
     bm.extend_constant(num_start_nulls, false);
     bm.extend_constant(ca.len() - num_start_nulls, true);
     ChunkedArray::from_chunk_iter_like(
         ca,
         [
             T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
-                .with_validity_typed(Some(bm.into())),
+                .with_validity_typed(bm.into_opt_validity()),
         ],
     )
 }
@@ -176,14 +175,14 @@ where
         .last_non_null()
         .map(|i| ca.len() - 1 - i)
         .unwrap_or(ca.len());
-    let mut bm = MutableBitmap::with_capacity(ca.len());
+    let mut bm = BitmapBuilder::with_capacity(ca.len());
     bm.extend_constant(ca.len() - num_end_nulls, true);
     bm.extend_constant(num_end_nulls, false);
     ChunkedArray::from_chunk_iter_like(
         ca,
         [
             T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
-                .with_validity_typed(Some(bm.into())),
+                .with_validity_typed(bm.into_opt_validity()),
         ],
     )
 }
@@ -211,15 +210,13 @@ where
         )?,
         FillNullStrategy::One => return ca.fill_null_with_values(One::one()),
         FillNullStrategy::Zero => return ca.fill_null_with_values(Zero::zero()),
-        FillNullStrategy::MinBound => return ca.fill_null_with_values(Bounded::min_value()),
-        FillNullStrategy::MaxBound => return ca.fill_null_with_values(Bounded::max_value()),
         FillNullStrategy::Forward(None) => fill_forward_numeric(ca),
         FillNullStrategy::Backward(None) => fill_backward_numeric(ca),
         // Handled earlier
         FillNullStrategy::Forward(_) => unreachable!(),
         FillNullStrategy::Backward(_) => unreachable!(),
     };
-    out.rename(ca.name());
+    out.rename(ca.name().clone());
     Ok(out)
 }
 
@@ -233,7 +230,7 @@ fn fill_with_gather<F: Fn(&Bitmap) -> Vec<IdxSize>>(
 
     let idx = bits_to_idx(validity);
 
-    Ok(unsafe { s.take_unchecked_from_slice(&idx) })
+    Ok(unsafe { s.take_slice_unchecked(&idx) })
 }
 
 fn fill_forward_gather(s: &Series) -> PolarsResult<Series> {
@@ -337,12 +334,8 @@ fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResu
             .fill_null_with_values(ca.max().ok_or_else(err_fill_null)?)
             .map(|ca| ca.into_series()),
         FillNullStrategy::Mean => polars_bail!(opq = mean, "Boolean"),
-        FillNullStrategy::One | FillNullStrategy::MaxBound => {
-            ca.fill_null_with_values(true).map(|ca| ca.into_series())
-        },
-        FillNullStrategy::Zero | FillNullStrategy::MinBound => {
-            ca.fill_null_with_values(false).map(|ca| ca.into_series())
-        },
+        FillNullStrategy::One => ca.fill_null_with_values(true).map(|ca| ca.into_series()),
+        FillNullStrategy::Zero => ca.fill_null_with_values(false).map(|ca| ca.into_series()),
         FillNullStrategy::Forward(_) => unreachable!(),
         FillNullStrategy::Backward(_) => unreachable!(),
     }

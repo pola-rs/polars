@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from datetime import date
 from pathlib import Path
@@ -20,24 +19,23 @@ pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_categoricals_5921() -> None:
-    with pl.StringCache():
-        out_lazy = (
-            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
-            .lazy()
-            .with_columns(pl.col("X").cast(pl.Categorical))
-            .group_by("X")
-            .agg(pl.col("Y").min())
-            .sort("Y", descending=True)
-            .collect(streaming=True)
-        )
+    out_lazy = (
+        pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+        .lazy()
+        .with_columns(pl.col("X").cast(pl.Categorical))
+        .group_by("X")
+        .agg(pl.col("Y").min())
+        .sort("Y", descending=True)
+        .collect(engine="streaming")
+    )
 
-        out_eager = (
-            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
-            .with_columns(pl.col("X").cast(pl.Categorical))
-            .group_by("X")
-            .agg(pl.col("Y").min())
-            .sort("Y", descending=True)
-        )
+    out_eager = (
+        pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+        .with_columns(pl.col("X").cast(pl.Categorical))
+        .group_by("X")
+        .agg(pl.col("Y").min())
+        .sort("Y", descending=True)
+    )
 
     for out in [out_eager, out_lazy]:
         assert out.dtypes == [pl.Categorical, pl.Int64]
@@ -49,36 +47,42 @@ def test_streaming_block_on_literals_6054() -> None:
     s = pl.Series("col_2", list(range(10)))
 
     assert df.lazy().with_columns(s).group_by("col_1").agg(pl.all().first()).collect(
-        streaming=True
+        engine="streaming"
     ).sort("col_1").to_dict(as_series=False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    calls = 0
+
+    def func(df: pl.DataFrame) -> pl.DataFrame:
+        nonlocal calls
+        calls += 1
+        return df.with_columns(pl.col("a").alias("b"))
+
     assert (
-        pl.DataFrame({"a": [1, 2, 3]})
+        pl.DataFrame({"a": list(range(100))})
         .lazy()
         .map_batches(
-            function=lambda df: df.with_columns(pl.col("a").alias("b")),
+            function=func,
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,
         )
-    ).collect(streaming=True).to_dict(as_series=False) == {
-        "a": [1, 2, 3],
-        "b": [1, 2, 3],
+    ).collect(engine="streaming").to_dict(as_series=False) == {
+        "a": list(range(100)),
+        "b": list(range(100)),
     }
 
-    (_, err) = capfd.readouterr()
-    assert "df -> function -> ordered_sink" in err
+    assert calls > 1
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
+@pytest.mark.may_fail_auto_streaming
 def test_cross_join_stack() -> None:
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
-    # this should be instant if directly pushed into sink
-    # if not the cross join will first fill the stack with all matches of a single chunk
-    assert a.join(a, how="cross").head().collect(streaming=True).shape == (5, 2)
+    assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
     t1 = time.time()
     assert (t1 - t0) < 0.5
 
@@ -97,13 +101,13 @@ def test_streaming_literal_expansion() -> None:
         z=pl.col("z"),
     )
 
-    assert q.collect(streaming=True).to_dict(as_series=False) == {
+    assert q.collect(engine="streaming").to_dict(as_series=False) == {
         "x": ["constant", "constant"],
         "y": ["a", "b"],
         "z": [1, 2],
     }
     assert q.group_by(["x", "y"]).agg(pl.mean("z")).sort("y").collect(
-        streaming=True
+        engine="streaming"
     ).to_dict(as_series=False) == {
         "x": ["constant", "constant"],
         "y": ["a", "b"],
@@ -115,31 +119,17 @@ def test_streaming_literal_expansion() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
-
     with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
-            ).collect(streaming=True)
+            ).collect(engine="streaming")
         )
-        (_, err) = capfd.readouterr()
-        assert "df -> projection -> ordered_sink" in err
-
-
-def test_streaming_ternary() -> None:
-    q = pl.LazyFrame({"a": [1, 2, 3]})
-
-    assert (
-        q.with_columns(
-            pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
-        )
-        .explain(streaming=True)
-        .startswith("STREAMING")
-    )
 
 
 def test_streaming_sortedness_propagation_9494() -> None:
@@ -154,15 +144,15 @@ def test_streaming_sortedness_propagation_9494() -> None:
         .sort("when")
         .group_by_dynamic("when", every="1mo")
         .agg(pl.col("what").sum())
-        .collect(streaming=True)
+        .collect(engine="streaming")
     ).to_dict(as_series=False) == {
         "when": [date(2023, 5, 1), date(2023, 6, 1)],
         "what": [3, 3],
     }
 
 
-@pytest.mark.write_disk()
-@pytest.mark.slow()
+@pytest.mark.write_disk
+@pytest.mark.slow
 def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     p0 = tmp_path / "df0.parquet"
@@ -187,10 +177,13 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
 
     join_strategies: list[JoinStrategy] = ["left", "inner"]
     for how in join_strategies:
-        q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
         assert_frame_equal(
-            q.collect(streaming=True),
-            q.collect(streaming=False),
+            lf0.join(
+                lf1, left_on="id", right_on="id_r", how=how, maintain_order="left"
+            ).collect(engine="streaming"),
+            lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
+                engine="in-memory"
+            ),
             check_row_order=how == "left",
         )
 
@@ -212,7 +205,7 @@ def test_streaming_9776() -> None:
     assert unordered.sort(["col_1", "ID"]).rows() == expected
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_stream_empty_file(tmp_path: Path) -> None:
     p = tmp_path / "in.parquet"
     schema = {
@@ -226,7 +219,7 @@ def test_stream_empty_file(tmp_path: Path) -> None:
         schema=schema,
     )
     df.write_parquet(p)
-    assert pl.scan_parquet(p).collect(streaming=True).schema == schema
+    assert pl.scan_parquet(p).collect(engine="streaming").schema == schema
 
 
 def test_streaming_empty_df() -> None:
@@ -241,7 +234,7 @@ def test_streaming_empty_df() -> None:
         df.lazy()
         .join(df.lazy(), on="a", how="inner")
         .filter(False)
-        .collect(streaming=True)
+        .collect(engine="streaming")
     )
 
     assert result.to_dict(as_series=False) == {"a": [], "b": [], "b_right": []}
@@ -250,7 +243,7 @@ def test_streaming_empty_df() -> None:
 def test_streaming_duplicate_cols_5537() -> None:
     assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
         (pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)
-    ).collect(streaming=True).to_dict(as_series=False) == {
+    ).collect(engine="streaming").to_dict(as_series=False) == {
         "a": [3, 6, 9],
         "b": [1, 2, 3],
         "foo": [2, 4, 6],
@@ -265,7 +258,7 @@ def test_null_sum_streaming_10455() -> None:
         },
         schema={"x": pl.Int64, "y": pl.Float32},
     )
-    result = df.lazy().group_by("x").sum().collect(streaming=True)
+    result = df.lazy().group_by("x").sum().collect(engine="streaming")
     expected = {"x": [1], "y": [0.0]}
     assert result.to_dict(as_series=False) == expected
 
@@ -282,13 +275,13 @@ def test_boolean_agg_schema() -> None:
 
     for streaming in [True, False]:
         assert (
-            agg_df.collect(streaming=streaming).schema
+            agg_df.collect(engine="streaming" if streaming else "in-memory").schema
             == agg_df.collect_schema()
             == {"x": pl.Int64, "max_y": pl.Boolean}
         )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
     with Path.open(tmp_path / "header_no_data.csv", "w") as f:
         f.write("name, age\n")
@@ -297,27 +290,13 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
     df = (
         pl.scan_csv(tmp_path / "header_no_data.csv", schema=schema)
         .head()
-        .collect(streaming=True)
+        .collect(engine="streaming")
     )
-    assert len(df) == 0
+    assert df.height == 0
     assert df.schema == schema
 
 
-@pytest.mark.write_disk()
-def test_custom_temp_dir(tmp_path: Path, monkeypatch: Any) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
-    s = pl.arange(0, 100_000, eager=True).rename("idx")
-    df = s.shuffle().to_frame()
-    df.lazy().sort("idx").collect(streaming=True)
-
-    assert os.listdir(tmp_path), f"Temp directory '{tmp_path}' is empty"
-
-
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_with_hconcat(tmp_path: Path) -> None:
     df1 = pl.DataFrame(
         {
@@ -343,18 +322,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
         .sort(pl.col("id"))
     )
 
-    plan_lines = [line.strip() for line in query.explain(streaming=True).splitlines()]
-
-    # Each input of the concatenation should be a streaming section,
-    # as these might be streamable even though the horizontal concatenation itself
-    # doesn't yet support streaming.
-    for i, line in enumerate(plan_lines):
-        if line.startswith("PLAN"):
-            assert plan_lines[i + 1].startswith(
-                "STREAMING"
-            ), f"{line} does not contain a streaming section"
-
-    result = query.collect(streaming=True)
+    result = query.collect(engine="streaming")
 
     expected = pl.DataFrame(
         {
@@ -365,3 +333,50 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.write_disk
+def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    (
+        pl.LazyFrame({"a": pl.Series([1])})
+        .with_columns(b=pl.col("a").is_in(pl.Series([1, 2, 3])))
+        .sink_parquet(tmp_path / "1")
+    )
+
+    (
+        pl.LazyFrame({"a": pl.Series([1])})
+        .with_columns(
+            b=pl.when(pl.col("a").is_in(pl.Series([1, 2, 3]))).then(pl.col("a"))
+        )
+        .sink_parquet(tmp_path / "1")
+    )
+
+
+def test_streaming_temporal_17669() -> None:
+    df = (
+        pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.Datetime("us")})
+        .with_columns(
+            b=pl.col("a").dt.date(),
+            c=pl.col("a").dt.time(),
+        )
+        .collect(engine="streaming")
+    )
+    assert df.schema == {
+        "a": pl.Datetime("us"),
+        "b": pl.Date,
+        "c": pl.Time,
+    }
+
+
+def test_i128_sum_reduction() -> None:
+    assert (
+        pl.Series("a", [1, 2, 3], pl.Int128)
+        .to_frame()
+        .lazy()
+        .sum()
+        .collect(engine="streaming")
+        .item()
+        == 6
+    )

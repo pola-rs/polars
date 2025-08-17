@@ -42,7 +42,8 @@
 //! println!("{:?}", schema);
 //! ```
 
-use parquet_format_safe::Type;
+use polars_parquet_format::Type;
+use polars_utils::pl_str::PlSmallStr;
 use types::PrimitiveLogicalType;
 
 use super::super::types::{ParquetType, TimeUnit};
@@ -101,10 +102,7 @@ fn converted_group_from_str(s: &str) -> ParquetResult<GroupConvertedType> {
         "MAP_KEY_VALUE" => GroupConvertedType::MapKeyValue,
         "LIST" => GroupConvertedType::List,
         other => {
-            return Err(ParquetError::oos(format!(
-                "Invalid converted type {}",
-                other
-            )))
+            return Err(ParquetError::oos(format!("Invalid converted type {other}")));
         },
     })
 }
@@ -140,7 +138,7 @@ fn repetition_from_str(s: &str) -> ParquetResult<Repetition> {
         "REQUIRED" => Repetition::Required,
         "OPTIONAL" => Repetition::Optional,
         "REPEATED" => Repetition::Repeated,
-        other => return Err(ParquetError::oos(format!("Invalid repetition {}", other))),
+        other => return Err(ParquetError::oos(format!("Invalid repetition {other}"))),
     })
 }
 
@@ -154,13 +152,15 @@ fn type_from_str(s: &str) -> ParquetResult<Type> {
         "DOUBLE" => Ok(Type::DOUBLE),
         "BYTE_ARRAY" | "BINARY" => Ok(Type::BYTE_ARRAY),
         "FIXED_LEN_BYTE_ARRAY" => Ok(Type::FIXED_LEN_BYTE_ARRAY),
-        other => Err(ParquetError::oos(format!("Invalid type {}", other))),
+        other => Err(ParquetError::oos(format!("Invalid type {other}"))),
     }
 }
 
-/// Parses message type as string into a Parquet [`ParquetType`](crate::parquet::schema::types::ParquetType)
-/// which, for example, could be used to extract individual columns. Returns Parquet
-/// general error when parsing or validation fails.
+/// Parses message type as string into a Parquet [`ParquetType`](crate::parquet::schema::types::ParquetType).
+///
+/// This could, for example, be used to extract individual columns.
+///
+/// Returns Parquet general error when parsing or validation fails.
 pub fn from_message(message_type: &str) -> ParquetResult<ParquetType> {
     let mut parser = Parser {
         tokenizer: &mut Tokenizer::from_str(message_type),
@@ -248,12 +248,10 @@ fn assert_token(token: Option<&str>, expected: &str) -> ParquetResult<()> {
     match token {
         Some(value) if value == expected => Ok(()),
         Some(other) => Err(ParquetError::oos(format!(
-            "Expected '{}', found token '{}'",
-            expected, other
+            "Expected '{expected}', found token '{other}'"
         ))),
         None => Err(ParquetError::oos(format!(
-            "Expected '{}', but no token found (None)",
-            expected
+            "Expected '{expected}', but no token found (None)"
         ))),
     }
 }
@@ -300,7 +298,7 @@ fn parse_timeunit(
         })
 }
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     // Entry function to parse message type, uses internal tokenizer.
     fn parse_message_type(&mut self) -> ParquetResult<ParquetType> {
         // Check that message type starts with "message".
@@ -311,7 +309,7 @@ impl<'a> Parser<'a> {
                     .next()
                     .ok_or_else(|| ParquetError::oos("Expected name, found None"))?;
                 let fields = self.parse_child_types()?;
-                Ok(ParquetType::new_root(name.to_string(), fields))
+                Ok(ParquetType::new_root(PlSmallStr::from_str(name), fields))
             },
             _ => Err(ParquetError::oos(
                 "Message type does not start with 'message'",
@@ -387,7 +385,7 @@ impl<'a> Parser<'a> {
         let fields = self.parse_child_types()?;
 
         Ok(ParquetType::from_converted(
-            name.to_string(),
+            PlSmallStr::from_str(name),
             fields,
             repetition,
             converted_type,
@@ -434,8 +432,7 @@ impl<'a> Parser<'a> {
                         (false, converted_primitive_from_str(&string), string)
                     } else {
                         return Err(ParquetError::oos(format!(
-                            "Expected converted or logical type, found {}",
-                            string
+                            "Expected converted or logical type, found {string}"
                         )));
                     })
                 })?;
@@ -471,7 +468,7 @@ impl<'a> Parser<'a> {
         assert_token(self.tokenizer.next(), ";")?;
 
         ParquetType::try_from_primitive(
-            name.to_string(),
+            PlSmallStr::from_str(name),
             (physical_type, length).try_into()?,
             repetition,
             converted_type,
@@ -881,7 +878,7 @@ mod tests {
 
         let fields = vec![
             ParquetType::try_from_primitive(
-                "f1".to_string(),
+                PlSmallStr::from_static("f1"),
                 PhysicalType::FixedLenByteArray(5),
                 Repetition::Optional,
                 None,
@@ -889,7 +886,7 @@ mod tests {
                 None,
             )?,
             ParquetType::try_from_primitive(
-                "f2".to_string(),
+                PlSmallStr::from_static("f2"),
                 PhysicalType::FixedLenByteArray(16),
                 Repetition::Optional,
                 None,
@@ -898,7 +895,7 @@ mod tests {
             )?,
         ];
 
-        let expected = ParquetType::new_root("root".to_string(), fields);
+        let expected = ParquetType::new_root(PlSmallStr::from_static("root"), fields);
 
         assert_eq!(message, expected);
         Ok(())
@@ -930,7 +927,7 @@ mod tests {
         .unwrap();
 
         let a2 = ParquetType::try_from_primitive(
-            "a2".to_string(),
+            "a2".into(),
             PhysicalType::ByteArray,
             Repetition::Repeated,
             Some(PrimitiveConvertedType::Utf8),
@@ -938,38 +935,38 @@ mod tests {
             None,
         )?;
         let a1 = ParquetType::from_converted(
-            "a1".to_string(),
+            "a1".into(),
             vec![a2],
             Repetition::Optional,
             Some(GroupConvertedType::List),
             None,
         );
         let b2 = ParquetType::from_converted(
-            "b2".to_string(),
+            "b2".into(),
             vec![
-                ParquetType::from_physical("b3".to_string(), PhysicalType::Int32),
-                ParquetType::from_physical("b4".to_string(), PhysicalType::Double),
+                ParquetType::from_physical("b3".into(), PhysicalType::Int32),
+                ParquetType::from_physical("b4".into(), PhysicalType::Double),
             ],
             Repetition::Repeated,
             None,
             None,
         );
         let b1 = ParquetType::from_converted(
-            "b1".to_string(),
+            "b1".into(),
             vec![b2],
             Repetition::Optional,
             Some(GroupConvertedType::List),
             None,
         );
         let a0 = ParquetType::from_converted(
-            "a0".to_string(),
+            "a0".into(),
             vec![a1, b1],
             Repetition::Required,
             None,
             None,
         );
 
-        let expected = ParquetType::new_root("root".to_string(), vec![a0]);
+        let expected = ParquetType::new_root("root".into(), vec![a0]);
 
         assert_eq!(message, expected);
         Ok(())
@@ -995,7 +992,7 @@ mod tests {
         .unwrap();
 
         let f1 = ParquetType::try_from_primitive(
-            "_1".to_string(),
+            "_1".into(),
             PhysicalType::Int32,
             Repetition::Required,
             Some(PrimitiveConvertedType::Int8),
@@ -1003,7 +1000,7 @@ mod tests {
             None,
         )?;
         let f2 = ParquetType::try_from_primitive(
-            "_2".to_string(),
+            "_2".into(),
             PhysicalType::Int32,
             Repetition::Required,
             Some(PrimitiveConvertedType::Int16),
@@ -1011,7 +1008,7 @@ mod tests {
             None,
         )?;
         let f3 = ParquetType::try_from_primitive(
-            "_3".to_string(),
+            "_3".into(),
             PhysicalType::Float,
             Repetition::Required,
             None,
@@ -1019,7 +1016,7 @@ mod tests {
             None,
         )?;
         let f4 = ParquetType::try_from_primitive(
-            "_4".to_string(),
+            "_4".into(),
             PhysicalType::Double,
             Repetition::Required,
             None,
@@ -1027,7 +1024,7 @@ mod tests {
             None,
         )?;
         let f5 = ParquetType::try_from_primitive(
-            "_5".to_string(),
+            "_5".into(),
             PhysicalType::Int32,
             Repetition::Optional,
             None,
@@ -1035,7 +1032,7 @@ mod tests {
             None,
         )?;
         let f6 = ParquetType::try_from_primitive(
-            "_6".to_string(),
+            "_6".into(),
             PhysicalType::ByteArray,
             Repetition::Optional,
             Some(PrimitiveConvertedType::Utf8),
@@ -1045,7 +1042,7 @@ mod tests {
 
         let fields = vec![f1, f2, f3, f4, f5, f6];
 
-        let expected = ParquetType::new_root("root".to_string(), fields);
+        let expected = ParquetType::new_root("root".into(), fields);
         assert_eq!(message, expected);
         Ok(())
     }
@@ -1073,7 +1070,7 @@ mod tests {
         .parse_message_type()?;
 
         let f1 = ParquetType::try_from_primitive(
-            "_1".to_string(),
+            "_1".into(),
             PhysicalType::Int32,
             Repetition::Required,
             None,
@@ -1081,7 +1078,7 @@ mod tests {
             None,
         )?;
         let f2 = ParquetType::try_from_primitive(
-            "_2".to_string(),
+            "_2".into(),
             PhysicalType::Int32,
             Repetition::Required,
             None,
@@ -1089,7 +1086,7 @@ mod tests {
             None,
         )?;
         let f3 = ParquetType::try_from_primitive(
-            "_3".to_string(),
+            "_3".into(),
             PhysicalType::Float,
             Repetition::Required,
             None,
@@ -1097,7 +1094,7 @@ mod tests {
             None,
         )?;
         let f4 = ParquetType::try_from_primitive(
-            "_4".to_string(),
+            "_4".into(),
             PhysicalType::Double,
             Repetition::Required,
             None,
@@ -1105,7 +1102,7 @@ mod tests {
             None,
         )?;
         let f5 = ParquetType::try_from_primitive(
-            "_5".to_string(),
+            "_5".into(),
             PhysicalType::Int32,
             Repetition::Optional,
             None,
@@ -1113,7 +1110,7 @@ mod tests {
             None,
         )?;
         let f6 = ParquetType::try_from_primitive(
-            "_6".to_string(),
+            "_6".into(),
             PhysicalType::Int32,
             Repetition::Optional,
             None,
@@ -1124,7 +1121,7 @@ mod tests {
             None,
         )?;
         let f7 = ParquetType::try_from_primitive(
-            "_7".to_string(),
+            "_7".into(),
             PhysicalType::Int64,
             Repetition::Optional,
             None,
@@ -1135,7 +1132,7 @@ mod tests {
             None,
         )?;
         let f8 = ParquetType::try_from_primitive(
-            "_8".to_string(),
+            "_8".into(),
             PhysicalType::Int64,
             Repetition::Optional,
             None,
@@ -1146,7 +1143,7 @@ mod tests {
             None,
         )?;
         let f9 = ParquetType::try_from_primitive(
-            "_9".to_string(),
+            "_9".into(),
             PhysicalType::Int64,
             Repetition::Optional,
             None,
@@ -1158,7 +1155,7 @@ mod tests {
         )?;
 
         let f10 = ParquetType::try_from_primitive(
-            "_10".to_string(),
+            "_10".into(),
             PhysicalType::ByteArray,
             Repetition::Optional,
             None,
@@ -1168,7 +1165,7 @@ mod tests {
 
         let fields = vec![f1, f2, f3, f4, f5, f6, f7, f8, f9, f10];
 
-        let expected = ParquetType::new_root("root".to_string(), fields);
+        let expected = ParquetType::new_root("root".into(), fields);
         assert_eq!(message, expected);
         Ok(())
     }

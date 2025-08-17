@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 from collections import OrderedDict
-from datetime import timezone
+from collections.abc import Mapping
+from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
 import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import dtype_str_repr as _dtype_str_repr
+    import polars._plr as plr
+    from polars._plr import PyCategories
+    from polars._plr import dtype_str_repr as _dtype_str_repr
+
+import polars.datatypes.classes as pldt
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
     from polars import Series
     from polars._typing import (
         CategoricalOrdering,
@@ -24,12 +32,20 @@ if TYPE_CHECKING:
     )
 
 
-class classinstmethod(classmethod):  # type: ignore[type-arg]
+T = TypeVar("T")
+R = TypeVar("R")
+
+
+class classinstmethod(Generic[R]):
     """Decorator that allows a method to be called from the class OR instance."""
 
-    def __get__(self, instance: Any, type_: type) -> Any:  # type: ignore[override]
-        get = super().__get__ if instance is None else self.__func__.__get__
-        return get(instance, type_)
+    def __init__(self, func: Callable[..., R]) -> None:
+        self.func = func
+
+    def __get__(self, instance: Any, type_: Any) -> Callable[..., R]:
+        if instance is not None:
+            return self.func.__get__(instance, type_)
+        return self.func.__get__(type_, type_)
 
 
 class DataTypeClass(type):
@@ -64,6 +80,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_object(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def is_signed_integer(cls) -> bool:  # noqa: D102
         ...
 
@@ -83,6 +103,18 @@ class DataTypeClass(type):
     def is_nested(cls) -> bool:  # noqa: D102
         ...
 
+    @classmethod
+    def from_python(cls, py_type: PythonDataType) -> PolarsDataType:  # noqa: D102
+        ...
+
+    @classmethod
+    def to_python(cls) -> PythonDataType:  # noqa: D102
+        ...
+
+    @classmethod
+    def to_dtype_expr(cls) -> pl.DataTypeExpr:  # noqa: D102
+        ...
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -90,8 +122,16 @@ class DataType(metaclass=DataTypeClass):
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
 
-    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
-        if type(other) is DataTypeClass:
+    @overload  # type: ignore[override]
+    def __eq__(self, other: pl.DataTypeExpr) -> pl.Expr: ...
+
+    @overload
+    def __eq__(self, other: PolarsDataType) -> bool: ...
+
+    def __eq__(self, other: pl.DataTypeExpr | PolarsDataType) -> pl.Expr | bool:
+        if isinstance(other, pl.DataTypeExpr):
+            return self.to_dtype_expr() == other
+        elif type(other) is DataTypeClass:
             return issubclass(other, type(self))
         else:
             return isinstance(other, type(self))
@@ -118,7 +158,7 @@ class DataType(metaclass=DataTypeClass):
         """
         return cls
 
-    @classinstmethod  # type: ignore[arg-type]
+    @classinstmethod
     def is_(self, other: PolarsDataType) -> bool:
         """
         Check if this DataType is the same as another DataType.
@@ -129,7 +169,7 @@ class DataType(metaclass=DataTypeClass):
         Parameters
         ----------
         other
-            the other polars dtype to compare with.
+            the other Polars dtype to compare with.
 
         Examples
         --------
@@ -156,6 +196,11 @@ class DataType(metaclass=DataTypeClass):
         return issubclass(cls, IntegerType)
 
     @classmethod
+    def is_object(cls) -> bool:
+        """Check whether the data type is an object type."""
+        return issubclass(cls, ObjectType)
+
+    @classmethod
     def is_signed_integer(cls) -> bool:
         """Check whether the data type is a signed integer type."""
         return issubclass(cls, SignedIntegerType)
@@ -180,9 +225,104 @@ class DataType(metaclass=DataTypeClass):
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
 
+    @classmethod
+    def from_python(cls, py_type: PythonDataType) -> PolarsDataType:
+        """
+        Return the Polars data type corresponding to a given Python type.
+
+        Notes
+        -----
+        Not every Python type has a corresponding Polars data type; in general
+        you should declare Polars data types explicitly to exactly specify
+        the desired type and its properties (such as scale/unit).
+
+        Examples
+        --------
+        >>> pl.DataType.from_python(int)
+        Int64
+        >>> pl.DataType.from_python(float)
+        Float64
+        >>> from datetime import tzinfo
+        >>> pl.DataType.from_python(tzinfo)  # doctest: +SKIP
+        TypeError: cannot parse input <class 'datetime.tzinfo'> into Polars data type
+        """
+        from polars.datatypes._parse import parse_into_dtype
+
+        return parse_into_dtype(py_type)
+
+    @classinstmethod
+    def to_python(self) -> PythonDataType:
+        """
+        Return the Python type corresponding to this Polars data type.
+
+        Examples
+        --------
+        >>> pl.Int16().to_python()
+        <class 'int'>
+        >>> pl.Float32().to_python()
+        <class 'float'>
+        >>> pl.Array(pl.Date(), 10).to_python()
+        <class 'list'>
+        """
+        from polars.datatypes import dtype_to_py_type
+
+        return dtype_to_py_type(self)
+
+    @classinstmethod
+    def to_dtype_expr(self) -> pl.DataTypeExpr:
+        """
+        Return a :class:`DataTypeExpr` with a static :class:`DataType`.
+
+        Examples
+        --------
+        >>> pl.Int16().to_dtype_expr().collect_dtype({})
+        Int16
+        """
+        from polars._plr import PyDataTypeExpr
+
+        return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.from_dtype(self))
+
 
 class NumericType(DataType):
     """Base class for numeric data types."""
+
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Int8.max() == 127)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Int8.min() == -128)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
 
 
 class IntegerType(NumericType):
@@ -209,6 +349,10 @@ class NestedType(DataType):
     """Base class for nested data types."""
 
 
+class ObjectType(DataType):
+    """Base class for object data types."""
+
+
 class Int8(SignedIntegerType):
     """8-bit signed integer type."""
 
@@ -223,6 +367,17 @@ class Int32(SignedIntegerType):
 
 class Int64(SignedIntegerType):
     """64-bit signed integer type."""
+
+
+class Int128(SignedIntegerType):
+    """
+    128-bit signed integer type.
+
+    .. warning::
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
+    """
 
 
 class UInt8(UnsignedIntegerType):
@@ -274,13 +429,13 @@ class Decimal(NumericType):
         self,
         precision: int | None = None,
         scale: int = 0,
-    ):
+    ) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
-            "The Decimal data type is considered unstable."
+            "the Decimal data type is considered unstable."
             " It is a work-in-progress feature and may not always work as expected."
         )
 
@@ -343,6 +498,44 @@ class Time(TemporalType):
     The integer indicates the number of nanoseconds since midnight.
     """
 
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.max() == 86_399_999_999_999)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.min() == 0)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
+
 
 class Datetime(TemporalType):
     """
@@ -370,8 +563,8 @@ class Datetime(TemporalType):
     time_zone: str | None
 
     def __init__(
-        self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
-    ):
+        self, time_unit: TimeUnit = "us", time_zone: str | tzinfo | None = None
+    ) -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -379,7 +572,7 @@ class Datetime(TemporalType):
             )
             raise ValueError(msg)
 
-        if isinstance(time_zone, timezone):
+        if isinstance(time_zone, tzinfo):
             time_zone = str(time_zone)
 
         self.time_unit = time_unit
@@ -424,7 +617,7 @@ class Duration(TemporalType):
 
     time_unit: TimeUnit
 
-    def __init__(self, time_unit: TimeUnit = "us"):
+    def __init__(self, time_unit: TimeUnit = "us") -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -451,6 +644,123 @@ class Duration(TemporalType):
         return f"{class_name}(time_unit={self.time_unit!r})"
 
 
+class Categories:
+    """
+    A named collection of categories for `Categorical`.
+
+    Two categories are considered equal (and will use the same physical mapping of
+    categories to strings) if they have the same name, namespace and physical backing
+    type, even if they are created in separate calls to `Categories`.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+    """
+
+    _categories: PyCategories
+
+    def __init__(
+        self,
+        name: str | None = None,
+        namespace: str = "",
+        physical: PolarsDataType = pldt.UInt32,
+    ) -> None:
+        if name is None or name == "":
+            assert namespace == "", "global categories may not specify a namespace"
+            assert physical == pldt.UInt32, (
+                "global categories may not specify a physical type"
+            )
+            self._categories = PyCategories.global_categories()
+            return
+
+        if physical == pldt.UInt32:
+            internal_phys = "u32"
+        elif physical == pldt.UInt16:
+            internal_phys = "u16"
+        elif physical == pldt.UInt8:
+            internal_phys = "u8"
+        else:
+            msg = "Categorical physical must be one of pl.UInt(8|16|32)"
+            raise TypeError(msg)
+
+        self._categories = PyCategories(name, namespace, internal_phys)
+
+    @staticmethod
+    def _from_py_categories(py_categories: PyCategories) -> Categories:
+        self = Categories.__new__(Categories)
+        self._categories = py_categories
+        return self
+
+    @staticmethod
+    def random(
+        namespace: str = "", physical: PolarsDataType = pldt.UInt32
+    ) -> Categories:
+        """Creates a new Categories with a random name."""
+        if physical == pldt.UInt32:
+            internal_phys = "u32"
+        elif physical == pldt.UInt16:
+            internal_phys = "u16"
+        elif physical == pldt.UInt8:
+            internal_phys = "u8"
+        else:
+            msg = "Categorical physical must be one of pl.UInt(8|16|32)"
+            raise TypeError(msg)
+
+        return Categories._from_py_categories(
+            PyCategories.random(namespace, internal_phys)
+        )
+
+    def name(self) -> str:
+        """The name of this `Categories`."""
+        return self._categories.name()
+
+    def namespace(self) -> str:
+        """The namespace of this `Categories`."""
+        return self._categories.namespace()
+
+    def physical(self) -> PolarsDataType:
+        """The physical type used to represent the categories."""
+        phys = self._categories.physical()
+        if phys == "u8":
+            return pldt.UInt8
+        elif phys == "u16":
+            return pldt.UInt16
+        elif phys == "u32":
+            return pldt.UInt32
+        else:
+            msg = "unknown physical dtype"
+            raise RuntimeError(msg)
+
+    def is_global(self) -> bool:
+        """Returns whether this refers to the global categories."""
+        return self._categories.is_global()
+
+    def __getitem__(self, key: str | int | None) -> str | int | None:
+        if key is None:
+            return key
+        elif isinstance(key, str):
+            return self._categories.get_cat(key)
+        else:
+            return self._categories.cat_to_str(key)
+
+    def __repr__(self) -> str:
+        name = self.name()
+        namespace = self.namespace()
+        phys = self.physical()
+        if self._categories.is_global():
+            return "Categories()"
+        elif namespace == "" and phys == pldt.UInt32:
+            return f'Categories("{name}")'
+        else:
+            return f'Categories(name="{name}", namespace="{namespace}", physical=pl.{phys})'
+
+    def __hash__(self) -> int:
+        return hash(self._categories)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Categories) and self._categories == other._categories
+
+
 class Categorical(DataType):
     """
     A categorical encoding of a set of strings.
@@ -460,60 +770,100 @@ class Categorical(DataType):
     ordering : {'lexical', 'physical'}
         Ordering by order of appearance (`'physical'`, default)
         or string value (`'lexical'`).
+
+        .. deprecated:: 1.32.0
+            Parameter is now ignored. Always behaves as if `'lexical'` was passed.
     """
 
     ordering: CategoricalOrdering | None
+    categories: Categories
 
     def __init__(
         self,
-        ordering: CategoricalOrdering | None = "physical",
-    ):
-        self.ordering = ordering
+        ordering: CategoricalOrdering | Categories | None = "lexical",
+        **kwargs: Any,
+    ) -> None:
+        # Future API will be this, already support it for backwards compat.
+        if isinstance(ordering, Categories):
+            self.ordering = "lexical"
+            self.categories = ordering
+            assert len(kwargs) == 0
+            return
+
+        if ordering == "physical":
+            from polars._utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "the physical Categorical ordering is deprecated. The ordering is now always lexical.",
+                version="1.32.0",
+            )
+
+        self.ordering = "lexical"
+        if kwargs.get("categories") is not None:
+            assert len(kwargs) == 1
+            self.categories = kwargs["categories"]
+        else:
+            assert len(kwargs) == 0
+            self.categories = Categories()
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(ordering={self.ordering!r})"
+        if self.categories.is_global():
+            return f"{self.__class__.__name__}"
+        else:
+            return f"{self.__class__.__name__}({self.categories!r})"
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Categorical):
-            return True
+            return self.categories.is_global()
         elif isinstance(other, Categorical):
-            return self.ordering == other.ordering
+            return self.categories == other.categories
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.ordering))
+        return hash((self.__class__, self.categories))
 
 
 class Enum(DataType):
     """
-    A fixed set categorical encoding of a set of strings.
-
-    .. warning::
-        This functionality is considered **unstable**.
-        It is a work-in-progress feature and may not always work as expected.
-        It may be changed at any point without it being considered a breaking change.
+    A fixed categorical encoding of a unique set of strings.
 
     Parameters
     ----------
     categories
-        The categories in the dataset. Categories must be strings.
-    """
+        The categories in the dataset; must be a unique set of strings, or an
+        existing Python string-valued enum.
+
+    Examples
+    --------
+    Explicitly define enumeration categories:
+
+    >>> pl.Enum(["north", "south", "east", "west"])
+    Enum(categories=['north', 'south', 'east', 'west'])
+
+    Initialise from an existing Python enumeration:
+
+    >>> from http import HTTPMethod
+    >>> pl.Enum(HTTPMethod)
+    Enum(categories=['CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'])
+    """  # noqa: W505
 
     categories: Series
 
-    def __init__(self, categories: Series | Iterable[str]):
-        # Issuing the warning on `__init__` does not trigger when the class is used
-        # without being instantiated, but it's better than nothing
-        from polars._utils.unstable import issue_unstable_warning
+    def __init__(self, categories: Series | Iterable[str] | type[enum.Enum]) -> None:
+        if isclass(categories) and issubclass(categories, enum.Enum):
+            for enum_subclass in (enum.Flag, enum.IntEnum):
+                if issubclass(categories, enum_subclass):
+                    enum_type_name = categories.__name__
+                    msg = f"Enum categories must be strings; `{enum_type_name}` values are integers"
+                    raise TypeError(msg)
 
-        issue_unstable_warning(
-            "The Enum data type is considered unstable."
-            " It is a work-in-progress feature and may not always work as expected."
-        )
-
-        if not isinstance(categories, pl.Series):
+            enum_values = [
+                getattr(v, "value", v) for v in categories.__members__.values()
+            ]
+            categories = pl.Series(values=enum_values)
+        elif not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 
         if categories.is_empty():
@@ -560,7 +910,7 @@ class Enum(DataType):
     __or__ = union
 
 
-class Object(DataType):
+class Object(ObjectType):
     """Data type for wrapping arbitrary Python objects."""
 
 
@@ -603,7 +953,7 @@ class List(NestedType):
 
     inner: PolarsDataType
 
-    def __init__(self, inner: PolarsDataType | PythonDataType):
+    def __init__(self, inner: PolarsDataType | PythonDataType) -> None:
         self.inner = polars.datatypes.parse_into_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -637,8 +987,13 @@ class Array(NestedType):
     ----------
     inner
         The `DataType` of the values within each array.
+    shape
+        The shape of the arrays.
     width
         The length of the arrays.
+
+        .. deprecated:: 0.20.31
+            The `width` parameter for `Array` is deprecated. Use `shape` instead.
 
     Examples
     --------
@@ -662,12 +1017,12 @@ class Array(NestedType):
         shape: int | tuple[int, ...] | None = None,
         *,
         width: int | None = None,
-    ):
+    ) -> None:
         if width is not None:
             from polars._utils.deprecation import issue_deprecation_warning
 
             issue_deprecation_warning(
-                "The `width` parameter for `Array` is deprecated. Use `shape` instead.",
+                "the `width` parameter for `Array` is deprecated. Use `shape` instead.",
                 version="0.20.31",
             )
             shape = width
@@ -683,7 +1038,7 @@ class Array(NestedType):
             self.size = shape
             self.shape = (shape,) + inner_shape
 
-        elif isinstance(shape, tuple):
+        elif isinstance(shape, tuple) and isinstance(shape[0], int):  # type: ignore[redundant-expr]
             if len(shape) > 1:
                 inner_parsed = Array(inner_parsed, shape[1:])
 
@@ -731,7 +1086,7 @@ class Array(NestedType):
         from polars._utils.deprecation import issue_deprecation_warning
 
         issue_deprecation_warning(
-            "The `width` attribute for `Array` is deprecated. Use `size` instead.",
+            "the `width` attribute for `Array` is deprecated. Use `size` instead.",
             version="0.20.31",
         )
         return self.size
@@ -752,7 +1107,7 @@ class Field:
     name: str
     dtype: PolarsDataType
 
-    def __init__(self, name: str, dtype: PolarsDataType):
+    def __init__(self, name: str, dtype: PolarsDataType) -> None:
         self.name = name
         self.dtype = polars.datatypes.parse_into_dtype(dtype)
 
@@ -807,7 +1162,7 @@ class Struct(NestedType):
 
     fields: list[Field]
 
-    def __init__(self, fields: Sequence[Field] | SchemaDict):
+    def __init__(self, fields: Sequence[Field] | SchemaDict) -> None:
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:

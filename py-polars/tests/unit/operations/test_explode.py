@@ -89,7 +89,7 @@ def test_explode_correct_for_slice() -> None:
                 how="cross",
             )
         )
-        .sort("group")
+        .sort("group", maintain_order=True)
         .with_row_index()
     )
     expected = pl.DataFrame(
@@ -123,20 +123,26 @@ def test_sliced_null_explode() -> None:
     assert s.slice(2, 4).list.explode().to_list() == [True, False, None, True]
 
 
-def test_explode_in_agg_context() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_explode_in_agg_context(maintain_order: bool) -> None:
     df = pl.DataFrame(
         {"idxs": [[0], [1], [0, 2]], "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0]]}
     )
 
-    assert (
+    assert_frame_equal(
         df.with_row_index()
         .explode("idxs")
-        .group_by("index")
-        .agg(pl.col("array").flatten())
-    ).to_dict(as_series=False) == {
-        "index": [0, 1, 2],
-        "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],
-    }
+        .group_by("index", maintain_order=maintain_order)
+        .agg(pl.col("array").flatten()),
+        pl.DataFrame(
+            {
+                "index": [0, 1, 2],
+                "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],
+            },
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+        check_row_order=maintain_order,
+    )
 
 
 def test_explode_inner_lists_3985() -> None:
@@ -167,7 +173,7 @@ def test_list_struct_explode_6905() -> None:
         },
         schema={"group": pl.List(pl.Struct([pl.Field("params", pl.List(pl.Int32))]))},
     )["group"].list.explode().to_list() == [
-        {"params": None},
+        None,
         {"params": [1]},
         {"params": []},
     ]
@@ -230,7 +236,7 @@ def test_explode_array() -> None:
     )
     expected = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1, 1, 2, 2]})
     for ex in ("a", ~cs.integer()):
-        out = df.explode(ex).collect()  # type: ignore[arg-type]
+        out = df.explode(ex).collect()
         assert_frame_equal(out, expected)
 
 
@@ -289,7 +295,7 @@ def test_df_explode_with_array() -> None:
             "val": ["x", "x", "y", "y", "z", "q", "q"],
         }
     )
-    assert_frame_equal(df.explode(pl.col("arr")), expected_by_arr)
+    assert_frame_equal(df.explode("arr"), expected_by_arr)
 
     expected_by_list = pl.DataFrame(
         {
@@ -303,7 +309,7 @@ def test_df_explode_with_array() -> None:
             "val": pl.String,
         },
     )
-    assert_frame_equal(df.explode(pl.col("list")), expected_by_list)
+    assert_frame_equal(df.explode("list"), expected_by_list)
 
     df = pl.DataFrame(
         {
@@ -386,7 +392,7 @@ def test_fast_explode_merge_right_16923() -> None:
         rechunk=True,
     ).explode("foo")
 
-    assert len(df) == 4
+    assert df.height == 4
 
 
 def test_fast_explode_merge_left_16923() -> None:
@@ -399,7 +405,7 @@ def test_fast_explode_merge_left_16923() -> None:
         rechunk=True,
     ).explode("foo")
 
-    assert len(df) == 4
+    assert df.height == 4
 
 
 @pytest.mark.parametrize(
@@ -447,3 +453,8 @@ def test_explode_17648() -> None:
         .with_columns(pl.int_ranges(pl.col("a").list.len()).alias("count"))
         .explode("a", "count")
     ).to_dict(as_series=False) == {"a": [2, 6, 7, 3, 9, 2], "count": [0, 1, 2, 0, 1, 2]}
+
+
+def test_explode_struct_nulls() -> None:
+    df = pl.DataFrame({"A": [[{"B": 1}], [None], []]})
+    assert df.explode("A").to_dict(as_series=False) == {"A": [{"B": 1}, None, None]}

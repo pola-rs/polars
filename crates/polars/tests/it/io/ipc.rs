@@ -5,7 +5,7 @@ use polars::prelude::*;
 #[test]
 fn test_ipc_compression_variadic_buffers() {
     let mut df = df![
-        "foo" => std::iter::repeat("Home delivery vat 24 %").take(3).collect::<Vec<_>>()
+        "foo" => std::iter::repeat_n("Home delivery vat 24 %",3).collect::<Vec<_>>()
     ]
     .unwrap();
 
@@ -24,8 +24,8 @@ fn test_ipc_compression_variadic_buffers() {
 
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {
-    let s0 = Series::new("days", [0, 1, 2, 3, 4].as_ref());
-    let s1 = Series::new("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
+    let s0 = Column::new("days".into(), [0, 1, 2, 3, 4].as_ref());
+    let s1 = Column::new("temp".into(), [22.1, 19.9, 7., 2., 3.].as_ref());
     DataFrame::new(vec![s0, s1]).unwrap()
 }
 
@@ -132,7 +132,7 @@ fn test_write_with_compression() {
 
         let df_read = IpcReader::new(buf)
             .finish()
-            .unwrap_or_else(|_| panic!("IPC reader: {:?}", compression));
+            .unwrap_or_else(|_| panic!("IPC reader: {compression:?}"));
         assert!(df.equals(&df_read));
     }
 }
@@ -140,8 +140,8 @@ fn test_write_with_compression() {
 #[test]
 fn write_and_read_ipc_empty_series() {
     let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-    let chunked_array = Float64Chunked::new("empty", &[0_f64; 0]);
-    let mut df = DataFrame::new(vec![chunked_array.into_series()]).unwrap();
+    let chunked_array = Float64Chunked::new("empty".into(), &[0_f64; 0]);
+    let mut df = DataFrame::new(vec![chunked_array.into_column()]).unwrap();
     IpcWriter::new(&mut buf)
         .finish(&mut df)
         .expect("ipc writer");

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -8,11 +10,15 @@ import pytest
 import polars as pl
 from polars.exceptions import (
     ComputeError,
+    InvalidOperationError,
     OutOfBoundsError,
     SchemaError,
-    StructFieldNotFoundError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import time_func
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_list_arr_get() -> None:
@@ -164,6 +170,79 @@ def test_list_categorical_get() -> None:
     )
 
 
+def test_list_gather_wrong_indices_list_type() -> None:
+    a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
+    expected = pl.Series("a", [[1, 2], [4], [6, 9]])
+
+    # int8
+    indices_series = pl.Series("indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.Int8))
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # int16
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.Int16)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # int32
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.Int32)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # int64
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.Int64)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # uint8
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.UInt8)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # uint16
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.UInt16)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # uint32
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.UInt32)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # uint64
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.UInt64)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    df = pl.DataFrame(
+        {
+            "index": [["2"], ["2"], ["2"]],
+            "lists": [[3, 4, 5], [4, 5, 6], [7, 8, 9, 4]],
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=re.escape(
+            "list.gather operation not supported for dtypes `list[i64]` and `list[str]`"
+        ),
+    ):
+        df.select(pl.col("lists").list.gather(pl.col("index")))
+
+
 def test_contains() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     out = a.list.contains(2)
@@ -178,6 +257,16 @@ def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(SchemaError, match="invalid series dtype: expected `List`"):
         df.select(pl.col("a").list.contains(2))
+
+
+def test_list_contains_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in list.contains
+    # https://github.com/pola-rs/polars/issues/18968
+    df = pl.DataFrame({"a": [[1, 2]], "b": [[3, 4]]})
+    assert df.select(pl.all().list.contains(3)).to_dict(as_series=False) == {
+        "a": [False],
+        "b": [True],
+    }
 
 
 def test_list_concat() -> None:
@@ -297,12 +386,12 @@ def test_list_drop_nulls() -> None:
 def test_list_sample() -> None:
     s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
 
-    expected_sample_n = pl.Series("values", [[3, 1], [None], [2], None])
+    expected_sample_n = pl.Series("values", [[None, 3], [None], [2], None])
     assert_series_equal(
         s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1), expected_sample_n
     )
 
-    expected_sample_frac = pl.Series("values", [[3, 1], [None], [1, 2], None])
+    expected_sample_frac = pl.Series("values", [[None, 3], [None], [1, 2], None])
     assert_series_equal(
         s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1),
         expected_sample_frac,
@@ -320,7 +409,10 @@ def test_list_sample() -> None:
         sample_frac=pl.col("values").list.sample(fraction=pl.col("frac"), seed=1),
     )
     expected_df = pl.DataFrame(
-        {"sample_n": [[3, 1], [None], [3, 4]], "sample_frac": [[3, 1], [None], [3, 4]]}
+        {
+            "sample_n": [[None, 3], [None], [3, 4]],
+            "sample_frac": [[None, 3], [None], [3, 4]],
+        }
     )
     assert_frame_equal(df, expected_df)
 
@@ -340,44 +432,6 @@ def test_slice() -> None:
     assert s.list.head(200).to_list() == vals
     assert s.list.slice(1, 2).to_list() == [[2, 3], [2, 1]]
     assert s.list.slice(-5, 2).to_list() == [[1], []]
-
-
-def test_list_eval_dtype_inference() -> None:
-    grades = pl.DataFrame(
-        {
-            "student": ["bas", "laura", "tim", "jenny"],
-            "arithmetic": [10, 5, 6, 8],
-            "biology": [4, 6, 2, 7],
-            "geography": [8, 4, 9, 7],
-        }
-    )
-
-    rank_pct = pl.col("").rank(descending=True) / pl.col("").count().cast(pl.UInt16)
-
-    # the .list.first() would fail if .list.eval did not correctly infer the output type
-    assert grades.with_columns(
-        pl.concat_list(pl.all().exclude("student")).alias("all_grades")
-    ).select(
-        pl.col("all_grades")
-        .list.eval(rank_pct, parallel=True)
-        .alias("grades_rank")
-        .list.first()
-    ).to_series().to_list() == [
-        0.3333333333333333,
-        0.6666666666666666,
-        0.6666666666666666,
-        0.3333333333333333,
-    ]
-
-
-def test_list_eval_categorical() -> None:
-    df = pl.DataFrame({"test": [["a", None]]}, schema={"test": pl.List(pl.Categorical)})
-    df = df.select(
-        pl.col("test").list.eval(pl.element().filter(pl.element().is_not_null()))
-    )
-    assert_series_equal(
-        df.get_column("test"), pl.Series("test", [["a"]], dtype=pl.List(pl.Categorical))
-    )
 
 
 def test_list_ternary_concat() -> None:
@@ -423,17 +477,6 @@ def test_arr_contains_categorical() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_list_eval_type_coercion() -> None:
-    last_non_null_value = pl.element().fill_null(3).last()
-    df = pl.DataFrame({"array_cols": [[1, None]]})
-
-    assert df.select(
-        pl.col("array_cols")
-        .list.eval(last_non_null_value, parallel=False)
-        .alias("col_last")
-    ).to_dict(as_series=False) == {"col_last": [[3]]}
-
-
 def test_list_slice() -> None:
     df = pl.DataFrame(
         {
@@ -476,21 +519,6 @@ def test_list_sliced_get_5186() -> None:
     assert_frame_equal(out1, out2)
 
 
-def test_empty_eval_dtype_5546() -> None:
-    # https://github.com/pola-rs/polars/issues/5546
-    df = pl.DataFrame([{"a": [{"name": 1}, {"name": 2}]}])
-
-    dtype = df.dtypes[0]
-
-    assert (
-        df.limit(0).with_columns(
-            pl.col("a")
-            .list.eval(pl.element().filter(pl.first().struct.field("name") == 1))
-            .alias("a_filtered")
-        )
-    ).dtypes == [dtype, dtype]
-
-
 def test_list_amortized_apply_explode_5812() -> None:
     s = pl.Series([None, [1, 3], [0, -3], [1, 2, 2]])
     assert s.list.sum().to_list() == [None, 4, -3, 5]
@@ -508,7 +536,7 @@ def test_list_slice_5866() -> None:
 
 def test_list_gather() -> None:
     s = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8]])
-    # mypy: we make it work, but idomatic is `arr.get`.
+    # mypy: we make it work, but idiomatic is `arr.get`.
     assert s.list.gather(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
     assert s.list.gather([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
 
@@ -540,22 +568,12 @@ def test_list_gather() -> None:
     s = pl.Series([[42, 1, 2], [5, 6, 7]])
 
     with pytest.raises(OutOfBoundsError, match=r"gather indices are out of bounds"):
-        s.list.gather([[0, 1, 2, 3], [0, 1, 2, 3]])
+        s.list.gather(pl.Series([[0, 1, 2, 3], [0, 1, 2, 3]]))
 
     assert s.list.gather([0, 1, 2, 3], null_on_oob=True).to_list() == [
         [42, 1, 2, None],
         [5, 6, 7, None],
     ]
-
-
-def test_list_eval_all_null() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_columns(
-        pl.col("bar").cast(pl.List(pl.String))
-    )
-
-    assert df.select(pl.col("bar").list.eval(pl.element())).to_dict(
-        as_series=False
-    ) == {"bar": [None, None, None]}
 
 
 def test_list_function_group_awareness() -> None:
@@ -578,9 +596,9 @@ def test_list_function_group_awareness() -> None:
         "group": [0, 1, 2],
         "get_scalar": [100, 105, 100],
         "take_no_implode": [[100], [105], [100]],
-        "implode_get": [[100], [105], [100]],
-        "implode_take": [[[100]], [[105]], [[100]]],
-        "implode_slice": [[[100, 103]], [[105, 106, 105]], [[100, 102]]],
+        "implode_get": [100, 105, 100],
+        "implode_take": [[100], [105], [100]],
+        "implode_slice": [[100, 103], [105, 106, 105], [100, 102]],
     }
 
 
@@ -631,14 +649,14 @@ def test_list_unique2() -> None:
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    assert df.select(pl.col("n").list.to_struct()).rows(named=True) == [
+    assert df.select(pl.col("n").list.to_struct(upper_bound=3)).rows(named=True) == [
         {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
         {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
     ]
 
-    assert df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
-        named=True
-    ) == [
+    assert df.select(
+        pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=3)
+    ).rows(named=True) == [
         {"n": {"n0": 0, "n1": 1, "n2": 2}},
         {"n": {"n0": 0, "n1": 1, "n2": None}},
     ]
@@ -649,6 +667,28 @@ def test_list_to_struct() -> None:
         {"n": {"one": 0, "two": 1, "three": 2}},
         {"n": {"one": 0, "two": 1, "three": None}},
     ]
+
+    q = df.lazy().select(
+        pl.col("n").list.to_struct(fields=["a", "b"]).struct.field("a")
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [0, 0]}))
+
+    # Check that:
+    # * Specifying an upper bound calls the field name getter function to
+    #   retrieve the lazy schema
+    # * The upper bound is respected during execution
+    q = df.lazy().select(
+        pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
+    )
+    assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
+    assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
+
+
+def test_list_to_struct_all_null_12119() -> None:
+    s = pl.Series([None], dtype=pl.List(pl.Int64))
+    result = s.list.to_struct(fields=["a", "b", "c"]).to_list()
+    assert result == [{"a": None, "b": None, "c": None}]
 
 
 def test_select_from_list_to_struct_11143() -> None:
@@ -693,6 +733,16 @@ def test_list_count_matches_boolean_nulls_9141() -> None:
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
 
+def test_list_count_matches_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in list.count_match
+    # https://github.com/pola-rs/polars/issues/18968
+    df = pl.DataFrame({"a": [[1, 2]], "b": [[3, 4]]})
+    assert df.select(pl.all().list.count_matches(3)).to_dict(as_series=False) == {
+        "a": [0],
+        "b": [1],
+    }
+
+
 def test_list_gather_oob_10079() -> None:
     df = pl.DataFrame(
         {
@@ -715,13 +765,6 @@ def test_utf8_empty_series_arg_min_max_10703() -> None:
         "arg_min": [0, None],
         "arg_max": [0, None],
     }
-
-
-def test_list_len() -> None:
-    s = pl.Series([[1, 2, None], [5]])
-    result = s.list.len()
-    expected = pl.Series([3, 1], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
 
 
 def test_list_to_array() -> None:
@@ -767,11 +810,34 @@ def test_list_to_array_wrong_dtype() -> None:
 
 
 def test_list_lengths() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    result = s.list.len()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.UInt32))
     df = pl.DataFrame([s])
     assert_series_equal(
         df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=pl.UInt32)
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.when(pl.Series([True, False]))
+            .then(pl.Series([[1, 1], [1, 1]]))
+            .list.len()
+        ).to_series(),
+        pl.Series([2, None], dtype=pl.UInt32),
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.when(pl.Series([False, False]))
+            .then(pl.Series([[1, 1], [1, 1]]))
+            .list.len()
+        ).to_series(),
+        pl.Series([None, None], dtype=pl.UInt32),
     )
 
 
@@ -823,13 +889,6 @@ def test_list_get_logical_type() -> None:
         dtype=pl.Date,
     )
     assert_series_equal(out, expected)
-
-
-def test_list_eval_gater_every_13410() -> None:
-    df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-    out = df.with_columns(result=pl.col("a").list.eval(pl.element().gather_every(2)))
-    expected = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]], "result": [[1, 3], [4, 6]]})
-    assert_frame_equal(out, expected)
 
 
 def test_list_gather_every() -> None:
@@ -896,24 +955,281 @@ def test_list_get_with_null() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_list_eval_err_raise_15653() -> None:
-    df = pl.DataFrame({"foo": [[]]})
-    with pytest.raises(StructFieldNotFoundError):
-        df.with_columns(bar=pl.col("foo").list.eval(pl.element().struct.field("baz")))
-
-
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
 
 
-def test_list_eval_type_cast_11188() -> None:
+def test_list_concat_struct_19279() -> None:
+    df = pl.select(
+        pl.struct(s=pl.lit("abcd").str.split("").explode(), i=pl.int_range(0, 4))
+    )
+    df = pl.concat([df[:2], df[-2:]])
+    assert df.select(pl.concat_list("s")).to_dict(as_series=False) == {
+        "s": [
+            [{"s": "a", "i": 0}],
+            [{"s": "b", "i": 1}],
+            [{"s": "c", "i": 2}],
+            [{"s": "d", "i": 3}],
+        ]
+    }
+
+
+def test_list_eval_element_schema_19345() -> None:
+    assert_frame_equal(
+        (
+            pl.LazyFrame({"a": [[{"a": 1}]]})
+            .select(pl.col("a").list.eval(pl.element().struct.field("a")))
+            .collect()
+        ),
+        pl.DataFrame({"a": [[1]]}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("agg", "inner_dtype", "expected_dtype"),
+    [
+        ("sum", pl.Int8, pl.Int64),
+        ("max", pl.Int8, pl.Int8),
+        ("sum", pl.Duration("us"), pl.Duration("us")),
+        ("min", pl.Duration("ms"), pl.Duration("ms")),
+        ("min", pl.String, pl.String),
+        ("max", pl.String, pl.String),
+    ],
+)
+def test_list_agg_all_null(
+    agg: str, inner_dtype: PolarsDataType, expected_dtype: PolarsDataType
+) -> None:
+    s = pl.Series([None, None], dtype=pl.List(inner_dtype))
+    assert getattr(s.list, agg)().dtype == expected_dtype
+
+
+@pytest.mark.parametrize(
+    ("inner_dtype", "expected_inner_dtype"),
+    [
+        (pl.Datetime("us"), pl.Duration("us")),
+        (pl.Date(), pl.Duration("us")),
+        (pl.Time(), pl.Duration("ns")),
+        (pl.UInt64(), pl.Int64()),
+        (pl.UInt32(), pl.Int64()),
+        (pl.UInt8(), pl.Int16()),
+        (pl.Int8(), pl.Int8()),
+        (pl.Float32(), pl.Float32()),
+    ],
+)
+def test_list_diff_schema(
+    inner_dtype: PolarsDataType, expected_inner_dtype: PolarsDataType
+) -> None:
+    lf = (
+        pl.LazyFrame({"a": [[1, 2]]})
+        .cast(pl.List(inner_dtype))
+        .select(pl.col("a").list.diff(1))
+    )
+    expected = {"a": pl.List(expected_inner_dtype)}
+    assert lf.collect_schema() == expected
+    assert lf.collect().schema == expected
+
+
+def test_gather_every_nzero_22027() -> None:
     df = pl.DataFrame(
         [
-            {"a": None},
-        ],
-        schema={"a": pl.List(pl.Int64)},
+            pl.Series(
+                "a",
+                [
+                    ["a"],
+                    ["eb", "d"],
+                ],
+                pl.List(pl.String),
+            ),
+        ]
     )
-    assert df.select(
-        pl.col("a").list.eval(pl.element().cast(pl.String)).alias("a_str")
-    ).schema == {"a_str": pl.List(pl.String)}
+    with pytest.raises(pl.exceptions.ComputeError):
+        df.select(pl.col.a.list.gather_every(pl.Series([0, 0])))
+
+
+def test_list_sample_n_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series("a", [[1, 2], [1, 2]]).list.sample(pl.Series([1, 2, 1]))
+
+
+def test_list_sample_fraction_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series("a", [[1, 2], [1, 2]]).list.sample(
+            fraction=pl.Series([0.5, 0.2, 0.4])
+        )
+
+
+def test_list_sample_n_self_broadcast() -> None:
+    assert pl.Series("a", [[1, 2]]).list.sample(pl.Series([1, 2, 1])).len() == 3
+
+
+def test_list_sample_fraction_self_broadcast() -> None:
+    assert (
+        pl.Series("a", [[1, 2]]).list.sample(fraction=pl.Series([0.5, 0.2, 0.4])).len()
+        == 3
+    )
+
+
+def test_list_shift_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series("a", [[1, 2], [1, 2]]).list.shift(pl.Series([1, 2, 3]))
+
+
+def test_list_shift_self_broadcast() -> None:
+    assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3
+
+
+def test_list_filter_simple() -> None:
+    assert pl.Series(
+        [
+            [1, 2, 3, 4, 5],
+            [1, 3, 7, 8],
+            [6, 1, 4, 5],
+        ]
+    ).list.filter(pl.element() < 5).to_list() == [
+        [1, 2, 3, 4],
+        [1, 3],
+        [1, 4],
+    ]
+
+
+def test_list_filter_result_empty() -> None:
+    assert pl.Series(
+        [
+            ["a"],
+            ["b", "c"],
+        ]
+    ).list.filter(pl.element() == "d").to_list() == [
+        [],
+        [],
+    ]
+
+
+def test_list_filter_null() -> None:
+    assert pl.Series(
+        [
+            [None, 1, 2],
+            [None, None],
+            [1, 2],
+        ]
+    ).list.filter(pl.element().is_not_null()).to_list() == [
+        [1, 2],
+        [],
+        [1, 2],
+    ]
+
+
+@pytest.mark.slow
+def test_list_struct_field_perf() -> None:
+    base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
+    df = base_df
+
+    q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))
+
+    t0 = time_func(q.collect, iterations=5)
+
+    # Note: Rechunk is important here to force single threaded
+    df = pl.concat(10_000 * [base_df]).rechunk()
+
+    q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))
+
+    t1 = time_func(q.collect, iterations=5)
+
+    slowdown = t1 / t0
+
+    # Timings (Apple M3 Pro 11-core)
+    # * Debug build w/ elementwise: 1x
+    # * Release pypi 1.29.0: 80x
+    threshold = 5
+
+    if slowdown > threshold:
+        msg = f"slowdown ({slowdown}) > {threshold}x ({t0 = }, {t1 = })"
+        raise ValueError(msg)
+
+
+def test_list_elementwise_eval_logical_output_type() -> None:
+    out = pl.DataFrame({"a": [["2025-01-01"], ["2025-01-01"]]}).select(
+        pl.col("a").list.eval(pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d"))
+    )
+
+    assert_series_equal(
+        out.to_series(),
+        pl.Series(
+            "a",
+            [[datetime(2025, 1, 1)], [datetime(2025, 1, 1)]],
+            dtype=pl.List(pl.Datetime),
+        ),
+    )
+
+
+def test_list_elementwise_eval_fallible_masked_sliced() -> None:
+    # Baseline - fails on invalid data
+    with pytest.raises(
+        InvalidOperationError, match=r"conversion from `str` to `datetime\[μs\]` failed"
+    ):
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"]]}).select(
+            pl.col("a").list.eval(
+                pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d")
+            )
+        )
+
+    # Ensure fallible expressions do not cause failures on masked-out data.
+    out = (
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"]]})
+        .with_columns(pl.when(pl.Series([False, True])).then(pl.col("a")).alias("a"))
+        .select(
+            pl.col("a").list.eval(
+                pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d")
+            )
+        )
+    )
+
+    assert_series_equal(
+        out.to_series(),
+        pl.Series("a", [None, [datetime(2025, 1, 1)]], dtype=pl.List(pl.Datetime)),
+    )
+
+    out = (
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"], ["2025-01-01"]]})
+        .slice(1)
+        .select(
+            pl.col("a").list.eval(
+                pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d")
+            )
+        )
+    )
+
+    assert_series_equal(
+        out.to_series(),
+        pl.Series(
+            "a",
+            [[datetime(2025, 1, 1)], [datetime(2025, 1, 1)]],
+            dtype=pl.List(pl.Datetime),
+        ),
+    )
+
+
+def test_list_contains() -> None:
+    s = pl.Series([[1, 2, None], [None], None])
+
+    assert_series_equal(
+        s.list.contains(None, nulls_equal=False),
+        pl.Series([None, None, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.list.contains(None, nulls_equal=True),
+        pl.Series([True, True, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.list.contains(1, nulls_equal=False),
+        pl.Series([True, False, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.list.contains(1, nulls_equal=True),
+        pl.Series([True, False, None], dtype=pl.Boolean),
+    )
+
+
+def test_list_diff_invalid_type() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series([1, 2, 3]).list.diff()

@@ -1,0 +1,30 @@
+[package]
+name = "polars-dtype"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Low-level datatype definitions of the Polars project."
+
+[dependencies]
+arrow = { workspace = true }
+boxcar = { workspace = true }
+hashbrown = { workspace = true }
+polars-error = { workspace = true }
+polars-utils = { workspace = true }
+schemars = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
+
+[features]
+default = []
+serde = ["dep:serde", "arrow/serde", "polars-utils/serde"]
+dsl-schema = ["dep:schemars", "arrow/dsl-schema", "polars-utils/dsl-schema"]
+
+[lints]
+workspace = true

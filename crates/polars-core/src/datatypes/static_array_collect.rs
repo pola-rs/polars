@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use arrow::array::ArrayFromIter;
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::BitmapBuilder;
 
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
 
@@ -27,7 +25,7 @@ impl<'a, T: PolarsObject> ArrayFromIter<Option<&'a T>> for ObjectArray<T> {
         let iter = iter.into_iter();
         let size = iter.size_hint().0;
 
-        let mut null_mask_builder = arrow::bitmap::MutableBitmap::with_capacity(size);
+        let mut null_mask_builder = BitmapBuilder::with_capacity(size);
         let values: Vec<T> = iter
             .map(|value| match value? {
                 Some(value) => {
@@ -41,14 +39,6 @@ impl<'a, T: PolarsObject> ArrayFromIter<Option<&'a T>> for ObjectArray<T> {
             })
             .collect::<Result<Vec<T>, E>>()?;
 
-        let null_bit_buffer: Option<Bitmap> = null_mask_builder.into();
-        let null_bitmap = null_bit_buffer;
-        let len = values.len();
-        Ok(ObjectArray {
-            values: Arc::new(values),
-            null_bitmap,
-            offset: 0,
-            len,
-        })
+        Ok(ObjectArray::from(values).with_validity(null_mask_builder.into_opt_validity()))
     }
 }

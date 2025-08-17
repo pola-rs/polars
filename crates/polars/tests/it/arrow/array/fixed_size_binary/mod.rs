@@ -1,7 +1,7 @@
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
-use arrow::datatypes::ArrowDataType;
+use arrow::datatypes::{ArrowDataType, ExtensionType};
 
 mod mutable;
 
@@ -61,7 +61,7 @@ fn null() {
 
 #[test]
 fn from_iter() {
-    let iter = std::iter::repeat(vec![1u8, 2]).take(2).map(Some);
+    let iter = std::iter::repeat_n(vec![1u8, 2], 2).map(Some);
     let a = FixedSizeBinaryArray::from_iter(iter, 2);
     assert_eq!(a.len(), 2);
 }
@@ -84,7 +84,7 @@ fn wrong_len() {
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     let values = Buffer::from(b"abba".to_vec());
     assert!(FixedSizeBinaryArray::try_new(ArrowDataType::Binary, values, None).is_err());
 }
@@ -94,10 +94,10 @@ fn to() {
     let values = Buffer::from(b"abba".to_vec());
     let a = FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(2), values, None);
 
-    let extension = ArrowDataType::Extension(
-        "a".to_string(),
-        Box::new(ArrowDataType::FixedSizeBinary(2)),
-        None,
-    );
+    let extension = ArrowDataType::Extension(Box::new(ExtensionType {
+        name: "a".into(),
+        inner: ArrowDataType::FixedSizeBinary(2),
+        metadata: None,
+    }));
     let _ = a.to(extension);
 }

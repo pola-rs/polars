@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable, NoReturn, Sequence, overload
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, NoReturn, overload
 
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.constants import U32_MAX
 from polars._utils.slice import PolarsSlice
-from polars._utils.various import range_to_slice
+from polars._utils.various import qualified_type_name, range_to_slice
 from polars.datatypes.classes import (
     Boolean,
     Int8,
@@ -22,6 +23,8 @@ from polars.dependencies import numpy as np
 from polars.meta.index_type import get_index_type
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import DataFrame, Series
     from polars._typing import (
         MultiColSelector,
@@ -69,7 +72,7 @@ def get_series_item_by_key(
         try:
             indices = pl.Series("", key, dtype=Int64)
         except TypeError:
-            msg = f"cannot select elements using Sequence with elements of type {type(first).__name__!r}"
+            msg = f"cannot select elements using Sequence with elements of type {qualified_type_name(first)!r}"
             raise TypeError(msg) from None
 
         indices = _convert_series_to_indices(indices, s.len())
@@ -83,7 +86,7 @@ def get_series_item_by_key(
         indices = _convert_np_ndarray_to_indices(key, s.len())
         return _select_elements_by_index(s, indices)
 
-    msg = f"cannot select elements using key of type {type(key).__name__!r}: {key!r}"
+    msg = f"cannot select elements using key of type {qualified_type_name(key)!r}: {key!r}"
     raise TypeError(msg)
 
 
@@ -213,7 +216,7 @@ def _select_columns(
         elif isinstance(first, str):
             return _select_columns_by_name(df, key)  # type: ignore[arg-type]
         else:
-            msg = f"cannot select columns using Sequence with elements of type {type(first).__name__!r}"
+            msg = f"cannot select columns using Sequence with elements of type {qualified_type_name(first)!r}"
             raise TypeError(msg)
 
     elif isinstance(key, pl.Series):
@@ -231,7 +234,9 @@ def _select_columns(
             raise TypeError(msg)
 
     elif _check_for_numpy(key) and isinstance(key, np.ndarray):
-        if key.ndim != 1:
+        if key.ndim == 0:
+            key = np.atleast_1d(key)
+        elif key.ndim != 1:
             msg = "multi-dimensional NumPy arrays not supported as index"
             raise TypeError(msg)
 
@@ -249,7 +254,9 @@ def _select_columns(
             msg = f"cannot select columns using NumPy array of type {key.dtype}"
             raise TypeError(msg)
 
-    msg = f"cannot select columns using key of type {type(key).__name__!r}: {key!r}"
+    msg = (
+        f"cannot select columns using key of type {qualified_type_name(key)!r}: {key!r}"
+    )
     raise TypeError(msg)
 
 
@@ -259,7 +266,7 @@ def _select_columns_by_index(df: DataFrame, key: Iterable[int]) -> DataFrame:
 
 
 def _select_columns_by_name(df: DataFrame, key: Iterable[str]) -> DataFrame:
-    return df._from_pydf(df._df.select(key))
+    return df._from_pydf(df._df.select(list(key)))
 
 
 def _select_columns_by_mask(
@@ -286,6 +293,10 @@ def _select_rows(
 ) -> DataFrame | Series:
     """Select one or more rows from the DataFrame."""
     if isinstance(key, int):
+        num_rows = df.height
+        if (key >= num_rows) or (key < -num_rows):
+            msg = f"index {key} is out of bounds for DataFrame of height {num_rows}"
+            raise IndexError(msg)
         return df.slice(key, 1)
 
     if isinstance(key, slice):
@@ -313,7 +324,7 @@ def _select_rows(
         return _select_rows_by_index(df, indices)
 
     else:
-        msg = f"cannot select rows using key of type {type(key).__name__!r}: {key!r}"
+        msg = f"cannot select rows using key of type {qualified_type_name(key)!r}: {key!r}"
         raise TypeError(msg)
 
 
@@ -394,6 +405,8 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
     #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
     #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
     #     to absolute indexes.
+    if arr.ndim == 0:
+        arr = np.atleast_1d(arr)
     if arr.ndim != 1:
         msg = "only 1D NumPy arrays can be treated as indices"
         raise TypeError(msg)

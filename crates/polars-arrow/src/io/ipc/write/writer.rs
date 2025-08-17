@@ -1,9 +1,10 @@
 use std::io::Write;
+use std::sync::Arc;
 
 use arrow_format::ipc::planus::Builder;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::super::{IpcField, ARROW_MAGIC_V2};
+use super::super::{ARROW_MAGIC_V2, IpcField};
 use super::common::{DictionaryTracker, EncodedData, WriteOptions};
 use super::common_sync::{write_continuation, write_message};
 use super::{default_ipc_fields, schema, schema_to_bytes};
@@ -40,6 +41,8 @@ pub struct FileWriter<W: Write> {
     pub(crate) dictionary_tracker: DictionaryTracker,
     /// Buffer/scratch that is reused between writes
     pub(crate) encoded_message: EncodedData,
+    /// Custom schema-level metadata
+    pub(crate) custom_schema_metadata: Option<Arc<Metadata>>,
 }
 
 impl<W: Write> FileWriter<W> {
@@ -66,7 +69,7 @@ impl<W: Write> FileWriter<W> {
         let ipc_fields = if let Some(ipc_fields) = ipc_fields {
             ipc_fields
         } else {
-            default_ipc_fields(&schema.fields)
+            default_ipc_fields(schema.iter_values())
         };
 
         Self {
@@ -83,6 +86,7 @@ impl<W: Write> FileWriter<W> {
                 cannot_replace: true,
             },
             encoded_message: Default::default(),
+            custom_schema_metadata: None,
         }
     }
 
@@ -116,7 +120,12 @@ impl<W: Write> FileWriter<W> {
         // write the schema, set the written bytes to the schema
 
         let encoded_message = EncodedData {
-            ipc_message: schema_to_bytes(&self.schema, &self.ipc_fields),
+            ipc_message: schema_to_bytes(
+                &self.schema,
+                &self.ipc_fields,
+                // No need to pass metadata here, as it is already written to the footer in `finish`
+                None,
+            ),
             arrow_data: vec![],
         };
 
@@ -134,7 +143,7 @@ impl<W: Write> FileWriter<W> {
     ) -> PolarsResult<()> {
         if self.state != State::Started {
             polars_bail!(
-                oos ="The IPC file must be started before it can be written to. Call `start` before `write`"
+                oos = "The IPC file must be started before it can be written to. Call `start` before `write`"
             );
         }
 
@@ -151,9 +160,27 @@ impl<W: Write> FileWriter<W> {
             &mut self.encoded_message,
         )?;
 
+        let encoded_message = std::mem::take(&mut self.encoded_message);
+        self.write_encoded(&encoded_dictionaries[..], &encoded_message)?;
+        self.encoded_message = encoded_message;
+
+        Ok(())
+    }
+
+    pub fn write_encoded(
+        &mut self,
+        encoded_dictionaries: &[EncodedData],
+        encoded_message: &EncodedData,
+    ) -> PolarsResult<()> {
+        if self.state != State::Started {
+            polars_bail!(
+                oos = "The IPC file must be started before it can be written to. Call `start` before `write`"
+            );
+        }
+
         // add all dictionaries
         for encoded_dictionary in encoded_dictionaries {
-            let (meta, data) = write_message(&mut self.writer, &encoded_dictionary)?;
+            let (meta, data) = write_message(&mut self.writer, encoded_dictionary)?;
 
             let block = arrow_format::ipc::Block {
                 offset: self.block_offsets as i64,
@@ -164,7 +191,16 @@ impl<W: Write> FileWriter<W> {
             self.block_offsets += meta + data;
         }
 
-        let (meta, data) = write_message(&mut self.writer, &self.encoded_message)?;
+        self.write_encoded_record_batch(encoded_message)?;
+
+        Ok(())
+    }
+
+    pub fn write_encoded_record_batch(
+        &mut self,
+        encoded_message: &EncodedData,
+    ) -> PolarsResult<()> {
+        let (meta, data) = write_message(&mut self.writer, encoded_message)?;
         // add a record block for the footer
         let block = arrow_format::ipc::Block {
             offset: self.block_offsets as i64,
@@ -173,6 +209,7 @@ impl<W: Write> FileWriter<W> {
         };
         self.record_blocks.push(block);
         self.block_offsets += meta + data;
+
         Ok(())
     }
 
@@ -187,7 +224,11 @@ impl<W: Write> FileWriter<W> {
         // write EOS
         write_continuation(&mut self.writer, 0)?;
 
-        let schema = schema::serialize_schema(&self.schema, &self.ipc_fields);
+        let schema = schema::serialize_schema(
+            &self.schema,
+            &self.ipc_fields,
+            self.custom_schema_metadata.as_deref(),
+        );
 
         let root = arrow_format::ipc::Footer {
             version: arrow_format::ipc::MetadataVersion::V5,
@@ -206,5 +247,10 @@ impl<W: Write> FileWriter<W> {
         self.state = State::Finished;
 
         Ok(())
+    }
+
+    /// Sets custom schema metadata. Must be called before `start` is called
+    pub fn set_custom_schema_metadata(&mut self, custom_metadata: Arc<Metadata>) {
+        self.custom_schema_metadata = Some(custom_metadata);
     }
 }

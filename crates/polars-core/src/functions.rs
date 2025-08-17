@@ -19,8 +19,8 @@ pub fn concat_df_diagonal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
 
     for df in dfs {
         df.get_columns().iter().for_each(|s| {
-            let name = s.name();
-            if column_names.insert(name) {
+            let name = s.name().clone();
+            if column_names.insert(name.clone()) {
                 schema.push((name, s.dtype()))
             }
         });
@@ -33,12 +33,12 @@ pub fn concat_df_diagonal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
             let mut columns = Vec::with_capacity(schema.len());
 
             for (name, dtype) in &schema {
-                match df.column(name).ok() {
+                match df.column(name.as_str()).ok() {
                     Some(s) => columns.push(s.clone()),
-                    None => columns.push(Series::full_null(name, height, dtype)),
+                    None => columns.push(Column::full_null(name.clone(), height, dtype)),
                 }
             }
-            unsafe { DataFrame::new_no_checks(columns) }
+            unsafe { DataFrame::new_no_checks(height, columns) }
         })
         .collect::<Vec<_>>();
 

@@ -30,12 +30,12 @@ macro_rules! dyn_eq {
 }
 
 fn equal(lhs: &dyn Scalar, rhs: &dyn Scalar) -> bool {
-    if lhs.data_type() != rhs.data_type() {
+    if lhs.dtype() != rhs.dtype() {
         return false;
     }
 
     use PhysicalType::*;
-    match lhs.data_type().to_physical_type() {
+    match lhs.dtype().to_physical_type() {
         Null => dyn_eq!(NullScalar, lhs, rhs),
         Boolean => dyn_eq!(BooleanScalar, lhs, rhs),
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {

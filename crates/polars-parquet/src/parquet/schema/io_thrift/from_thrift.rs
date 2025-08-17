@@ -1,4 +1,5 @@
-use parquet_format_safe::SchemaElement;
+use polars_parquet_format::SchemaElement;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::types::ParquetType;
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -37,14 +38,21 @@ fn from_thrift_helper(
     // There is only one message type node in the schema tree.
     let is_root_node = index == 0;
 
-    let element = elements.get(index).ok_or_else(|| {
-        ParquetError::oos(format!("index {} on SchemaElement is not valid", index))
-    })?;
-    let name = element.name.clone();
+    let element = elements
+        .get(index)
+        .ok_or_else(|| ParquetError::oos(format!("index {index} on SchemaElement is not valid")))?;
+    let name = PlSmallStr::from_str(element.name.as_str());
     let converted_type = element.converted_type;
 
     let id = element.field_id;
     match element.num_children {
+        // empty root
+        None | Some(0) if is_root_node => {
+            let fields = vec![];
+            let tp = ParquetType::new_root(name, fields);
+            Ok((index + 1, tp))
+        },
+
         // From parquet-format:
         //   The children count is used to construct the nested relationship.
         //   This field is not set when the element is a primitive type
@@ -70,7 +78,7 @@ fn from_thrift_helper(
                         _ => {
                             return Err(ParquetError::oos(
                                 "When precision or scale are defined, both must be defined",
-                            ))
+                            ));
                         },
                     };
                     (converted_type, maybe_decimal).try_into()

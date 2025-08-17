@@ -1,16 +1,20 @@
-use parquet_format_safe::DataPageHeaderV2;
+use polars_parquet_format::DataPageHeaderV2;
 
-use crate::parquet::compression::{self, Compression};
+use super::PageReader;
+use crate::parquet::CowBuffer;
+use crate::parquet::compression::{self, Compression, DecompressionContext};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
-use crate::parquet::{CowBuffer, FallibleStreamingIterator};
+use crate::parquet::page::{
+    CompressedDataPage, CompressedPage, DataPage, DataPageHeader, DictPage, Page,
+};
 
 fn decompress_v1(
     compressed: &[u8],
     compression: Compression,
     buffer: &mut [u8],
+    context: &mut DecompressionContext,
 ) -> ParquetResult<()> {
-    compression::decompress(compression, compressed, buffer)
+    compression::decompress(compression, compressed, buffer, context)
 }
 
 fn decompress_v2(
@@ -18,6 +22,7 @@ fn decompress_v2(
     page_header: &DataPageHeaderV2,
     compression: Compression,
     buffer: &mut [u8],
+    context: &mut DecompressionContext,
 ) -> ParquetResult<()> {
     // When processing data page v2, depending on enabled compression for the
     // page, we should account for uncompressed data ('offset') of
@@ -39,7 +44,15 @@ fn decompress_v2(
 
         (buffer[..offset]).copy_from_slice(&compressed[..offset]);
 
-        compression::decompress(compression, &compressed[offset..], &mut buffer[offset..])?;
+        // https://github.com/pola-rs/polars/issues/22170
+        if compressed.len() > offset {
+            compression::decompress(
+                compression,
+                &compressed[offset..],
+                &mut buffer[offset..],
+                context,
+            )?;
+        }
     } else {
         if buffer.len() != compressed.len() {
             return Err(ParquetError::oos(
@@ -51,76 +64,67 @@ fn decompress_v2(
     Ok(())
 }
 
-/// decompresses a [`CompressedDataPage`] into `buffer`.
-/// If the page is un-compressed, `buffer` is swapped instead.
-/// Returns whether the page was decompressed.
-pub fn decompress_buffer(
-    compressed_page: &mut CompressedPage,
-    buffer: &mut Vec<u8>,
-) -> ParquetResult<bool> {
-    if compressed_page.compression() != Compression::Uncompressed {
-        // prepare the compression buffer
-        let read_size = compressed_page.uncompressed_size();
-
-        if read_size > buffer.capacity() {
-            // dealloc and ignore region, replacing it by a new region.
-            // This won't reallocate - it frees and calls `alloc_zeroed`
-            *buffer = vec![0; read_size];
-        } else if read_size > buffer.len() {
-            // fill what we need with zeros so that we can use them in `Read`.
-            // This won't reallocate
-            buffer.resize(read_size, 0);
-        } else {
-            buffer.truncate(read_size);
-        }
-        match compressed_page {
-            CompressedPage::Data(compressed_page) => match compressed_page.header() {
-                DataPageHeader::V1(_) => {
-                    decompress_v1(&compressed_page.buffer, compressed_page.compression, buffer)?
-                },
-                DataPageHeader::V2(header) => decompress_v2(
-                    &compressed_page.buffer,
-                    header,
-                    compressed_page.compression,
-                    buffer,
-                )?,
-            },
-            CompressedPage::Dict(page) => decompress_v1(&page.buffer, page.compression(), buffer)?,
-        }
-        Ok(true)
-    } else {
-        // page.buffer is already decompressed => swap it with `buffer`, making `page.buffer` the
-        // decompression buffer and `buffer` the decompressed buffer
-        std::mem::swap(&mut compressed_page.buffer().to_vec(), buffer);
-        Ok(false)
-    }
-}
-
-fn create_page(compressed_page: CompressedPage, buffer: Vec<u8>) -> Page {
-    match compressed_page {
-        CompressedPage::Data(page) => Page::Data(DataPage::new_read(
-            page.header,
-            CowBuffer::Owned(buffer),
-            page.descriptor,
-            page.selected_rows,
-        )),
-        CompressedPage::Dict(page) => Page::Dict(DictPage {
-            buffer: CowBuffer::Owned(buffer),
-            num_values: page.num_values,
-            is_sorted: page.is_sorted,
-        }),
-    }
-}
-
 /// Decompresses the page, using `buffer` for decompression.
 /// If `page.buffer.len() == 0`, there was no decompression and the buffer was moved.
 /// Else, decompression took place.
 pub fn decompress(
-    mut compressed_page: CompressedPage,
+    compressed_page: CompressedPage,
     buffer: &mut Vec<u8>,
+    context: &mut DecompressionContext,
 ) -> ParquetResult<Page> {
-    decompress_buffer(&mut compressed_page, buffer)?;
-    Ok(create_page(compressed_page, std::mem::take(buffer)))
+    Ok(match (compressed_page.compression(), compressed_page) {
+        (Compression::Uncompressed, CompressedPage::Data(page)) => Page::Data(DataPage::new_read(
+            page.header,
+            page.buffer,
+            page.descriptor,
+        )),
+        (_, CompressedPage::Data(page)) => {
+            // prepare the compression buffer
+            let read_size = page.uncompressed_size();
+            if read_size > buffer.capacity() {
+                // Clear before resizing to avoid memcpy'ing junk we don't care about anymore rather
+                // than just memset'ing zeroes.
+                buffer.clear();
+            }
+            buffer.resize(read_size, 0);
+
+            match page.header() {
+                DataPageHeader::V1(_) => {
+                    decompress_v1(&page.buffer, page.compression, buffer, context)?
+                },
+                DataPageHeader::V2(header) => {
+                    decompress_v2(&page.buffer, header, page.compression, buffer, context)?
+                },
+            }
+            let buffer = CowBuffer::Owned(std::mem::take(buffer));
+
+            Page::Data(DataPage::new_read(page.header, buffer, page.descriptor))
+        },
+        (Compression::Uncompressed, CompressedPage::Dict(page)) => Page::Dict(DictPage {
+            buffer: page.buffer,
+            num_values: page.num_values,
+            is_sorted: page.is_sorted,
+        }),
+        (_, CompressedPage::Dict(page)) => {
+            // prepare the compression buffer
+            let read_size = page.uncompressed_page_size;
+            if read_size > buffer.capacity() {
+                // Clear before resizing to avoid memcpy'ing junk we don't care about anymore rather
+                // than just memset'ing zeroes.
+                buffer.clear();
+            }
+            buffer.resize(read_size, 0);
+
+            decompress_v1(&page.buffer, page.compression(), buffer, context)?;
+            let buffer = CowBuffer::Owned(std::mem::take(buffer));
+
+            Page::Dict(DictPage {
+                buffer,
+                num_values: page.num_values,
+                is_sorted: page.is_sorted,
+            })
+        },
+    })
 }
 
 type _Decompressor<I> = streaming_decompression::Decompressor<
@@ -150,60 +154,162 @@ impl streaming_decompression::Decompressed for Page {
 /// This decompressor uses an internal [`Vec<u8>`] to perform decompressions which
 /// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
-pub struct BasicDecompressor<I: Iterator<Item = ParquetResult<CompressedPage>>> {
-    iter: _Decompressor<I>,
-    peeked: Option<Page>,
+pub struct BasicDecompressor {
+    reader: PageReader,
+    buffer: Vec<u8>,
+    context: DecompressionContext,
 }
 
-impl<I> BasicDecompressor<I>
-where
-    I: Iterator<Item = ParquetResult<CompressedPage>>,
-{
-    /// Returns a new [`BasicDecompressor`].
-    pub fn new(iter: I, buffer: Vec<u8>) -> Self {
+impl BasicDecompressor {
+    /// Create a new [`BasicDecompressor`]
+    pub fn new(reader: PageReader, buffer: Vec<u8>) -> Self {
         Self {
-            iter: _Decompressor::new(iter, buffer, decompress),
-            peeked: None,
+            reader,
+            buffer,
+            context: DecompressionContext::Unset,
         }
+    }
+
+    /// The total number of values is given from the `ColumnChunk` metadata.
+    ///
+    /// - Nested column: equal to the number of non-null values at the lowest nesting level.
+    /// - Unnested column: equal to the number of non-null rows.
+    pub fn total_num_values(&self) -> usize {
+        self.reader.total_num_values()
     }
 
     /// Returns its internal buffer, consuming itself.
     pub fn into_inner(self) -> Vec<u8> {
-        self.iter.into_inner()
+        self.buffer
     }
 
     pub fn read_dict_page(&mut self) -> ParquetResult<Option<DictPage>> {
-        match self.iter.next()? {
-            Some(Page::Data(page)) => {
-                self.peeked = Some(Page::Data(page.clone()));
-                Ok(None)
-            },
-            Some(Page::Dict(page)) => Ok(Some(page.clone())),
+        match self.reader.read_dict()? {
             None => Ok(None),
+            Some(p) => {
+                let num_values = p.num_values;
+                let page = decompress(
+                    CompressedPage::Dict(p),
+                    &mut Vec::with_capacity(num_values),
+                    &mut self.context,
+                )?;
+
+                match page {
+                    Page::Dict(d) => Ok(Some(d)),
+                    Page::Data(_) => unreachable!(),
+                }
+            },
         }
+    }
+
+    pub fn reuse_page_buffer(&mut self, page: DataPage) {
+        let buffer = match page.buffer {
+            CowBuffer::Borrowed(_) => return,
+            CowBuffer::Owned(vec) => vec,
+        };
+
+        if self.buffer.capacity() > buffer.capacity() {
+            return;
+        };
+
+        self.buffer = buffer;
     }
 }
 
-impl<I> FallibleStreamingIterator for BasicDecompressor<I>
-where
-    I: Iterator<Item = ParquetResult<CompressedPage>>,
-{
-    type Item = Page;
-    type Error = ParquetError;
+pub struct DataPageItem {
+    page: CompressedDataPage,
+}
 
-    fn advance(&mut self) -> ParquetResult<()> {
-        if self.peeked.take().is_some() {
-            return Ok(());
-        }
-
-        self.iter.advance()
+impl DataPageItem {
+    pub fn num_values(&self) -> usize {
+        self.page.num_values()
     }
 
-    fn get(&self) -> Option<&Self::Item> {
-        if let Some(peeked) = self.peeked.as_ref() {
-            return Some(peeked);
-        }
+    pub fn page(&self) -> &CompressedDataPage {
+        &self.page
+    }
 
-        self.iter.get()
+    pub fn decompress(self, decompressor: &mut BasicDecompressor) -> ParquetResult<DataPage> {
+        let p = decompress(
+            CompressedPage::Data(self.page),
+            &mut decompressor.buffer,
+            &mut decompressor.context,
+        )?;
+        let Page::Data(p) = p else {
+            panic!("Decompressing a data page should result in a data page");
+        };
+
+        Ok(p)
+    }
+}
+
+impl Iterator for BasicDecompressor {
+    type Item = ParquetResult<DataPageItem>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let page = match self.reader.next() {
+            None => return None,
+            Some(Err(e)) => return Some(Err(e)),
+            Some(Ok(p)) => p,
+        };
+
+        let CompressedPage::Data(page) = page else {
+            return Some(Err(ParquetError::oos(
+                "Found dictionary page beyond the first page of a column chunk",
+            )));
+        };
+
+        Some(Ok(DataPageItem { page }))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.reader.size_hint()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_parquet_format::Encoding;
+
+    use super::*;
+
+    #[test]
+    fn test_decompress_v2_empty_datapage() {
+        let compressions = [
+            Compression::Snappy,
+            Compression::Gzip,
+            Compression::Lzo,
+            Compression::Brotli,
+            Compression::Lz4,
+            Compression::Zstd,
+            Compression::Lz4Raw,
+        ];
+
+        // this datapage has an empty compressed section after the first two bytes (uncompressed definition levels)
+        let compressed: &mut Vec<u8> = &mut vec![0x03, 0x00];
+        let page_header = DataPageHeaderV2::new(1, 1, 1, Encoding::PLAIN, 2, 0, true, None);
+        let buffer: &mut Vec<u8> = &mut vec![0, 2];
+
+        compressions.iter().for_each(|compression| {
+            test_decompress_v2_datapage(compressed, &page_header, *compression, buffer, compressed)
+        });
+    }
+
+    fn test_decompress_v2_datapage(
+        compressed: &[u8],
+        page_header: &DataPageHeaderV2,
+        compression: Compression,
+        buffer: &mut [u8],
+        expected: &[u8],
+    ) {
+        decompress_v2(
+            compressed,
+            page_header,
+            compression,
+            buffer,
+            &mut DecompressionContext::Unset,
+        )
+        .unwrap();
+        assert_eq!(buffer, expected);
     }
 }

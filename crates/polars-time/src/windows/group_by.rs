@@ -1,18 +1,20 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::trusted_len::TrustedLen;
-use polars_core::export::rayon::prelude::*;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
-use polars_core::POOL;
-use polars_utils::slice::GetSaferUnchecked;
+use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use crate::prelude::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[strum(serialize_all = "snake_case")]
 pub enum ClosedWindow {
     Left,
     Right,
@@ -20,16 +22,20 @@ pub enum ClosedWindow {
     None,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[strum(serialize_all = "snake_case")]
 pub enum Label {
     Left,
     Right,
     DataPoint,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[strum(serialize_all = "snake_case")]
 pub enum StartBy {
     WindowBound,
     DataPoint,
@@ -145,7 +151,7 @@ pub fn group_by_windows(
     include_lower_bound: bool,
     include_upper_bound: bool,
     start_by: StartBy,
-) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
+) -> PolarsResult<(GroupsSlice, Vec<i64>, Vec<i64>)> {
     let start = time[0];
     // the boundary we define here is not yet correct. It doesn't take 'period' into account
     // and it doesn't have the proper starting point. This boundary is used as a proxy to find
@@ -178,15 +184,13 @@ pub fn group_by_windows(
         #[cfg(feature = "timezones")]
         Some(tz) => {
             update_groups_and_bounds(
-                window
-                    .get_overlapping_bounds_iter(
-                        boundary,
-                        closed_window,
-                        tu,
-                        tz.parse::<Tz>().ok().as_ref(),
-                        start_by,
-                    )
-                    .unwrap(),
+                window.get_overlapping_bounds_iter(
+                    boundary,
+                    closed_window,
+                    tu,
+                    tz.parse::<Tz>().ok().as_ref(),
+                    start_by,
+                )?,
                 start_offset,
                 time,
                 closed_window,
@@ -199,9 +203,7 @@ pub fn group_by_windows(
         },
         _ => {
             update_groups_and_bounds(
-                window
-                    .get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)
-                    .unwrap(),
+                window.get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)?,
                 start_offset,
                 time,
                 closed_window,
@@ -214,7 +216,7 @@ pub fn group_by_windows(
         },
     };
 
-    (groups, lower_bound, upper_bound)
+    Ok((groups, lower_bound, upper_bound))
 }
 
 // t is right at the end of the window
@@ -256,17 +258,26 @@ pub(crate) fn group_by_values_iter_lookbehind(
         0
     };
     let mut end = start;
+    let mut last = time[start_offset];
     Ok(time[start_offset..upper_bound]
         .iter()
         .enumerate()
         .map(move |(mut i, t)| {
+            // Fast path for duplicates.
+            if *t == last && i > 0 {
+                let len = end - start;
+                let offset = start as IdxSize;
+                return Ok((offset, len as IdxSize));
+            }
+            last = *t;
             i += start_offset;
+
             let lower = add(&offset, *t, tz.as_ref())?;
             let upper = *t;
 
             let b = Bounds::new(lower, upper);
 
-            for &t in unsafe { time.get_unchecked_release(start..i) } {
+            for &t in unsafe { time.get_unchecked(start..i) } {
                 if b.is_member_entry(t, closed_window) {
                     break;
                 }
@@ -280,7 +291,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
                 end = std::cmp::max(end, start);
             }
             // we still must loop to consume duplicates
-            for &t in unsafe { time.get_unchecked_release(end..) } {
+            for &t in unsafe { time.get_unchecked(end..) } {
                 if !b.is_member_exit(t, closed_window) {
                     break;
                 }
@@ -314,7 +325,17 @@ pub(crate) fn group_by_values_iter_window_behind_t(
 
     let mut start = 0;
     let mut end = start;
+    let mut last = time[0];
+    let mut started = false;
     time.iter().map(move |lower| {
+        // Fast path for duplicates.
+        if *lower == last && started {
+            let len = end - start;
+            let offset = start as IdxSize;
+            return Ok((offset, len as IdxSize));
+        }
+        last = *lower;
+        started = true;
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
@@ -364,7 +385,16 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
 
     let mut start = 0;
     let mut end = start;
+    let mut last = time[0];
     time.iter().enumerate().map(move |(i, lower)| {
+        // Fast path for duplicates.
+        if *lower == last && i > 0 {
+            let len = end - start;
+            let offset = start as IdxSize;
+            return Ok((offset, len as IdxSize));
+        }
+        last = *lower;
+
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
@@ -416,7 +446,18 @@ pub(crate) fn group_by_values_iter_lookahead(
     let mut start = start_offset;
     let mut end = start;
 
+    let mut last = time[start_offset];
+    let mut started = false;
     time[start_offset..upper_bound].iter().map(move |lower| {
+        // Fast path for duplicates.
+        if *lower == last && started {
+            let len = end - start;
+            let offset = start as IdxSize;
+            return Ok((offset, len as IdxSize));
+        }
+        started = true;
+        last = *lower;
+
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
@@ -557,7 +598,9 @@ pub(crate) fn group_by_values_iter_lookahead_collected(
 }
 
 /// Different from `group_by_windows`, where define window buckets and search which values fit that
-/// pre-defined bucket, this function defines every window based on the:
+/// pre-defined bucket.
+///
+/// This function defines every window based on the:
 ///     - timestamp (lower bound)
 ///     - timestamp + period (upper bound)
 /// where timestamps are the individual values in the array `time`
@@ -569,6 +612,10 @@ pub fn group_by_values(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> PolarsResult<GroupsSlice> {
+    if time.is_empty() {
+        return Ok(GroupsSlice::from(vec![]));
+    }
+
     let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
     // there are duplicates in the splits, so we opt for a single partition
     prune_splits_on_duplicates(time, &mut thread_offsets);

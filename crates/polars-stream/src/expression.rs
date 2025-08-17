@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::Series;
+use polars_core::prelude::Column;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{ExecutionState, PhysicalExpr};
 
 #[derive(Clone)]
-pub(crate) struct StreamExpr {
+pub struct StreamExpr {
     inner: Arc<dyn PhysicalExpr>,
     // Whether the expression can be re-entering the engine (e.g. a function use the lazy api
     // within that function)
@@ -14,18 +14,14 @@ pub(crate) struct StreamExpr {
 }
 
 impl StreamExpr {
-    pub(crate) fn new(phys_expr: Arc<dyn PhysicalExpr>, reentrant: bool) -> Self {
+    pub fn new(phys_expr: Arc<dyn PhysicalExpr>, reentrant: bool) -> Self {
         Self {
             inner: phys_expr,
             reentrant,
         }
     }
 
-    pub(crate) async fn evaluate(
-        &self,
-        df: &DataFrame,
-        state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    pub async fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         if self.reentrant {
             let state = state.clone();
             let phys_expr = self.inner.clone();
@@ -37,5 +33,13 @@ impl StreamExpr {
         } else {
             self.inner.evaluate(df, state)
         }
+    }
+
+    pub fn evaluate_blocking(
+        &self,
+        df: &DataFrame,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        self.inner.evaluate(df, state)
     }
 }

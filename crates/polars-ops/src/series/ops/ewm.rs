@@ -21,7 +21,7 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name(), Box::new(result) as ArrayRef))
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
         DataType::Float64 => {
             let xs = s.f64().unwrap();
@@ -32,7 +32,7 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name(), Box::new(result) as ArrayRef))
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
         _ => ewm_mean(&s.cast(&DataType::Float64)?, options),
     }
@@ -51,7 +51,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name(), Box::new(result) as ArrayRef))
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
         DataType::Float64 => {
             let xs = s.f64().unwrap();
@@ -63,7 +63,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name(), Box::new(result) as ArrayRef))
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
         _ => ewm_std(&s.cast(&DataType::Float64)?, options),
     }
@@ -82,7 +82,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name(), Box::new(result) as ArrayRef))
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
         DataType::Float64 => {
             let xs = s.f64().unwrap();
@@ -94,7 +94,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name(), Box::new(result) as ArrayRef))
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
         _ => ewm_var(&s.cast(&DataType::Float64)?, options),
     }

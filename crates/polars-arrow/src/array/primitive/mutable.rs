@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 
-use super::{check, PrimitiveArray};
+use super::{PrimitiveArray, check};
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::{Bitmap, MutableBitmap};
@@ -14,7 +14,7 @@ use crate::types::NativeType;
 /// Converting a [`MutablePrimitiveArray`] into a [`PrimitiveArray`] is `O(1)`.
 #[derive(Debug, Clone)]
 pub struct MutablePrimitiveArray<T: NativeType> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     values: Vec<T>,
     validity: Option<MutableBitmap>,
 }
@@ -30,7 +30,7 @@ impl<T: NativeType> From<MutablePrimitiveArray<T>> for PrimitiveArray<T> {
             }
         });
 
-        PrimitiveArray::<T>::new(other.data_type, other.values.into(), validity)
+        PrimitiveArray::<T>::new(other.dtype, other.values.into(), validity)
     }
 }
 
@@ -58,15 +58,15 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// # Errors
     /// This function errors iff:
     /// * The validity is not `None` and its length is different from `values`'s length
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Primitive(T::PRIMITIVE)`]
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Primitive(T::PRIMITIVE)`]
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Vec<T>,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
-        check(&data_type, &values, validity.as_ref().map(|x| x.len()))?;
+        check(&dtype, &values, validity.as_ref().map(|x| x.len()))?;
         Ok(Self {
-            data_type,
+            dtype,
             values,
             validity,
         })
@@ -74,7 +74,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
 
     /// Extract the low-end APIs from the [`MutablePrimitiveArray`].
     pub fn into_inner(self) -> (ArrowDataType, Vec<T>, Option<MutableBitmap>) {
-        (self.data_type, self.values, self.validity)
+        (self.dtype, self.values, self.validity)
     }
 
     /// Applies a function `f` to the values of this array, cloning the values
@@ -98,10 +98,10 @@ impl<T: NativeType> Default for MutablePrimitiveArray<T> {
 }
 
 impl<T: NativeType> From<ArrowDataType> for MutablePrimitiveArray<T> {
-    fn from(data_type: ArrowDataType) -> Self {
-        assert!(data_type.to_physical_type().eq_primitive(T::PRIMITIVE));
+    fn from(dtype: ArrowDataType) -> Self {
+        assert!(dtype.to_physical_type().eq_primitive(T::PRIMITIVE));
         Self {
-            data_type,
+            dtype,
             values: Vec::<T>::new(),
             validity: None,
         }
@@ -110,10 +110,10 @@ impl<T: NativeType> From<ArrowDataType> for MutablePrimitiveArray<T> {
 
 impl<T: NativeType> MutablePrimitiveArray<T> {
     /// Creates a new [`MutablePrimitiveArray`] from a capacity and [`ArrowDataType`].
-    pub fn with_capacity_from(capacity: usize, data_type: ArrowDataType) -> Self {
-        assert!(data_type.to_physical_type().eq_primitive(T::PRIMITIVE));
+    pub fn with_capacity_from(capacity: usize, dtype: ArrowDataType) -> Self {
+        assert!(dtype.to_physical_type().eq_primitive(T::PRIMITIVE));
         Self {
-            data_type,
+            dtype,
             values: Vec::<T>::with_capacity(capacity),
             validity: None,
         }
@@ -130,9 +130,8 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     #[inline]
     pub fn push_value(&mut self, value: T) {
         self.values.push(value);
-        match &mut self.validity {
-            Some(validity) => validity.push(true),
-            None => {},
+        if let Some(validity) = &mut self.validity {
+            validity.push(true)
         }
     }
 
@@ -221,7 +220,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     where
         I: TrustedLen<Item = T>,
     {
-        unsafe { self.extend_trusted_len_values_unchecked(iterator) }
+        unsafe { self.extend_values(iterator) }
     }
 
     /// Extends the [`MutablePrimitiveArray`] from an iterator of values of trusted len.
@@ -230,7 +229,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
-    pub unsafe fn extend_trusted_len_values_unchecked<I>(&mut self, iterator: I)
+    pub fn extend_values<I>(&mut self, iterator: I)
     where
         I: Iterator<Item = T>,
     {
@@ -265,8 +264,8 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// # Implementation
     /// This operation is `O(1)`.
     #[inline]
-    pub fn to(self, data_type: ArrowDataType) -> Self {
-        Self::try_new(data_type, self.values, self.validity).unwrap()
+    pub fn to(self, dtype: ArrowDataType) -> Self {
+        Self::try_new(dtype, self.values, self.validity).unwrap()
     }
 
     /// Converts itself into an [`Array`].
@@ -371,7 +370,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
 
     /// Sets values.
     /// # Panic
-    /// Panics iff the values' length is not equal to the existing validity's len.
+    /// Panics iff the values' length is not equal to the existing values' len.
     pub fn set_values(&mut self, values: Vec<T>) {
         assert_eq!(values.len(), self.values.len());
         self.values = values;
@@ -414,7 +413,7 @@ impl<T: NativeType> MutableArray for MutablePrimitiveArray<T> {
 
     fn as_box(&mut self) -> Box<dyn Array> {
         PrimitiveArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             std::mem::take(&mut self.values).into(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
@@ -423,15 +422,15 @@ impl<T: NativeType> MutableArray for MutablePrimitiveArray<T> {
 
     fn as_arc(&mut self) -> Arc<dyn Array> {
         PrimitiveArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             std::mem::take(&mut self.values).into(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
         .arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -475,7 +474,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         let (validity, values) = trusted_len_unzip(iterator);
 
         Self {
-            data_type: T::PRIMITIVE.into(),
+            dtype: T::PRIMITIVE.into(),
             values,
             validity,
         }
@@ -509,7 +508,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         let (validity, values) = try_trusted_len_unzip(iterator)?;
 
         Ok(Self {
-            data_type: T::PRIMITIVE.into(),
+            dtype: T::PRIMITIVE.into(),
             values,
             validity,
         })
@@ -528,7 +527,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// Creates a new [`MutablePrimitiveArray`] out an iterator over values
     pub fn from_trusted_len_values_iter<I: TrustedLen<Item = T>>(iter: I) -> Self {
         Self {
-            data_type: T::PRIMITIVE.into(),
+            dtype: T::PRIMITIVE.into(),
             values: iter.collect(),
             validity: None,
         }
@@ -547,7 +546,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// I.e. that `size_hint().1` correctly reports its length.
     pub unsafe fn from_trusted_len_values_iter_unchecked<I: Iterator<Item = T>>(iter: I) -> Self {
         Self {
-            data_type: T::PRIMITIVE.into(),
+            dtype: T::PRIMITIVE.into(),
             values: iter.collect(),
             validity: None,
         }
@@ -578,7 +577,7 @@ impl<T: NativeType, Ptr: std::borrow::Borrow<Option<T>>> FromIterator<Ptr>
         let validity = Some(validity);
 
         Self {
-            data_type: T::PRIMITIVE.into(),
+            dtype: T::PRIMITIVE.into(),
             values,
             validity,
         }

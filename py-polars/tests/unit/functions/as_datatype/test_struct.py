@@ -62,6 +62,7 @@ def test_eager_struct() -> None:
 
 
 def test_struct_from_schema_only() -> None:
+    # Workaround for new streaming engine.
     # we create a dataframe with default types
     df = pl.DataFrame(
         {
@@ -263,3 +264,32 @@ def test_resolved_names_15442() -> None:
     right = 1000
     in_x = (left < center.struct.field("x")) & (center.struct.field("x") <= right)
     assert df.lazy().filter(in_x).collect().shape == (1, 2)
+
+
+def test_error_on_duplicate_field_name_22959() -> None:
+    with pytest.raises(DuplicateError, match="'literal'"):
+        pl.select(
+            pl.struct(
+                pl.lit(1),
+                pl.lit(2),
+            )
+        )
+
+
+def test_struct_nested_naming_in_group_by_23701() -> None:
+    df = pl.LazyFrame({"ID": [1], "SOURCE_FIELD": ["some value"]})
+
+    expr_inner_struct = pl.struct(
+        pl.col("SOURCE_FIELD").alias("INNER_FIELD"),
+    )
+
+    expr_outer_struct = pl.struct(
+        pl.lit(date(2026, 1, 1))
+        .dt.offset_by(pl.int_ranges(0, 3).list.last().cast(pl.String) + "d")
+        .alias("OUTER_FIELD"),
+        expr_inner_struct.alias("INNER_STRUCT"),
+    ).alias("OUTER_STRUCT")
+
+    agg_df = df.group_by("ID").agg(expr_outer_struct)
+
+    assert agg_df.collect_schema() == agg_df.collect().schema

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @contextmanager
@@ -39,10 +42,11 @@ def PortableTemporaryFile(
             "errors": errors,
         },
     )
-    tmp = NamedTemporaryFile(**params)
-    try:
-        yield tmp
-    finally:
-        tmp.close()
-        if delete:
-            Path(tmp.name).unlink(missing_ok=True)
+
+    with NamedTemporaryFile(**params) as tmp:
+        try:
+            yield tmp
+        finally:
+            tmp.close()
+            if delete:
+                Path(tmp.name).unlink(missing_ok=True)

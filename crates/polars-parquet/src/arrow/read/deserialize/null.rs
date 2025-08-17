@@ -2,156 +2,115 @@
 //! The implementation mostly stubs all the function and just keeps track of the length in the
 //! `DecodedState`.
 
-use arrow::array::{Array, NullArray};
+use arrow::array::NullArray;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
-use super::utils;
-use crate::parquet::encoding::hybrid_rle;
+use super::PredicateFilter;
+use super::utils::filter::Filter;
+use super::utils::{self};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
 pub(crate) struct NullDecoder;
+pub(crate) struct NullTranslation {
+    num_rows: usize,
+}
+
+#[derive(Debug)]
 pub(crate) struct NullArrayLength {
     length: usize,
 }
 
-impl utils::ExactSize for NullArrayLength {
+impl utils::Decoded for NullArrayLength {
     fn len(&self) -> usize {
         self.length
     }
+    fn extend_nulls(&mut self, n: usize) {
+        self.length += n;
+    }
 }
 
-impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
+impl<'a> utils::StateTranslation<'a, NullDecoder> for NullTranslation {
     type PlainDecoder = ();
 
     fn new(
         _decoder: &NullDecoder,
-        _page: &'a DataPage,
+        page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
-        _page_validity: Option<&utils::PageValidity<'a>>,
-        _filter: Option<&utils::filter::Filter<'a>>,
-    ) -> PolarsResult<Self> {
-        Ok(())
+        _page_validity: Option<&Bitmap>,
+    ) -> ParquetResult<Self> {
+        Ok(NullTranslation {
+            num_rows: page.num_values(),
+        })
     }
-
-    fn len_when_not_nullable(&self) -> usize {
-        usize::MAX
-    }
-
-    fn skip_in_place(&mut self, _: usize) -> ParquetResult<()> {
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        _decoder: &mut NullDecoder,
-        decoded: &mut <NullDecoder as utils::Decoder>::DecodedState,
-        _page_validity: &mut Option<utils::PageValidity<'a>>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        decoded.length += additional;
-        Ok(())
+    fn num_rows(&self) -> usize {
+        self.num_rows
     }
 }
 
 impl utils::Decoder for NullDecoder {
-    type Translation<'a> = ();
-    type Dict = ();
+    type Translation<'a> = NullTranslation;
+    type Dict = NullArray;
     type DecodedState = NullArrayLength;
+    type Output = NullArray;
 
     /// Initializes a new state
     fn with_capacity(&self, _: usize) -> Self::DecodedState {
         NullArrayLength { length: 0 }
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
-
-    fn decode_plain_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        _page_validity: Option<&mut utils::PageValidity<'a>>,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unimplemented!()
+    fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(NullArray::new_empty(ArrowDataType::Null))
     }
 
-    fn decode_dictionary_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
-        _page_validity: Option<&mut utils::PageValidity<'a>>,
-        _dict: &Self::Dict,
-        _limit: usize,
+    fn has_predicate_specialization(
+        &self,
+        _state: &utils::State<'_, Self>,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        // @TODO: This can be enabled for the fast paths
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        _is_optional: bool,
     ) -> ParquetResult<()> {
-        unimplemented!()
+        let additional = additional.as_any().downcast_ref::<NullArray>().unwrap();
+        decoded.length += additional.len();
+
+        Ok(())
     }
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
+        _dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
-    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
-        Ok(Box::new(NullArray::new(data_type, decoded.length)))
+    ) -> ParquetResult<Self::Output> {
+        Ok(NullArray::new(dtype, decoded.length))
     }
 
-    fn finalize_dict_array<K: arrow::array::DictionaryKey>(
-        &self,
-        _data_type: ArrowDataType,
-        _dict: Self::Dict,
-        _decoded: (Vec<K>, Option<arrow::bitmap::Bitmap>),
-    ) -> ParquetResult<arrow::array::DictionaryArray<K>> {
-        unimplemented!()
-    }
-}
-
-impl utils::NestedDecoder for NullDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        _: &mut Self::DecodedState,
-        _value: bool,
-        _n: usize,
-    ) {
-    }
-
-    fn values_extend_nulls(
-        _state: &mut utils::State<'_, Self>,
+    fn extend_filtered_with_state(
+        &mut self,
+        state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        n: usize,
-    ) {
-        decoded.length += n;
-    }
-}
-
-use super::{BasicDecompressor, CompressedPagesIter};
-use crate::parquet::page::Page;
-
-/// Converts [`PagesIter`] to an [`ArrayIter`]
-pub fn iter_to_arrays<I>(
-    mut iter: BasicDecompressor<I>,
-    data_type: ArrowDataType,
-    num_rows: usize,
-) -> Box<dyn Array>
-where
-    I: CompressedPagesIter,
-{
-    use streaming_decompression::FallibleStreamingIterator;
-
-    let mut len = 0usize;
-
-    while let Ok(Some(page)) = iter.next() {
-        match page {
-            Page::Dict(_) => continue,
-            Page::Data(page) => {
-                let rows = page.num_values();
-                len = (len + rows).min(num_rows);
-                if len == num_rows {
-                    break;
-                }
-            },
+        _pred_true_mask: &mut BitmapBuilder,
+        filter: Option<Filter>,
+    ) -> ParquetResult<()> {
+        if matches!(filter, Some(Filter::Predicate(_))) {
+            todo!()
         }
-    }
 
-    Box::new(NullArray::new(data_type, len))
+        let num_rows = match filter {
+            Some(f) => f.num_rows(0),
+            None => state.translation.num_rows,
+        };
+        decoded.length += num_rows;
+
+        Ok(())
+    }
 }

@@ -1,19 +1,27 @@
-use polars_time::chunkedarray::*;
-
 use super::*;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RollingFunction {
-    Min(RollingOptionsFixedWindow),
-    Max(RollingOptionsFixedWindow),
-    Mean(RollingOptionsFixedWindow),
-    Sum(RollingOptionsFixedWindow),
-    Quantile(RollingOptionsFixedWindow),
-    Var(RollingOptionsFixedWindow),
-    Std(RollingOptionsFixedWindow),
+    Min,
+    Max,
+    Mean,
+    Sum,
+    Quantile,
+    Var,
+    Std,
     #[cfg(feature = "moment")]
-    Skew(usize, bool),
+    Skew,
+    #[cfg(feature = "moment")]
+    Kurtosis,
+    #[cfg(feature = "cov")]
+    CorrCov {
+        corr_cov_options: RollingCovOptions,
+        // Whether is Corr or Cov
+        is_corr: bool,
+    },
+    Map(PlanCallback<Series, Series>),
 }
 
 impl Display for RollingFunction {
@@ -21,69 +29,28 @@ impl Display for RollingFunction {
         use RollingFunction::*;
 
         let name = match self {
-            Min(_) => "rolling_min",
-            Max(_) => "rolling_max",
-            Mean(_) => "rolling_mean",
-            Sum(_) => "rolling_sum",
-            Quantile(_) => "rolling_quantile",
-            Var(_) => "rolling_var",
-            Std(_) => "rolling_std",
+            Min => "min",
+            Max => "max",
+            Mean => "mean",
+            Sum => "rsum",
+            Quantile => "quantile",
+            Var => "var",
+            Std => "std",
             #[cfg(feature = "moment")]
-            Skew(..) => "rolling_skew",
+            Skew => "skew",
+            #[cfg(feature = "moment")]
+            Kurtosis => "kurtosis",
+            #[cfg(feature = "cov")]
+            CorrCov { is_corr, .. } => {
+                if *is_corr {
+                    "corr"
+                } else {
+                    "cov"
+                }
+            },
+            Map(_) => "map",
         };
 
-        write!(f, "{name}")
+        write!(f, "rolling_{name}")
     }
-}
-
-impl Hash for RollingFunction {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        use RollingFunction::*;
-
-        std::mem::discriminant(self).hash(state);
-        match self {
-            #[cfg(feature = "moment")]
-            Skew(window_size, bias) => {
-                window_size.hash(state);
-                bias.hash(state)
-            },
-            _ => {},
-        }
-    }
-}
-
-pub(super) fn rolling_min(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_min(options)
-}
-
-pub(super) fn rolling_max(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_max(options)
-}
-
-pub(super) fn rolling_mean(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_mean(options)
-}
-
-pub(super) fn rolling_sum(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_sum(options)
-}
-
-pub(super) fn rolling_quantile(
-    s: &Series,
-    options: RollingOptionsFixedWindow,
-) -> PolarsResult<Series> {
-    s.rolling_quantile(options)
-}
-
-pub(super) fn rolling_var(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_var(options)
-}
-
-pub(super) fn rolling_std(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_std(options)
-}
-
-#[cfg(feature = "moment")]
-pub(super) fn rolling_skew(s: &Series, window_size: usize, bias: bool) -> PolarsResult<Series> {
-    s.rolling_skew(window_size, bias)
 }

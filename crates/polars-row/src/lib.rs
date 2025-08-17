@@ -120,6 +120,10 @@
 //! This approach is loosely inspired by [COBS] encoding, and chosen over more traditional
 //! [byte stuffing] as it is more amenable to vectorisation, in particular AVX-256.
 //!
+//! For the unordered row encoding we use a simpler scheme, we prepend the length
+//! encoded as 4 bytes followed by the raw data, with nulls being marked with a
+//! length of u32::MAX.
+//!
 //! ## Dictionary Encoding
 //!
 //! [`RowsEncoded`] needs to support converting dictionary encoded arrays with unsorted, and
@@ -271,6 +275,7 @@ pub(crate) mod fixed;
 mod row;
 mod utils;
 pub(crate) mod variable;
+mod widths;
 
 use arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;
@@ -279,4 +284,4 @@ pub use encode::{
     convert_columns, convert_columns_amortized, convert_columns_amortized_no_order,
     convert_columns_no_order,
 };
-pub use row::{EncodingField, RowsEncoded};
+pub use row::{RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions, RowsEncoded};

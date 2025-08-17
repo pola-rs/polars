@@ -8,23 +8,19 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
-        self.0.ref_field().data_type()
+        self.0.ref_field().dtype()
     }
 
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
     }
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
-    }
-
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.equal_element(idx_self, idx_other, other)
     }
@@ -40,28 +36,36 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         (&self.0).into_total_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         self.0.agg_min(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0.agg_max(groups)
     }
 
@@ -81,13 +85,13 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         NumOpsDispatch::remainder(&self.0, rhs)
     }
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
@@ -95,14 +99,14 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<StringChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -125,13 +129,15 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        polars_ensure!(
-            self.0.dtype() == other.dtype(),
-            SchemaMismatch: "cannot extend Series: data types don't match",
-        );
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
         // todo! add object
-        self.0.append(other.as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref())?;
         Ok(())
+    }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        // todo! add object
+        self.0.append_owned(other.take_inner())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -139,7 +145,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
             self.0.dtype() == other.dtype(),
             SchemaMismatch: "cannot extend Series: data types don't match",
         );
-        self.0.extend(other.as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref())?;
         Ok(())
     }
 
@@ -168,23 +174,19 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, cast_options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 
@@ -243,7 +245,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         Err(polars_err!(
             op = "`sum`",
             DataType::String,
-            hint = "you may mean to call `str.concat` or `list.join`"
+            hint = "you may mean to call `str.join` or `list.join`"
         ))
     }
     fn max_reduce(&self) -> PolarsResult<Scalar> {
@@ -252,11 +254,33 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         Ok(ChunkAggSeries::min_reduce(&self.0))
     }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(&self.0))
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        &self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }

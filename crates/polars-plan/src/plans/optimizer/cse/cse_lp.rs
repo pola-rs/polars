@@ -1,11 +1,14 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::unique_id::UniqueId;
 
 use super::*;
 use crate::prelude::visitor::IRNode;
 
 mod identifier_impl {
-    use ahash::RandomState;
-    use polars_core::hashing::_boost_hash_combine;
+    use polars_utils::aliases::PlFixedStateQuality;
+    use polars_utils::hashing::_boost_hash_combine;
 
     use super::*;
     /// Identifier that shows the sub-expression path.
@@ -17,7 +20,7 @@ mod identifier_impl {
     pub(super) struct Identifier {
         inner: Option<u64>,
         last_node: Option<IRNode>,
-        hb: RandomState,
+        hb: PlFixedStateQuality,
     }
 
     impl Identifier {
@@ -48,7 +51,7 @@ mod identifier_impl {
             Self {
                 inner: None,
                 last_node: None,
-                hb: RandomState::with_seed(0),
+                hb: PlFixedStateQuality::with_seed(0),
             }
         }
 
@@ -80,19 +83,24 @@ mod identifier_impl {
             Self {
                 inner,
                 last_node: Some(*alp),
-                hb: self.hb.clone(),
+                hb: self.hb,
             }
         }
     }
 }
 use identifier_impl::*;
 
-#[derive(Default)]
 struct IdentifierMap<V> {
     inner: PlHashMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
+    fn new() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+
     fn get(&self, id: &Identifier, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<&V> {
         self.inner
             .raw_entry()
@@ -119,6 +127,12 @@ impl<V> IdentifierMap<V> {
                 v
             },
         }
+    }
+}
+
+impl<V> Default for IdentifierMap<V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -185,7 +199,7 @@ fn skip_children(lp: &IR) -> bool {
     }
 }
 
-impl<'a> Visitor for LpIdentifierVisitor<'a> {
+impl Visitor for LpIdentifierVisitor<'_> {
     type Node = IRNode;
     type Arena = IRNodeArena;
 
@@ -235,7 +249,7 @@ impl<'a> Visitor for LpIdentifierVisitor<'a> {
     }
 }
 
-pub(super) type CacheId2Caches = PlHashMap<usize, (u32, Vec<Node>)>;
+pub(super) type CacheId2Caches = PlHashMap<UniqueId, (u32, Vec<Node>)>;
 
 struct CommonSubPlanRewriter<'a> {
     sp_count: &'a SubPlanCount,
@@ -247,7 +261,7 @@ struct CommonSubPlanRewriter<'a> {
     visited_idx: usize,
     /// Indicates if this expression is rewritten.
     rewritten: bool,
-    cache_id: IdentifierMap<usize>,
+    cache_id: IdentifierMap<UniqueId>,
     // Maps cache_id : (cache_count and cache_nodes)
     cache_id_to_caches: CacheId2Caches,
 }
@@ -266,7 +280,7 @@ impl<'a> CommonSubPlanRewriter<'a> {
     }
 }
 
-impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
+impl RewritingVisitor for CommonSubPlanRewriter<'_> {
     type Node = IRNode;
     type Arena = IRNodeArena;
 
@@ -329,16 +343,14 @@ impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
             self.visited_idx += 1;
         }
 
-        let cache_id = self.cache_id.inner.len();
         let cache_id = *self
             .cache_id
-            .entry(id.clone(), || cache_id, &arena.0, &arena.1);
+            .entry(id.clone(), UniqueId::new, &arena.0, &arena.1);
         let cache_count = self.sp_count.get(id, &arena.0, &arena.1).unwrap().1;
 
         let cache_node = IR::Cache {
             input: node.node(),
             id: cache_id,
-            cache_hits: cache_count - 1,
         };
         node.assign(cache_node, &mut arena.0);
         let (_count, nodes) = self
@@ -360,11 +372,12 @@ pub(crate) fn elim_cmn_subplans(
     let mut id_array = Default::default();
 
     with_ir_arena(lp_arena, expr_arena, |arena| {
-        let lp_node = IRNode::new(root);
+        let lp_node = IRNode::new_mutate(root);
         let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
 
         lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
 
+        let lp_node = IRNode::new_mutate(root);
         let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
         lp_node.rewrite(&mut rewriter, arena).unwrap();
 

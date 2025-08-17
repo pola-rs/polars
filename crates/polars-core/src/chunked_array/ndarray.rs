@@ -3,8 +3,8 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::*;
 use crate::POOL;
+use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -20,7 +20,7 @@ where
 {
     /// If data is aligned in a single chunk and has no Null values a zero copy view is returned
     /// as an [ndarray]
-    pub fn to_ndarray(&self) -> PolarsResult<ArrayView1<T::Native>> {
+    pub fn to_ndarray(&self) -> PolarsResult<ArrayView1<'_, T::Native>> {
         let slice = self.cont_slice()?;
         Ok(aview1(slice))
     }
@@ -47,7 +47,7 @@ impl ListChunked {
         let mut row_idx = 0;
         let mut ndarray = ndarray::Array::uninit((self.len(), width));
 
-        let series = series.cast(&N::get_dtype())?;
+        let series = series.cast(&N::get_static_dtype())?;
         let ca = series.unpack::<N>()?;
         let a = ca.to_ndarray()?;
         let mut row = ndarray.slice_mut(s![row_idx, ..]);
@@ -59,7 +59,7 @@ impl ListChunked {
                 series.len() == width,
                 ShapeMismatch: "unable to create a 2-D array, series have different lengths"
             );
-            let series = series.cast(&N::get_dtype())?;
+            let series = series.cast(&N::get_static_dtype())?;
             let ca = series.unpack::<N>()?;
             let a = ca.to_ndarray()?;
             let mut row = ndarray.slice_mut(s![row_idx, ..]);
@@ -76,15 +76,15 @@ impl ListChunked {
 
 impl DataFrame {
     /// Create a 2D [`ndarray::Array`] from this [`DataFrame`]. This requires all columns in the
-    /// [`DataFrame`] to be non-null and numeric. They will be casted to the same data type
+    /// [`DataFrame`] to be non-null and numeric. They will be cast to the same data type
     /// (if they aren't already).
     ///
     /// For floating point data we implicitly convert `None` to `NaN` without failure.
     ///
     /// ```rust
     /// use polars_core::prelude::*;
-    /// let a = UInt32Chunked::new("a", &[1, 2, 3]).into_series();
-    /// let b = Float64Chunked::new("b", &[10., 8., 6.]).into_series();
+    /// let a = UInt32Chunked::new("a".into(), &[1, 2, 3]).into_column();
+    /// let b = Float64Chunked::new("b".into(), &[10., 8., 6.]).into_column();
     ///
     /// let df = DataFrame::new(vec![a, b]).unwrap();
     /// let ndarray = df.to_ndarray::<Float64Type>(IndexOrder::Fortran).unwrap();
@@ -108,7 +108,7 @@ impl DataFrame {
         let columns = self.get_columns();
         POOL.install(|| {
             columns.par_iter().enumerate().try_for_each(|(col_idx, s)| {
-                let s = s.cast(&N::get_dtype())?;
+                let s = s.as_materialized_series().cast(&N::get_static_dtype())?;
                 let s = match s.dtype() {
                     DataType::Float32 => {
                         let ca = s.f32().unwrap();
@@ -186,12 +186,16 @@ mod test {
 
     #[test]
     fn test_ndarray_from_ca() -> PolarsResult<()> {
-        let ca = Float64Chunked::new("", &[1.0, 2.0, 3.0]);
+        let ca = Float64Chunked::new(PlSmallStr::EMPTY, &[1.0, 2.0, 3.0]);
         let ndarr = ca.to_ndarray()?;
         assert_eq!(ndarr, ArrayView1::from(&[1.0, 2.0, 3.0]));
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Float64Type>::new("", 10, 10, DataType::Float64);
+        let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
+            PlSmallStr::EMPTY,
+            10,
+            10,
+            DataType::Float64,
+        );
         builder.append_opt_slice(Some(&[1.0, 2.0, 3.0]));
         builder.append_opt_slice(Some(&[2.0, 4.0, 5.0]));
         builder.append_opt_slice(Some(&[6.0, 7.0, 8.0]));
@@ -202,8 +206,12 @@ mod test {
         assert_eq!(ndarr, expected);
 
         // test list array that is not square
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Float64Type>::new("", 10, 10, DataType::Float64);
+        let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
+            PlSmallStr::EMPTY,
+            10,
+            10,
+            DataType::Float64,
+        );
         builder.append_opt_slice(Some(&[1.0, 2.0, 3.0]));
         builder.append_opt_slice(Some(&[2.0]));
         builder.append_opt_slice(Some(&[6.0, 7.0, 8.0]));

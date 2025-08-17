@@ -1,18 +1,8 @@
 use std::ops::BitAnd;
 
 use polars_core::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum ClosedInterval {
-    #[default]
-    Both,
-    Left,
-    Right,
-    None,
-}
+use crate::series::ClosedInterval;
 
 pub fn is_between(
     s: &Series,

@@ -74,7 +74,7 @@ fn not_utf8() {
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     let offsets = vec![0, 4].try_into().unwrap();
     let values = vec![1, 2, 3, 4];
     assert!(MutableUtf8Array::<i32>::try_new(ArrowDataType::Int8, offsets, values, None).is_err());

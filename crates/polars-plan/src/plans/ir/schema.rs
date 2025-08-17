@@ -18,14 +18,13 @@ impl IR {
     pub fn name(&self) -> &'static str {
         use IR::*;
         match self {
-            Scan { scan_type, .. } => scan_type.into(),
+            Scan { scan_type, .. } => (&**scan_type).into(),
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
-            Filter { .. } => "selection",
+            Filter { .. } => "filter",
             DataFrameScan { .. } => "df",
             Select { .. } => "projection",
-            Reduce { .. } => "reduce",
             Sort { .. } => "sort",
             Cache { .. } => "cache",
             GroupBy { .. } => "aggregate",
@@ -37,12 +36,14 @@ impl IR {
             HConcat { .. } => "hconcat",
             ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
-                SinkType::Memory => "sink (memory)",
-                SinkType::File { .. } => "sink (file)",
-                #[cfg(feature = "cloud")]
-                SinkType::Cloud { .. } => "sink (cloud)",
+                SinkTypeIR::Memory => "sink (memory)",
+                SinkTypeIR::File { .. } => "sink (file)",
+                SinkTypeIR::Partition { .. } => "sink (partition)",
             },
+            SinkMultiple { .. } => "sink multiple",
             SimpleProjection { .. } => "simple_projection",
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => "merge_sorted",
             Invalid => "invalid",
         }
     }
@@ -51,7 +52,7 @@ impl IR {
         use IR::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options, .. } => &options.schema,
+            PythonScan { options } => &options.schema,
             DataFrameScan { schema, .. } => schema,
             Scan { file_info, .. } => &file_info.schema,
             node => {
@@ -68,7 +69,7 @@ impl IR {
         use IR::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options, .. } => options.output_schema.as_ref().unwrap_or(&options.schema),
+            PythonScan { options } => options.output_schema.as_ref().unwrap_or(&options.schema),
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             HConcat { schema, .. } => schema,
             Cache { input, .. } => return arena.get(*input).schema(arena),
@@ -85,12 +86,16 @@ impl IR {
             } => output_schema.as_ref().unwrap_or(schema),
             Filter { input, .. } => return arena.get(*input).schema(arena),
             Select { schema, .. } => schema,
-            Reduce { schema, .. } => schema,
             SimpleProjection { columns, .. } => columns,
             GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | Sink { input, .. } => return arena.get(*input).schema(arena),
+            Distinct { input, .. }
+            | Sink {
+                input,
+                payload: SinkTypeIR::Memory,
+            } => return arena.get(*input).schema(arena),
+            Sink { .. } | SinkMultiple { .. } => return Cow::Owned(Arc::new(Schema::default())),
             Slice { input, .. } => return arena.get(*input).schema(arena),
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
@@ -103,8 +108,71 @@ impl IR {
                 };
             },
             ExtContext { schema, .. } => schema,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
             Invalid => unreachable!(),
         };
         Cow::Borrowed(schema)
+    }
+
+    /// Get the schema of the logical plan node, using caching.
+    #[recursive]
+    pub fn schema_with_cache<'a>(
+        node: Node,
+        arena: &'a Arena<IR>,
+        cache: &mut PlHashMap<Node, Arc<Schema>>,
+    ) -> Arc<Schema> {
+        use IR::*;
+        if let Some(schema) = cache.get(&node) {
+            return schema.clone();
+        }
+
+        let schema = match arena.get(node) {
+            #[cfg(feature = "python")]
+            PythonScan { options } => options
+                .output_schema
+                .as_ref()
+                .unwrap_or(&options.schema)
+                .clone(),
+            Union { inputs, .. } => IR::schema_with_cache(inputs[0], arena, cache),
+            HConcat { schema, .. } => schema.clone(),
+            Cache { input, .. }
+            | Sort { input, .. }
+            | Filter { input, .. }
+            | Distinct { input, .. }
+            | Sink {
+                input,
+                payload: SinkTypeIR::Memory,
+            }
+            | Slice { input, .. } => IR::schema_with_cache(*input, arena, cache),
+            Sink { .. } | SinkMultiple { .. } => Arc::new(Schema::default()),
+            Scan {
+                output_schema,
+                file_info,
+                ..
+            } => output_schema.as_ref().unwrap_or(&file_info.schema).clone(),
+            DataFrameScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema).clone(),
+            Select { schema, .. }
+            | GroupBy { schema, .. }
+            | Join { schema, .. }
+            | HStack { schema, .. }
+            | ExtContext { schema, .. }
+            | SimpleProjection {
+                columns: schema, ..
+            } => schema.clone(),
+            MapFunction { input, function } => {
+                let input_schema = IR::schema_with_cache(*input, arena, cache);
+                function.schema(&input_schema).unwrap().into_owned()
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { input_left, .. } => IR::schema_with_cache(*input_left, arena, cache),
+            Invalid => unreachable!(),
+        };
+        cache.insert(node, schema.clone());
+        schema
     }
 }

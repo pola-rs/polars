@@ -11,7 +11,7 @@ fn basics() {
 #[test]
 fn remainder() {
     let a = BitChunks::<u16>::new(&[0b00000001u8, 0b00000010u8, 0b00000100u8], 0, 18);
-    assert_eq!(a.remainder(), 0b00000100u16);
+    assert_eq!(a.remainder(), 0b00000000u16);
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn basics_offset() {
 fn basics_offset_remainder() {
     let mut a = BitChunks::<u16>::new(&[0b00000001u8, 0b00000011u8, 0b10000001u8], 1, 15);
     assert_eq!(a.next(), None);
-    assert_eq!(a.remainder(), 0b1000_0001_1000_0000u16);
+    assert_eq!(a.remainder(), 0b0000_0001_1000_0000u16);
     assert_eq!(a.remainder_len(), 15);
 }
 
@@ -52,7 +52,7 @@ fn offset_remainder_saturating2() {
 fn offset_remainder_saturating3() {
     let input: &[u8] = &[0b01000000, 0b01000001];
     let a = BitChunks::<u64>::new(input, 8, 2);
-    assert_eq!(a.remainder(), 0b0100_0001u64);
+    assert_eq!(a.remainder(), 0b0000_0001u64);
 }
 
 #[test]

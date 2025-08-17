@@ -2,7 +2,7 @@ use crate::prelude::*;
 
 pub trait PhysicalAggExpr {
     #[allow(clippy::ptr_arg)]
-    fn evaluate(&self, df: &DataFrame, groups: &GroupsProxy) -> PolarsResult<Series>;
+    fn evaluate_on_groups(&self, df: &DataFrame, groups: &GroupPositions) -> PolarsResult<Series>;
 
-    fn root_name(&self) -> PolarsResult<&str>;
+    fn root_name(&self) -> PolarsResult<&PlSmallStr>;
 }

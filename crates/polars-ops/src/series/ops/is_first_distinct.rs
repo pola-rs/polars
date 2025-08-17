@@ -20,7 +20,7 @@ where
             .collect_trusted()
     });
 
-    BooleanChunked::from_chunk_iter(ca.name(), chunks)
+    BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)
 }
 
 fn is_first_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
@@ -31,7 +31,7 @@ fn is_first_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
             .collect_trusted()
     });
 
-    BooleanChunked::from_chunk_iter(ca.name(), chunks)
+    BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)
 }
 
 fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
@@ -42,7 +42,7 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         out.set(0, true);
     } else {
         let ca = ca.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
+        let arr = ca.downcast_as_array();
         if ca.null_count() == 0 {
             let (true_index, false_index) =
                 find_first_true_false_no_null(arr.values().chunks::<u64>());
@@ -69,7 +69,7 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         }
     }
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::with_chunk(ca.name(), arr)
+    BooleanChunked::with_chunk(ca.name().clone(), arr)
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -85,7 +85,7 @@ fn is_first_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(s.name(), arr))
+    Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
 }
 
 fn is_first_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
@@ -100,15 +100,15 @@ fn is_first_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(ca.name(), arr))
+    Ok(BooleanChunked::with_chunk(ca.name().clone(), arr))
 }
 
 pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
-    if s.len() == 0 {
-        return Ok(BooleanChunked::full_null(s.name(), 0));
+    if s.is_empty() {
+        return Ok(BooleanChunked::full_null(s.name().clone(), 0));
     } else if s.len() == 1 {
-        return Ok(BooleanChunked::new(s.name(), &[true]));
+        return Ok(BooleanChunked::new(s.name().clone(), &[true]));
     }
 
     let s = s.to_physical_repr();
@@ -127,7 +127,7 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_first_distinct_numeric(ca)

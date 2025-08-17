@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Any
 
 import numpy as np
 import pytest
@@ -8,19 +9,24 @@ from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsEr
 from polars.testing import assert_series_equal
 
 
-def test_scatter() -> None:
-    s = pl.Series("s", [1, 2, 3])
-
-    # no-op (empty sequences)
-    for x in (
+@pytest.mark.parametrize(
+    "input",
+    [
         (),
         [],
         pl.Series(),
         pl.Series(dtype=pl.Int8),
         np.array([]),
-    ):
-        s.scatter(x, 8)  # type: ignore[arg-type]
-        assert s.to_list() == [1, 2, 3]
+    ],
+)
+def test_scatter_noop(input: Any) -> None:
+    s = pl.Series("s", [1, 2, 3])
+    s.scatter(input, 8)
+    assert s.to_list() == [1, 2, 3]
+
+
+def test_scatter() -> None:
+    s = pl.Series("s", [1, 2, 3])
 
     # set new values, one index at a time
     s.scatter(0, 8)
@@ -37,7 +43,7 @@ def test_scatter() -> None:
     assert s.to_list() == ["a", "x", "x"]
     assert s.scatter([0, 2], 0.12345).to_list() == ["0.12345", "x", "0.12345"]
 
-    # set multiple values values
+    # set multiple values
     s = pl.Series(["z", "z", "z"])
     assert s.scatter([0, 1], ["a", "b"]).to_list() == ["a", "b", "z"]
     s = pl.Series([True, False, True])
@@ -71,7 +77,7 @@ def test_object_dtype_16905() -> None:
     with pytest.raises(InvalidOperationError):
         s[0] = 5
     # The error doesn't trash the series, as it used to:
-    assert s.dtype == pl.Object
+    assert s.dtype.is_object()
     assert s.name == "s"
     assert s.to_list() == [obj, 27]
 
@@ -88,3 +94,31 @@ def test_scatter_logical_all_null() -> None:
     result = s.scatter(0, date(2022, 2, 2))
     expected = pl.Series("dt", [date(2022, 2, 2), None])
     assert_series_equal(result, expected)
+
+
+def test_scatter_categorical_21175() -> None:
+    s = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+    assert_series_equal(
+        s.scatter(0, "b"), pl.Series(["b", "b", "c"], dtype=pl.Categorical)
+    )
+    v = pl.Series(["v"], dtype=pl.Categorical)
+    assert_series_equal(
+        s.scatter([0, 2], v), pl.Series(["v", "b", "v"], dtype=pl.Categorical)
+    )
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(1, 2)
+
+
+def test_scatter_enum() -> None:
+    e = pl.Enum(["a", "b", "c", "v"])
+    s = pl.Series(["a", "b", "c"], dtype=e)
+    assert_series_equal(s.scatter(0, "b"), pl.Series(["b", "b", "c"], dtype=e))
+    v = pl.Series(["v"], dtype=pl.Categorical)
+    assert_series_equal(s.scatter([0, 2], v), pl.Series(["v", "b", "v"], dtype=e))
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(1, "d")
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(1, 2)

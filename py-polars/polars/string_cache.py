@@ -4,11 +4,18 @@ import contextlib
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
-    from polars.polars import PyStringCacheHolder
+    import polars._plr as plr
+    from polars._plr import PyStringCacheHolder
 
 if TYPE_CHECKING:
+    import sys
     from types import TracebackType
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
+
 
 __all__ = [
     "StringCache",
@@ -68,7 +75,7 @@ class StringCache(contextlib.ContextDecorator):
     ...     return pl.concat([s1, s2])
     """
 
-    def __enter__(self) -> StringCache:
+    def __enter__(self) -> Self:
         self._string_cache = PyStringCacheHolder()
         return self
 
@@ -130,7 +137,7 @@ def enable_string_cache() -> None:
     plr.enable_string_cache()
 
 
-def disable_string_cache() -> bool:
+def disable_string_cache() -> None:
     """
     Disable and clear the global string cache.
 
@@ -171,7 +178,6 @@ def disable_string_cache() -> bool:
             "green"
     ]
     """
-    return plr.disable_string_cache()
 
 
 def using_string_cache() -> bool:

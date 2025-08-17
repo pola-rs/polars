@@ -6,7 +6,7 @@ from polars._utils.wrap import wrap_df
 
 if TYPE_CHECKING:
     from polars import DataFrame
-    from polars.polars import PyInProcessQuery
+    from polars._plr import PyInProcessQuery
 
 
 class InProcessQuery:
@@ -32,8 +32,7 @@ class InProcessQuery:
         If it is ready, a materialized DataFrame is returned.
         If it is not ready it will return `None`.
         """
-        out = self._inner.fetch()
-        if out is not None:
+        if (out := self._inner.fetch()) is not None:
             return wrap_df(out)
         else:
             return None

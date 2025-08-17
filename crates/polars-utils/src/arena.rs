@@ -1,14 +1,15 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::error::*;
-use crate::slice::GetSaferUnchecked;
+use crate::relaxed_cell::RelaxedCell;
 
 unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
-    (item as *const _ as usize - slice.as_ptr() as usize) / std::mem::size_of::<T>()
+    (item as *const _ as usize - slice.as_ptr() as usize) / size_of::<T>()
 }
 
 fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
-    debug_assert!(std::mem::size_of::<T>() > 0);
+    debug_assert!(size_of::<T>() > 0);
     let ptr = item as *const T;
     unsafe {
         if slice.as_ptr() < ptr && slice.as_ptr().add(slice.len()) > ptr {
@@ -21,6 +22,7 @@ fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct Node(pub usize);
 
 impl Default for Node {
@@ -29,9 +31,10 @@ impl Default for Node {
     }
 }
 
-static ARENA_VERSION: AtomicU32 = AtomicU32::new(0);
+static ARENA_VERSION: RelaxedCell<u32> = RelaxedCell::new_u32(0);
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct Arena<T> {
     version: u32,
     items: Vec<T>,
@@ -61,6 +64,14 @@ impl<T> Arena<T> {
         self.items.pop()
     }
 
+    pub fn last_node(&mut self) -> Option<Node> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(Node(self.items.len() - 1))
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.items.len()
     }
@@ -72,14 +83,14 @@ impl<T> Arena<T> {
     pub fn new() -> Self {
         Arena {
             items: vec![],
-            version: ARENA_VERSION.fetch_add(1, Ordering::Relaxed),
+            version: ARENA_VERSION.fetch_add(1),
         }
     }
 
     pub fn with_capacity(cap: usize) -> Self {
         Arena {
             items: Vec::with_capacity(cap),
-            version: ARENA_VERSION.fetch_add(1, Ordering::Relaxed),
+            version: ARENA_VERSION.fetch_add(1),
         }
     }
 
@@ -100,7 +111,7 @@ impl<T> Arena<T> {
     /// # Safety
     /// Doesn't do any bound checks
     pub unsafe fn get_unchecked(&self, idx: Node) -> &T {
-        self.items.get_unchecked_release(idx.0)
+        unsafe { self.items.get_unchecked(idx.0) }
     }
 
     #[inline]
@@ -144,7 +155,8 @@ impl<T> Arena<T> {
         unsafe {
             for i in 0..N {
                 let idx = *indices.get_unchecked(i);
-                *(*arr_ptr).get_unchecked_mut(i) = (*slice).get_unchecked_mut(idx.0);
+                let slice_ref: &mut [T] = &mut *slice;
+                *(*arr_ptr).get_unchecked_mut(i) = slice_ref.get_unchecked_mut(idx.0);
             }
             arr.assume_init()
         }
@@ -158,7 +170,7 @@ impl<T> Arena<T> {
 
     pub fn clear(&mut self) {
         self.items.clear();
-        self.version = ARENA_VERSION.fetch_add(1, Ordering::Relaxed);
+        self.version = ARENA_VERSION.fetch_add(1);
     }
 }
 

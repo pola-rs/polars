@@ -10,7 +10,7 @@ from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -34,9 +34,8 @@ def read_json(
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance).
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        function, or a `BytesIO` instance). For file-like objects, the stream position
+        may not be updated accordingly after reading.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 

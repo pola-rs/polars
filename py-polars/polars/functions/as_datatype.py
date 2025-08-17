@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Iterable, overload
+from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Struct, Time
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from typing import Literal
 
     from polars import Expr, Series
@@ -135,24 +137,22 @@ def datetime_(
     month_expr = parse_into_expression(month)
     day_expr = parse_into_expression(day)
 
-    if hour is not None:
-        hour = parse_into_expression(hour)
-    if minute is not None:
-        minute = parse_into_expression(minute)
-    if second is not None:
-        second = parse_into_expression(second)
-    if microsecond is not None:
-        microsecond = parse_into_expression(microsecond)
+    hour_expr = parse_into_expression(hour) if hour is not None else None
+    minute_expr = parse_into_expression(minute) if minute is not None else None
+    second_expr = parse_into_expression(second) if second is not None else None
+    microsecond_expr = (
+        parse_into_expression(microsecond) if microsecond is not None else None
+    )
 
     return wrap_expr(
         plr.datetime(
             year_expr,
             month_expr,
             day_expr,
-            hour,
-            minute,
-            second,
-            microsecond,
+            hour_expr,
+            minute_expr,
+            second_expr,
+            microsecond_expr,
             time_unit,
             time_zone,
             ambiguous_expr,
@@ -392,38 +392,37 @@ def duration(
     │ 2022-01-04 00:00:00 ┆ 2022-03-02 00:00:00 ┆ 2024-01-02 00:00:00 │
     └─────────────────────┴─────────────────────┴─────────────────────┘
     """  # noqa: W505
-    if weeks is not None:
-        weeks = parse_into_expression(weeks)
-    if days is not None:
-        days = parse_into_expression(days)
-    if hours is not None:
-        hours = parse_into_expression(hours)
-    if minutes is not None:
-        minutes = parse_into_expression(minutes)
-    if seconds is not None:
-        seconds = parse_into_expression(seconds)
-    if milliseconds is not None:
-        milliseconds = parse_into_expression(milliseconds)
-    if microseconds is not None:
-        microseconds = parse_into_expression(microseconds)
-    if nanoseconds is not None:
-        nanoseconds = parse_into_expression(nanoseconds)
-        if time_unit is None:
-            time_unit = "ns"
+    if nanoseconds is not None and time_unit is None:
+        time_unit = "ns"
+
+    weeks_expr = parse_into_expression(weeks) if weeks is not None else None
+    days_expr = parse_into_expression(days) if days is not None else None
+    hours_expr = parse_into_expression(hours) if hours is not None else None
+    minutes_expr = parse_into_expression(minutes) if minutes is not None else None
+    seconds_expr = parse_into_expression(seconds) if seconds is not None else None
+    milliseconds_expr = (
+        parse_into_expression(milliseconds) if milliseconds is not None else None
+    )
+    microseconds_expr = (
+        parse_into_expression(microseconds) if microseconds is not None else None
+    )
+    nanoseconds_expr = (
+        parse_into_expression(nanoseconds) if nanoseconds is not None else None
+    )
 
     if time_unit is None:
         time_unit = "us"
 
     return wrap_expr(
         plr.duration(
-            weeks,
-            days,
-            hours,
-            minutes,
-            seconds,
-            milliseconds,
-            microseconds,
-            nanoseconds,
+            weeks_expr,
+            days_expr,
+            hours_expr,
+            minutes_expr,
+            seconds_expr,
+            milliseconds_expr,
+            microseconds_expr,
+            nanoseconds_expr,
             time_unit,
         )
     )
@@ -499,6 +498,124 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     """
     exprs = parse_into_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_list(exprs))
+
+
+def concat_arr(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+    """
+    Horizontally concatenate columns into a single array column.
+
+    Non-array columns are reshaped to a unit-width array. All columns must have
+    a dtype of either `pl.Array(<DataType>, width)` or `pl.<DataType>`.
+
+    .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    exprs
+        Columns to concatenate into a single array column. Accepts expression input.
+        Strings are parsed as column names, other non-expression inputs are parsed as
+        literals.
+    *more_exprs
+        Additional columns to concatenate into a single array column, specified as
+        positional arguments.
+
+    Examples
+    --------
+    Concatenate 2 array columns:
+
+    >>> (
+    ...     pl.select(
+    ...         a=pl.Series([[1], [3], None], dtype=pl.Array(pl.Int64, 1)),
+    ...         b=pl.Series([[3], [None], [5]], dtype=pl.Array(pl.Int64, 1)),
+    ...     ).with_columns(
+    ...         pl.concat_arr("a", "b").alias("concat_arr(a, b)"),
+    ...         pl.concat_arr("a", pl.first("b")).alias("concat_arr(a, first(b))"),
+    ...     )
+    ... )
+    shape: (3, 4)
+    ┌───────────────┬───────────────┬──────────────────┬─────────────────────────┐
+    │ a             ┆ b             ┆ concat_arr(a, b) ┆ concat_arr(a, first(b)) │
+    │ ---           ┆ ---           ┆ ---              ┆ ---                     │
+    │ array[i64, 1] ┆ array[i64, 1] ┆ array[i64, 2]    ┆ array[i64, 2]           │
+    ╞═══════════════╪═══════════════╪══════════════════╪═════════════════════════╡
+    │ [1]           ┆ [3]           ┆ [1, 3]           ┆ [1, 3]                  │
+    │ [3]           ┆ [null]        ┆ [3, null]        ┆ [3, 3]                  │
+    │ null          ┆ [5]           ┆ null             ┆ null                    │
+    └───────────────┴───────────────┴──────────────────┴─────────────────────────┘
+
+    Concatenate non-array columns:
+
+    >>> (
+    ...     pl.select(
+    ...         c=pl.Series([None, 5, 6], dtype=pl.Int64),
+    ...     )
+    ...     .with_columns(d=pl.col("c").reverse())
+    ...     .with_columns(
+    ...         pl.concat_arr("c", "d").alias("concat_arr(c, d)"),
+    ...     )
+    ... )
+    shape: (3, 3)
+    ┌──────┬──────┬──────────────────┐
+    │ c    ┆ d    ┆ concat_arr(c, d) │
+    │ ---  ┆ ---  ┆ ---              │
+    │ i64  ┆ i64  ┆ array[i64, 2]    │
+    ╞══════╪══════╪══════════════════╡
+    │ null ┆ 6    ┆ [null, 6]        │
+    │ 5    ┆ 5    ┆ [5, 5]           │
+    │ 6    ┆ null ┆ [6, null]        │
+    └──────┴──────┴──────────────────┘
+
+    Concatenate mixed array and non-array columns:
+
+    >>> (
+    ...     pl.select(
+    ...         a=pl.Series([[1], [3], None], dtype=pl.Array(pl.Int64, 1)),
+    ...         b=pl.Series([[3], [None], [5]], dtype=pl.Array(pl.Int64, 1)),
+    ...         c=pl.Series([None, 5, 6], dtype=pl.Int64),
+    ...     ).with_columns(
+    ...         pl.concat_arr("a", "b", "c").alias("concat_arr(a, b, c)"),
+    ...     )
+    ... )
+    shape: (3, 4)
+    ┌───────────────┬───────────────┬──────┬─────────────────────┐
+    │ a             ┆ b             ┆ c    ┆ concat_arr(a, b, c) │
+    │ ---           ┆ ---           ┆ ---  ┆ ---                 │
+    │ array[i64, 1] ┆ array[i64, 1] ┆ i64  ┆ array[i64, 3]       │
+    ╞═══════════════╪═══════════════╪══════╪═════════════════════╡
+    │ [1]           ┆ [3]           ┆ null ┆ [1, 3, null]        │
+    │ [3]           ┆ [null]        ┆ 5    ┆ [3, null, 5]        │
+    │ null          ┆ [5]           ┆ 6    ┆ null                │
+    └───────────────┴───────────────┴──────┴─────────────────────┘
+
+    Unit-length columns are broadcasted:
+
+    >>> (
+    ...     pl.select(
+    ...         a=pl.Series([1, 3, None]),
+    ...     ).with_columns(
+    ...         pl.concat_arr("a", pl.lit(0, dtype=pl.Int64)).alias("concat_arr(a, 0)"),
+    ...         pl.concat_arr("a", pl.sum("a")).alias("concat_arr(a, sum(a))"),
+    ...         pl.concat_arr("a", pl.max("a")).alias("concat_arr(a, max(a))"),
+    ...     )
+    ... )
+    shape: (3, 4)
+    ┌──────┬──────────────────┬───────────────────────┬───────────────────────┐
+    │ a    ┆ concat_arr(a, 0) ┆ concat_arr(a, sum(a)) ┆ concat_arr(a, max(a)) │
+    │ ---  ┆ ---              ┆ ---                   ┆ ---                   │
+    │ i64  ┆ array[i64, 2]    ┆ array[i64, 2]         ┆ array[i64, 2]         │
+    ╞══════╪══════════════════╪═══════════════════════╪═══════════════════════╡
+    │ 1    ┆ [1, 0]           ┆ [1, 4]                ┆ [1, 3]                │
+    │ 3    ┆ [3, 0]           ┆ [3, 4]                ┆ [3, 3]                │
+    │ null ┆ [null, 0]        ┆ [null, 4]             ┆ [null, 3]             │
+    └──────┴──────────────────┴───────────────────────┴───────────────────────┘
+    """
+    msg = "`concat_arr` functionality is considered unstable"
+    issue_unstable_warning(msg)
+
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+    return wrap_expr(plr.concat_arr(exprs))
 
 
 @overload

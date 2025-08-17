@@ -3,7 +3,6 @@ from datetime import datetime
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -19,7 +18,7 @@ def test_with_context() -> None:
 
     with pytest.deprecated_call():
         context = df_a.with_context(df_b.lazy())
-    with pytest.raises(ComputeError):
+    with pytest.raises(pl.exceptions.ShapeError):
         context.select("a", "c").collect()
 
 
@@ -56,26 +55,10 @@ def test_predicate_pushdown_with_context_11014() -> None:
         out = (
             df1.with_context(df2)
             .filter(pl.col("df1_c1").is_in(pl.col("df2_c1")))
-            .collect(predicate_pushdown=True)
+            .collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
         )
 
     assert out.to_dict(as_series=False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
-
-
-@pytest.mark.xdist_group("streaming")
-def test_streaming_11219() -> None:
-    # https://github.com/pola-rs/polars/issues/11219
-
-    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
-    lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
-    lf_other2 = pl.LazyFrame({"c": ["foo", "ham"]})
-
-    with pytest.deprecated_call():
-        context = lf.with_context([lf_other, lf_other2])
-
-    assert context.select(pl.col("b") + pl.col("c").first()).collect(
-        streaming=True
-    ).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
 
 
 def test_no_cse_in_with_context() -> None:

@@ -1,24 +1,40 @@
+mod builder;
+mod equality;
+mod evaluate;
+mod function_expr;
 #[cfg(feature = "cse")]
 mod hash;
+mod minterm_iter;
+pub mod predicates;
+mod scalar;
 mod schema;
-mod utils;
+mod traverse;
 
 use std::hash::{Hash, Hasher};
 
+pub use function_expr::*;
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
+pub use minterm_iter::MintermIter;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+pub use scalar::is_scalar_ae;
 use strum_macros::IntoStaticStr;
-pub use utils::*;
+pub use traverse::*;
+mod properties;
+pub use aexpr::function_expr::schema::FieldsMapper;
+pub use builder::AExprBuilder;
+pub use properties::*;
 
 use crate::constants::LEN;
 use crate::plans::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRAggExpr {
     Min {
         input: Node,
@@ -37,9 +53,10 @@ pub enum IRAggExpr {
     Quantile {
         expr: Node,
         quantile: Node,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     },
     Sum(Node),
+    // include_nulls
     Count(Node, bool),
     Std(Node, u8),
     Var(Node, u8),
@@ -53,8 +70,11 @@ impl Hash for IRAggExpr {
             Self::Min { propagate_nans, .. } | Self::Max { propagate_nans, .. } => {
                 propagate_nans.hash(state)
             },
-            Self::Quantile { interpol, .. } => interpol.hash(state),
+            Self::Quantile {
+                method: interpol, ..
+            } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
+            Self::Count(_, include_nulls) => include_nulls.hash(state),
             _ => {},
         }
     }
@@ -81,7 +101,7 @@ impl IRAggExpr {
                     propagate_nans: r, ..
                 },
             ) => l == r,
-            (Quantile { interpol: l, .. }, Quantile { interpol: r, .. }) => l == r,
+            (Quantile { method: l, .. }, Quantile { method: r, .. }) => l == r,
             (Std(_, l), Std(_, r)) => l == r,
             (Var(_, l), Var(_, r)) => l == r,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
@@ -125,10 +145,13 @@ impl From<IRAggExpr> for GroupByMethod {
 
 /// IR expression node that is allocated in an [`Arena`][polars_utils::arena::Arena].
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AExpr {
-    Explode(Node),
-    Alias(Node, ColumnName),
-    Column(ColumnName),
+    Explode {
+        expr: Node,
+        skip_empty: bool,
+    },
+    Column(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -137,7 +160,7 @@ pub enum AExpr {
     },
     Cast {
         expr: Node,
-        data_type: DataType,
+        dtype: DataType,
         options: CastOptions,
     },
     Sort {
@@ -166,18 +189,30 @@ pub enum AExpr {
     },
     AnonymousFunction {
         input: Vec<ExprIR>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
-        output_type: GetOutput,
+        function: OpaqueColumnUdf,
         options: FunctionOptions,
+        fmt_str: Box<PlSmallStr>,
+    },
+    /// Evaluates the `evaluation` expression on the output of the `expr`.
+    ///
+    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    Eval {
+        expr: Node,
+
+        /// An expression that is guaranteed to not contain any column reference beyond
+        /// `pl.element()` which refers to `pl.col("")`.
+        evaluation: Node,
+
+        variant: EvalVariant,
     },
     Function {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefor we need `[ExprIr]`.
+        /// Therefor we need [`ExprIr`].
         input: Vec<ExprIR>,
         /// function to apply
-        function: FunctionExpr,
+        function: IRFunctionExpr,
         options: FunctionOptions,
     },
     Window {
@@ -186,306 +221,68 @@ pub enum AExpr {
         order_by: Option<(Node, SortOptions)>,
         options: WindowType,
     },
-    #[default]
-    Wildcard,
     Slice {
         input: Node,
         offset: Node,
         length: Node,
     },
+    #[default]
     Len,
-    Nth(i64),
 }
 
 impl AExpr {
     #[cfg(feature = "cse")]
-    pub(crate) fn col(name: &str) -> Self {
-        AExpr::Column(ColumnName::from(name))
-    }
-    /// Any expression that is sensitive to the number of elements in a group
-    /// - Aggregations
-    /// - Sorts
-    /// - Counts
-    /// - ..
-    pub(crate) fn groups_sensitive(&self) -> bool {
-        use AExpr::*;
-        match self {
-            Function { options, .. } | AnonymousFunction { options, .. } => {
-                options.is_groups_sensitive()
-            }
-            Sort { .. }
-            | SortBy { .. }
-            | Agg { .. }
-            | Window { .. }
-            | Len
-            | Slice { .. }
-            | Gather { .. }
-            | Nth(_)
-             => true,
-            Alias(_, _)
-            | Explode(_)
-            | Column(_)
-            | Literal(_)
-            // a caller should traverse binary and ternary
-            // to determine if the whole expr. is group sensitive
-            | BinaryExpr { .. }
-            | Ternary { .. }
-            | Wildcard
-            | Cast { .. }
-            | Filter { .. } => false,
-        }
+    pub(crate) fn col(name: PlSmallStr) -> Self {
+        AExpr::Column(name)
     }
 
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
-    pub fn get_type(
-        &self,
-        schema: &Schema,
-        ctxt: Context,
-        arena: &Arena<AExpr>,
-    ) -> PolarsResult<DataType> {
-        self.to_field(schema, ctxt, arena)
-            .map(|f| f.data_type().clone())
+    pub fn get_dtype(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<DataType> {
+        self.to_field(schema, arena).map(|f| f.dtype().clone())
     }
 
-    /// Push nodes at this level to a pre-allocated stack
-    pub(crate) fn nodes<C: PushNode>(&self, container: &mut C) {
-        use AExpr::*;
-
+    #[recursive::recursive]
+    fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Len => {},
-            Alias(e, _) => container.push_node(*e),
-            BinaryExpr { left, op: _, right } => {
-                // reverse order so that left is popped first
-                container.push_node(*right);
-                container.push_node(*left);
-            },
-            Cast { expr, .. } => container.push_node(*expr),
-            Sort { expr, .. } => container.push_node(*expr),
-            Gather { expr, idx, .. } => {
-                container.push_node(*idx);
-                // latest, so that it is popped first
-                container.push_node(*expr);
-            },
-            SortBy { expr, by, .. } => {
-                for node in by {
-                    container.push_node(*node)
+            AExpr::Literal(lv) => lv.is_scalar(),
+            AExpr::Function { options, input, .. }
+            | AExpr::AnonymousFunction { options, input, .. } => {
+                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
+                    true
+                } else if options.is_elementwise()
+                    || options.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+                {
+                    input.iter().all(|e| e.is_scalar(arena))
+                } else {
+                    false
                 }
-                // latest, so that it is popped first
-                container.push_node(*expr);
             },
-            Filter { input, by } => {
-                container.push_node(*by);
-                // latest, so that it is popped first
-                container.push_node(*input);
+            AExpr::BinaryExpr { left, right, .. } => {
+                is_scalar_ae(*left, arena) && is_scalar_ae(*right, arena)
             },
-            Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.push_node(node),
-                NodeInputs::Many(nodes) => container.extend_from_slice(&nodes),
-                NodeInputs::Leaf => {},
-            },
-            Ternary {
+            AExpr::Ternary {
+                predicate,
                 truthy,
                 falsy,
-                predicate,
             } => {
-                container.push_node(*predicate);
-                container.push_node(*falsy);
-                // latest, so that it is popped first
-                container.push_node(*truthy);
+                is_scalar_ae(*predicate, arena)
+                    && is_scalar_ae(*truthy, arena)
+                    && is_scalar_ae(*falsy, arena)
             },
-            AnonymousFunction { input, .. } | Function { input, .. } =>
-            // we iterate in reverse order, so that the lhs is popped first and will be found
-            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
-            {
-                input
-                    .iter()
-                    .rev()
-                    .for_each(|e| container.push_node(e.node()))
+            AExpr::Agg(_) | AExpr::Len => true,
+            AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Eval { expr, variant, .. } => match variant {
+                EvalVariant::List => is_scalar_ae(*expr, arena),
+                EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
             },
-            Explode(e) => container.push_node(*e),
-            Window {
-                function,
-                partition_by,
-                order_by,
-                options: _,
-            } => {
-                if let Some((n, _)) = order_by {
-                    container.push_node(*n);
-                }
-                for e in partition_by.iter().rev() {
-                    container.push_node(*e);
-                }
-                // latest so that it is popped first
-                container.push_node(*function);
-            },
-            Slice {
-                input,
-                offset,
-                length,
-            } => {
-                container.push_node(*length);
-                container.push_node(*offset);
-                // latest so that it is popped first
-                container.push_node(*input);
-            },
-        }
-    }
-
-    pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
-        use AExpr::*;
-        let input = match &mut self {
-            Column(_) | Literal(_) | Wildcard | Len | Nth(_) => return self,
-            Alias(input, _) => input,
-            Cast { expr, .. } => expr,
-            Explode(input) => input,
-            BinaryExpr { left, right, .. } => {
-                *right = inputs[0];
-                *left = inputs[1];
-                return self;
-            },
-            Gather { expr, idx, .. } => {
-                *idx = inputs[0];
-                *expr = inputs[1];
-                return self;
-            },
-            Sort { expr, .. } => expr,
-            SortBy { expr, by, .. } => {
-                *expr = *inputs.last().unwrap();
-                by.clear();
-                by.extend_from_slice(&inputs[..inputs.len() - 1]);
-                return self;
-            },
-            Filter { input, by, .. } => {
-                *by = inputs[0];
-                *input = inputs[1];
-                return self;
-            },
-            Agg(a) => {
-                match a {
-                    IRAggExpr::Quantile { expr, quantile, .. } => {
-                        *expr = inputs[0];
-                        *quantile = inputs[1];
-                    },
-                    _ => {
-                        a.set_input(inputs[0]);
-                    },
-                }
-                return self;
-            },
-            Ternary {
-                truthy,
-                falsy,
-                predicate,
-            } => {
-                *predicate = inputs[0];
-                *falsy = inputs[1];
-                *truthy = inputs[2];
-                return self;
-            },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
-                debug_assert_eq!(input.len(), inputs.len());
-
-                // Assign in reverse order as that was the order in which nodes were extracted.
-                for (e, node) in input.iter_mut().zip(inputs.iter().rev()) {
-                    e.set_node(*node);
-                }
-                return self;
-            },
-            Slice {
-                input,
-                offset,
-                length,
-            } => {
-                *length = inputs[0];
-                *offset = inputs[1];
-                *input = inputs[2];
-                return self;
-            },
-            Window {
-                function,
-                partition_by,
-                order_by,
-                ..
-            } => {
-                let offset = order_by.is_some() as usize;
-                *function = *inputs.last().unwrap();
-                partition_by.clear();
-                partition_by.extend_from_slice(&inputs[offset..inputs.len() - 1]);
-
-                if let Some((_, options)) = order_by {
-                    *order_by = Some((inputs[0], *options));
-                }
-
-                return self;
-            },
-        };
-        *input = inputs[0];
-        self
-    }
-
-    pub(crate) fn is_leaf(&self) -> bool {
-        matches!(
-            self,
-            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len | AExpr::Nth(_)
-        )
-    }
-}
-
-impl IRAggExpr {
-    pub fn get_input(&self) -> NodeInputs {
-        use IRAggExpr::*;
-        use NodeInputs::*;
-        match self {
-            Min { input, .. } => Single(*input),
-            Max { input, .. } => Single(*input),
-            Median(input) => Single(*input),
-            NUnique(input) => Single(*input),
-            First(input) => Single(*input),
-            Last(input) => Single(*input),
-            Mean(input) => Single(*input),
-            Implode(input) => Single(*input),
-            Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
-            Sum(input) => Single(*input),
-            Count(input, _) => Single(*input),
-            Std(input, _) => Single(*input),
-            Var(input, _) => Single(*input),
-            AggGroups(input) => Single(*input),
-        }
-    }
-    pub fn set_input(&mut self, input: Node) {
-        use IRAggExpr::*;
-        let node = match self {
-            Min { input, .. } => input,
-            Max { input, .. } => input,
-            Median(input) => input,
-            NUnique(input) => input,
-            First(input) => input,
-            Last(input) => input,
-            Mean(input) => input,
-            Implode(input) => input,
-            Quantile { expr, .. } => expr,
-            Sum(input) => input,
-            Count(input, _) => input,
-            Std(input, _) => input,
-            Var(input, _) => input,
-            AggGroups(input) => input,
-        };
-        *node = input;
-    }
-}
-
-pub enum NodeInputs {
-    Leaf,
-    Single(Node),
-    Many(Vec<Node>),
-}
-
-impl NodeInputs {
-    pub fn first(&self) -> Node {
-        match self {
-            NodeInputs::Single(node) => *node,
-            NodeInputs::Many(nodes) => nodes[0],
-            NodeInputs::Leaf => panic!(),
+            AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Gather { returns_scalar, .. } => *returns_scalar,
+            AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Window { function, .. } => is_scalar_ae(*function, arena),
+            AExpr::Explode { .. }
+            | AExpr::Column(_)
+            | AExpr::Filter { .. }
+            | AExpr::Slice { .. } => false,
         }
     }
 }

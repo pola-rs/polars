@@ -6,11 +6,12 @@ use arrow::scalar::{MapScalar, Scalar};
 #[test]
 fn equal() {
     let kv_dt = ArrowDataType::Struct(vec![
-        Field::new("key", ArrowDataType::Utf8, false),
-        Field::new("value", ArrowDataType::Boolean, true),
+        Field::new("key".into(), ArrowDataType::Utf8, false),
+        Field::new("value".into(), ArrowDataType::Boolean, true),
     ]);
     let kv_array1 = StructArray::try_new(
         kv_dt.clone(),
+        2,
         vec![
             Utf8Array::<i32>::from([Some("k1"), Some("k2")]).boxed(),
             BooleanArray::from_slice([true, false]).boxed(),
@@ -20,6 +21,7 @@ fn equal() {
     .unwrap();
     let kv_array2 = StructArray::try_new(
         kv_dt.clone(),
+        2,
         vec![
             Utf8Array::<i32>::from([Some("k1"), Some("k3")]).boxed(),
             BooleanArray::from_slice([true, true]).boxed(),
@@ -28,7 +30,7 @@ fn equal() {
     )
     .unwrap();
 
-    let dt = ArrowDataType::Map(Box::new(Field::new("entries", kv_dt, true)), false);
+    let dt = ArrowDataType::Map(Box::new(Field::new("entries".into(), kv_dt, true)), false);
     let a = MapScalar::new(dt.clone(), Some(Box::new(kv_array1)));
     let b = MapScalar::new(dt.clone(), None);
     assert_eq!(a, a);
@@ -42,11 +44,12 @@ fn equal() {
 #[test]
 fn basics() {
     let kv_dt = ArrowDataType::Struct(vec![
-        Field::new("key", ArrowDataType::Utf8, false),
-        Field::new("value", ArrowDataType::Boolean, true),
+        Field::new("key".into(), ArrowDataType::Utf8, false),
+        Field::new("value".into(), ArrowDataType::Boolean, true),
     ]);
     let kv_array = StructArray::try_new(
         kv_dt.clone(),
+        2,
         vec![
             Utf8Array::<i32>::from([Some("k1"), Some("k2")]).boxed(),
             BooleanArray::from_slice([true, false]).boxed(),
@@ -55,11 +58,11 @@ fn basics() {
     )
     .unwrap();
 
-    let dt = ArrowDataType::Map(Box::new(Field::new("entries", kv_dt, true)), false);
+    let dt = ArrowDataType::Map(Box::new(Field::new("entries".into(), kv_dt, true)), false);
     let a = MapScalar::new(dt.clone(), Some(Box::new(kv_array.clone())));
 
     assert_eq!(kv_array, a.values().as_ref());
-    assert_eq!(a.data_type(), &dt);
+    assert_eq!(a.dtype(), &dt);
     assert!(a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

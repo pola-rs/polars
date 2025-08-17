@@ -1,14 +1,15 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
+use polars_core::CHEAP_SERIES_HASH_LIMIT;
+use polars_utils::aliases::PlFixedStateQuality;
+use polars_utils::format_pl_smallstr;
+use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::vec::CapacityByFactor;
 
 use super::*;
 use crate::constants::CSE_REPLACED;
 use crate::prelude::visitor::AexprNode;
-
-const SERIES_LIMIT: usize = 1000;
-
-use ahash::RandomState;
-use polars_core::hashing::_boost_hash_combine;
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -45,7 +46,7 @@ impl ProjectionExprs {
 pub(super) struct Identifier {
     inner: Option<u64>,
     last_node: Option<AexprNode>,
-    hb: RandomState,
+    hb: PlFixedStateQuality,
 }
 
 impl Identifier {
@@ -53,7 +54,7 @@ impl Identifier {
         Self {
             inner: None,
             last_node: None,
-            hb: RandomState::with_seed(0),
+            hb: PlFixedStateQuality::with_seed(0),
         }
     }
 
@@ -75,8 +76,8 @@ impl Identifier {
         self.inner.is_some()
     }
 
-    fn materialize(&self) -> String {
-        format!("{}{:#x}", CSE_REPLACED, self.materialized_hash())
+    fn materialize(&self) -> PlSmallStr {
+        format_pl_smallstr!("{}{:#x}", CSE_REPLACED, self.materialized_hash())
     }
 
     fn materialized_hash(&self) -> u64 {
@@ -102,7 +103,7 @@ impl Identifier {
         Self {
             inner,
             last_node: Some(*ae),
-            hb: self.hb.clone(),
+            hb: self.hb,
         }
     }
 }
@@ -148,6 +149,69 @@ impl<V> IdentifierMap<V> {
     }
 }
 
+/// Merges identical expressions into identical IDs.
+///
+/// Does no analysis whether this leads to legal substitutions.
+#[derive(Default)]
+pub struct NaiveExprMerger {
+    node_to_uniq_id: PlHashMap<Node, u32>,
+    uniq_id_to_node: Vec<Node>,
+    identifier_to_uniq_id: IdentifierMap<u32>,
+    arg_stack: Vec<Option<Identifier>>,
+}
+
+impl NaiveExprMerger {
+    pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
+        let node = AexprNode::new(node);
+        node.visit(self, arena).unwrap();
+    }
+
+    pub fn get_uniq_id(&self, node: Node) -> Option<u32> {
+        self.node_to_uniq_id.get(&node).copied()
+    }
+
+    pub fn get_node(&self, uniq_id: u32) -> Option<Node> {
+        self.uniq_id_to_node.get(uniq_id as usize).copied()
+    }
+}
+
+impl Visitor for NaiveExprMerger {
+    type Node = AexprNode;
+    type Arena = Arena<AExpr>;
+
+    fn pre_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        self.arg_stack.push(None);
+        Ok(VisitRecursion::Continue)
+    }
+
+    fn post_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        let mut identifier = Identifier::new();
+        while let Some(Some(arg)) = self.arg_stack.pop() {
+            identifier.combine(&arg);
+        }
+        identifier = identifier.add_ae_node(node, arena);
+        let uniq_id = *self.identifier_to_uniq_id.entry(
+            identifier,
+            || {
+                let uniq_id = self.uniq_id_to_node.len() as u32;
+                self.uniq_id_to_node.push(node.node());
+                uniq_id
+            },
+            arena,
+        );
+        self.node_to_uniq_id.insert(node.node(), uniq_id);
+        Ok(VisitRecursion::Continue)
+    }
+}
+
 /// Identifier maps to Expr Node and count.
 type SubExprCount = IdentifierMap<(Node, u32)>;
 /// (post_visit_idx, identifier);
@@ -181,6 +245,7 @@ enum VisitRecord {
 fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
     match ae {
         AExpr::Window { .. } => true,
+        #[cfg(feature = "dtype-struct")]
         AExpr::Ternary { .. } => is_groupby,
         _ => false,
     }
@@ -303,7 +368,7 @@ impl ExprIdentifierVisitor<'_> {
             AExpr::Window { .. } => REFUSE_SKIP,
             // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
             // TODO! Add a typed null
-            AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
+            AExpr::Literal(LiteralValue::Scalar(sc)) if sc.is_null() => REFUSE_NO_MEMBER,
             AExpr::Literal(s) => {
                 match s {
                     LiteralValue::Series(s) => {
@@ -312,7 +377,7 @@ impl ExprIdentifierVisitor<'_> {
                         // Object and nested types are harder to hash and compare.
                         let allow = !(dtype.is_nested() | dtype.is_object());
 
-                        if s.len() < SERIES_LIMIT && allow {
+                        if s.len() < CHEAP_SERIES_HASH_LIMIT && allow {
                             REFUSE_ALLOW_MEMBER
                         } else {
                             REFUSE_NO_MEMBER
@@ -321,7 +386,7 @@ impl ExprIdentifierVisitor<'_> {
                     _ => REFUSE_ALLOW_MEMBER,
                 }
             },
-            AExpr::Column(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
+            AExpr::Column(_) => REFUSE_ALLOW_MEMBER,
             AExpr::Len => {
                 if self.is_group_by {
                     REFUSE_NO_MEMBER
@@ -331,12 +396,12 @@ impl ExprIdentifierVisitor<'_> {
             },
             #[cfg(feature = "random")]
             AExpr::Function {
-                function: FunctionExpr::Random { .. },
+                function: IRFunctionExpr::Random { .. },
                 ..
             } => REFUSE_NO_MEMBER,
             #[cfg(feature = "rolling_window")]
             AExpr::Function {
-                function: FunctionExpr::RollingExpr { .. },
+                function: IRFunctionExpr::RollingExpr { .. },
                 ..
             } => REFUSE_NO_MEMBER,
             AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
@@ -345,11 +410,11 @@ impl ExprIdentifierVisitor<'_> {
                 // other operations we cannot add to the state as they have the output size of the
                 // groups, not the original dataframe
                 if self.is_group_by {
-                    if ae.groups_sensitive() {
+                    if !ae.is_elementwise_top_level() {
                         return REFUSE_NO_MEMBER;
                     }
                     match ae {
-                        AExpr::AnonymousFunction { .. } | AExpr::Filter { .. } => REFUSE_NO_MEMBER,
+                        AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
                         AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
                         _ => ACCEPT,
                     }
@@ -591,7 +656,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         );
 
         let name = id.materialize();
-        node.assign(AExpr::col(name.as_ref()), arena);
+        node.assign(AExpr::col(name), arena);
         self.rewritten = true;
 
         Ok(node)
@@ -696,7 +761,9 @@ impl CommonSubExprOptimizer {
 
             if !valid {
                 if verbose() {
-                    eprintln!("materialized names collided in common subexpression elimination.\n backtrace and run without CSE")
+                    eprintln!(
+                        "materialized names collided in common subexpression elimination.\n backtrace and run without CSE"
+                    )
                 }
                 return Ok(None);
             }
@@ -719,12 +786,73 @@ impl CommonSubExprOptimizer {
                 } else {
                     out_e.set_node(out_node);
 
+                    // Ensure the function ExprIR's have the proper names.
+                    // This is needed for structs to get the proper field
+                    let mut scratch = vec![];
+                    let mut stack = vec![(e.node(), out_node)];
+                    while let Some((original, new)) = stack.pop() {
+                        // Don't follow identical nodes.
+                        if original == new {
+                            continue;
+                        }
+                        scratch.clear();
+                        let aes = expr_arena.get_many_mut([original, new]);
+
+                        // Only follow paths that are the same.
+                        if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
+                            continue;
+                        }
+
+                        aes[0].inputs_rev(&mut scratch);
+                        let offset = scratch.len();
+                        aes[1].inputs_rev(&mut scratch);
+
+                        // If they have a different number of inputs, we don't follow the nodes.
+                        if scratch.len() != offset * 2 {
+                            continue;
+                        }
+
+                        for i in 0..scratch.len() / 2 {
+                            stack.push((scratch[i], scratch[i + offset]));
+                        }
+
+                        match expr_arena.get_many_mut([original, new]) {
+                            [
+                                AExpr::Function {
+                                    input: input_original,
+                                    ..
+                                },
+                                AExpr::Function {
+                                    input: input_new, ..
+                                },
+                            ] => {
+                                for (new, original) in input_new.iter_mut().zip(input_original) {
+                                    new.set_alias(original.output_name().clone());
+                                }
+                            },
+                            [
+                                AExpr::AnonymousFunction {
+                                    input: input_original,
+                                    ..
+                                },
+                                AExpr::AnonymousFunction {
+                                    input: input_new, ..
+                                },
+                            ] => {
+                                for (new, original) in input_new.iter_mut().zip(input_original) {
+                                    new.set_alias(original.output_name().clone());
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+
                     // If we don't end with an alias we add an alias. Because the normal left-hand
                     // rule we apply for determining the name will not work we now refer to
                     // intermediate temporary names starting with the `CSE_REPLACED` constant.
                     if !e.has_alias() {
                         let name = ae_node.to_field(schema, expr_arena)?.name;
-                        out_e.set_alias(ColumnName::from(name.as_str()));
+                        out_e.set_alias(name.clone());
                     }
                     out_e
                 };
@@ -734,7 +862,7 @@ impl CommonSubExprOptimizer {
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
                 let name = id.materialize();
-                let out_e = ExprIR::new(*node, OutputName::Alias(ColumnName::from(name)));
+                let out_e = ExprIR::new(*node, OutputName::Alias(name));
                 new_expr.push(out_e)
             }
             let expr =

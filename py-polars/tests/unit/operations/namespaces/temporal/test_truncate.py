@@ -9,6 +9,7 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -25,10 +26,10 @@ if TYPE_CHECKING:
 def test_truncate_monthly(value: date, n: int) -> None:
     result = pl.Series([value]).dt.truncate(f"{n}mo").item()
     # manual calculation
-    total = value.year * 12 + value.month - 1
+    total = (value.year - 1970) * 12 + value.month - 1
     remainder = total % n
     total -= remainder
-    year, month = (total // 12), ((total % 12) + 1)
+    year, month = (total // 12) + 1970, ((total % 12) + 1)
     expected = datetime(year, month, 1)
     assert result == expected
 
@@ -119,3 +120,49 @@ def test_fast_path_vs_slow_path(datetimes: list[datetime], every: str) -> None:
     # Definitely uses slowpath:
     expected = s.dt.truncate(pl.Series([every] * len(datetimes)))
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("as_date", [False, True])
+def test_truncate_unequal_length_22018(as_date: bool) -> None:
+    s = pl.Series([datetime(2088, 8, 8, 8, 8, 8, 8)] * 2)
+    if as_date:
+        s = s.dt.date()
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.dt.truncate(pl.Series(["1y"] * 3))
+
+
+@pytest.mark.parametrize(
+    ("multiplier", "unit", "value", "expected"),
+    [
+        (2, "h", datetime(1970, 1, 2, 3), datetime(1970, 1, 2, 2)),
+        (5, "h", datetime(1983, 3, 1, 4), datetime(1983, 3, 1, 2)),
+        (3, "d", datetime(1970, 1, 1), datetime(1970, 1, 1)),
+        (7, "d", datetime(2001, 1, 4, 5), datetime(2001, 1, 4)),
+        (11, "q", datetime(1, 9, 9, 9), datetime(1, 1, 1)),
+        (3, "y", datetime(1970, 1, 1), datetime(1970, 1, 1)),
+        (19, "y", datetime(9543, 1, 5, 6), datetime(9532, 1, 1)),
+        (5, "mo", datetime(1342, 11, 11, 11), datetime(1342, 7, 1)),
+    ],
+)
+@pytest.mark.parametrize("time_zone", ["Asia/Kathmandu", None])
+def test_truncate_origin_22590(
+    multiplier: int,
+    unit: str,
+    value: datetime,
+    expected: datetime,
+    time_zone: str | None,
+) -> None:
+    result = (
+        pl.Series([value])
+        .dt.replace_time_zone(time_zone)
+        .dt.truncate(f"{multiplier}{unit}")
+        .dt.replace_time_zone(None)
+        .item()
+    )
+    assert result == expected, result
+
+
+def test_truncate_invalid() -> None:
+    s = pl.Series([date(2020, 1, 1)])
+    with pytest.raises(ComputeError, match="cannot mix"):
+        s.dt.truncate("1d1h")

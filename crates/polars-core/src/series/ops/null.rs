@@ -1,9 +1,13 @@
+use arrow::bitmap::Bitmap;
+use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
+
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
 impl Series {
-    pub fn full_null(name: &str, size: usize, dtype: &DataType) -> Self {
+    pub fn full_null(name: PlSmallStr, size: usize, dtype: &DataType) -> Self {
         // match the logical types and create them
         match dtype {
             DataType::List(inner_dtype) => {
@@ -14,18 +18,15 @@ impl Series {
                 ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(rev_map, ord) | DataType::Enum(rev_map, ord)) => {
-                let mut ca = CategoricalChunked::full_null(
-                    name,
-                    matches!(dt, DataType::Enum(_, _)),
-                    size,
-                    *ord,
-                );
-                // ensure we keep the rev-map of a cleared series
-                if let Some(rev_map) = rev_map {
-                    unsafe { ca.set_rev_map(rev_map.clone(), false) }
-                }
-                ca.into_series()
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    CategoricalChunked::<$C>::full_null_with_dtype(
+                        name,
+                        size,
+                        dtype.clone()
+                    )
+                        .into_series()
+                })
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => Int32Chunked::full_null(name, size)
@@ -51,19 +52,45 @@ impl Series {
             DataType::Struct(fields) => {
                 let fields = fields
                     .iter()
-                    .map(|fld| Series::full_null(fld.name(), size, fld.data_type()))
+                    .map(|fld| Series::full_null(fld.name().clone(), size, fld.dtype()))
                     .collect::<Vec<_>>();
-                StructChunked::from_series(name, &fields)
-                    .unwrap()
-                    .into_series()
+                let ca = StructChunked::from_series(name, size, fields.iter()).unwrap();
+
+                if !fields.is_empty() {
+                    ca.with_outer_validity(Some(Bitmap::new_zeroed(size)))
+                        .into_series()
+                } else {
+                    ca.into_series()
+                }
+            },
+            DataType::BinaryOffset => {
+                let length = size;
+
+                let offsets = vec![0; size + 1];
+                let array = BinaryArray::<i64>::new(
+                    dtype.to_arrow(CompatLevel::oldest()),
+                    unsafe { OffsetsBuffer::new_unchecked(Buffer::from(offsets)) },
+                    Buffer::default(),
+                    Some(Bitmap::new_zeroed(size)),
+                );
+
+                unsafe {
+                    BinaryOffsetChunked::new_with_dims(
+                        Arc::new(Field::new(name, dtype.clone())),
+                        vec![Box::new(array)],
+                        length,
+                        length,
+                    )
+                }
+                .into_series()
             },
             DataType::Null => Series::new_null(name, size),
             DataType::Unknown(kind) => {
-                let dtype = kind.materialize().expect("expected known type");
+                let dtype = kind.materialize().unwrap_or(DataType::Null);
                 Series::full_null(name, size, &dtype)
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let mut builder = get_object_builder(name, size);
                 for _ in 0..size {
                     builder.append_null();
@@ -72,24 +99,16 @@ impl Series {
             },
             _ => {
                 macro_rules! primitive {
-                    ($type:ty) => {{
-                        ChunkedArray::<$type>::full_null(name, size).into_series()
-                    }};
+                    ($type:ty) => {{ ChunkedArray::<$type>::full_null(name, size).into_series() }};
                 }
                 macro_rules! bool {
-                    () => {{
-                        ChunkedArray::<BooleanType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<BooleanType>::full_null(name, size).into_series() }};
                 }
                 macro_rules! string {
-                    () => {{
-                        ChunkedArray::<StringType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<StringType>::full_null(name, size).into_series() }};
                 }
                 macro_rules! binary {
-                    () => {{
-                        ChunkedArray::<BinaryType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<BinaryType>::full_null(name, size).into_series() }};
                 }
                 match_dtype_to_logical_apply_macro!(dtype, primitive, string, binary, bool)
             },

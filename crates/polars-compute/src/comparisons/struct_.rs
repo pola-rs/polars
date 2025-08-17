@@ -1,5 +1,5 @@
 use arrow::array::{Array, StructArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 
 use super::TotalEqKernel;
 use crate::comparisons::dyn_array::array_tot_eq_missing_kernel;
@@ -22,12 +22,12 @@ impl TotalEqKernel for StructArray {
         let lv = lhs.values();
         let rv = rhs.values();
 
-        let mut bitmap = MutableBitmap::with_capacity(lhs.len());
+        let mut bitmap = BitmapBuilder::with_capacity(lhs.len());
 
         for i in 0..lhs.len() {
             let mut is_equal = true;
 
-            if !ln.map_or(true, |v| v.get(i).unwrap()) || !rn.map_or(true, |v| v.get(i).unwrap()) {
+            if !ln.is_none_or(|v| v.get(i).unwrap()) || !rn.is_none_or(|v| v.get(i).unwrap()) {
                 bitmap.push(true);
                 continue;
             }
@@ -69,12 +69,12 @@ impl TotalEqKernel for StructArray {
         let lv = lhs.values();
         let rv = rhs.values();
 
-        let mut bitmap = MutableBitmap::with_capacity(lhs.len());
+        let mut bitmap = BitmapBuilder::with_capacity(lhs.len());
 
         for i in 0..lhs.len() {
             let mut is_equal = true;
 
-            if !ln.map_or(true, |v| v.get(i).unwrap()) || !rn.map_or(true, |v| v.get(i).unwrap()) {
+            if !ln.is_none_or(|v| v.get(i).unwrap()) || !rn.is_none_or(|v| v.get(i).unwrap()) {
                 bitmap.push(false);
                 continue;
             }

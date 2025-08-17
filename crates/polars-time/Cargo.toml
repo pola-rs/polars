@@ -10,39 +10,52 @@ description = "Time related code for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true, features = ["compute", "temporal"] }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
 polars-error = { workspace = true }
 polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
-atoi = { workspace = true }
+atoi_simd = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 now = { version = "0.1" }
-once_cell = { workspace = true }
+num-traits = { workspace = true }
+rayon = { workspace = true }
 regex = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
-smartstring = { workspace = true }
+strum_macros = { workspace = true }
 
 [dev-dependencies]
 polars-ops = { workspace = true, features = ["abs"] }
 
 [features]
+dtype-i8 = ["polars-core/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16"]
+dtype-u8 = ["polars-core/dtype-u8"]
+dtype-u16 = ["polars-core/dtype-u16"]
+dtype-i128 = ["polars-core/dtype-i128"]
 dtype-date = ["polars-core/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "temporal"]
 dtype-time = ["polars-core/dtype-time", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "temporal"]
 month_start = []
-month_end = []
+month_end = ["month_start"]
 offset_by = []
 rolling_window = ["polars-core/rolling_window"]
 rolling_window_by = ["polars-core/rolling_window_by", "dtype-duration"]
 fmt = ["polars-core/fmt"]
-serde = ["dep:serde", "smartstring/serde"]
+serde = ["dep:serde", "polars-utils/serde", "polars-compute/serde"]
+dsl-schema = ["dep:schemars", "polars-utils/dsl-schema", "polars-compute/dsl-schema"]
 temporal = ["polars-core/temporal"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
 
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
+allow_unused = []
 
 default = []
+
+[lints]
+workspace = true

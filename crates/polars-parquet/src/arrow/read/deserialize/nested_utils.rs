@@ -1,21 +1,15 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey};
-use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
+use arrow::bitmap::utils::BitmapIter;
+use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 
-use super::utils::{self, BatchableCollector};
-use super::{BasicDecompressor, CompressedPagesIter, ParquetError};
-use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use super::utils::PageDecoder;
+use super::{Filter, utils};
+use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, Page};
+use crate::parquet::page::{DataPage, split_buffer};
 use crate::parquet::read::levels::get_bit_width;
-use crate::read::deserialize::dictionary::DictionaryDecoder;
-use crate::read::deserialize::utils::BatchedCollector;
 
-#[derive(Debug)]
 pub struct Nested {
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     length: usize,
     content: NestedContent,
 
@@ -40,7 +34,7 @@ impl Nested {
         // This is because primitive does not keep track of the validity here. It keeps track in
         // the decoder. We do still want to put something so that we can check for nullability by
         // looking at the option.
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(0));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(0));
 
         Self {
             validity,
@@ -54,7 +48,7 @@ impl Nested {
 
     fn list_with_capacity(is_nullable: bool, capacity: usize) -> Self {
         let offsets = Vec::with_capacity(capacity);
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -66,7 +60,7 @@ impl Nested {
     }
 
     fn fixedlist_with_capacity(is_nullable: bool, width: usize, capacity: usize) -> Self {
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -78,7 +72,7 @@ impl Nested {
     }
 
     fn struct_with_capacity(is_nullable: bool, capacity: usize) -> Self {
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -89,12 +83,18 @@ impl Nested {
         }
     }
 
-    fn take(mut self) -> (Vec<i64>, Option<MutableBitmap>) {
+    fn take(mut self) -> (usize, Vec<i64>, Option<BitmapBuilder>) {
         if !matches!(self.content, NestedContent::Primitive) {
             if let Some(validity) = self.validity.as_mut() {
                 validity.extend_constant(self.num_valids, true);
                 validity.extend_constant(self.num_invalids, false);
             }
+
+            debug_assert!(
+                self.validity
+                    .as_ref()
+                    .is_none_or(|v| v.len() == self.length)
+            );
         }
 
         self.num_valids = 0;
@@ -102,12 +102,12 @@ impl Nested {
 
         match self.content {
             NestedContent::Primitive => {
-                debug_assert!(self.validity.map_or(true, |validity| validity.is_empty()));
-                (Vec::new(), None)
+                debug_assert!(self.validity.is_none_or(|validity| validity.is_empty()));
+                (self.length, Vec::new(), None)
             },
-            NestedContent::List { offsets } => (offsets, self.validity),
-            NestedContent::FixedSizeList { .. } => (Vec::new(), self.validity),
-            NestedContent::Struct => (Vec::new(), self.validity),
+            NestedContent::List { offsets } => (self.length, offsets, self.validity),
+            NestedContent::FixedSizeList { .. } => (self.length, Vec::new(), self.validity),
+            NestedContent::Struct => (self.length, Vec::new(), self.validity),
         }
     }
 
@@ -140,7 +140,7 @@ impl Nested {
 
     fn invalid_num_values(&self) -> usize {
         match &self.content {
-            NestedContent::Primitive => 0,
+            NestedContent::Primitive => 1,
             NestedContent::List { .. } => 0,
             NestedContent::FixedSizeList { width } => *width,
             NestedContent::Struct => 1,
@@ -153,9 +153,35 @@ impl Nested {
         if is_valid && self.num_invalids != 0 {
             debug_assert!(!is_primitive);
 
-            let validity = self.validity.as_mut().unwrap();
-            validity.extend_constant(self.num_valids, true);
-            validity.extend_constant(self.num_invalids, false);
+            // @NOTE: Having invalid items might not necessarily mean that we have a validity mask.
+            //
+            // For instance, if we have a optional struct with a required list in it, that struct
+            // will have a validity mask and the list will not. In the arrow representation of this
+            // array, however, the list will still have invalid items where the struct is null.
+            //
+            // Array:
+            // [
+            //     { 'x': [1] },
+            //     None,
+            //     { 'x': [1, 2] },
+            // ]
+            //
+            // Arrow:
+            // struct = [ list[0] None list[2] ]
+            // list   = {
+            //     values  = [ 1, 1, 2 ],
+            //     offsets = [ 0, 1, 1, 3 ],
+            // }
+            //
+            // Parquet:
+            // [ 1, 1, 2 ] + definition + repetition levels
+            //
+            // As you can see we need to insert an invalid item into the list even though it does
+            // not have a validity mask.
+            if let Some(validity) = self.validity.as_mut() {
+                validity.extend_constant(self.num_valids, true);
+                validity.extend_constant(self.num_invalids, false);
+            }
 
             self.num_valids = 0;
             self.num_invalids = 0;
@@ -171,8 +197,6 @@ impl Nested {
     }
 
     fn push_default(&mut self, length: i64) {
-        debug_assert!(self.validity.is_some());
-
         let is_primitive = matches!(self.content, NestedContent::Primitive);
         self.num_invalids += usize::from(!is_primitive);
 
@@ -183,25 +207,77 @@ impl Nested {
     }
 }
 
-pub struct BatchedNestedDecoder<'a, 'b, 'c, D: utils::NestedDecoder> {
-    state: &'b mut utils::State<'a, D>,
-    decoder: &'c mut D,
+/// Utility structure to create a `Filter` and `Validity` mask for the leaf values.
+///
+/// This batches the extending.
+pub struct BatchedNestedDecoder<'a> {
+    pub(crate) num_waiting_valids: usize,
+    pub(crate) num_waiting_invalids: usize,
+
+    filter: &'a mut MutableBitmap,
+    validity: &'a mut MutableBitmap,
 }
 
-impl<'a, 'b, 'c, D: utils::NestedDecoder> BatchableCollector<(), D::DecodedState>
-    for BatchedNestedDecoder<'a, 'b, 'c, D>
-{
-    fn reserve(_target: &mut D::DecodedState, _n: usize) {
-        unreachable!()
+impl BatchedNestedDecoder<'_> {
+    fn push_valid(&mut self) -> ParquetResult<()> {
+        self.push_n_valids(1)
     }
 
-    fn push_n(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
-        self.decoder.push_n_valids(self.state, target, n)?;
+    fn push_invalid(&mut self) -> ParquetResult<()> {
+        self.push_n_invalids(1)
+    }
+
+    fn push_n_valids(&mut self, n: usize) -> ParquetResult<()> {
+        if self.num_waiting_invalids == 0 {
+            self.num_waiting_valids += n;
+            return Ok(());
+        }
+
+        self.filter.extend_constant(self.num_waiting_valids, true);
+        self.validity.extend_constant(self.num_waiting_valids, true);
+
+        self.filter.extend_constant(self.num_waiting_invalids, true);
+        self.validity
+            .extend_constant(self.num_waiting_invalids, false);
+
+        self.num_waiting_valids = n;
+        self.num_waiting_invalids = 0;
+
         Ok(())
     }
 
-    fn push_n_nulls(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
-        self.decoder.push_n_nulls(self.state, target, n);
+    fn push_n_invalids(&mut self, n: usize) -> ParquetResult<()> {
+        self.num_waiting_invalids += n;
+        Ok(())
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if self.num_waiting_valids > 0 {
+            self.filter.extend_constant(self.num_waiting_valids, true);
+            self.validity.extend_constant(self.num_waiting_valids, true);
+            self.num_waiting_valids = 0;
+        }
+        if self.num_waiting_invalids > 0 {
+            self.filter.extend_constant(self.num_waiting_invalids, true);
+            self.validity
+                .extend_constant(self.num_waiting_invalids, false);
+            self.num_waiting_invalids = 0;
+        }
+
+        self.filter.extend_constant(n, false);
+        self.validity.extend_constant(n, true);
+
+        Ok(())
+    }
+
+    fn finalize(self) -> ParquetResult<()> {
+        self.filter.extend_constant(self.num_waiting_valids, true);
+        self.validity.extend_constant(self.num_waiting_valids, true);
+
+        self.filter.extend_constant(self.num_waiting_invalids, true);
+        self.validity
+            .extend_constant(self.num_waiting_invalids, false);
+
         Ok(())
     }
 }
@@ -240,7 +316,7 @@ pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
 }
 
 /// The state of nested data types.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct NestedState {
     /// The nesteds composing `NestedState`.
     nested: Vec<Nested>,
@@ -252,8 +328,12 @@ impl NestedState {
         Self { nested }
     }
 
-    pub fn pop(&mut self) -> Option<(Vec<i64>, Option<MutableBitmap>)> {
+    pub fn pop(&mut self) -> Option<(usize, Vec<i64>, Option<BitmapBuilder>)> {
         Some(self.nested.pop()?.take())
+    }
+
+    pub fn last(&self) -> Option<&NestedContent> {
+        self.nested.last().map(|v| &v.content)
     }
 
     /// The number of rows in this state
@@ -286,289 +366,200 @@ impl NestedState {
     }
 }
 
+fn collect_level_values(
+    target: &mut Vec<u16>,
+    hybrid_rle: HybridRleDecoder<'_>,
+) -> ParquetResult<()> {
+    target.reserve(hybrid_rle.len());
+
+    for chunk in hybrid_rle.into_chunk_iter() {
+        let chunk = chunk?;
+
+        match chunk {
+            HybridRleChunk::Rle(value, size) => {
+                target.resize(target.len() + size, value as u16);
+            },
+            HybridRleChunk::Bitpacked(decoder) => {
+                decoder.lower_element::<u16>()?.collect_into(target);
+            },
+        }
+    }
+
+    Ok(())
+}
+
+/// State to keep track of how many top-level values (i.e. rows) still need to be skipped and
+/// collected.
+///
+/// This state should be kept between pages because a top-level value / row value may span several
+/// pages.
+///
+/// - `num_skips = Some(n)` means that it will skip till the `n + 1`-th occurrence of the repetition
+///   level of `0` (i.e. the start of a top-level value / row value).
+/// - `num_collects = Some(n)` means that it will collect values till the `n + 1`-th occurrence of
+///   the repetition level of `0` (i.e. the start of a top-level value / row value).
+struct DecodingState {
+    num_skips: Option<usize>,
+    num_collects: Option<usize>,
+}
+
 #[allow(clippy::too_many_arguments)]
-fn extend_offsets2<'a, D: utils::NestedDecoder>(
-    def_iter: HybridRleDecoder<'a>,
-    rep_iter: HybridRleDecoder<'a>,
-    batched_collector: &mut BatchedCollector<
-        '_,
-        (),
-        D::DecodedState,
-        BatchedNestedDecoder<'a, '_, '_, D>,
-    >,
+fn decode_nested(
+    mut current_def_levels: &[u16],
+    mut current_rep_levels: &[u16],
+
+    batched_collector: &mut BatchedNestedDecoder<'_>,
     nested: &mut [Nested],
-    additional: usize,
+
+    state: &mut DecodingState,
+    top_level_filter: &mut BitmapIter<'_>,
+
     // Amortized allocations
     def_levels: &[u16],
     rep_levels: &[u16],
-) -> PolarsResult<bool> {
-    struct RowIdxOffsetGatherer;
-    struct RowIdxOffsetState {
-        num_elements_seen: usize,
-        top_level_limit: usize,
-        found: Option<usize>,
-    }
-
-    impl HybridRleGatherer<bool> for RowIdxOffsetGatherer {
-        type Target = RowIdxOffsetState;
-
-        fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
-
-        fn target_num_elements(&self, target: &Self::Target) -> usize {
-            target.num_elements_seen
-        }
-
-        fn hybridrle_to_target(&self, value: u32) -> ParquetResult<bool> {
-            Ok(value == 0)
-        }
-
-        fn gather_one(&self, target: &mut Self::Target, value: bool) -> ParquetResult<()> {
-            let idx = target.num_elements_seen;
-            target.num_elements_seen += 1;
-
-            if !value || target.found.is_some() {
-                return Ok(());
-            }
-
-            if target.top_level_limit > 0 {
-                target.top_level_limit -= 1;
-                return Ok(());
-            }
-
-            target.found = Some(idx);
-
-            Ok(())
-        }
-
-        fn gather_repeated(
-            &self,
-            target: &mut Self::Target,
-            value: bool,
-            n: usize,
-        ) -> ParquetResult<()> {
-            let idx = target.num_elements_seen;
-            target.num_elements_seen += n;
-
-            if !value || target.found.is_some() {
-                return Ok(());
-            }
-
-            if target.top_level_limit >= n {
-                target.top_level_limit -= n;
-                return Ok(());
-            }
-
-            target.found = Some(idx + target.top_level_limit);
-            target.top_level_limit = 0;
-
-            Ok(())
-        }
-
-        // @TODO: Add specialization for other methods
-    }
-
-    #[derive(Default)]
-    struct LevelGatherer<'a>(std::marker::PhantomData<&'a ()>);
-    struct LevelGathererState<'a> {
-        offset: usize,
-        slice: &'a mut [u16],
-    }
-
-    impl<'a> HybridRleGatherer<u16> for LevelGatherer<'a> {
-        type Target = LevelGathererState<'a>;
-
-        fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
-
-        fn target_num_elements(&self, target: &Self::Target) -> usize {
-            target.offset
-        }
-
-        fn hybridrle_to_target(&self, value: u32) -> ParquetResult<u16> {
-            debug_assert!(value <= u16::MAX as u32);
-            Ok(value as u16)
-        }
-
-        fn gather_one(&self, target: &mut Self::Target, value: u16) -> ParquetResult<()> {
-            debug_assert!(target.offset < target.slice.len());
-
-            target.slice[target.offset] = value;
-            target.offset += 1;
-
-            Ok(())
-        }
-
-        fn gather_repeated(
-            &self,
-            target: &mut Self::Target,
-            value: u16,
-            n: usize,
-        ) -> ParquetResult<()> {
-            debug_assert!(target.offset + n <= target.slice.len());
-
-            for i in 0..n {
-                target.slice[target.offset + i] = value;
-            }
-            target.offset += n;
-
-            Ok(())
-        }
-
-        // @TODO: Add specialization for other methods
-    }
-
-    const ROW_IDX_BATCH_SIZE: usize = 1024;
-    let mut state = RowIdxOffsetState {
-        num_elements_seen: 0,
-        top_level_limit: additional,
-        found: None,
-    };
-
-    let mut row_idx_iter = rep_iter.clone();
-    while row_idx_iter.len() > 0 && state.found.is_none() {
-        row_idx_iter.gather_n_into(&mut state, ROW_IDX_BATCH_SIZE, &RowIdxOffsetGatherer)?;
-    }
-
-    debug_assert_eq!(def_iter.len(), rep_iter.len());
-
-    let mut def_iter = def_iter;
-    let mut rep_iter = rep_iter;
-    let mut def_values = [0u16; DECODE_BATCH_SIZE];
-    let mut rep_values = [0u16; DECODE_BATCH_SIZE];
-
+) -> ParquetResult<()> {
     let max_depth = nested.len();
+    let leaf_def_level = *def_levels.last().unwrap();
 
-    const DECODE_BATCH_SIZE: usize = 1024;
-    let mut limit = state.found.unwrap_or(def_iter.len());
-    while def_iter.len() > 0 && limit > 0 {
-        let additional = usize::min(limit, DECODE_BATCH_SIZE);
+    while !current_def_levels.is_empty() {
+        debug_assert_eq!(current_def_levels.len(), current_rep_levels.len());
 
-        let mut def_state = LevelGathererState {
-            offset: 0,
-            slice: &mut def_values,
-        };
-        let mut rep_state = LevelGathererState {
-            offset: 0,
-            slice: &mut rep_values,
-        };
+        // Handle skips
+        if let Some(ref mut num_skips) = state.num_skips {
+            let mut i = 0;
+            let mut num_skipped_values = 0;
+            while i < current_def_levels.len() && (*num_skips > 0 || current_rep_levels[i] != 0) {
+                let def = current_def_levels[i];
+                let rep = current_rep_levels[i];
 
-        def_iter.gather_n_into(&mut def_state, additional, &LevelGatherer::default())?;
-        rep_iter.gather_n_into(&mut rep_state, additional, &LevelGatherer::default())?;
+                *num_skips -= usize::from(rep == 0);
+                i += 1;
 
-        debug_assert_eq!(def_state.offset, rep_state.offset);
-        debug_assert_eq!(def_state.offset, additional);
+                // @NOTE:
+                // We don't need to account for higher def-levels that imply extra values, since we
+                // don't have those higher levels either.
+                num_skipped_values += usize::from(def == leaf_def_level);
+            }
+            batched_collector.skip_in_place(num_skipped_values)?;
 
-        for i in 0..additional {
-            let def = def_values[i];
-            let rep = rep_values[i];
+            current_def_levels = &current_def_levels[i..];
+            current_rep_levels = &current_rep_levels[i..];
 
-            let mut is_required = false;
-
-            for depth in 0..max_depth {
-                // Defines whether this element is defined at `depth`
-                //
-                // e.g. [ [ [ 1 ] ] ] is defined at [ ... ], [ [ ... ] ], [ [ [ ... ] ] ] and
-                // [ [ [ 1 ] ] ].
-                let is_defined_at_this_depth = rep <= rep_levels[depth] && def >= def_levels[depth];
-
-                let length = nested
-                    .get(depth + 1)
-                    .map(|x| x.len() as i64)
-                    // the last depth is the leaf, which is always increased by 1
-                    .unwrap_or(1);
-
-                let nest = &mut nested[depth];
-
-                let is_valid = !nest.is_nullable() || def > def_levels[depth];
-
-                if is_defined_at_this_depth && !is_valid {
-                    let mut num_elements = 1;
-
-                    nest.push(length, is_valid);
-
-                    for embed_depth in depth..max_depth {
-                        let embed_length = nested
-                            .get(embed_depth + 1)
-                            .map(|x| x.len() as i64)
-                            // the last depth is the leaf, which is always increased by 1
-                            .unwrap_or(1);
-
-                        let embed_nest = &mut nested[embed_depth];
-
-                        if embed_depth > depth {
-                            for _ in 0..num_elements {
-                                embed_nest.push_default(embed_length);
-                            }
-                        }
-
-                        if embed_depth == max_depth - 1 {
-                            for _ in 0..num_elements {
-                                batched_collector.push_invalid();
-                            }
-
-                            break;
-                        }
-
-                        let embed_num_values = embed_nest.invalid_num_values();
-
-                        if embed_num_values == 0 {
-                            break;
-                        }
-
-                        num_elements *= embed_num_values;
-                    }
-
-                    break;
-                }
-
-                if is_required || is_defined_at_this_depth {
-                    nest.push(length, is_valid);
-
-                    if depth == max_depth - 1 {
-                        // the leaf / primitive
-                        let is_valid = (def != def_levels[depth]) || !nest.is_nullable();
-
-                        if is_valid {
-                            batched_collector.push_valid()?;
-                        } else {
-                            batched_collector.push_invalid();
-                        }
-                    }
-                }
-
-                is_required =
-                    (is_required || is_defined_at_this_depth) && nest.is_required() && !is_valid;
+            if current_def_levels.is_empty() {
+                break;
+            } else {
+                state.num_skips = None;
             }
         }
 
-        limit -= additional;
+        // Handle collects
+        if let Some(ref mut num_collects) = state.num_collects {
+            let mut i = 0;
+            while i < current_def_levels.len() && (*num_collects > 0 || current_rep_levels[i] != 0)
+            {
+                let def = current_def_levels[i];
+                let rep = current_rep_levels[i];
+
+                *num_collects -= usize::from(rep == 0);
+                i += 1;
+
+                let mut is_required = false;
+
+                for depth in 0..max_depth {
+                    // Defines whether this element is defined at `depth`
+                    //
+                    // e.g. [ [ [ 1 ] ] ] is defined at [ ... ], [ [ ... ] ], [ [ [ ... ] ] ] and
+                    // [ [ [ 1 ] ] ].
+                    let is_defined_at_this_depth =
+                        rep <= rep_levels[depth] && def >= def_levels[depth];
+
+                    let length = nested
+                        .get(depth + 1)
+                        .map(|x| x.len() as i64)
+                        // the last depth is the leaf, which is always increased by 1
+                        .unwrap_or(1);
+
+                    let nest = &mut nested[depth];
+
+                    let is_valid = !nest.is_nullable() || def > def_levels[depth];
+
+                    if is_defined_at_this_depth && !is_valid {
+                        let mut num_elements = 1;
+
+                        nest.push(length, is_valid);
+
+                        for embed_depth in depth..max_depth {
+                            let embed_length = nested
+                                .get(embed_depth + 1)
+                                .map(|x| x.len() as i64)
+                                // the last depth is the leaf, which is always increased by 1
+                                .unwrap_or(1);
+
+                            let embed_nest = &mut nested[embed_depth];
+
+                            if embed_depth > depth {
+                                for _ in 0..num_elements {
+                                    embed_nest.push_default(embed_length);
+                                }
+                            }
+
+                            let embed_num_values = embed_nest.invalid_num_values();
+                            num_elements *= embed_num_values;
+
+                            if embed_num_values == 0 {
+                                break;
+                            }
+                        }
+
+                        batched_collector.push_n_invalids(num_elements)?;
+
+                        break;
+                    }
+
+                    if is_required || is_defined_at_this_depth {
+                        nest.push(length, is_valid);
+
+                        if depth == max_depth - 1 {
+                            // the leaf / primitive
+                            let is_valid = (def != def_levels[depth]) || !nest.is_nullable();
+
+                            if is_valid {
+                                batched_collector.push_valid()?;
+                            } else {
+                                batched_collector.push_invalid()?;
+                            }
+                        }
+                    }
+
+                    is_required = (is_required || is_defined_at_this_depth)
+                        && nest.is_required()
+                        && !is_valid;
+                }
+            }
+
+            current_def_levels = &current_def_levels[i..];
+            current_rep_levels = &current_rep_levels[i..];
+
+            if current_def_levels.is_empty() {
+                break;
+            } else {
+                state.num_collects = None;
+            }
+        }
+
+        if top_level_filter.num_remaining() == 0 {
+            break;
+        }
+
+        state.num_skips = Some(top_level_filter.take_leading_zeros()).filter(|v| *v != 0);
+        state.num_collects = Some(top_level_filter.take_leading_ones()).filter(|v| *v != 0);
     }
 
-    Ok(def_iter.len() != 0)
-}
-
-pub struct PageNestedDecoder<I: CompressedPagesIter, D: utils::NestedDecoder> {
-    pub iter: BasicDecompressor<I>,
-    pub data_type: ArrowDataType,
-    pub dict: Option<D::Dict>,
-    pub decoder: D,
-    pub init: Vec<InitNested>,
-}
-
-pub struct PageNestedDictArrayDecoder<
-    I: CompressedPagesIter,
-    K: DictionaryKey,
-    D: utils::NestedDecoder,
-> {
-    pub iter: BasicDecompressor<I>,
-    pub data_type: ArrowDataType,
-    pub dict: D::Dict,
-    pub decoder: D,
-    pub init: Vec<InitNested>,
-    _pd: std::marker::PhantomData<K>,
+    Ok(())
 }
 
 /// Return the definition and repetition level iterators for this page.
-fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDecoder)> {
+fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder<'_>, HybridRleDecoder<'_>)> {
     let split = split_buffer(page)?;
     let def = split.def;
     let rep = split.rep;
@@ -582,227 +573,127 @@ fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDec
     Ok((def_iter, rep_iter))
 }
 
-impl<I: CompressedPagesIter, D: utils::NestedDecoder> PageNestedDecoder<I, D> {
-    pub fn new(
-        mut iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
-        decoder: D,
-        init: Vec<InitNested>,
-    ) -> ParquetResult<Self> {
-        let dict_page = iter.read_dict_page()?;
-        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+impl<D: utils::Decoder> PageDecoder<D> {
+    pub fn collect_nested(
+        mut self,
+        filter: Option<Filter>,
+    ) -> ParquetResult<(NestedState, D::Output, Bitmap)> {
+        let init = self.init_nested.as_mut().unwrap();
 
-        Ok(Self {
-            iter,
-            data_type,
-            dict,
-            decoder,
-            init,
-        })
-    }
-
-    pub fn collect_n(mut self, limit: usize) -> ParquetResult<(NestedState, Box<dyn Array>)> {
-        use streaming_decompression::FallibleStreamingIterator;
-
-        let mut target = self.decoder.with_capacity(limit);
+        // @TODO: We should probably count the filter so that we don't overallocate
+        let mut target = self.decoder.with_capacity(self.iter.total_num_values());
         // @TODO: Self capacity
-        let mut nested_state = init_nested(&self.init, 0);
+        let mut nested_state = init_nested(init, 0);
 
-        if limit == 0 {
-            return Ok((nested_state, self.decoder.finalize(self.data_type, target)?));
+        if let Some(dict) = self.dict.as_ref() {
+            self.decoder.apply_dictionary(&mut target, dict)?;
         }
-
-        let mut limit = limit;
 
         // Amortize the allocations.
         let (def_levels, rep_levels) = nested_state.levels();
 
-        loop {
-            let Some(page) = self.iter.next()? else {
-                break;
-            };
+        let mut current_def_levels = Vec::<u16>::new();
+        let mut current_rep_levels = Vec::<u16>::new();
 
-            let Page::Data(page) = page else {
-                // @TODO This should be removed
-                unreachable!();
-            };
-
-            let mut values_page =
-                utils::State::new_nested(&self.decoder, page, self.dict.as_ref())?;
-            let (def_iter, rep_iter) = level_iters(page)?;
-
-            let start_length = nested_state.len();
-
-            // @TODO: move this to outside the loop.
-            let mut batched_collector = BatchedCollector::new(
-                BatchedNestedDecoder {
-                    state: &mut values_page,
-                    decoder: &mut self.decoder,
+        let (mut decode_state, top_level_filter) = match filter {
+            None => (
+                DecodingState {
+                    num_skips: None,
+                    num_collects: Some(usize::MAX),
                 },
-                &mut target,
-            );
-
-            let is_fully_read = extend_offsets2(
-                def_iter,
-                rep_iter,
-                &mut batched_collector,
-                &mut nested_state.nested,
-                limit,
-                &def_levels,
-                &rep_levels,
-            )?;
-
-            batched_collector.finalize()?;
-
-            let num_done = nested_state.len() - start_length;
-            debug_assert!(num_done <= limit);
-            limit -= num_done;
-
-            debug_assert!(values_page.len() == 0 || limit == 0);
-
-            if is_fully_read {
-                break;
-            }
-        }
-
-        // we pop the primitive off here.
-        debug_assert!(matches!(
-            nested_state.nested.last().unwrap().content,
-            NestedContent::Primitive
-        ));
-        _ = nested_state.pop().unwrap();
-
-        let array = self.decoder.finalize(self.data_type, target)?;
-
-        Ok((nested_state, array))
-    }
-}
-
-impl<I: CompressedPagesIter, K: DictionaryKey, D: utils::NestedDecoder>
-    PageNestedDictArrayDecoder<I, K, D>
-{
-    pub fn new(
-        mut iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
-        decoder: D,
-        init: Vec<InitNested>,
-    ) -> ParquetResult<Self> {
-        let dict_page = iter
-            .read_dict_page()?
-            .ok_or(ParquetError::FeatureNotSupported(
-                "Dictionary array without a dictionary page".to_string(),
-            ))?;
-        let dict = decoder.deserialize_dict(dict_page);
-
-        Ok(Self {
-            iter,
-            data_type,
-            dict,
-            decoder,
-            init,
-            _pd: std::marker::PhantomData,
-        })
-    }
-
-    pub fn collect_n(mut self, limit: usize) -> ParquetResult<(NestedState, DictionaryArray<K>)> {
-        use streaming_decompression::FallibleStreamingIterator;
-
-        let mut target = (
-            Vec::with_capacity(limit),
-            MutableBitmap::with_capacity(limit),
-        );
-        // @TODO: Self capacity
-        let mut nested_state = init_nested(&self.init, 0);
-
-        if limit == 0 {
-            let (values, validity) = target;
-            let validity = if !validity.is_empty() {
-                Some(validity.freeze())
-            } else {
-                None
-            };
-            return Ok((
-                nested_state,
-                self.decoder
-                    .finalize_dict_array(self.data_type, self.dict, (values, validity))?,
-            ));
-        }
-
-        let mut limit = limit;
-
-        // Amortize the allocations.
-        let (def_levels, rep_levels) = nested_state.levels();
-
-        loop {
-            let Some(page) = self.iter.next()? else {
-                break;
-            };
-
-            let Page::Data(page) = page else {
-                // @TODO This should be removed
-                unreachable!();
-            };
-
-            use utils::ExactSize;
-            let mut dictionary_decoder = DictionaryDecoder::new(self.dict.len());
-            let mut values_page = utils::State::new_nested(&dictionary_decoder, page, Some(&()))?;
-            let (def_iter, rep_iter) = level_iters(page)?;
-
-            let start_length = nested_state.len();
-
-            // @TODO: move this to outside the loop.
-            let mut batched_collector = BatchedCollector::new(
-                BatchedNestedDecoder {
-                    state: &mut values_page,
-                    decoder: &mut dictionary_decoder,
+                Bitmap::new(),
+            ),
+            Some(Filter::Range(range)) => (
+                DecodingState {
+                    num_skips: Some(range.start),
+                    num_collects: Some(range.len()),
                 },
-                &mut target,
-            );
-
-            let is_fully_read = extend_offsets2(
-                def_iter,
-                rep_iter,
-                &mut batched_collector,
-                &mut nested_state.nested,
-                limit,
-                &def_levels,
-                &rep_levels,
-            )?;
-
-            batched_collector.finalize()?;
-
-            let num_done = nested_state.len() - start_length;
-            debug_assert!(num_done <= limit);
-            limit -= num_done;
-
-            debug_assert!(values_page.len() == 0 || limit == 0);
-
-            if is_fully_read {
-                break;
-            }
-        }
-
-        // we pop the primitive off here.
-        debug_assert!(matches!(
-            nested_state.nested.last().unwrap().content,
-            NestedContent::Primitive
-        ));
-        _ = nested_state.pop().unwrap();
-
-        let (values, validity) = target;
-        let validity = if !validity.is_empty() {
-            Some(validity.freeze())
-        } else {
-            None
+                Bitmap::new(),
+            ),
+            Some(Filter::Mask(mask)) => (
+                DecodingState {
+                    num_skips: None,
+                    num_collects: None,
+                },
+                mask,
+            ),
+            Some(Filter::Predicate(_)) => todo!(),
         };
-        let array =
-            self.decoder
-                .finalize_dict_array(self.data_type, self.dict, (values, validity))?;
 
-        Ok((nested_state, array))
+        let mut top_level_filter = top_level_filter.iter();
+
+        loop {
+            let Some(page) = self.iter.next() else {
+                break;
+            };
+            let page = page?;
+            let page = page.decompress(&mut self.iter)?;
+
+            let (mut def_iter, mut rep_iter) = level_iters(&page)?;
+
+            let num_levels = def_iter.len().min(rep_iter.len());
+            def_iter.limit_to(num_levels);
+            rep_iter.limit_to(num_levels);
+
+            current_def_levels.clear();
+            current_rep_levels.clear();
+
+            collect_level_values(&mut current_def_levels, def_iter)?;
+            collect_level_values(&mut current_rep_levels, rep_iter)?;
+
+            let mut leaf_filter = MutableBitmap::new();
+            let mut leaf_validity = MutableBitmap::new();
+
+            // @TODO: move this to outside the loop.
+            let mut batched_collector = BatchedNestedDecoder {
+                num_waiting_valids: 0,
+                num_waiting_invalids: 0,
+
+                filter: &mut leaf_filter,
+                validity: &mut leaf_validity,
+            };
+
+            decode_nested(
+                &current_def_levels,
+                &current_rep_levels,
+                &mut batched_collector,
+                &mut nested_state.nested,
+                &mut decode_state,
+                &mut top_level_filter,
+                &def_levels,
+                &rep_levels,
+            )?;
+
+            batched_collector.finalize()?;
+
+            let leaf_validity = leaf_validity.freeze();
+            let leaf_filter = leaf_filter.freeze();
+
+            let state = utils::State::new_nested(
+                &self.decoder,
+                &page,
+                self.dict.as_ref(),
+                Some(leaf_validity),
+            )?;
+            state.decode(
+                &mut self.decoder,
+                &mut target,
+                &mut BitmapBuilder::new(), // This will not get used or filled
+                Some(Filter::Mask(leaf_filter)),
+            )?;
+
+            self.iter.reuse_page_buffer(page);
+        }
+
+        // we pop the primitive off here.
+        debug_assert!(matches!(
+            nested_state.nested.last().unwrap().content,
+            NestedContent::Primitive
+        ));
+        _ = nested_state.pop().unwrap();
+
+        let array = self.decoder.finalize(self.dtype, self.dict, target)?;
+
+        Ok((nested_state, array, Bitmap::new()))
     }
 }
-
-/// Type def for a sharable, boxed dyn [`Iterator`] of NestedStates and arrays
-pub type NestedArrayIter<'a> =
-    Box<dyn Iterator<Item = PolarsResult<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a>;

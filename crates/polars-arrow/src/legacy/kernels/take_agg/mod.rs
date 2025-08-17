@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! kernels that combine take and aggregations.
 mod boolean;
 mod var;
@@ -58,7 +59,7 @@ pub unsafe fn take_agg_primitive_iter_unchecked<
 
 /// Take kernel for single chunk and an iterator as index.
 /// # Safety
-/// caller must enure iterators indexes are in bounds
+/// caller must ensure iterators indexes are in bounds
 #[inline]
 pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
     T: NativeType + ToPrimitive,
@@ -107,7 +108,7 @@ pub unsafe fn take_agg_bin_iter_unchecked<
     indices: I,
     f: F,
     len: IdxSize,
-) -> Option<&[u8]> {
+) -> Option<&'a [u8]> {
     let mut null_count = 0 as IdxSize;
     let validity = arr.validity().unwrap();
 
@@ -147,7 +148,7 @@ pub unsafe fn take_agg_bin_iter_unchecked_no_null<
     arr: &'a BinaryViewArray,
     indices: I,
     f: F,
-) -> Option<&[u8]> {
+) -> Option<&'a [u8]> {
     indices
         .into_iter()
         .map(|idx| arr.value_unchecked(idx))

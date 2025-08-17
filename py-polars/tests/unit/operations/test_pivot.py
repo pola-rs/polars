@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PivotAgg
+    from polars._typing import PivotAgg, PolarsIntegerType, PolarsTemporalType
 
 
 def test_pivot() -> None:
@@ -90,10 +90,10 @@ def test_pivot_list() -> None:
     ("agg_fn", "expected_rows"),
     [
         ("first", [("a", 2, None, None), ("b", None, None, 10)]),
-        ("len", [("a", 2, None, None), ("b", None, 2, 1)]),
+        ("len", [("a", 2, 0, 0), ("b", 0, 2, 1)]),
         ("min", [("a", 2, None, None), ("b", None, 8, 10)]),
         ("max", [("a", 4, None, None), ("b", None, 8, 10)]),
-        ("sum", [("a", 6, None, None), ("b", None, 8, 10)]),
+        ("sum", [("a", 6, 0, 0), ("b", 0, 8, 10)]),
         ("mean", [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]),
         ("median", [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]),
     ],
@@ -141,7 +141,7 @@ def test_pivot_categorical_index() -> None:
     )
 
     result = df.pivot(index=["A"], on="B", values="B", aggregate_function="len")
-    expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
+    expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, 0]}
     assert result.to_dict(as_series=False) == expected
 
     # test expression dispatch
@@ -161,7 +161,7 @@ def test_pivot_categorical_index() -> None:
         "A": ["Fire", "Water"],
         "C": ["Paper", "Paper"],
         "Car": [1, 2],
-        "Ship": [1, None],
+        "Ship": [1, 0],
     }
     assert result.to_dict(as_series=False) == expected
 
@@ -248,7 +248,7 @@ def test_pivot_multiple_columns_12407() -> None:
     result = df.pivot(
         index="b", on=["c", "e"], values=["a"], aggregate_function="len"
     ).to_dict(as_series=False)
-    expected = {"b": ["a", "b"], '{"s","x"}': [1, None], '{"f","y"}': [None, 1]}
+    expected = {"b": ["a", "b"], '{"s","x"}': [1, 0], '{"f","y"}': [0, 1]}
     assert result == expected
 
 
@@ -282,6 +282,36 @@ def test_pivot_index_struct_14101() -> None:
     )
     result = df.pivot(index="b", on="c", values="a")
     expected = pl.DataFrame({"b": [{"a": 1}, {"a": 2}], "x": [1, None], "y": [2, 1]})
+    assert_frame_equal(result, expected)
+
+
+def test_pivot_nested_struct_17065() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["one", "two", "one", "two"],
+            "bar": ["x", "x", "y", "y"],
+            "baz": [
+                {"a": 1, "b": {"c": 2}},
+                {"a": 3, "b": {"c": 4}},
+                {"a": 5, "b": {"c": 6}},
+                {"a": 7, "b": {"c": 8}},
+            ],
+        }
+    )
+    result = df.pivot(on="bar", index="foo", values="baz")
+    expected = pl.DataFrame(
+        {
+            "foo": ["one", "two"],
+            "x": [
+                {"a": 1, "b": {"c": 2}},
+                {"a": 3, "b": {"c": 4}},
+            ],
+            "y": [
+                {"a": 5, "b": {"c": 6}},
+                {"a": 7, "b": {"c": 8}},
+            ],
+        }
+    )
     assert_frame_equal(result, expected)
 
 
@@ -361,12 +391,25 @@ def test_pivot_reinterpret_5907() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_pivot_temporal_logical_types() -> None:
-    date_lst = [datetime(_, 1, 1) for _ in range(1960, 1980)]
-
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("ns"),
+        pl.Datetime("us"),
+        pl.Datetime("ms", time_zone="Asia/Shanghai"),
+        pl.Duration("ms"),
+        pl.Duration("us"),
+        pl.Duration("ns"),
+        pl.Time,
+    ],
+)
+def test_pivot_temporal_logical_types(dtype: PolarsTemporalType) -> None:
+    idx = pl.Series([7, 8, 9, 0, 1, 2, 3, 4]).cast(dtype)
     df = pl.DataFrame(
         {
-            "idx": date_lst[-3:] + date_lst[0:5],
+            "idx": idx,
             "foo": ["a"] * 3 + ["b"] * 5,
             "value": [0] * 8,
         }
@@ -374,16 +417,7 @@ def test_pivot_temporal_logical_types() -> None:
     assert df.pivot(
         index="idx", on="foo", values="value", aggregate_function=None
     ).to_dict(as_series=False) == {
-        "idx": [
-            datetime(1977, 1, 1, 0, 0),
-            datetime(1978, 1, 1, 0, 0),
-            datetime(1979, 1, 1, 0, 0),
-            datetime(1960, 1, 1, 0, 0),
-            datetime(1961, 1, 1, 0, 0),
-            datetime(1962, 1, 1, 0, 0),
-            datetime(1963, 1, 1, 0, 0),
-            datetime(1964, 1, 1, 0, 0),
-        ],
+        "idx": idx.to_list(),
         "a": [0, 0, 0, None, None, None, None, None],
         "b": [None, None, None, 0, 0, 0, 0, 0],
     }
@@ -393,7 +427,7 @@ def test_pivot_negative_duration() -> None:
     df1 = pl.DataFrame({"root": [date(2020, i, 15) for i in (1, 2)]})
     df2 = pl.DataFrame({"delta": [timedelta(days=i) for i in (-2, -1, 0, 1)]})
 
-    df = df1.join(df2, how="cross").with_columns(
+    df = df1.join(df2, how="cross", maintain_order="left_right").with_columns(
         pl.Series(name="value", values=range(len(df1) * len(df2)))
     )
     assert df.pivot(
@@ -443,22 +477,22 @@ def test_pivot_struct() -> None:
         "id": ["a", "b", "c"],
         "1": [
             {"num1": 1, "num2": 4},
-            {"num1": None, "num2": None},
+            None,
             {"num1": 6, "num2": 6},
         ],
         "2": [
             {"num1": 3, "num2": 5},
-            {"num1": None, "num2": None},
-            {"num1": None, "num2": None},
+            None,
+            None,
         ],
         "3": [
-            {"num1": None, "num2": None},
+            None,
             {"num1": 5, "num2": 3},
             {"num1": 3, "num2": 6},
         ],
         "4": [
-            {"num1": None, "num2": None},
-            {"num1": None, "num2": None},
+            None,
+            None,
             {"num1": 4, "num2": 4},
         ],
     }
@@ -466,7 +500,7 @@ def test_pivot_struct() -> None:
 
 def test_duplicate_column_names_which_should_raise_14305() -> None:
     df = pl.DataFrame({"a": [1, 3, 2], "c": ["a", "a", "a"], "d": [7, 8, 9]})
-    with pytest.raises(DuplicateError, match="has more than one occurrences"):
+    with pytest.raises(DuplicateError, match="has more than one occurrence"):
         df.pivot(index="a", on="c", values="d")
 
 
@@ -531,3 +565,59 @@ def test_pivot_invalid() -> None:
         match="`index` and `values` cannot both be None in `pivot` operation",
     ):
         pl.DataFrame({"a": [1, 2], "b": [2, 3], "c": [3, 4]}).pivot("a")
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
+)
+def test_pivot_empty_index_dtypes(dtype: PolarsIntegerType) -> None:
+    index = pl.Series([], dtype=dtype)
+    df = pl.DataFrame({"index": index, "on": [], "values": []})
+    result = df.pivot(index="index", on="on", values="values")
+    expected = pl.DataFrame({"index": index})
+    assert_frame_equal(result, expected)
+
+
+def test_pivot_agg_column_ref_invalid_22479() -> None:
+    df = pl.DataFrame(
+        {"a": ["x", "x", "x"], "b": [1, 1, 1], "c": [7, 8, 9], "d": [0, 2, 1]}
+    )
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="explicit column references are not allowed in aggregate_function",
+    ):
+        df.pivot(
+            on="a", index="b", values="c", aggregate_function=pl.element().sort_by("d")
+        )
+
+
+def test_pivot_agg_null_methods_23408() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [0, 0, 1, 1],
+            "on": ["a", "b", "a", "c"],
+            "val": ["aa", "bb", "aa", "cc"],
+        }
+    )
+    out = df.pivot(
+        on="on",
+        index="idx",
+        values="val",
+        aggregate_function=pl.element().first().is_null(),
+    )
+    expected = pl.DataFrame(
+        {"idx": [0, 1], "a": [False, False], "b": [False, True], "c": [True, False]}
+    )
+    assert_frame_equal(out, expected)
+
+    out = df.pivot(
+        on="on",
+        index="idx",
+        values="val",
+        aggregate_function=pl.element().first().fill_null("xx"),
+    )
+    expected = pl.DataFrame(
+        {"idx": [0, 1], "a": ["aa", "aa"], "b": ["bb", "xx"], "c": ["xx", "cc"]}
+    )
+    assert_frame_equal(out, expected)

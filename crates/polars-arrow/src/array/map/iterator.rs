@@ -22,7 +22,7 @@ impl<'a> MapValuesIter<'a> {
     }
 }
 
-impl<'a> Iterator for MapValuesIter<'a> {
+impl Iterator for MapValuesIter<'_> {
     type Item = Box<dyn Array>;
 
     #[inline]
@@ -43,9 +43,9 @@ impl<'a> Iterator for MapValuesIter<'a> {
     }
 }
 
-unsafe impl<'a> TrustedLen for MapValuesIter<'a> {}
+unsafe impl TrustedLen for MapValuesIter<'_> {}
 
-impl<'a> DoubleEndedIterator for MapValuesIter<'a> {
+impl DoubleEndedIterator for MapValuesIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.index == self.end {

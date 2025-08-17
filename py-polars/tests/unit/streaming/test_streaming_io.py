@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-from unittest.mock import patch
 
 import pytest
 
@@ -14,25 +13,27 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
     df.write_parquet(file_path)
 
     path_glob = tmp_path / "small*.parquet"
-    result = pl.scan_parquet(path_glob).select(pl.all().first()).collect(streaming=True)
+    result = (
+        pl.scan_parquet(path_glob).select(pl.all().first()).collect(engine="streaming")
+    )
     assert result.shape == (1, df.width)
 
 
 def test_scan_slice_streaming(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "foods1.csv"
-    df = pl.scan_csv(foods_file_path).head(5).collect(streaming=True)
+    df = pl.scan_csv(foods_file_path).head(5).collect(engine="streaming")
     assert df.shape == (5, 4)
 
     # globbing
     foods_file_path = io_files_path / "foods*.csv"
-    df = pl.scan_csv(foods_file_path).head(5).collect(streaming=True)
+    df = pl.scan_csv(foods_file_path).head(5).collect(engine="streaming")
     assert df.shape == (5, 4)
 
 
@@ -42,12 +43,12 @@ def test_scan_csv_overwrite_small_dtypes(
 ) -> None:
     file_path = io_files_path / "foods1.csv"
     df = pl.scan_csv(file_path, schema_overrides={"sugars_g": dtype}).collect(
-        streaming=True
+        engine="streaming"
     )
     assert df.dtypes == [pl.String, pl.Int64, pl.Float64, dtype]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -58,13 +59,12 @@ def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
     df_scanned = pl.scan_parquet(file)
     df_scanned.sink_parquet(file_path)
 
-    with pl.StringCache():
-        result = pl.read_parquet(file_path)
-        df_read = pl.read_parquet(file)
-        assert_frame_equal(result, df_read)
+    result = pl.read_parquet(file_path)
+    df_read = pl.read_parquet(file)
+    assert_frame_equal(result, df_read)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_parquet_10115(tmp_path: Path) -> None:
     in_path = tmp_path / "in.parquet"
     out_path = tmp_path / "out.parquet"
@@ -89,7 +89,7 @@ def test_sink_parquet_10115(tmp_path: Path) -> None:
     }
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -100,78 +100,29 @@ def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
     df_scanned = pl.scan_parquet(file)
     df_scanned.sink_ipc(file_path)
 
-    with pl.StringCache():
-        result = pl.read_ipc(file_path)
-        df_read = pl.read_parquet(file)
-        assert_frame_equal(result, df_read)
+    result = pl.read_ipc(file_path)
+    df_read = pl.read_parquet(file)
+    assert_frame_equal(result, df_read)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
     source_file = io_files_path / "small.parquet"
     target_file = tmp_path / "sink.csv"
 
     pl.scan_parquet(source_file).sink_csv(target_file)
 
-    with pl.StringCache():
-        source_data = pl.read_parquet(source_file)
-        target_data = pl.read_csv(target_file)
-        assert_frame_equal(target_data, source_data)
+    source_data = pl.read_parquet(source_file)
+    target_data = pl.read_csv(target_file)
+    assert_frame_equal(target_data, source_data)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_csv_14494(tmp_path: Path) -> None:
     pl.LazyFrame({"c": [1, 2, 3]}, schema={"c": pl.Int64}).filter(
         pl.col("c") > 10
     ).sink_csv(tmp_path / "sink.csv")
     assert pl.read_csv(tmp_path / "sink.csv").columns == ["c"]
-
-
-def test_sink_csv_with_options() -> None:
-    """
-    Test with all possible options.
-
-    As we already tested the main read/write functionality of the `sink_csv` method in
-     the `test_sink_csv` method above, we only need to verify that all the options are
-     passed into the rust-polars correctly.
-    """
-    df = pl.LazyFrame({"dummy": ["abc"]})
-    with patch.object(df, "_ldf") as ldf:
-        df.sink_csv(
-            "path",
-            include_bom=True,
-            include_header=False,
-            separator=";",
-            line_terminator="|",
-            quote_char="$",
-            batch_size=42,
-            datetime_format="%Y",
-            date_format="%d",
-            time_format="%H",
-            float_scientific=True,
-            float_precision=42,
-            null_value="BOOM",
-            quote_style="always",
-            maintain_order=False,
-        )
-
-        ldf.optimization_toggle().sink_csv.assert_called_with(
-            path="path",
-            include_bom=True,
-            include_header=False,
-            separator=ord(";"),
-            line_terminator="|",
-            quote_char=ord("$"),
-            batch_size=42,
-            datetime_format="%Y",
-            date_format="%d",
-            time_format="%H",
-            float_scientific=True,
-            float_precision=42,
-            null_value="BOOM",
-            quote_style="always",
-            maintain_order=False,
-        )
 
 
 @pytest.mark.parametrize(("value"), ["abc", ""])
@@ -194,7 +145,7 @@ def test_sink_csv_batch_size_zero() -> None:
         lf.sink_csv("test.csv", batch_size=0)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_csv_nested_data(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "data.csv"
@@ -208,17 +159,17 @@ def test_sink_csv_nested_data(tmp_path: Path) -> None:
 
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "only_header.csv"
-    df = pl.scan_csv(foods_file_path).collect(streaming=True)
+    df = pl.scan_csv(foods_file_path).collect(engine="streaming")
     assert df.to_dict(as_series=False) == {"Name": [], "Address": []}
 
 
 def test_scan_empty_csv_10818(io_files_path: Path) -> None:
     empty_file_path = io_files_path / "empty.csv"
-    df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(streaming=True)
+    df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(engine="streaming")
     assert df.is_empty()
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_cross_join_schema(tmp_path: Path) -> None:
     file_path = tmp_path / "temp.parquet"
     a = pl.DataFrame({"a": [1, 2]}).lazy()
@@ -228,7 +179,7 @@ def test_streaming_cross_join_schema(tmp_path: Path) -> None:
     assert read.to_dict(as_series=False) == {"a": [1, 2], "b": ["b", "b"]}
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_ndjson_should_write_same_data(
     io_files_path: Path, tmp_path: Path
 ) -> None:
@@ -246,8 +197,11 @@ def test_sink_ndjson_should_write_same_data(
     assert_frame_equal(df, expected)
 
 
-@pytest.mark.write_disk()
-def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [False, True])
+def test_parquet_eq_statistics(
+    monkeypatch: Any, capfd: Any, tmp_path: Path, streaming: bool
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     monkeypatch.setenv("POLARS_VERBOSE", "1")
@@ -261,36 +215,94 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> 
     file_path = tmp_path / "stats.parquet"
     df.write_parquet(file_path, statistics=True, use_pyarrow=False)
 
-    file_path = tmp_path / "stats.parquet"
-    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
-
-    for streaming in [False, True]:
-        for pred in [
-            pl.col("idx") == 50,
-            pl.col("idx") == 150,
-            pl.col("idx") == 210,
-        ]:
-            result = (
-                pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
-            )
-            assert_frame_equal(result, df.filter(pred))
-
-        captured = capfd.readouterr().err
-        assert (
-            "parquet file must be read, statistics not sufficient for predicate."
-            in captured
+    for pred in [
+        pl.col("idx") == 50,
+        pl.col("idx") == 150,
+        pl.col("idx") == 210,
+    ]:
+        result = (
+            pl.scan_parquet(file_path)
+            .filter(pred)
+            .collect(engine="streaming" if streaming else "in-memory")
         )
-        assert (
-            "parquet file can be skipped, the statistics were sufficient"
-            " to apply the predicate." in captured
-        )
+        assert_frame_equal(result, df.filter(pred))
+
+    captured = capfd.readouterr().err
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in captured
+    )
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 0 / 1 row groups" in captured
+    )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     file_path = tmp_path / "foo.parquet"
     df = pl.DataFrame({"a": []}, schema={"a": pl.Int32})
     df.write_parquet(file_path)
     q = pl.scan_parquet(file_path)
     q2 = pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})
-    assert q.join(q2, on="a").collect(streaming=True).shape == (0, 1)
+    assert q.join(q2, on="a").collect(engine="streaming").shape == (0, 1)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["parquet", "csv", "ipc", "ndjson"],
+)
+@pytest.mark.write_disk
+def test_sink_phases(tmp_path: Path, method: str) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6, 7],
+            "b": [
+                "some",
+                "text",
+                "over-here-is-very-long",
+                "and",
+                "some",
+                "more",
+                "text",
+            ],
+        }
+    )
+
+    # Ordered Unions lead to many phase transitions.
+    ref_df = pl.concat([df] * 100)
+    lf = pl.concat([df.lazy()] * 100)
+
+    (getattr(lf, f"sink_{method}"))(tmp_path / f"t.{method}", engine="streaming")
+    df = (getattr(pl, f"scan_{method}"))(tmp_path / f"t.{method}").collect()
+
+    assert_frame_equal(df, ref_df)
+
+    (getattr(lf, f"sink_{method}"))(
+        tmp_path / f"t.{method}", maintain_order=False, engine="streaming"
+    )
+    height = (
+        (getattr(pl, f"scan_{method}"))(tmp_path / f"t.{method}")
+        .select(pl.len())
+        .collect()[0, 0]
+    )
+    assert height == ref_df.height
+
+
+def test_empty_sink_parquet_join_14863(tmp_path: Path) -> None:
+    file_path = tmp_path / "empty.parquet"
+    lf = pl.LazyFrame(schema=["a", "b", "c"]).cast(pl.String)
+    lf.sink_parquet(file_path)
+    assert_frame_equal(
+        pl.LazyFrame({"a": ["uno"]}).join(pl.scan_parquet(file_path), on="a").collect(),
+        lf.collect(),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_non_existent_file_21527() -> None:
+    with pytest.raises(
+        FileNotFoundError,
+        match=r"a-file-that-does-not-exist",
+    ):
+        pl.scan_parquet("a-file-that-does-not-exist").sink_ipc(
+            "x.ipc", engine="streaming"
+        )

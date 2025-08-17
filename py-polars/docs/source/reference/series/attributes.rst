@@ -7,6 +7,6 @@ Attributes
    :toctree: api/
 
    Series.dtype
+   Series.flags
    Series.name
    Series.shape
-   Series.flags

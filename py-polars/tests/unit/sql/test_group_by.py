@@ -10,7 +10,7 @@ from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
@@ -238,3 +238,67 @@ def test_group_by_errors() -> None:
         match=r"'a' should participate in the GROUP BY clause or an aggregate function",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY b")
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"HAVING clause not valid outside of GROUP BY",
+    ):
+        df.sql("SELECT a, COUNT(a) AS n FROM self HAVING n > 1")
+
+
+def test_group_by_output_struct() -> None:
+    df = pl.DataFrame({"g": [1], "x": [2], "y": [3]})
+    out = df.group_by("g").agg(pl.struct(pl.col.x.min(), pl.col.y.sum()))
+    assert out.rows() == [(1, {"x": 2, "y": 3})]
+
+
+@pytest.mark.parametrize(
+    "maintain_order",
+    [False, True],
+)
+def test_group_by_list_cat_24049(maintain_order: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "x": [["a"], ["b", "c"], ["a"], ["a"], ["d"], ["b", "c"]],
+            "y": [1, 2, 3, 4, 5, 10],
+        },
+        schema={"x": pl.List(pl.Categorical), "y": pl.Int32},
+    )
+
+    expected = pl.DataFrame(
+        {"x": [["a"], ["b", "c"], ["d"]], "y": [8, 12, 5]},
+        schema={"x": pl.List(pl.Categorical), "y": pl.Int32},
+    )
+    assert_frame_equal(
+        df.group_by("x", maintain_order=maintain_order).agg(pl.col.y.sum()),
+        expected,
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize(
+    "maintain_order",
+    [False, True],
+)
+def test_group_by_struct_cat_24049(maintain_order: bool) -> None:
+    a = {"k1": "a2", "k2": "a2"}
+    b = {"k1": "b2", "k2": "b2"}
+    c = {"k1": "c2", "k2": "c2"}
+    s = pl.Struct({"k1": pl.Categorical, "k2": pl.Categorical})
+    df = pl.DataFrame(
+        {
+            "x": [a, b, a, a, c, b],
+            "y": [1, 2, 3, 4, 5, 10],
+        },
+        schema={"x": s, "y": pl.Int32},
+    )
+
+    expected = pl.DataFrame(
+        {"x": [a, b, c], "y": [8, 12, 5]},
+        schema={"x": s, "y": pl.Int32},
+    )
+    assert_frame_equal(
+        df.group_by("x", maintain_order=maintain_order).agg(pl.col.y.sum()),
+        expected,
+        check_row_order=maintain_order,
+    )

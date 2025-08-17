@@ -33,7 +33,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<IR> {
+    ) -> PolarsResult<Option<IR>> {
         use IR::*;
         let lp = lp_arena.get(node);
 
@@ -44,25 +44,28 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                 {
                     // First check if we can apply the optimization before we allocate.
                     if !expr.iter().all(|e| {
-                        matches!(expr_arena.get(e.node()), AExpr::Column(_)) && !e.has_alias()
+                        matches!(expr_arena.get(e.node()), AExpr::Column(name) if e.output_name() == name)
                     }) {
                         self.processed.insert(node);
-                        return None;
+                        return Ok(None);
                     }
 
                     let exprs = expr
                         .iter()
-                        .map(|e| e.output_name_arc().clone())
+                        .map(|e| e.output_name().clone())
                         .collect::<Vec<_>>();
-                    let alp = IRBuilder::new(*input, expr_arena, lp_arena)
-                        .project_simple(exprs.iter().map(|s| s.as_ref()))
-                        .ok()?
-                        .build();
+                    let Some(alp) = IRBuilder::new(*input, expr_arena, lp_arena)
+                        .project_simple(exprs.iter().cloned())
+                        .ok()
+                    else {
+                        return Ok(None);
+                    };
+                    let alp = alp.build();
 
-                    Some(alp)
+                    Ok(Some(alp))
                 } else {
                     self.processed.insert(node);
-                    None
+                    Ok(None)
                 }
             },
             SimpleProjection { columns, input } if !self.eager => {
@@ -70,10 +73,10 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                     // If there are 2 subsequent fast projections, flatten them and only take the last
                     SimpleProjection {
                         input: prev_input, ..
-                    } => Some(SimpleProjection {
+                    } => Ok(Some(SimpleProjection {
                         input: *prev_input,
                         columns: columns.clone(),
-                    }),
+                    })),
                     // Cleanup projections set in projection pushdown just above caches
                     // they are not needed.
                     cache_lp @ Cache { .. } if self.processed.contains(&node) => {
@@ -83,9 +86,9 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                                 |(left_name, right_name)| left_name.as_str() == right_name.as_str(),
                             )
                         {
-                            Some(cache_lp.clone())
+                            Ok(Some(cache_lp.clone()))
                         } else {
-                            None
+                            Ok(None)
                         }
                     },
                     // If a projection does nothing, remove it.
@@ -93,56 +96,30 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                         let input_schema = other.schema(lp_arena);
                         // This will fail fast if lengths are not equal
                         if *input_schema.as_ref() == *columns {
-                            Some(other.clone())
+                            Ok(Some(other.clone()))
                         } else {
                             self.processed.insert(node);
-                            None
+                            Ok(None)
                         }
                     },
                 }
             },
             // if there are 2 subsequent caches, flatten them and only take the inner
-            Cache {
-                input,
-                cache_hits: outer_cache_hits,
-                ..
-            } if !self.eager => {
+            Cache { input, .. } if !self.eager => {
                 if let Cache {
                     input: prev_input,
                     id,
-                    cache_hits,
                 } = lp_arena.get(*input)
                 {
-                    Some(Cache {
+                    Ok(Some(Cache {
                         input: *prev_input,
                         id: *id,
-                        // ensure the counts are updated
-                        cache_hits: cache_hits.saturating_add(*outer_cache_hits),
-                    })
+                    }))
                 } else {
-                    None
+                    Ok(None)
                 }
             },
-            // Remove double sorts
-            Sort {
-                input,
-                by_column,
-                slice,
-                sort_options,
-            } => match lp_arena.get(*input) {
-                Sort {
-                    input: inner,
-                    slice: None,
-                    ..
-                } => Some(Sort {
-                    input: *inner,
-                    by_column: by_column.clone(),
-                    slice: *slice,
-                    sort_options: sort_options.clone(),
-                }),
-                _ => None,
-            },
-            _ => None,
+            _ => Ok(None),
         }
     }
 }

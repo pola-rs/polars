@@ -4,8 +4,11 @@ use polars_sql::*;
 use polars_time::Duration;
 
 fn create_sample_df() -> DataFrame {
-    let a = Series::new("a", (1..10000i64).map(|i| i / 100).collect::<Vec<_>>());
-    let b = Series::new("b", 1..10000i64);
+    let a = Column::new(
+        "a".into(),
+        (1..10000i64).map(|i| i / 100).collect::<Vec<_>>(),
+    );
+    let b = Column::new("b".into(), 1..10000i64);
     DataFrame::new(vec![a, b]).unwrap()
 }
 
@@ -122,7 +125,7 @@ fn test_group_by_expression_key() -> PolarsResult<()> {
     .unwrap();
 
     let mut context = SQLContext::new();
-    context.register("df", df.clone().lazy());
+    context.register("df", df.lazy());
 
     // check how we handle grouping by a key that gets used in select transform
     let df_sql = context
@@ -193,19 +196,24 @@ fn test_literal_exprs() {
             'foo' as string_lit,
             true as bool_lit,
             null as null_lit,
-            interval '1 quarter 2 weeks 1 day 50 seconds' as duration_lit
+            interval '2 weeks 1 day 50 seconds' as duration_lit
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let df_pl = df
         .lazy()
         .select(&[
+            first().as_expr(),
             lit(1i64).alias("int_lit"),
             lit(1.0).alias("float_lit"),
             lit("foo").alias("string_lit"),
             lit(true).alias("bool_lit"),
             lit(NULL).alias("null_lit"),
-            lit(Duration::parse("1q2w1d50s")).alias("duration_lit"),
+            lit(Duration::parse("2w1d50s")).alias("duration_lit"),
         ])
+        .collect()
+        .unwrap()
+        .lazy()
+        .drop(first())
         .collect()
         .unwrap();
     assert!(df_sql.equals_missing(&df_pl));
@@ -505,10 +513,12 @@ fn test_arr_agg() {
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
-            vec![col("a")
-                .sort_by(vec![col("a")], SortMultipleOptions::default())
-                .implode()
-                .alias("a")],
+            vec![
+                col("a")
+                    .sort_by(vec![col("a")], SortMultipleOptions::default())
+                    .implode()
+                    .alias("a"),
+            ],
         ),
         (
             "SELECT ARRAY_AGG(a) AS a FROM df",
@@ -520,10 +530,12 @@ fn test_arr_agg() {
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
-            vec![col("a")
-                .sort_by(vec![col("b")], SortMultipleOptions::default())
-                .head(Some(2))
-                .implode()],
+            vec![
+                col("a")
+                    .sort_by(vec![col("b")], SortMultipleOptions::default())
+                    .head(Some(2))
+                    .implode(),
+            ],
         ),
     ];
 
@@ -572,6 +584,8 @@ fn test_cte_values() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "ipc")]
 fn test_group_by_2() -> PolarsResult<()> {
+    use polars_utils::plpath::PlPath;
+
     let mut context = SQLContext::new();
     let sql = r#"
     CREATE TABLE foods AS
@@ -592,19 +606,22 @@ fn test_group_by_2() -> PolarsResult<()> {
 
     let df_sql = context.execute(sql)?;
     let df_sql = df_sql.collect()?;
-    let expected = LazyFrame::scan_ipc("../../examples/datasets/foods1.ipc", Default::default())?
-        .select(&[col("*")])
-        .group_by(vec![col("category")])
-        .agg(vec![
-            col("category").count().alias("count"),
-            col("calories").max(),
-            col("fats_g").min(),
-        ])
-        .sort_by_exprs(
-            vec![col("count"), col("category")],
-            SortMultipleOptions::default().with_order_descending_multi([false, true]),
-        )
-        .limit(2);
+    let expected = LazyFrame::scan_ipc(
+        PlPath::new("../../examples/datasets/foods1.ipc"),
+        Default::default(),
+    )?
+    .select(&[col("*")])
+    .group_by(vec![col("category")])
+    .agg(vec![
+        col("category").count().alias("count"),
+        col("calories").max(),
+        col("fats_g").min(),
+    ])
+    .sort_by_exprs(
+        vec![col("count"), col("category")],
+        SortMultipleOptions::default().with_order_descending_multi([false, true]),
+    )
+    .limit(2);
 
     let expected = expected.collect()?;
     assert!(df_sql.equals(&expected));
@@ -718,7 +735,7 @@ fn test_struct_field_selection() {
     let (df_struct, df_original) = create_struct_df();
 
     let mut context = SQLContext::new();
-    context.register("df", df_struct.clone().lazy());
+    context.register("df", df_struct.lazy());
 
     for sql in [
         r#"SELECT json_msg.* FROM df ORDER BY 1"#,

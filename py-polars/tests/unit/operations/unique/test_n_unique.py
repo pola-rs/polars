@@ -46,3 +46,17 @@ def test_n_unique_null() -> None:
 )
 def test_n_unique_categorical(input: list[str | None], output: int) -> None:
     assert pl.Series(input, dtype=pl.Categorical).n_unique() == output
+
+
+def test_n_unique_list_of_struct_20341() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                [{"a": 1, "b": 2}, {"a": 10, "b": 20}],
+                [{"a": 1, "b": 2}, {"a": 10, "b": 20}],
+                [{"a": 3, "b": 4}],
+            ]
+        }
+    )
+    assert df.select("a").n_unique() == 2
+    assert df["a"].n_unique() == 2

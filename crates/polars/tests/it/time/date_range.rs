@@ -1,4 +1,4 @@
-use polars::export::chrono::NaiveDate;
+use chrono::NaiveDate;
 use polars::prelude::*;
 #[allow(unused_imports)]
 use polars::time::date_range;
@@ -14,7 +14,7 @@ fn test_time_units_9413() {
         .and_hms_opt(0, 0, 0)
         .unwrap();
     let actual = date_range(
-        "date",
+        "date".into(),
         start,
         stop,
         Duration::parse("1d"),
@@ -23,7 +23,7 @@ fn test_time_units_9413() {
         None,
     )
     .map(|date_range| date_range.into_series());
-    let result = format!("{:?}", actual);
+    let result = format!("{actual:?}");
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[ms]]
 [
@@ -35,7 +35,7 @@ Series: 'date' [datetime[ms]]
 ])"#;
     assert_eq!(result, expected);
     let actual = date_range(
-        "date",
+        "date".into(),
         start,
         stop,
         Duration::parse("1d"),
@@ -44,7 +44,7 @@ Series: 'date' [datetime[ms]]
         None,
     )
     .map(|date_range| date_range.into_series());
-    let result = format!("{:?}", actual);
+    let result = format!("{actual:?}");
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[μs]]
 [
@@ -56,7 +56,7 @@ Series: 'date' [datetime[μs]]
 ])"#;
     assert_eq!(result, expected);
     let actual = date_range(
-        "date",
+        "date".into(),
         start,
         stop,
         Duration::parse("1d"),
@@ -65,7 +65,7 @@ Series: 'date' [datetime[μs]]
         None,
     )
     .map(|date_range| date_range.into_series());
-    let result = format!("{:?}", actual);
+    let result = format!("{actual:?}");
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[ns]]
 [

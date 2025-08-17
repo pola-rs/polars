@@ -5,12 +5,12 @@ from polars.exceptions import SchemaError, ShapeError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def df1() -> pl.DataFrame:
     return pl.DataFrame({"foo": [1, 2], "bar": [6, 7], "ham": ["a", "b"]})
 
 
-@pytest.fixture()
+@pytest.fixture
 def df2() -> pl.DataFrame:
     return pl.DataFrame({"foo": [3, 4], "bar": [8, 9], "ham": ["c", "d"]})
 
@@ -81,3 +81,27 @@ def test_vstack_with_nested_nulls() -> None:
     out = a.vstack(b)
     expected = pl.DataFrame({"x": [[3.5], [None]]}, schema={"x": pl.List(pl.Float32)})
     assert_frame_equal(out, expected)
+
+
+def test_vstack_bad_input_type() -> None:
+    a = pl.DataFrame({"x": [1, 2, 3]})
+    b = pl.DataFrame({"x": [4, 5, 6]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        a.vstack(pl.Series(b))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        a.vstack(b.lazy())  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    b = DummyDataFrameSubclass(b)
+
+    a = a.vstack(b)

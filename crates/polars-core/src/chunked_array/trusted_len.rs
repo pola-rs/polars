@@ -18,7 +18,7 @@ where
         let iter = iter.into_iter();
         let arr = unsafe {
             PrimitiveArray::from_trusted_len_iter_unchecked(iter)
-                .to(T::get_dtype().to_arrow(CompatLevel::newest()))
+                .to(T::get_static_dtype().to_arrow(CompatLevel::newest()))
         };
         arr.into()
     }
@@ -38,7 +38,11 @@ where
         // SAFETY: iter is TrustedLen.
         let iter = iter.into_iter();
         let values = unsafe { Vec::from_trusted_len_iter_unchecked(iter) }.into();
-        let arr = PrimitiveArray::new(T::get_dtype().to_arrow(CompatLevel::newest()), values, None);
+        let arr = PrimitiveArray::new(
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
+            values,
+            None,
+        );
         NoNull::new(arr.into())
     }
 }
@@ -168,7 +172,7 @@ where
 {
     fn from_iter_trusted_length<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = BinaryArray::from_iter_values(iter.into_iter());
-        ChunkedArray::with_chunk("", arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 
@@ -179,7 +183,7 @@ where
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let arr = BinaryArray::from_iter(iter);
-        ChunkedArray::with_chunk("", arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 

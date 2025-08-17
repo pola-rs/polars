@@ -1,13 +1,13 @@
 use polars_parquet::parquet::encoding::hybrid_rle::{self, BitmapIter, HybridRleDecoder};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
+use polars_parquet::parquet::page::{DataPage, EncodedSplitBuffer, split_buffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::schema::Repetition;
-use polars_parquet::parquet::types::{decode, NativeType};
+use polars_parquet::parquet::types::{NativeType, decode};
 use polars_parquet::read::PhysicalType;
 use polars_parquet::write::Encoding;
 
-pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<HybridRleDecoder> {
+pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<HybridRleDecoder<'_>> {
     let EncodedSplitBuffer {
         rep: _,
         def: _,
@@ -191,19 +191,17 @@ impl<'a, P> FixedLenBinaryPageState<'a, P> {
 pub type Casted<'a, T> = std::iter::Map<std::slice::ChunksExact<'a, u8>, fn(&'a [u8]) -> T>;
 
 /// Views the values of the data page as [`Casted`] to [`NativeType`].
-pub fn native_cast<T: NativeType>(page: &DataPage) -> ParquetResult<Casted<T>> {
+pub fn native_cast<T: NativeType>(page: &DataPage) -> ParquetResult<Casted<'_, T>> {
     let EncodedSplitBuffer {
         rep: _,
         def: _,
         values,
     } = split_buffer(page)?;
-    if values.len() % std::mem::size_of::<T>() != 0 {
+    if values.len() % size_of::<T>() != 0 {
         panic!("A primitive page data's len must be a multiple of the type");
     }
 
-    Ok(values
-        .chunks_exact(std::mem::size_of::<T>())
-        .map(decode::<T>))
+    Ok(values.chunks_exact(size_of::<T>()).map(decode::<T>))
 }
 
 /// The deserialization state of a `DataPage` of `Primitive` parquet primitive type

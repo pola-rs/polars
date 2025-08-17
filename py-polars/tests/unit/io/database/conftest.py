@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_sqlite_db(tmp_path: Path) -> Path:
     test_db = tmp_path / "test.db"
     test_db.unlink(missing_ok=True)
@@ -19,7 +19,7 @@ def tmp_sqlite_db(tmp_path: Path) -> Path:
         """Convert ISO 8601 date to datetime.date object."""
         return date.fromisoformat(val.decode())
 
-    # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
+    # NOTE: at the time of writing adbc/connectorx have weak SQLite support (poor or
     # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
     # causes float rounding < py 3.11, hence we are only testing/storing simple values
     # in this test db for now. as support improves, we can add/test additional dtypes).
@@ -51,7 +51,7 @@ def tmp_sqlite_db(tmp_path: Path) -> Path:
     return test_db
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_sqlite_inference_db(tmp_path: Path) -> Path:
     test_db = tmp_path / "test_inference.db"
     test_db.unlink(missing_ok=True)

@@ -1,6 +1,6 @@
 /// Utility that allows use to send pointers to another thread.
 /// This is better than going through `usize` as MIRI can follow these.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct SyncPtr<T>(*mut T);
 
@@ -33,7 +33,7 @@ impl<T> SyncPtr<T> {
     /// # Safety
     /// Derefs a raw pointer, no guarantees whatsoever.
     pub unsafe fn deref_unchecked(&self) -> &'static T {
-        &*(self.0 as *const T)
+        unsafe { &*(self.0 as *const T) }
     }
 }
 

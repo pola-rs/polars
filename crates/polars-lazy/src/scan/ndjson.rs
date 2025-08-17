@@ -1,19 +1,22 @@
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::RowIndex;
-use polars_plan::plans::{DslPlan, FileScan};
-use polars_plan::prelude::{FileScanOptions, NDJsonReadOptions};
+use polars_io::{HiveOptions, RowIndex};
+use polars_plan::dsl::{
+    CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScanDsl, MissingColumnsPolicy, ScanSources,
+};
+use polars_plan::prelude::{NDJsonReadOptions, UnifiedScanArgs};
+use polars_utils::plpath::PlPath;
+use polars_utils::slice_enum::Slice;
 
 use crate::prelude::LazyFrame;
 use crate::scan::file_list_reader::LazyFileListReader;
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
-    pub(crate) paths: Arc<[PathBuf]>,
+    pub(crate) sources: ScanSources,
     pub(crate) batch_size: Option<NonZeroUsize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
@@ -23,18 +26,18 @@ pub struct LazyJsonLineReader {
     pub(crate) infer_schema_length: Option<NonZeroUsize>,
     pub(crate) n_rows: Option<usize>,
     pub(crate) ignore_errors: bool,
-    pub(crate) include_file_paths: Option<Arc<str>>,
+    pub(crate) include_file_paths: Option<PlSmallStr>,
     pub(crate) cloud_options: Option<CloudOptions>,
 }
 
 impl LazyJsonLineReader {
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
-        Self::new(PathBuf::new()).with_paths(paths)
+    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
+        Self::new_with_sources(ScanSources::Paths(paths))
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new_with_sources(sources: ScanSources) -> Self {
         LazyJsonLineReader {
-            paths: Arc::new([path.as_ref().to_path_buf()]),
+            sources,
             batch_size: None,
             low_memory: false,
             rechunk: false,
@@ -48,6 +51,11 @@ impl LazyJsonLineReader {
             cloud_options: None,
         }
     }
+
+    pub fn new(path: PlPath) -> Self {
+        Self::new_with_sources(ScanSources::Paths([path].into()))
+    }
+
     /// Add a row index column.
     #[must_use]
     pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
@@ -109,7 +117,7 @@ impl LazyJsonLineReader {
         self
     }
 
-    pub fn with_include_file_paths(mut self, include_file_paths: Option<Arc<str>>) -> Self {
+    pub fn with_include_file_paths(mut self, include_file_paths: Option<PlSmallStr>) -> Self {
         self.include_file_paths = include_file_paths;
         self
     }
@@ -117,18 +125,23 @@ impl LazyJsonLineReader {
 
 impl LazyFileListReader for LazyJsonLineReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let paths = Arc::new(Mutex::new((self.paths, false)));
-
-        let file_options = FileScanOptions {
-            n_rows: self.n_rows,
-            with_columns: None,
-            cache: false,
-            row_index: self.row_index,
+        let unified_scan_args = UnifiedScanArgs {
+            schema: None,
+            cloud_options: self.cloud_options,
+            hive_options: HiveOptions::new_disabled(),
             rechunk: self.rechunk,
-            file_counter: 0,
-            hive_options: Default::default(),
+            cache: false,
             glob: true,
+            projection: None,
+            column_mapping: None,
+            default_values: None,
+            row_index: self.row_index,
+            pre_slice: self.n_rows.map(|len| Slice::Positive { offset: 0, len }),
+            cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+            missing_columns_policy: MissingColumnsPolicy::Raise,
+            extra_columns_policy: ExtraColumnsPolicy::Raise,
             include_file_paths: self.include_file_paths,
+            deletion_files: None,
         };
 
         let options = NDJsonReadOptions {
@@ -141,18 +154,13 @@ impl LazyFileListReader for LazyJsonLineReader {
             schema_overwrite: self.schema_overwrite,
         };
 
-        let scan_type = FileScan::NDJson {
-            options,
-            cloud_options: self.cloud_options,
-        };
+        let scan_type = Box::new(FileScanDsl::NDJson { options });
 
         Ok(LazyFrame::from(DslPlan::Scan {
-            paths,
-            file_info: Arc::new(RwLock::new(None)),
-            hive_parts: None,
-            predicate: None,
-            file_options,
+            sources: self.sources,
+            unified_scan_args: Box::new(unified_scan_args),
             scan_type,
+            cached_ir: Default::default(),
         }))
     }
 
@@ -160,12 +168,12 @@ impl LazyFileListReader for LazyJsonLineReader {
         unreachable!();
     }
 
-    fn paths(&self) -> &[PathBuf] {
-        &self.paths
+    fn sources(&self) -> &ScanSources {
+        &self.sources
     }
 
-    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
-        self.paths = paths;
+    fn with_sources(mut self, sources: ScanSources) -> Self {
+        self.sources = sources;
         self
     }
 
@@ -184,7 +192,6 @@ impl LazyFileListReader for LazyJsonLineReader {
     }
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
     fn with_rechunk(mut self, toggle: bool) -> Self {
         self.rechunk = toggle;
         self

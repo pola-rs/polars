@@ -26,6 +26,7 @@ fn inner_compress<
 
 /// Compresses data stored in slice `input_buf` and writes the compressed result
 /// to `output_buf`.
+///
 /// Note that you'll need to call `clear()` before reusing the same `output_buf`
 /// across different `compress` calls.
 #[allow(unused_variables)]
@@ -123,10 +124,15 @@ pub fn compress(
             "Compressing uncompressed".to_string(),
         )),
         _ => Err(ParquetError::FeatureNotSupported(format!(
-            "Compression {:?} is not supported",
-            compression,
+            "Compression {compression:?} is not supported",
         ))),
     }
+}
+
+pub enum DecompressionContext {
+    Unset,
+    #[cfg(feature = "zstd")]
+    Zstd(zstd::zstd_safe::DCtx<'static>),
 }
 
 /// Decompresses data stored in slice `input_buf` and writes output to `output_buf`.
@@ -136,6 +142,7 @@ pub fn decompress(
     compression: Compression,
     input_buf: &[u8],
     output_buf: &mut [u8],
+    ctx: &mut DecompressionContext,
 ) -> ParquetResult<()> {
     match compression {
         #[cfg(feature = "brotli")]
@@ -164,7 +171,7 @@ pub fn decompress(
         )),
         #[cfg(feature = "snappy")]
         Compression::Snappy => {
-            use snap::raw::{decompress_len, Decoder};
+            use snap::raw::{Decoder, decompress_len};
 
             let len = decompress_len(input_buf)?;
             if len > output_buf.len() {
@@ -211,7 +218,13 @@ pub fn decompress(
         #[cfg(feature = "zstd")]
         Compression::Zstd => {
             use std::io::Read;
-            let mut decoder = zstd::Decoder::new(input_buf)?;
+            if !matches!(ctx, DecompressionContext::Zstd(_)) {
+                *ctx = DecompressionContext::Zstd(zstd::zstd_safe::DCtx::create());
+            }
+            let DecompressionContext::Zstd(ctx) = ctx else {
+                unreachable!();
+            };
+            let mut decoder = zstd::Decoder::with_context(input_buf, ctx);
             decoder.read_exact(output_buf).map_err(|e| e.into())
         },
         #[cfg(not(feature = "zstd"))]
@@ -223,8 +236,7 @@ pub fn decompress(
             "Compressing uncompressed".to_string(),
         )),
         _ => Err(ParquetError::FeatureNotSupported(format!(
-            "Compression {:?} is not supported",
-            compression,
+            "Compression {compression:?} is not supported",
         ))),
     }
 }
@@ -244,7 +256,7 @@ fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> ParquetResu
     // The Hadoop Lz4Codec source code can be found here:
     // https://github.com/apache/hadoop/blob/trunk/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-nativetask/src/main/native/src/codec/Lz4Codec.cc
 
-    const SIZE_U32: usize = std::mem::size_of::<u32>();
+    const SIZE_U32: usize = size_of::<u32>();
     const PREFIX_LEN: usize = SIZE_U32 * 2;
     let mut input_len = input_buf.len();
     let mut input = input_buf;
@@ -319,8 +331,14 @@ mod tests {
         assert!(compressed.len() - offset < data.len());
 
         let mut decompressed = vec![0; data.len()];
-        decompress(c.into(), &compressed[offset..], &mut decompressed)
-            .expect("Error when decompressing");
+        let mut context = DecompressionContext::Unset;
+        decompress(
+            c.into(),
+            &compressed[offset..],
+            &mut decompressed,
+            &mut context,
+        )
+        .expect("Error when decompressing");
         assert_eq!(data, decompressed.as_slice());
     }
 

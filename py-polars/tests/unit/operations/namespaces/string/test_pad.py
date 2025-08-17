@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 import polars as pl
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -18,6 +21,40 @@ def test_str_pad_start() -> None:
             "padded_len": [10, 10, 16, 10],
         },
         schema_overrides={"padded_len": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_str_pad_start_expr() -> None:
+    df = pl.DataFrame({"a": ["a", "bbbbbb", "cc", "d", None], "b": [1, 2, None, 4, 4]})
+    result = df.select(
+        lit_expr=pl.col("a").str.pad_start(pl.lit(4)),
+        int_expr=pl.col("a").str.pad_start(4),
+        b_expr=pl.col("a").str.pad_start("b"),
+    )
+    expected = pl.DataFrame(
+        {
+            "lit_expr": ["   a", "bbbbbb", "  cc", "   d", None],
+            "int_expr": ["   a", "bbbbbb", "  cc", "   d", None],
+            "b_expr": ["a", "bbbbbb", None, "   d", None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_str_pad_end_expr() -> None:
+    df = pl.DataFrame({"a": ["a", "bbbbbb", "cc", "d", None], "b": [1, 2, None, 4, 4]})
+    result = df.select(
+        lit_expr=pl.col("a").str.pad_end(pl.lit(4)),
+        int_expr=pl.col("a").str.pad_end(4),
+        b_expr=pl.col("a").str.pad_end("b"),
+    )
+    expected = pl.DataFrame(
+        {
+            "lit_expr": ["a   ", "bbbbbb", "cc  ", "d   ", None],
+            "int_expr": ["a   ", "bbbbbb", "cc  ", "d   ", None],
+            "b_expr": ["a", "bbbbbb", None, "d   ", None],
+        }
     )
     assert_frame_equal(result, expected)
 
@@ -69,23 +106,51 @@ def test_str_zfill() -> None:
 def test_str_zfill_expr() -> None:
     df = pl.DataFrame(
         {
-            "num": ["-10", "-1", "0", "1", "10", None, "1"],
-            "len": [3, 4, 3, 2, 5, 3, None],
+            "num": ["-10", "-1", "0", "1", "10", None, "1", "+1"],
+            # u8 tests the IR length cast
+            "len_u8": pl.Series([3, 4, 3, 2, 5, 3, None, 3], dtype=pl.UInt8),
+            "len_u64": pl.Series([3, 4, 3, 2, 5, 3, None, 3], dtype=pl.UInt64),
         }
     )
     out = df.select(
-        all_expr=pl.col("num").str.zfill(pl.col("len")),
-        str_lit=pl.lit("10").str.zfill(pl.col("len")),
+        all_expr_u8=pl.col("num").str.zfill(pl.col("len_u8") + 1),
+        all_expr=pl.col("num").str.zfill(pl.col("len_u64") + 1),
+        str_lit=pl.lit("10").str.zfill(pl.col("len_u64")),
         len_lit=pl.col("num").str.zfill(5),
     )
     expected = pl.DataFrame(
         {
-            "all_expr": ["-10", "-001", "000", "01", "00010", None, None],
-            "str_lit": ["010", "0010", "010", "10", "00010", "010", None],
-            "len_lit": ["-0010", "-0001", "00000", "00001", "00010", None, "00001"],
+            "all_expr_u8": [
+                "-010",
+                "-0001",
+                "0000",
+                "001",
+                "000010",
+                None,
+                None,
+                "+001",
+            ],
+            "all_expr": ["-010", "-0001", "0000", "001", "000010", None, None, "+001"],
+            "str_lit": ["010", "0010", "010", "10", "00010", "010", None, "010"],
+            "len_lit": [
+                "-0010",
+                "-0001",
+                "00000",
+                "00001",
+                "00010",
+                None,
+                "00001",
+                "+0001",
+            ],
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_str_zfill_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.zfill(pl.Series([1, 2])))
 
 
 def test_pad_end_unicode() -> None:

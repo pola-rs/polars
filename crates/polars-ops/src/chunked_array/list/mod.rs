@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 mod any_all;
 mod count;
 mod dispersion;
+mod get;
 #[cfg(feature = "hash")]
 pub(crate) mod hash;
 mod min_max;
@@ -18,6 +19,7 @@ mod to_struct;
 pub use count::*;
 #[cfg(not(feature = "list_count"))]
 use count::*;
+pub use get::*;
 pub use namespace::*;
 #[cfg(feature = "list_sets")]
 pub use sets::*;

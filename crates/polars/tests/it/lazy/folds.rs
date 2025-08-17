@@ -1,3 +1,5 @@
+use polars_plan::prelude::PlanCallback;
+
 use super::*;
 
 #[test]
@@ -10,7 +12,14 @@ fn test_fold_wildcard() -> PolarsResult<()> {
     let out = df1
         .clone()
         .lazy()
-        .select([fold_exprs(lit(0), |a, b| (&a + &b).map(Some), [col("*")]).alias("foo")])
+        .select([fold_exprs(
+            lit(0),
+            PlanCallback::new(|(a, b)| &a + &b),
+            [col("*")],
+            false,
+            Some(DataType::Int32.into()),
+        )
+        .alias("foo")])
         .collect()?;
 
     assert_eq!(

@@ -170,13 +170,13 @@ def test_dataframes_columns(lf: pl.LazyFrame) -> None:
     assert all(v in xyz for v in df["d"].to_list())
 
 
-@pytest.mark.hypothesis()
+@pytest.mark.hypothesis
 def test_column_invalid_probability() -> None:
     with pytest.deprecated_call(), pytest.raises(InvalidArgument):
         column("col", null_probability=2.0)
 
 
-@pytest.mark.hypothesis()
+@pytest.mark.hypothesis
 def test_column_null_probability_deprecated() -> None:
     with pytest.deprecated_call():
         col = column("col", allow_null=False, null_probability=0.5)
@@ -251,12 +251,14 @@ def test_strategy_dtypes(
 
 @given(s=series(allow_chunks=False))
 @settings(max_examples=10)
+@pytest.mark.may_fail_cloud
 def test_series_allow_chunks(s: pl.Series) -> None:
     assert s.n_chunks() == 1
 
 
 @given(df=dataframes(allow_chunks=False))
 @settings(max_examples=10)
+@pytest.mark.may_fail_cloud
 def test_dataframes_allow_chunks(df: pl.DataFrame) -> None:
     assert df.n_chunks("first") == 1
     assert df.n_chunks("all") == [1] * df.width

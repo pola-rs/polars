@@ -1,16 +1,13 @@
 use polars_parquet::parquet::error::ParquetError;
 use polars_parquet::parquet::metadata::SchemaDescriptor;
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType};
-use polars_parquet::parquet::write::{write_metadata_sidecar, FileWriter, Version, WriteOptions};
+use polars_parquet::parquet::write::{FileWriter, Version, WriteOptions, write_metadata_sidecar};
 
 #[test]
 fn basic() -> Result<(), ParquetError> {
     let schema = SchemaDescriptor::new(
-        "schema".to_string(),
-        vec![ParquetType::from_physical(
-            "c1".to_string(),
-            PhysicalType::Int32,
-        )],
+        "schema".into(),
+        vec![ParquetType::from_physical("c1".into(), PhysicalType::Int32)],
     );
 
     let mut metadatas = vec![];

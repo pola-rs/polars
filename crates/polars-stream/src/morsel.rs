@@ -1,8 +1,8 @@
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use polars_core::frame::DataFrame;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::async_primitives::wait_group::WaitToken;
 
@@ -16,6 +16,11 @@ pub fn get_ideal_morsel_size() -> usize {
     })
 }
 
+/// A token indicating the order of morsels in a stream.
+///
+/// The sequence tokens going through a pipe are monotonely non-decreasing and are allowed to be
+/// discontinuous. Consequently, `1 -> 1 -> 2` and `1 -> 3 -> 5` are valid streams of sequence
+/// tokens.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Default)]
 pub struct MorselSeq(u64);
 
@@ -38,6 +43,10 @@ impl MorselSeq {
         Self(self.0 + offset.0)
     }
 
+    pub fn offset_by_u64(self, offset: u64) -> Self {
+        Self(self.0 + 2 * offset)
+    }
+
     pub fn to_u64(self) -> u64 {
         self.0
     }
@@ -46,27 +55,28 @@ impl MorselSeq {
 /// A token indicating which source this morsel originated from, and a way to
 /// pass information/signals to it. Currently it's only used to request a source
 /// to stop with passing new morsels this execution phase.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SourceToken {
-    stop: Arc<AtomicBool>,
+    stop: Arc<RelaxedCell<bool>>,
 }
 
 impl SourceToken {
     pub fn new() -> Self {
         Self {
-            stop: Arc::new(AtomicBool::new(false)),
+            stop: Arc::default(),
         }
     }
 
     pub fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true);
     }
 
     pub fn stop_requested(&self) -> bool {
-        self.stop.load(Ordering::Relaxed)
+        self.stop.load()
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Morsel {
     /// The data contained in this morsel.
     df: DataFrame,
@@ -150,5 +160,9 @@ impl Morsel {
 
     pub fn source_token(&self) -> &SourceToken {
         &self.source_token
+    }
+
+    pub fn replace_source_token(&mut self, new_token: SourceToken) -> SourceToken {
+        core::mem::replace(&mut self.source_token, new_token)
     }
 }

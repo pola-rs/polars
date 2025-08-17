@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, PanicException
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -21,18 +21,13 @@ def test_date_range() -> None:
 
 
 def test_date_range_invalid_time_unit() -> None:
-    with pytest.raises(PanicException, match="'x' not supported"):
+    with pytest.raises(InvalidOperationError, match="'x' not supported"):
         pl.date_range(
             start=date(2021, 12, 16),
             end=date(2021, 12, 18),
             interval="1X",
             eager=True,
         )
-
-
-def test_date_range_invalid_time() -> None:
-    with pytest.raises(ComputeError, match="end is an out-of-range time"):
-        pl.date_range(pl.date(2024, 1, 1), pl.date(2024, 2, 30), eager=True)
 
 
 def test_date_range_lazy_with_literals() -> None:
@@ -169,7 +164,7 @@ def test_date_range_name() -> None:
 
     start = pl.Series("left", [date(2020, 1, 1)])
     result_lazy = pl.select(
-        pl.date_range(start, date(2020, 1, 3), eager=False)
+        pl.date_range(pl.lit(start).first(), date(2020, 1, 3), eager=False)
     ).to_series()
     assert result_lazy.name == "left"
 
@@ -191,13 +186,9 @@ def test_date_ranges_eager() -> None:
 
 
 def test_date_range_eager() -> None:
-    start = pl.Series("start", [date(2022, 1, 1)])
-    end = pl.Series("end", [date(2022, 1, 3)])
-
-    result = pl.date_range(start, end, eager=True)
-
+    result = pl.date_range(date(2022, 1, 1), date(2022, 1, 3), eager=True)
     expected = pl.Series(
-        "start", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]
+        "literal", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]
     )
     assert_series_equal(result, expected)
 
@@ -206,17 +197,11 @@ def test_date_range_input_shape_empty() -> None:
     empty = pl.Series(dtype=pl.Datetime)
     single = pl.Series([datetime(2022, 1, 2)])
 
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.date_range(empty, single, eager=True)
-    with pytest.raises(
-        ComputeError, match="`end` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.date_range(single, empty, eager=True)
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.date_range(empty, empty, eager=True)
 
 
@@ -224,17 +209,11 @@ def test_date_range_input_shape_multiple_values() -> None:
     single = pl.Series([datetime(2022, 1, 2)])
     multiple = pl.Series([datetime(2022, 1, 3), datetime(2022, 1, 4)])
 
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.date_range(multiple, single, eager=True)
-    with pytest.raises(
-        ComputeError, match="`end` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.date_range(single, multiple, eager=True)
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.date_range(multiple, multiple, eager=True)
 
 
@@ -309,4 +288,18 @@ def test_date_ranges_datetime_input() -> None:
     expected = pl.Series(
         "literal", [[date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]]
     )
+    assert_series_equal(result, expected)
+
+
+def test_date_range_with_subclass_18470_18447() -> None:
+    class MyAmazingDate(date):
+        pass
+
+    class MyAmazingDatetime(datetime):
+        pass
+
+    result = pl.datetime_range(
+        MyAmazingDate(2020, 1, 1), MyAmazingDatetime(2020, 1, 2), eager=True
+    )
+    expected = pl.Series("literal", [datetime(2020, 1, 1), datetime(2020, 1, 2)])
     assert_series_equal(result, expected)
