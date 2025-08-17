@@ -71,6 +71,7 @@ pub struct AnyValueArbitraryOptions {
     pub vector_length_range: RangeInclusive<usize>,
     pub decimal_precision_range: RangeInclusive<usize>,
     pub categories_range: RangeInclusive<usize>,
+    pub list_length: RangeInclusive<usize>,
     pub array_width_range: RangeInclusive<usize>,
     pub struct_fields_range: RangeInclusive<usize>,
 }
@@ -83,6 +84,7 @@ impl Default for AnyValueArbitraryOptions {
             vector_length_range: 0..=5,
             decimal_precision_range: 1..=38,
             categories_range: 0..=3,
+            list_length: 0..=3,
             array_width_range: 0..=3,
             struct_fields_range: 0..=3,
         }
@@ -163,9 +165,11 @@ pub fn anyvalue_strategy(
             _ if selection == S::ENUM_OWNED => {
                 categorical_enum_owned_strategy(options.categories_range.clone()).boxed()
             },
-            _ if selection == S::LIST => {
-                list_strategy(anyvalue_strategy(Rc::clone(&options), nesting_level + 1)).boxed()
-            },
+            _ if selection == S::LIST => list_strategy(
+                anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
+                options.list_length.clone(),
+            )
+            .boxed(),
             #[cfg(feature = "dtype-array")]
             _ if selection == S::ARRAY => array_strategy(
                 anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
@@ -356,9 +360,13 @@ fn categorical_enum_owned_strategy(
 
 fn list_strategy(
     inner: impl Strategy<Value = AnyValue<'static>>,
+    list_length: RangeInclusive<usize>,
 ) -> impl Strategy<Value = AnyValue<'static>> {
-    inner.prop_map(|inner| {
-        AnyValue::List(Series::from_any_values("".into(), &[inner], true).unwrap())
+    inner.prop_flat_map(move |value| {
+        let single_value = Just(value.clone());
+        prop::collection::vec(single_value, list_length.clone()).prop_map(|anyvalue_values| {
+            AnyValue::List(Series::from_any_values("".into(), &anyvalue_values, true).unwrap())
+        })
     })
 }
 
@@ -367,11 +375,13 @@ fn array_strategy(
     inner: impl Strategy<Value = AnyValue<'static>>,
     array_width_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = AnyValue<'static>> {
-    (inner, array_width_range).prop_map(|(inner, width)| {
-        AnyValue::Array(
-            Series::from_any_values("".into(), &[inner], true).unwrap(),
-            width,
-        )
+    inner.prop_flat_map(move |value| {
+        let single_value = Just(value.clone());
+        prop::collection::vec(single_value, array_width_range.clone()).prop_map(|anyvalue_values| {
+            let series = Series::from_any_values("".into(), &anyvalue_values, true).unwrap();
+            let len = series.len();
+            AnyValue::Array(series, len)
+        })
     })
 }
 
