@@ -23,7 +23,7 @@ use slotmap::SlotMap;
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
-use crate::physical_plan::lower_ir::build_row_idx_stream;
+use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
 
 type ExprNodeKey = Node;
 
@@ -1459,11 +1459,16 @@ fn lower_exprs_with_ctx(
                 let row_index =
                     build_row_idx_stream(predicate, out_name.clone(), None, ctx.phys_sm);
 
-                let filter_stream = build_filter_stream_with_ctx(
+                let filter_stream = build_filter_stream(
                     row_index,
                     AExprBuilder::col(predicate_name.clone(), ctx.expr_arena)
                         .expr_ir(predicate_name),
-                    ctx,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext {
+                        prepare_visualization: ctx.prepare_visualization,
+                    },
                 )?;
                 input_streams.insert(filter_stream);
                 transformed_exprs.push(AExprBuilder::col(out_name.clone(), ctx.expr_arena).node());
@@ -1650,62 +1655,6 @@ fn build_select_stream_with_ctx(
     };
     let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
     Ok(PhysStream::first(node_key))
-}
-
-fn build_filter_stream_with_ctx(
-    input: PhysStream,
-    predicate: ExprIR,
-    ctx: &mut LowerExprContext,
-) -> PolarsResult<PhysStream> {
-    let input_schema = ctx.phys_sm[input.node].output_schema.clone();
-    let (input, predicate, output_schema) = match ctx.expr_arena.get(predicate.node()) {
-        // If we already have a column we can just filter by that.
-        AExpr::Column(..) => (input, predicate, input_schema.clone()),
-
-        _ => {
-            // Otherwise, lower the expression to a unique new column.
-            let predicate_name = unique_column_name();
-            let transformed_input = build_hstack_stream(
-                input,
-                &[predicate],
-                ctx.expr_arena,
-                ctx.phys_sm,
-                ctx.cache,
-                StreamingLowerIRContext {
-                    prepare_visualization: ctx.prepare_visualization,
-                },
-            )?;
-            let mut output_schema = input_schema.as_ref().clone();
-            output_schema.insert(predicate_name.clone(), DataType::Boolean);
-            (
-                transformed_input,
-                AExprBuilder::col(predicate_name.clone(), ctx.expr_arena)
-                    .expr_ir(predicate_name.clone()),
-                Arc::new(output_schema),
-            )
-        },
-    };
-
-    let node_kind = PhysNodeKind::Filter { input, predicate };
-    let node_key = ctx
-        .phys_sm
-        .insert(PhysNode::new(output_schema.clone(), node_kind));
-
-    let mut stream = PhysStream::first(node_key);
-
-    // If we added a predicate column, we should also remove again afterwards.
-    if input_schema.len() != output_schema.len() {
-        let node_kind = PhysNodeKind::SimpleProjection {
-            input: stream,
-            columns: input_schema.iter_names_cloned().collect(),
-        };
-        let node_key = ctx
-            .phys_sm
-            .insert(PhysNode::new(input_schema.clone(), node_kind));
-        stream = PhysStream::first(node_key);
-    }
-
-    Ok(stream)
 }
 
 /// Lowers an input node plus a set of expressions on that input node to an
