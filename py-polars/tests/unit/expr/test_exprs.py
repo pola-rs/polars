@@ -581,12 +581,12 @@ def test_tail() -> None:
 
 
 def test_repr_short_expression() -> None:
-    expr = pl.functions.all().len().name.prefix("length:")
+    expr = pl.functions.all().len().name.prefix("length-long:")
     # we cut off the last ten characters because that includes the
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
-    expected = "<Expr ['cs.all().count().prefix(length…'] at "
+    expected = "<Expr ['cs.all().len().prefix(length-l…'] at "
     assert result == expected
 
 
