@@ -2831,20 +2831,20 @@ class ExprStringNameSpace:
         >>> patterns = ["winter", "disco", "onte", "discontent"]
         >>> df.with_columns(
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=False)
+        ...     .str.find_many(patterns, overlapping=False)
         ...     .alias("matches"),
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=True)
+        ...     .str.find_many(patterns, overlapping=True)
         ...     .alias("matches_overlapping"),
         ... )
         shape: (1, 3)
-        ┌────────────┬───────────┬─────────────────────────────────┐
-        │ values     ┆ matches   ┆ matches_overlapping             │
-        │ ---        ┆ ---       ┆ ---                             │
-        │ str        ┆ list[str] ┆ list[str]                       │
-        ╞════════════╪═══════════╪═════════════════════════════════╡
-        │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
-        └────────────┴───────────┴─────────────────────────────────┘
+        ┌────────────┬───────────┬─────────────────────┐
+        │ values     ┆ matches   ┆ matches_overlapping │
+        │ ---        ┆ ---       ┆ ---                 │
+        │ str        ┆ list[u32] ┆ list[u32]           │
+        ╞════════════╪═══════════╪═════════════════════╡
+        │ discontent ┆ [0]       ┆ [0, 4, 0]           │
+        └────────────┴───────────┴─────────────────────┘
         >>> df = pl.DataFrame(
         ...     {
         ...         "values": ["discontent", "rhapsody"],
