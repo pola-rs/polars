@@ -1,7 +1,10 @@
+import pytest
+
 import hypothesis.strategies as st
 from hypothesis import given
 
 import polars as pl
+from polars.testing.parametric.strategies.core import dataframes
 from polars.testing.parametric.strategies.dtype import dtypes
 
 
@@ -57,3 +60,55 @@ def test_dtypes_allowed_instantiated(dtype: pl.DataType) -> None:
 @given(dtype=dtypes(allowed_dtypes=[pl.List(pl.List), pl.Int64]))
 def test_dtypes_allowed_uninstantiated_nested(dtype: pl.DataType) -> None:
     assert dtype in (pl.List, pl.Int64)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("col0") + pl.col("col1"),
+        pl.col("col0") - pl.col("col1"),
+        pl.col("col0") * pl.col("col1"),
+        pl.col("col0") / pl.col("col1"),
+        pl.col("col0").truediv(pl.col("col1")),
+        pl.col("col0") // pl.col("col1"),
+        pl.col("col0") % pl.col("col1"),
+    ],
+)
+@given(
+    df=dataframes(
+        excluded_dtypes=[
+            # At the moment, these dtypes are known to be mismatched between the
+            # in-memory engine and the planner.
+            pl.Struct,
+            pl.Decimal,
+            pl.Categorical,
+            pl.Enum,
+            pl.Null,
+            pl.Binary,
+        ],
+        cols=2,
+        min_size=1,
+        max_size=1,
+    ),
+)
+def test_lazy_collect_schema_matches_inmemory_schema(
+    expr: pl.Expr, df: pl.DataFrame
+) -> None:
+    print(df)
+    lazy_df = df.lazy().select(expr)
+
+    expected_schema = None
+    try:
+        expected_schema = lazy_df.collect().schema
+    except (
+        pl.exceptions.InvalidOperationError,
+        pl.exceptions.SchemaError,
+        pl.exceptions.ComputeError,
+    ):
+        return
+
+    actual_schema = lazy_df.collect_schema()
+    assert actual_schema == expected_schema, (
+        f"expected {expected_schema} does not match actual {actual_schema} for expression {expr} from data types {df.dtypes}\n"
+        f"result of computation is:\n{lazy_df.collect()}\n"
+    )
