@@ -738,7 +738,10 @@ pub(super) fn convert_functions(
             polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'fill_value' must be a scalar value");
             I::ShiftAndFill
         },
-        F::Shift => I::Shift,
+        F::Shift => {
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
+            I::Shift
+        },
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         #[cfg(feature = "mode")]

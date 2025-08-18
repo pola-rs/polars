@@ -163,6 +163,33 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Shift {
+            input,
+            offset,
+            fill,
+        } => {
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let offset_schema = ctx.phys_sm[offset.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let offset_key = to_graph_rec(offset.node, ctx)?;
+            if let Some(fill) = fill {
+                let fill_key = to_graph_rec(fill.node, ctx)?;
+                ctx.graph.add_node(
+                    nodes::shift::ShiftNode::new(input_schema, offset_schema, true),
+                    [
+                        (input_key, input.port),
+                        (offset_key, offset.port),
+                        (fill_key, fill.port),
+                    ],
+                )
+            } else {
+                ctx.graph.add_node(
+                    nodes::shift::ShiftNode::new(input_schema, offset_schema, false),
+                    [(input_key, input.port), (offset_key, offset.port)],
+                )
+            }
+        },
+
         Filter { predicate, input } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
