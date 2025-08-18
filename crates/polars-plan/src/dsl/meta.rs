@@ -1,9 +1,8 @@
 use std::fmt::Display;
-use std::ops::BitAnd;
 
 use super::*;
 use crate::plans::conversion::is_regex_projection;
-use crate::plans::ir::tree_format::TreeFmtVisitor;
+use crate::plans::tree_format::TreeFmtVisitor;
 use crate::plans::visitor::{AexprNode, TreeWalker};
 use crate::prelude::tree_format::TreeFmtVisitorDisplay;
 
@@ -12,16 +11,10 @@ pub struct MetaNameSpace(pub(crate) Expr);
 
 impl MetaNameSpace {
     /// Pop latest expression and return the input(s) of the popped expression.
-    pub fn pop(self) -> PolarsResult<Vec<Expr>> {
-        let mut arena = Arena::with_capacity(8);
-        let node = to_aexpr(self.0, &mut arena)?;
-        let ae = arena.get(node);
-        let mut inputs = Vec::with_capacity(2);
-        ae.inputs_rev(&mut inputs);
-        Ok(inputs
-            .iter()
-            .map(|node| node_to_expr(*node, &arena))
-            .collect())
+    pub fn pop(self, _schema: Option<&Schema>) -> PolarsResult<Vec<Expr>> {
+        let mut out = Vec::new();
+        self.0.nodes_owned(&mut out);
+        Ok(out)
     }
 
     /// Get the root column names.
@@ -30,10 +23,15 @@ impl MetaNameSpace {
     }
 
     /// A projection that only takes a column or a column + alias.
-    pub fn is_simple_projection(&self) -> bool {
+    pub fn is_simple_projection(&self, schema: Option<&Schema>) -> bool {
+        let schema = match schema {
+            None => &Default::default(),
+            Some(s) => s,
+        };
         let mut arena = Arena::with_capacity(8);
-        to_aexpr(self.0.clone(), &mut arena)
-            .map(|node| aexpr_is_simple_projection(node, &arena))
+        let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
+        to_expr_ir(self.0.clone(), &mut ctx)
+            .map(|expr| aexpr_is_simple_projection(expr.node(), &arena))
             .unwrap_or(false)
     }
 
@@ -54,11 +52,15 @@ impl MetaNameSpace {
 
     /// Indicate if this expression expands to multiple expressions.
     pub fn has_multiple_outputs(&self) -> bool {
-        self.0.into_iter().any(|e| match e {
-            Expr::Selector(_) | Expr::Wildcard | Expr::Columns(_) | Expr::DtypeColumn(_) => true,
-            Expr::IndexColumn(idxs) => idxs.len() > 1,
-            Expr::Column(name) => is_regex_projection(name),
-            _ => false,
+        self.0.into_iter().any(|e| {
+            matches!(
+                e,
+                Expr::Selector(_)
+                    | Expr::Function {
+                        function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
+                        ..
+                    }
+            )
         })
     }
 
@@ -75,14 +77,7 @@ impl MetaNameSpace {
     /// aliasing of the selected columns is optionally allowed.
     pub fn is_column_selection(&self, allow_aliasing: bool) -> bool {
         self.0.into_iter().all(|e| match e {
-            Expr::Column(_)
-            | Expr::Columns(_)
-            | Expr::DtypeColumn(_)
-            | Expr::Exclude(_, _)
-            | Expr::Nth(_)
-            | Expr::IndexColumn(_)
-            | Expr::Selector(_)
-            | Expr::Wildcard => true,
+            Expr::Column(_) | Expr::Selector(_) => true,
             Expr::Alias(_, _) | Expr::KeepName(_) | Expr::RenameAlias { .. } => allow_aliasing,
             _ => false,
         })
@@ -95,93 +90,39 @@ impl MetaNameSpace {
             Expr::Alias(_, _) => allow_aliasing,
             Expr::Cast {
                 expr,
-                dtype: DataType::Datetime(_, _),
+                dtype,
                 options: CastOptions::Strict,
-            } if matches!(&**expr, Expr::Literal(LiteralValue::DateTime(_, _, _))) => true,
+            } if matches!(dtype.as_literal(), Some(DataType::Datetime(_, _))) && matches!(&**expr, Expr::Literal(LiteralValue::Scalar(sc)) if matches!(sc.as_any_value(), AnyValue::Datetime(..))) => true,
             _ => false,
         })
     }
 
     /// Indicate if this expression expands to multiple expressions with regex expansion.
     pub fn is_regex_projection(&self) -> bool {
-        self.0.into_iter().any(|e| match e {
-            Expr::Column(name) => is_regex_projection(name),
-            _ => false,
-        })
-    }
-
-    pub fn _selector_add(self, other: Expr) -> PolarsResult<Expr> {
-        if let Expr::Selector(mut s) = self.0 {
-            if let Expr::Selector(s_other) = other {
-                s = s + s_other;
-            } else {
-                s = s + Selector::Root(Box::new(other))
-            }
-            Ok(Expr::Selector(s))
-        } else {
-            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
-        }
-    }
-
-    pub fn _selector_and(self, other: Expr) -> PolarsResult<Expr> {
-        if let Expr::Selector(mut s) = self.0 {
-            if let Expr::Selector(s_other) = other {
-                s = s.bitand(s_other);
-            } else {
-                s = s.bitand(Selector::Root(Box::new(other)))
-            }
-            Ok(Expr::Selector(s))
-        } else {
-            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
-        }
-    }
-
-    pub fn _selector_sub(self, other: Expr) -> PolarsResult<Expr> {
-        if let Expr::Selector(mut s) = self.0 {
-            if let Expr::Selector(s_other) = other {
-                s = s - s_other;
-            } else {
-                s = s - Selector::Root(Box::new(other))
-            }
-            Ok(Expr::Selector(s))
-        } else {
-            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
-        }
-    }
-
-    pub fn _selector_xor(self, other: Expr) -> PolarsResult<Expr> {
-        if let Expr::Selector(mut s) = self.0 {
-            if let Expr::Selector(s_other) = other {
-                s = s ^ s_other;
-            } else {
-                s = s ^ Selector::Root(Box::new(other))
-            }
-            Ok(Expr::Selector(s))
-        } else {
-            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
-        }
-    }
-
-    pub fn _into_selector(self) -> Expr {
-        if let Expr::Selector(_) = self.0 {
-            self.0
-        } else {
-            Expr::Selector(Selector::new(self.0))
-        }
+        self.0
+            .into_iter()
+            .any(|e| matches!(e, Expr::Selector(Selector::Matches(_))))
     }
 
     /// Get a hold to an implementor of the `Display` trait that will format as
     /// the expression as a tree
-    pub fn into_tree_formatter(self, display_as_dot: bool) -> PolarsResult<impl Display> {
+    pub fn into_tree_formatter(
+        self,
+        display_as_dot: bool,
+        schema: Option<&Schema>,
+    ) -> PolarsResult<impl Display> {
+        let schema = match schema {
+            None => &Default::default(),
+            Some(s) => s,
+        };
         let mut arena = Default::default();
-        let node = to_aexpr(self.0, &mut arena)?;
+        let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
+        let node = to_expr_ir(self.0, &mut ctx)?.node();
         let mut visitor = TreeFmtVisitor::default();
         if display_as_dot {
             visitor.display = TreeFmtVisitorDisplay::DisplayDot;
         }
-
         AexprNode::new(node).visit(&mut visitor, &arena)?;
-
         Ok(visitor)
     }
 }

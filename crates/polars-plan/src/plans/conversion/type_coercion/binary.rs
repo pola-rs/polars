@@ -117,22 +117,23 @@ fn err_date_str_compare() -> PolarsResult<()> {
 
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
-    lp_arena: &Arena<IR>,
-    lp_node: Node,
+    input_schema: &Schema,
     node_left: Node,
     op: Operator,
     node_right: Node,
 ) -> PolarsResult<Option<AExpr>> {
-    let input_schema = get_schema(lp_arena, lp_node);
     let (left, type_left): (&AExpr, DataType) =
-        unpack!(get_aexpr_and_type(expr_arena, node_left, &input_schema));
+        unpack!(get_aexpr_and_type(expr_arena, node_left, input_schema));
     let (right, type_right): (&AExpr, DataType) =
-        unpack!(get_aexpr_and_type(expr_arena, node_right, &input_schema));
+        unpack!(get_aexpr_and_type(expr_arena, node_right, input_schema));
 
     match (&type_left, &type_right) {
-        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
         (
-            Unknown(UnknownKind::Any),
+            Unknown(UnknownKind::Any | UnknownKind::Ufunc),
+            Unknown(UnknownKind::Any | UnknownKind::Ufunc),
+        ) => return Ok(None),
+        (
+            Unknown(UnknownKind::Any | UnknownKind::Ufunc),
             Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
         ) => {
             let right = unpack!(materialize(right));
@@ -146,7 +147,7 @@ pub(super) fn process_binary(
         },
         (
             Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
-            Unknown(UnknownKind::Any),
+            Unknown(UnknownKind::Any | UnknownKind::Ufunc),
         ) => {
             let left = unpack!(materialize(left));
             let left = expr_arena.add(left);
@@ -169,21 +170,21 @@ pub(super) fn process_binary(
         (DataType::String, dt, op) | (dt, DataType::String, op)
             if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
         (String | Unknown(UnknownKind::Str) | Categorical(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Categorical(_, _), op)
             if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
         (Unknown(UnknownKind::Str) | String | Enum(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Enum(_, _), op)
             if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-date")]
         (Date, String | Unknown(UnknownKind::Str), op)
@@ -232,7 +233,7 @@ pub(super) fn process_binary(
             (Struct(_), a) | (a, Struct(_)) if a.is_primitive_numeric() => {
                 return process_struct_numeric_arithmetic(
                     type_left, type_right, node_left, node_right, op, expr_arena,
-                )
+                );
             },
             _ => {},
         }
@@ -250,7 +251,7 @@ pub(super) fn process_binary(
 
     // TODO! raise here?
     // We should at least never cast to Unknown.
-    if matches!(st, DataType::Unknown(UnknownKind::Any)) {
+    if matches!(st, DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc)) {
         return Ok(None);
     }
 

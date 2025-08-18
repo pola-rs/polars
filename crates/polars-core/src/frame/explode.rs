@@ -4,16 +4,16 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::POOL;
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::POOL;
 
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
-        DataType::List(_) => series.list().unwrap().explode_and_offsets(),
+        DataType::List(_) => series.list().unwrap().explode_and_offsets(false),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(),
+        DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(false),
         _ => polars_bail!(opq = explode, series.dtype()),
     }
 }
@@ -34,7 +34,7 @@ impl DataFrame {
         let mut df = self.clone();
         if self.is_empty() {
             for s in &columns {
-                df.with_column(s.as_materialized_series().explode()?)?;
+                df.with_column(s.as_materialized_series().explode(false)?)?;
             }
             return Ok(df);
         }
@@ -209,7 +209,7 @@ mod test {
 
         let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
         let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
-        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
+        let df = DataFrame::new(vec![list, s0, s1]).unwrap();
         let exploded = df.explode(["foo"]).unwrap();
         assert_eq!(exploded.shape(), (9, 3));
         assert_eq!(

@@ -45,7 +45,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import dtype_str_repr as _dtype_str_repr
+    from polars._plr import dtype_str_repr as _dtype_str_repr
 
 
 OptionType = type(Optional[type])
@@ -240,7 +240,7 @@ class _DataTypeMappings:
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
         def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
             try:
-                return _dtype_str_repr(o.base_type()).split("[")[0]
+                return _dtype_str_repr(o.base_type()).split("[")[0]  # type: ignore[return-value]
             except TypeError:
                 return None
 
@@ -288,6 +288,7 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
     """Map a PolarsDataType short repr (eg: 'i64', 'list[str]') back into a dtype."""
     if dtype_string is None:
         return None
+
     m = re.match(r"^(\w+)(?:\[(.+)\])?$", dtype_string)
     if m is None:
         return None
@@ -355,6 +356,8 @@ def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
         try:
             el = py_type(el)  # type: ignore[call-arg]
         except Exception:
-            msg = f"cannot convert Python type {type(el).__name__!r} to {dtype!r}"
+            from polars._utils.various import qualified_type_name
+
+            msg = f"cannot convert Python type {qualified_type_name(el)!r} to {dtype!r}"
             raise TypeError(msg) from None
     return el

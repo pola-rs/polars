@@ -1,3 +1,7 @@
+use std::borrow::Cow;
+
+use crate::relaxed_cell::RelaxedCell;
+
 #[macro_export]
 macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
@@ -19,6 +23,23 @@ type Inner = compact_str::CompactString;
     serde(transparent)
 )]
 pub struct PlSmallStr(Inner);
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PlSmallStr {
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn schema_name() -> std::string::String {
+        String::schema_name()
+    }
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        String::schema_id()
+    }
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        String::json_schema(generator)
+    }
+}
 
 impl PlSmallStr {
     pub const EMPTY: Self = Self::from_static("");
@@ -48,6 +69,12 @@ impl PlSmallStr {
     #[inline(always)]
     pub fn as_mut_str(&mut self) -> &mut str {
         self.0.as_mut_str()
+    }
+
+    #[inline(always)]
+    #[allow(clippy::inherent_to_string_shadow_display)] // This is faster.
+    pub fn to_string(&self) -> String {
+        self.0.as_str().to_owned()
     }
 
     #[inline(always)]
@@ -131,6 +158,13 @@ impl From<String> for PlSmallStr {
     #[inline(always)]
     fn from(value: String) -> Self {
         Self::from_string(value)
+    }
+}
+
+impl From<Cow<'_, str>> for PlSmallStr {
+    #[inline(always)]
+    fn from(value: Cow<str>) -> Self {
+        Self(Inner::from(value))
     }
 }
 
@@ -265,4 +299,10 @@ impl core::fmt::Display for PlSmallStr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.as_str().fmt(f)
     }
+}
+
+pub fn unique_column_name() -> PlSmallStr {
+    static COUNTER: RelaxedCell<u64> = RelaxedCell::new_u64(0);
+    let idx = COUNTER.fetch_add(1);
+    format_pl_smallstr!("_POLARS_TMP_{idx}")
 }

@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use polars::io::RowIndex;
 use polars::io::csv::read::OwnedBatchedCsvReader;
 use polars::io::mmap::MmapBytesReader;
-use polars::io::RowIndex;
 use polars::prelude::*;
 use polars_utils::open_file;
 use pyo3::prelude::*;
@@ -100,7 +100,7 @@ impl PyBatchedCsv {
             .with_has_header(has_header)
             .with_n_rows(n_rows)
             .with_skip_rows(skip_rows)
-            .with_skip_rows(skip_lines)
+            .with_skip_lines(skip_lines)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection.map(Arc::new))
             .with_rechunk(rechunk)
@@ -135,7 +135,7 @@ impl PyBatchedCsv {
         })
     }
 
-    fn next_batches(&self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
+    fn next_batches(&self, py: Python<'_>, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
         let reader = &self.reader;
         let batches = py.enter_polars(move || reader.lock().unwrap().next_batches(n))?;
 

@@ -1,13 +1,13 @@
 use std::io::Write;
 
+pub use Compression as AvroCompression;
 pub use arrow::io::avro::avro_schema::file::Compression;
 use arrow::io::avro::avro_schema::{self};
 use arrow::io::avro::write;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-pub use Compression as AvroCompression;
 
-use crate::shared::{schema_to_arrow_checked, SerWriter};
+use crate::shared::{SerWriter, schema_to_arrow_checked};
 
 /// Write a [`DataFrame`] to [Apache Avro] format
 ///

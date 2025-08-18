@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import io
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
 import pytest
 
 import polars as pl
 from polars.interchange.protocol import CompatLevel
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -203,9 +203,7 @@ def test_ipc_schema_from_file(
         "datetime": pl.Datetime(),
         "time": pl.Time(),
         "cat": pl.Categorical(),
-        "enum": pl.Enum(
-            []
-        ),  # at schema inference categories are not read an empty Enum is returned
+        "enum": pl.Enum(["foo", "ham", "bar"]),
     }
     assert schema == expected
 
@@ -358,7 +356,7 @@ def test_ipc_decimal_15920(
     ).to_frame()  # fmt: skip
 
     for df in [base_df, base_df.drop_nulls()]:
-        path = f"{tmp_path}/data"
+        path = f"{tmp_path}/data.ipc"
         df.write_ipc(path)
         assert_frame_equal(pl.read_ipc(path), df)
 
@@ -441,3 +439,31 @@ def test_categorical_lexical_sort_2732() -> None:
     df.write_ipc(f)
     f.seek(0)
     assert_frame_equal(df, pl.read_ipc(f))
+
+
+def test_enum_scan_21564() -> None:
+    s = pl.Series("a", ["A"], pl.Enum(["A"]))
+
+    # DataFrame with a an enum field
+    f = io.BytesIO()
+    s.to_frame().write_ipc(f)
+
+    f.seek(0)
+    assert_series_equal(
+        pl.scan_ipc(f).collect().to_series(),
+        s,
+    )
+
+
+@no_type_check
+def test_roundtrip_empty_str_list_21163() -> None:
+    schema = {
+        "s": pl.Utf8,
+        "list": pl.List(pl.Utf8),
+    }
+    row1 = pl.DataFrame({"s": ["A"], "list": [[]]}, schema=schema)
+    row2 = pl.DataFrame({"s": ["B"], "list": [[]]}, schema=schema)
+    df = pl.concat([row1, row2])
+    bytes = df.serialize()
+    deserialized = pl.DataFrame.deserialize(io.BytesIO(bytes))
+    assert_frame_equal(df, deserialized)

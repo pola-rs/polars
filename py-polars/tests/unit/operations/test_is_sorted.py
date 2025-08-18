@@ -249,18 +249,6 @@ def test_unset_sorted_flag_after_extend() -> None:
     assert df.to_dict(as_series=False) == {"Add": [37, 41], "Batch": [48, 49]}
 
 
-def test_sorted_flag_after_streaming_join() -> None:
-    # streaming left join
-    df1 = pl.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 6]}).set_sorted("x")
-    df2 = pl.DataFrame({"x": [4, 2, 3, 1], "z": [1, 4, 9, 1]})
-    assert (
-        df1.lazy()
-        .join(df2.lazy(), on="x", how="left")
-        .collect(streaming=True)["x"]
-        .flags["SORTED_ASC"]
-    )
-
-
 def test_sorted_flag_partition_by() -> None:
     assert (
         pl.DataFrame({"one": [1, 2, 3], "two": ["a", "a", "b"]})
@@ -332,6 +320,7 @@ def test_sorted_flag() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
     dfa = pl.DataFrame(
@@ -414,6 +403,7 @@ def test_is_sorted_rle_id() -> None:
     assert pl.Series([12, 3345, 12, 3, 4, 4, 1, 12]).rle_id().flags["SORTED_ASC"]
 
 
+@pytest.mark.may_fail_cloud
 def test_is_sorted_chunked_select() -> None:
     df = pl.DataFrame({"a": np.ones(14)})
 
@@ -427,3 +417,13 @@ def test_is_sorted_chunked_select() -> None:
 def test_is_sorted_arithmetic_overflow_14106() -> None:
     s = pl.Series([0, 200], dtype=pl.UInt8).sort()
     assert not (s + 200).is_sorted()
+
+
+def test_is_sorted_struct() -> None:
+    s = pl.Series("a", [{"x": 3}, {"x": 1}, {"x": 2}]).sort()
+    assert s.flags["SORTED_ASC"]
+    assert not s.flags["SORTED_DESC"]
+
+    s = s.sort(descending=True)
+    assert s.flags["SORTED_DESC"]
+    assert not s.flags["SORTED_ASC"]

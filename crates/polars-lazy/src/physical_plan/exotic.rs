@@ -1,15 +1,27 @@
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 
 use crate::prelude::*;
 
-#[cfg(feature = "pivot")]
-pub(crate) fn prepare_eval_expr(expr: Expr) -> Expr {
-    expr.map_expr(|e| match e {
-        Expr::Column(_) => Expr::Column(PlSmallStr::EMPTY),
-        Expr::Nth(_) => Expr::Column(PlSmallStr::EMPTY),
-        e => e,
-    })
+pub(crate) fn contains_column_refs(expr: &Expr) -> bool {
+    for e in expr.into_iter() {
+        match e {
+            Expr::Column(c) if !c.eq(&PlSmallStr::EMPTY) => return true,
+            Expr::Selector(_) => return true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Field(_) => return true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function:
+                    FunctionExpr::StructExpr(
+                        StructFunction::FieldByName(_) | StructFunction::SelectFields(_),
+                    ),
+                ..
+            } => return true,
+            _ => {},
+        }
+    }
+    false
 }
 
 pub(crate) fn prepare_expression_for_context(
@@ -34,15 +46,15 @@ pub(crate) fn prepare_expression_for_context(
     let optimized = lf.optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(optimized);
     let aexpr = lp
-        .get_exprs()
-        .pop()
+        .exprs()
+        .next()
         .ok_or_else(|| polars_err!(ComputeError: "expected expressions in the context"))?;
 
     create_physical_expr(
-        &aexpr,
+        aexpr,
         ctxt,
         &expr_arena,
         &input_schema,
-        &mut ExpressionConversionState::new(true, 0),
+        &mut ExpressionConversionState::new(true),
     )
 }

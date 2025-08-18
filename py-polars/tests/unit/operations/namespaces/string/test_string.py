@@ -10,7 +10,7 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
-    SchemaError,
+    ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -56,7 +56,7 @@ def test_str_slice_expr() -> None:
 
 def test_str_slice_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.slice(pl.Series([1, 2])))
 
 
@@ -123,7 +123,7 @@ def test_str_head_expr() -> None:
 
 def test_str_head_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.head(pl.Series([1, 2])))
 
 
@@ -190,7 +190,7 @@ def test_str_tail_expr() -> None:
 
 def test_str_tail_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.tail(pl.Series([1, 2])))
 
 
@@ -232,7 +232,7 @@ def test_str_contains() -> None:
 
 def test_str_contains_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.contains(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
@@ -364,7 +364,7 @@ def test_str_find_escaped_chars() -> None:
 
 def test_str_find_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.find(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
@@ -450,6 +450,17 @@ def test_str_to_integer() -> None:
         hex.str.to_integer(base=16)
 
 
+@pytest.mark.parametrize("strict", [False, True])
+def test_str_to_integer_invalid_base(strict: bool) -> None:
+    numbers = pl.Series(["1", "ZZZ", "-ABCZZZ", None])
+    with pytest.raises(ComputeError):
+        numbers.str.to_integer(base=100, strict=strict)
+
+    df = pl.DataFrame({"str": numbers, "base": [0, 1, 100, None]})
+    with pytest.raises(ComputeError):
+        df.select(pl.col("str").str.to_integer(base=pl.col("base"), strict=strict))
+
+
 def test_str_to_integer_base_expr() -> None:
     df = pl.DataFrame(
         {"str": ["110", "ff00", "234", None, "130"], "base": [2, 16, 10, 8, None]}
@@ -490,6 +501,100 @@ def test_str_to_integer_base_literal() -> None:
             pl.col("bin").str.to_integer(base=2),
             pl.col("hex").str.to_integer(base=16),
         )
+
+
+def test_str_to_integer_dtype() -> None:
+    lf = pl.LazyFrame(
+        {
+            "str": ["1111111", "7f", "127", None, "42"],
+            "base": [2, 16, 10, 8, None],
+        }
+    )
+    out = lf.select(
+        i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8),
+        i16=pl.col("str").str.to_integer(base="base", dtype=pl.Int16),
+        i32=pl.col("str").str.to_integer(base="base", dtype=pl.Int32),
+        i64=pl.col("str").str.to_integer(base="base", dtype=pl.Int64),
+        u8=pl.col("str").str.to_integer(base="base", dtype=pl.UInt8),
+        u16=pl.col("str").str.to_integer(base="base", dtype=pl.UInt16),
+        u32=pl.col("str").str.to_integer(base="base", dtype=pl.UInt32),
+        u64=pl.col("str").str.to_integer(base="base", dtype=pl.UInt64),
+        default=pl.col("str").str.to_integer(base="base"),
+    ).collect()
+
+    expected = pl.DataFrame(
+        {
+            "i8": [127, 127, 127, None, None],
+            "i16": [127, 127, 127, None, None],
+            "i32": [127, 127, 127, None, None],
+            "i64": [127, 127, 127, None, None],
+            "u8": [127, 127, 127, None, None],
+            "u16": [127, 127, 127, None, None],
+            "u32": [127, 127, 127, None, None],
+            "u64": [127, 127, 127, None, None],
+            "default": [127, 127, 127, None, None],
+        },
+        schema={
+            "i8": pl.Int8,
+            "i16": pl.Int16,
+            "i32": pl.Int32,
+            "i64": pl.Int64,
+            "u8": pl.UInt8,
+            "u16": pl.UInt16,
+            "u32": pl.UInt32,
+            "u64": pl.UInt64,
+            "default": pl.Int64,
+        },
+    )
+    assert lf.collect_schema() == lf.collect().schema
+    assert_frame_equal(out, expected)
+
+
+def test_str_to_integer_large() -> None:
+    df = pl.DataFrame(
+        {
+            "str": [
+                "-6129899454972456276923959272",
+                "1A44E53BFEBA967E6682FBB0",
+                "10100110111110110101110100000100110010101111000100011000000100010101010101101011111111101000",
+                None,
+                "7798994549724957734429272",
+            ],
+            "base": [10, 16, 2, 8, None],
+        }
+    )
+    out = df.select(i128=pl.col("str").str.to_integer(base="base", dtype=pl.Int128))
+    expected = pl.DataFrame(
+        {
+            "i128": [
+                -6129899454972456276923959272,
+                8129899739726392769273592752,
+                3229899454972495776923959272,
+                None,
+                None,
+            ]
+        },
+        schema={"i128": pl.Int128},
+    )
+    assert_frame_equal(out, expected)
+
+    # test strict raise
+    df = pl.DataFrame(
+        {
+            "i128": [
+                "612989945497245627692395927261298994549724562769239592726129899454972456276923959272",
+                "1A44E53BFEBA967E6682FBB0",
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "7798994549724957734429272",
+                None,
+                "7798994549724957734429272",
+            ],
+            "base": [10, 2, 16, 10, 8, None],
+        }
+    )
+
+    with pytest.raises(ComputeError):
+        df.select(pl.col("i128").str.to_integer(base="base", dtype=pl.Int128))
 
 
 def test_str_strip_chars_expr() -> None:
@@ -547,7 +652,7 @@ def test_str_strip_chars() -> None:
 
 def test_str_strip_chars_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_chars(pl.Series(["a", "b"])))
 
 
@@ -565,7 +670,7 @@ def test_str_strip_chars_start() -> None:
 
 def test_str_strip_chars_start_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_chars_start(pl.Series(["a", "b"])))
 
 
@@ -583,7 +688,7 @@ def test_str_strip_chars_end() -> None:
 
 def test_str_strip_chars_end_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_chars_end(pl.Series(["a", "b"])))
 
 
@@ -629,7 +734,7 @@ def test_str_strip_prefix_suffix_expr() -> None:
 
 def test_str_strip_prefix_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_prefix(pl.Series(["a", "b"])))
 
 
@@ -644,7 +749,7 @@ def test_str_strip_suffix() -> None:
 
 def test_str_strip_suffix_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_suffix(pl.Series(["a", "b"])))
 
 
@@ -707,10 +812,8 @@ def test_json_decode_nested_struct() -> None:
         '[{"key_1": "a2", "key_2": 2}]',
         '[{"key_1": "a3", "key_2": 3, "key_3": "c"}]',
     ]
-    df = pl.DataFrame({"json_str": json})
-    df_parsed = df.with_columns(
-        pl.col("json_str").str.json_decode().alias("parsed_list_json")
-    )
+    s = pl.Series("json_str", json)
+    s_parsed = s.str.json_decode().rename("parsed_list_json")
 
     expected_dtype = pl.List(
         pl.Struct(
@@ -721,9 +824,9 @@ def test_json_decode_nested_struct() -> None:
             ]
         )
     )
-    assert df_parsed.get_column("parsed_list_json").dtype == expected_dtype
+    assert s_parsed.dtype == expected_dtype
 
-    key_1_values = df_parsed.select(
+    key_1_values = s_parsed.to_frame().select(
         pl.col("parsed_list_json")
         .list.get(0)
         .struct.field("key_1")
@@ -792,7 +895,7 @@ def test_json_path_match() -> None:
 
 def test_str_json_path_match_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises((ShapeError, ComputeError)):
         df.select(pl.col("num").str.json_path_match(pl.Series(["a", "b"])))
 
 
@@ -1194,6 +1297,23 @@ def test_replace_many(
     )
 
 
+def test_replace_many_groupby() -> None:
+    df = pl.DataFrame(
+        {
+            "x": ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
+            "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        }
+    )
+    out = df.group_by("g").agg(pl.col.x.str.replace_many(pl.col.x.head(2), ""))
+    expected = pl.DataFrame(
+        {
+            "g": [0, 1, 2],
+            "x": [["", "", "c"], ["", "", "f"], ["", "", "i"]],
+        }
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
 @pytest.mark.parametrize(
     ("mapping", "case_insensitive", "expected"),
     [
@@ -1240,13 +1360,13 @@ def test_replace_many_invalid_inputs() -> None:
     with pytest.raises(ColumnNotFoundError, match="me"):
         df.select(pl.col("text").str.replace_many("me", "you"))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many(1, 2))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many([1], [2]))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many(["me"], None))
 
     with pytest.raises(TypeError):
@@ -1262,9 +1382,6 @@ def test_replace_many_invalid_inputs() -> None:
 
     with pytest.raises(ColumnNotFoundError, match="me"):
         s.str.replace_many("me", "you")  # type: ignore[arg-type]
-
-    with pytest.raises(SchemaError):
-        df.select(pl.col("text").str.replace_many(["me"], None))
 
     with pytest.raises(TypeError):
         df.select(pl.col("text").str.replace_many(["me"]))
@@ -1378,7 +1495,10 @@ def test_extract_groups() -> None:
 
     assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
         as_series=False
-    ) == {"iso_code": [{"iso_code": None}, {"iso_code": None}]}
+    ) == {"iso_code": [{}, {}]}
+
+    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
+    assert q.collect_schema() == q.collect().schema
 
     assert df.select(
         pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
@@ -1932,3 +2052,64 @@ def test_string_normalize(form: Any, expected_data: list[str | None]) -> None:
 def test_string_normalize_wrong_input() -> None:
     with pytest.raises(ValueError, match="`form` must be one of"):
         pl.Series(["01²"], dtype=pl.String).str.normalize("foobar")  # type: ignore[arg-type]
+
+
+def test_to_integer_unequal_lengths_22034() -> None:
+    s = pl.Series("a", ["1", "2", "3"], pl.String)
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.str.to_integer(base=pl.Series([4, 5, 5, 4]))
+
+
+def test_broadcast_self() -> None:
+    s = pl.Series("a", ["3"], pl.String)
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="strict integer parsing failed"
+    ):
+        s.str.to_integer(base=pl.Series([2, 2, 3, 4]))
+
+
+def test_strptime_unequal_length_22018() -> None:
+    s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.str.strptime(
+            pl.Datetime, "%Y-%m-%d %H:%M%#z", ambiguous=pl.Series(["a", "b", "d"])
+        )
+
+
+@pytest.mark.parametrize("inclusive", [False, True])
+def test_str_split_unequal_length_22018(inclusive: bool) -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series(["a-c", "x-y"]).str.split(
+            pl.Series(["-", "/", "+"]), inclusive=inclusive
+        )
+
+
+def test_str_split_self_broadcast() -> None:
+    assert_series_equal(
+        pl.Series(["a-/c"]).str.split(pl.Series(["-", "/", "+"])),
+        pl.Series([["a", "/c"], ["a-", "c"], ["a-/c"]]),
+    )
+
+
+def test_replace_many_mapping_in_list() -> None:
+    assert_series_equal(
+        pl.Series([["a", "b"]]).list.eval(
+            pl.element().replace_strict({"a": 1, "b": 2})
+        ),
+        pl.Series([[1, 2]]),
+    )
+
+
+def test_str_replace_n_zero_23570() -> None:
+    # more than 32 bytes
+    abc_long = "abc " * 20 + "abc"
+    df = pl.DataFrame(
+        {"a": [abc_long, "abc abc abc", "abc ghi"], "b": ["jkl", "pqr", "xyz"]}
+    )
+    expected = df
+
+    out = df.with_columns(pl.col("a").str.replace("abc", "XYZ", n=0))
+    assert_frame_equal(out, expected)
+
+    out = df.with_columns(pl.col("a").str.replace("abc", pl.col("b"), n=0))
+    assert_frame_equal(out, expected)

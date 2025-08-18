@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars._typing import IntoExpr, PolarsDataType
-    from polars.polars import PyExpr
+    from polars._plr import PyExpr
+    from polars._typing import ColumnNameOrSelector, IntoExpr, PolarsDataType
 
 
 def parse_into_expression(
@@ -105,6 +106,49 @@ def parse_into_list_of_expressions(
     return exprs
 
 
+def parse_into_selector(
+    i: ColumnNameOrSelector,
+    *,
+    strict: bool = True,
+) -> pl.Selector:
+    if isinstance(i, str):
+        import polars.selectors as cs
+
+        return cs.by_name([i], require_all=strict)
+    elif isinstance(i, pl.Selector):
+        return i
+    elif isinstance(i, pl.Expr):
+        return i.meta.as_selector()
+    else:
+        msg = f"cannot turn {qualified_type_name(i)!r} into selector"
+        raise TypeError(msg)
+
+
+def parse_list_into_selector(
+    inputs: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+    *,
+    strict: bool = True,
+) -> pl.Selector:
+    if isinstance(inputs, Collection) and not isinstance(inputs, str):
+        import polars.selectors as cs
+
+        columns = list(filter(lambda i: isinstance(i, str), inputs))
+        selector = cs.by_name(columns, require_all=strict)  # type: ignore[arg-type]
+
+        if len(columns) == len(inputs):
+            return selector
+
+        # A bit cleaner
+        if len(columns) == 0:
+            selector = cs.empty()
+
+        for i in inputs:
+            selector |= parse_into_selector(i, strict=strict)
+        return selector
+    else:
+        return parse_into_selector(inputs, strict=strict)
+
+
 def _parse_positional_inputs(
     inputs: tuple[IntoExpr, ...] | tuple[Iterable[IntoExpr]],
     *,
@@ -119,6 +163,18 @@ def _parse_inputs_as_iterable(
 ) -> Iterable[Any]:
     if not inputs:
         return []
+
+    # Ensures that the outermost element cannot be a Dictionary (as an iterable)
+    if len(inputs) == 1 and isinstance(inputs[0], Mapping):
+        msg = (
+            "Cannot pass a dictionary as a single positional argument.\n"
+            "If you merely want the *keys*, use:\n"
+            "  • df.method(*your_dict.keys())\n"
+            "If you need the key value pairs, use one of:\n"
+            "  • unpack as keywords:    df.method(**your_dict)\n"
+            "  • build expressions:     df.method(expr.alias(k) for k, expr in your_dict.items())"
+        )
+        raise TypeError(msg)
 
     # Treat elements of a single iterable as separate inputs
     if len(inputs) == 1 and _is_iterable(inputs[0]):

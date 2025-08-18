@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -11,7 +12,7 @@ from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
-from tests.unit.conftest import INTEGER_DTYPES
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType
@@ -561,11 +562,6 @@ def test_strict_cast_string(
 @pytest.mark.parametrize(
     "dtype_out",
     [
-        *INTEGER_DTYPES,
-        pl.Date,
-        pl.Datetime,
-        pl.Time,
-        pl.Duration,
         pl.String,
         pl.Categorical,
         pl.Enum(["1", "2"]),
@@ -656,6 +652,54 @@ def test_invalid_inner_type_cast_list() -> None:
         s.cast(pl.List(pl.Categorical))
 
 
+@pytest.mark.parametrize(
+    ("values", "result"),
+    [
+        ([[]], [b""]),
+        ([[1, 2], [3, 4]], [b"\x01\x02", b"\x03\x04"]),
+        ([[1, 2], None, [3, 4]], [b"\x01\x02", None, b"\x03\x04"]),
+        (
+            [None, [111, 110, 101], [12, None], [116, 119, 111], list(range(256))],
+            [
+                None,
+                b"one",
+                # A list with a null in it gets turned into a null:
+                None,
+                b"two",
+                bytes(i for i in range(256)),
+            ],
+        ),
+    ],
+)
+def test_list_uint8_to_bytes(
+    values: list[list[int | None] | None], result: list[bytes | None]
+) -> None:
+    s = pl.Series(
+        values,
+        dtype=pl.List(pl.UInt8()),
+    )
+    assert s.cast(pl.Binary(), strict=False).to_list() == result
+
+
+def test_list_uint8_to_bytes_strict() -> None:
+    series = pl.Series(
+        [[1, 2], [3, 4]],
+        dtype=pl.List(pl.UInt8()),
+    )
+    assert series.cast(pl.Binary(), strict=True).to_list() == [b"\x01\x02", b"\x03\x04"]
+
+    series = pl.Series(
+        "mycol",
+        [[1, 2], [3, None]],
+        dtype=pl.List(pl.UInt8()),
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match="conversion from `list\\[u8\\]` to `binary` failed in column 'mycol' for 1 out of 2 values: \\[\\[3, null\\]\\]",
+    ):
+        series.cast(pl.Binary(), strict=True)
+
+
 def test_all_null_cast_5826() -> None:
     df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.String)])
     out = df.with_columns(pl.col("a").cast(pl.Boolean))
@@ -701,7 +745,7 @@ def test_cast_python_dtypes() -> None:
 
 
 def test_overflowing_cast_literals_21023() -> None:
-    for no_optimization in [True, False]:
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
         assert_frame_equal(
             (
                 pl.LazyFrame()
@@ -710,7 +754,296 @@ def test_overflowing_cast_literals_21023() -> None:
                         pl.Int8, wrap_numerical=True
                     )
                 )
-                .collect(no_optimization=no_optimization)
+                .collect(optimizations=optimizations)
             ),
             pl.Series([-128], dtype=pl.Int8).to_frame(),
         )
+
+
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Enum(["a", "b"]),
+        pl.Series(["a", "b"], dtype=pl.Categorical).dtype,
+    ],
+)
+def test_invalid_bool_to_cat(value: bool, dtype: PolarsDataType) -> None:
+    # Enum
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot cast Boolean to Categorical",
+    ):
+        pl.Series([value]).cast(dtype)
+
+
+@pytest.mark.parametrize(
+    ("values", "from_dtype", "to_dtype", "pre_apply"),
+    [
+        ([["A"]], pl.List(pl.String), pl.List(pl.Int8), None),
+        ([["A"]], pl.Array(pl.String, 1), pl.List(pl.Int8), None),
+        ([[["A"]]], pl.List(pl.List(pl.String)), pl.List(pl.List(pl.Int8)), None),
+        (
+            [
+                {"x": "1", "y": "2"},
+                {"x": "A", "y": "B"},
+                {"x": "3", "y": "4"},
+                {"x": "X", "y": "Y"},
+                {"x": "5", "y": "6"},
+            ],
+            pl.Struct(
+                {
+                    "x": pl.String,
+                    "y": pl.String,
+                }
+            ),
+            pl.Struct(
+                {
+                    "x": pl.Int8,
+                    "y": pl.Int32,
+                }
+            ),
+            None,
+        ),
+    ],
+)
+def test_nested_strict_casts_failing(
+    values: list[Any],
+    from_dtype: pl.DataType,
+    to_dtype: pl.DataType,
+    pre_apply: Callable[[pl.Series], pl.Series] | None,
+) -> None:
+    s = pl.Series(values, dtype=from_dtype)
+
+    if pre_apply is not None:
+        s = pre_apply(s)
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"conversion from",
+    ):
+        s.cast(to_dtype)
+
+
+@pytest.mark.parametrize(
+    ("values", "from_dtype", "pre_apply", "to"),
+    [
+        (
+            [["A"], ["1"], ["2"]],
+            pl.List(pl.String),
+            lambda s: s.slice(1, 2),
+            pl.Series([[1], [2]]),
+        ),
+        (
+            [["1"], ["A"], ["2"], ["B"], ["3"]],
+            pl.List(pl.String),
+            lambda s: s.filter(pl.Series([True, False, True, False, True])),
+            pl.Series([[1], [2], [3]]),
+        ),
+        (
+            [
+                {"x": "1", "y": "2"},
+                {"x": "A", "y": "B"},
+                {"x": "3", "y": "4"},
+                {"x": "X", "y": "Y"},
+                {"x": "5", "y": "6"},
+            ],
+            pl.Struct(
+                {
+                    "x": pl.String,
+                    "y": pl.String,
+                }
+            ),
+            lambda s: s.filter(pl.Series([True, False, True, False, True])),
+            pl.Series(
+                [
+                    {"x": 1, "y": 2},
+                    {"x": 3, "y": 4},
+                    {"x": 5, "y": 6},
+                ]
+            ),
+        ),
+        (
+            [
+                {"x": "1", "y": "2"},
+                {"x": "A", "y": "B"},
+                {"x": "3", "y": "4"},
+                {"x": "X", "y": "Y"},
+                {"x": "5", "y": "6"},
+            ],
+            pl.Struct(
+                {
+                    "x": pl.String,
+                    "y": pl.String,
+                }
+            ),
+            lambda s: pl.select(
+                pl.when(pl.Series([True, False, True, False, True])).then(s)
+            ).to_series(),
+            pl.Series(
+                [
+                    {"x": 1, "y": 2},
+                    None,
+                    {"x": 3, "y": 4},
+                    None,
+                    {"x": 5, "y": 6},
+                ]
+            ),
+        ),
+    ],
+)
+def test_nested_strict_casts_succeeds(
+    values: list[Any],
+    from_dtype: pl.DataType,
+    pre_apply: Callable[[pl.Series], pl.Series] | None,
+    to: pl.Series,
+) -> None:
+    s = pl.Series(values, dtype=from_dtype)
+
+    if pre_apply is not None:
+        s = pre_apply(s)
+
+    assert_series_equal(
+        s.cast(to.dtype),
+        to,
+    )
+
+
+def test_nested_struct_cast_22744() -> None:
+    s = pl.Series(
+        "x",
+        [{"attrs": {"class": "a"}}],
+    )
+
+    expected = pl.select(
+        pl.lit(s).struct.with_fields(
+            pl.field("attrs").struct.with_fields(
+                [pl.field("class"), pl.lit(None, dtype=pl.String()).alias("other")]
+            )
+        )
+    )
+
+    assert_series_equal(
+        s.cast(
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+        ),
+        expected.to_series(),
+    )
+    assert_frame_equal(
+        pl.DataFrame([s]).cast(
+            {
+                "x": pl.Struct(
+                    {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
+                )
+            }
+        ),
+        expected,
+    )
+
+
+def test_cast_to_self_is_pruned() -> None:
+    q = pl.LazyFrame({"x": 1}, schema={"x": pl.Int64}).with_columns(
+        y=pl.col("x").cast(pl.Int64)
+    )
+
+    plan = q.explain()
+    assert 'col("x").alias("y")' in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "y": 1}))
+
+
+@pytest.mark.parametrize(
+    ("s", "to", "should_fail"),
+    [
+        (
+            pl.Series([datetime(2025, 1, 1)]),
+            pl.Datetime("ns"),
+            False,
+        ),
+        (
+            pl.Series([datetime(9999, 1, 1)]),
+            pl.Datetime("ns"),
+            True,
+        ),
+        (
+            pl.Series([datetime(2025, 1, 1), datetime(9999, 1, 1)]),
+            pl.Datetime("ns"),
+            True,
+        ),
+        (
+            pl.Series([[datetime(2025, 1, 1)], [datetime(9999, 1, 1)]]),
+            pl.List(pl.Datetime("ns")),
+            True,
+        ),
+        # lower date limit for nanosecond
+        (pl.Series([date(1677, 9, 22)]), pl.Datetime("ns"), False),
+        (pl.Series([date(1677, 9, 21)]), pl.Datetime("ns"), True),
+        # upper date limit for nanosecond
+        (pl.Series([date(2262, 4, 11)]), pl.Datetime("ns"), False),
+        (pl.Series([date(2262, 4, 12)]), pl.Datetime("ns"), True),
+    ],
+)
+def test_cast_temporals_overflow_16039(
+    s: pl.Series, to: pl.DataType, should_fail: bool
+) -> None:
+    if should_fail:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="conversion from"
+        ):
+            s.cast(to)
+    else:
+        s.cast(to)
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_prune_superfluous_cast(dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": dtype})
+    result = lf.select(pl.col("a").cast(dtype))
+    assert "strict_cast" not in result.explain()
+
+
+def test_not_prune_necessary_cast() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt16})
+    result = lf.select(pl.col("a").cast(pl.UInt8))
+    assert "strict_cast" in result.explain()
+
+
+@pytest.mark.parametrize("target_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("inner_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_cast_optimizer_in_list_eval_23924(
+    inner_dtype: PolarsDataType,
+    target_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    print(inner_dtype, target_dtype)
+    if target_dtype in INTEGER_DTYPES:
+        df = pl.Series("a", [[1]], dtype=pl.List(target_dtype)).to_frame()
+    else:
+        df = pl.Series("a", [[1.0]], dtype=pl.List(target_dtype)).to_frame()
+    q = df.lazy().select(
+        pl.col("a").list.eval(
+            (op(pl.element(), pl.element().cast(inner_dtype))).cast(target_dtype)
+        )
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+def test_lit_cast_arithmetic_23677() -> None:
+    df = pl.DataFrame({"a": [1]}, schema={"a": pl.Float32})
+    q = df.lazy().select(pl.col("a") / pl.lit(1, pl.Int32))
+    expected = pl.Schema({"a": pl.Float64})
+    assert q.collect().schema == expected
+
+
+@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_lit_cast_arithmetic_matrix_schema(
+    col_dtype: PolarsDataType,
+    lit_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    df = pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
+    q = df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    assert q.collect_schema() == q.collect().schema

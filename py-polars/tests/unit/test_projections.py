@@ -123,6 +123,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_unnest_columns_available() -> None:
     df = pl.DataFrame(
         {
@@ -139,9 +140,7 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(
-            n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}", _eager=True
-        )
+        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
     ).unnest("genres")
 
     out = q.collect()
@@ -321,7 +320,12 @@ def test_join_suffix_collision_9562() -> None:
     )
     df.join(other_df, on="ham")
     assert df.lazy().join(
-        other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
+        other_df.lazy(),
+        how="inner",
+        left_on="ham",
+        right_on="ham",
+        suffix="m",
+        maintain_order="right",
     ).select("ham").collect().to_dict(as_series=False) == {"ham": ["a", "b"]}
 
 
@@ -351,7 +355,7 @@ def test_projection_join_names_9955() -> None:
         how="inner",
     )
 
-    q = q.select(batting.collect_schema())
+    q = q.select(*batting.collect_schema().keys())
 
     assert q.collect().schema == {
         "playerID": pl.String,
@@ -399,16 +403,19 @@ def test_projection_pushdown_full_outer_join_duplicates() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
     df2 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
     assert (
-        df1.join(df2, on="a", how="full").with_columns(c=0).select("a", "c").collect()
+        df1.join(df2, on="a", how="full", maintain_order="right")
+        .with_columns(c=0)
+        .select("a", "c")
+        .collect()
     ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
 
 
 def test_rolling_key_projected_13617() -> None:
     df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
     ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
-    plan = ldf.explain(projection_pushdown=True)
+    plan = ldf.explain(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     assert r"2/2 COLUMNS" in plan
-    out = ldf.collect(projection_pushdown=True)
+    out = ldf.collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
 
 
@@ -436,7 +443,9 @@ def test_cached_schema_15651() -> None:
     q = q.with_row_index()
     q = q.filter(~pl.col("col1").is_null())
     # create a subplan diverging from q
-    _ = q.select(pl.len()).collect(projection_pushdown=True)
+    _ = q.select(pl.len()).collect(
+        optimizations=pl.QueryOptFlags(projection_pushdown=True)
+    )
 
     # ensure that q's "cached" columns are still correct
     assert q.collect_schema().names() == q.collect().columns
@@ -448,7 +457,7 @@ def test_double_projection_pushdown_15895() -> None:
         .select(C="A", A="B")
         .group_by(1)
         .all()
-        .collect(projection_pushdown=True)
+        .collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     )
     assert df.to_dict(as_series=False) == {
         "literal": [1],

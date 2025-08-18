@@ -11,7 +11,7 @@ def test_concat_invalid_schema_err_20355() -> None:
     lf1 = pl.LazyFrame({"x": [1], "y": [None]})
     lf2 = pl.LazyFrame({"y": [1]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.concat([lf1, lf2]).collect(streaming=True)
+        pl.concat([lf1, lf2]).collect(engine="streaming")
 
 
 def test_concat_df() -> None:

@@ -1,4 +1,4 @@
-use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+use polars_core::utils::arrow::temporal_conversions::{MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY};
 
 use super::*;
 
@@ -25,29 +25,22 @@ fn test_duration() -> PolarsResult<()> {
             (col("date") - col("date").first()).alias("date"),
             (col("datetime") - col("datetime").first()).alias("datetime"),
         ])
-        .explode([col("date"), col("datetime")])
+        .explode(by_name(["date", "datetime"], true))
         .collect()?;
 
-    for c in ["date", "datetime"] {
-        let column = out.column(c)?;
-        assert!(matches!(
-            column.dtype(),
-            DataType::Duration(TimeUnit::Milliseconds)
-        ));
+    let column = out.column("date")?;
+    let (scale, _tu) = (MICROSECONDS_IN_DAY, TimeUnit::Microseconds);
+    assert!(matches!(column.dtype(), DataType::Duration(_tu)));
+    assert_eq!(column.get(0)?, AnyValue::Duration(0, _tu));
+    assert_eq!(column.get(1)?, AnyValue::Duration(scale, _tu));
+    assert_eq!(column.get(2)?, AnyValue::Duration(2 * scale, _tu));
 
-        assert_eq!(
-            column.get(0)?,
-            AnyValue::Duration(0, TimeUnit::Milliseconds)
-        );
-        assert_eq!(
-            column.get(1)?,
-            AnyValue::Duration(MILLISECONDS_IN_DAY, TimeUnit::Milliseconds)
-        );
-        assert_eq!(
-            column.get(2)?,
-            AnyValue::Duration(2 * MILLISECONDS_IN_DAY, TimeUnit::Milliseconds)
-        );
-    }
+    let column = out.column("datetime")?;
+    let (scale, _tu) = (MILLISECONDS_IN_DAY, TimeUnit::Milliseconds);
+    assert!(matches!(column.dtype(), DataType::Duration(_tu)));
+    assert_eq!(column.get(0)?, AnyValue::Duration(0, _tu));
+    assert_eq!(column.get(1)?, AnyValue::Duration(scale, _tu));
+    assert_eq!(column.get(2)?, AnyValue::Duration(2 * scale, _tu));
     Ok(())
 }
 
@@ -70,7 +63,7 @@ fn test_lazy_arithmetic() {
     print_plans(&lf);
 
     let new = lf.collect().unwrap();
-    println!("{:?}", new);
+    println!("{new:?}");
     assert_eq!(new.height(), 7);
     assert_eq!(
         new.column("super_wide").unwrap().f64().unwrap().get(0),
@@ -88,7 +81,7 @@ fn test_lazy_logical_plan_filter_and_alias_combined() {
 
     print_plans(&lf);
     let df = lf.collect().unwrap();
-    println!("{:?}", df);
+    println!("{df:?}");
 }
 
 #[test]

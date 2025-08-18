@@ -5,8 +5,8 @@ use polars_utils::arena::Arena;
 
 use super::*;
 use crate::plans::{AExpr, IR};
-use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
+use crate::prelude::aexpr::traverse_and_hash_aexpr;
 
 impl IRNode {
     pub(crate) fn hashable_and_cmp<'a>(
@@ -80,13 +80,13 @@ impl Hash for HashableEqLP<'_> {
                 predicate,
                 output_schema: _,
                 scan_type,
-                file_options,
+                unified_scan_args,
             } => {
                 // We don't have to traverse the schema, hive partitions etc. as they are derivative from the paths.
                 scan_type.hash(state);
                 sources.hash(state);
                 hash_option_expr(predicate, self.expr_arena, state);
-                file_options.hash(state);
+                unified_scan_args.hash(state);
             },
             IR::DataFrameScan {
                 df,
@@ -179,15 +179,11 @@ impl Hash for HashableEqLP<'_> {
                 }
             },
             IR::Sink { input: _, payload } => {
-                payload.hash(state);
+                payload.traverse_and_hash(self.expr_arena, state);
             },
-            IR::Cache {
-                input: _,
-                id,
-                cache_hits,
-            } => {
+            IR::SinkMultiple { .. } => {},
+            IR::Cache { input: _, id } => {
                 id.hash(state);
-                cache_hits.hash(state);
             },
             #[cfg(feature = "merge_sorted")]
             IR::MergeSorted {
@@ -260,7 +256,7 @@ impl HashableEqLP<'_> {
                     predicate: pred_l,
                     output_schema: _,
                     scan_type: stl,
-                    file_options: ol,
+                    unified_scan_args: ol,
                 },
                 IR::Scan {
                     sources: pr,
@@ -269,10 +265,10 @@ impl HashableEqLP<'_> {
                     predicate: pred_r,
                     output_schema: _,
                     scan_type: str,
-                    file_options: or,
+                    unified_scan_args: or,
                 },
             ) => {
-                pl.as_paths() == pr.as_paths()
+                pl == pr
                     && stl == str
                     && ol == or
                     && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena)
@@ -288,7 +284,7 @@ impl HashableEqLP<'_> {
                     schema: _,
                     output_schema: s_r,
                 },
-            ) => Arc::as_ptr(dfl) == Arc::as_ptr(dfr) && s_l == s_r,
+            ) => std::ptr::eq(Arc::as_ptr(dfl), Arc::as_ptr(dfr)) && s_l == s_r,
             (
                 IR::SimpleProjection {
                     input: _,

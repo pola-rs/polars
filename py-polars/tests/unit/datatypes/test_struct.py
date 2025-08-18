@@ -11,6 +11,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -97,6 +98,7 @@ def test_struct_hashes() -> None:
     assert len({hash(tp) for tp in (dtypes)}) == 3
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct (map_elements)
 def test_struct_unnesting() -> None:
     df_base = pl.DataFrame({"a": [1, 2]})
     df = df_base.select(
@@ -121,18 +123,13 @@ def test_struct_unnesting() -> None:
         out_lazy = df.lazy().unnest(cols)
         assert_frame_equal(out_lazy, expected.lazy())
 
-    out = (
-        df_base.lazy()
-        .select(
-            pl.all().alias("a_original"),
-            pl.col("a")
-            .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
-            .struct.rename_fields(["a", "a_squared", "mod2eq0"])
-            .alias("foo"),
-        )
-        .unnest("foo")
-        .collect()
-    )
+    out = df_base.select(
+        pl.all().alias("a_original"),
+        pl.col("a")
+        .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+        .struct.rename_fields(["a", "a_squared", "mod2eq0"])
+        .alias("foo"),
+    ).unnest("foo")
     assert_frame_equal(out, expected)
 
 
@@ -261,6 +258,7 @@ def test_from_dicts_struct() -> None:
     ]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
@@ -278,16 +276,16 @@ def test_list_to_struct() -> None:
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct(n_field_strategy="max_width").to_list() == [
+    assert df.to_series().list.to_struct("max_width").to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
     ]
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    assert df.lazy().select(
-        pl.col("lists").list.to_struct(upper_bound=3, _eager=True)
-    ).unnest("lists").sum().collect().columns == ["field_0", "field_1", "field_2"]
+    assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
+        "lists"
+    ).sum().collect().columns == ["field_0", "field_1", "field_2"]
 
 
 def test_sort_df_with_list_struct() -> None:
@@ -761,7 +759,7 @@ def test_struct_is_in() -> None:
     # The dtype casts below test that struct is_in upcasts dtypes.
     s1 = (
         pl.DataFrame({"x": [4, 3, 4, 9], "y": [0, 4, 6, 2]})
-        .select(pl.struct(schema={"x": pl.Int8, "y": pl.Float32}))
+        .select(pl.struct(schema={"x": pl.Int64, "y": pl.Int64}))
         .to_series()
     )
     s2 = (
@@ -877,16 +875,15 @@ def test_struct_field_recognized_as_renaming_expr_16480() -> None:
 
 
 def test_struct_filter_chunked_16498() -> None:
-    with pl.StringCache():
-        N = 5
-        df_orig1 = pl.DataFrame({"cat_a": ["remove"] * N, "cat_b": ["b"] * N})
+    N = 5
+    df_orig1 = pl.DataFrame({"cat_a": ["remove"] * N, "cat_b": ["b"] * N})
 
-        df_orig2 = pl.DataFrame({"cat_a": ["a"] * N, "cat_b": ["b"] * N})
+    df_orig2 = pl.DataFrame({"cat_a": ["a"] * N, "cat_b": ["b"] * N})
 
-        df = pl.concat([df_orig1, df_orig2], rechunk=False).cast(pl.Categorical)
-        df = df.select(pl.struct(pl.all()).alias("s"))
-        df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
-        assert df.shape == (5, 1)
+    df = pl.concat([df_orig1, df_orig2], rechunk=False).cast(pl.Categorical)
+    df = df.select(pl.struct(pl.all()).alias("s"))
+    df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
+    assert df.shape == (5, 1)
 
 
 def test_struct_field_dynint_nullable_16243() -> None:
@@ -923,12 +920,13 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
         ),
     ]
 
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.lazy().select(
             pl.col("meta_data").struct.with_fields(pl.field("*").exclude("user_data"))
         ).collect()
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 def test_struct_chunked_gather_17603() -> None:
     df = pl.DataFrame(
         {
@@ -1049,12 +1047,14 @@ def test_struct_null_zip() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 5, 9, 13, 42])
 def test_zfs_construction(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))
     assert a.len() == size
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_unnest(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).struct.unnest()
@@ -1075,6 +1075,7 @@ def test_zfs_equality(size: int) -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 def test_zfs_nullable_when_otherwise() -> None:
     a = pl.Series("a", [{}, None, {}, {}, None], pl.Struct([]))
     b = pl.Series("b", [None, {}, None, {}, None], pl.Struct([]))
@@ -1092,6 +1093,7 @@ def test_zfs_nullable_when_otherwise() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 def test_zfs_struct_fns() -> None:
     a = pl.Series("a", [{}], pl.Struct([]))
 
@@ -1119,18 +1121,20 @@ def test_zfs_serialization_roundtrip(format: pl.SerializationFormat, size: int) 
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_row_encoding(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))
 
     df = pl.DataFrame([a, pl.Series("x", list(range(size)), pl.Int8)])
 
-    gb = df.lazy().group_by(["a", "x"]).agg(pl.all().min()).collect(streaming=True)
+    gb = df.lazy().group_by(["a", "x"]).agg(pl.all().min()).collect(engine="streaming")
 
     # We need to ignore the order because the group_by is non-deterministic
     assert_frame_equal(gb, df, check_row_order=False)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct_19208() -> None:
     df = pl.DataFrame(
@@ -1143,7 +1147,7 @@ def test_list_to_struct_19208() -> None:
         }
     )
     assert pl.concat([df[0], df[1], df[2]]).select(
-        pl.col("nested").list.to_struct(_eager=True)
+        pl.col("nested").list.to_struct(upper_bound=1)
     ).to_dict(as_series=False) == {
         "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
     }
@@ -1219,10 +1223,82 @@ def test_leaf_list_eq_19613(data: Any) -> None:
     assert not pl.DataFrame([data]).equals(pl.DataFrame([[data]]))
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_nested_object_raises_15237() -> None:
     obj = object()
     df = pl.DataFrame({"a": [obj]})
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError, match="nested objects are not allowed"
-    ):
+    with pytest.raises(InvalidOperationError, match="nested objects are not allowed"):
         df.select(pl.struct("a"))
+
+
+def test_empty_struct_with_fields_21095() -> None:
+    df = pl.DataFrame({"a": [{}, {}]})
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=pl.lit(42, pl.Int64))),
+        pl.DataFrame({"a": [{"a": 42}, {"a": 42}]}),
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=None)),
+        pl.DataFrame({"a": [{"a": None}, {"a": None}]}),
+    )
+
+
+def test_cast_to_struct_needs_field_14083() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="must specify one field in the struct"
+    ):
+        pl.Series([1], dtype=pl.Int32).cast(pl.Struct)
+
+    with pytest.raises(
+        InvalidOperationError, match="must specify one field in the struct"
+    ):
+        pl.Series([1], dtype=pl.Int32).cast(pl.Struct({"a": pl.UInt8, "b": pl.UInt8}))
+
+
+@pytest.mark.filterwarnings("ignore:Comparisons with None always result in null.")
+def test_zip_outer_validity_infinite_recursion_21267() -> None:
+    s = pl.Series("x", [None, None], pl.Struct({"f": pl.Null}))
+    assert_series_equal(
+        s.to_frame().select(pl.col.x.__eq__(None)).to_series(),
+        pl.Series("x", [None, None], pl.Boolean),
+    )
+
+
+def test_struct_arithmetic_broadcast_21376() -> None:
+    df = pl.DataFrame(
+        {
+            "struct1": [{"low": 1, "mid": 2, "up": 3}],
+            "list_struct": [
+                [{"low": 1, "mid": 2, "up": 3}, {"low": 1, "mid": 2, "up": 3}]
+            ],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "add_struct": [{"low": 2, "mid": 4, "up": 6}] * 2,
+        }
+    )
+    out = (
+        df.with_row_index()
+        .explode("list_struct")
+        .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_cast_string_multiple_chunks_21650() -> None:
+    df = pl.DataFrame({"a": [{"a": 1, "b": 2}]})
+    df = pl.concat([df, df], rechunk=False)
+    result = df.select(pl.col("a").cast(pl.String))
+    expected = pl.DataFrame({"a": ["{1,2}", "{1,2}"]})
+    assert_frame_equal(result, expected)
+
+
+def test_struct_nulls_in_equality_23527() -> None:
+    df = pl.DataFrame({"a": [False, False, False, None, True, True]})
+    df_struct = df.with_columns(pl.struct(["a"]).alias("a"))
+    out = df_struct.with_columns(
+        (pl.col("a") == pl.col("a").shift(1)).fill_null(False).alias("a")
+    )
+    expected = pl.DataFrame({"a": [False, True, True, False, False, True]})
+    assert_frame_equal(out, expected)

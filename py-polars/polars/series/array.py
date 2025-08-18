@@ -8,11 +8,11 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from datetime import date, datetime, time
 
     from polars import Series
+    from polars._plr import PySeries
     from polars._typing import IntoExpr, IntoExprColumn
-    from polars.polars import PySeries
+    from polars.expr.expr import Expr
 
 
 @expr_dispatch
@@ -59,6 +59,10 @@ class ArrayNameSpace:
     def sum(self) -> Series:
         """
         Compute the sum values of the sub-arrays.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `0`.
 
         Examples
         --------
@@ -192,6 +196,10 @@ class ArrayNameSpace:
         Series
             Series of data type :class:`Boolean`.
 
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `False`.
+
         Examples
         --------
         >>> s = pl.Series(
@@ -210,6 +218,146 @@ class ArrayNameSpace:
         ]
         """
 
+    def len(self) -> Series:
+        """
+        Return the number of elements in each array.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.len()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            2
+        ]
+        """
+
+    def slice(
+        self,
+        offset: int | Expr,
+        length: int | Expr | None = None,
+        *,
+        as_array: bool = False,
+    ) -> Series:
+        """
+        Slice the sub-arrays.
+
+        Parameters
+        ----------
+        offset
+            The starting index of the slice.
+        length
+            The length of the slice.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]],
+        ...     dtype=pl.Array(pl.Int64, 6),
+        ... )
+        >>> s.arr.slice(1)
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [2, 3, … 6]
+            [8, 9, … 12]
+        ]
+        >>> s.arr.slice(1, 3, as_array=True)
+        shape: (2,)
+        Series: '' [array[i64, 3]]
+        [
+            [2, 3, 4]
+            [8, 9, 10]
+        ]
+        >>> s.arr.slice(-2)
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [5, 6]
+            [11, 12]
+        ]
+        """
+
+    def head(self, n: int | Expr = 5, *, as_array: bool = False) -> Series:
+        """
+        Get the first `n` elements of the sub-arrays.
+
+        Parameters
+        ----------
+        n
+            Number of values to return for each sublist.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `n` must be a constant value.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]],
+        ...     dtype=pl.Array(pl.Int64, 6),
+        ... )
+        >>> s.arr.head()
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [1, 2, … 5]
+            [7, 8, … 11]
+        ]
+        >>> s.arr.head(3, as_array=True)
+        shape: (2,)
+        Series: '' [array[i64, 3]]
+        [
+            [1, 2, 3]
+            [7, 8, 9]
+        ]
+        """
+
+    def tail(self, n: int | Expr = 5, *, as_array: bool = False) -> Series:
+        """
+        Slice the last `n` values of every sublist.
+
+        Parameters
+        ----------
+        n
+            Number of values to return for each sublist.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `n` must be a constant value.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]],
+        ...     dtype=pl.Array(pl.Int64, 6),
+        ... )
+        >>> s.arr.tail()
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [2, 3, … 6]
+            [8, 9, … 12]
+        ]
+        >>> s.arr.tail(3, as_array=True)
+        shape: (2,)
+        Series: '' [array[i64, 3]]
+        [
+            [4, 5, 6]
+            [10, 11, 12]
+        ]
+        """
+
     def all(self) -> Series:
         """
         Evaluate whether all boolean values are true for every subarray.
@@ -218,6 +366,10 @@ class ArrayNameSpace:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `True`.
 
         Examples
         --------
@@ -476,9 +628,7 @@ class ArrayNameSpace:
         ]
         """
 
-    def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
-    ) -> Series:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
         Check if sub-arrays contain the given item.
 
@@ -486,6 +636,8 @@ class ArrayNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------

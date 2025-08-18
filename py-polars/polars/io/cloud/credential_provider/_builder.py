@@ -1,23 +1,32 @@
 from __future__ import annotations
 
 import abc
-from functools import partial
-from typing import TYPE_CHECKING, Any, Callable, Literal
+import os
+import threading
+from typing import TYPE_CHECKING, Any, Callable, Literal, Union
 
 import polars._utils.logging
+from polars._utils.cache import LRUCache
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
+from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
+    CachingCredentialProvider,
+    CredentialProvider,
     CredentialProviderAWS,
     CredentialProviderAzure,
+    CredentialProviderFunction,
     CredentialProviderGCP,
+    UserProvidedGCPToken,
 )
 
 if TYPE_CHECKING:
-    from polars.io.cloud.credential_provider._providers import (
-        CredentialProvider,
-        CredentialProviderFunction,
-    )
+    import sys
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
 OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
@@ -41,6 +50,10 @@ OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
         "user_agent",
     ]
 )
+
+CredentialProviderBuilderReturn: TypeAlias = Union[
+    CredentialProvider, CredentialProviderFunction, None
+]
 
 
 class CredentialProviderBuilder:
@@ -70,8 +83,17 @@ class CredentialProviderBuilder:
     # Note: The rust-side expects this exact function name.
     def build_credential_provider(
         self,
-    ) -> CredentialProvider | CredentialProviderFunction | None:
-        """Instantiate a credential provider from configuration."""
+        clear_cached_credentials: bool = False,  # noqa: FBT001
+    ) -> CredentialProviderBuilderReturn:
+        """
+        Instantiate a credential provider from configuration.
+
+        Parameters
+        ----------
+        clear_cached_credentials
+            If the built provider is an instance of `CachingCredentialProvider`,
+            clears any cached credentials on that object.
+        """
         verbose = polars._utils.logging.verbose()
 
         if verbose:
@@ -92,6 +114,14 @@ class CredentialProviderBuilder:
                 eprint(
                     f"[CredentialProviderBuilder]: No provider initialized "
                     f"from {self.credential_provider_init!r}"
+                )
+
+        if clear_cached_credentials and isinstance(v, CachingCredentialProvider):
+            v.clear_cached_credentials()
+
+            if verbose:
+                eprint(
+                    f"[CredentialProviderBuilder]: Clear cached credentials for {v!r}"
                 )
 
         return v
@@ -138,7 +168,7 @@ class CredentialProviderBuilderImpl(abc.ABC):
         return f"{provider_repr} @ {builder_name}"
 
 
-# Wraps an already ininitialized credential provider into the builder interface.
+# Wraps an already initialized credential provider into the builder interface.
 # Used for e.g. user-provided credential providers.
 class InitializedCredentialProvider(CredentialProviderBuilderImpl):
     """Wraps an already initialized credential provider."""
@@ -154,64 +184,96 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         return repr(self.credential_provider)
 
 
+AUTO_INIT_LRU_CACHE: LRUCache[bytes, CredentialProviderBuilderReturn] | None = None
+AUTO_INIT_LRU_CACHE_LOCK: threading.RLock = threading.RLock()
+
+
+def _auto_init_with_cache(
+    get_cache_key_func: Callable[[], bytes],
+    build_provider_func: Callable[[], CredentialProviderBuilderReturn],
+) -> CredentialProviderBuilderReturn:
+    global AUTO_INIT_LRU_CACHE
+
+    if (
+        max_items := int(
+            os.getenv(
+                "POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE",
+                8,
+            )
+        )
+    ) <= 0:
+        if AUTO_INIT_LRU_CACHE_LOCK.acquire(blocking=False):
+            AUTO_INIT_LRU_CACHE = None
+            AUTO_INIT_LRU_CACHE_LOCK.release()
+
+        return build_provider_func()
+
+    verbose = polars._utils.logging.verbose()
+
+    with AUTO_INIT_LRU_CACHE_LOCK:
+        if AUTO_INIT_LRU_CACHE is None:
+            if verbose:
+                eprint(
+                    f"Create credential provider AutoInit LRU cache ({max_items = })"
+                )
+
+            AUTO_INIT_LRU_CACHE = LRUCache(max_items)
+
+        cache_key = get_cache_key_func()
+
+        try:
+            provider = AUTO_INIT_LRU_CACHE[cache_key]
+        except KeyError:
+            provider = build_provider_func()
+            AUTO_INIT_LRU_CACHE[cache_key] = provider
+
+        return provider
+
+
 # Represents an automatic initialization configuration. This is created for
 # credential_provider="auto".
 class AutoInit(CredentialProviderBuilderImpl):
     def __init__(self, cls: Any, **kw: Any) -> None:
         self.cls = cls
         self.kw = kw
+        self._cache_key: NoPickleOption[bytes] = NoPickleOption()
 
-    def __call__(self) -> Any:
+    def __call__(self) -> CredentialProviderFunction | None:
         # This is used for credential_provider="auto", which allows for
         # ImportErrors.
         try:
-            return self.cls(**self.kw)
+            return _auto_init_with_cache(
+                self.get_or_init_cache_key,
+                lambda: self.cls(**self.kw),
+            )
         except ImportError as e:
             if verbose():
                 eprint(f"failed to auto-initialize {self.provider_repr}: {e!r}")
 
         return None
 
+    def get_or_init_cache_key(self) -> bytes:
+        cache_key = self._cache_key.get()
+
+        if cache_key is None:
+            cache_key = self.get_cache_key_impl()
+            self._cache_key.set(cache_key)
+
+            if verbose():
+                eprint(f"{self!r}: AutoInit cache key: {cache_key.hex()}")
+
+        return cache_key
+
+    def get_cache_key_impl(self) -> bytes:
+        import hashlib
+        import pickle
+
+        hash = hashlib.sha256(pickle.dumps(self))
+        return hash.digest()[:16]
+
     @property
     def provider_repr(self) -> str:
         return self.cls.__name__
-
-
-# AWS auto-init needs its own class for a bit of extra logic.
-class AutoInitAWS(CredentialProviderBuilderImpl):
-    def __init__(
-        self,
-        initializer: Callable[[], CredentialProviderAWS],
-    ) -> None:
-        self.initializer = initializer
-        self.profile_name = initializer.keywords["profile_name"]  # type: ignore[attr-defined]
-
-    def __call__(self) -> CredentialProviderAWS | None:
-        try:
-            provider = self.initializer()
-            provider()  # call it to potentially catch EmptyCredentialError
-
-        except (ImportError, CredentialProviderAWS.EmptyCredentialError) as e:
-            # Check it is ImportError, EmptyCredentialError could be because the
-            # profile was loaded but did not contain any credentials.
-            if isinstance(e, ImportError) and self.profile_name:
-                # Hard error as we are unable to load the requested profile
-                # without CredentialProviderAWS (the rust-side does not load
-                # aws_profile).
-                msg = f"cannot load requested aws_profile '{self.profile_name}': {e!r}"
-                raise polars.exceptions.ComputeError(msg) from e
-
-            if verbose():
-                eprint(f"failed to auto-initialize {self.provider_repr}: {e!r}")
-
-        else:
-            return provider
-
-        return None
-
-    @property
-    def provider_repr(self) -> str:
-        return "CredentialProviderAWS"
 
 
 def _init_credential_provider_builder(
@@ -245,7 +307,7 @@ def _init_credential_provider_builder(
             return credential_provider
 
         if credential_provider != "auto":
-            msg = f"The `credential_provider` parameter of `{caller_name}` is considered unstable."
+            msg = f"the `credential_provider` parameter of `{caller_name}` is considered unstable."
             issue_unstable_warning(msg)
 
             return CredentialProviderBuilder.from_initialized_provider(
@@ -306,6 +368,7 @@ def _init_credential_provider_builder(
             profile = None
             default_region = None
             unhandled_key = None
+            has_endpoint_url = False
 
             if storage_options is not None:
                 for k, v in storage_options.items():
@@ -318,11 +381,17 @@ def _init_credential_provider_builder(
                         default_region = v
                     elif k in {"aws_profile", "profile"}:
                         profile = v
+                    elif k in {
+                        "aws_endpoint",
+                        "aws_endpoint_url",
+                        "endpoint",
+                        "endpoint_url",
+                    }:
+                        has_endpoint_url = True
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
                         continue
                     else:
-                        # We assume some sort of access key was given, so we
-                        # just dispatch to the rust side.
+                        # We assume this is some sort of access key
                         unhandled_key = k
 
             if unhandled_key is not None:
@@ -333,23 +402,56 @@ def _init_credential_provider_builder(
                     )
                     raise ValueError(msg)
 
-                return None
-
             return CredentialProviderBuilder(
-                AutoInitAWS(
-                    partial(
-                        CredentialProviderAWS,
-                        profile_name=profile,
-                        region_name=region or default_region,
-                    )
+                AutoInit(
+                    CredentialProviderAWS,
+                    profile_name=profile,
+                    region_name=region or default_region,
+                    _auto_init_unhandled_key=unhandled_key,
+                    _storage_options_has_endpoint_url=has_endpoint_url,
                 )
             )
 
-        elif storage_options is not None and any(
-            key.lower() not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
-        ):
-            return None
         elif _is_gcp_cloud(scheme):
+            token = None
+            unhandled_key = None
+
+            if storage_options is not None:
+                for k, v in storage_options.items():
+                    k = k.lower()
+
+                    # https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
+                    if k in {"token", "bearer_token"}:
+                        token = v
+                    elif k in {
+                        "google_bucket",
+                        "google_bucket_name",
+                        "bucket",
+                        "bucket_name",
+                    }:
+                        continue
+                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                        continue
+                    else:
+                        # We assume some sort of access key was given, so we
+                        # just dispatch to the rust side.
+                        unhandled_key = k
+
+            if unhandled_key is not None:
+                if token is not None:
+                    msg = (
+                        "unsupported: cannot combine token with "
+                        f"{unhandled_key} in storage_options"
+                    )
+                    raise ValueError(msg)
+
+                return None
+
+            if token is not None:
+                return CredentialProviderBuilder(
+                    InitializedCredentialProvider(UserProvidedGCPToken(token))
+                )
+
             return CredentialProviderBuilder(AutoInit(CredentialProviderGCP))
 
         return None

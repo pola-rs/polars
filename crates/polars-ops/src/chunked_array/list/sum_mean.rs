@@ -3,6 +3,7 @@ use std::ops::Div;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
 
@@ -112,7 +113,7 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
                     .sum_reduce()
                     .map(|sc| sc.into_series(PlSmallStr::EMPTY))
             })?
-            .explode()
+            .explode(false)
             .unwrap()
             .into_series()
             .cast(dt)?,
@@ -184,6 +185,22 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
                 .with_name(ca.name().clone());
             out.into_series()
+        },
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Date => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (US_IN_DAY as f64)) as i64))
+                })
+                .with_name(ca.name().clone());
+            out.into_datetime(TimeUnit::Microseconds, None)
+                .into_series()
+        },
+        dt if dt.is_temporal() => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as i64)))
+                .with_name(ca.name().clone());
+            out.cast(dt).unwrap()
         },
         _ => {
             let out: Float64Chunked = ca

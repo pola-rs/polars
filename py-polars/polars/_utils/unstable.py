@@ -40,7 +40,7 @@ def issue_unstable_warning(message: str | None = None) -> None:
         return
 
     if message is None:
-        message = "This functionality is considered unstable."
+        message = "this functionality is considered unstable."
     message += (
         " It may be changed at any point without it being considered a breaking change."
     )

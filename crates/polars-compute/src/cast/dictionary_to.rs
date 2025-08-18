@@ -1,9 +1,9 @@
 use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::datatypes::ArrowDataType;
 use arrow::match_integer_type;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::{cast, primitive_to_primitive, CastOptionsImpl};
+use super::{CastOptionsImpl, cast, primitive_to_primitive};
 
 macro_rules! key_cast {
     ($keys:expr, $values:expr, $array:expr, $to_keys_type:expr, $to_type:ty, $to_datatype:expr) => {{

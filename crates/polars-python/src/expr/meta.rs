@@ -1,8 +1,10 @@
+use polars::prelude::Schema;
 use pyo3::prelude::*;
 
+use crate::PyExpr;
 use crate::error::PyPolarsErr;
 use crate::expr::ToPyExprs;
-use crate::PyExpr;
+use crate::prelude::Wrap;
 
 #[pymethods]
 impl PyExpr {
@@ -10,8 +12,14 @@ impl PyExpr {
         self.inner == other.inner
     }
 
-    fn meta_pop(&self) -> PyResult<Vec<Self>> {
-        let exprs = self.inner.clone().meta().pop().map_err(PyPolarsErr::from)?;
+    fn meta_pop(&self, schema: Option<Wrap<Schema>>) -> PyResult<Vec<Self>> {
+        let schema = schema.as_ref().map(|s| &s.0);
+        let exprs = self
+            .inner
+            .clone()
+            .meta()
+            .pop(schema)
+            .map_err(PyPolarsErr::from)?;
         Ok(exprs.to_pyexprs())
     }
 
@@ -62,65 +70,25 @@ impl PyExpr {
         self.inner.clone().meta().is_literal(allow_aliasing)
     }
 
-    fn _meta_selector_add(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_add(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    fn _meta_selector_and(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_and(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    fn _meta_selector_sub(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_sub(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    fn _meta_selector_xor(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_xor(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    fn _meta_as_selector(&self) -> PyExpr {
-        self.inner.clone().meta()._into_selector().into()
-    }
-
-    fn compute_tree_format(&self, display_as_dot: bool) -> Result<String, PyErr> {
+    fn compute_tree_format(
+        &self,
+        display_as_dot: bool,
+        schema: Option<Wrap<Schema>>,
+    ) -> Result<String, PyErr> {
         let e = self
             .inner
             .clone()
             .meta()
-            .into_tree_formatter(display_as_dot)
+            .into_tree_formatter(display_as_dot, schema.as_ref().map(|s| &s.0))
             .map_err(PyPolarsErr::from)?;
         Ok(format!("{e}"))
     }
 
-    fn meta_tree_format(&self) -> PyResult<String> {
-        self.compute_tree_format(false)
+    fn meta_tree_format(&self, schema: Option<Wrap<Schema>>) -> PyResult<String> {
+        self.compute_tree_format(false, schema)
     }
 
-    fn meta_show_graph(&self) -> PyResult<String> {
-        self.compute_tree_format(true)
+    fn meta_show_graph(&self, schema: Option<Wrap<Schema>>) -> PyResult<String> {
+        self.compute_tree_format(true, schema)
     }
 }

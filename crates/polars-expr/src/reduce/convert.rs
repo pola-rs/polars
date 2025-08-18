@@ -3,6 +3,11 @@ use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use super::*;
+use crate::reduce::any_all::{new_all_reduction, new_any_reduction};
+#[cfg(feature = "bitwise")]
+use crate::reduce::bitwise::{
+    new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
+};
 use crate::reduce::count::CountReduce;
 use crate::reduce::first_last::{new_first_reduction, new_last_reduction};
 use crate::reduce::len::LenReduce;
@@ -20,7 +25,7 @@ pub fn into_reduction(
     let get_dt = |node| {
         expr_arena
             .get(node)
-            .to_dtype(schema, Context::Default, expr_arena)?
+            .to_dtype(schema, expr_arena)?
             .materialize_unknown(false)
     };
     let out = match expr_arena.get(node) {
@@ -54,16 +59,56 @@ pub fn into_reduction(
             IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {
-            // Compute length on the first column, or if none exist we'll use
-            // a zero-length dummy series.
-            let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
-            let expr = if let Some(first_column) = schema.iter_names().next() {
-                expr_arena.add(AExpr::Column(first_column.as_str().into()))
+            if let Some(first_column) = schema.iter_names().next() {
+                let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
+                let expr = expr_arena.add(AExpr::Column(first_column.as_str().into()));
+
+                (out, expr)
             } else {
-                let dummy = Series::new_null(PlSmallStr::from_static("dummy"), 0);
-                expr_arena.add(AExpr::Literal(LiteralValue::Series(SpecialEq::new(dummy))))
-            };
-            (out, expr)
+                // Support len aggregation on 0-width morsels.
+                // Notes:
+                // * We do this instead of projecting a scalar, because scalar literals don't
+                //   project to the height of the DataFrame (in the PhysicalExpr impl).
+                // * This approach is not sound for `update_groups()`, but currently that case is
+                //   not hit (it would need group-by -> len on empty morsels).
+                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE);
+                let expr = expr_arena.add(AExpr::Len);
+
+                (out, expr)
+            }
+        },
+        #[cfg(feature = "bitwise")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Bitwise(inner_fn),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            match inner_fn {
+                IRBitwiseFunction::And => (new_bitwise_and_reduction(get_dt(input)?), input),
+                IRBitwiseFunction::Or => (new_bitwise_or_reduction(get_dt(input)?), input),
+                IRBitwiseFunction::Xor => (new_bitwise_xor_reduction(get_dt(input)?), input),
+                _ => unreachable!(),
+            }
+        },
+
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Boolean(inner_fn),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            match inner_fn {
+                IRBooleanFunction::Any { ignore_nulls } => {
+                    (new_any_reduction(*ignore_nulls), input)
+                },
+                IRBooleanFunction::All { ignore_nulls } => {
+                    (new_all_reduction(*ignore_nulls), input)
+                },
+                _ => unreachable!(),
+            }
         },
         _ => unreachable!(),
     };

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(not(feature = "simd"))]
 mod inner {
     /// An adapted version of std::iter::Split.
@@ -43,7 +44,7 @@ mod inner {
             Some((self.v, need_escaping))
         }
 
-        fn eof_oel(&self, current_ch: u8) -> bool {
+        fn eof_eol(&self, current_ch: u8) -> bool {
             current_ch == self.separator || current_ch == self.eol_char
         }
     }
@@ -88,7 +89,7 @@ mod inner {
                         in_field = !in_field;
                     }
 
-                    if !in_field && self.eof_oel(c) {
+                    if !in_field && self.eof_eol(c) {
                         if c == self.eol_char {
                             // SAFETY:
                             // we are in bounds
@@ -108,7 +109,7 @@ mod inner {
 
                 idx as usize
             } else {
-                match self.v.iter().position(|&c| self.eof_oel(c)) {
+                match self.v.iter().position(|&c| self.eof_eol(c)) {
                     None => return self.finish(needs_escaping),
                     Some(idx) => unsafe {
                         // SAFETY:
@@ -201,7 +202,7 @@ mod inner {
             Some((self.v, need_escaping))
         }
 
-        fn eof_oel(&self, current_ch: u8) -> bool {
+        fn eof_eol(&self, current_ch: u8) -> bool {
             current_ch == self.separator || current_ch == self.eol_char
         }
     }
@@ -254,6 +255,7 @@ mod inner {
             // SAFETY:
             // we have checked bounds
             let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
+                // Start of an enclosed field
                 let mut total_idx = 0;
                 needs_escaping = true;
                 let mut not_in_field_previous_iter = true;
@@ -323,14 +325,7 @@ mod inner {
                                 in_field = !in_field;
                             }
 
-                            if !in_field && self.eof_oel(c) {
-                                if c == self.eol_char {
-                                    // SAFETY:
-                                    // we are in bounds
-                                    return unsafe {
-                                        self.finish_eol(needs_escaping, current_idx + total_idx)
-                                    };
-                                }
+                            if !in_field && self.eof_eol(c) {
                                 idx = current_idx;
                                 break;
                             }
@@ -351,6 +346,7 @@ mod inner {
                 }
                 total_idx
             } else {
+                // Start of an unenclosed field
                 let mut total_idx = 0;
 
                 loop {
@@ -375,7 +371,7 @@ mod inner {
                             total_idx += SIMD_SIZE;
                         }
                     } else {
-                        match bytes.iter().position(|&c| self.eof_oel(c)) {
+                        match bytes.iter().position(|&c| self.eof_eol(c)) {
                             None => return self.finish(needs_escaping),
                             Some(idx) => {
                                 total_idx += idx;
@@ -384,14 +380,16 @@ mod inner {
                         }
                     }
                 }
-                unsafe {
-                    if *self.v.get_unchecked(total_idx) == self.eol_char {
-                        return self.finish_eol(needs_escaping, total_idx);
-                    } else {
-                        total_idx
-                    }
-                }
+                total_idx
             };
+
+            // Make sure the iterator is done when EOL.
+            let c = unsafe { *self.v.get_unchecked(pos) };
+            if c == self.eol_char {
+                // SAFETY:
+                // we are in bounds
+                return unsafe { self.finish_eol(needs_escaping, pos) };
+            }
 
             unsafe {
                 debug_assert!(pos < self.v.len());

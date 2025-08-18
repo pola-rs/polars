@@ -28,6 +28,7 @@ use crate::prelude::*;
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SortOptions {
     /// If true sort in descending order.
     /// Default `false`.
@@ -80,6 +81,7 @@ pub struct SortOptions {
 /// # }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SortMultipleOptions {
     /// Order of the columns. Default all `false``.
     ///

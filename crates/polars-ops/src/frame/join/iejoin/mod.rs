@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 mod filtered_bit_array;
 mod l1_l2;
 
@@ -11,12 +12,12 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, split};
-use polars_core::{with_match_physical_numeric_polars_type, POOL};
-use polars_error::{polars_err, PolarsResult};
+use polars_core::{POOL, with_match_physical_numeric_polars_type};
+use polars_error::{PolarsResult, polars_err};
+use polars_utils::IdxSize;
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
-use polars_utils::IdxSize;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -537,17 +538,21 @@ fn piecewise_merge_join_tuples(
     }
 
     let (left_ordered, left_order) = get_sorted(left, descending);
-    debug_assert!(left_order
-        .as_ref()
-        .is_none_or(|order| order.chunks().len() == 1));
+    debug_assert!(
+        left_order
+            .as_ref()
+            .is_none_or(|order| order.chunks().len() == 1)
+    );
     let left_order = left_order
         .as_ref()
         .map(|order| order.downcast_get(0).unwrap().values().as_slice());
 
     let (right_ordered, right_order) = get_sorted(right, descending);
-    debug_assert!(right_order
-        .as_ref()
-        .is_none_or(|order| order.chunks().len() == 1));
+    debug_assert!(
+        right_order
+            .as_ref()
+            .is_none_or(|order| order.chunks().len() == 1)
+    );
     let right_order = right_order
         .as_ref()
         .map(|order| order.downcast_get(0).unwrap().values().as_slice());

@@ -2,10 +2,8 @@ use std::io::Read;
 #[cfg(target_os = "emscripten")]
 use std::io::{Seek, SeekFrom};
 
-use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 use polars_utils::mmap::{MMapSemaphore, MemSlice};
-use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
@@ -153,22 +151,12 @@ pub fn overwrite_schema(schema: &mut Schema, overwriting_schema: &Schema) -> Pol
     Ok(())
 }
 
-pub static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
-});
-
-pub static FLOAT_RE_DECIMAL: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[-+]?((\d*,\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+,)$").unwrap()
-});
-
-pub static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^-?(\d+)$").unwrap());
-
-pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
-    RegexBuilder::new(r"^(true|false)$")
-        .case_insensitive(true)
-        .build()
-        .unwrap()
-});
+polars_utils::regex_cache::cached_regex! {
+    pub static FLOAT_RE = r"^[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$";
+    pub static FLOAT_RE_DECIMAL = r"^[-+]?((\d*,\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+,)$";
+    pub static INTEGER_RE = r"^-?(\d+)$";
+    pub static BOOLEAN_RE = r"^(?i:true|false)$";
+}
 
 pub fn materialize_projection(
     with_columns: Option<&[PlSmallStr]>,

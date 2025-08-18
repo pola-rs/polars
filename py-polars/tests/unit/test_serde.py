@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import pytest
 
 import polars as pl
-from polars import StringCache
 from polars.exceptions import SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -96,6 +95,7 @@ def times2(x: pl.Series) -> pl.Series:
     return x * 2
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_pickle_udf_expression() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -160,7 +160,6 @@ def test_pickle_lazyframe_nested_function_udf() -> None:
     assert q.collect()["a"].to_list() == [2, 4, 6]
 
 
-@StringCache()
 def test_serde_categorical_series_10586() -> None:
     s = pl.Series(["a", "b", "b", "a", "c"], dtype=pl.Categorical)
     loaded_s = pickle.loads(pickle.dumps(s))
@@ -225,3 +224,24 @@ def test_serde_empty_df_lazy_frame() -> None:
     f.write(lf.serialize())
     f.seek(0)
     assert pl.LazyFrame.deserialize(f).collect().shape == (0, 0)
+
+
+def test_pickle_class_objects_21021() -> None:
+    assert isinstance(pickle.loads(pickle.dumps(pl.col))("A"), pl.Expr)
+    assert isinstance(pickle.loads(pickle.dumps(pl.DataFrame))(), pl.DataFrame)
+    assert isinstance(pickle.loads(pickle.dumps(pl.LazyFrame))(), pl.LazyFrame)
+
+
+def test_serialize_does_not_overflow_stack() -> None:
+    n = 2000
+    lf = pl.DataFrame({"a": 0}).lazy()
+
+    for i in range(1, n):
+        lf = pl.concat([lf, pl.DataFrame({"a": i}).lazy()])
+
+    f = io.BytesIO()
+    f.write(lf.serialize())
+    f.seek(0)
+    actual = pl.LazyFrame.deserialize(f).collect()
+    expected = pl.DataFrame({"a": range(n)})
+    assert_frame_equal(actual, expected)

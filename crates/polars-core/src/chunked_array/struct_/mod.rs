@@ -6,13 +6,13 @@ use std::fmt::Write;
 use arrow::array::StructArray;
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
 
+use crate::chunked_array::ChunkedArray;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
-use crate::chunked_array::ChunkedArray;
 use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::Container;
@@ -100,14 +100,11 @@ impl StructChunked {
 
             needs_to_broadcast |= length != 1 && s_len == 1;
 
-            polars_ensure!(
-                names.insert(s.name()),
-                Duplicate: "multiple fields with name '{}' found", s.name()
-            );
+            polars_ensure!(names.insert(s.name()), duplicate_field = s.name());
 
             match s.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => {
+                DataType::Object(_) => {
                     polars_bail!(InvalidOperation: "nested objects are not allowed")
                 },
                 _ => {},
@@ -138,7 +135,7 @@ impl StructChunked {
     }
 
     /// Convert a struct to the underlying physical datatype.
-    pub fn to_physical_repr(&self) -> Cow<StructChunked> {
+    pub fn to_physical_repr(&self) -> Cow<'_, StructChunked> {
         let mut physicals = Vec::new();
 
         let field_series = self.fields_as_series();
@@ -205,25 +202,29 @@ impl StructChunked {
     }
 
     pub fn fields_as_series(&self) -> Vec<Series> {
-        self.struct_fields()
-            .iter()
-            .enumerate()
-            .map(|(i, field)| {
-                let field_chunks = self
-                    .downcast_iter()
-                    .map(|chunk| chunk.values()[i].clone())
-                    .collect::<Vec<_>>();
+        self._fields_iter().collect()
+    }
 
-                // SAFETY: correct type.
-                unsafe {
-                    Series::from_chunks_and_dtype_unchecked(
-                        field.name.clone(),
-                        field_chunks,
-                        &field.dtype,
-                    )
-                }
-            })
-            .collect()
+    pub fn fields_as_columns(&self) -> Vec<Column> {
+        self._fields_iter().map(|s| s.into_column()).collect()
+    }
+
+    fn _fields_iter(&self) -> impl Iterator<Item = Series> {
+        self.struct_fields().iter().enumerate().map(|(i, field)| {
+            let field_chunks = self
+                .downcast_iter()
+                .map(|chunk| chunk.values()[i].clone())
+                .collect::<Vec<_>>();
+
+            // SAFETY: correct type.
+            unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    field.name.clone(),
+                    field_chunks,
+                    &field.dtype,
+                )
+            }
+        })
     }
 
     unsafe fn cast_impl(
@@ -263,9 +264,7 @@ impl StructChunked {
                 Ok(out.into_series())
             },
             DataType::String => {
-                let ca = self.clone();
-                ca.rechunk();
-
+                let ca = self.rechunk();
                 let fields = ca.fields_as_series();
                 let mut iters = fields.iter().map(|s| s.iter()).collect::<Vec<_>>();
                 let cap = ca.len();
@@ -280,7 +279,7 @@ impl StructChunked {
                     for iter in &mut iters {
                         let av = unsafe { iter.next().unwrap_unchecked() };
                         row_has_nulls |= matches!(&av, AnyValue::Null);
-                        write!(scratch, "{},", av).unwrap();
+                        write!(scratch, "{av},").unwrap();
                     }
 
                     // replace latest comma with '|'
@@ -385,21 +384,19 @@ impl StructChunked {
         )
     }
 
-    /// Set the outer nulls into the inner arrays, and clear the outer validity.
-    pub(crate) fn propagate_nulls(&mut self) {
-        if self.null_count > 0 {
-            // SAFETY:
-            // We keep length and dtypes the same.
-            unsafe {
-                for arr in self.downcast_iter_mut() {
-                    *arr = arr.propagate_nulls()
-                }
-            }
+    /// Set the outer nulls into the inner arrays.
+    pub(crate) fn propagate_nulls_mut(&mut self) {
+        if let Some(ca) = ChunkNestingUtils::propagate_nulls(self) {
+            *self = ca;
         }
     }
 
     /// Combine the validities of two structs.
     pub fn zip_outer_validity(&mut self, other: &StructChunked) {
+        // This might go wrong for broadcasting behavior. If this is not checked, it leads to a
+        // segfault because we infinitely recurse.
+        assert_eq!(self.len(), other.len());
+
         if other.null_count() == 0 {
             return;
         }
@@ -426,7 +423,7 @@ impl StructChunked {
         }
 
         self.compute_len();
-        self.propagate_nulls();
+        self.propagate_nulls_mut();
     }
 
     pub fn unnest(self) -> DataFrame {
@@ -455,7 +452,7 @@ impl StructChunked {
             *arr = arr.with_validity(validity);
         }
         self.compute_len();
-        self.propagate_nulls();
+        self.propagate_nulls_mut();
     }
 
     pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {

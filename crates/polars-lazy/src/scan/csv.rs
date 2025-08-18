@@ -1,15 +1,15 @@
-use std::path::{Path, PathBuf};
-
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
-    infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
+    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues, infer_file_schema,
 };
 use polars_io::path_utils::expand_paths;
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::get_reader_bytes;
-use polars_io::RowIndex;
+use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MemSlice;
+use polars_utils::plpath::PlPath;
+use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
 
@@ -35,7 +35,7 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
+    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -50,8 +50,8 @@ impl LazyCsvReader {
         }
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path.as_ref().to_path_buf()].into()))
+    pub fn new(path: PlPath) -> Self {
+        Self::new_with_sources(ScanSources::Paths([path].into()))
     }
 
     /// Skip this number of rows after the header location.
@@ -77,8 +77,8 @@ impl LazyCsvReader {
     }
 
     /// Set the number of rows to use when inferring the csv schema.
-    /// the default is 100 rows.
-    /// Setting to `None` will do a full table scan, very slow.
+    /// The default is 100 rows.
+    /// Setting to [None] will do a full table scan, which is very slow.
     #[must_use]
     pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
         self.read_options.infer_schema_length = num_rows;
@@ -244,9 +244,9 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut n_threads = self.read_options.n_threads;
+        let n_threads = self.read_options.n_threads;
 
-        let mut infer_schema = |bytes: MemSlice| {
+        let infer_schema = |bytes: MemSlice| {
             let skip_rows = self.read_options.skip_rows;
             let skip_lines = self.read_options.skip_lines;
             let parse_options = self.read_options.get_parse_options();
@@ -266,7 +266,6 @@ impl LazyCsvReader {
                     skip_lines,
                     self.read_options.skip_rows_after_header,
                     self.read_options.raise_if_empty,
-                    &mut n_threads,
                 )?
                 .0,
             )
@@ -282,7 +281,9 @@ impl LazyCsvReader {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(&polars_utils::open_file(path)?)?)?
+                infer_schema(MemSlice::from_file(&polars_utils::open_file(
+                    path.as_ref().as_local_path().unwrap(),
+                )?)?)?
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {
@@ -322,17 +323,34 @@ impl LazyCsvReader {
 impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let mut lf: LazyFrame = DslBuilder::scan_csv(
+        let rechunk = self.rechunk();
+        let row_index = self.row_index().cloned();
+        let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });
+
+        let lf: LazyFrame = DslBuilder::scan_csv(
             self.sources,
             self.read_options,
-            self.cache,
-            self.cloud_options,
-            self.glob,
-            self.include_file_paths,
+            UnifiedScanArgs {
+                schema: None,
+                cloud_options: self.cloud_options,
+                hive_options: HiveOptions::new_disabled(),
+                rechunk,
+                cache: self.cache,
+                glob: self.glob,
+                projection: None,
+                column_mapping: None,
+                default_values: None,
+                row_index,
+                pre_slice,
+                cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+                missing_columns_policy: MissingColumnsPolicy::Raise,
+                extra_columns_policy: ExtraColumnsPolicy::Raise,
+                include_file_paths: self.include_file_paths,
+                deletion_files: None,
+            },
         )?
         .build()
         .into();
-        lf.opt_state |= OptFlags::FILE_CACHING;
         Ok(lf)
     }
 
@@ -368,7 +386,6 @@ impl LazyFileListReader for LazyCsvReader {
     }
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
     fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.read_options.rechunk = rechunk;
         self

@@ -11,6 +11,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ColumnNotFoundError
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -48,7 +49,7 @@ def test_group_by() -> None:
     )
 
     # check if this query runs and thus column names propagate
-    df.group_by("b").agg(pl.col("c").forward_fill()).explode("c")
+    df.group_by("b").agg(pl.col("c").fill_null(strategy="forward")).explode("c")
 
     # get a specific column
     result = df.group_by("b", maintain_order=True).agg(pl.count("a"))
@@ -73,7 +74,7 @@ def test_group_by() -> None:
             [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
             [datetime(2023, 1, 2, 8, 0, 0), datetime(2023, 1, 5)],
             pl.Date,
-            pl.Datetime("ms"),
+            pl.Datetime("us"),
         ),
         (
             [
@@ -137,7 +138,7 @@ def test_group_by_mean_by_dtype(
     # groups are defined by first 3 values, then last value
     name = str(input_dtype)
     key = ["a", "a", "a", "b"]
-    df = pl.DataFrame(
+    df = pl.LazyFrame(
         {
             "key": key,
             name: pl.Series(input, dtype=input_dtype),
@@ -150,7 +151,8 @@ def test_group_by_mean_by_dtype(
             name: pl.Series(expected, dtype=output_dtype),
         }
     )
-    assert_frame_equal(result, df_expected)
+    assert result.collect_schema() == df_expected.schema
+    assert_frame_equal(result.collect(), df_expected)
 
 
 @pytest.mark.parametrize(
@@ -170,7 +172,7 @@ def test_group_by_mean_by_dtype(
             [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
             [datetime(2023, 1, 2), datetime(2023, 1, 5)],
             pl.Date,
-            pl.Datetime("ms"),
+            pl.Datetime("us"),
         ),
         (
             [
@@ -234,7 +236,7 @@ def test_group_by_median_by_dtype(
     # groups are defined by first 3 values, then last value
     name = str(input_dtype)
     key = ["a", "a", "a", "b"]
-    df = pl.DataFrame(
+    df = pl.LazyFrame(
         {
             "key": key,
             name: pl.Series(input, dtype=input_dtype),
@@ -247,7 +249,8 @@ def test_group_by_median_by_dtype(
             name: pl.Series(expected, dtype=output_dtype),
         }
     )
-    assert_frame_equal(result, df_expected)
+    assert result.collect_schema() == df_expected.schema
+    assert_frame_equal(result.collect(), df_expected)
 
 
 @pytest.fixture
@@ -403,11 +406,11 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
         .sort("key")
         .group_by("key")
         .tail(1)
-        .collect(_check_order=False)
+        .collect(optimizations=pl.QueryOptFlags(check_order_observe=False))
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
-    assert df.schema == {"key": pl.Categorical(ordering="physical"), "val": pl.Float64}
+    assert df.schema == {"key": pl.Categorical(ordering="lexical"), "val": pl.Float64}
 
 
 def test_group_by_custom_agg_empty_list() -> None:
@@ -910,6 +913,17 @@ def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
     }
 
 
+def test_partitioned_group_by_nulls_mean_21838() -> None:
+    size = 10
+    a = [1 for i in range(size)] + [2 for i in range(size)] + [3 for i in range(size)]
+    b = [1 for i in range(size)] + [None for i in range(size * 2)]
+    df = pl.DataFrame({"a": a, "b": b})
+    assert df.group_by("a").mean().sort("a").to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": [1.0, None, None],
+    }
+
+
 def test_aggregated_scalar_elementwise_15602() -> None:
     df = pl.DataFrame({"group": [1, 2, 1]})
 
@@ -926,7 +940,6 @@ def test_group_by_multiple_null_cols_15623() -> None:
 
 
 @pytest.mark.release
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
     s = pl.Series("a", np.random.randint(0, 50, 100))
@@ -1134,13 +1147,21 @@ def test_absence_off_null_prop_8224() -> None:
     ]
 
 
-def test_grouped_slice_literals() -> None:
-    assert pl.DataFrame({"idx": [1, 2, 3]}).group_by(True).agg(
-        x=pl.lit([1, 2]).slice(
-            -1, 1
-        ),  # slices a list of 1 element, so remains the same element
-        x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
-    ).to_dict(as_series=False) == {"literal": [True], "x": [[1, 2]], "x2": [2]}
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_grouped_slice_literals(maintain_order: bool) -> None:
+    assert_frame_equal(
+        pl.DataFrame({"idx": [1, 2, 3]})
+        .group_by(True, maintain_order=maintain_order)
+        .agg(
+            x=pl.lit([1, 2]).slice(
+                -1, 1
+            ),  # slices a list of 1 element, so remains the same element
+            x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
+            x3=pl.lit(pl.Series([[1, 2]])).slice(-1, 1),
+        ),
+        pl.DataFrame({"literal": [True], "x": [[1, 2]], "x2": [[2]], "x3": [[[1, 2]]]}),
+        check_row_order=maintain_order,
+    )
 
 
 def test_positional_by_with_list_or_tuple_17540() -> None:
@@ -1201,3 +1222,237 @@ def test_group_by_list_column() -> None:
     result = df.group_by("b").agg(pl.sum("a")).sort("b")
     expected = pl.DataFrame({"b": [[1, 2], [3]], "a": [4, 2]})
     assert_frame_equal(result, expected)
+
+
+def test_enum_perfect_group_by_21360() -> None:
+    dtype = pl.Enum(categories=["a", "b"])
+
+    assert_frame_equal(
+        pl.from_dicts([{"col": "a"}], schema={"col": dtype})
+        .group_by("col")
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series("col", ["a"], dtype),
+                pl.Series("len", [1], get_index_type()),
+            ]
+        ),
+    )
+
+
+def test_partitioned_group_by_21634(partition_limit: int) -> None:
+    n = partition_limit
+    df = pl.DataFrame({"grp": [1] * n, "x": [1] * n})
+    assert df.group_by("grp", True).agg().to_dict(as_series=False) == {
+        "grp": [1],
+        "literal": [True],
+    }
+
+
+def test_group_by_cse_dup_key_alias_22238() -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2, -1], "x": [0, 1, 2, 3, 10]})
+    result = df.group_by(
+        pl.col("a").abs(),
+        pl.col("a").abs().alias("a_with_alias"),
+    ).agg(pl.col("x").sum())
+    assert_frame_equal(
+        result.collect(),
+        pl.DataFrame({"a": [1, 2], "a_with_alias": [1, 2], "x": [11, 5]}),
+        check_row_order=False,
+    )
+
+
+def test_group_by_22328() -> None:
+    N = 20
+
+    df1 = pl.select(
+        x=pl.repeat(1, N // 2).append(pl.repeat(2, N // 2)).shuffle(),
+        y=pl.lit(3.0, pl.Float32),
+    ).lazy()
+
+    df2 = pl.select(x=pl.repeat(4, N)).lazy()
+
+    assert (
+        df2.join(df1.group_by("x").mean().with_columns(z="y"), how="left", on="x")
+        .with_columns(pl.col("z").fill_null(0))
+        .collect()
+    ).shape == (20, 3)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_arrays_22574(maintain_order: bool) -> None:
+    assert_frame_equal(
+        pl.Series("a", [[1], [2], [2]], pl.Array(pl.Int64, 1))
+        .to_frame()
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series("a", [[1], [2]], pl.Array(pl.Int64, 1)),
+                pl.Series("len", [1, 2], pl.get_index_type()),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )
+
+    assert_frame_equal(
+        pl.Series(
+            "a", [[[1, 2]], [[2, 3]], [[2, 3]]], pl.Array(pl.Array(pl.Int64, 2), 1)
+        )
+        .to_frame()
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series(
+                    "a", [[[1, 2]], [[2, 3]]], pl.Array(pl.Array(pl.Int64, 2), 1)
+                ),
+                pl.Series("len", [1, 2], pl.get_index_type()),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )
+
+
+def test_group_by_empty_rows_with_literal_21959() -> None:
+    out = (
+        pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [1, 1, 3]})
+        .filter(pl.col("c") == 99)
+        .group_by(pl.lit(1).alias("d"), pl.col("a"), pl.col("b"))
+        .agg()
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {"d": [], "a": [], "b": []},
+        schema={"d": pl.Int32, "a": pl.Int64, "b": pl.Int64},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_empty_dtype_22716() -> None:
+    df = pl.DataFrame(schema={"a": pl.String, "b": pl.Int64})
+    out = df.group_by("a").agg(x=(pl.col("b") == pl.int_range(pl.len())).all())
+    assert_frame_equal(out, pl.DataFrame(schema={"a": pl.String, "x": pl.Boolean}))
+
+
+def test_group_by_implode_22870() -> None:
+    out = (
+        pl.DataFrame({"x": ["a", "b"]})
+        .group_by(pl.col.x)
+        .agg(
+            y=pl.col.x.replace_strict(
+                pl.lit(pl.Series(["a", "b"])).implode(),
+                pl.lit(pl.Series([1, 2])).implode(),
+                default=-1,
+            )
+        )
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"x": ["a", "b"], "y": [[1], [2]]}),
+        check_row_order=False,
+    )
+
+
+# Note: the underlying bug is not guaranteed to manifest itself as it depends
+# on the internal group order, i.e., for the bug to materialize, there must be
+# empty groups before the non-empty group
+def test_group_by_empty_groups_23338() -> None:
+    # We need one non-empty and many groups
+    df = pl.DataFrame(
+        {
+            "k": [10, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+            "a": [1, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        }
+    )
+    out = df.group_by("k").agg(
+        pl.col("a").filter(pl.col("a") == 1).fill_nan(None).sum()
+    )
+    expected = df.group_by("k").agg(pl.col("a").filter(pl.col("a") == 1).sum())
+    assert_frame_equal(out.sort("k"), expected.sort("k"))
+
+
+def test_group_by_filter_all_22955() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": [1, 2, 3, 4, 5],
+            "value": [10, 20, 30, 40, 50],
+        }
+    )
+
+    assert_frame_equal(
+        df.group_by("grp").agg(
+            pl.all().filter(pl.col("value") > 20),
+        ),
+        pl.DataFrame(
+            {
+                "grp": [1, 2, 3, 4, 5],
+                "value": [[], [], [30], [40], [50]],
+            }
+        ),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_series_lit_22103(maintain_order: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 1],
+        }
+    )
+    assert_frame_equal(
+        df.group_by("g", maintain_order=maintain_order).agg(
+            foo=pl.lit(pl.Series([42, 2, 3]))
+        ),
+        pl.DataFrame(
+            {
+                "g": [0, 1],
+                "foo": [[42, 2, 3], [42, 2, 3]],
+            }
+        ),
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_filter_sum_23897(maintain_order: bool) -> None:
+    testdf = pl.DataFrame(
+        {
+            "id": [8113, 9110, 9110],
+            "value": [None, None, 1.0],
+            "weight": [1.0, 1.0, 1.0],
+        }
+    )
+
+    w = pl.col("weight").filter(pl.col("value").is_finite())
+
+    w = w / w.sum()
+
+    result = w.sum()
+
+    assert_frame_equal(
+        testdf.group_by("id", maintain_order=maintain_order).agg(result),
+        pl.DataFrame({"id": [8113, 9110], "weight": [0.0, 1.0]}),
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_shift_filter_23910(maintain_order: bool) -> None:
+    df = pl.DataFrame({"a": [3, 7, 5, 9, 2, 1], "b": [2, 2, 2, 3, 3, 1]})
+
+    out = df.group_by("b", maintain_order=maintain_order).agg(
+        pl.col("a").filter(pl.col("a") > pl.col("a").shift(1)).sum().alias("tt")
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "b": [2, 3, 1],
+                "tt": [7, 0, 0],
+            }
+        ),
+        check_row_order=maintain_order,
+    )

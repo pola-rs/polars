@@ -1,9 +1,17 @@
+#![cfg_attr(
+    feature = "allow_unused",
+    allow(unused, dead_code, irrefutable_let_patterns)
+)] // Maybe be caused by some feature
 mod executors;
 mod planner;
 mod predicate;
 mod prelude;
-mod utils;
 
 pub use executors::Executor;
-pub use planner::{create_physical_plan, create_scan_predicate};
+#[cfg(feature = "python")]
+pub use planner::python_scan_predicate;
+pub use planner::{
+    StreamingExecutorBuilder, create_multiple_physical_plans, create_physical_plan,
+    create_scan_predicate,
+};
 pub use predicate::ScanPredicate;

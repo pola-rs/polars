@@ -1,4 +1,7 @@
+mod builder;
+mod equality;
 mod evaluate;
+mod function_expr;
 #[cfg(feature = "cse")]
 mod hash;
 mod minterm_iter;
@@ -9,19 +12,21 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
+pub use function_expr::*;
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
 pub use scalar::is_scalar_ae;
-#[cfg(feature = "ir_serde")]
-use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 mod properties;
+pub use aexpr::function_expr::schema::FieldsMapper;
+pub use builder::AExprBuilder;
 pub use properties::*;
 
 use crate::constants::LEN;
@@ -29,7 +34,7 @@ use crate::plans::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRAggExpr {
     Min {
         input: Node,
@@ -69,6 +74,7 @@ impl Hash for IRAggExpr {
                 method: interpol, ..
             } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
+            Self::Count(_, include_nulls) => include_nulls.hash(state),
             _ => {},
         }
     }
@@ -139,10 +145,12 @@ impl From<IRAggExpr> for GroupByMethod {
 
 /// IR expression node that is allocated in an [`Arena`][polars_utils::arena::Arena].
 #[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AExpr {
-    Explode(Node),
-    Alias(Node, PlSmallStr),
+    Explode {
+        expr: Node,
+        skip_empty: bool,
+    },
     Column(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {
@@ -182,8 +190,20 @@ pub enum AExpr {
     AnonymousFunction {
         input: Vec<ExprIR>,
         function: OpaqueColumnUdf,
-        output_type: GetOutput,
         options: FunctionOptions,
+        fmt_str: Box<PlSmallStr>,
+    },
+    /// Evaluates the `evaluation` expression on the output of the `expr`.
+    ///
+    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    Eval {
+        expr: Node,
+
+        /// An expression that is guaranteed to not contain any column reference beyond
+        /// `pl.element()` which refers to `pl.col("")`.
+        evaluation: Node,
+
+        variant: EvalVariant,
     },
     Function {
         /// Function arguments
@@ -192,7 +212,7 @@ pub enum AExpr {
         /// Therefor we need [`ExprIr`].
         input: Vec<ExprIR>,
         /// function to apply
-        function: FunctionExpr,
+        function: IRFunctionExpr,
         options: FunctionOptions,
     },
     Window {
@@ -217,13 +237,52 @@ impl AExpr {
     }
 
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
-    pub fn get_type(
-        &self,
-        schema: &Schema,
-        ctxt: Context,
-        arena: &Arena<AExpr>,
-    ) -> PolarsResult<DataType> {
-        self.to_field(schema, ctxt, arena)
-            .map(|f| f.dtype().clone())
+    pub fn get_dtype(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<DataType> {
+        self.to_field(schema, arena).map(|f| f.dtype().clone())
+    }
+
+    #[recursive::recursive]
+    fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
+        match self {
+            AExpr::Literal(lv) => lv.is_scalar(),
+            AExpr::Function { options, input, .. }
+            | AExpr::AnonymousFunction { options, input, .. } => {
+                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
+                    true
+                } else if options.is_elementwise()
+                    || options.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+                {
+                    input.iter().all(|e| e.is_scalar(arena))
+                } else {
+                    false
+                }
+            },
+            AExpr::BinaryExpr { left, right, .. } => {
+                is_scalar_ae(*left, arena) && is_scalar_ae(*right, arena)
+            },
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                is_scalar_ae(*predicate, arena)
+                    && is_scalar_ae(*truthy, arena)
+                    && is_scalar_ae(*falsy, arena)
+            },
+            AExpr::Agg(_) | AExpr::Len => true,
+            AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Eval { expr, variant, .. } => match variant {
+                EvalVariant::List => is_scalar_ae(*expr, arena),
+                EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
+            },
+            AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Gather { returns_scalar, .. } => *returns_scalar,
+            AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Window { function, .. } => is_scalar_ae(*function, arena),
+            AExpr::Explode { .. }
+            | AExpr::Column(_)
+            | AExpr::Filter { .. }
+            | AExpr::Slice { .. } => false,
+        }
     }
 }

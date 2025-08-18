@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::BooleanArray;
 use arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;
@@ -9,6 +10,7 @@ use crate::prelude::SeriesSealed;
 
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RankMethod {
     Average,
     Min,
@@ -22,6 +24,7 @@ pub enum RankMethod {
 // We might want to add a `nulls_last` or `null_behavior` field.
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RankOptions {
     pub method: RankMethod,
     pub descending: bool,
@@ -38,7 +41,7 @@ impl Default for RankOptions {
 
 #[cfg(feature = "random")]
 fn get_random_seed() -> u64 {
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = SmallRng::from_os_rng();
 
     rng.next_u64()
 }

@@ -47,11 +47,9 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         .lazy()
         .select([
             col("fruits"),
-            col("B").shift_and_fill(lit(-1), lit(-1)).over_with_options(
-                [col("fruits")],
-                None,
-                WindowMapping::Join,
-            ),
+            col("B")
+                .shift_and_fill(lit(-1), lit(-1))
+                .over_with_options(Some([col("fruits")]), None, WindowMapping::Join)?,
         ])
         .collect()?;
 
@@ -60,11 +58,9 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         .lazy()
         .select([
             col("fruits"),
-            col("B").shift_and_fill(lit(-1), lit(-1)).over_with_options(
-                [col("fruits")],
-                None,
-                WindowMapping::Join,
-            ),
+            col("B")
+                .shift_and_fill(lit(-1), lit(-1))
+                .over_with_options(Some([col("fruits")]), None, WindowMapping::Join)?,
         ])
         .collect()?;
 
@@ -85,7 +81,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift(lit(1))
-                .over_with_options([col("fruits")], None, WindowMapping::Explode)
+                .over_with_options(Some([col("fruits")]), None, WindowMapping::Explode)?
                 .alias("shifted"),
         ])
         .collect()?;
@@ -104,7 +100,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(lit(1), lit(-1.0f32))
-                .over_with_options([col("fruits")], None, WindowMapping::Explode)
+                .over_with_options(Some([col("fruits")]), None, WindowMapping::Explode)?
                 .alias("shifted"),
         ])
         .collect()?;
@@ -172,13 +168,13 @@ fn test_literal_window_fn() -> PolarsResult<()> {
         .lazy()
         .select([repeat(1, len())
             .cum_sum(false)
-            .over_with_options([col("chars")], None, WindowMapping::Join)
+            .over_with_options(Some([col("chars")]), None, WindowMapping::Join)?
             .alias("foo")])
         .collect()?;
 
     let out = out.column("foo")?;
     assert!(matches!(out.dtype(), DataType::List(_)));
-    let flat = out.explode()?;
+    let flat = out.explode(false)?;
     let flat = flat.i32()?;
     assert_eq!(
         Vec::from(flat),

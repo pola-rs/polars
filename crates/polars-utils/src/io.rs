@@ -10,7 +10,7 @@ pub fn _limit_path_len_io_err(path: &Path, err: io::Error) -> PolarsError {
     let path = path.to_string_lossy();
     let msg = if path.len() > 88 && !verbose() {
         let truncated_path: String = path.chars().skip(path.len() - 88).collect();
-        format!("{err}: ...{truncated_path}")
+        format!("{err}: ...{truncated_path} (set POLARS_VERBOSE=1 to see full path)")
     } else {
         format!("{err}: {path}")
     };

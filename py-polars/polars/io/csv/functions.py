@@ -15,6 +15,7 @@ from polars._utils.various import (
     is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
+    qualified_type_name,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT, String, parse_into_dtype
@@ -31,7 +32,7 @@ from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PyLazyFrame
+    from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -86,6 +87,15 @@ def read_csv(
 ) -> DataFrame:
     r"""
     Read a CSV file into a DataFrame.
+
+    Polars expects CSV data to strictly conform to RFC 4180, unless documented
+    otherwise. Malformed data, though common, may lead to undefined behavior.
+
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
 
     Parameters
     ----------
@@ -171,7 +181,7 @@ def read_csv(
         Stop reading from CSV file after reading `n_rows`.
         During multi-threaded parsing, an upper bound of `n_rows`
         rows cannot be guaranteed.
-    encoding : {'utf8', 'utf8-lossy', ...}
+    encoding : {'utf8', 'utf8-lossy', 'windows-1252', 'windows-1252-lossy', ...}
         Lossy means that invalid utf8 values are replaced with `�`
         characters. When using other encodings than `utf8` or
         `utf8-lossy`, the input is first decoded in memory with
@@ -205,7 +215,7 @@ def read_csv(
         allocation needed.
 
         .. deprecated:: 1.10.0
-            Is a no-op.
+            This parameter is now a no-op.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
@@ -228,16 +238,18 @@ def read_csv(
     --------
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
+    Warnings
+    --------
+    Calling `read_csv().lazy()` is an antipattern as this forces Polars to materialize
+    a full csv file and therefore cannot push any optimizations into the reader.
+    Therefore always prefer `scan_csv` if you want to work with `LazyFrame` s.
+
     Notes
     -----
     If the schema is inferred incorrectly (e.g. as `pl.Int64` instead of `pl.Float64`),
     try to increase the number of lines used to infer the schema with
     `infer_schema_length` or override the inferred dtype for those columns with
     `schema_overrides`.
-
-    This operation defaults to a `rechunk` operation at the end, meaning that all data
-    will be stored continuously in memory. Set `rechunk=False` if you are benchmarking
-    the csv-reader. A `rechunk` is an expensive operation.
 
     Examples
     --------
@@ -624,7 +636,7 @@ def _read_csv_impl(
         elif isinstance(schema_overrides, Sequence):
             dtype_slice = schema_overrides
         else:
-            msg = f"`schema_overrides` should be of type list or dict, got {type(schema_overrides).__name__!r}"
+            msg = f"`schema_overrides` should be of type list or dict, got {qualified_type_name(schema_overrides)!r}"
             raise TypeError(msg)
 
     processed_null_values = _process_null_values(null_values)
@@ -730,6 +742,7 @@ def read_csv_batched(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
+    skip_lines: int = 0,
     schema_overrides: (
         Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
     ) = None,
@@ -760,6 +773,12 @@ def read_csv_batched(
     determine the file chunks. After that, work will only be done if `next_batches`
     is called, which will return a list of `n` frames of the given batch size.
 
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -788,7 +807,13 @@ def read_csv_batched(
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
-        Start reading after `skip_rows` lines.
+        Start reading after ``skip_rows`` rows. The header will be parsed at this
+        offset. Note that we respect CSV escaping/comments when skipping rows.
+        If you want to skip by newline char only, use `skip_lines`.
+    skip_lines
+        Start reading after `skip_lines` lines. The header will be parsed at this
+        offset. Note that CSV escaping will not be respected when skipping lines.
+        If you want to skip valid CSV rows, use ``skip_rows``.
     schema_overrides
         Overwrite dtypes during inference.
     null_values
@@ -1001,6 +1026,7 @@ def read_csv_batched(
         comment_prefix=comment_prefix,
         quote_char=quote_char,
         skip_rows=skip_rows,
+        skip_lines=skip_lines,
         schema_overrides=schema_overrides,
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,
@@ -1028,16 +1054,18 @@ def read_csv_batched(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_csv(
-    source: str
-    | Path
-    | IO[str]
-    | IO[bytes]
-    | bytes
-    | list[str]
-    | list[Path]
-    | list[IO[str]]
-    | list[IO[bytes]]
-    | list[bytes],
+    source: (
+        str
+        | Path
+        | IO[str]
+        | IO[bytes]
+        | bytes
+        | list[str]
+        | list[Path]
+        | list[IO[str]]
+        | list[IO[bytes]]
+        | list[bytes]
+    ),
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1081,6 +1109,12 @@ def scan_csv(
     projections to the scan level, thereby potentially reducing
     memory overhead.
 
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -1110,7 +1144,8 @@ def scan_csv(
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `schema_overrides` can be
-        used to partially overwrite a schema.
+        used to partially overwrite a schema. Note that the order of the columns in
+        the provided `schema` must match the order of the columns in the CSV being read.
     schema_overrides
         Overwrite dtypes during inference; should be a {colname:dtype,} dict or,
         if providing a list of strings to `new_columns`, a list of dtypes of
@@ -1285,7 +1320,7 @@ def scan_csv(
         raise TypeError(msg)
 
     if not new_columns and isinstance(schema_overrides, Sequence):
-        msg = f"expected 'schema_overrides' dict, found {type(schema_overrides).__name__!r}"
+        msg = f"expected 'schema_overrides' dict, found {qualified_type_name(schema_overrides)!r}"
         raise TypeError(msg)
     elif new_columns:
         if with_column_names:

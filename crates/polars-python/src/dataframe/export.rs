@@ -2,9 +2,9 @@ use arrow::datatypes::IntegerType;
 use arrow::record_batch::RecordBatch;
 use polars::prelude::*;
 use polars_compute::cast::CastOptionsImpl;
+use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};
-use pyo3::IntoPyObjectExt;
 
 use super::PyDataFrame;
 use crate::conversion::{ObjectValue, Wrap};
@@ -29,7 +29,7 @@ impl PyDataFrame {
         PyTuple::new(
             py,
             self.df.get_columns().iter().map(|s| match s.dtype() {
-                DataType::Object(_, _) => {
+                DataType::Object(_) => {
                     let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                     obj.into_py_any(py).unwrap()
                 },
@@ -57,7 +57,7 @@ impl PyDataFrame {
                     py,
                     df.get_columns().iter().map(|c| match c.dtype() {
                         DataType::Null => py.None(),
-                        DataType::Object(_, _) => {
+                        DataType::Object(_) => {
                             let obj: Option<&ObjectValue> = c.get_object(idx).map(|any| any.into());
                             obj.into_py_any(py).unwrap()
                         },
@@ -74,7 +74,11 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(
+        &mut self,
+        py: Python<'_>,
+        compat_level: PyCompatLevel,
+    ) -> PyResult<Vec<PyObject>> {
         py.enter_polars_ok(|| self.df.align_chunks_par())?;
         let pyarrow = py.import("pyarrow")?;
 
@@ -158,9 +162,9 @@ impl PyDataFrame {
     }
 
     #[allow(unused_variables)]
-    #[pyo3(signature = (requested_schema=None))]
+    #[pyo3(signature = (requested_schema))]
     fn __arrow_c_stream__<'py>(
-        &'py mut self,
+        &mut self,
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {

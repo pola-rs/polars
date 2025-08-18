@@ -21,6 +21,7 @@ from polars.exceptions import (
     ShapeError,
     StructFieldNotFoundError,
 )
+from polars.testing import assert_frame_equal
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
@@ -39,30 +40,45 @@ def test_error_on_reducing_map() -> None:
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
     with pytest.raises(
-        InvalidOperationError,
-        match=(
-            r"output length of `map` \(1\) must be equal to "
-            r"the input length \(6\); consider using `apply` instead"
-        ),
+        TypeError,
+        match=r"`map` with `returns_scalar=False`",
     ):
-        df.group_by("id").agg(pl.map_batches(["t", "y"], np.mean))
+        df.group_by("id").agg(
+            pl.map_batches(["t", "y"], np.mean, return_dtype=pl.Float64)
+        )
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
-    with pytest.raises(
-        InvalidOperationError,
-        match=(
-            r"output length of `map` \(1\) must be equal to "
-            r"the input length \(4\); consider using `apply` instead"
-        ),
-    ):
+    with pytest.raises(TypeError, match=r"`map` with `returns_scalar=False`"):
         df.select(
             pl.col("x")
             .map_batches(
                 lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
                 is_elementwise=True,
+                return_dtype=pl.Struct(
+                    {"breakpoint": pl.Int64, "cat": pl.Categorical()}
+                ),
             )
             .over("group")
         )
+
+    assert_frame_equal(
+        df.select(
+            pl.col("x")
+            .map_batches(
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True),
+                is_elementwise=True,
+            )
+            .struct.unnest()
+            .over("group")
+        ),
+        pl.DataFrame(
+            {
+                "breakpoint": [1.0, 2.0, 3.0, float("inf")],
+                "category": ["(-inf, 1]", "(1, 2]", "(2, 3]", "(3, inf]"],
+            },
+            schema_overrides={"category": pl.Categorical()},
+        ),
+    )
 
 
 def test_error_on_invalid_by_in_asof_join() -> None:
@@ -137,15 +153,21 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
+        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
+        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'LazyFrame'.* not 'pandas.core.frame.DataFrame'",
+    ):
+        df_left.lazy().join_asof(df_right.to_pandas(), on="Id")  # type: ignore[arg-type]
 
 
 def test_projection_update_schema_missing_column() -> None:
@@ -243,12 +265,13 @@ def test_is_nan_on_non_boolean() -> None:
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
             pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")
         )
-    except ComputeError as exc:
+    except ShapeError as exc:
         msg = str(exc)
         assert (
             "the length of the window expression did not match that of the group" in msg
@@ -337,9 +360,7 @@ def test_invalid_dtype() -> None:
 def test_arr_eval_named_cols() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
 
-    with pytest.raises(
-        ComputeError,
-    ):
+    with pytest.raises(ComputeError):
         df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
 
@@ -421,21 +442,6 @@ def test_date_string_comparison(e: pl.Expr) -> None:
         df.select(e)
 
 
-def test_err_on_multiple_column_expansion() -> None:
-    # this would be a great feature :)
-    with pytest.raises(
-        ComputeError, match=r"expanding more than one `col` is not allowed"
-    ):
-        pl.DataFrame(
-            {
-                "a": [1],
-                "b": [2],
-                "c": [3],
-                "d": [4],
-            }
-        ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])])
-
-
 def test_compare_different_len() -> None:
     df = pl.DataFrame(
         {
@@ -480,12 +486,12 @@ def test_with_column_duplicates() -> None:
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
-
     with pytest.raises(
-        ComputeError,
-        match=r"The output type of the 'map_elements' function cannot be determined",
+        pl.exceptions.InvalidOperationError,
+        match="UDF called without return type, but was not able to infer the output type.",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
@@ -660,6 +666,7 @@ def test_raise_array_of_cats() -> None:
         pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_raise_invalid_arithmetic() -> None:
     df = pl.Series("a", [object()]).to_frame()
 
@@ -696,7 +703,7 @@ def test_no_panic_pandas_nat() -> None:
 
 def test_list_to_struct_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.DataFrame({"a": 1}).to_series().list.to_struct()
+        pl.DataFrame({"a": 1}).to_series().list.to_struct(fields=["a", "b"])
 
 
 def test_raise_invalid_agg() -> None:
@@ -731,7 +738,9 @@ def test_raise_column_not_found_in_join_arg() -> None:
 def test_raise_on_different_results_20104() -> None:
     df = pl.DataFrame({"x": [1, 2]})
 
-    with pytest.raises(pl.exceptions.SchemaError):
+    with pytest.raises(TypeError):
         df.rolling("x", period="3i").agg(
-            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+            result=pl.col("x")
+            .gather_every(2, offset=1)
+            .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )

@@ -24,7 +24,9 @@ def test_cross_join_predicate_pushdown_block_16956() -> None:
             )
         )
         .select("start_datetime", "end_datetime_right")
-    ).collect(predicate_pushdown=True).to_dict(as_series=False) == {
+    ).collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)).to_dict(
+        as_series=False
+    ) == {
         "start_datetime": [
             datetime(2024, 6, 11, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
             datetime(2024, 6, 11, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
@@ -74,4 +76,18 @@ def test_nested_loop_join() -> None:
     )
     assert_frame_equal(
         actual.collect(), expected, check_row_order=False, check_exact=True
+    )
+
+
+def test_cross_join_chunking_panic_22793() -> None:
+    N = int(pl.thread_pool_size() ** 0.5) * 2
+    df = pl.DataFrame(
+        [pl.concat([pl.Series("a", [0]) for _ in range(N)]), pl.Series("b", [0] * N)],
+    )
+    assert_frame_equal(
+        df.lazy()
+        .join(pl.DataFrame().lazy(), how="cross")
+        .filter(pl.col("a") == pl.col("a"))
+        .collect(),
+        df.schema.to_frame(),
     )

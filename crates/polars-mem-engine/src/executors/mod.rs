@@ -10,11 +10,11 @@ mod hconcat;
 mod join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
-mod multi_file_scan;
 mod projection;
 mod projection_simple;
 mod projection_utils;
 mod scan;
+mod sink;
 mod slice;
 mod sort;
 mod stack;
@@ -26,7 +26,6 @@ use std::borrow::Cow;
 
 pub use executor::*;
 use polars_core::POOL;
-use polars_plan::global::FETCH_ROWS;
 use polars_plan::utils::*;
 use projection_utils::*;
 use rayon::prelude::*;
@@ -44,10 +43,10 @@ pub(super) use self::hconcat::*;
 pub(super) use self::join::*;
 #[cfg(feature = "merge_sorted")]
 pub(super) use self::merge_sorted::*;
-pub(super) use self::multi_file_scan::*;
 pub(super) use self::projection::*;
 pub(super) use self::projection_simple::*;
 pub(super) use self::scan::*;
+pub(super) use self::sink::*;
 pub(super) use self::slice::*;
 pub(super) use self::sort::*;
 pub(super) use self::stack::*;

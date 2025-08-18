@@ -1,5 +1,6 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-#![cfg_attr(feature = "simd", feature(avx512_target_feature))]
+// TODO: Remove the allow and cfg_attr once Rust 1.89 is stable
+#![allow(stable_features)]
 #![cfg_attr(
     all(feature = "simd", target_arch = "x86_64"),
     feature(stdarch_x86_avx512)
@@ -9,6 +10,7 @@ use arrow::types::NativeType;
 
 pub mod arithmetic;
 pub mod arity;
+pub mod binview_index_map;
 pub mod bitwise;
 #[cfg(feature = "approx_unique")]
 pub mod cardinality;
@@ -16,6 +18,8 @@ pub mod cardinality;
 pub mod cast;
 pub mod comparisons;
 pub mod filter;
+#[cfg(feature = "cast")]
+pub mod find_validity_mismatch;
 pub mod float_sum;
 #[cfg(feature = "gather")]
 pub mod gather;
@@ -24,11 +28,14 @@ pub mod horizontal_flatten;
 pub mod hyperloglogplus;
 pub mod if_then_else;
 pub mod min_max;
+pub mod moment;
 pub mod propagate_dictionary;
+pub mod propagate_nulls;
+pub mod rolling;
 pub mod size;
 pub mod sum;
+pub mod trim_lists_to_normalized_offsets;
 pub mod unique;
-pub mod var_cov;
 
 // Trait to enable the scalar blanket implementation.
 pub trait NotSimdPrimitive: NativeType {}

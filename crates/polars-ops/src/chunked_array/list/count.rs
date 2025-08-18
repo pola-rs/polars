@@ -1,6 +1,6 @@
 use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::count_zeros;
 use arrow::legacy::utils::CustomIterTools;
 
 use super::*;

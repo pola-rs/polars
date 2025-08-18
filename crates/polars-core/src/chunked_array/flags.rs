@@ -1,10 +1,11 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::series::IsSorted;
 
 /// An interior mutable version of [`StatisticsFlags`]
+#[derive(Clone)]
 pub struct StatisticsFlagsIM {
-    inner: AtomicU32,
+    inner: RelaxedCell<u32>,
 }
 
 bitflags::bitflags! {
@@ -16,6 +17,14 @@ bitflags::bitflags! {
         const IS_SORTED_ASC = 0x01;
         const IS_SORTED_DSC = 0x02;
         const CAN_FAST_EXPLODE_LIST = 0x04;
+
+        /// Recursive version of `CAN_FAST_EXPLODE_LIST`.
+        ///
+        /// This can also apply to other nested chunked arrays and signals that there all lists
+        /// have been compacted recursively.
+        const HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS = 0x08;
+        /// All masked out values have their nulls propagated.
+        const HAS_PROPAGATED_NULLS = 0x10;
     }
 }
 
@@ -27,23 +36,18 @@ impl std::fmt::Debug for StatisticsFlagsIM {
     }
 }
 
-impl Clone for StatisticsFlagsIM {
-    fn clone(&self) -> Self {
-        Self::new(self.get())
-    }
-}
-
 impl PartialEq for StatisticsFlagsIM {
     fn eq(&self, other: &Self) -> bool {
         self.get() == other.get()
     }
 }
+
 impl Eq for StatisticsFlagsIM {}
 
 impl From<StatisticsFlags> for StatisticsFlagsIM {
     fn from(value: StatisticsFlags) -> Self {
         Self {
-            inner: AtomicU32::new(value.bits()),
+            inner: RelaxedCell::from(value.bits()),
         }
     }
 }
@@ -51,7 +55,7 @@ impl From<StatisticsFlags> for StatisticsFlagsIM {
 impl StatisticsFlagsIM {
     pub fn new(value: StatisticsFlags) -> Self {
         Self {
-            inner: AtomicU32::new(value.bits()),
+            inner: RelaxedCell::from(value.bits()),
         }
     }
 
@@ -67,10 +71,10 @@ impl StatisticsFlagsIM {
     }
 
     pub fn get(&self) -> StatisticsFlags {
-        StatisticsFlags::from_bits(self.inner.load(Ordering::Relaxed)).unwrap()
+        StatisticsFlags::from_bits(self.inner.load()).unwrap()
     }
     pub fn set(&self, value: StatisticsFlags) {
-        self.inner.store(value.bits(), Ordering::Relaxed);
+        self.inner.store(value.bits());
     }
 }
 
@@ -112,5 +116,13 @@ impl StatisticsFlags {
 
     pub fn can_fast_explode_list(&self) -> bool {
         self.contains(Self::CAN_FAST_EXPLODE_LIST)
+    }
+
+    pub fn has_propagated_nulls(&self) -> bool {
+        self.contains(Self::HAS_PROPAGATED_NULLS)
+    }
+
+    pub fn has_trimmed_lists_to_normalized_offsets(&self) -> bool {
+        self.contains(Self::HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS)
     }
 }

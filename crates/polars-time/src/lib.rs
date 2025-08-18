@@ -1,4 +1,9 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(
+    feature = "allow_unused",
+    allow(unused, dead_code, irrefutable_let_patterns)
+)] // Maybe be caused by some feature
+// combinations
 #[cfg(feature = "timezones")]
 mod base_utc_offset;
 pub mod chunkedarray;
@@ -41,6 +46,8 @@ pub use round::*;
 #[cfg(feature = "dtype-date")]
 pub use truncate::*;
 pub use upsample::*;
+#[cfg(feature = "timezones")]
+pub use utils::known_timezones;
 pub use windows::duration::Duration;
 pub use windows::group_by::ClosedWindow;
 pub use windows::window::Window;

@@ -1,20 +1,17 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 use polars_core::prelude::ChunkCompareIneq;
-use polars_core::schema::Schema;
 use polars_ops::frame::_merge_sorted_dfs;
-use polars_utils::pl_str::PlSmallStr;
 
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::morsel::{get_ideal_morsel_size, SourceToken};
+use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
+/// Performs `merge_sorted` with the last column being regarded as the key column. This key column
+/// is also popped in the send pipe.
 pub struct MergeSortedNode {
-    key_column_idx: usize,
-
     seq: MorselSeq,
 
     starting_nulls: bool,
@@ -25,13 +22,8 @@ pub struct MergeSortedNode {
 }
 
 impl MergeSortedNode {
-    pub fn new(schema: Arc<Schema>, key: PlSmallStr) -> Self {
-        assert!(schema.contains(key.as_str()));
-        let key_column_idx = schema.index_of(key.as_str()).unwrap();
-
+    pub fn new() -> Self {
         Self {
-            key_column_idx,
-
             seq: MorselSeq::default(),
 
             starting_nulls: false,
@@ -49,14 +41,12 @@ fn find_mergeable(
     left_unmerged: &mut VecDeque<DataFrame>,
     right_unmerged: &mut VecDeque<DataFrame>,
 
-    key_column_idx: usize,
-
     is_first: bool,
     starting_nulls: &mut bool,
 ) -> PolarsResult<Option<(DataFrame, DataFrame)>> {
     fn first_non_empty(vd: &mut VecDeque<DataFrame>) -> Option<DataFrame> {
         let mut df = vd.pop_front()?;
-        while df.is_empty() {
+        while df.height() == 0 {
             df = vd.pop_front()?;
         }
         Some(df)
@@ -79,8 +69,8 @@ fn find_mergeable(
             (None, None) => return Ok(None),
         };
 
-        let left_key = &left[key_column_idx];
-        let right_key = &right[key_column_idx];
+        let left_key = left.get_columns().last().unwrap();
+        let right_key = right.get_columns().last().unwrap();
 
         let left_null_count = left_key.null_count();
         let right_null_count = right_key.null_count();
@@ -169,54 +159,65 @@ fn find_mergeable(
     }
 }
 
+fn remove_key_column(df: &mut DataFrame) {
+    // SAFETY:
+    // - We only pop so height stays same.
+    // - We only pop so no new name collisions.
+    // - We clear schema afterwards.
+    unsafe { df.get_columns_mut().pop().unwrap() };
+    df.clear_schema();
+}
+
 impl ComputeNode for MergeSortedNode {
     fn name(&self) -> &str {
-        "merge_sorted"
+        "merge-sorted"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert_eq!(send.len(), 1);
         assert_eq!(recv.len(), 2);
 
-        match (send[0], recv[0], recv[1]) {
-            (PortState::Done, _, _) => {
-                recv[0] = PortState::Done;
-                recv[1] = PortState::Done;
-            },
+        // Abstraction: we merge buffer state with port state so we can map
+        // to one three possible 'effective' states:
+        // no data now (_blocked); data available (); or no data anymore (_done)
+        let left_done = recv[0] == PortState::Done && self.left_unmerged.is_empty();
+        let right_done = recv[1] == PortState::Done && self.right_unmerged.is_empty();
 
-            (_, PortState::Done, PortState::Done)
-                if self.left_unmerged.is_empty() && self.right_unmerged.is_empty() =>
-            {
-                send[0] = PortState::Done;
-            },
-
-            // If the output port is blocked, the input port is blocked as well.
-            (PortState::Blocked, _, _) => {
-                if recv[0] != PortState::Done {
-                    recv[0] = PortState::Blocked;
-                }
-                if recv[1] != PortState::Done {
-                    recv[1] = PortState::Blocked;
-                }
-            },
-
-            // If one of the two ports is blocked such that we cannot produce data anymore, block
-            // the other input port and output port.
-            (_, PortState::Blocked, _) if self.left_unmerged.is_empty() => {
-                send[0] = PortState::Blocked;
-                if recv[1] != PortState::Done {
-                    recv[1] = PortState::Blocked;
-                }
-            },
-            (_, _, PortState::Blocked) if self.right_unmerged.is_empty() => {
-                send[0] = PortState::Blocked;
-                if recv[0] != PortState::Done {
-                    recv[0] = PortState::Blocked;
-                }
-            },
-
-            _ => send[0] = PortState::Ready,
+        // We're done as soon as one side is done.
+        if send[0] == PortState::Done || (left_done && right_done) {
+            recv[0] = PortState::Done;
+            recv[1] = PortState::Done;
+            send[0] = PortState::Done;
+            return Ok(());
         }
+
+        // Each port is ready to proceed unless one of the other ports is effectively
+        // blocked. For example:
+        // - [Blocked with empty buffer, Ready] [Ready] returns [Ready, Blocked] [Blocked]
+        // - [Blocked with non-empty buffer, Ready] [Ready] returns [Ready, Ready, Ready]
+        let send_blocked = send[0] == PortState::Blocked;
+        let left_blocked = recv[0] == PortState::Blocked && self.left_unmerged.is_empty();
+        let right_blocked = recv[1] == PortState::Blocked && self.right_unmerged.is_empty();
+        send[0] = if left_blocked || right_blocked {
+            PortState::Blocked
+        } else {
+            PortState::Ready
+        };
+        recv[0] = if send_blocked || right_blocked {
+            PortState::Blocked
+        } else {
+            PortState::Ready
+        };
+        recv[1] = if send_blocked || left_blocked {
+            PortState::Blocked
+        } else {
+            PortState::Ready
+        };
 
         Ok(())
     }
@@ -226,7 +227,7 @@ impl ComputeNode for MergeSortedNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert_eq!(recv_ports.len(), 2);
@@ -236,7 +237,6 @@ impl ComputeNode for MergeSortedNode {
 
         let seq = &mut self.seq;
         let starting_nulls = &mut self.starting_nulls;
-        let key_column_idx = self.key_column_idx;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
 
@@ -258,6 +258,8 @@ impl ComputeNode for MergeSortedNode {
                                 // Ensure the morsel sequence id stream is monotone non-decreasing.
                                 let seq = morsel.seq().offset_by(morsel_offset);
                                 max_seq = max_seq.max(seq);
+
+                                remove_key_column(morsel.df_mut());
 
                                 morsel.set_seq(seq);
                                 if send.send(morsel).await.is_err() {
@@ -304,7 +306,7 @@ impl ComputeNode for MergeSortedNode {
                 }
 
                 let (mut distributor, dist_recv) =
-                    distributor_channel(send.len(), DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+                    distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
                 let mut left = left.map(|p| p.serial());
                 let mut right = right.map(|p| p.serial());
@@ -322,7 +324,6 @@ impl ComputeNode for MergeSortedNode {
                         while let Some((left_mergeable, right_mergeable)) = find_mergeable(
                             left_unmerged,
                             right_unmerged,
-                            key_column_idx,
                             seq.to_u64() == 0,
                             starting_nulls,
                         )? {
@@ -383,7 +384,6 @@ impl ComputeNode for MergeSortedNode {
                     while let Some((left_mergeable, right_mergeable)) = find_mergeable(
                         left_unmerged,
                         right_unmerged,
-                        key_column_idx,
                         seq.to_u64() == 0,
                         starting_nulls,
                     )? {
@@ -451,24 +451,40 @@ impl ComputeNode for MergeSortedNode {
                 join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
                     let ideal_morsel_size = get_ideal_morsel_size();
                     scope.spawn_task(TaskPriority::High, async move {
-                        while let Ok((left, right)) = recv.recv().await {
+                        while let Ok((mut left, mut right)) = recv.recv().await {
                             // When we are flushing the buffer, we will just send one morsel from
                             // the input. We don't want to mess with the source token or wait group
                             // and just pass it on.
                             if right.is_empty() {
+                                remove_key_column(left.df_mut());
+
                                 if send.send(left).await.is_err() {
                                     return Ok(());
                                 }
                                 continue;
                             }
 
-                            let (left, seq, source_token, wg) = left.into_inner();
+                            let (mut left, seq, source_token, wg) = left.into_inner();
                             assert!(wg.is_none());
 
-                            let left_s = left[key_column_idx].as_materialized_series();
-                            let right_s = right[key_column_idx].as_materialized_series();
+                            let left_s = left
+                                .get_columns()
+                                .last()
+                                .unwrap()
+                                .as_materialized_series()
+                                .clone();
+                            let right_s = right
+                                .get_columns()
+                                .last()
+                                .unwrap()
+                                .as_materialized_series()
+                                .clone();
 
-                            let merged = _merge_sorted_dfs(&left, &right, left_s, right_s, false)?;
+                            remove_key_column(&mut left);
+                            remove_key_column(&mut right);
+
+                            let merged =
+                                _merge_sorted_dfs(&left, &right, &left_s, &right_s, false)?;
 
                             if ideal_morsel_size > 1 && merged.height() > ideal_morsel_size {
                                 // The merged dataframe will have at most doubled in size from the

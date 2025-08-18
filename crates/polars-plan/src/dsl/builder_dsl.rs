@@ -1,17 +1,12 @@
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
-use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
-use polars_io::HiveOptions;
-#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
-use polars_io::RowIndex;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
@@ -28,46 +23,28 @@ impl From<DslPlan> for DslBuilder {
 impl DslBuilder {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,
-        schema: Option<SchemaRef>,
-        infer_schema_length: Option<usize>,
-        skip_rows: Option<usize>,
-        n_rows: Option<usize>,
-        name: &'static str,
+        options: AnonymousScanOptions,
+        unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
-        let schema = match schema {
-            Some(s) => s,
-            None => function.schema(infer_schema_length)?,
-        };
-
-        let file_info = FileInfo::new(schema.clone(), None, (n_rows, n_rows.unwrap_or(usize::MAX)));
-        let file_options = FileScanOptions {
-            slice: n_rows.map(|x| (0, x)),
-            with_columns: None,
-            cache: false,
-            row_index: None,
-            rechunk: false,
-            file_counter: Default::default(),
-            // TODO: Support Hive partitioning.
-            hive_options: HiveOptions {
-                enabled: Some(false),
-                ..Default::default()
-            },
-            glob: false,
-            include_file_paths: None,
-            allow_missing_columns: false,
-        };
+        let schema = unified_scan_args.schema.clone().ok_or_else(|| {
+            polars_err!(
+                ComputeError:
+                "anonymous scan requires schema to be specified in unified_scan_args"
+            )
+        })?;
 
         Ok(DslPlan::Scan {
-            sources: ScanSources::Buffers(Arc::default()),
-            file_info: Some(file_info),
-            file_options,
-            scan_type: FileScan::Anonymous {
+            sources: ScanSources::default(),
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::Anonymous {
                 function,
-                options: Arc::new(AnonymousScanOptions {
-                    fmt_str: name,
-                    skip_rows,
-                }),
-            },
+                options: Arc::new(options),
+                file_info: FileInfo {
+                    schema: schema.clone(),
+                    reader_schema: Some(either::Either::Right(schema)),
+                    ..Default::default()
+                },
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -77,46 +54,13 @@ impl DslBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
         sources: ScanSources,
-        n_rows: Option<usize>,
-        cache: bool,
-        parallel: polars_io::parquet::read::ParallelStrategy,
-        row_index: Option<RowIndex>,
-        rechunk: bool,
-        low_memory: bool,
-        cloud_options: Option<CloudOptions>,
-        use_statistics: bool,
-        schema: Option<SchemaRef>,
-        hive_options: HiveOptions,
-        glob: bool,
-        include_file_paths: Option<PlSmallStr>,
-        allow_missing_columns: bool,
+        options: ParquetOptions,
+        unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
-        let options = FileScanOptions {
-            with_columns: None,
-            cache,
-            slice: n_rows.map(|x| (0, x)),
-            rechunk,
-            row_index,
-            file_counter: Default::default(),
-            hive_options,
-            glob,
-            include_file_paths,
-            allow_missing_columns,
-        };
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
-            file_options: options,
-            scan_type: FileScan::Parquet {
-                options: ParquetOptions {
-                    schema,
-                    parallel,
-                    low_memory,
-                    use_statistics,
-                },
-                cloud_options,
-                metadata: None,
-            },
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::Parquet { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -127,34 +71,12 @@ impl DslBuilder {
     pub fn scan_ipc(
         sources: ScanSources,
         options: IpcScanOptions,
-        n_rows: Option<usize>,
-        cache: bool,
-        row_index: Option<RowIndex>,
-        rechunk: bool,
-        cloud_options: Option<CloudOptions>,
-        hive_options: HiveOptions,
-        include_file_paths: Option<PlSmallStr>,
+        unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
-            file_options: FileScanOptions {
-                with_columns: None,
-                cache,
-                slice: n_rows.map(|x| (0, x)),
-                rechunk,
-                row_index,
-                file_counter: Default::default(),
-                hive_options,
-                glob: true,
-                include_file_paths,
-                allow_missing_columns: false,
-            },
-            scan_type: FileScan::Ipc {
-                options,
-                cloud_options,
-                metadata: None,
-            },
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::Ipc { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -164,52 +86,42 @@ impl DslBuilder {
     #[cfg(feature = "csv")]
     pub fn scan_csv(
         sources: ScanSources,
-        read_options: CsvReadOptions,
-        cache: bool,
-        cloud_options: Option<CloudOptions>,
-        glob: bool,
-        include_file_paths: Option<PlSmallStr>,
+        options: CsvReadOptions,
+        unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
-        // This gets partially moved by FileScanOptions
-        let read_options_clone = read_options.clone();
-
-        let options = FileScanOptions {
-            with_columns: None,
-            cache,
-            slice: read_options_clone.n_rows.map(|x| (0, x)),
-            rechunk: read_options_clone.rechunk,
-            row_index: read_options_clone.row_index,
-            file_counter: Default::default(),
-            // TODO: Support Hive partitioning.
-            hive_options: HiveOptions {
-                enabled: Some(false),
-                ..Default::default()
-            },
-            glob,
-            include_file_paths,
-            allow_missing_columns: false,
-        };
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
-            file_options: options,
-            scan_type: FileScan::Csv {
-                options: read_options,
-                cloud_options,
-            },
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::Csv { options }),
             cached_ir: Default::default(),
         }
         .into())
     }
 
-    pub fn cache(self) -> Self {
-        let input = Arc::new(self.0);
-        let id = input.as_ref() as *const DslPlan as usize;
-        DslPlan::Cache { input, id }.into()
+    #[cfg(feature = "python")]
+    pub fn scan_python_dataset(
+        dataset_object: polars_utils::python_function::PythonObject,
+    ) -> DslBuilder {
+        use super::python_dataset::PythonDatasetProvider;
+
+        DslPlan::Scan {
+            sources: ScanSources::default(),
+            unified_scan_args: Default::default(),
+            scan_type: Box::new(FileScanDsl::PythonDataset {
+                dataset_object: Arc::new(PythonDatasetProvider::new(dataset_object)),
+            }),
+            cached_ir: Default::default(),
+        }
+        .into()
     }
 
-    pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
-        self.map_private(DslFunction::Drop(DropFunction { to_drop, strict }))
+    pub fn cache(self) -> Self {
+        let input = Arc::new(self.0);
+        DslPlan::Cache { input }.into()
+    }
+
+    pub fn drop(self, columns: Selector) -> Self {
+        self.project(vec![Expr::Selector(!columns)], ProjectionOptions::default())
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
@@ -223,7 +135,7 @@ impl DslBuilder {
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
         self.project(
-            vec![all().fill_null(fill_value)],
+            vec![all().as_expr().fill_null(fill_value)],
             ProjectionOptions {
                 duplicate_check: false,
                 ..Default::default()
@@ -231,40 +143,17 @@ impl DslBuilder {
         )
     }
 
-    pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
-        if let Some(subset) = subset {
-            self.filter(
-                all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|v| v.is_not_nan())
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            )
-        } else {
-            self.filter(
-                // TODO: when Decimal supports NaN, include here
-                all_horizontal([dtype_cols([DataType::Float32, DataType::Float64]).is_not_nan()])
-                    .unwrap(),
-            )
-        }
+    pub fn drop_nans(self, subset: Option<Selector>) -> Self {
+        let is_nan = subset
+            .unwrap_or(DataTypeSelector::Float.as_selector())
+            .as_expr()
+            .is_nan();
+        self.remove(any_horizontal([is_nan]).unwrap())
     }
 
-    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        if let Some(subset) = subset {
-            self.filter(
-                all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|v| v.is_not_null())
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            )
-        } else {
-            self.filter(all_horizontal([all().is_not_null()]).unwrap())
-        }
+    pub fn drop_nulls(self, subset: Option<Selector>) -> Self {
+        let is_not_null = subset.unwrap_or(Selector::Wildcard).as_expr().is_not_null();
+        self.filter(all_horizontal([is_not_null]).unwrap())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
@@ -284,6 +173,29 @@ impl DslBuilder {
         .into()
     }
 
+    pub fn match_to_schema(
+        self,
+        match_schema: SchemaRef,
+        per_column: Arc<[MatchToSchemaPerColumn]>,
+        extra_columns: ExtraColumnsPolicy,
+    ) -> Self {
+        DslPlan::MatchToSchema {
+            input: Arc::new(self.0),
+            match_schema,
+            per_column,
+            extra_columns,
+        }
+        .into()
+    }
+
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+        DslPlan::PipeWithSchema {
+            input: Arc::new(self.0),
+            callback,
+        }
+        .into()
+    }
+
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
         DslPlan::ExtContext {
             input: Arc::new(self.0),
@@ -292,10 +204,20 @@ impl DslBuilder {
         .into()
     }
 
-    /// Apply a filter
+    /// Apply a filter predicate, keeping the rows that match it.
     pub fn filter(self, predicate: Expr) -> Self {
         DslPlan::Filter {
             predicate,
+            input: Arc::new(self.0),
+        }
+        .into()
+    }
+
+    /// Remove rows matching a filter predicate (note that rows
+    /// where the predicate resolves to `null` are *not* removed).
+    pub fn remove(self, predicate: Expr) -> Self {
+        DslPlan::Filter {
+            predicate: predicate.neq_missing(lit(true)),
             input: Arc::new(self.0),
         }
         .into()
@@ -305,7 +227,7 @@ impl DslBuilder {
         self,
         keys: Vec<Expr>,
         aggs: E,
-        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
+        apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
         #[cfg(feature = "dynamic_group_by")] dynamic_options: Option<DynamicGroupOptions>,
         #[cfg(feature = "dynamic_group_by")] rolling_options: Option<RollingGroupOptions>,
@@ -353,7 +275,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<Selector>, allow_empty: bool) -> Self {
+    pub fn explode(self, columns: Selector, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode {
@@ -438,7 +360,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 validate_output,
             }),
         }
@@ -464,7 +386,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 fmt_str: name,
             }),
         }

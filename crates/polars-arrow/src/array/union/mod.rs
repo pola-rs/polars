@@ -1,10 +1,10 @@
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
-use super::{new_empty_array, new_null_array, Array, Splitable};
+use super::{Array, Splitable, new_empty_array, new_null_array};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, Field, UnionMode};
-use crate::scalar::{new_scalar, Scalar};
+use crate::scalar::{Scalar, new_scalar};
 
 mod ffi;
 pub(super) mod fmt;
@@ -351,7 +351,7 @@ impl Array for UnionArray {
 }
 
 impl UnionArray {
-    fn try_get_all(dtype: &ArrowDataType) -> PolarsResult<UnionComponents> {
+    fn try_get_all(dtype: &ArrowDataType) -> PolarsResult<UnionComponents<'_>> {
         match dtype.to_logical_type() {
             ArrowDataType::Union(u) => Ok((&u.fields, u.ids.as_ref().map(|x| x.as_ref()), u.mode)),
             _ => polars_bail!(ComputeError:

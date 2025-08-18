@@ -18,18 +18,15 @@ impl Series {
                 ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(rev_map, ord) | DataType::Enum(rev_map, ord)) => {
-                let mut ca = CategoricalChunked::full_null(
-                    name,
-                    matches!(dt, DataType::Enum(_, _)),
-                    size,
-                    *ord,
-                );
-                // ensure we keep the rev-map of a cleared series
-                if let Some(rev_map) = rev_map {
-                    unsafe { ca.set_rev_map(rev_map.clone(), false) }
-                }
-                ca.into_series()
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    CategoricalChunked::<$C>::full_null_with_dtype(
+                        name,
+                        size,
+                        dtype.clone()
+                    )
+                        .into_series()
+                })
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => Int32Chunked::full_null(name, size)
@@ -93,7 +90,7 @@ impl Series {
                 Series::full_null(name, size, &dtype)
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let mut builder = get_object_builder(name, size);
                 for _ in 0..size {
                     builder.append_null();
@@ -102,24 +99,16 @@ impl Series {
             },
             _ => {
                 macro_rules! primitive {
-                    ($type:ty) => {{
-                        ChunkedArray::<$type>::full_null(name, size).into_series()
-                    }};
+                    ($type:ty) => {{ ChunkedArray::<$type>::full_null(name, size).into_series() }};
                 }
                 macro_rules! bool {
-                    () => {{
-                        ChunkedArray::<BooleanType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<BooleanType>::full_null(name, size).into_series() }};
                 }
                 macro_rules! string {
-                    () => {{
-                        ChunkedArray::<StringType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<StringType>::full_null(name, size).into_series() }};
                 }
                 macro_rules! binary {
-                    () => {{
-                        ChunkedArray::<BinaryType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<BinaryType>::full_null(name, size).into_series() }};
                 }
                 match_dtype_to_logical_apply_macro!(dtype, primitive, string, binary, bool)
             },

@@ -8,12 +8,23 @@ import subprocess
 import sys
 import zoneinfo
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, Union
+from functools import partial
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Optional,
+    TypedDict,
+    Union,
+)
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
+from polars.io.cloud._utils import NoPickleOption
 
 if TYPE_CHECKING:
+    from polars.dependencies import boto3
+
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
@@ -52,8 +63,8 @@ class CredentialProvider(abc.ABC):
     Base class for credential providers.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     @abc.abstractmethod
@@ -61,15 +72,92 @@ class CredentialProvider(abc.ABC):
         """Fetches the credentials."""
 
 
-class CredentialProviderAWS(CredentialProvider):
+class CachingCredentialProvider(CredentialProvider, abc.ABC):
+    """
+    Base class for credential providers that has built-in caching.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+    """
+
+    def __init__(self) -> None:
+        self._cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] = (
+            NoPickleOption()
+        )
+        self._has_logged_use_cache = False
+
+        if verbose():
+            eprint(
+                f"[{type(self).__name__} @ {hex(id(self))}]: CredentialProvider.__init__()"
+            )
+
+    def __call__(self) -> CredentialProviderFunctionReturn:
+        if os.getenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING") == "1":
+            self._cached_credentials.set(None)
+
+            return self.retrieve_credentials_impl()
+
+        credentials = self._cached_credentials.get()
+
+        if credentials is None or (
+            (expiry := credentials[1]) is not None
+            and expiry <= int(datetime.now().timestamp())
+        ):
+            credentials = self.retrieve_credentials_impl()
+            self._cached_credentials.set(credentials)
+            self._has_logged_use_cache = False
+
+        elif verbose() and not self._has_logged_use_cache:
+            expiry = credentials[1]
+            eprint(
+                f"[{type(self).__name__} @ {hex(id(self))}]: Using cached credentials ({expiry = })"
+            )
+            self._has_logged_use_cache = True
+
+        creds, expiry = credentials
+
+        return {**creds}, expiry
+
+    @abc.abstractmethod
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn: ...
+
+    def clear_cached_credentials(self) -> None:
+        self._cached_credentials.set(None)
+
+
+class CachedCredentialProvider(CachingCredentialProvider):
+    """
+    Wrapper that adds caching on top of a credential provider.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+    """
+
+    def __init__(
+        self, provider: CredentialProvider | CredentialProviderFunction
+    ) -> None:
+        self._provider = provider
+
+        super().__init__()
+
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
+        return self._provider()
+
+    def __repr__(self) -> str:
+        return f"CachedCredentialProvider[{self._provider!r}]"
+
+
+class CredentialProviderAWS(CachingCredentialProvider):
     """
     AWS Credential Provider.
 
     Using this requires the `boto3` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
@@ -78,6 +166,8 @@ class CredentialProviderAWS(CredentialProvider):
         profile_name: str | None = None,
         region_name: str | None = None,
         assume_role: AWSAssumeRoleKWArgs | None = None,
+        _auto_init_unhandled_key: str | None = None,
+        _storage_options_has_endpoint_url: bool = False,
     ) -> None:
         """
         Initialize a credential provider for AWS.
@@ -93,20 +183,21 @@ class CredentialProviderAWS(CredentialProvider):
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
 
+        super().__init__()
+
         self._ensure_module_availability()
+
         self.profile_name = profile_name
         self.region_name = region_name
         self.assume_role = assume_role
+        self._auto_init_unhandled_key = _auto_init_unhandled_key
+        self._storage_options_has_endpoint_url = _storage_options_has_endpoint_url
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
-        import boto3
+        assert not self._auto_init_unhandled_key
 
-        # Note: boto3 automatically sources the AWS_PROFILE env var
-        session = boto3.Session(
-            profile_name=self.profile_name,
-            region_name=self.region_name,
-        )
+        session = self._session()
 
         if self.assume_role is not None:
             return self._finish_assume_role(session)
@@ -117,11 +208,17 @@ class CredentialProviderAWS(CredentialProvider):
             msg = "did not receive any credentials from boto3.Session.get_credentials()"
             raise self.EmptyCredentialError(msg)
 
+        expiry = (
+            int(expiry.timestamp())
+            if isinstance(expiry := getattr(creds, "_expiry_time", None), datetime)
+            else None
+        )
+
         return {
             "aws_access_key_id": creds.access_key,
             "aws_secret_access_key": creds.secret_key,
             **({"aws_session_token": creds.token} if creds.token is not None else {}),
-        }, None
+        }, expiry
 
     def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
         client = session.client("sts")
@@ -141,6 +238,65 @@ class CredentialProviderAWS(CredentialProvider):
             "aws_session_token": creds["SessionToken"],
         }, int(expiry.timestamp())
 
+    # Called from Rust, mainly for AWS endpoint_url
+    def _storage_update_options(self) -> dict[str, str]:
+        if self._storage_options_has_endpoint_url:
+            return {}
+
+        try:
+            config = self._session()._session.get_scoped_config()
+        except ImportError:
+            return {}
+
+        if endpoint_url := config.get("endpoint_url"):
+            if verbose():
+                eprint(f"[CredentialProviderAWS]: Loaded endpoint_url: {endpoint_url}")
+
+            return {"endpoint_url": endpoint_url}
+
+        return {}
+
+    # Called from Rust
+    def _can_use_as_provider(self) -> bool:
+        if self._auto_init_unhandled_key:
+            if verbose():
+                eprint(
+                    "[CredentialProviderAWS]: Will not be used as a provider: "
+                    f"unhandled key in storage_options: '{self._auto_init_unhandled_key}'"
+                )
+
+            return False
+
+        try:
+            self()
+
+        except ImportError as e:
+            if self.profile_name:
+                msg = (
+                    "cannot load requested aws_profile "
+                    f"'{self.profile_name}': {type(e).__name__}: {e}"
+                )
+                raise polars.exceptions.ComputeError(msg) from e
+
+            return False
+
+        except self.EmptyCredentialError:
+            if verbose():
+                eprint("[CredentialProviderAWS]: Did not find any credentials")
+
+            return False
+
+        return True
+
+    def _session(self) -> boto3.Session:
+        # Note: boto3 automatically sources the AWS_PROFILE env var
+        import boto3
+
+        return boto3.Session(
+            profile_name=self.profile_name,
+            region_name=self.region_name,
+        )
+
     @classmethod
     def _ensure_module_availability(cls) -> None:
         if importlib.util.find_spec("boto3") is None:
@@ -156,15 +312,15 @@ class CredentialProviderAWS(CredentialProvider):
         """
 
 
-class CredentialProviderAzure(CredentialProvider):
+class CredentialProviderAzure(CachingCredentialProvider):
     """
     Azure Credential Provider.
 
     Using this requires the `azure-identity` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
@@ -172,7 +328,7 @@ class CredentialProviderAzure(CredentialProvider):
         *,
         scopes: list[str] | None = None,
         tenant_id: str | None = None,
-        credentials: Any | None = None,
+        credential: Any | None = None,
         _storage_account: str | None = None,
     ) -> None:
         """
@@ -186,7 +342,7 @@ class CredentialProviderAzure(CredentialProvider):
             Scopes to pass to `get_token`
         tenant_id
             Azure tenant ID.
-        credentials
+        credential
             Optionally pass an instantiated Azure credential class to use (e.g.
             `azure.identity.DefaultAzureCredential`). The credential class must
             have a `get_token()` method.
@@ -194,26 +350,28 @@ class CredentialProviderAzure(CredentialProvider):
         msg = "`CredentialProviderAzure` functionality is considered unstable"
         issue_unstable_warning(msg)
 
+        super().__init__()
+
         self.account_name = _storage_account
         self.scopes = (
             scopes if scopes is not None else ["https://storage.azure.com/.default"]
         )
         self.tenant_id = tenant_id
-        self.credentials = credentials
+        self.credential = credential
 
-        if credentials is not None:
-            # If the user passes a credentials class, we just need to ensure it
+        if credential is not None:
+            # If the user passes a credential class, we just need to ensure it
             # has a `get_token()` method.
-            if not hasattr(credentials, "get_token"):
+            if not hasattr(credential, "get_token"):
                 msg = (
-                    f"the provided `credentials` object {credentials!r} does "
+                    f"the provided `credential` object {credential!r} does "
                     "not have a `get_token()` method."
                 )
                 raise ValueError(msg)
 
         # We don't need the module if we are permitted and able to retrieve the
         # account key from the Azure CLI.
-        elif self._try_get_azure_storage_account_credentials_if_permitted() is None:
+        elif self._try_get_azure_storage_account_credential_if_permitted() is None:
             self._ensure_module_availability()
 
         if verbose():
@@ -224,27 +382,23 @@ class CredentialProviderAzure(CredentialProvider):
                 f"{self.scopes = } "
             )
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         if (
-            v := self._try_get_azure_storage_account_credentials_if_permitted()
+            v := self._try_get_azure_storage_account_credential_if_permitted()
         ) is not None:
             return v
 
-        # Done like this to bypass mypy, we don't have stubs for azure.identity
-        credential = (
-            self.credentials
-            or importlib.import_module("azure.identity").__dict__[
-                "DefaultAzureCredential"
-            ]()
-        )
+        import azure.identity
+
+        credential = self.credential or azure.identity.DefaultAzureCredential()
         token = credential.get_token(*self.scopes, tenant_id=self.tenant_id)
 
         return {
             "bearer_token": token.token,
         }, token.expires_on
 
-    def _try_get_azure_storage_account_credentials_if_permitted(
+    def _try_get_azure_storage_account_credential_if_permitted(
         self,
     ) -> CredentialProviderFunctionReturn | None:
         POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = os.getenv(
@@ -350,15 +504,15 @@ class CredentialProviderAzure(CredentialProvider):
         )
 
 
-class CredentialProviderGCP(CredentialProvider):
+class CredentialProviderGCP(CachingCredentialProvider):
     """
     GCP Credential Provider.
 
     Using this requires the `google-auth` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
@@ -379,20 +533,14 @@ class CredentialProviderGCP(CredentialProvider):
         msg = "`CredentialProviderGCP` functionality is considered unstable"
         issue_unstable_warning(msg)
 
+        super().__init__()
+
         self._ensure_module_availability()
 
         import google.auth
-        import google.auth.credentials
 
-        # CI runs with both `mypy` and `mypy --allow-untyped-calls` depending on
-        # Python version. If we add a `type: ignore[no-untyped-call]`, then the
-        # check that runs with `--allow-untyped-calls` will complain about an
-        # unused "type: ignore" comment. And if we don't add the ignore, then
-        # he check that runs `mypy` will complain.
-        #
-        # So we just bypass it with a __dict__[] (because ruff complains about
-        # getattr) :|
-        creds, _ = google.auth.__dict__["default"](
+        self._init_creds = partial(
+            google.auth.default,
             scopes=(
                 scopes
                 if scopes is not None
@@ -402,15 +550,15 @@ class CredentialProviderGCP(CredentialProvider):
             quota_project_id=quota_project_id,
             default_scopes=default_scopes,
         )
-        self.creds = creds
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         import google.auth.transport.requests
 
-        self.creds.refresh(google.auth.transport.requests.__dict__["Request"]())
+        creds, _project_id = self._init_creds()
+        creds.refresh(google.auth.transport.requests.Request())  # type: ignore[no-untyped-call, unused-ignore]
 
-        return {"bearer_token": self.creds.token}, (
+        return {"bearer_token": creds.token}, (
             int(
                 (
                     expiry.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
@@ -418,7 +566,7 @@ class CredentialProviderGCP(CredentialProvider):
                     else expiry
                 ).timestamp()
             )
-            if (expiry := self.creds.expiry) is not None
+            if (expiry := creds.expiry) is not None
             else None
         )
 
@@ -429,9 +577,25 @@ class CredentialProviderGCP(CredentialProvider):
             raise ImportError(msg)
 
 
+class UserProvidedGCPToken(CredentialProvider):
+    """User-provided GCP token in storage_options."""
+
+    def __init__(self, token: str) -> None:
+        self.token = token
+
+    def __call__(self) -> CredentialProviderFunctionReturn:
+        return {"bearer_token": self.token}, None
+
+
 def _get_credentials_from_provider_expiry_aware(
     credential_provider: CredentialProviderFunction,
-) -> dict[str, str]:
+) -> dict[str, str] | None:
+    if (
+        isinstance(credential_provider, CredentialProviderAWS)
+        and not credential_provider._can_use_as_provider()
+    ):
+        return None
+
     creds, opt_expiry = credential_provider()
 
     if (
@@ -445,5 +609,11 @@ def _get_credentials_from_provider_expiry_aware(
 
         sleep(1 + expires_in)
         creds, _ = credential_provider()
+
+    # Loads the endpoint_url
+    if isinstance(credential_provider, CredentialProviderAWS) and (
+        v := credential_provider._storage_update_options()
+    ):
+        creds = {**creds, **v}
 
     return creds

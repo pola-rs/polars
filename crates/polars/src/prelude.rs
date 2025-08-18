@@ -8,3 +8,4 @@ pub use polars_lazy::prelude::*;
 pub use polars_ops::prelude::*;
 #[cfg(feature = "temporal")]
 pub use polars_time::prelude::*;
+pub use polars_utils::plpath::{PlPath, PlPathRef};

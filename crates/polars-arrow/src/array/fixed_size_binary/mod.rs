@@ -3,12 +3,14 @@ use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
+mod builder;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
+pub use builder::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 
 /// The Arrow's equivalent to an immutable `Vec<Option<[u8; size]>>`.
 /// Cloning and slicing this struct is `O(1)`.
@@ -82,6 +84,10 @@ impl FixedSizeBinaryArray {
             vec![0u8; length * size].into(),
             Some(Bitmap::new_zeroed(length)),
         )
+    }
+
+    pub fn into_inner(self) -> (ArrowDataType, Buffer<u8>, Option<Bitmap>) {
+        (self.dtype, self.values, self.validity)
     }
 }
 

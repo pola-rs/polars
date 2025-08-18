@@ -26,9 +26,11 @@ from polars.functions.as_datatype import datetime_ as datetime
 from polars.functions.as_datatype import time_ as time
 from polars.functions.business import business_day_count
 from polars.functions.col import col
+from polars.functions.datatype import dtype_of, self_dtype, struct_with_fields
 from polars.functions.eager import align_frames, concat
 from polars.functions.escape_regex import escape_regex
 from polars.functions.lazy import (
+    _row_encode,
     approx_n_unique,
     arctan2,
     arctan2d,
@@ -45,6 +47,7 @@ from polars.functions.lazy import (
     cum_reduce,
     element,
     exclude,
+    explain_all,
     field,
     first,
     fold,
@@ -63,6 +66,7 @@ from polars.functions.lazy import (
     reduce,
     rolling_corr,
     rolling_cov,
+    row_index,
     select,
     sql_expr,
     std,
@@ -102,6 +106,10 @@ __all__ = [
     "max_horizontal",
     "min_horizontal",
     "sum_horizontal",
+    # polars.functions.datatype
+    "dtype_of",
+    "self_dtype",
+    "struct_with_fields",
     # polars.functions.eager
     "align_frames",
     "approx_n_unique",
@@ -118,6 +126,7 @@ __all__ = [
     "time_ranges",
     "zeros",
     # polars.functions.lazy
+    "_row_encode",
     "arange",
     "arctan2",
     "arctan2d",
@@ -140,6 +149,7 @@ __all__ = [
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
+    "explain_all",
     "field",
     "first",
     "fold",
@@ -165,6 +175,7 @@ __all__ = [
     "reduce",
     "rolling_corr",
     "rolling_cov",
+    "row_index",
     "select",
     "set_random_seed",
     "std",

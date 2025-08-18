@@ -5,9 +5,9 @@ use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_ops::frame::join::{private_left_join_multiple_keys, ChunkJoinOptIds};
+use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_ops::frame::SeriesJoin;
+use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::sort::perfect_sort;
@@ -22,12 +22,12 @@ pub struct WindowExpr {
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
-    pub(crate) out_name: Option<PlSmallStr>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) mapping: WindowMapping,
     pub(crate) expr: Expr,
+    pub(crate) has_different_group_sources: bool,
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -170,14 +170,14 @@ impl WindowExpr {
                     .map(|s| format!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
                 polars_bail!(
-                    expr = self.expr, ComputeError:
+                    expr = self.expr, ShapeMismatch:
                     "the length of the window expression did not match that of the group\
                     \n> group: {}\n> group length: {}\n> output: '{:?}'",
                     comma_delimited(String::new(), &group), group.len(), output.unwrap()
                 );
             } else {
                 polars_bail!(
-                    expr = self.expr, ComputeError:
+                    expr = self.expr, ShapeMismatch:
                     "the length of the window expression did not match that of the group"
                 );
             };
@@ -285,41 +285,6 @@ impl WindowExpr {
         agg_col
     }
 
-    /// Check if the branches have an aggregation
-    /// when(a > sum)
-    /// then (foo)
-    /// otherwise(bar - sum)
-    fn has_different_group_sources(&self) -> bool {
-        let mut has_arity = false;
-        let mut agg_col = false;
-        for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
-                // or list().alias
-                for e in &**function {
-                    match e {
-                        Expr::Ternary { .. } | Expr::BinaryExpr { .. } => {
-                            has_arity = true;
-                        },
-                        Expr::Alias(_, _) => {},
-                        Expr::Agg(_) => {
-                            agg_col = true;
-                        },
-                        Expr::Function { options, .. }
-                        | Expr::AnonymousFunction { options, .. } => {
-                            if options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-                                && matches!(options.collect_groups, ApplyOptions::GroupWise)
-                            {
-                                agg_col = true;
-                            }
-                        },
-                        _ => {},
-                    }
-                }
-            }
-        }
-        has_arity && agg_col
-    }
-
     fn determine_map_strategy(
         &self,
         agg_state: &AggState,
@@ -363,7 +328,7 @@ impl WindowExpr {
             },
             (WindowMapping::Join, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
-            (_, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
+            (_, AggState::LiteralScalar(_)) => Ok(MapStrategy::Nothing),
         }
     }
 }
@@ -408,7 +373,18 @@ impl PhysicalExpr for WindowExpr {
 
         if df.is_empty() {
             let field = self.phys_function.to_field(df.schema())?;
-            return Ok(Column::full_null(field.name().clone(), 0, field.dtype()));
+            match self.mapping {
+                WindowMapping::Join => {
+                    return Ok(Column::full_null(
+                        field.name().clone(),
+                        0,
+                        &DataType::List(Box::new(field.dtype().clone())),
+                    ));
+                },
+                _ => {
+                    return Ok(Column::full_null(field.name().clone(), 0, field.dtype()));
+                },
+            }
         }
 
         let group_by_columns = self
@@ -440,7 +416,7 @@ impl PhysicalExpr for WindowExpr {
 
         // overwrite sort_groups for some expressions
         // TODO: fully understand the rationale is here.
-        if self.has_different_group_sources() {
+        if self.has_different_group_sources {
             sort_groups = true
         }
 
@@ -500,12 +476,6 @@ impl PhysicalExpr for WindowExpr {
         }
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
 
-        // If the aggregation creates categoricals and `MapStrategy` is `Join`,
-        // the string cache was needed. So we hold it for that case.
-        // Worst case is that a categorical is created with indexes from the string
-        // cache which is fine, as the physical representation is undefined.
-        #[cfg(feature = "dtype-categorical")]
-        let _sc = polars_core::StringCacheHolder::hold();
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
@@ -516,23 +486,17 @@ impl PhysicalExpr for WindowExpr {
                 if ac.is_literal() {
                     out = out.new_from_index(0, df.height())
                 }
-                if let Some(name) = &self.out_name {
-                    out.rename(name.clone());
-                }
                 Ok(out.into_column())
             },
             Explode => {
-                let mut out = ac.aggregated().explode()?;
-                if let Some(name) = &self.out_name {
-                    out.rename(name.clone());
-                }
+                let out = ac.aggregated().explode(false)?;
                 Ok(out.into_column())
             },
             Map => {
                 // TODO!
                 // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
-                let flattened = out_column.explode()?;
+                let flattened = out_column.explode(false)?;
                 // we extend the lifetime as we must convince the compiler that ac lives
                 // long enough. We drop `GrouBy` when we are done with `ac`.
                 let ac = unsafe {
@@ -557,7 +521,7 @@ impl PhysicalExpr for WindowExpr {
                 let update_groups = !matches!(&ac.update_groups, UpdateGroups::No);
                 match (
                     &ac.update_groups,
-                    set_by_groups(&out_column, &ac.groups, df.height(), update_groups),
+                    set_by_groups(&out_column, &ac, df.height(), update_groups),
                 ) {
                     // for aggregations that reduce like sum, mean, first and are numeric
                     // we take the group locations to directly map them to the right place
@@ -620,21 +584,14 @@ impl PhysicalExpr for WindowExpr {
                                 jt
                             } else {
                                 let jt = get_join_tuples()?;
-                                state
-                                    .window_cache
-                                    .insert_join(cache_key.clone(), jt.clone());
+                                state.window_cache.insert_join(cache_key, jt.clone());
                                 jt
                             }
                         } else {
                             get_join_tuples()?
                         };
 
-                        let mut out = materialize_column(&join_opt_ids, &out_column);
-
-                        if let Some(name) = &self.out_name {
-                            out.rename(name.clone());
-                        }
-
+                        let out = materialize_column(&join_opt_ids, &out_column);
                         Ok(out.into_column())
                     },
                 }
@@ -643,7 +600,7 @@ impl PhysicalExpr for WindowExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.function.to_field(input_schema, Context::Default)
+        self.function.to_field(input_schema)
     }
 
     fn is_scalar(&self) -> bool {
@@ -682,11 +639,11 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
 /// Simple reducing aggregation can be set by the groups
 fn set_by_groups(
     s: &Column,
-    groups: &GroupsType,
+    ac: &AggregationContext,
     len: usize,
     update_groups: bool,
 ) -> Option<Column> {
-    if update_groups {
+    if update_groups || !ac.original_len {
         return None;
     }
     if s.dtype().to_physical().is_primitive_numeric() {
@@ -694,9 +651,7 @@ fn set_by_groups(
         let s = s.to_physical_repr();
 
         macro_rules! dispatch {
-            ($ca:expr) => {{
-                Some(set_numeric($ca, groups, len))
-            }};
+            ($ca:expr) => {{ Some(set_numeric($ca, &ac.groups, len)) }};
         }
         downcast_as_macro_arg_physical!(&s, dispatch)
             .map(|s| unsafe { s.from_physical_unchecked(dtype) }.unwrap())
@@ -706,11 +661,11 @@ fn set_by_groups(
     }
 }
 
-fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsType, len: usize) -> Series
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+fn set_numeric<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsType,
+    len: usize,
+) -> Series {
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
     // SAFETY:
@@ -756,7 +711,7 @@ where
 
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        ChunkedArray::new_vec(ca.name().clone(), values).into_series()
+        ChunkedArray::<T>::new_vec(ca.name().clone(), values).into_series()
     } else {
         // We don't use a mutable bitmap as bits will have race conditions!
         // A single byte might alias if we write from single threads.
@@ -830,7 +785,9 @@ where
         unsafe { values.set_len(len) }
         let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_physical().to_arrow(CompatLevel::newest()),
+            T::get_static_dtype()
+                .to_physical()
+                .to_arrow(CompatLevel::newest()),
             values.into(),
             Some(validity),
         );

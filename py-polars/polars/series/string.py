@@ -2,28 +2,40 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+import polars._reexport as pl
+import polars.functions as F
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import no_default
+from polars._utils.wrap import wrap_s
+from polars.datatypes import Int64
+from polars.datatypes.classes import Datetime
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Mapping
 
     from polars import Expr, Series
+    from polars._plr import PySeries
     from polars._typing import (
         Ambiguous,
         IntoExpr,
         IntoExprColumn,
         PolarsDataType,
+        PolarsIntegerType,
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
         UnicodeForm,
     )
     from polars._utils.various import NoDefault
-    from polars.polars import PySeries
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 @expr_dispatch
@@ -87,8 +99,8 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        ambiguous: Ambiguous | Series = "raise",
-    ) -> Series:
+        ambiguous: Ambiguous | pl.Series = "raise",
+    ) -> pl.Series:
         """
         Convert a String column into a Datetime column.
 
@@ -146,6 +158,38 @@ class StringNameSpace:
                 2020-01-01 02:00:00 UTC
         ]
         """
+        if format is None and time_zone is None:
+            if isinstance(ambiguous, str):
+                ambiguous_s = pl.Series([ambiguous])
+            else:
+                ambiguous_s = ambiguous
+
+            return wrap_s(
+                self._s.str_to_datetime_infer(
+                    time_unit,
+                    strict,
+                    exact,
+                    ambiguous_s._s,
+                )
+            )
+        else:
+            ambiguous_expr = F.lit(ambiguous)
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(
+                    F.col(s.name).str.to_datetime(
+                        format,
+                        time_unit=time_unit,
+                        time_zone=time_zone,
+                        strict=strict,
+                        exact=exact,
+                        cache=cache,
+                        ambiguous=ambiguous_expr,
+                    )
+                )
+                .to_series()
+            )
 
     def to_time(
         self,
@@ -270,21 +314,61 @@ class StringNameSpace:
                 2001-07-08
         ]
         """
+        if format is None and (
+            dtype is Datetime
+            or (isinstance(dtype, Datetime) and dtype.time_zone is None)
+        ):
+            time_unit = None
+            if isinstance(dtype, Datetime):
+                time_unit = dtype.time_unit
+
+            return self.to_datetime(
+                time_unit=time_unit,
+                strict=strict,
+                exact=exact,
+                cache=cache,
+                ambiguous=ambiguous,
+            )
+        else:
+            ambiguous_expr = F.lit(ambiguous)
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(
+                    F.col(s.name).str.strptime(
+                        dtype,
+                        format,
+                        strict=strict,
+                        exact=exact,
+                        cache=cache,
+                        ambiguous=ambiguous_expr,
+                    )
+                )
+                .to_series()
+            )
 
     @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
+        *,
+        scale: int | None = None,
     ) -> Series:
         """
         Convert a String column into a Decimal column.
 
-        This method infers the needed parameters `precision` and `scale`.
+        This method infers the needed parameters `precision` and `scale` if not
+        given.
+
+        .. versionchanged:: 1.20.0
+            Parameter `inference_length` should now be passed as a keyword argument.
 
         Parameters
         ----------
         inference_length
             Number of elements to parse to determine the `precision` and `scale`
+        scale
+            Number of digits after the comma to use for the decimals.
 
         Examples
         --------
@@ -304,6 +388,17 @@ class StringNameSpace:
             143.90
         ]
         """
+        if scale is not None:
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(F.col(s.name).str.to_decimal(scale=scale))
+                .to_series()
+            )
+        else:
+            return wrap_s(
+                self._s.str_to_decimal_infer(inference_length=inference_length)
+            )
 
     def len_bytes(self) -> Series:
         """
@@ -678,6 +773,15 @@ class StringNameSpace:
                 {2,false}
         ]
         """
+        if dtype is not None:
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(F.col(s.name).str.json_decode(dtype))
+                .to_series()
+            )
+
+        return wrap_s(self._s.str_json_decode(infer_schema_length))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
@@ -1439,15 +1543,15 @@ class StringNameSpace:
         ]
         """
 
-    def pad_start(self, length: int, fill_char: str = " ") -> Series:
+    def pad_start(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -1470,15 +1574,15 @@ class StringNameSpace:
         ]
         """
 
-    def pad_end(self, length: int, fill_char: str = " ") -> Series:
+    def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the end of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -1504,14 +1608,14 @@ class StringNameSpace:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
-        A sign prefix (`-`) is handled by inserting the padding after the sign
-        character rather than before.
+        A sign prefix (`-`) is handled by inserting the padding after the sign character
+        rather than before.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
 
         See Also
         --------
@@ -1789,22 +1893,21 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_function(
-        'Use `.str.split("").explode()` instead.'
-        " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use when/then/otherwise"
-        " to handle the empty list before exploding.",
-        version="0.20.31",
+    @deprecated(
+        '`Series.str.explode` is deprecated; use `Series.str.split("").explode()` instead. '
+        "Note that empty strings will result in null instead of being preserved. To get "
+        "the exact same behavior, split first and then use a `pl.when...then...otherwise` "
+        "expression to handle the empty list before exploding. "
     )
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use `.str.split("").explode()` instead.
-            Note that empty strings will result in null instead of being preserved.
-            To get the exact same behavior, split first and then use when/then/otherwise
-            to handle the empty list before exploding.
+            Use the `.str.split("").explode()` method instead. Note that empty strings
+            will result in null instead of being preserved. To get the exact same
+            behavior, split first and then use a `pl.when...then...otherwise`
+            expression to handle the empty list before exploding.
 
         Returns
         -------
@@ -1827,9 +1930,15 @@ class StringNameSpace:
         ]
         """
 
-    def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
+    def to_integer(
+        self,
+        *,
+        base: int | IntoExprColumn = 10,
+        dtype: PolarsIntegerType = Int64,
+        strict: bool = True,
+    ) -> Series:
         """
-        Convert an String column into an Int64 column with base radix.
+        Convert an String column into a column of dtype with base radix.
 
         Parameters
         ----------
@@ -1837,6 +1946,9 @@ class StringNameSpace:
             Positive integer or expression which is the base of the string
             we are parsing.
             Default: 10.
+        dtype
+            Polars integer type to cast to.
+            Default: :class:`Int64`.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1844,14 +1956,14 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            Series of data.
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.to_integer(base=2, strict=False)
+        >>> s.str.to_integer(base=2, dtype=pl.Int32, strict=False)
         shape: (4,)
-        Series: 'bin' [i64]
+        Series: 'bin' [i32]
         [
                 6
                 5
@@ -1967,8 +2079,8 @@ class StringNameSpace:
             "Can me feel the love tonight"
         ]
 
-        Broadcast a replacement for many patterns by passing a string or a sequence of
-        length 1 to the `replace_with` parameter.
+        Broadcast a replacement for many patterns by passing a sequence of length 1 to
+        the `replace_with` parameter.
 
         >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> s = pl.Series(
@@ -1979,7 +2091,7 @@ class StringNameSpace:
         ...         "Can you feel the love tonight",
         ...     ],
         ... )
-        >>> s.str.replace_many(["me", "you", "they"], "")
+        >>> s.str.replace_many(["me", "you", "they"], [""])
         shape: (3,)
         Series: 'lyrics' [str]
         [
@@ -2121,7 +2233,6 @@ class StringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
-
         """
 
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:
@@ -2159,10 +2270,9 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_function(
-        "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
-        " is an empty string instead of a hyphen.",
-        version="1.0.0",
+    @deprecated(
+        "`Series.str.concat` is deprecated; use `Series.str.join` instead. Note also "
+        "that the default `delimiter` for `str.join` is an empty string, not a hyphen."
     )
     def concat(
         self, delimiter: str | None = None, *, ignore_nulls: bool = True

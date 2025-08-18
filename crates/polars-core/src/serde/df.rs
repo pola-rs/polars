@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use arrow::datatypes::Metadata;
-use arrow::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
+use arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
 use arrow::io::ipc::write::WriteOptions;
-use polars_error::{polars_err, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err, to_compute_err};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_serialize::deserialize_map_bytes;
 use polars_utils::pl_str::PlSmallStr;
@@ -74,7 +74,6 @@ impl DataFrame {
 
     pub fn deserialize_from_reader(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
         let mut md = read_stream_metadata(reader)?;
-        let arrow_schema = md.schema.clone();
 
         let custom_metadata = md.custom_schema_metadata.take();
 
@@ -82,7 +81,7 @@ impl DataFrame {
         let dfs = reader
             .into_iter()
             .map_while(|batch| match batch {
-                Ok(StreamState::Some(batch)) => Some(DataFrame::try_from((batch, &arrow_schema))),
+                Ok(StreamState::Some(batch)) => Some(Ok(DataFrame::from(batch))),
                 Ok(StreamState::Waiting) => None,
                 Err(e) => Some(Err(e)),
             })
@@ -104,7 +103,7 @@ impl DataFrame {
 
             if let Err(e) = &flags {
                 if verbose {
-                    eprintln!("DataFrame::read_ipc: Error parsing metadata flags: {}", e);
+                    eprintln!("DataFrame::read_ipc: Error parsing metadata flags: {e}");
                 }
             }
 
@@ -171,5 +170,20 @@ impl<'de> Deserialize<'de> for DataFrame {
             Self::deserialize_from_reader(v)
         })?
         .map_err(D::Error::custom)
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for DataFrame {
+    fn schema_name() -> String {
+        "DataFrame".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "DataFrame"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }

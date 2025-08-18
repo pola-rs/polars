@@ -26,7 +26,7 @@ fn test_drop() -> PolarsResult<()> {
         "a" => [1],
     ]?
     .lazy()
-    .drop(["a"])
+    .drop(by_name(["a"], true))
     .collect()?;
     assert_eq!(out.width(), 0);
     Ok(())
@@ -122,7 +122,7 @@ fn test_alias_before_cast() -> PolarsResult<()> {
     ]?
     .lazy()
     .select([col("a").alias("d").cast(DataType::Int32)])
-    .select([all()])
+    .select([all().as_expr()])
     .collect()?;
     assert_eq!(
         Vec::from(out.column("d")?.i32()?),
@@ -143,7 +143,7 @@ fn test_sorted_path() -> PolarsResult<()> {
     let out = df
         .lazy()
         .with_row_index("index", None)
-        .explode(["a"])
+        .explode(by_name(["a"], true))
         .group_by(["index"])
         .agg([col("a").count().alias("count")])
         .collect()?;
@@ -195,16 +195,14 @@ fn test_unknown_supertype_ignore() -> PolarsResult<()> {
 fn test_apply_multiple_columns() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    let multiply = |s: &mut [Column]| (&(&s[0] * &s[0])? * &s[1]).map(Some);
+    let multiply = |s: &mut [Column]| (&(&s[0] * &s[0])? * &s[1]);
 
     let out = df
         .clone()
         .lazy()
-        .select([map_multiple(
-            multiply,
-            [col("A"), col("B")],
-            GetOutput::from_type(DataType::Int32),
-        )])
+        .select([map_multiple(multiply, [col("A"), col("B")], |_, f| {
+            Ok(Field::new(f[0].name().clone(), DataType::Int32))
+        })])
         .collect()?;
     let out = out.column("A")?;
     let out = out.i32()?;
@@ -219,8 +217,8 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .agg([apply_multiple(
             multiply,
             [col("A"), col("B")],
-            GetOutput::from_type(DataType::Int32),
-            true,
+            |_, f| Ok(Field::new(f[0].name().clone(), DataType::Int32)),
+            false,
         )])
         .collect()?;
 
@@ -265,9 +263,7 @@ fn test_group_by_on_lists() -> PolarsResult<()> {
     // a list of lists
     assert_eq!(
         out.column("arrays")?.dtype(),
-        &DataType::List(Box::new(DataType::List(Box::new(DataType::List(
-            Box::new(DataType::Int32)
-        )))))
+        &DataType::List(Box::new(DataType::List(Box::new(DataType::Int32))))
     );
 
     Ok(())

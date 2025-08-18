@@ -69,11 +69,15 @@ pre-commit: fmt clippy  ## Run all code formatting and lint/quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest -n auto --dist loadgroup $(PYTEST_ARGS)
+	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
+
+.PHONY: test-streaming
+test-streaming: .venv build  ## Run fast unittests with the streaming engine
+	POLARS_TIMEOUT_MS=60000 POLARS_AUTO_NEW_STREAMING=1 $(VENV_BIN)/pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only" $(PYTEST_ARGS)
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
-	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
+	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: doctest
@@ -92,7 +96,7 @@ docs-clean: .venv  ## Build Python docs (full rebuild)
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not release and not benchmark"
+	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest --cov -n auto -m "not release and not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts

@@ -8,7 +8,7 @@ use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
 
 pub struct InMemorySinkNode {
-    morsels_per_pipe: Mutex<Vec<Vec<Morsel>>>,
+    morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, DataFrame)>>>,
     schema: Arc<Schema>,
 }
 
@@ -23,10 +23,15 @@ impl InMemorySinkNode {
 
 impl ComputeNode for InMemorySinkNode {
     fn name(&self) -> &str {
-        "in_memory_sink"
+        "in-memory-sink"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(send.is_empty());
         assert!(recv.len() == 1);
 
@@ -47,7 +52,7 @@ impl ComputeNode for InMemorySinkNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 1 && send_ports.is_empty());
@@ -59,7 +64,7 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
-                    morsels.push(morsel);
+                    morsels.push((morsel.seq(), morsel.into_df()));
                 }
 
                 slf.morsels_per_pipe.lock().push(morsels);

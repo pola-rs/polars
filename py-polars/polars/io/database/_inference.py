@@ -19,6 +19,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     List,
     Null,
     String,
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
-def _infer_dtype_from_database_typename(
+def dtype_from_database_typename(
     value: str,
     *,
     raise_unmatched: bool = True,
@@ -48,13 +49,13 @@ def _infer_dtype_from_database_typename(
 
     Examples
     --------
-    >>> _infer_dtype_from_database_typename("INT2")
+    >>> dtype_from_database_typename("INT2")
     Int16
-    >>> _infer_dtype_from_database_typename("NVARCHAR")
+    >>> dtype_from_database_typename("NVARCHAR")
     String
-    >>> _infer_dtype_from_database_typename("NUMERIC(10,2)")
+    >>> dtype_from_database_typename("NUMERIC(10,2)")
     Decimal(precision=10, scale=2)
-    >>> _infer_dtype_from_database_typename("TIMESTAMP WITHOUT TZ")
+    >>> dtype_from_database_typename("TIMESTAMP WITHOUT TZ")
     Datetime(time_unit='us', time_zone=None)
     """
     dtype: PolarsDataType | None = None
@@ -83,12 +84,12 @@ def _infer_dtype_from_database_typename(
 
         nested: PolarsDataType | None = None
         if not value and modifier:
-            nested = _infer_dtype_from_database_typename(
+            nested = dtype_from_database_typename(
                 value=modifier,
                 raise_unmatched=False,
             )
         else:
-            if inner_value := _infer_dtype_from_database_typename(
+            if inner_value := dtype_from_database_typename(
                 value[1:-1]
                 if (value[0], value[-1]) == ("<", ">")
                 else re.sub(r"\W", "", re.sub(r"\WOF\W", "", value)),
@@ -96,7 +97,7 @@ def _infer_dtype_from_database_typename(
             ):
                 nested = inner_value
             elif modifier:
-                nested = _infer_dtype_from_database_typename(
+                nested = dtype_from_database_typename(
                     value=modifier,
                     raise_unmatched=False,
                 )
@@ -117,17 +118,24 @@ def _infer_dtype_from_database_typename(
         value.startswith(("INT", "UINT", "UNSIGNED"))
         or value.endswith(("INT", "SERIAL"))
         or ("INTEGER" in value)
-        or value == "ROWID"
+        or value in ("TINY", "SHORT", "LONG", "LONGLONG", "ROWID")
     ):
         sz: Any
-        if "LARGE" in value or value.startswith("BIG") or value == "INT8":
+        if "HUGEINT" in value:
+            sz = 128
+        elif (
+            "LARGE" in value or value.startswith("BIG") or value in ("INT8", "LONGLONG")
+        ):
             sz = 64
-        elif "MEDIUM" in value or value in ("INT4", "SERIAL"):
+        elif "MEDIUM" in value or value in ("INT4", "UINT4", "LONG", "SERIAL"):
             sz = 32
-        elif "SMALL" in value or value == "INT2":
+        elif "SMALL" in value or value in ("INT2", "UINT2", "SHORT"):
             sz = 16
         elif "TINY" in value:
             sz = 8
+        elif n := re.sub(r"^\D+", "", value):
+            if (sz := int(n)) <= 8:
+                sz = sz * 8
         else:
             sz = None
 
@@ -139,9 +147,9 @@ def _infer_dtype_from_database_typename(
             or ("UNSIGNED" in value)
             or value == "ROWID"
         ):
-            dtype = _integer_dtype_from_nbits(sz, unsigned=True, default=UInt64)
+            dtype = integer_dtype_from_nbits(sz, unsigned=True, default=UInt64)
         else:
-            dtype = _integer_dtype_from_nbits(sz, unsigned=False, default=Int64)
+            dtype = integer_dtype_from_nbits(sz, unsigned=False, default=Int64)
 
     # number types (note: 'number' alone is not that helpful and requires refinement)
     elif "NUMBER" in value and "CARDINAL" in value:
@@ -180,7 +188,7 @@ def _infer_dtype_from_database_typename(
         if any((tz in value.replace(" ", "")) for tz in ("TZ", "TIMEZONE")):
             if "WITHOUT" not in value:
                 return None  # there's a timezone, but we don't know what it is
-        unit = _timeunit_from_precision(modifier) if modifier else "us"
+        unit = timeunit_from_precision(modifier) if modifier else "us"
         dtype = Datetime(time_unit=(unit or "us"))  # type: ignore[arg-type]
     else:
         value = re.sub(r"\d", "", value)
@@ -198,7 +206,7 @@ def _infer_dtype_from_database_typename(
     return dtype
 
 
-def _infer_dtype_from_cursor_description(
+def dtype_from_cursor_description(
     cursor: Any,
     description: tuple[Any, ...],
 ) -> PolarsDataType | None:
@@ -213,7 +221,7 @@ def _infer_dtype_from_cursor_description(
 
     elif isinstance(type_code, str):
         # database/sql type names, eg: "VARCHAR", "NUMERIC", "BLOB", etc
-        dtype = _infer_dtype_from_database_typename(
+        dtype = dtype_from_database_typename(
             value=type_code,
             raise_unmatched=False,
         )
@@ -225,7 +233,7 @@ def _infer_dtype_from_cursor_description(
 
         elif dtype in INTEGER_DTYPES and internal_size in (2, 4, 8):
             bits = internal_size * 8
-            dtype = _integer_dtype_from_nbits(
+            dtype = integer_dtype_from_nbits(
                 bits,
                 unsigned=(dtype in UNSIGNED_INTEGER_DTYPES),
                 default=dtype,
@@ -243,7 +251,7 @@ def _infer_dtype_from_cursor_description(
 
 
 @functools.lru_cache(8)
-def _integer_dtype_from_nbits(
+def integer_dtype_from_nbits(
     bits: int,
     *,
     unsigned: bool,
@@ -254,9 +262,9 @@ def _integer_dtype_from_nbits(
 
     Examples
     --------
-    >>> _integer_dtype_from_nbits(8, unsigned=False)
+    >>> integer_dtype_from_nbits(8, unsigned=False)
     Int8
-    >>> _integer_dtype_from_nbits(32, unsigned=True)
+    >>> integer_dtype_from_nbits(32, unsigned=True)
     UInt32
     """
     dtype = {
@@ -268,6 +276,8 @@ def _integer_dtype_from_nbits(
         (32, True): UInt32,
         (64, False): Int64,
         (64, True): UInt64,
+        (128, False): Int128,
+        (128, True): Int128,  # UInt128 not (yet?) supported
     }.get((bits, unsigned), None)
 
     if dtype is None and default is not None:
@@ -275,17 +285,17 @@ def _integer_dtype_from_nbits(
     return dtype
 
 
-def _timeunit_from_precision(precision: int | str | None) -> str | None:
+def timeunit_from_precision(precision: int | str | None) -> str | None:
     """
     Return `time_unit` from integer precision value.
 
     Examples
     --------
-    >>> _timeunit_from_precision(3)
+    >>> timeunit_from_precision(3)
     'ms'
-    >>> _timeunit_from_precision(5)
+    >>> timeunit_from_precision(5)
     'us'
-    >>> _timeunit_from_precision(7)
+    >>> timeunit_from_precision(7)
     'ns'
     """
     from math import ceil

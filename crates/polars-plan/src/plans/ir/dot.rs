@@ -1,16 +1,17 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use polars_core::prelude::{InitHashMaps, PlHashSet};
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::unique_id::UniqueId;
+use recursive::recursive;
 
 use super::format::ExprIRSliceDisplay;
-use crate::constants::UNLIMITED_CACHE;
 use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::*;
 
 pub struct IRDotDisplay<'a> {
-    is_streaming: bool,
     lp: IRPlanRef<'a>,
 }
 
@@ -19,14 +20,14 @@ const INDENT: &str = "  ";
 #[derive(Clone, Copy)]
 enum DotNode {
     Plain(usize),
-    Cache(usize),
+    Cache(UniqueId),
 }
 
 impl fmt::Display for DotNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DotNode::Plain(n) => write!(f, "p{n}"),
-            DotNode::Cache(n) => write!(f, "c{n}"),
+            DotNode::Cache(n) => write!(f, "\"{n}\""),
         }
     }
 }
@@ -50,26 +51,11 @@ fn write_label<'a, 'b>(
 
 impl<'a> IRDotDisplay<'a> {
     pub fn new(lp: IRPlanRef<'a>) -> Self {
-        if let Some(streaming_lp) = lp.extract_streaming_plan() {
-            return Self::new_streaming(streaming_lp);
-        }
-
-        Self {
-            is_streaming: false,
-            lp,
-        }
-    }
-
-    fn new_streaming(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            is_streaming: true,
-            lp,
-        }
+        Self { lp }
     }
 
     fn with_root(&self, root: Node) -> Self {
         Self {
-            is_streaming: false,
             lp: self.lp.with_root(root),
         }
     }
@@ -85,30 +71,17 @@ impl<'a> IRDotDisplay<'a> {
         }
     }
 
+    #[recursive]
     fn _format(
         &self,
         f: &mut fmt::Formatter<'_>,
         parent: Option<DotNode>,
         last: &mut usize,
+        visited_caches: &mut PlHashSet<UniqueId>,
     ) -> std::fmt::Result {
         use fmt::Write;
 
         let root = self.lp.root();
-
-        let mut parent = parent;
-        if self.is_streaming {
-            *last += 1;
-            let streaming_node = DotNode::Plain(*last);
-
-            if let Some(parent) = parent {
-                writeln!(f, "{INDENT}{parent} -- {streaming_node}")?;
-                write_label(f, streaming_node, |f| f.write_str("STREAMING"))?;
-            }
-
-            parent = Some(streaming_node);
-        }
-        let parent = parent;
-
         let id = if let IR::Cache { id, .. } = root {
             DotNode::Cache(*id)
         } else {
@@ -117,38 +90,47 @@ impl<'a> IRDotDisplay<'a> {
         };
 
         if let Some(parent) = parent {
-            writeln!(f, "{INDENT}{parent} -- {id}")?;
+            writeln!(f, "{INDENT}{id} -> {parent}")?;
+        }
+
+        macro_rules! recurse {
+            ($input:expr) => {
+                self.with_root($input)
+                    ._format(f, Some(id), last, visited_caches)?;
+            };
         }
 
         use IR::*;
         match root {
             Union { inputs, .. } => {
                 for input in inputs {
-                    self.with_root(*input)._format(f, Some(id), last)?;
+                    recurse!(*input);
                 }
 
                 write_label(f, id, |f| f.write_str("UNION"))?;
             },
             HConcat { inputs, .. } => {
                 for input in inputs {
-                    self.with_root(*input)._format(f, Some(id), last)?;
+                    recurse!(*input);
                 }
 
                 write_label(f, id, |f| f.write_str("HCONCAT"))?;
             },
             Cache {
-                input, cache_hits, ..
+                input,
+                id: cache_id,
+                ..
             } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                if !visited_caches.contains(cache_id) {
+                    visited_caches.insert(*cache_id);
 
-                if *cache_hits == UNLIMITED_CACHE {
+                    recurse!(*input);
+
                     write_label(f, id, |f| f.write_str("CACHE"))?;
-                } else {
-                    write_label(f, id, |f| write!(f, "CACHE: {cache_hits} times"))?;
-                };
+                }
             },
             Filter { predicate, input } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
 
                 let pred = self.display_expr(predicate);
                 write_label(f, id, |f| write!(f, "FILTER BY {pred}"))?;
@@ -176,14 +158,14 @@ impl<'a> IRDotDisplay<'a> {
                 schema,
                 ..
             } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "π {}/{}", expr.len(), schema.len()))?;
             },
             Sort {
                 input, by_column, ..
             } => {
                 let by_column = self.display_exprs(by_column);
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "SORT BY {by_column}"))?;
             },
             GroupBy {
@@ -191,20 +173,20 @@ impl<'a> IRDotDisplay<'a> {
             } => {
                 let keys = self.display_exprs(keys);
                 let aggs = self.display_exprs(aggs);
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "AGG {aggs}\nBY\n{keys}"))?;
             },
             HStack { input, exprs, .. } => {
                 let exprs = self.display_exprs(exprs);
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
             },
             Slice { input, offset, len } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;
             },
             Distinct { input, options, .. } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| {
                     f.write_str("DISTINCT")?;
 
@@ -244,15 +226,18 @@ impl<'a> IRDotDisplay<'a> {
                 hive_parts: _,
                 predicate,
                 scan_type,
-                file_options: options,
+                unified_scan_args,
                 output_schema: _,
             } => {
-                let name: &str = scan_type.into();
+                let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);
-                let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
+                let with_columns = unified_scan_args
+                    .projection
+                    .as_ref()
+                    .map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);
                 let total_columns =
-                    file_info.schema.len() - usize::from(options.row_index.is_some());
+                    file_info.schema.len() - usize::from(unified_scan_args.row_index.is_some());
 
                 write_label(f, id, |f| {
                     write!(f, "{name} SCAN {path}\nπ {with_columns}/{total_columns};",)?;
@@ -261,7 +246,7 @@ impl<'a> IRDotDisplay<'a> {
                         write!(f, "\nσ {}", self.display_expr(predicate))?;
                     }
 
-                    if let Some(row_index) = options.row_index.as_ref() {
+                    if let Some(row_index) = unified_scan_args.row_index.as_ref() {
                         write!(f, "\nrow index: {} (+{})", row_index.name, row_index.offset)?;
                     }
 
@@ -276,50 +261,54 @@ impl<'a> IRDotDisplay<'a> {
                 options,
                 ..
             } => {
-                self.with_root(*input_left)._format(f, Some(id), last)?;
-                self.with_root(*input_right)._format(f, Some(id), last)?;
-
-                let left_on = self.display_exprs(left_on);
-                let right_on = self.display_exprs(right_on);
+                recurse!(*input_left);
+                recurse!(*input_right);
 
                 write_label(f, id, |f| {
-                    write!(
-                        f,
-                        "JOIN {}\nleft: {left_on};\nright: {right_on}",
-                        options.args.how
-                    )
+                    write!(f, "JOIN {}", options.args.how)?;
+
+                    if !left_on.is_empty() {
+                        let left_on = self.display_exprs(left_on);
+                        let right_on = self.display_exprs(right_on);
+                        write!(f, "\nleft: {left_on};\nright: {right_on}")?
+                    }
+                    Ok(())
                 })?;
             },
             MapFunction {
                 input, function, ..
             } => {
-                if let Some(streaming_lp) = function.to_streaming_lp() {
-                    Self::new_streaming(streaming_lp)._format(f, Some(id), last)?;
-                } else {
-                    self.with_root(*input)._format(f, Some(id), last)?;
-                    write_label(f, id, |f| write!(f, "{function}"))?;
-                }
+                recurse!(*input);
+                write_label(f, id, |f| write!(f, "{function}"))?;
             },
             ExtContext { input, .. } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| f.write_str("EXTERNAL_CONTEXT"))?;
             },
             Sink { input, payload, .. } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
 
                 write_label(f, id, |f| {
                     f.write_str(match payload {
-                        SinkType::Memory => "SINK (MEMORY)",
-                        SinkType::File { .. } => "SINK (FILE)",
+                        SinkTypeIR::Memory => "SINK (MEMORY)",
+                        SinkTypeIR::File { .. } => "SINK (FILE)",
+                        SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
                     })
                 })?;
+            },
+            SinkMultiple { inputs } => {
+                for input in inputs {
+                    recurse!(*input);
+                }
+
+                write_label(f, id, |f| f.write_str("SINK MULTIPLE"))?;
             },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
                 let total_columns = self.lp.lp_arena.get(*input).schema(self.lp.lp_arena).len();
 
                 let columns = ColumnsDisplay(columns.as_ref());
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| {
                     write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]")
                 })?;
@@ -330,8 +319,8 @@ impl<'a> IRDotDisplay<'a> {
                 input_right,
                 key,
             } => {
-                self.with_root(*input_left)._format(f, Some(id), last)?;
-                self.with_root(*input_right)._format(f, Some(id), last)?;
+                recurse!(*input_left);
+                recurse!(*input_right);
 
                 write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
             },
@@ -351,7 +340,7 @@ struct NumColumnsSchema<'a>(Option<&'a Schema>);
 impl fmt::Display for ScanSourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ScanSourceRef::Path(path) => path.display().fmt(f),
+            ScanSourceRef::Path(addr) => addr.display().fmt(f),
             ScanSourceRef::File(_) => f.write_str("open-file"),
             ScanSourceRef::Buffer(buff) => write!(f, "{} in-mem bytes", buff.len()),
         }
@@ -442,10 +431,13 @@ impl fmt::Write for EscapeLabel<'_> {
 
 impl fmt::Display for IRDotDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "graph  polars_query {{")?;
+        writeln!(f, "digraph polars_query {{")?;
+        writeln!(f, "{INDENT}rankdir=\"BT\"")?;
+        writeln!(f, "{INDENT}node [fontname=\"Monospace\", shape=\"box\"]")?;
 
         let mut last = 0;
-        self._format(f, None, &mut last)?;
+        let mut visited_caches = PlHashSet::new();
+        self._format(f, None, &mut last, &mut visited_caches)?;
 
         writeln!(f, "}}")?;
 

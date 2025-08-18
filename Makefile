@@ -67,6 +67,8 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 	python3 -m venv $(VENV)
 	$(MAKE) requirements
 
+# Note: Installed separately as pyiceberg does not have wheels for 3.13, causing
+# --no-build to fail.
 .PHONY: requirements
 requirements: .venv  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
@@ -75,7 +77,8 @@ requirements: .venv  ## Install/refresh Python project requirements
 	   -r py-polars/requirements-dev.txt \
 	   -r py-polars/requirements-lint.txt \
 	   -r py-polars/docs/requirements-docs.txt \
-	   -r docs/source/requirements.txt
+	   -r docs/source/requirements.txt \
+	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core
 
 .PHONY: requirements-all
 requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)
@@ -137,13 +140,17 @@ fmt:  ## Run autoformatting and linting
 	cargo fmt --all
 	dprint fmt
 	$(VENV_BIN)/typos
-	
+
 .PHONY: fix
 fix:
-	cargo clippy --workspace --all-targets --all-features --fix 
+	cargo clippy --workspace --all-targets --all-features --fix
 	@# Good chance the fixing introduced formatting issues, best to just do a quick format.
 	cargo fmt --all
-	
+
+.PHONY: update-dsl-schema-hashes
+update-dsl-schema-hashes:  ## Update the DSL schema hashes file
+	cargo build --all-features
+	./target/debug/dsl-schema update-hashes
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run all code quality checks

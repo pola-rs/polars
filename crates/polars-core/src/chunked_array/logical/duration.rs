@@ -5,24 +5,23 @@ pub type DurationChunked = Logical<DurationType, Int64Type>;
 
 impl Int64Chunked {
     pub fn into_duration(self, timeunit: TimeUnit) -> DurationChunked {
-        let mut dt = DurationChunked::new_logical(self);
-        dt.2 = Some(DataType::Duration(timeunit));
-        dt
+        // SAFETY: no invalid states.
+        unsafe { DurationChunked::new_logical(self, DataType::Duration(timeunit)) }
     }
 }
 
 impl LogicalType for DurationChunked {
     fn dtype(&self) -> &DataType {
-        self.2.as_ref().unwrap()
+        &self.dtype
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        self.0
+        self.phys
             .get_any_value(i)
             .map(|av| av.as_duration(self.time_unit()))
     }
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        self.0
+        self.phys
             .get_any_value_unchecked(i)
             .as_duration(self.time_unit())
     }
@@ -33,28 +32,29 @@ impl LogicalType for DurationChunked {
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
         use DataType::*;
-        use TimeUnit::*;
+
+        use crate::datatypes::time_unit::TimeUnit::*;
         match dtype {
             Duration(tu) => {
                 let to_unit = *tu;
-                let out = match (self.time_unit(), to_unit) {
-                    (Milliseconds, Microseconds) => self.0.as_ref() * 1_000i64,
-                    (Milliseconds, Nanoseconds) => self.0.as_ref() * 1_000_000i64,
-                    (Microseconds, Milliseconds) => {
-                        self.0.as_ref().wrapping_trunc_div_scalar(1_000i64)
-                    },
-                    (Microseconds, Nanoseconds) => self.0.as_ref() * 1_000i64,
-                    (Nanoseconds, Milliseconds) => {
-                        self.0.as_ref().wrapping_trunc_div_scalar(1_000_000i64)
-                    },
-                    (Nanoseconds, Microseconds) => {
-                        self.0.as_ref().wrapping_trunc_div_scalar(1_000i64)
-                    },
+                let (divisor, multiplier) = match (self.time_unit(), to_unit) {
+                    (Milliseconds, Microseconds) => (None, Some(1_000i64)),
+                    (Milliseconds, Nanoseconds) => (None, Some(1_000_000i64)),
+                    (Microseconds, Milliseconds) => (Some(1_000i64), None),
+                    (Microseconds, Nanoseconds) => (None, Some(1_000i64)),
+                    (Nanoseconds, Milliseconds) => (Some(1_000_000i64), None),
+                    (Nanoseconds, Microseconds) => (Some(1_000i64), None),
                     _ => return Ok(self.clone().into_series()),
+                };
+
+                let out = match (divisor, multiplier) {
+                    (None, None) | (Some(_), Some(_)) => unreachable!(),
+                    (_, Some(multiplier)) => self.phys.as_ref().checked_mul_scalar(multiplier),
+                    (Some(divisor), _) => self.phys.as_ref().wrapping_trunc_div_scalar(divisor),
                 };
                 Ok(out.into_duration(to_unit).into_series())
             },
-            dt if dt.is_primitive_numeric() => self.0.cast_with_options(dtype, cast_options),
+            dt if dt.is_primitive_numeric() => self.phys.cast_with_options(dtype, cast_options),
             dt => {
                 polars_bail!(
                     InvalidOperation:

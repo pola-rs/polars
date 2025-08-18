@@ -1,6 +1,6 @@
 use arrow::legacy::is_valid::IsValid;
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
@@ -48,7 +48,10 @@ impl PhysicalExpr for FilterExpr {
         let (mut ac_s, mut ac_predicate) = (ac_s?, ac_predicate?);
         // Check if the groups are still equal, otherwise aggregate.
         // TODO! create a special group iters that don't materialize
-        if ac_s.groups.as_ref() as *const _ != ac_predicate.groups.as_ref() as *const _ {
+        if !std::ptr::eq(
+            ac_s.groups.as_ref() as *const _,
+            ac_predicate.groups.as_ref() as *const _,
+        ) {
             let _ = ac_s.aggregated();
             let _ = ac_predicate.aggregated();
         }

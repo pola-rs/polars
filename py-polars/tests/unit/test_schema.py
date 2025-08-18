@@ -33,7 +33,7 @@ def test_schema() -> None:
         pl.Schema(
             {
                 "foo": pl.UInt32(),
-                "bar": pl.Categorical("physical"),
+                "bar": pl.Categorical(),
                 "baz": pl.Struct({"x": pl.Int64(), "y": pl.Float64()}),
             }
         ),
@@ -129,9 +129,8 @@ def test_schema_in_map_elements_returns_scalar() -> None:
     )
     q = ldf.group_by("portfolio").agg(
         pl.col("amounts")
-        .map_elements(
-            lambda x: float(x.sum()), return_dtype=pl.Float64, returns_scalar=True
-        )
+        .implode()
+        .map_elements(lambda x: float(x.sum()), return_dtype=pl.Float64)
         .alias("irr")
     )
     assert q.collect_schema() == schema
@@ -369,3 +368,9 @@ def test_scalar_agg_schema_20044() -> None:
         .group_by("c")
         .agg(pl.col("d").mean())
     ).schema == pl.Schema([("c", pl.String), ("d", pl.Float64)])
+
+
+def test_mean_on_invalid_type_24008() -> None:
+    df = pl.DataFrame({"s": ["bob", "foo"]})
+    q = df.lazy().select(pl.col("s").mean())
+    assert q.collect_schema() == q.collect().schema

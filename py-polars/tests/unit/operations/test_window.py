@@ -544,3 +544,157 @@ def test_nested_window_keys() -> None:
     df = pl.DataFrame({"x": 1, "y": "two"})
     assert df.select(pl.col("y").first().over(pl.struct("x").implode())).item() == "two"
     assert df.select(pl.col("y").first().over(pl.struct("x"))).item() == "two"
+
+
+def test_window_21692() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 1, 2, 3],
+            "b": [4, 3, 0, 1, 2, 0],
+            "c": ["first", "first", "first", "second", "second", "second"],
+        }
+    )
+    gt0 = pl.col("b") > 0
+    assert df.with_columns(
+        corr=pl.corr(
+            pl.col("a").filter(gt0),
+            pl.col("b").filter(gt0),
+        ).over("c"),
+    ).to_dict(as_series=False) == {
+        "a": [1, 2, 3, 1, 2, 3],
+        "b": [4, 3, 0, 1, 2, 0],
+        "c": ["first", "first", "first", "second", "second", "second"],
+        "corr": [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0],
+    }
+
+
+def test_window_implode_explode() -> None:
+    assert pl.DataFrame(
+        {
+            "x": [1, 2, 3, 1, 2, 3, 1, 2, 3],
+            "y": [2, 2, 2, 3, 3, 3, 4, 4, 4],
+        }
+    ).select(
+        works=(pl.col.x * pl.col.x.implode().explode()).over(pl.col.y),
+    ).to_dict(as_series=False) == {"works": [1, 4, 9, 1, 4, 9, 1, 4, 9]}
+
+
+def test_window_22006() -> None:
+    df = pl.DataFrame(
+        [
+            {"a": 1, "b": 1},
+            {"a": 1, "b": 2},
+            {"a": 2, "b": 3},
+            {"a": 2, "b": 4},
+        ]
+    )
+
+    df_empty = pl.DataFrame([], df.schema)
+
+    df_out = df.select(c=pl.col("b").over("a", mapping_strategy="join"))
+
+    df_empty_out = df_empty.select(c=pl.col("b").over("a", mapping_strategy="join"))
+
+    assert df_out.schema == df_empty_out.schema
+
+
+def test_when_then_over_22478() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False, True, True, True, False],
+            "t": [1, 2, 3, 4, 5, 6, 7],
+        }
+    ).with_columns(
+        duration=(
+            pl.when(pl.col("x"))
+            .then(pl.col("t").last() - pl.col("t").first())
+            .otherwise(pl.lit(0))
+            .over(pl.col("x").rle_id())
+        )
+    )
+
+    expect = pl.DataFrame(
+        {
+            "x": [True, True, False, True, True, True, False],
+            "t": [1, 2, 3, 4, 5, 6, 7],
+            "duration": [1, 1, 0, 2, 2, 2, 0],
+        }
+    )
+
+    assert q.collect_schema() == {
+        "x": pl.Boolean,
+        "t": pl.Int64,
+        "duration": pl.Int64,
+    }
+    assert_frame_equal(q.collect(), expect)
+
+    q = pl.LazyFrame({"key": [1, 1, 2, 2, 2]}).with_columns(
+        out=pl.when(pl.Series(99 * [True])).then(pl.sum("key")).over("key")
+    )
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        q.collect()
+
+
+def test_window_fold_22493() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2, 2, 2], "b": [1, 1, 1, 2, 2, 2, 2, 2]})
+
+    assert (
+        df.select(
+            (
+                pl.when(False)
+                .then(1)
+                .otherwise(
+                    pl.fold(
+                        acc=pl.lit(0.0),
+                        function=lambda acc, x: acc + x,
+                        exprs=pl.col(["a", "b"]),
+                        returns_scalar=False,
+                    )
+                )
+            )
+            .over("a")
+            .alias("prod"),
+        )
+    ).to_dict(as_series=False) == {"prod": [2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]}
+
+    assert (
+        df.select(
+            (
+                pl.when(False)
+                .then(1)
+                .otherwise(
+                    pl.fold(
+                        acc=pl.lit(0.0),
+                        function=lambda acc, x: acc + x.sum(),
+                        exprs=pl.col(["a", "b"]),
+                        returns_scalar=True,
+                    )
+                )
+            )
+            .over("a")
+            .alias("prod"),
+        )
+    ).to_dict(as_series=False) == {
+        "prod": [6.0, 6.0, 6.0, 20.0, 20.0, 20.0, 20.0, 20.0]
+    }
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        (
+            df.select(
+                (
+                    pl.when(False)
+                    .then(1)
+                    .otherwise(
+                        pl.fold(
+                            acc=pl.lit(0.0),
+                            function=lambda acc, x: acc + x,
+                            exprs=pl.col(["a", "b"]),
+                            returns_scalar=True,
+                        )
+                    )
+                )
+                .over("a")
+                .alias("prod"),
+            )
+        )

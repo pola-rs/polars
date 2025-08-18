@@ -86,13 +86,14 @@ fn test_rolling_mean() {
     .into_series();
 
     // check err on wrong input
-    assert!(s
-        .rolling_mean(RollingOptionsFixedWindow {
+    assert!(
+        s.rolling_mean(RollingOptionsFixedWindow {
             window_size: 1,
             min_periods: 2,
             ..Default::default()
         })
-        .is_err());
+        .is_err()
+    );
 
     // validate that we divide by the proper window length. (same as pandas)
     let a = s
@@ -177,7 +178,7 @@ fn test_rolling_map() {
 
     let out = ca
         .rolling_map(
-            &|s| s.sum_reduce().unwrap().into_series(s.name().clone()),
+            &|s| Ok(s.sum_reduce()?.into_series(s.name().clone())),
             RollingOptionsFixedWindow {
                 window_size: 3,
                 min_periods: 3,
@@ -276,7 +277,6 @@ fn test_rolling_var() {
     });
     assert!(
         test_res,
-        "{:?} is not approximately equal to {:?}",
-        out, exp_res
+        "{out:?} is not approximately equal to {exp_res:?}"
     );
 }

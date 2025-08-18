@@ -1,8 +1,6 @@
 mod args;
 #[cfg(feature = "asof_join")]
 mod asof;
-#[cfg(feature = "dtype-categorical")]
-mod checks;
 mod cross_join;
 mod dispatch_left_right;
 mod general;
@@ -20,8 +18,6 @@ pub use args::*;
 use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
 pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
-#[cfg(feature = "dtype-categorical")]
-pub(crate) use checks::*;
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
@@ -34,6 +30,7 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
+use polars_core::POOL;
 #[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
@@ -44,7 +41,6 @@ pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::slice_offsets;
 #[allow(unused_imports)]
 use polars_core::utils::slice_slice;
-use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
@@ -174,7 +170,11 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut right = Cow::Borrowed(other);
                 if left_df.should_rechunk() {
                     if _verbose {
-                        eprintln!("{:?} join triggered a rechunk of the left DataFrame: {} columns are affected", args.how, left_df.width());
+                        eprintln!(
+                            "{:?} join triggered a rechunk of the left DataFrame: {} columns are affected",
+                            args.how,
+                            left_df.width()
+                        );
                     }
 
                     let mut tmp_left = left_df.clone();
@@ -183,7 +183,11 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
                 if other.should_rechunk() {
                     if _verbose {
-                        eprintln!("{:?} join triggered a rechunk of the right DataFrame: {} columns are affected", args.how, other.width());
+                        eprintln!(
+                            "{:?} join triggered a rechunk of the right DataFrame: {} columns are affected",
+                            args.how,
+                            other.width()
+                        );
                     }
                     let mut tmp_right = other.clone();
                     tmp_right.as_single_chunk_par();
@@ -214,19 +218,6 @@ pub trait DataFrameJoinOps: IntoDf {
                     )
             );
         };
-
-        #[cfg(feature = "dtype-categorical")]
-        for (l, r) in selected_left.iter_mut().zip(selected_right.iter_mut()) {
-            match _check_categorical_src(l.dtype(), r.dtype()) {
-                Ok(_) => {},
-                Err(_) => {
-                    let (ca_left, ca_right) =
-                        make_categoricals_compatible(l.categorical()?, r.categorical()?)?;
-                    *l = ca_left.into_series().with_name(l.name().clone());
-                    *r = ca_right.into_series().with_name(r.name().clone());
-                },
-            }
-        }
 
         #[cfg(feature = "iejoin")]
         if let JoinType::IEJoin = args.how {
@@ -284,7 +275,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     s_right,
                     args.slice,
                     true,
-                    args.join_nulls,
+                    args.nulls_equal,
                 ),
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Semi => left_df._semi_anti_join_from_series(
@@ -292,7 +283,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     s_right,
                     args.slice,
                     false,
-                    args.join_nulls,
+                    args.nulls_equal,
                 ),
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(options) => match (options.left_by, options.right_by) {
@@ -303,7 +294,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         left_by,
                         right_by,
                         options.strategy,
-                        options.tolerance,
+                        options.tolerance.map(|v| v.into_value()),
                         args.suffix.clone(),
                         args.slice,
                         should_coalesce,
@@ -315,7 +306,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         s_left,
                         s_right,
                         options.strategy,
-                        options.tolerance,
+                        options.tolerance.map(|v| v.into_value()),
                         args.suffix,
                         args.slice,
                         should_coalesce,
@@ -335,15 +326,32 @@ pub trait DataFrameJoinOps: IntoDf {
                 },
             };
         }
-
-        let lhs_keys = prepare_keys_multiple(&selected_left, args.join_nulls)?.into_series();
-        let rhs_keys = prepare_keys_multiple(&selected_right, args.join_nulls)?.into_series();
+        let (lhs_keys, rhs_keys) =
+            if (left_df.is_empty() || other.is_empty()) && matches!(&args.how, JoinType::Inner) {
+                // Fast path for empty inner joins.
+                // Return 2 dummies so that we don't row-encode.
+                let a = Series::full_null("".into(), 0, &DataType::Null);
+                (a.clone(), a)
+            } else {
+                // Row encode the keys.
+                (
+                    prepare_keys_multiple(&selected_left, args.nulls_equal)?.into_series(),
+                    prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series(),
+                )
+            };
 
         let drop_names = if should_coalesce {
-            selected_right
-                .iter()
-                .map(|s| s.name().clone())
-                .collect::<Vec<_>>()
+            if args.how == JoinType::Right {
+                selected_left
+                    .iter()
+                    .map(|s| s.name().clone())
+                    .collect::<Vec<_>>()
+            } else {
+                selected_right
+                    .iter()
+                    .map(|s| s.name().clone())
+                    .collect::<Vec<_>>()
+            }
         } else {
             vec![]
         };
@@ -375,7 +383,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         out?,
                         names_left.as_slice(),
                         drop_names.as_slice(),
-                        suffix.clone(),
+                        suffix,
                         left_df,
                     ))
                 } else {
@@ -534,10 +542,8 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         drop_names: Option<Vec<PlSmallStr>>,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
-        #[cfg(feature = "dtype-categorical")]
-        _check_categorical_src(s_left.dtype(), s_right.dtype())?;
         let ((join_tuples_left, join_tuples_right), sorted) =
-            _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.join_nulls)?;
+            _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.nulls_equal)?;
 
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
@@ -603,14 +609,14 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                 )
             };
 
-        _finish_join(df_left, df_right, args.suffix.clone())
+        _finish_join(df_left, df_right, args.suffix)
     }
 }
 
 impl DataFrameJoinOps for DataFrame {}
 impl DataFrameJoinOpsPrivate for DataFrame {}
 
-fn prepare_keys_multiple(s: &[Series], join_nulls: bool) -> PolarsResult<BinaryOffsetChunked> {
+fn prepare_keys_multiple(s: &[Series], nulls_equal: bool) -> PolarsResult<BinaryOffsetChunked> {
     let keys = s
         .iter()
         .map(|s| {
@@ -623,7 +629,7 @@ fn prepare_keys_multiple(s: &[Series], join_nulls: bool) -> PolarsResult<BinaryO
         })
         .collect::<Vec<_>>();
 
-    if join_nulls {
+    if nulls_equal {
         encode_rows_vertical_par_unordered(&keys)
     } else {
         encode_rows_vertical_par_unordered_broadcast_nulls(&keys)
@@ -632,7 +638,7 @@ fn prepare_keys_multiple(s: &[Series], join_nulls: bool) -> PolarsResult<BinaryO
 pub fn private_left_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<LeftJoinIds> {
     // @scalar-opt
     let a_cols = a
@@ -646,7 +652,7 @@ pub fn private_left_join_multiple_keys(
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();
 
-    let a = prepare_keys_multiple(&a_cols, join_nulls)?.into_series();
-    let b = prepare_keys_multiple(&b_cols, join_nulls)?.into_series();
-    sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, join_nulls)
+    let a = prepare_keys_multiple(&a_cols, nulls_equal)?.into_series();
+    let b = prepare_keys_multiple(&b_cols, nulls_equal)?.into_series();
+    sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, nulls_equal)
 }

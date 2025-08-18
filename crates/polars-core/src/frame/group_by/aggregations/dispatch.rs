@@ -66,11 +66,7 @@ impl Series {
                     .iter()
                     .map(
                         |(first, idx)| {
-                            if idx.is_empty() {
-                                None
-                            } else {
-                                Some(first)
-                            }
+                            if idx.is_empty() { None } else { Some(first) }
                         },
                     )
                     .collect_ca(PlSmallStr::EMPTY);
@@ -140,6 +136,8 @@ impl Series {
             Float32 => SeriesWrap(s.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_primitive_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => self.cast(&Float64).unwrap().agg_mean(groups),
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -170,8 +168,8 @@ impl Series {
                 .agg_mean(groups)
                 .cast(&Float64)
                 .unwrap()
-                * (MS_IN_DAY as f64))
-                .cast(&Datetime(TimeUnit::Milliseconds, None))
+                * (US_IN_DAY as f64))
+                .cast(&Datetime(TimeUnit::Microseconds, None))
                 .unwrap(),
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
@@ -194,6 +192,8 @@ impl Series {
             dt if dt.is_primitive_numeric() => {
                 apply_method_physical_integer!(s, agg_median, groups)
             },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => self.cast(&Float64).unwrap().agg_median(groups),
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -224,8 +224,8 @@ impl Series {
                 .agg_median(groups)
                 .cast(&Float64)
                 .unwrap()
-                * (MS_IN_DAY as f64))
-                .cast(&Datetime(TimeUnit::Milliseconds, None))
+                * (US_IN_DAY as f64))
+                .cast(&Datetime(TimeUnit::Microseconds, None))
                 .unwrap(),
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }

@@ -1,5 +1,5 @@
-use arrow::compute::concatenate::concatenate;
 use arrow::Either;
+use arrow::compute::concatenate::concatenate;
 
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
@@ -182,6 +182,15 @@ impl StructChunked {
         // this is harder because we don't know the inner type of the list
         self.set_sorted_flag(IsSorted::Not);
         self.append(other)
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+#[doc(hidden)]
+impl<T: PolarsCategoricalType> CategoricalChunked<T> {
+    pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
+        assert!(self.dtype() == other.dtype());
+        self.phys.extend(&other.phys)
     }
 }
 

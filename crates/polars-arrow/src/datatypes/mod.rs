@@ -8,12 +8,17 @@ mod schema;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub use field::{Field, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES};
+pub use field::{
+    DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
+    DTYPE_ENUM_VALUES_NEW, Field,
+};
 pub use physical_type::*;
 use polars_utils::pl_str::PlSmallStr;
 pub use schema::{ArrowSchema, ArrowSchemaRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::array::LIST_VALUES_NAME;
 
 /// typedef for [BTreeMap<PlSmallStr, PlSmallStr>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
 pub type Metadata = BTreeMap<PlSmallStr, PlSmallStr>;
@@ -30,6 +35,7 @@ pub(crate) type Extension = Option<(PlSmallStr, Option<PlSmallStr>)>;
 /// Use `to_logical_type` to desugar such type and return its corresponding logical type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ArrowDataType {
     /// Null type
     #[default]
@@ -157,6 +163,10 @@ pub enum ArrowDataType {
     /// scale is the number of decimal places.
     /// The number 999.99 has a precision of 5 and scale of 2.
     Decimal(usize, usize),
+    /// Decimal backed by 32 bits
+    Decimal32(usize, usize),
+    /// Decimal backed by 64 bits
+    Decimal64(usize, usize),
     /// Decimal backed by 256 bits
     Decimal256(usize, usize),
     /// Extension type.
@@ -171,12 +181,13 @@ pub enum ArrowDataType {
     Unknown,
     /// A nested datatype that can represent slots of differing types.
     /// Third argument represents mode
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Union(Box<UnionType>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ExtensionType {
     pub name: PlSmallStr,
     pub inner: ArrowDataType,
@@ -204,11 +215,7 @@ impl UnionMode {
     /// Constructs a [`UnionMode::Sparse`] if the input bool is true,
     /// or otherwise constructs a [`UnionMode::Dense`]
     pub fn sparse(is_sparse: bool) -> Self {
-        if is_sparse {
-            Self::Sparse
-        } else {
-            Self::Dense
-        }
+        if is_sparse { Self::Sparse } else { Self::Dense }
     }
 
     /// Returns whether the mode is sparse
@@ -225,6 +232,7 @@ impl UnionMode {
 /// The time units defined in Arrow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum TimeUnit {
     /// Time in seconds.
     Second,
@@ -239,6 +247,7 @@ pub enum TimeUnit {
 /// Interval units defined in Arrow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IntervalUnit {
     /// The number of elapsed whole months.
     YearMonth,
@@ -250,6 +259,18 @@ pub enum IntervalUnit {
 }
 
 impl ArrowDataType {
+    /// Polars IdxSize type, dependent on bigidx feature
+    pub const IDX_DTYPE: Self = {
+        #[cfg(not(feature = "bigidx"))]
+        {
+            ArrowDataType::UInt32
+        }
+        #[cfg(feature = "bigidx")]
+        {
+            ArrowDataType::UInt64
+        }
+    };
+
     /// the [`PhysicalType`] of this [`ArrowDataType`].
     pub fn to_physical_type(&self) -> PhysicalType {
         use ArrowDataType::*;
@@ -265,6 +286,8 @@ impl ArrowDataType {
                 PhysicalType::Primitive(PrimitiveType::Int64)
             },
             Decimal(_, _) => PhysicalType::Primitive(PrimitiveType::Int128),
+            Decimal32(_, _) => PhysicalType::Primitive(PrimitiveType::Int32),
+            Decimal64(_, _) => PhysicalType::Primitive(PrimitiveType::Int64),
             Decimal256(_, _) => PhysicalType::Primitive(PrimitiveType::Int256),
             UInt8 => PhysicalType::Primitive(PrimitiveType::UInt8),
             UInt16 => PhysicalType::Primitive(PrimitiveType::UInt16),
@@ -397,17 +420,15 @@ impl ArrowDataType {
                 | D::Float32
                 | D::Float64
                 | D::Decimal(_, _)
+                | D::Decimal32(_, _)
+                | D::Decimal64(_, _)
                 | D::Decimal256(_, _)
         )
     }
 
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
         ArrowDataType::FixedSizeList(
-            Box::new(Field::new(
-                PlSmallStr::from_static("item"),
-                self,
-                is_nullable,
-            )),
+            Box::new(Field::new(LIST_VALUES_NAME, self, is_nullable)),
             size,
         )
     }
@@ -443,6 +464,8 @@ impl ArrowDataType {
             | D::Utf8
             | D::LargeUtf8
             | D::Decimal(_, _)
+            | D::Decimal32(_, _)
+            | D::Decimal64(_, _)
             | D::Decimal256(_, _)
             | D::BinaryView
             | D::Utf8View

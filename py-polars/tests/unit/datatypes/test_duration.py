@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 import pytest
 
@@ -137,17 +138,11 @@ def test_duration_std_var() -> None:
     )
 
     result = df.select(
-        pl.col("duration").var().name.suffix("_var"),
         pl.col("duration").std().name.suffix("_std"),
     )
 
     expected = pl.DataFrame(
         [
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=4000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
             pl.Series(
                 "duration_std",
                 [timedelta(microseconds=2000)],
@@ -158,17 +153,23 @@ def test_duration_std_var() -> None:
 
     assert_frame_equal(result, expected)
 
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("duration").var())
+
 
 def test_series_duration_std_var() -> None:
     s = pl.Series([timedelta(days=1), timedelta(days=2), timedelta(days=4)])
     assert s.std() == timedelta(days=1, seconds=45578, microseconds=180014)
-    assert s.var() == timedelta(days=201600000)
-
-
-def test_series_duration_var_overflow() -> None:
-    s = pl.Series([timedelta(days=10), timedelta(days=20), timedelta(days=40)])
-    with pytest.raises(OverflowError):
+    with pytest.raises(pl.exceptions.InvalidOperationError):
         s.var()
+
+
+@pytest.mark.parametrize("other", [24, pl.Series([24])])
+def test_series_duration_div_multiply(other: Any) -> None:
+    s = pl.Series([timedelta(hours=1)])
+    assert (s * other).to_list() == [timedelta(days=1)]
+    assert (other * s).to_list() == [timedelta(days=1)]
+    assert (s / other).to_list() == [timedelta(minutes=2, seconds=30)]
 
 
 def test_series_duration_units() -> None:
@@ -208,3 +209,8 @@ def test_comparison_with_string_raises_9461() -> None:
     df = pl.DataFrame({"duration": [timedelta(hours=2)]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.filter(pl.col("duration") > "1h")
+
+
+def test_duration_invalid_cast_22258() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(a=pl.duration(days=[1, 2, 3, 4]))  # type: ignore[arg-type]

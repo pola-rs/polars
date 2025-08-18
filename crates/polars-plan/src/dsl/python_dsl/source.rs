@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use either::Either;
-use polars_core::error::{polars_err, PolarsResult};
+use polars_core::error::{PolarsResult, polars_err};
 use polars_core::schema::SchemaRef;
 use polars_utils::python_function::PythonFunction;
 use pyo3::prelude::*;
@@ -12,6 +12,7 @@ use crate::dsl::SpecialEq;
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct PythonOptionsDsl {
     /// A function that returns a Python Generator.
     /// The generator should produce Polars DataFrame's.
@@ -19,10 +20,11 @@ pub struct PythonOptionsDsl {
     /// Either the schema fn or schema is set.
     pub schema_fn: Option<SpecialEq<Arc<Either<PythonFunction, SchemaRef>>>>,
     pub python_source: PythonScanSource,
+    pub validate_schema: bool,
 }
 
 impl PythonOptionsDsl {
-    pub(crate) fn get_schema(&self) -> PolarsResult<SchemaRef> {
+    pub fn get_schema(&self) -> PolarsResult<SchemaRef> {
         match self.schema_fn.as_ref().expect("should be set").as_ref() {
             Either::Left(func) => Python::with_gil(|py| {
                 let schema = func
@@ -38,6 +40,7 @@ impl PythonOptionsDsl {
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum PythonScanSource {
     Pyarrow,
     Cuda,

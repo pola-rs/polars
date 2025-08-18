@@ -1,0 +1,16 @@
+[package]
+name = "polars-testing"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Testing suite for the Polars DataFrame library"
+
+[dependencies]
+polars-core = { workspace = true, features = ["dtype-array", "dtype-categorical", "dtype-struct"] }
+polars-ops = { workspace = true, features = ["abs"] }
+
+[lints]
+workspace = true

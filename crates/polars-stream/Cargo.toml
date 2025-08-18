@@ -9,29 +9,37 @@ repository = { workspace = true }
 description = "Private crate for the streaming execution engine for the Polars DataFrame library"
 
 [dependencies]
+arrow = { workspace = true }
+async-channel = { workspace = true }
+async-trait = { workspace = true }
 atomic-waker = { workspace = true }
+bitflags = { workspace = true }
+crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
 crossbeam-queue = { workspace = true }
 crossbeam-utils = { workspace = true }
 futures = { workspace = true }
 memmap = { workspace = true }
 parking_lot = { workspace = true }
+percent-encoding = { workspace = true }
 pin-project-lite = { workspace = true }
-polars-io = { workspace = true, features = ["async"] }
+polars-io = { workspace = true, features = ["async", "file_cache"] }
 polars-utils = { workspace = true }
+pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 slotmap = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true, features = ["rt"] }
 
-polars-core = { workspace = true }
+polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
-polars-ops = { workspace = true }
+polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true }
+polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "unique_counts", "dtype-struct"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -39,18 +47,38 @@ version_check = { workspace = true }
 [features]
 nightly = []
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
-merge_sorted = ["polars-plan/merge_sorted"]
-dynamic_group_by = []
+merge_sorted = ["polars-plan/merge_sorted", "polars-mem-engine/merge_sorted"]
+dynamic_group_by = [
+  "polars-plan/dynamic_group_by",
+  "polars-expr/dynamic_group_by",
+  "polars-mem-engine/dynamic_group_by",
+]
 strings = []
 ipc = ["polars-mem-engine/ipc", "polars-plan/ipc", "polars-io/ipc"]
-parquet = ["polars-mem-engine/parquet", "polars-plan/parquet"]
+parquet = ["polars-mem-engine/parquet", "polars-plan/parquet", "cloud"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
-dtype-categorical = ["polars-core/dtype-categorical"]
+dtype-array = ["polars-core/dtype-array"]
+dtype-u8 = ["polars-core/dtype-u8", "polars-plan/dtype-u8"]
+dtype-u16 = ["polars-core/dtype-u16", "polars-plan/dtype-u16"]
+dtype-i8 = ["polars-core/dtype-i8", "polars-plan/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16", "polars-plan/dtype-i16"]
+dtype-i128 = ["polars-core/dtype-i128", "polars-plan/dtype-i128"]
+dtype-categorical = ["polars-core/dtype-categorical", "polars-plan/dtype-categorical"]
+dtype-decimal = ["polars-core/dtype-decimal", "polars-plan/dtype-decimal"]
 object = ["polars-ops/object"]
-python = ["polars-plan/python"]
+python = ["pyo3", "polars-plan/python", "polars-mem-engine/python", "polars-error/python"]
+semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join"]
+is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]
+replace = ["polars-ops/replace", "polars-plan/replace"]
+range = ["polars-plan/range"]
+top_k = ["polars-plan/top_k"]
+cum_agg = ["polars-plan/cum_agg", "polars-ops/cum_agg"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.
 default = ["bitwise"]
+
+[lints]
+workspace = true

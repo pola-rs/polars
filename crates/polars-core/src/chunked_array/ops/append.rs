@@ -9,7 +9,7 @@ pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: us
         other.clone_into(chunks);
     } else {
         for chunk in other {
-            if chunk.len() > 0 {
+            if !chunk.is_empty() {
                 chunks.push(chunk.clone());
             }
         }
@@ -22,7 +22,7 @@ pub(crate) fn new_chunks_owned(chunks: &mut Vec<ArrayRef>, other: Vec<ArrayRef>,
         *chunks = other;
     } else {
         chunks.reserve(other.len());
-        chunks.extend(other.into_iter().filter(|c| c.len() > 0));
+        chunks.extend(other.into_iter().filter(|c| !c.is_empty()));
     }
 }
 
@@ -149,7 +149,15 @@ where
     ///
     /// See also [`extend`](Self::extend) for appends to the underlying memory
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
-        self.append_owned(other.clone())
+        update_sorted_flag_before_append::<T>(self, other);
+        let len = self.len();
+        self.length = self
+            .length
+            .checked_add(other.length)
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+        self.null_count += other.null_count;
+        new_chunks(&mut self.chunks, &other.chunks, len);
+        Ok(())
     }
 
     /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].
@@ -243,6 +251,20 @@ impl StructChunked {
 
         new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+#[doc(hidden)]
+impl<T: PolarsCategoricalType> CategoricalChunked<T> {
+    pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        assert!(self.dtype() == other.dtype());
+        self.phys.append(&other.phys)
+    }
+
+    pub fn append_owned(&mut self, other: Self) -> PolarsResult<()> {
+        assert!(self.dtype() == other.dtype());
+        self.phys.append_owned(other.phys)
     }
 }
 

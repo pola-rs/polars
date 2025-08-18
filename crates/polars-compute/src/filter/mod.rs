@@ -6,12 +6,12 @@ mod scalar;
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx512;
 
-use arrow::array::growable::make_growable;
+use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
 use arrow::array::{
-    new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray,
+    Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray, new_empty_array,
 };
-use arrow::bitmap::utils::SlicesIterator;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::SlicesIterator;
 use arrow::with_match_primitive_type_full;
 pub use boolean::filter_boolean_kernel;
 
@@ -99,11 +99,12 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
         },
         _ => {
             let iter = SlicesIterator::new(mask);
-            let mut mutable = make_growable(&[array], false, iter.slots());
-            // SAFETY:
-            // we are in bounds
-            iter.for_each(|(start, len)| unsafe { mutable.extend(0, start, len) });
-            mutable.as_box()
+            let mut mutable = make_builder(array.dtype());
+            mutable.reserve(iter.slots());
+            iter.for_each(|(start, len)| {
+                mutable.subslice_extend(array, start, len, ShareStrategy::Always)
+            });
+            mutable.freeze()
         },
     }
 }

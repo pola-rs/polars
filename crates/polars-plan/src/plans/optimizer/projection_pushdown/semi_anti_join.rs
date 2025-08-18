@@ -7,7 +7,7 @@ pub(super) fn process_semi_anti_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
-    options: Arc<JoinOptions>,
+    options: Arc<JoinOptionsIR>,
     ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -19,7 +19,7 @@ pub(super) fn process_semi_anti_join(
     let mut names_left = PlHashSet::with_capacity(n);
     let mut names_right = PlHashSet::with_capacity(n);
 
-    if ctx.acc_projections.is_empty() {
+    if !ctx.has_pushed_down() {
         // Only project the join columns.
         for e in &right_on {
             add_expr_to_accumulated(e.node(), &mut pushdown_right, &mut names_right, expr_arena);

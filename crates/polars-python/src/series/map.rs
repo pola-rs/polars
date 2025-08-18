@@ -1,10 +1,11 @@
+use pyo3::Python;
 use pyo3::prelude::*;
 use pyo3::types::PyCFunction;
-use pyo3::Python;
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
-use crate::map::series::{call_lambda_and_extract, ApplyLambda};
+use crate::map::check_nested_object;
+use crate::map::series::{ApplyLambda, call_lambda_and_extract};
 use crate::prelude::*;
 use crate::py_modules::pl_series;
 use crate::{apply_method_all_arrow_series2, raise_err};
@@ -19,13 +20,6 @@ impl PySeries {
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
         let series = &self.series;
-
-        if return_dtype.is_none() {
-            polars_warn!(
-                MapWithoutReturnDtypeWarning,
-                "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
-                Specify `return_dtype` to silence this warning.")
-        }
 
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(return_dtype) = return_dtype {
@@ -45,7 +39,7 @@ impl PySeries {
             ($self:expr, $method:ident, $($args:expr),*) => {
                 match $self.dtype() {
                     #[cfg(feature = "object")]
-                    DataType::Object(_, _) => {
+                    DataType::Object(_) => {
                         let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
                         ca.$method($($args),*)
                     },
@@ -93,8 +87,13 @@ impl PySeries {
                     };
                     avs.push(out)
                 }
+                let out = Series::new(self.series.name().clone(), &avs);
+                let dtype = out.dtype();
+                if dtype.is_nested() {
+                    check_nested_object(dtype)?;
+                }
 
-                return Ok(Series::new(self.series.name().clone(), &avs).into());
+                return Ok(out.into());
             }
 
             let out = match return_dtype {
@@ -243,6 +242,7 @@ impl PySeries {
                     ca.into_series()
                 },
                 Some(DataType::List(inner)) => {
+                    check_nested_object(&inner)?;
                     // Make sure the function returns a Series of the correct data type.
                     let function_owned = function.clone().unbind();
                     let dtype_py = Wrap((*inner).clone());
@@ -250,7 +250,11 @@ impl PySeries {
                         PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
                             Python::with_gil(|py| {
                                 let out = function_owned.call1(py, args)?;
-                                pl_series(py).call1(py, ("", out, &dtype_py))
+                                if out.is_none(py) {
+                                    Ok(py.None())
+                                } else {
+                                    pl_series(py).call1(py, ("", out, &dtype_py))
+                                }
                             })
                         })?
                         .into_any()
@@ -269,7 +273,7 @@ impl PySeries {
                     ca.into_series()
                 },
                 #[cfg(feature = "object")]
-                Some(DataType::Object(_, _)) => {
+                Some(DataType::Object(_)) => {
                     let ca = dispatch_apply!(
                         series,
                         apply_lambda_with_object_out_type,
@@ -285,6 +289,7 @@ impl PySeries {
                 _ => return dispatch_apply!(series, apply_lambda_unknown, py, function),
             };
 
+            assert!(out.dtype().is_known());
             Ok(out.into())
         })
     }

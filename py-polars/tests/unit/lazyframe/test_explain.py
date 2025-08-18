@@ -10,7 +10,6 @@ def test_lf_explain_format_tree() -> None:
     plan = lf.select("a").select(pl.col("a").sum() + pl.len())
 
     result = plan.explain(format="tree")
-    print(result)
 
     expected = """\
                 0                            1

@@ -73,11 +73,7 @@ macro_rules! impl_signed_pl_num_arith {
 
             #[inline(always)]
             fn wrapping_trunc_div(self, rhs: Self) -> Self {
-                if rhs != 0 {
-                    self.wrapping_div(rhs)
-                } else {
-                    0
-                }
+                if rhs != 0 { self.wrapping_div(rhs) } else { 0 }
             }
 
             #[inline(always)]
@@ -131,11 +127,7 @@ macro_rules! impl_unsigned_pl_num_arith {
 
             #[inline(always)]
             fn wrapping_floor_div(self, rhs: Self) -> Self {
-                if rhs != 0 {
-                    self / rhs
-                } else {
-                    0
-                }
+                if rhs != 0 { self / rhs } else { 0 }
             }
 
             #[inline(always)]
@@ -145,11 +137,7 @@ macro_rules! impl_unsigned_pl_num_arith {
 
             #[inline(always)]
             fn wrapping_mod(self, rhs: Self) -> Self {
-                if rhs != 0 {
-                    self % rhs
-                } else {
-                    0
-                }
+                if rhs != 0 { self % rhs } else { 0 }
             }
 
             #[inline(always)]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+from polars._utils.various import qualified_type_name
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import import_optional
 from polars.io.database._cursor_proxies import ODBCCursorProxy
@@ -357,7 +358,8 @@ def read_database_uri(
         given in the data returned by the query.
     execute_options
         These options will be passed to the underlying query execution method as
-        kwargs. Note that connectorx does not support this parameter.
+        kwargs. Note that connectorx does not support this parameter and ADBC currently
+        only supports positional 'qmark' style parameterization.
 
     Notes
     -----
@@ -418,11 +420,29 @@ def read_database_uri(
     ...     "snowflake://user:pass@company-org/testdb/public?warehouse=test&role=myrole",
     ...     engine="adbc",
     ... )  # doctest: +SKIP
+
+    Pass a single parameter via `execute_options` into a query using the ADBC driver:
+
+    >>> df = pl.read_database_uri(
+    ...     "SELECT * FROM employees WHERE hourly_rate > ?",
+    ...     "sqlite:///:memory:",
+    ...     engine="adbc",
+    ...     execute_options={"parameters": (30,)},
+    ... )  # doctest: +SKIP
+
+    Or pass multiple parameters:
+
+    >>> df = pl.read_database_uri(
+    ...     "SELECT * FROM employees WHERE hourly_rate BETWEEN ? AND ?",
+    ...     "sqlite:///:memory:",
+    ...     engine="adbc",
+    ...     execute_options={"parameters": (40, 20)},
+    ... )  # doctest: +SKIP
     """
     from polars.io.database._utils import _read_sql_adbc, _read_sql_connectorx
 
     if not isinstance(uri, str):
-        msg = f"expected connection to be a URI string; found {type(uri).__name__!r}"
+        msg = f"expected connection to be a URI string; found {qualified_type_name(uri)!r}"
         raise TypeError(msg)
     elif engine is None:
         engine = "connectorx"

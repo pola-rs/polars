@@ -10,84 +10,11 @@ use polars_core::schema::*;
 use polars_ops::frame::{IEJoinOptions, InequalityOperator};
 use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
-use polars_utils::pl_str::PlSmallStr;
 
-use super::{aexpr_to_leaf_names_iter, AExpr, ExprOrigin, JoinOptions, IR};
+use super::{AExpr, ExprOrigin, IR, JoinOptionsIR, aexpr_to_leaf_names_iter};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
-use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
-use crate::plans::{ExprIR, MintermIter, OutputName};
-
-fn remove_suffix<'a>(
-    exprs: &mut Vec<ExprIR>,
-    expr_arena: &mut Arena<AExpr>,
-    schema: &'a SchemaRef,
-    suffix: &'a str,
-) {
-    let mut remover = RemoveSuffix {
-        schema: schema.as_ref(),
-        suffix,
-    };
-
-    for expr in exprs {
-        // Using AexprNode::rewrite() ensures we do not mutate any nodes in-place. The nodes may be
-        // used in other locations and mutating them will cause really confusing bugs, such as
-        // https://github.com/pola-rs/polars/issues/20831.
-        match AexprNode::new(expr.node()).rewrite(&mut remover, expr_arena) {
-            Ok(v) => {
-                expr.set_node(v.node());
-
-                if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
-                    if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
-                        let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
-                        expr.set_columnlhs(name);
-                    }
-                }
-            },
-            e @ Err(_) => panic!("should not have failed: {:?}", e),
-        }
-    }
-}
-
-struct RemoveSuffix<'a> {
-    schema: &'a Schema,
-    suffix: &'a str,
-}
-
-impl RewritingVisitor for RemoveSuffix<'_> {
-    type Node = AexprNode;
-    type Arena = Arena<AExpr>;
-
-    fn pre_visit(
-        &mut self,
-        node: &Self::Node,
-        arena: &mut Self::Arena,
-    ) -> polars_core::prelude::PolarsResult<crate::prelude::visitor::RewriteRecursion> {
-        let AExpr::Column(colname) = arena.get(node.node()) else {
-            return Ok(RewriteRecursion::NoMutateAndContinue);
-        };
-
-        if !colname.ends_with(self.suffix) || self.schema.contains(colname.as_str()) {
-            return Ok(RewriteRecursion::NoMutateAndContinue);
-        }
-
-        Ok(RewriteRecursion::MutateAndContinue)
-    }
-
-    fn mutate(
-        &mut self,
-        node: Self::Node,
-        arena: &mut Self::Arena,
-    ) -> polars_core::prelude::PolarsResult<Self::Node> {
-        let AExpr::Column(colname) = arena.get(node.node()) else {
-            unreachable!();
-        };
-
-        // Safety: Checked in pre_visit()
-        Ok(AexprNode::new(arena.add(AExpr::Column(PlSmallStr::from(
-            &colname[..colname.len() - self.suffix.len()],
-        )))))
-    }
-}
+use crate::plans::optimizer::join_utils::remove_suffix;
+use crate::plans::{ExprIR, MintermIter};
 
 fn and_expr(left: Node, right: Node, expr_arena: &mut Arena<AExpr>) -> Node {
     expr_arena.add(AExpr::BinaryExpr {
@@ -97,7 +24,12 @@ fn and_expr(left: Node, right: Node, expr_arena: &mut Arena<AExpr>) -> Node {
     })
 }
 
-pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+pub fn optimize(
+    root: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    streaming: bool,
+) {
     let mut predicates = Vec::with_capacity(4);
 
     // Partition to:
@@ -195,14 +127,18 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                             left_schema,
                             right_schema,
                             suffix.as_str(),
-                        );
+                            None,
+                        )
+                        .unwrap();
                         let right_origin = ExprOrigin::get_expr_origin(
                             right,
                             expr_arena,
                             left_schema,
                             right_schema,
                             suffix.as_str(),
-                        );
+                            None,
+                        )
+                        .unwrap();
 
                         use ExprOrigin as EO;
 
@@ -282,12 +218,16 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                 let mut can_simplify_join = false;
 
                 if !eq_left_on.is_empty() {
-                    remove_suffix(&mut eq_right_on, expr_arena, right_schema, suffix.as_str());
+                    for expr in eq_right_on.iter_mut() {
+                        remove_suffix(expr, expr_arena, right_schema, suffix.as_str());
+                    }
                     can_simplify_join = true;
                 } else {
                     #[cfg(feature = "iejoin")]
                     if !ie_op.is_empty() {
-                        remove_suffix(&mut ie_right_on, expr_arena, right_schema, suffix.as_str());
+                        for expr in ie_right_on.iter_mut() {
+                            remove_suffix(expr, expr_arena, right_schema, suffix.as_str());
+                        }
                         can_simplify_join = true;
                     }
                     can_simplify_join |= options.args.how.is_cross();
@@ -310,6 +250,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         *input_left,
                         *input_right,
                         schema.clone(),
+                        streaming,
                     );
 
                     lp_arena.swap(predicates[0].0, new_join);
@@ -334,10 +275,11 @@ fn insert_fitting_join(
     remaining_predicates: &[Node],
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    mut options: JoinOptions,
+    mut options: JoinOptionsIR,
     input_left: Node,
     input_right: Node,
     schema: SchemaRef,
+    streaming: bool,
 ) -> Node {
     debug_assert_eq!(eq_left_on.len(), eq_right_on.len());
     #[cfg(feature = "iejoin")]
@@ -412,9 +354,9 @@ fn insert_fitting_join(
             );
 
             let mut remaining_predicates = remaining_predicates;
-            if let Some(pred) = remaining_predicates
-                .take_if(|_| matches!(options.args.maintain_order, MaintainOrderJoin::None))
-            {
+            if let Some(pred) = remaining_predicates.take_if(|_| {
+                matches!(options.args.maintain_order, MaintainOrderJoin::None) && !streaming
+            }) {
                 options.options = Some(JoinTypeOptionsIR::Cross {
                     predicate: ExprIR::from_node(pred, expr_arena),
                 })

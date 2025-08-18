@@ -3,10 +3,12 @@ from __future__ import annotations
 import decimal
 import functools
 import io
+import warnings
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
+from zoneinfo import ZoneInfo
 
 import fsspec
 import numpy as np
@@ -20,6 +22,7 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.io.parquet import ParquetFieldOverwrites
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
 from polars.testing.parametric.strategies.core import series
@@ -27,7 +30,12 @@ from polars.testing.parametric.strategies.core import series
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import ParallelStrategy, ParquetCompression
+    from polars._typing import (
+        ParallelStrategy,
+        ParquetCompression,
+        ParquetMetadata,
+        ParquetMetadataContext,
+    )
     from tests.unit.conftest import MemoryUsage
 
 
@@ -121,6 +129,7 @@ def test_to_from_buffer(
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: chunking
 def test_read_parquet_respects_rechunk_16416(
     use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
 ) -> None:
@@ -142,9 +151,6 @@ def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
     with pytest.raises(ComputeError):
         df.write_parquet(buf, compression="lzo", use_pyarrow=False)
     buf.seek(0)
-    # Invalid parquet file as writing failed.
-    with pytest.raises(ComputeError):
-        _ = pl.read_parquet(buf)
 
     buf = io.BytesIO()
     with pytest.raises(OSError):
@@ -315,19 +321,18 @@ def test_recursive_logical_type() -> None:
 
 
 def test_nested_dictionary() -> None:
-    with pl.StringCache():
-        df = (
-            pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
-            .with_columns(pl.col("str").cast(pl.Categorical))
-            .group_by("group")
-            .agg([pl.col("str").alias("cat_list")])
-        )
-        f = io.BytesIO()
-        df.write_parquet(f)
-        f.seek(0)
+    df = (
+        pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
+        .with_columns(pl.col("str").cast(pl.Categorical))
+        .group_by("group")
+        .agg([pl.col("str").alias("cat_list")])
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
 
-        read_df = pl.read_parquet(f)
-        assert_frame_equal(df, read_df)
+    read_df = pl.read_parquet(f)
+    assert_frame_equal(df, read_df)
 
 
 def test_row_group_size_saturation() -> None:
@@ -426,16 +431,15 @@ def test_parquet_nested_dictionaries_6217() -> None:
 
     table = pa.table({"Col1": col1})
 
-    with pl.StringCache():
-        df = pl.from_arrow(table)
+    df = pl.from_arrow(table)
 
-        f = io.BytesIO()
-        import pyarrow.parquet as pq
+    f = io.BytesIO()
+    import pyarrow.parquet as pq
 
-        pq.write_table(table, f, compression="snappy")
-        f.seek(0)
-        read = pl.read_parquet(f)
-        assert_frame_equal(read, df)  # type: ignore[arg-type]
+    pq.write_table(table, f, compression="snappy")
+    f.seek(0)
+    read = pl.read_parquet(f)
+    assert_frame_equal(read, df)  # type: ignore[arg-type]
 
 
 @pytest.mark.write_disk
@@ -528,7 +532,7 @@ def test_parquet_nested_list_pandas() -> None:
     assert df.to_dict(as_series=False) == {"listcol": [[]]}
 
 
-def test_parquet_string_cache() -> None:
+def test_parquet_cat_roundtrip() -> None:
     f = io.BytesIO()
 
     df = pl.DataFrame({"a": ["a", "b", "c", "d"]}).with_columns(
@@ -536,11 +540,8 @@ def test_parquet_string_cache() -> None:
     )
 
     df.write_parquet(f, row_group_size=2)
-
-    # this file has 2 row groups and a categorical column
-    # so polars should automatically set string cache
     f.seek(0)
-    assert_series_equal(pl.read_parquet(f)["a"].cast(str), df["a"].cast(str))
+    assert_series_equal(pl.read_parquet(f)["a"], df["a"])
 
 
 def test_tz_aware_parquet_9586(io_files_path: Path) -> None:
@@ -629,12 +630,8 @@ def test_parquet_rle_non_nullable_12814() -> None:
 
     f = io.BytesIO()
     pq.write_table(table, f, data_page_size=1)
-    f.seek(0)
-
-    print(pq.read_table(f))
 
     f.seek(0)
-
     expect = pl.DataFrame(table).tail(10)
     actual = pl.read_parquet(f).tail(10)
 
@@ -665,8 +662,7 @@ def test_parquet_struct_categorical(tmp_path: Path) -> None:
     file_path = tmp_path / "categorical.parquet"
     df.write_parquet(file_path)
 
-    with pl.StringCache():
-        out = pl.read_parquet(file_path).select(pl.col("b").value_counts())
+    out = pl.read_parquet(file_path).select(pl.col("b").value_counts())
     assert out.to_dict(as_series=False) == {"b": [{"b": "foo", "count": 1}]}
 
 
@@ -846,6 +842,18 @@ def test_sliced_dict_with_nulls_14904() -> None:
     test_round_trip(df)
 
 
+@pytest.fixture
+def empty_compressed_datapage_v2_path(io_files_path: Path) -> Path:
+    return io_files_path / "empty_datapage_v2.snappy.parquet"
+
+
+def test_read_empty_compressed_datapage_v2_22170(
+    empty_compressed_datapage_v2_path: Path,
+) -> None:
+    df = pl.DataFrame({"value": [None]}, schema={"value": pl.Float32})
+    assert_frame_equal(df, pl.read_parquet(empty_compressed_datapage_v2_path))
+
+
 def test_parquet_array_dtype() -> None:
     df = pl.DataFrame({"x": []})
     df = df.cast({"x": pl.Array(pl.Int64, shape=3)})
@@ -887,8 +895,16 @@ def test_parquet_array_dtype_nulls() -> None:
         ([[1, 2, 3]], pl.Array(pl.Int64, 3)),
         ([[1, None, 3], None, [1, 2, None]], pl.Array(pl.Int64, 3)),
         ([[1, 2], None, [None, 3]], pl.Array(pl.Int64, 2)),
-        ([[], [], []], pl.Array(pl.Int64, 0)),
-        ([[], None, []], pl.Array(pl.Int64, 0)),
+        pytest.param(
+            [[], [], []],
+            pl.Array(pl.Int64, 0),
+            marks=pytest.mark.may_fail_cloud,
+        ),  # reason: zero-width array
+        pytest.param(
+            [[], None, []],
+            pl.Array(pl.Int64, 0),
+            marks=pytest.mark.may_fail_cloud,
+        ),
         (
             [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
             pl.Array(pl.Array(pl.Int8, 3), 2),
@@ -1305,6 +1321,9 @@ def test_parquet_nested_struct_17933() -> None:
     test_round_trip(df)
 
 
+# This is fixed with POLARS_FORCE_MULTISCAN=1. Without it we have
+# first_metadata.unwrap() on None.
+@pytest.mark.may_fail_auto_streaming
 def test_parquet_pyarrow_map() -> None:
     xs = [
         [
@@ -1340,6 +1359,19 @@ def test_parquet_pyarrow_map() -> None:
     )
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f).explode(["x"]), expected)
+
+    # Test for https://github.com/pola-rs/polars/issues/21317
+    # Specifying schema/allow_missing_columns
+    for missing_columns in ["insert", "raise"]:
+        f.seek(0)
+        assert_frame_equal(
+            pl.read_parquet(
+                f,
+                schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
+                missing_columns=missing_columns,  # type: ignore[arg-type]
+            ).explode(["x"]),
+            expected,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1977,37 +2009,65 @@ def test_allow_missing_columns(
     for df, path in zip(dfs, paths):
         df.write_parquet(path)
 
-    expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
+    expected_full = pl.DataFrame({"a": [1, 2], "b": [1, None]})
+    expected = expected_full.select(projection)
 
     with pytest.raises(
-        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
-        match="enabling `allow_missing_columns`",
+        pl.exceptions.ColumnNotFoundError,
+        match="passing `missing_columns='insert'`",
     ):
         pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
 
     with pytest.raises(
-        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
-        match="enabling `allow_missing_columns`",
+        pl.exceptions.ColumnNotFoundError,
+        match="passing `missing_columns='insert'`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
-            streaming=streaming
+            engine="streaming" if streaming else "in-memory"
         )
 
     assert_frame_equal(
         pl.read_parquet(
             paths,
             parallel=parallel,  # type: ignore[arg-type]
-            allow_missing_columns=True,
+            missing_columns="insert",
         ).select(projection),
         expected,
     )
 
     assert_frame_equal(
-        pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
+        pl.scan_parquet(paths, parallel=parallel, missing_columns="insert")  # type: ignore[arg-type]
         .select(projection)
-        .collect(streaming=streaming),
+        .collect(engine="streaming" if streaming else "in-memory"),
         expected,
     )
+
+    # Test deprecated parameter
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        with pytest.raises(
+            pl.exceptions.ColumnNotFoundError,
+            match="passing `missing_columns='insert'`",
+        ):
+            assert_frame_equal(
+                pl.scan_parquet(
+                    paths,
+                    parallel=parallel,  # type: ignore[arg-type]
+                    allow_missing_columns=False,
+                ).collect(engine="streaming" if streaming else "in-memory"),
+                expected_full,
+            )
+
+        assert_frame_equal(
+            pl.scan_parquet(
+                paths,
+                parallel=parallel,  # type: ignore[arg-type]
+                allow_missing_columns=True,
+            ).collect(engine="streaming" if streaming else "in-memory"),
+            expected_full,
+        )
 
 
 def test_nested_nonnullable_19158() -> None:
@@ -2078,9 +2138,10 @@ def test_decimal_precision_nested_roundtrip(
     test_round_trip(df)
 
 
+@pytest.mark.may_fail_cloud  # reason: sortedness flag
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
 def test_conserve_sortedness(
-    monkeypatch: Any, capfd: Any, parallel: pl.ParallelStrategy
+    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: pl.ParallelStrategy
 ) -> None:
     f = io.BytesIO()
 
@@ -2095,36 +2156,34 @@ def test_conserve_sortedness(
         }
     )
 
-    pq.write_table(
-        df.to_arrow(),
-        f,
-        sorting_columns=[
-            pq.SortingColumn(0, False, False),
-            pq.SortingColumn(1, False, False),
-            pq.SortingColumn(2, True, True),
-            pq.SortingColumn(3, True, True),
-        ],
-    )
+    for col, descending, nulls_last in [("a", False, False), ("c", True, True)]:
+        col_idx = df.get_column_index(col)
+        f.seek(0)
+        pq.write_table(
+            df.to_arrow(),
+            f,
+            sorting_columns=[
+                pq.SortingColumn(col_idx, descending, nulls_last),
+            ],
+        )
+        f.truncate()
+        f.seek(0)
 
-    f.seek(0)
+        monkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+        df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
 
-    df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
+        captured = capfd.readouterr().err
 
-    captured = capfd.readouterr().err
-
-    # @NOTE: We don't conserve sortedness for anything except integers at the
-    # moment.
-    assert captured.count("Parquet conserved SortingColumn for column chunk of") == 2
-    assert (
-        "Parquet conserved SortingColumn for column chunk of 'a' to Ascending"
-        in captured
-    )
-    assert (
-        "Parquet conserved SortingColumn for column chunk of 'c' to Descending"
-        in captured
-    )
+        # @NOTE: We don't conserve sortedness for anything except integers at the
+        # moment.
+        assert (
+            captured.count("Parquet conserved SortingColumn for column chunk of") == 1
+        )
+        assert (
+            f"Parquet conserved SortingColumn for column chunk of '{col}' to {'Descending' if descending else 'Ascending'}"
+            in captured
+        )
 
 
 @pytest.mark.parametrize("use_dictionary", [True, False])
@@ -2250,7 +2309,9 @@ def test_invalid_utf8_binary() -> None:
         pl.Boolean,
         pl.Struct({"x": pl.Int32}),
         pl.List(pl.Int32),
-        pl.Array(pl.Int32, 0),
+        pytest.param(
+            pl.Array(pl.Int32, 0), marks=pytest.mark.may_fail_cloud
+        ),  # reason: zero-width array
         pl.Array(pl.Int32, 2),
     ],
 )
@@ -2437,7 +2498,6 @@ def test_dict_masked(
     )
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 @pytest.mark.may_fail_auto_streaming
 def test_categorical_sliced_20017() -> None:
     f = io.BytesIO()
@@ -2464,15 +2524,14 @@ def test_categorical_sliced_20017() -> None:
 def test_categorical_parametric_masked(s: pl.Series, mask: pl.Series) -> None:
     f = io.BytesIO()
 
-    with pl.StringCache():
-        df = pl.DataFrame([s, mask]).with_columns(pl.col.a.cast(pl.Categorical))
-        df.write_parquet(f)
+    df = pl.DataFrame([s, mask]).with_columns(pl.col.a.cast(pl.Categorical))
+    df.write_parquet(f)
 
-        f.seek(0)
-        assert_frame_equal(
-            pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.mask).collect(),
-            df.filter(pl.col.mask),
-        )
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.mask).collect(),
+        df.filter(pl.col.mask),
+    )
 
 
 @given(
@@ -2485,15 +2544,14 @@ def test_categorical_parametric_sliced(s: pl.Series, start: int, length: int) ->
 
     f = io.BytesIO()
 
-    with pl.StringCache():
-        df = s.to_frame().with_columns(pl.col.a.cast(pl.Categorical))
-        df.write_parquet(f)
+    df = s.to_frame().with_columns(pl.col.a.cast(pl.Categorical))
+    df.write_parquet(f)
 
-        f.seek(0)
-        assert_frame_equal(
-            pl.scan_parquet(f).slice(start, length).collect(),
-            df.slice(start, length),
-        )
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).slice(start, length).collect(),
+        df.slice(start, length),
+    )
 
 
 @pytest.mark.write_disk
@@ -2656,22 +2714,14 @@ def test_parquet_roundtrip_lex_cat_20288() -> None:
     assert dt.ordering == "lexical"
 
 
-def test_from_parquet_string_cache_20271() -> None:
-    with pl.StringCache():
-        f = io.BytesIO()
-        s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
-        df = pl.Series("b", ["D", "E"], pl.Categorical).to_frame()
-        df.write_parquet(f)
-        f.seek(0)
-        df = pl.read_parquet(f)
-
-        assert_series_equal(
-            s.to_physical(), pl.Series("a", [0, 1, 2]), check_dtypes=False
-        )
-        assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
-        assert_series_equal(
-            df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
-        )
+def test_from_parquet_20271() -> None:
+    f = io.BytesIO()
+    df = pl.Series("b", ["D", "E"], pl.Categorical).to_frame()
+    df.write_parquet(f)
+    del df
+    f.seek(0)
+    df = pl.read_parquet(f)
+    assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
 
 
 def test_boolean_slice_pushdown_20314() -> None:
@@ -2848,4 +2898,634 @@ def test_equality_filter(
             print(f"needle: {needle}", file=sys.stderr)
             raise
 
-    pl.read_parquet(f)
+
+def test_nested_string_slice_utf8_21202() -> None:
+    s = pl.Series(
+        "a",
+        [
+            ["A" * 128],
+            ["A"],
+        ],
+        pl.List(pl.String()),
+    )
+
+    f = io.BytesIO()
+    s.to_frame().write_parquet(f)
+
+    f.seek(0)
+    assert_series_equal(
+        pl.scan_parquet(f).slice(1, 1).collect().to_series(),
+        s.slice(1, 1),
+    )
+
+
+def test_filter_true_predicate_21204() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": [1]})
+    df.write_parquet(f)
+    f.seek(0)
+    lf = pl.scan_parquet(f).filter(pl.lit(True))
+    assert_frame_equal(lf.collect(), df)
+
+
+def test_nested_deprecated_int96_timestamps_21332() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": [{"t": datetime(2025, 1, 1)}]})
+
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_deprecated_int96_timestamps=True,
+    )
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.read_parquet(f),
+        df,
+    )
+
+
+def test_final_masked_optional_iteration_21378() -> None:
+    # fmt: off
+    values = [
+        1, 0, 0, 0, 0, 1, 1, 1,
+        1, 0, 0, 1, 1, 1, 1, 0,
+        0, 1, 1, 1, 0, 1, 0, 0,
+        1, 1, 0, 0, 0, 1, 1, 1,
+        0, 1, 0, 0, 1, 1, 1, 1,
+        0, 1, 1, 1, 0, 1, 0, 1,
+        0, 1, 1, 0, 1, 0, 1, 1,
+        0, 0, 0, 0, 1, 0, 0, 0,
+        0, 1, 1, 1, 0, 0, 1, 1,
+        0, 0, 1, 1, 0, 0, 0, 1,
+        1, 1, 0, 1, 1, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1, 1, 1, 0,
+        0, 0, 1, 0, 1, 1, 0, 0,
+        0, 1, 1, 0, 0, 1, 0, 0,
+        1, 1, 1, 1, 0, 0, 1, 0,
+        0, 1, 1, 0, 0, 1, 1, 1,
+        1, 1, 1, 0, 1, 1, 0, 1,
+        0, 1, 0, 1, 0, 1, 0, 1,
+        0, 0, 0, 1, 1, 0, 0, 0,
+        1, 1, 0, 1, 0, 1, 0, 1,
+        0, 1, 0, 0, 0, 0, 0, 1,
+        0, 0, 1, 1, 0, 0, 1, 1,
+        0, 1, 0, 0, 0, 1, 1, 1,
+        1, 0, 1, 0, 1, 0, 1, 1,
+        1, 0, 1, 0, 0, 1, 0, 1,
+        0, 1, 1, 1, 0, 0, 0, 1,
+        1, 1, 1, 1, 1, 1, 0, 0,
+        1, 0, 0, 0, 0, 0, 0, 1,
+        1, 1, 1, 0, 0, 0, 0, 0,
+        1, 1, 1, 0, 0, 0, 1, 1,
+        0, 0, 0, 0, 0, 1, 1, 0,
+        0, 0, 1, 0, 0, 0, 0, 1,
+        0, 0, 0, 0, 0, 1, 0, 0,
+        1, 0, 1, 0, 0, 1, 0, 0,
+        0, 1, 1, 1, 0, 0, 1, 1,
+        1, 0, 1, 1, 0, 0, 0, 1,
+        0, 0, 1, 1, 0, 1, 0, 1,
+        0, 1, 1, 1, 0, 0, 0, 1,
+        0, 0, 0, 1, 0, 1, 0, 1,
+        0, 1, 0, 1, 0, 1, 1, 1,
+        1, 0, 1, 1, 1, 1, 1, 0,
+        1, 0, 1, 0, 0, 0, 1, 1,
+        0, 0, 0, 1, 0, 0, 1, 0,
+        0, 1, 0, 0, 1, 0, 1, 1,
+        1, 0, 0, 1, 0, 1, 1, 0,
+        0, 1, 0, 1, 1, 0, 1, 0,
+        0, 0, 0, 1, 1, 1, 0, 0,
+        0, 1, 0, 1, 1, 0, 1, 1,
+        1, 1, 0, 1, 0, 1, 0, 1,
+        1, 1, 0, 1, 0, 0, 1, 0,
+        1, 1, 0, 1, 1, 0, 0, 1,
+        0, 0, 0, 0, 0, 1, 0, 0,
+        0, 1, 0, 0, 1, 1, 1, 1,
+        1, 0, 1, 1, 1, 0, 1, 1,
+        1, 1, 0, 0, 0, 0, 1, 1,
+    ]
+
+    df = pl.DataFrame(
+        [
+            pl.Series("x", [None if x == 1 else 0.0 for x in values], pl.Float32),
+            pl.Series(
+                "f",
+                [False] * 164 +
+                [True] * 10 +
+                [False] * 264 +
+                [True] * 10,
+                pl.Boolean(),
+            ),
+        ]
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+
+    output = pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.f).collect()
+    assert_frame_equal(df.filter(pl.col.f), output)
+
+
+def test_predicate_empty_is_in_21450() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(
+        df.clear(),
+        pl.scan_parquet(f).filter(pl.col("a").is_in([])).collect(),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_filter_statistics_load_missing_column_21391(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path
+    dfs = [pl.DataFrame({"x": 1, "y": 1}), pl.DataFrame({"x": 2})]
+
+    for i, df in enumerate(dfs):
+        df.write_parquet(root / f"{i}.parquet")
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(root, missing_columns="insert")
+            .filter(pl.col("y") == 1)
+            .collect()
+        ),
+        pl.DataFrame({"x": 1, "y": 1}),
+    )
+
+
+@pytest.mark.parametrize(
+    "ty",
+    [
+        (lambda i: i, pl.Int8, True),
+        (lambda i: datetime(year=2025, month=9, day=i), pl.Datetime, True),
+        (lambda i: float(i), pl.Float32, True),
+        (lambda i: str(i), pl.String, True),
+        (lambda i: str(i) + "make it a bit longer", pl.String, True),
+        (lambda i: [i, i + 7] * (i % 3), pl.List(pl.Int32), True),
+        (lambda i: {"x": i}, pl.Struct({"x": pl.Int32}), True),
+        (lambda i: [i, i + 3, i + 7], pl.Array(pl.Int32, 3), False),
+    ],
+)
+def test_filter_nulls_21538(ty: tuple[Callable[[int], Any], pl.DataType, bool]) -> None:
+    i_to_value, dtype, do_no_dicts = ty
+
+    patterns: list[list[int | None]] = [
+        [None, None, None, None, None],
+        [1, None, None, 2, None],
+        [None, 1, 2, 3, 4],
+        [1, 2, 3, 4, None],
+        [None, 1, 2, 3, None],
+        [None, 1, None, 3, None],
+        [1, 2, 3, 4, 5],
+    ]
+
+    df = pl.DataFrame(
+        [
+            pl.Series(
+                f"p{i}", [None if v is None else i_to_value(v) for v in pattern], dtype
+            )
+            for i, pattern in enumerate(patterns)
+        ]
+    )
+
+    fs = []
+
+    dicts_f = io.BytesIO()
+    df.write_parquet(dicts_f)
+    fs += [dicts_f]
+
+    if do_no_dicts:
+        no_dicts_f = io.BytesIO()
+        pq.write_table(df.to_arrow(), no_dicts_f, use_dictionary=False)
+        fs += [no_dicts_f]
+
+    for f in fs:
+        for i in range(len(patterns)):
+            f.seek(0)
+            assert_frame_equal(
+                pl.scan_parquet(f).filter(pl.col(f"p{i}").is_null()).collect(),
+                df.filter(pl.col(f"p{i}").is_null()),
+            )
+
+            f.seek(0)
+            assert_frame_equal(
+                pl.scan_parquet(f).filter(pl.col(f"p{i}").is_not_null()).collect(),
+                df.filter(pl.col(f"p{i}").is_not_null()),
+            )
+
+
+def test_unspecialized_decoding_prefiltering() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None, None, None, "abc"],
+            "b": [False, True, False, True],
+        }
+    )
+
+    cols = df.columns
+
+    encodings = dict.fromkeys(cols, "DELTA_LENGTH_BYTE_ARRAY")
+    encodings["b"] = "PLAIN"
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        column_encoding=encodings,
+    )
+
+    f.seek(0)
+    expr = pl.col("b")
+    result = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(expr)
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(result, df.filter(expr))
+
+
+@pytest.mark.parametrize("parallel", ["columns", "row_groups"])
+def test_filtering_on_other_parallel_modes_with_statistics(
+    parallel: ParallelStrategy,
+) -> None:
+    f = io.BytesIO()
+
+    pl.DataFrame(
+        {
+            "a": [1, 4, 9, 2, 4, 8, 3, 4, 7],
+        }
+    ).write_parquet(f, row_group_size=3)
+
+    f.seek(0)
+    assert_series_equal(
+        pl.scan_parquet(f, parallel=parallel)
+        .filter(pl.col.a == 4)
+        .collect()
+        .to_series(),
+        pl.Series("a", [4, 4, 4]),
+    )
+
+
+def test_filter_on_logical_dtype_22252() -> None:
+    f = io.BytesIO()
+    pl.Series("a", [datetime(1996, 10, 5)]).to_frame().write_parquet(f)
+    f.seek(0)
+    pl.scan_parquet(f).filter(pl.col.a.dt.weekday() == 6).collect()
+
+
+def test_filter_nan_22289() -> None:
+    f = io.BytesIO()
+    pl.DataFrame(
+        {"a": [1, 2, float("nan")], "b": [float("nan"), 5, 6]}, strict=False
+    ).write_parquet(f)
+
+    f.seek(0)
+    lf = pl.scan_parquet(f)
+
+    assert_frame_equal(
+        lf.collect().filter(pl.col.a.is_not_nan()),
+        lf.filter(pl.col.a.is_not_nan()).collect(),
+    )
+
+    assert_frame_equal(
+        lf.collect().filter(pl.col.a.is_nan()),
+        lf.filter(pl.col.a.is_nan()).collect(),
+    )
+
+
+def test_encode_utf8_check_22467() -> None:
+    f = io.BytesIO()
+    values = ["😀" * 129, "😀"]
+
+    pq.write_table(pl.Series(values).to_frame().to_arrow(), f, use_dictionary=False)
+
+    f.seek(0)
+    pl.scan_parquet(f).slice(1, 1).collect()
+
+
+def test_reencode_categoricals_22385() -> None:
+    tbl = pl.Series("a", ["abc"], pl.Categorical()).to_frame().to_arrow()
+    tbl = tbl.cast(
+        pa.schema(
+            [
+                pa.field(
+                    "a",
+                    pa.dictionary(pa.int32(), pa.large_string()),
+                    metadata=tbl.schema[0].metadata,
+                ),
+            ]
+        )
+    )
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f)
+
+    f.seek(0)
+    pl.scan_parquet(f).collect()
+
+
+def test_parquet_read_timezone_22506() -> None:
+    f = io.BytesIO()
+
+    pd.DataFrame(
+        {
+            "a": [1, 2],
+            "b": pd.to_datetime(
+                ["2020-01-01T00:00:00+01:00", "2020-01-02T00:00:00+01:00"]
+            ),
+        }
+    ).to_parquet(f)
+
+    assert b'"metadata": {"timezone": "+01:00"}}' in f.getvalue()
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.read_parquet(f),
+        pl.DataFrame(
+            {
+                "a": [1, 2],
+                "b": [
+                    datetime(2020, 1, 1, tzinfo=ZoneInfo("Etc/GMT-1")),
+                    datetime(2020, 1, 2, tzinfo=ZoneInfo("Etc/GMT-1")),
+                ],
+            },
+            schema={
+                "a": pl.Int64,
+                "b": pl.Datetime(time_unit="ns", time_zone="Etc/GMT-1"),
+            },
+        ),
+    )
+
+
+@pytest.mark.parametrize("static", [True, False])
+@pytest.mark.parametrize("lazy", [True, False])
+def test_read_write_metadata(static: bool, lazy: bool) -> None:
+    metadata = {"hello": "world", "something": "else"}
+    md: ParquetMetadata = metadata
+    if not static:
+        md = lambda ctx: metadata  # noqa: E731
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    f = io.BytesIO()
+    if lazy:
+        df.lazy().sink_parquet(f, metadata=md)
+    else:
+        df.write_parquet(f, metadata=md)
+
+    f.seek(0)
+    actual = pl.read_parquet_metadata(f)
+    assert "ARROW:schema" in actual
+    assert metadata == {k: v for k, v in actual.items() if k != "ARROW:schema"}
+
+
+@pytest.mark.write_disk
+def test_metadata_callback_info(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    num_writes = 0
+
+    def fn_metadata(ctx: ParquetMetadataContext) -> dict[str, str]:
+        nonlocal num_writes
+        num_writes += 1
+        return {}
+
+    df.write_parquet(tmp_path, partition_by="a", metadata=fn_metadata)
+
+    assert num_writes == len(df)
+
+
+def test_field_overwrites_metadata() -> None:
+    f = io.BytesIO()
+    lf = pl.LazyFrame(
+        {
+            "a": [None, 2, 3, 4],
+            "b": [[1, 2, 3], [42], [13], [37]],
+            "c": [
+                {"x": "a", "y": 42},
+                {"x": "b", "y": 13},
+                {"x": "X", "y": 37},
+                {"x": "Y", "y": 15},
+            ],
+        }
+    )
+    lf.sink_parquet(
+        f,
+        field_overwrites={
+            "a": ParquetFieldOverwrites(metadata={"flat_from_polars": "yes"}),
+            "b": ParquetFieldOverwrites(
+                children=ParquetFieldOverwrites(metadata={"listitem": "yes"}),
+                metadata={"list": "true"},
+            ),
+            "c": ParquetFieldOverwrites(
+                children=[
+                    ParquetFieldOverwrites(name="x", metadata={"md": "yes"}),
+                    ParquetFieldOverwrites(name="y", metadata={"md2": "Yes!"}),
+                ],
+                metadata={"struct": "true"},
+            ),
+        },
+    )
+
+    f.seek(0)
+    schema = pq.read_schema(f)
+    assert schema[0].metadata[b"flat_from_polars"] == b"yes"
+    assert schema[1].metadata[b"list"] == b"true"
+    assert schema[1].type.value_field.metadata[b"listitem"] == b"yes"
+    assert schema[2].metadata[b"struct"] == b"true"
+    assert schema[2].type.fields[0].metadata[b"md"] == b"yes"
+    assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"
+
+
+def multiple_test_sorting_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2, 2, 2],
+            "b": [1, 2, 3, 1, 2, 3],
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        sorting_columns=[pq.SortingColumn(0), pq.SortingColumn(1)],
+    )
+
+    f.seek(0)
+    roundtrip = pl.read_parquet(f)
+    assert roundtrip.get_column("a").is_sorted()
+    assert not roundtrip.get_column("b").is_sorted()
+    assert_frame_equal(roundtrip.sort("b"), df.sort("b"))
+
+
+@pytest.mark.write_disk
+def test_read_parquet_duplicate_range_start_fetch_23139(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.parquet"
+
+    df = pl.DataFrame(
+        schema={
+            "a": pl.Boolean,
+            "b": pl.Boolean,
+        }
+    )
+
+    df.write_parquet(path, use_pyarrow=True)
+
+    assert_frame_equal(pl.read_parquet(path), df)
+
+
+@pytest.mark.parametrize(
+    ("value", "scan_dtype", "filter_expr"),
+    [
+        (pl.lit(1, dtype=pl.Int8), pl.Int16, pl.col("x") > 1),
+        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") > 1.0),
+        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") > 1.0),
+        (
+            pl.lit(
+                datetime(2025, 1, 1),
+                dtype=pl.Datetime(time_unit="ns", time_zone="Europe/Amsterdam"),
+            ),
+            pl.Datetime(time_unit="ms", time_zone="Australia/Sydney"),
+            pl.col("x")
+            != pl.lit(
+                datetime(2025, 1, 1, 10),
+                dtype=pl.Datetime(time_unit="ms", time_zone="Australia/Sydney"),
+            ),
+        ),
+        # Note: This is not implemented at all
+        # (
+        #     pl.lit({"a": 1}, dtype=pl.Struct({"a": pl.Int8})),
+        #     pl.Struct({"a": pl.Int64}),
+        #     pl.col("x").struct.field("a") > 1,
+        # ),
+    ],
+)
+def test_scan_parquet_skip_row_groups_with_cast(
+    value: Any,
+    scan_dtype: pl.DataType,
+    filter_expr: pl.Expr,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    f = io.BytesIO()
+
+    df = pl.select(x=value)
+
+    df.write_parquet(f)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"x": scan_dtype},
+        cast_options=pl.ScanCastOptions(
+            integer_cast="upcast",
+            float_cast=["upcast", "downcast"],
+            datetime_cast=["convert-timezone", "nanosecond-downcast"],
+            missing_struct_fields="insert",
+        ),
+    ).filter(filter_expr)
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    assert "reading 0 / 1 row groups" in capfd.readouterr().err
+
+    assert_frame_equal(out, pl.DataFrame(schema={"x": scan_dtype}))
+
+
+@pytest.mark.parametrize(
+    ("value", "scan_dtype", "filter_expr"),
+    [
+        (pl.lit(1, dtype=pl.Int8), pl.Int16, pl.col("x") == 1),
+        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") == 1.0),
+        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") == 1.0),
+        (
+            pl.lit(
+                datetime(2025, 1, 1),
+                dtype=pl.Datetime(time_unit="ns", time_zone="Europe/Amsterdam"),
+            ),
+            pl.Datetime(time_unit="ms", time_zone="Australia/Sydney"),
+            pl.col("x")
+            == pl.lit(
+                datetime(2025, 1, 1, 10),
+                dtype=pl.Datetime(time_unit="ms", time_zone="Australia/Sydney"),
+            ),
+        ),
+        (
+            pl.lit({"a": 1}, dtype=pl.Struct({"a": pl.Int8})),
+            pl.Struct({"a": pl.Int64}),
+            pl.col("x").struct.field("a") == 1,
+        ),
+    ],
+)
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
+def test_scan_parquet_skip_row_groups_with_cast_inclusions(
+    value: Any,
+    scan_dtype: pl.DataType,
+    filter_expr: pl.Expr,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    f = io.BytesIO()
+    df = pl.select(x=value)
+    df.write_parquet(f)
+
+    f.seek(0)
+    q = pl.scan_parquet(
+        f,
+        schema={"x": scan_dtype},
+        cast_options=pl.ScanCastOptions(
+            integer_cast="upcast",
+            float_cast=["upcast", "downcast"],
+            datetime_cast=["convert-timezone", "nanosecond-downcast"],
+            missing_struct_fields="insert",
+        ),
+    ).filter(filter_expr)
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    assert "reading 1 / 1 row groups" in capfd.readouterr().err
+
+    assert_frame_equal(out, pl.select(x=value).select(pl.first().cast(scan_dtype)))
+
+
+def test_roundtrip_int128() -> None:
+    f = io.BytesIO()
+    s = pl.Series("a", [1, 2, 3], pl.Int128)
+    s.to_frame().write_parquet(f)
+    f.seek(0)
+    assert_series_equal(pl.read_parquet(f).to_series(), s)
+
+
+def test_write_nested_categoricals() -> None:
+    df = pl.select(
+        pl.lit(pl.Series("col", ["a", "b"], dtype=pl.Categorical)).implode().implode(),
+    )
+
+    f = io.BytesIO()
+    df.lazy().sink_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+def test_literal_predicate_23901() -> None:
+    df = pl.DataFrame({"x": range(10)})
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=1)
+
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).filter(pl.lit(1) == 1).collect(), df)

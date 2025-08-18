@@ -18,7 +18,6 @@ pub fn ewm_mean_by(
     where
         T: PolarsFloatType,
         T::Native: Float + Zero + One,
-        ChunkedArray<T>: IntoSeries,
     {
         if times_is_sorted {
             Ok(ewm_mean_by_impl_sorted(values, times, half_life).into_series())
@@ -26,6 +25,13 @@ pub fn ewm_mean_by(
             Ok(ewm_mean_by_impl(values, times, half_life).into_series())
         }
     }
+
+    polars_ensure!(
+        s.len() == times.len(),
+        length_mismatch = "ewm_mean_by",
+        s.len(),
+        times.len()
+    );
 
     match (s.dtype(), times.dtype()) {
         (DataType::Float64, DataType::Int64) => func(
@@ -53,7 +59,7 @@ pub fn ewm_mean_by(
         #[cfg(feature = "dtype-date")]
         (_, DataType::Date) => ewm_mean_by(
             s,
-            &times.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+            &times.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
             half_life,
             times_is_sorted,
         ),

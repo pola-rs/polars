@@ -1,13 +1,11 @@
-use std::borrow::Cow;
-
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 
-use crate::conversion::Wrap;
 use crate::PyExpr;
+use crate::conversion::Wrap;
 
 #[pymethods]
 impl PyExpr {
@@ -30,8 +28,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn list_contains(&self, other: PyExpr) -> Self {
-        self.inner.clone().list().contains(other.inner).into()
+    fn list_contains(&self, other: PyExpr, nulls_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .contains(other.inner, nulls_equal)
+            .into()
     }
 
     #[cfg(feature = "list_count")]
@@ -43,8 +45,17 @@ impl PyExpr {
         Ok(self.inner.clone().list().diff(n, null_behavior.0).into())
     }
 
-    fn list_eval(&self, expr: PyExpr, parallel: bool) -> Self {
-        self.inner.clone().list().eval(expr.inner, parallel).into()
+    fn list_eval(&self, expr: PyExpr, _parallel: bool) -> Self {
+        self.inner.clone().list().eval(expr.inner).into()
+    }
+
+    #[cfg(feature = "list_filter")]
+    fn list_filter(&self, predicate: PyExpr) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .eval(Expr::Column(PlSmallStr::EMPTY).filter(predicate.inner))
+            .into()
     }
 
     fn list_get(&self, index: PyExpr, null_on_oob: bool) -> Self {
@@ -72,39 +83,19 @@ impl PyExpr {
     }
 
     fn list_mean(&self) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .mean()
-            .with_fmt("list.mean")
-            .into()
+        self.inner.clone().list().mean().into()
     }
 
     fn list_median(&self) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .median()
-            .with_fmt("list.median")
-            .into()
+        self.inner.clone().list().median().into()
     }
 
     fn list_std(&self, ddof: u8) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .std(ddof)
-            .with_fmt("list.std")
-            .into()
+        self.inner.clone().list().std(ddof).into()
     }
 
     fn list_var(&self, ddof: u8) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .var(ddof)
-            .with_fmt("list.var")
-            .into()
+        self.inner.clone().list().var(ddof).into()
     }
 
     fn list_min(&self) -> Self {
@@ -145,7 +136,7 @@ impl PyExpr {
     }
 
     fn list_sum(&self) -> Self {
-        self.inner.clone().list().sum().with_fmt("list.sum").into()
+        self.inner.clone().list().sum().into()
     }
 
     #[cfg(feature = "list_drop_nulls")]
@@ -207,47 +198,18 @@ impl PyExpr {
         self.inner.clone().list().to_array(width).into()
     }
 
-    #[pyo3(signature = (width_strat, name_gen, upper_bound))]
-    fn list_to_struct(
-        &self,
-        width_strat: Wrap<ListToStructWidthStrategy>,
-        name_gen: Option<PyObject>,
-        upper_bound: usize,
-    ) -> PyResult<Self> {
-        let name_gen = name_gen.map(|lambda| {
-            NameGenerator::from_func(move |idx: usize| {
-                Python::with_gil(|py| {
-                    let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: PlSmallStr = out.extract::<Cow<str>>(py).unwrap().as_ref().into();
-                    out
-                })
-            })
-        });
-
-        Ok(self
-            .inner
-            .clone()
-            .list()
-            .to_struct(ListToStructArgs::InferWidth {
-                infer_field_strategy: width_strat.0,
-                get_index_name: name_gen,
-                max_fields: upper_bound,
-            })
-            .into())
-    }
-
     #[pyo3(signature = (names))]
-    fn list_to_struct_fixed_width(&self, names: Bound<'_, PySequence>) -> PyResult<Self> {
+    fn list_to_struct(&self, names: Bound<'_, PySequence>) -> PyResult<Self> {
         Ok(self
             .inner
             .clone()
             .list()
-            .to_struct(ListToStructArgs::FixedWidth(
+            .to_struct(
                 names
                     .try_iter()?
                     .map(|x| Ok(x?.extract::<Wrap<PlSmallStr>>()?.0))
                     .collect::<PyResult<Arc<[_]>>>()?,
-            ))
+            )
             .into())
     }
 

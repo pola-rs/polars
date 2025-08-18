@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Row encoding for Binary values
 //!
 //! - single `0_u8` if null

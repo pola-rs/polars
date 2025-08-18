@@ -1,6 +1,7 @@
 use polars_error::PolarsResult;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
+use crate::execute::StreamingExecutionState;
 use crate::nodes::ComputeNode;
 
 slotmap::new_key_type! {
@@ -70,7 +71,7 @@ impl Graph {
     }
 
     /// Updates all the nodes' states until a fixed point is reached.
-    pub fn update_all_states(&mut self) -> PolarsResult<()> {
+    pub fn update_all_states(&mut self, state: &StreamingExecutionState) -> PolarsResult<()> {
         let mut to_update: Vec<_> = self.nodes.keys().collect();
         let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
             self.nodes.keys().map(|k| (k, ())).collect();
@@ -97,7 +98,7 @@ impl Graph {
                 );
             }
             node.compute
-                .update_state(&mut recv_state, &mut send_state)?;
+                .update_state(&mut recv_state, &mut send_state, state)?;
             if verbose {
                 eprintln!(
                     "updating {}, after: {recv_state:?} {send_state:?}",
@@ -109,7 +110,10 @@ impl Graph {
             for (input, state) in node.inputs.iter().zip(recv_state.iter()) {
                 let pipe = &mut self.pipes[*input];
                 if pipe.recv_state != *state {
-                    assert!(pipe.recv_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
+                    assert!(
+                        pipe.recv_state != PortState::Done,
+                        "implementation error: state transition from Done to Blocked/Ready attempted"
+                    );
                     pipe.recv_state = *state;
                     if scheduled_for_update.insert(pipe.sender, ()).is_none() {
                         to_update.push(pipe.sender);
@@ -120,7 +124,10 @@ impl Graph {
             for (output, state) in node.outputs.iter().zip(send_state.iter()) {
                 let pipe = &mut self.pipes[*output];
                 if pipe.send_state != *state {
-                    assert!(pipe.send_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
+                    assert!(
+                        pipe.send_state != PortState::Done,
+                        "implementation error: state transition from Done to Blocked/Ready attempted"
+                    );
                     pipe.send_state = *state;
                     if scheduled_for_update.insert(pipe.receiver, ()).is_none() {
                         to_update.push(pipe.receiver);

@@ -3,8 +3,8 @@ use std::ops::{Add, IndexMut};
 use std::simd::{prelude::*, *};
 
 use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
 
@@ -245,11 +245,7 @@ where
             .enumerate()
             .map(|(i, x)| {
                 // No filter but rather select of 0.0 for cmov opt.
-                if rest_mask.get(i) {
-                    x.as_()
-                } else {
-                    F::zero()
-                }
+                if rest_mask.get(i) { x.as_() } else { F::zero() }
             })
             .sum();
         mainsum + restsum

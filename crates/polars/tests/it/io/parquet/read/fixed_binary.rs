@@ -2,7 +2,7 @@ use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::page::DataPage;
 
 use super::dictionary::FixedLenByteArrayPageDict;
-use super::utils::{deserialize_optional, FixedLenBinaryPageState};
+use super::utils::{FixedLenBinaryPageState, deserialize_optional};
 use crate::io::parquet::read::hybrid_rle_iter;
 
 pub fn page_to_vec(

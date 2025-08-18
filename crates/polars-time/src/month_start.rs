@@ -2,8 +2,8 @@ use arrow::legacy::time_zone::Tz;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
-    SECONDS_IN_DAY,
+    MILLISECONDS, SECONDS_IN_DAY, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_us_to_datetime,
 };
 
 #[cfg(feature = "timezones")]
@@ -81,7 +81,7 @@ impl PolarsMonthStart for DatetimeChunked {
             },
         };
         Ok(self
-            .0
+            .phys
             .try_apply_nonnull_values_generic(|t| {
                 roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)
             })?
@@ -92,7 +92,7 @@ impl PolarsMonthStart for DatetimeChunked {
 impl PolarsMonthStart for DateChunked {
     fn month_start(&self, _tz: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        let ret = self.0.try_apply_nonnull_values_generic(|t| {
+        let ret = self.phys.try_apply_nonnull_values_generic(|t| {
             let bwd = roll_backward(
                 MSECS_IN_DAY * t as i64,
                 None,

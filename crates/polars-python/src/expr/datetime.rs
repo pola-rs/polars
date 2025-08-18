@@ -1,8 +1,8 @@
 use polars::prelude::*;
 use pyo3::prelude::*;
 
-use crate::conversion::Wrap;
 use crate::PyExpr;
+use crate::conversion::Wrap;
 
 #[pymethods]
 impl PyExpr {
@@ -35,9 +35,9 @@ impl PyExpr {
                 |s| {
                     s.take_materialized_series()
                         .timestamp(TimeUnit::Milliseconds)
-                        .map(|ca| Some((ca / 1000).into_column()))
+                        .map(|ca| (ca / 1000).into_column())
                 },
-                GetOutput::from_type(DataType::Int64),
+                |_, f| Ok(Field::new(f.name().clone(), DataType::Int64)),
             )
             .into()
     }
@@ -47,12 +47,19 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    fn dt_convert_time_zone(&self, time_zone: String) -> Self {
-        self.inner
+    fn dt_convert_time_zone(&self, time_zone: String) -> PyResult<Self> {
+        use crate::utils::to_py_err;
+
+        Ok(self
+            .inner
             .clone()
             .dt()
-            .convert_time_zone(time_zone.into())
-            .into()
+            .convert_time_zone(
+                TimeZone::opt_try_new(Some(PlSmallStr::from(time_zone)))
+                    .map_err(to_py_err)?
+                    .unwrap_or(TimeZone::UTC),
+            )
+            .into())
     }
 
     fn dt_cast_time_unit(&self, time_unit: Wrap<TimeUnit>) -> Self {
@@ -66,12 +73,19 @@ impl PyExpr {
         time_zone: Option<String>,
         ambiguous: Self,
         non_existent: Wrap<NonExistent>,
-    ) -> Self {
-        self.inner
+    ) -> PyResult<Self> {
+        use crate::utils::to_py_err;
+
+        Ok(self
+            .inner
             .clone()
             .dt()
-            .replace_time_zone(time_zone.map(|x| x.into()), ambiguous.inner, non_existent.0)
-            .into()
+            .replace_time_zone(
+                TimeZone::opt_try_new(time_zone.map(PlSmallStr::from_string)).map_err(to_py_err)?,
+                ambiguous.inner,
+                non_existent.0,
+            )
+            .into())
     }
 
     fn dt_truncate(&self, every: Self) -> Self {
@@ -142,6 +156,13 @@ impl PyExpr {
     fn dt_year(&self) -> Self {
         self.inner.clone().dt().year().into()
     }
+    fn dt_is_business_day(&self, week_mask: [bool; 7], holidays: Vec<i32>) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .is_business_day(week_mask, holidays)
+            .into()
+    }
     fn dt_is_leap_year(&self) -> Self {
         self.inner.clone().dt().is_leap_year().into()
     }
@@ -153,6 +174,9 @@ impl PyExpr {
     }
     fn dt_month(&self) -> Self {
         self.inner.clone().dt().month().into()
+    }
+    fn dt_days_in_month(&self) -> Self {
+        self.inner.clone().dt().days_in_month().into()
     }
     fn dt_week(&self) -> Self {
         self.inner.clone().dt().week().into()

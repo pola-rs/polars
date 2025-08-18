@@ -174,8 +174,11 @@ impl DatetimeArgs {
         };
 
         Some(
-            Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None))
-                .alias(PlSmallStr::from_static("datetime")),
+            Expr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::Datetime(self.time_unit, None),
+                AnyValue::Datetime(ts, self.time_unit, None),
+            )))
+            .alias(PlSmallStr::from_static("datetime")),
         )
     }
 }
@@ -215,12 +218,6 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
                 time_unit,
                 time_zone,
             }),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-                fmt_str: "datetime",
-                ..Default::default()
-            },
         }),
         // TODO: follow left-hand rule in Polars 2.0.
         PlSmallStr::from_static("datetime"),
@@ -400,13 +397,17 @@ impl DurationArgs {
         };
 
         Some(
-            Expr::Literal(LiteralValue::Duration(d, self.time_unit))
-                .alias(PlSmallStr::from_static("duration")),
+            Expr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::Duration(self.time_unit),
+                AnyValue::Duration(d, self.time_unit),
+            )))
+            .alias(PlSmallStr::from_static("duration")),
         )
     }
 }
 
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
+#[cfg(feature = "dtype-duration")]
 pub fn duration(args: DurationArgs) -> Expr {
     if let Some(e) = args.as_literal() {
         return e;
@@ -423,10 +424,5 @@ pub fn duration(args: DurationArgs) -> Expr {
             args.nanoseconds,
         ],
         function: FunctionExpr::TemporalExpr(TemporalFunction::Duration(args.time_unit)),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default(),
-            ..Default::default()
-        },
     }
 }

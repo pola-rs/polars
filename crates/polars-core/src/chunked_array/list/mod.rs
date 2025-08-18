@@ -14,6 +14,9 @@ impl ListChunked {
         }
     }
 
+    /// # Panics
+    /// Panics if the physical representation of `dtype` differs the physical
+    /// representation of the existing inner `dtype`.
     pub fn set_inner_dtype(&mut self, dtype: DataType) {
         assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
         let field = Arc::make_mut(&mut self.field);
@@ -39,20 +42,27 @@ impl ListChunked {
     }
 
     /// Convert the datatype of the list into the physical datatype.
-    pub fn to_physical_repr(&self) -> Cow<ListChunked> {
+    pub fn to_physical_repr(&self) -> Cow<'_, ListChunked> {
         let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
             return Cow::Borrowed(self);
         };
 
-        assert_eq!(self.chunks().len(), physical_repr.chunks().len());
+        let ca = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
+            // Physical repr got rechunked, rechunk self as well.
+            self.rechunk()
+        } else {
+            Cow::Borrowed(self)
+        };
 
-        let chunks: Vec<_> = self
+        assert_eq!(ca.chunks().len(), physical_repr.chunks().len());
+
+        let chunks: Vec<_> = ca
             .downcast_iter()
             .zip(physical_repr.into_chunks())
             .map(|(chunk, values)| {
                 LargeListArray::new(
                     ArrowDataType::LargeList(Box::new(ArrowField::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         values.dtype().clone(),
                         true,
                     ))),
@@ -101,7 +111,7 @@ impl ListChunked {
             .map(|(chunk, values)| {
                 LargeListArray::new(
                     ArrowDataType::LargeList(Box::new(ArrowField::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         values.dtype().clone(),
                         true,
                     ))),
@@ -172,15 +182,5 @@ impl ListChunked {
                 DataType::List(Box::new(out.dtype().clone())),
             )
         })
-    }
-
-    pub fn rechunk_and_trim_to_normalized_offsets(&self) -> Self {
-        Self::with_chunk(
-            self.name().clone(),
-            self.rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .trim_to_normalized_offsets_recursive(),
-        )
     }
 }

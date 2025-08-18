@@ -23,11 +23,7 @@ pub fn propagate_dictionary_value_nulls(
         .map(|i| {
             let is_valid = unsafe { values_validity.get_bit_unchecked(i) };
             offset += usize::from(!is_valid);
-            if is_valid {
-                (i - offset) as u32
-            } else {
-                0
-            }
+            if is_valid { (i - offset) as u32 } else { 0 }
         })
         .collect();
 
@@ -77,7 +73,7 @@ pub fn propagate_dictionary_value_nulls(
     // Filter out the null values
     let values = crate::filter::filter_with_bitmap(&values, values_validity);
     let values = values.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-    let values = unsafe { values.to_utf8view_unchecked() }.clone();
+    let values = unsafe { values.to_utf8view_unchecked() };
 
     // Explicitly set the values validity to none.
     assert_eq!(values.null_count(), 0);

@@ -27,7 +27,7 @@ use crate::table_functions::PolarsTableFunctions;
 #[derive(Clone)]
 pub struct TableInfo {
     pub(crate) frame: LazyFrame,
-    pub(crate) name: String,
+    pub(crate) name: PlSmallStr,
     pub(crate) schema: Arc<Schema>,
 }
 
@@ -613,6 +613,13 @@ impl SQLContext {
         if !tbl_expr.joins.is_empty() {
             for join in &tbl_expr.joins {
                 let (r_name, mut rf) = self.get_table(&join.relation)?;
+                if r_name.is_empty() {
+                    // Require non-empty to avoid duplicate column errors from nested self-joins.
+                    polars_bail!(
+                        SQLInterface:
+                        "cannot join on unnamed relation; please provide an alias"
+                    )
+                }
                 let left_schema = self.get_frame_schema(&mut lf)?;
                 let right_schema = self.get_frame_schema(&mut rf)?;
 
@@ -634,12 +641,12 @@ impl SQLContext {
                         self.process_join(
                             &TableInfo {
                                 frame: lf,
-                                name: l_name.clone(),
+                                name: (&l_name).into(),
                                 schema: left_schema.clone(),
                             },
                             &TableInfo {
                                 frame: rf,
-                                name: r_name.clone(),
+                                name: (&r_name).into(),
                                 schema: right_schema.clone(),
                             },
                             constraint,
@@ -649,10 +656,18 @@ impl SQLContext {
                                 JoinOperator::RightOuter(_) => JoinType::Right,
                                 JoinOperator::Inner(_) => JoinType::Inner,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::Anti(_) | JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
+                                JoinOperator::Anti(_)
+                                | JoinOperator::LeftAnti(_)
+                                | JoinOperator::RightAnti(_) => JoinType::Anti,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::Semi(_) | JoinOperator::LeftSemi(_) | JoinOperator::RightSemi(_) => JoinType::Semi,
-                                join_type => polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type),
+                                JoinOperator::Semi(_)
+                                | JoinOperator::LeftSemi(_)
+                                | JoinOperator::RightSemi(_) => JoinType::Semi,
+                                join_type => polars_bail!(
+                                    SQLInterface:
+                                    "join type '{:?}' not currently supported",
+                                    join_type
+                                ),
                             },
                         )?
                     },
@@ -668,12 +683,12 @@ impl SQLContext {
                 let joined_schema = self.get_frame_schema(&mut lf)?;
 
                 self.joined_aliases.borrow_mut().insert(
-                    r_name.to_string(),
+                    r_name.clone(),
                     right_schema
                         .iter_names()
                         .filter_map(|name| {
                             // col exists in both tables and is aliased in the joined result
-                            let aliased_name = format!("{}:{}", name, r_name);
+                            let aliased_name = format!("{name}:{r_name}");
                             if left_schema.contains(name)
                                 && joined_schema.contains(aliased_name.as_str())
                             {
@@ -788,10 +803,7 @@ impl SQLContext {
             // are used to ensure a correct final projection. If there's no 'order by',
             // clause then we can project the final column *expressions* directly.
             for p in projections.iter() {
-                let name = p
-                    .to_field(schema.deref(), Context::Default)?
-                    .name
-                    .to_string();
+                let name = p.to_field(schema.deref())?.name.to_string();
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
@@ -840,7 +852,7 @@ impl SQLContext {
                                 validation: Default::default(),
                                 suffix: None,
                                 slice: None,
-                                join_nulls: false,
+                                nulls_equal: false,
                                 coalesce: Default::default(),
                                 maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
                             },
@@ -898,7 +910,7 @@ impl SQLContext {
                     .map(|e| {
                         let expr = parse_sql_expr(e, self, schema.as_deref())?;
                         if let Expr::Column(name) = expr {
-                            Ok(name.clone())
+                            Ok(name)
                         } else {
                             Err(polars_err!(SQLSyntax:"DISTINCT ON only supports column names"))
                         }
@@ -907,7 +919,13 @@ impl SQLContext {
 
                 // DISTINCT ON has to apply the ORDER BY before the operation.
                 lf = self.process_order_by(lf, &query.order_by, None)?;
-                return Ok(lf.unique_stable(Some(cols.clone()), UniqueKeepStrategy::First));
+                return Ok(lf.unique_stable(
+                    Some(Selector::ByName {
+                        names: cols.into(),
+                        strict: true,
+                    }),
+                    UniqueKeepStrategy::First,
+                ));
             },
             None => lf,
         };
@@ -996,11 +1014,11 @@ impl SQLContext {
                 filter_expression = all_horizontal([filter_expression])?;
             }
             lf = self.process_subqueries(lf, vec![&mut filter_expression]);
-            if invert_filter {
-                // negate the filter (being careful about null values)
-                filter_expression = filter_expression.neq_missing(lit(true))
-            }
-            lf = lf.filter(filter_expression);
+            lf = if invert_filter {
+                lf.remove(filter_expression)
+            } else {
+                lf.filter(filter_expression)
+            };
         }
         Ok(lf)
     }
@@ -1129,7 +1147,6 @@ impl SQLContext {
                 ..
             } => {
                 if let Some(alias) = alias {
-                    let table_name = alias.name.value.clone();
                     let column_names: Vec<Option<PlSmallStr>> = alias
                         .columns
                         .iter()
@@ -1163,22 +1180,24 @@ impl SQLContext {
                         .zip(column_names)
                         .map(|(s, name)| {
                             if let Some(name) = name {
-                                s.clone().with_name(name)
+                                s.with_name(name)
                             } else {
-                                s.clone()
+                                s
                             }
                         })
                         .map(Column::from)
                         .collect();
 
                     let lf = DataFrame::new(column_series)?.lazy();
+
                     if *with_offset {
-                        // TODO: support 'WITH ORDINALITY' modifier.
+                        // TODO: support 'WITH ORDINALITY|OFFSET' modifier.
                         //  (note that 'WITH OFFSET' is BigQuery-specific syntax, not PostgreSQL)
-                        polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH OFFSET/ORDINALITY");
+                        polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
                     }
+                    let table_name = alias.name.value.clone();
                     self.table_map.insert(table_name.clone(), lf.clone());
-                    Ok((table_name.clone(), lf))
+                    Ok((table_name, lf))
                 } else {
                     polars_bail!(SQLSyntax: "UNNEST table must have an alias");
                 }
@@ -1211,7 +1230,7 @@ impl SQLContext {
         let tbl_name = alias
             .as_ref()
             .map(|a| a.name.value.clone())
-            .unwrap_or_else(|| tbl_name);
+            .unwrap_or_else(|| tbl_name.to_str().to_string());
 
         self.table_map.insert(tbl_name.clone(), lf.clone());
         Ok((tbl_name, lf))
@@ -1280,8 +1299,7 @@ impl SQLContext {
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
         let schema_before = self.get_frame_schema(&mut lf)?;
-        let group_by_keys_schema =
-            expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
+        let group_by_keys_schema = expressions_to_schema(group_by_keys, &schema_before)?;
 
         // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
@@ -1291,13 +1309,26 @@ impl SQLContext {
 
         for mut e in projections {
             // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_agg_or_window = has_expr(e, |e| {
-                matches!(e, Expr::Agg(_) | Expr::Len | Expr::Window { .. })
+            let is_non_group_key_expr = has_expr(e, |e| {
+                match e {
+                    Expr::Agg(_) | Expr::Len | Expr::Window { .. } => true,
+                    Expr::Function { function: func, .. }
+                        if !matches!(func, FunctionExpr::StructExpr(_)) =>
+                    {
+                        // If it's a function call containing a column NOT in the group by keys,
+                        // we treat it as an aggregation.
+                        has_expr(e, |e| match e {
+                            Expr::Column(name) => !group_by_keys_schema.contains(name),
+                            _ => false,
+                        })
+                    },
+                    _ => false,
+                }
             });
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             if let Expr::Alias(expr, alias) = e {
-                if e.clone().meta().is_simple_projection() {
+                if e.clone().meta().is_simple_projection(Some(&schema_before)) {
                     group_key_aliases.insert(alias.as_ref());
                     e = expr
                 } else if let Expr::Function {
@@ -1307,12 +1338,12 @@ impl SQLContext {
                 {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
-                } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
+                } else if !is_non_group_key_expr && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
             }
-            let field = e.to_field(&schema_before, Context::Default)?;
-            if group_by_keys_schema.get(&field.name).is_none() && is_agg_or_window {
+            let field = e.to_field(&schema_before)?;
+            if group_by_keys_schema.get(&field.name).is_none() && is_non_group_key_expr {
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode(expr)) = &e {
                     e = (**expr).clone();
@@ -1335,8 +1366,7 @@ impl SQLContext {
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
-        let projection_schema =
-            expressions_to_schema(projections, &schema_before, Context::Default)?;
+        let projection_schema = expressions_to_schema(projections, &schema_before)?;
 
         // A final projection to get the proper order and any deferred transforms/aliases.
         let final_projection = projection_schema
@@ -1459,7 +1489,9 @@ impl SQLContext {
                 .replace('%', ".*")
                 .replace('_', ".");
 
-            modifiers.ilike = Some(regex::Regex::new(format!("^(?is){}$", rx).as_str()).unwrap());
+            modifiers.ilike = Some(
+                polars_utils::regex_cache::compile_regex(format!("^(?is){rx}$").as_str()).unwrap(),
+            );
         }
 
         // SELECT * RENAME
@@ -1551,21 +1583,19 @@ fn collect_compound_identifiers(
 
 fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
     match expr {
-        Expr::Wildcard => schema
-            .iter_names()
-            .map(|name| col(name.clone()))
-            .collect::<Vec<_>>(),
         Expr::Column(nm) if is_regex_colname(nm.as_str()) => {
-            let rx = regex::Regex::new(&nm).unwrap();
+            let re = polars_utils::regex_cache::compile_regex(&nm).unwrap();
             schema
                 .iter_names()
-                .filter(|name| rx.is_match(name))
+                .filter(|name| re.is_match(name))
                 .map(|name| col(name.clone()))
                 .collect::<Vec<_>>()
         },
-        Expr::Columns(names) => names
-            .iter()
-            .map(|name| col(name.clone()))
+        Expr::Selector(s) => s
+            .into_columns(schema, &Default::default())
+            .unwrap()
+            .into_iter()
+            .map(col)
             .collect::<Vec<_>>(),
         _ => vec![expr],
     }
@@ -1664,16 +1694,17 @@ impl ExprSqlProjectionHeightBehavior {
         for e in expr.into_iter() {
             use Expr::*;
 
-            has_column |= matches!(e, Column(_) | Columns(_) | DtypeColumn(_) | IndexColumn(_));
+            has_column |= matches!(e, Column(_) | Selector(_));
 
             has_independent |= match e {
-                Function { options, .. } | AnonymousFunction { options, .. } => {
+                // @TODO: This is broken now with functions.
+                AnonymousFunction { options, .. } => {
                     options.returns_scalar() || !options.is_length_preserving()
                 },
 
                 Literal(v) => !v.is_scalar(),
 
-                Explode(_) | Filter { .. } | Gather { .. } | Slice { .. } => true,
+                Explode { .. } | Filter { .. } | Gather { .. } | Slice { .. } => true,
 
                 Agg { .. } | Len => true,
 

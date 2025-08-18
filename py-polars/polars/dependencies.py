@@ -17,9 +17,12 @@ _GREAT_TABLES_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
+_POLARS_CLOUD_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
 _PYICEBERG_AVAILABLE = True
+_TORCH_AVAILABLE = True
+_PYTZ_AVAILABLE = True
 
 
 class _LazyModule(ModuleType):
@@ -39,6 +42,7 @@ class _LazyModule(ModuleType):
         "numpy": "np.",
         "pandas": "pd.",
         "pyarrow": "pa.",
+        "polars_cloud": "pc.",
     }
 
     def __init__(
@@ -151,6 +155,7 @@ if TYPE_CHECKING:
     import subprocess
 
     import altair
+    import boto3
     import deltalake
     import fsspec
     import gevent
@@ -158,9 +163,13 @@ if TYPE_CHECKING:
     import hypothesis
     import numpy
     import pandas
+    import polars_cloud
     import pyarrow
     import pydantic
     import pyiceberg
+    import pytz
+    import torch
+
 else:
     # infrequently-used builtins
     dataclasses, _ = _lazy_import("dataclasses")
@@ -171,16 +180,20 @@ else:
 
     # heavy/optional third party libs
     altair, _ALTAIR_AVAILABLE = _lazy_import("altair")
+    boto3, _BOTO3_AVAILABLE = _lazy_import("boto3")
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
     great_tables, _GREAT_TABLES_AVAILABLE = _lazy_import("great_tables")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
+    polars_cloud, _POLARS_CLOUD_AVAILABLE = _lazy_import("polars_cloud")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
-    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
+    torch, _TORCH_AVAILABLE = _lazy_import("torch")
+    pytz, _PYTZ_AVAILABLE = _lazy_import("pytz")
 
 
 @cache
@@ -215,6 +228,18 @@ def _check_for_pyarrow(obj: Any, *, check_type: bool = True) -> bool:
 def _check_for_pydantic(obj: Any, *, check_type: bool = True) -> bool:
     return _PYDANTIC_AVAILABLE and _might_be(
         cast(Hashable, type(obj) if check_type else obj), "pydantic"
+    )
+
+
+def _check_for_torch(obj: Any, *, check_type: bool = True) -> bool:
+    return _TORCH_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "torch"
+    )
+
+
+def _check_for_pytz(obj: Any, *, check_type: bool = True) -> bool:
+    return _PYTZ_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "pytz"
     )
 
 
@@ -292,28 +317,38 @@ __all__ = [
     "subprocess",
     # lazy-load third party libs
     "altair",
+    "boto3",
     "deltalake",
     "fsspec",
     "gevent",
     "great_tables",
     "numpy",
     "pandas",
+    "polars_cloud",
     "pydantic",
     "pyiceberg",
     "pyarrow",
+    "torch",
+    "pytz",
     # lazy utilities
     "_check_for_numpy",
     "_check_for_pandas",
     "_check_for_pyarrow",
     "_check_for_pydantic",
+    "_check_for_torch",
+    "_check_for_pytz",
     # exported flags/guards
     "_ALTAIR_AVAILABLE",
     "_DELTALAKE_AVAILABLE",
-    "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
     "_GEVENT_AVAILABLE",
+    "_GREAT_TABLES_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",
+    "_POLARS_CLOUD_AVAILABLE",
     "_PYARROW_AVAILABLE",
+    "_PYDANTIC_AVAILABLE",
+    "_PYICEBERG_AVAILABLE",
+    "_TORCH_AVAILABLE",
 ]

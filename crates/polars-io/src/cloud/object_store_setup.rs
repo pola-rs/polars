@@ -1,27 +1,26 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
-use once_cell::sync::Lazy;
+use object_store::local::LocalFileSystem;
 use polars_core::config::{self, verbose_print_sensitive};
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
 use url::Url;
 
-use super::{parse_url, CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
+use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore, parse_url};
+use crate::cloud::CloudConfig;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use crate::cloud::client_options::PlClientOptions;
-use crate::cloud::CloudConfig;
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
 /// Other reasons are connection pools that must be shared between as much as possible.
 #[allow(clippy::type_complexity)]
-static OBJECT_STORE_CACHE: Lazy<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
-    Lazy::new(Default::default);
+static OBJECT_STORE_CACHE: LazyLock<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
+    LazyLock::new(Default::default);
 
 #[allow(dead_code)]
 fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn ObjectStore>> {
@@ -69,7 +68,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
 
     verbose_print_sensitive(|| format!("object store cache key: {} {:?}", url, &cache_key));
 
-    return pl_serialize::serialize_to_bytes(&cache_key).unwrap();
+    return pl_serialize::serialize_to_bytes::<_, false>(&cache_key).unwrap();
 
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -110,7 +109,11 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
-    pub(super) async fn build_impl(&self) -> PolarsResult<Arc<dyn ObjectStore>> {
+    pub(super) async fn build_impl(
+        &self,
+        // Whether to clear cached credentials for Python credential providers.
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Arc<dyn ObjectStore>> {
         let options = self
             .options
             .as_ref()
@@ -120,7 +123,9 @@ impl PolarsObjectStoreBuilder {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
-                    let store = options.build_aws(&self.url).await?;
+                    let store = options
+                        .build_aws(&self.url, clear_cached_credentials)
+                        .await?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
                 #[cfg(not(feature = "aws"))]
@@ -129,7 +134,7 @@ impl PolarsObjectStoreBuilder {
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    let store = options.build_gcp(&self.url)?;
+                    let store = options.build_gcp(&self.url, clear_cached_credentials)?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
                 #[cfg(not(feature = "gcp"))]
@@ -139,7 +144,7 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "azure")]
                     {
-                        let store = options.build_azure(&self.url)?;
+                        let store = options.build_azure(&self.url, clear_cached_credentials)?;
                         Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }
@@ -197,7 +202,7 @@ impl PolarsObjectStoreBuilder {
             None
         };
 
-        let store = self.build_impl().await?;
+        let store = self.build_impl(false).await?;
         let store = PolarsObjectStore::new_from_inner(store, self);
 
         if let Some(mut cache) = opt_cache_write_guard {

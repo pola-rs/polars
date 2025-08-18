@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
+import polars.selectors as cs
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
+    deprecate_streaming_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.parse import (
@@ -17,25 +18,43 @@ from polars._utils.parse import (
     parse_into_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
-from polars._utils.various import extend_bool
-from polars._utils.wrap import wrap_df, wrap_expr
+from polars._utils.various import extend_bool, qualified_type_name
+from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.datatypes._parse import parse_into_datatype_expr
+from polars.dependencies import _check_for_numpy
+from polars.dependencies import numpy as np
+from polars.lazyframe.opt_flags import (
+    DEFAULT_QUERY_OPT_FLAGS,
+    forward_old_opt_flags,
+)
+from polars.meta.index_type import get_index_type
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Collection, Iterable
+    import sys
+    from collections.abc import Awaitable, Collection, Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
         CorrelationMethod,
+        EngineType,
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
-        RollingInterpolationMethod,
+        QuantileMethod,
     )
+    from polars.lazyframe.opt_flags import (
+        QueryOptFlags,
+    )
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 def field(name: str | list[str]) -> Expr:
@@ -52,7 +71,7 @@ def field(name: str | list[str]) -> Expr:
 
 def element() -> Expr:
     """
-    Alias for an element being evaluated in an `eval` expression.
+    Alias for an element being evaluated in an `eval` or `filter` expression.
 
     Examples
     --------
@@ -99,6 +118,24 @@ def element() -> Expr:
     │ 8   ┆ 5   ┆ [16, 10]    │
     │ 3   ┆ 2   ┆ [6, 4]      │
     └─────┴─────┴─────────────┘
+
+    A filter operation on list elements
+
+    >>> import polars as pl
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+    >>> df.with_columns(
+    ...     evens=pl.concat_list("a", "b").list.filter(pl.element() % 2 == 0)
+    ... )
+    shape: (3, 3)
+    ┌─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ evens     │
+    │ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ list[i64] │
+    ╞═════╪═════╪═══════════╡
+    │ 1   ┆ 4   ┆ [4]       │
+    │ 8   ┆ 5   ┆ [8]       │
+    │ 3   ┆ 2   ┆ [2]       │
+    └─────┴─────┴───────────┘
     """
     return F.col("")
 
@@ -196,17 +233,20 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
-    >>> df.select(pl.cum_count("a"))
-    shape: (3, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ u32 │
-    ╞═════╡
-    │ 1   │
-    │ 2   │
-    │ 2   │
-    └─────┘
+    >>> df.with_columns(
+    ...     ca=pl.cum_count("a"),
+    ...     cb=pl.cum_count("b"),
+    ... )
+    shape: (3, 4)
+    ┌──────┬──────┬─────┬─────┐
+    │ a    ┆ b    ┆ ca  ┆ cb  │
+    │ ---  ┆ ---  ┆ --- ┆ --- │
+    │ i64  ┆ i64  ┆ u32 ┆ u32 │
+    ╞══════╪══════╪═════╪═════╡
+    │ 1    ┆ 3    ┆ 1   ┆ 1   │
+    │ 2    ┆ null ┆ 2   ┆ 1   │
+    │ null ┆ null ┆ 2   ┆ 1   │
+    └──────┴──────┴─────┴─────┘
     """
     return F.col(*columns).cum_count(reverse=reverse)
 
@@ -569,7 +609,7 @@ def first(*columns: str) -> Expr:
 
     """
     if not columns:
-        return wrap_expr(plr.first())
+        return cs.first().as_expr()
 
     return F.col(*columns).first()
 
@@ -634,12 +674,12 @@ def last(*columns: str) -> Expr:
 
     """
     if not columns:
-        return wrap_expr(plr.last())
+        return cs.last().as_expr()
 
     return F.col(*columns).last()
 
 
-def nth(*indices: int | Sequence[int]) -> Expr:
+def nth(*indices: int | Sequence[int], strict: bool = True) -> Expr:
     """
     Get the nth column(s) of the context.
 
@@ -680,10 +720,7 @@ def nth(*indices: int | Sequence[int]) -> Expr:
     │ baz ┆ 3   │
     └─────┴─────┘
     """
-    if len(indices) == 1 and isinstance(indices[0], Sequence):
-        indices = indices[0]  # type: ignore[assignment]
-
-    return wrap_expr(plr.index_cols(indices))
+    return cs.by_index(*indices, require_all=strict).as_expr()
 
 
 def head(column: str, n: int = 10) -> Expr:
@@ -780,6 +817,30 @@ def tail(column: str, n: int = 10) -> Expr:
     return F.col(column).tail(n)
 
 
+@overload
+def corr(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    method: CorrelationMethod = ...,
+    ddof: int | None = ...,
+    propagate_nans: bool = ...,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def corr(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    method: CorrelationMethod = ...,
+    ddof: int | None = ...,
+    propagate_nans: bool = ...,
+    eager: Literal[True],
+) -> Series: ...
+
+
 def corr(
     a: IntoExpr,
     b: IntoExpr,
@@ -787,9 +848,10 @@ def corr(
     method: CorrelationMethod = "pearson",
     ddof: int | None = None,
     propagate_nans: bool = False,
-) -> Expr:
+    eager: bool = False,
+) -> Expr | Series:
     """
-    Compute the Pearson's or Spearman rank correlation correlation between two columns.
+    Compute the Pearson's or Spearman rank correlation between two columns.
 
     Parameters
     ----------
@@ -808,6 +870,10 @@ def corr(
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -832,13 +898,6 @@ def corr(
 
     Spearman rank correlation:
 
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "a": [1, 8, 3],
-    ...         "b": [4, 5, 2],
-    ...         "c": ["foo", "bar", "foo"],
-    ...     }
-    ... )
     >>> df.select(pl.corr("a", "b", method="spearman"))
     shape: (1, 1)
     ┌─────┐
@@ -848,26 +907,80 @@ def corr(
     ╞═════╡
     │ 0.5 │
     └─────┘
+
+    Eager evaluation:
+
+    >>> s1 = pl.Series("a", [1, 8, 3])
+    >>> s2 = pl.Series("b", [4, 5, 2])
+    >>> pl.corr(s1, s2, eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        0.544705
+    ]
+    >>> pl.corr(s1, s2, method="spearman", eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        0.5
+    ]
     """
     if ddof is not None:
         issue_deprecation_warning(
-            "The `ddof` parameter has no effect. Do not use it.",
+            "the `ddof` parameter has no effect. Do not use it.",
             version="1.17.0",
         )
 
-    a = parse_into_expression(a)
-    b = parse_into_expression(b)
+    if eager:
+        if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
+            msg = "expected at least one Series in 'corr' inputs if 'eager=True'"
+            raise ValueError(msg)
 
-    if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b))
-    elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+        frame = pl.DataFrame([e for e in (a, b) if isinstance(e, pl.Series)])
+        exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (a, b))
+        return frame.select(
+            corr(*exprs, eager=False, method=method, propagate_nans=propagate_nans)
+        ).to_series()
     else:
-        msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
-        raise ValueError(msg)
+        a_pyexpr = parse_into_expression(a)
+        b_pyexpr = parse_into_expression(b)
+
+        if method == "pearson":
+            return wrap_expr(plr.pearson_corr(a_pyexpr, b_pyexpr))
+        elif method == "spearman":
+            return wrap_expr(plr.spearman_rank_corr(a_pyexpr, b_pyexpr, propagate_nans))
+        else:
+            msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
+            raise ValueError(msg)
 
 
-def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
+@overload
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = ...,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = ...,
+    eager: Literal[True],
+) -> Series: ...
+
+
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = 1,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -881,6 +994,10 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
         "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
         where N represents the number of elements.
         By default ddof is 1.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -891,30 +1008,99 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     ...         "c": ["foo", "bar", "foo"],
     ...     },
     ... )
-    >>> df.select(pl.cov("a", "b"))
-    shape: (1, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ f64 │
-    ╞═════╡
-    │ 3.0 │
-    └─────┘
+
+    >>> df.select(
+    ...     x=pl.cov("a", "b"),
+    ...     y=pl.cov("a", "b", ddof=2),
+    ... )
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ x   ┆ y   │
+    │ --- ┆ --- │
+    │ f64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 3.0 ┆ 6.0 │
+    └─────┴─────┘
+
+    Eager evaluation:
+
+    >>> s1 = pl.Series("a", [1, 8, 3])
+    >>> s2 = pl.Series("b", [4, 5, 2])
+    >>> pl.cov(s1, s2, eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        3.0
+    ]
     """
-    a = parse_into_expression(a)
-    b = parse_into_expression(b)
-    return wrap_expr(plr.cov(a, b, ddof))
+    if eager:
+        if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
+            msg = "expected at least one Series in 'cov' inputs if 'eager=True'"
+            raise ValueError(msg)
+
+        frame = pl.DataFrame([e for e in (a, b) if isinstance(e, pl.Series)])
+        exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (a, b))
+        return frame.select(cov(*exprs, eager=False, ddof=ddof)).to_series()
+    else:
+        a_pyexpr = parse_into_expression(a)
+        b_pyexpr = parse_into_expression(b)
+        return wrap_expr(plr.cov(a_pyexpr, b_pyexpr, ddof))
+
+
+class _map_batches_wrapper:
+    def __init__(
+        self,
+        function: Callable[[Sequence[Series]], Series | Any],
+        *,
+        returns_scalar: bool,
+    ) -> None:
+        self.function = function
+        self.returns_scalar = returns_scalar
+
+    def __call__(
+        self, sl: list[plr.PySeries], *args: Any, **kwargs: Any
+    ) -> plr.PySeries:
+        return_dtype = kwargs["return_dtype"]
+        slp = [wrap_s(s) for s in sl]
+
+        # ufunc and numba don't expect return_dtype
+        try:
+            rv = self.function(slp, *args, **kwargs)
+        except TypeError as e:
+            if "unexpected keyword argument 'return_dtype'" in e.args[0]:
+                kwargs.pop("return_dtype")
+                rv = self.function(slp, *args, **kwargs)
+            else:
+                raise
+
+        if _check_for_numpy(rv) and isinstance(rv, np.ndarray):
+            rv = pl.Series(rv, dtype=return_dtype)
+
+        if isinstance(rv, pl.Series):
+            return rv._s
+        elif self.returns_scalar:
+            return pl.Series([rv], dtype=return_dtype)._s
+        else:
+            msg = f"`map` with `returns_scalar=False` must return a Series; found {qualified_type_name(rv)!r}.\n\nIf `returns_scalar` is set to `True`, a returned value can be a scalar value."
+            raise TypeError(msg)
 
 
 def map_batches(
-    exprs: Sequence[str] | Sequence[Expr],
-    function: Callable[[Sequence[Series]], Series],
-    return_dtype: PolarsDataType | None = None,
+    exprs: Sequence[str | Expr],
+    function: Callable[[Sequence[Series]], Series | Any],
+    return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
+    *,
+    is_elementwise: bool = False,
+    returns_scalar: bool = False,
 ) -> Expr:
     """
     Map a custom function over multiple columns/expressions.
 
     Produces a single Series result.
+
+    .. warning::
+        This method is much slower than the native expressions API.
+        Only use it if you cannot implement your logic otherwise.
 
     Parameters
     ----------
@@ -923,7 +1109,28 @@ def map_batches(
     function
         Function to apply over the input.
     return_dtype
-        dtype of the output Series.
+        Datatype of the output Series.
+
+        It is recommended to set this whenever possible. If this is `None`, it tries
+        to infer the datatype by calling the function with dummy data and looking at
+        the output.
+    is_elementwise
+        Set to true if the operations is elementwise for better performance
+        and optimization.
+
+        An elementwise operations has unit or equal length for all inputs
+        and can be ran sequentially on slices without results being affected.
+    returns_scalar
+        If the function returns a scalar, by default it will be wrapped in
+        a list in the output, since the assumption is that the function
+        always returns something Series-like. If you want to keep the
+        result as a scalar, set this argument to True.
+
+    Notes
+    -----
+    A UDF passed to `map_batches` must be pure, meaning that it cannot modify
+    or depend on state other than its arguments. We may call the function
+    with arbitrary input data.
 
     Returns
     -------
@@ -960,10 +1167,21 @@ def map_batches(
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
     """
-    exprs = parse_into_list_of_expressions(exprs)
+    pyexprs = parse_into_list_of_expressions(exprs)
+
+    return_dtype_expr = (
+        parse_into_datatype_expr(return_dtype)._pydatatype_expr
+        if return_dtype is not None
+        else None
+    )
+
     return wrap_expr(
-        plr.map_mul(
-            exprs, function, return_dtype, map_groups=False, returns_scalar=False
+        plr.map_expr(
+            pyexprs,
+            _map_batches_wrapper(function, returns_scalar=returns_scalar),
+            return_dtype_expr,
+            is_elementwise=is_elementwise,
+            returns_scalar=returns_scalar,
         )
     )
 
@@ -971,9 +1189,10 @@ def map_batches(
 def map_groups(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
-    return_dtype: PolarsDataType | None = None,
+    return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     *,
-    returns_scalar: bool = True,
+    is_elementwise: bool = False,
+    returns_scalar: bool = False,
 ) -> Expr:
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
@@ -989,9 +1208,25 @@ def map_groups(
     function
         Function to apply over the input; should be of type Callable[[Series], Series].
     return_dtype
-        dtype of the output Series.
+        Datatype of the output Series.
+
+        It is recommended to set this whenever possible. If this is `None`, it tries
+        to infer the datatype by calling the function with dummy data and looking at
+        the output.
+    is_elementwise
+        Set to true if the operations is elementwise for better performance
+        and optimization.
+
+        An elementwise operations has unit or equal length for all inputs
+        and can be ran sequentially on slices without results being affected.
     returns_scalar
         If the function returns a single scalar as output.
+
+    Notes
+    -----
+    A UDF passed to `map_batches` must be pure, meaning that it cannot modify
+    or depend on state other than its arguments. Polars may call the function
+    with arbitrary input data.
 
     Returns
     -------
@@ -1045,22 +1280,57 @@ def map_groups(
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(
-        plr.map_mul(
-            exprs,
-            function,
-            return_dtype,
-            map_groups=True,
-            returns_scalar=returns_scalar,
-        )
+    return map_batches(
+        exprs,
+        function,
+        return_dtype,
+        is_elementwise=is_elementwise,
+        returns_scalar=returns_scalar,
     )
+
+
+def _row_encode(
+    exprs: pl.Selector | pl.Expr | Sequence[str | pl.Expr],
+    *,
+    unordered: bool = False,
+    descending: list[bool] | None = None,
+    nulls_last: list[bool] | None = None,
+) -> Expr:
+    if isinstance(exprs, pl.Selector):
+        exprs = [exprs.as_expr()]
+    elif isinstance(exprs, pl.Expr):
+        exprs = [exprs]
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+
+    if unordered:
+        assert descending is None
+        assert nulls_last is None
+
+        result = plr.PyExpr.row_encode_unordered(pyexprs)
+    else:
+        result = plr.PyExpr.row_encode_ordered(pyexprs, descending, nulls_last)
+
+    return wrap_expr(result)
+
+
+def _wrap_acc_lamba(
+    function: Callable[[Series, Series], Series],
+) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:
+    def wrapper(t: tuple[plr.PySeries, plr.PySeries]) -> plr.PySeries:
+        a, b = t
+        return function(wrap_s(a), wrap_s(b))._s
+
+    return wrapper
 
 
 def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1075,6 +1345,13 @@ def fold(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype
+        of the accumulator.
 
     Notes
     -----
@@ -1113,7 +1390,7 @@ def fold(
     ┌─────┐
     │ sum │
     │ --- │
-    │ i64 │
+    │ i32 │
     ╞═════╡
     │ 10  │
     │ 13  │
@@ -1157,17 +1434,32 @@ def fold(
     └─────┴─────┘
     """
     # in case of col("*")
-    acc = parse_into_expression(acc, str_as_lit=True)
+    pyacc = parse_into_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.fold(acc, function, exprs))
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+    return wrap_expr(
+        plr.fold(
+            pyacc,
+            _wrap_acc_lamba(function),
+            pyexprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        )
+    )
 
 
 def reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1179,6 +1471,13 @@ def reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the input
+        expressions.
 
     Notes
     -----
@@ -1220,12 +1519,22 @@ def reduce(
     │ 5   │
     └─────┘
     """
-    # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.reduce(function, exprs))
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+    return wrap_expr(
+        plr.reduce(
+            _wrap_acc_lamba(function),
+            pyexprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        )
+    )
 
 
 def cum_fold(
@@ -1233,6 +1542,8 @@ def cum_fold(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
     *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
     include_init: bool = False,
 ) -> Expr:
     """
@@ -1250,6 +1561,12 @@ def cum_fold(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the accumulator.
     include_init
         Include the initial accumulator state as struct field.
 
@@ -1282,17 +1599,33 @@ def cum_fold(
     └─────┴─────┴─────┴───────────┘
     """
     # in case of col("*")
-    acc = parse_into_expression(acc, str_as_lit=True)
+    pyacc = parse_into_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init).alias("cum_fold"))
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+    return wrap_expr(
+        plr.cum_fold(
+            pyacc,
+            _wrap_acc_lamba(function),
+            pyexprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+            include_init=include_init,
+        ).alias("cum_fold")
+    )
 
 
 def cum_reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Cumulatively reduce horizontally across columns with a left fold.
@@ -1306,6 +1639,12 @@ def cum_reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the input
+        expressions.
+    include_init
+        Include the initial accumulator state as struct field.
 
     Examples
     --------
@@ -1332,8 +1671,19 @@ def cum_reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_reduce(function, exprs).alias("cum_reduce"))
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+    return wrap_expr(
+        plr.cum_reduce(
+            _wrap_acc_lamba(function),
+            pyexprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        ).alias("cum_reduce")
+    )
 
 
 def arctan2(y: str | Expr, x: str | Expr) -> Expr:
@@ -1376,10 +1726,17 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
         y = F.col(y)
     if isinstance(x, str):
         x = F.col(x)
+    if not hasattr(x, "_pyexpr"):
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{qualified_type_name(x)}`"
+        raise TypeError(msg)
+    if not hasattr(y, "_pyexpr"):
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{qualified_type_name(y)}`"
+        raise TypeError(msg)
+
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
-@deprecate_function("Use `arctan2` followed by `.degrees()` instead.", version="1.0.0")
+@deprecated("`arctan2d` is deprecated; use `arctan2` followed by `.degrees()` instead.")
 def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     """
     Compute two argument arctan in degrees.
@@ -1506,7 +1863,7 @@ def groups(column: str) -> Expr:
 def quantile(
     column: str,
     quantile: float | Expr,
-    interpolation: RollingInterpolationMethod = "nearest",
+    interpolation: QuantileMethod = "nearest",
 ) -> Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
@@ -1517,7 +1874,7 @@ def quantile(
         Column name.
     quantile
         Quantile between 0.0 and 1.0.
-    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
         Interpolation method.
     """
     return F.col(column).quantile(quantile, interpolation)
@@ -1619,11 +1976,12 @@ def arg_sort_by(
     )
 
 
+@deprecate_streaming_parameter()
+@forward_old_opt_flags()
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
     type_coercion: bool = True,
-    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1633,13 +1991,16 @@ def collect_all(
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
-    streaming: bool = False,
-    _check_order: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
 ) -> list[DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
 
-    This runs all the computation graphs in parallel on the Polars threadpool.
+    This can run all the computation graphs in parallel or combined.
+
+    Common Subplan Elimination is applied on the combined plan, meaning
+    that diverging queries will run only once.
 
     Parameters
     ----------
@@ -1647,78 +2008,84 @@ def collect_all(
         A list of LazyFrames to collect.
     type_coercion
         Do type coercion optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     predicate_pushdown
         Do predicate pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     projection_pushdown
         Do projection pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     simplify_expression
         Run simplify expressions optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     no_optimization
         Turn off optimizations.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     slice_pushdown
         Slice pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     comm_subplan_elim
         Will try to cache branching subplans that occur on self-joins or unions.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     collapse_joins
         Collapse a join and filters into a faster join
-    streaming
-        Process the query in batches to handle larger-than-memory data.
-        If set to `False` (default), the entire query is processed in a single
-        batch.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
+    optimizations
+        The optimization passes done during query optimization.
 
         .. warning::
-            Streaming mode is considered **unstable**. It may be changed
+            This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+    engine
+        Select the engine used to process the query, optional.
+        At the moment, if set to `"auto"` (default), the query
+        is run using the polars in-memory engine. Polars will also
+        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+        environment variable. If it cannot run the query using the
+        selected engine, the query is run using the polars in-memory
+        engine.
 
         .. note::
-            Use :func:`explain` to see if Polars can process the query in streaming
-            mode.
+           The GPU engine does not support async, or running in the
+           background. If either are enabled, then GPU execution is switched off.
 
     Returns
     -------
     list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
+
     """
-    if no_optimization:
-        predicate_pushdown = False
-        projection_pushdown = False
-        slice_pushdown = False
-        comm_subplan_elim = False
-        comm_subexpr_elim = False
-        cluster_with_columns = False
-        collapse_joins = False
+    if engine == "streaming":
+        issue_unstable_warning("streaming mode is considered unstable.")
 
-    if streaming:
-        issue_unstable_warning("Streaming mode is considered unstable.")
-        comm_subplan_elim = False
-
-    prepared = []
-
-    for lf in lazy_frames:
-        type_check = _type_check
-        ldf = lf._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=streaming,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
-        prepared.append(ldf)
-
-    out = plr.collect_all(prepared)
+    lfs = [lf._ldf for lf in lazy_frames]
+    out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
 
     # wrap the pydataframes into dataframe
     result = [wrap_df(pydf) for pydf in out]
@@ -1731,18 +2098,8 @@ def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
     gevent: Literal[True],
-    type_coercion: bool = True,
-    _type_check: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = True,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
-    streaming: bool = True,
+    engine: EngineType = "auto",
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
 
@@ -1751,39 +2108,19 @@ def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
     gevent: Literal[False] = False,
-    type_coercion: bool = True,
-    _type_check: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
-    streaming: bool = False,
+    engine: EngineType = "auto",
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> Awaitable[list[DataFrame]]: ...
 
 
 @unstable()
+@deprecate_streaming_parameter()
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
     gevent: bool = False,
-    type_coercion: bool = True,
-    _type_check: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
-    streaming: bool = False,
-    _check_order: bool = True,
+    engine: EngineType = "auto",
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
@@ -1805,38 +2142,24 @@ def collect_all_async(
         A list of LazyFrames to collect.
     gevent
         Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
-    type_coercion
-        Do type coercion optimization.
-    predicate_pushdown
-        Do predicate pushdown optimization.
-    projection_pushdown
-        Do projection pushdown optimization.
-    simplify_expression
-        Run simplify expressions optimization.
-    no_optimization
-        Turn off (certain) optimizations.
-    slice_pushdown
-        Slice pushdown optimization.
-    comm_subplan_elim
-        Will try to cache branching subplans that occur on self-joins or unions.
-    comm_subexpr_elim
-        Common subexpressions will be cached and reused.
-    cluster_with_columns
-        Combine sequential independent calls to with_columns
-    collapse_joins
-        Collapse a join and filters into a faster join
-    streaming
-        Process the query in batches to handle larger-than-memory data.
-        If set to `False` (default), the entire query is processed in a single
-        batch.
+    optimizations
+        The optimization passes done during query optimization.
 
         .. warning::
-            Streaming mode is considered **unstable**. It may be changed
+            This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+    engine
+        Select the engine used to process the query, optional.
+        At the moment, if set to `"auto"` (default), the query
+        is run using the polars in-memory engine. Polars will also
+        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+        environment variable. If it cannot run the query using the
+        selected engine, the query is run using the polars in-memory
+        engine.
 
         .. note::
-            Use :func:`explain` to see if Polars can process the query in streaming
-            mode.
+           The GPU engine does not support async, or running in the
+           background. If either are enabled, then GPU execution is switched off.
 
     See Also
     --------
@@ -1855,46 +2178,48 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    if no_optimization:
-        predicate_pushdown = False
-        projection_pushdown = False
-        slice_pushdown = False
-        comm_subplan_elim = False
-        comm_subexpr_elim = False
-        cluster_with_columns = False
-        collapse_joins = False
-
-    if streaming:
-        issue_unstable_warning("Streaming mode is considered unstable.")
-        comm_subplan_elim = False
-
-    prepared = []
-
-    for lf in lazy_frames:
-        type_check = _type_check
-        ldf = lf._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=streaming,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
-        prepared.append(ldf)
+    if engine == "streaming":
+        issue_unstable_warning("streaming mode is considered unstable.")
 
     result: (
         _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
     ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    plr.collect_all_with_callback(prepared, result._callback_all)
+    lfs = [lf._ldf for lf in lazy_frames]
+    plr.collect_all_with_callback(
+        lfs, engine, optimizations._pyoptflags, result._callback_all
+    )
     return result
+
+
+@unstable()
+def explain_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+) -> str:
+    """
+    Explain multiple LazyFrames as if passed to `collect_all`.
+
+    Common Subplan Elimination is applied on the combined plan, meaning
+    that diverging queries will run only once.
+
+    Parameters
+    ----------
+    lazy_frames
+        A list of LazyFrames to collect.
+    optimizations
+        The optimization passes done during query optimization.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+    Returns
+    -------
+    Explained plan.
+    """
+    lfs = [lf._ldf for lf in lazy_frames]
+    return plr.explain_all(lfs, optimizations._pyoptflags)
 
 
 @overload
@@ -1983,10 +2308,6 @@ def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
 def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series: ...
 
 
-@overload
-def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series: ...
-
-
 def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
     """
     Return indices where `condition` evaluates `True`.
@@ -1996,8 +2317,9 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     condition
         Boolean expression to evaluate
     eager
-        Evaluate immediately and return a `Series`. If set to `False` (default),
-        return an expression instead.
+        Evaluate immediately and return a `Series`; this requires that the given
+        condition is itself a `Series`. If set to `False` (default), return
+        an expression instead.
 
     See Also
     --------
@@ -2021,17 +2343,45 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     if eager:
         if not isinstance(condition, pl.Series):
             msg = (
-                "expected 'Series' in 'arg_where' if 'eager=True', got"
+                "expected Series in 'arg_where' if 'eager=True', got"
                 f" {type(condition).__name__!r}"
             )
             raise ValueError(msg)
         return condition.to_frame().select(arg_where(F.col(condition.name))).to_series()
     else:
-        condition = parse_into_expression(condition)
-        return wrap_expr(plr.arg_where(condition))
+        condition_pyexpr = parse_into_expression(condition)
+        return wrap_expr(plr.arg_where(condition_pyexpr))
 
 
-def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: Literal[True],
+) -> Series: ...
+
+
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: bool,
+) -> Expr | Series: ...
+
+
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Folds the columns from left to right, keeping the first non-null value.
 
@@ -2042,6 +2392,10 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
         names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to coalesce, specified as positional arguments.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -2052,7 +2406,8 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     ...         "c": [5, None, 3, None],
     ...     }
     ... )
-    >>> df.with_columns(pl.coalesce(["a", "b", "c", 10]).alias("d"))
+
+    >>> df.with_columns(pl.coalesce("a", "b", "c", 10).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬─────┐
     │ a    ┆ b    ┆ c    ┆ d   │
@@ -2064,6 +2419,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3   │
     │ null ┆ null ┆ null ┆ 10  │
     └──────┴──────┴──────┴─────┘
+
     >>> df.with_columns(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
@@ -2076,9 +2432,29 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3.0  │
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
+
+    >>> s1 = pl.Series("a", [None, 2, None])
+    >>> s2 = pl.Series("b", [1, None, 3])
+    >>> pl.coalesce(s1, s2, eager=True)
+    shape: (3,)
+    Series: 'a' [i64]
+    [
+        1
+        2
+        3
+    ]
     """
-    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
-    return wrap_expr(plr.coalesce(exprs))
+    if eager:
+        exprs = [exprs, *more_exprs]
+        if not (series := [e for e in exprs if isinstance(e, pl.Series)]):
+            msg = "expected at least one Series in 'coalesce' if 'eager=True'"
+            raise ValueError(msg)
+
+        exprs = [(e.name if isinstance(e, pl.Series) else e) for e in exprs]
+        return pl.DataFrame(series).select(coalesce(exprs, eager=False)).to_series()
+    else:
+        exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+        return wrap_expr(plr.coalesce(exprs))
 
 
 @overload
@@ -2168,6 +2544,9 @@ def rolling_cov(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
+    .. versionchanged:: 1.21.0
+        The `min_periods` parameter was renamed `min_samples`.
+
     Parameters
     ----------
     a
@@ -2208,6 +2587,9 @@ def rolling_corr(
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
+
+    .. versionchanged:: 1.21.0
+        The `min_periods` parameter was renamed `min_samples`.
 
     Parameters
     ----------
@@ -2288,3 +2670,82 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
         return wrap_expr(plr.sql_expr(sql))
     else:
         return [wrap_expr(plr.sql_expr(q)) for q in sql]
+
+
+@unstable()
+def row_index(name: str = "index") -> pl.Expr:
+    """
+    Generates a sequence of integers.
+
+    The length of the returned sequence will match the context length, and the
+    datatype will match the one returned by `get_index_dtype()`.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    If you would like to generate sequences with custom offsets / length /
+    step size / datatypes, it is recommended to use `int_range` instead.
+
+    Parameters
+    ----------
+    name
+        Name of the returned column.
+
+    Returns
+    -------
+    Expr
+        Column of integers.
+
+    See Also
+    --------
+    int_range : Generate a range of integers.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"x": ["A", "A", "B", "B", "B"]})
+    >>> df.with_columns(pl.row_index(), pl.row_index("another_index"))
+    shape: (5, 3)
+    ┌─────┬───────┬───────────────┐
+    │ x   ┆ index ┆ another_index │
+    │ --- ┆ ---   ┆ ---           │
+    │ str ┆ u32   ┆ u32           │
+    ╞═════╪═══════╪═══════════════╡
+    │ A   ┆ 0     ┆ 0             │
+    │ A   ┆ 1     ┆ 1             │
+    │ B   ┆ 2     ┆ 2             │
+    │ B   ┆ 3     ┆ 3             │
+    │ B   ┆ 4     ┆ 4             │
+    └─────┴───────┴───────────────┘
+    >>> df.group_by("x").agg(pl.row_index()).sort("x")
+    shape: (2, 2)
+    ┌─────┬───────────┐
+    │ x   ┆ index     │
+    │ --- ┆ ---       │
+    │ str ┆ list[u32] │
+    ╞═════╪═══════════╡
+    │ A   ┆ [0, 1]    │
+    │ B   ┆ [0, 1, 2] │
+    └─────┴───────────┘
+    >>> df.select(pl.row_index())
+    shape: (5, 1)
+    ┌───────┐
+    │ index │
+    │ ---   │
+    │ u32   │
+    ╞═══════╡
+    │ 0     │
+    │ 1     │
+    │ 2     │
+    │ 3     │
+    │ 4     │
+    └───────┘
+    """
+    # Notes
+    # * Dispatching to `int_range` means that we cannot accept an offset
+    #   parameter, as unlike `DataFrame.with_row_index()`, `int_range` will simply
+    #   truncate instead of raising an error.
+    return F.int_range(
+        F.len(),
+        dtype=get_index_type(),
+    ).alias(name)

@@ -13,6 +13,7 @@ repository = { workspace = true }
 description = "Minimal implementation of the Arrow specification forked from arrow2"
 
 [dependencies]
+bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["must_cast"] }
 chrono = { workspace = true }
 # for timezone support
@@ -21,10 +22,10 @@ dyn-clone = { version = "1" }
 either = { workspace = true }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
-parking_lot = { workspace = true }
 polars-error = { workspace = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
 
@@ -32,19 +33,10 @@ ethnum = { workspace = true }
 
 # To efficiently cast numbers to strings
 atoi_simd = { workspace = true, optional = true }
-fast-float2 = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
-ryu = { workspace = true, optional = true }
-
-regex = { workspace = true, optional = true }
-regex-syntax = { version = "0.8", optional = true }
 streaming-iterator = { workspace = true }
 
-indexmap = { workspace = true, optional = true }
-
 arrow-format = { workspace = true, optional = true, features = ["ipc"] }
-
-hex = { workspace = true, optional = true }
 
 # for IPC compression
 lz4 = { version = "1.24", optional = true }
@@ -56,40 +48,29 @@ futures = { workspace = true, optional = true }
 # avro support
 avro-schema = { workspace = true, optional = true }
 
-# for division/remainder optimization at runtime
-strength_reduce = { workspace = true, optional = true }
-
-# Faster hashing
-ahash = { workspace = true }
-
 # For async arrow flight conversion
 async-stream = { version = "0.3", optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }
 
+proptest = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
-crossbeam-channel = { workspace = true }
-doc-comment = "0.3"
-flate2 = { workspace = true, default-features = true }
 # used to run formal property testing
-proptest = { version = "1", default-features = false, features = ["std"] }
+polars-arrow = { path = ".", features = ["proptest"] }
+proptest = { workspace = true }
+
 # use for flaky testing
 rand = { workspace = true }
-# use for generating and testing random data samples
-sample-arrow2 = "0.17"
-sample-std = "0.2"
-sample-test = "0.2"
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
-tokio-util = { workspace = true, features = ["compat"] }
 
 [build-dependencies]
 version_check = { workspace = true }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+old_getrandom = { version = "0.2", features = ["js"], package = "getrandom" }
 
 [features]
 default = []
@@ -100,7 +81,6 @@ full = [
   "io_avro",
   "io_avro_compression",
   "io_avro_async",
-  "regex-syntax",
   "compute",
   "serde",
   # parses timezones used in timestamp conversions
@@ -118,8 +98,8 @@ io_avro_async = ["avro-schema/async"]
 
 # the compute kernels. Disabling this significantly reduces compile time.
 compute_aggregate = []
-compute_arithmetics_decimal = ["strength_reduce"]
-compute_arithmetics = ["strength_reduce", "compute_arithmetics_decimal"]
+compute_arithmetics_decimal = []
+compute_arithmetics = ["compute_arithmetics_decimal"]
 compute_bitwise = []
 compute_boolean = []
 compute_boolean_kleene = []
@@ -135,6 +115,7 @@ compute = [
   "compute_temporal",
 ]
 serde = ["dep:serde", "polars-schema/serde", "polars-utils/serde"]
+dsl-schema = ["dep:schemars", "polars-schema/dsl-schema", "polars-utils/dsl-schema"]
 simd = []
 
 # polars-arrow
@@ -155,3 +136,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [package.metadata.cargo-all-features]
 allowlist = ["compute", "compute_sort", "compute_nullif"]
+
+[lints]
+workspace = true

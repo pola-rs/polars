@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -18,13 +19,11 @@
 //! Defines take kernel for [`Array`]
 
 use arrow::array::{
-    self, new_empty_array, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray,
-    NullArray, StaticArray, Utf8ViewArray,
+    self, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray, NullArray, StaticArray,
+    Utf8ViewArray, new_empty_array,
 };
 use arrow::datatypes::{ArrowDataType, IdxArr};
 use arrow::types::Index;
-
-use crate::gather::binview::take_binview_unchecked;
 
 pub mod binary;
 pub mod binview;
@@ -77,11 +76,11 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
         },
         BinaryView => {
             let array: &BinaryViewArray = values.as_any().downcast_ref().unwrap();
-            take_binview_unchecked(array, indices).boxed()
+            binview::take_binview_unchecked(array, indices).boxed()
         },
         Utf8View => {
             let array: &Utf8ViewArray = values.as_any().downcast_ref().unwrap();
-            take_binview_unchecked(array, indices).boxed()
+            binview::take_binview_unchecked(array, indices).boxed()
         },
         t => unimplemented!("Take not supported for data type {:?}", t),
     }

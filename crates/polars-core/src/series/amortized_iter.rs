@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ptr::NonNull;
 use std::rc::Rc;
 
@@ -49,7 +50,7 @@ impl AmortSeries {
             debug_assert_eq!(s.chunks().len(), 1);
             let array_ref = s.chunks().get_unchecked(0).clone();
             let name = s.name().clone();
-            Series::from_chunks_and_dtype_unchecked(name.clone(), vec![array_ref], s.dtype())
+            Series::from_chunks_and_dtype_unchecked(name, vec![array_ref], s.dtype())
         }
     }
 

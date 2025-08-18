@@ -1,5 +1,4 @@
 use polars_core::utils::concat_df;
-use polars_plan::global::_is_fetch_query;
 
 use super::*;
 
@@ -16,10 +15,6 @@ impl Executor for UnionExec {
             if state.verbose() {
                 eprintln!("run UnionExec")
             }
-        }
-        // keep scans thread local if 'fetch' is used.
-        if _is_fetch_query() {
-            self.options.parallel = false;
         }
         let mut inputs = std::mem::take(&mut self.inputs);
 

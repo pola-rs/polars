@@ -1,17 +1,19 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
 
 use either::Either;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
+use polars_utils::relaxed_cell::RelaxedCell;
 
-use super::utils::{self, count_zeros, fmt, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
-use super::{chunk_iter_to_vec, intersects_with, num_intersections_with, IntoIter, MutableBitmap};
+use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt, get_bit_unchecked};
+use super::{IntoIter, MutableBitmap, chunk_iter_to_vec, num_intersections_with};
 use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
+use crate::bitmap::utils::bytes_for;
 use crate::legacy::utils::FromTrustedLenIterator;
 use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
@@ -50,6 +52,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// // when sliced (or cloned), it is no longer possible to `into_mut`.
 /// let same: Bitmap = sliced.into_mut().left().unwrap();
 /// ```
+#[derive(Default, Clone)]
 pub struct Bitmap {
     storage: SharedStorage<u8>,
     // Both offset and length are measured in bits. They are used to bound the
@@ -61,7 +64,7 @@ pub struct Bitmap {
     // If it is u64::MAX, we have no known value at all.
     // Other bit patterns where the top bit is set is reserved for future use.
     // If the top bit is not set we have an exact count.
-    unset_bit_count_cache: AtomicU64,
+    unset_bit_count_cache: RelaxedCell<u64>,
 }
 
 #[inline(always)]
@@ -69,29 +72,10 @@ fn has_cached_unset_bit_count(ubcc: u64) -> bool {
     ubcc >> 63 == 0
 }
 
-impl Clone for Bitmap {
-    fn clone(&self) -> Self {
-        Self {
-            storage: self.storage.clone(),
-            offset: self.offset,
-            length: self.length,
-            unset_bit_count_cache: AtomicU64::new(
-                self.unset_bit_count_cache.load(Ordering::Relaxed),
-            ),
-        }
-    }
-}
-
 impl std::fmt::Debug for Bitmap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (bytes, offset, len) = self.as_slice();
         fmt(bytes, offset, len, f)
-    }
-}
-
-impl Default for Bitmap {
-    fn default() -> Self {
-        MutableBitmap::new().into()
     }
 }
 
@@ -123,7 +107,11 @@ impl Bitmap {
             storage: SharedStorage::from_vec(bytes),
             length,
             offset: 0,
-            unset_bit_count_cache: AtomicU64::new(if length == 0 { 0 } else { UNKNOWN_BIT_COUNT }),
+            unset_bit_count_cache: RelaxedCell::from(if length == 0 {
+                0
+            } else {
+                UNKNOWN_BIT_COUNT
+            }),
         })
     }
 
@@ -140,14 +128,14 @@ impl Bitmap {
     }
 
     /// Returns a new iterator of `bool` over this bitmap
-    pub fn iter(&self) -> BitmapIter {
+    pub fn iter(&self) -> BitmapIter<'_> {
         BitmapIter::new(&self.storage, self.offset, self.length)
     }
 
     /// Returns an iterator over bits in bit chunks [`BitChunk`].
     ///
     /// This iterator is useful to operate over multiple bits via e.g. bitwise.
-    pub fn chunks<T: BitChunk>(&self) -> BitChunks<T> {
+    pub fn chunks<T: BitChunk>(&self) -> BitChunks<'_, T> {
         BitChunks::new(&self.storage, self.offset, self.length)
     }
 
@@ -183,7 +171,7 @@ impl Bitmap {
     ///
     /// The returned tuple contains:
     /// * `.1`: The byte slice, truncated to the start of the first bit. So the start of the slice
-    ///       is within the first 8 bits.
+    ///   is within the first 8 bits.
     /// * `.2`: The start offset in bits on a range `0 <= offsets < 8`.
     /// * `.3`: The length in number of bits.
     #[inline]
@@ -224,8 +212,7 @@ impl Bitmap {
     pub fn unset_bits(&self) -> usize {
         self.lazy_unset_bits().unwrap_or_else(|| {
             let zeros = count_zeros(&self.storage, self.offset, self.length);
-            self.unset_bit_count_cache
-                .store(zeros as u64, Ordering::Relaxed);
+            self.unset_bit_count_cache.store(zeros as u64);
             zeros
         })
     }
@@ -234,7 +221,7 @@ impl Bitmap {
     ///
     /// Guaranteed to be `<= self.len()`.
     pub fn lazy_unset_bits(&self) -> Option<usize> {
-        let cache = self.unset_bit_count_cache.load(Ordering::Relaxed);
+        let cache = self.unset_bit_count_cache.load();
         has_cached_unset_bit_count(cache).then_some(cache as usize)
     }
 
@@ -246,8 +233,7 @@ impl Bitmap {
     pub unsafe fn update_bit_count(&mut self, bits_set: usize) {
         assert!(bits_set <= self.length);
         let zeros = self.length - bits_set;
-        self.unset_bit_count_cache
-            .store(zeros as u64, Ordering::Relaxed);
+        self.unset_bit_count_cache.store(zeros as u64);
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
@@ -389,7 +375,8 @@ impl Bitmap {
                     let vec = chunk_iter_to_vec(chunks.chain(std::iter::once(remainder)));
                     MutableBitmap::from_vec(vec, data.length)
                 } else {
-                    MutableBitmap::from_vec(data.storage.as_ref().to_vec(), data.length)
+                    let len = bytes_for(data.length);
+                    MutableBitmap::from_vec(data.storage[0..len].to_vec(), data.length)
                 }
             },
             Either::Right(data) => data,
@@ -402,8 +389,11 @@ impl Bitmap {
         // We intentionally leak 1MiB of zeroed memory once so we don't have to
         // refcount it.
         const GLOBAL_ZERO_SIZE: usize = 1024 * 1024;
-        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> =
-            LazyLock::new(|| SharedStorage::from_static(vec![0; GLOBAL_ZERO_SIZE].leak()));
+        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> = LazyLock::new(|| {
+            let mut ss = SharedStorage::from_vec(vec![0; GLOBAL_ZERO_SIZE]);
+            ss.leak();
+            ss
+        });
 
         let bytes_needed = length.div_ceil(8);
         let storage = if bytes_needed <= GLOBAL_ZERO_SIZE {
@@ -415,7 +405,7 @@ impl Bitmap {
             storage,
             offset: 0,
             length,
-            unset_bit_count_cache: AtomicU64::new(length as u64),
+            unset_bit_count_cache: RelaxedCell::from(length as u64),
         }
     }
 
@@ -444,7 +434,7 @@ impl Bitmap {
 
     /// Creates a new [`Bitmap`] from a slice and length.
     /// # Panic
-    /// Panics iff `length <= bytes.len() * 8`
+    /// Panics iff `length > bytes.len() * 8`
     #[inline]
     pub fn from_u8_slice<T: AsRef<[u8]>>(slice: T, length: usize) -> Self {
         Bitmap::try_new(slice.as_ref().to_vec(), length).unwrap()
@@ -483,9 +473,9 @@ impl Bitmap {
         debug_assert!(check(&storage[..], offset, length).is_ok());
 
         let unset_bit_count_cache = if let Some(n) = unset_bits {
-            AtomicU64::new(n as u64)
+            RelaxedCell::from(n as u64)
         } else {
-            AtomicU64::new(UNKNOWN_BIT_COUNT)
+            RelaxedCell::from(UNKNOWN_BIT_COUNT)
         };
         Self {
             storage,
@@ -499,7 +489,7 @@ impl Bitmap {
     ///
     /// This is an optimized version of `(self & other) != 0000..`.
     pub fn intersects_with(&self, other: &Self) -> bool {
-        intersects_with(self, other)
+        self.num_intersections_with(other) != 0
     }
 
     /// Calculates the number of shared set bits between two [`Bitmap`]s.
@@ -543,7 +533,7 @@ impl Bitmap {
         utils::trailing_zeros(&self.storage, self.offset, self.length)
     }
     /// Returns the number of one bits from the back before a zero bit is seen
-    pub fn trailing_ones(&mut self) -> usize {
+    pub fn trailing_ones(&self) -> usize {
         utils::trailing_ones(&self.storage, self.offset, self.length)
     }
 
@@ -724,7 +714,7 @@ impl Splitable for Bitmap {
             return (self.clone(), Self::new());
         }
 
-        let ubcc = self.unset_bit_count_cache.load(Ordering::Relaxed);
+        let ubcc = self.unset_bit_count_cache.load();
 
         let lhs_length = offset;
         let rhs_length = self.length - offset;
@@ -767,13 +757,13 @@ impl Splitable for Bitmap {
                 storage: self.storage.clone(),
                 offset: self.offset,
                 length: lhs_length,
-                unset_bit_count_cache: AtomicU64::new(lhs_ubcc),
+                unset_bit_count_cache: RelaxedCell::from(lhs_ubcc),
             },
             Self {
                 storage: self.storage.clone(),
                 offset: self.offset + offset,
                 length: rhs_length,
-                unset_bit_count_cache: AtomicU64::new(rhs_ubcc),
+                unset_bit_count_cache: RelaxedCell::from(rhs_ubcc),
             },
         )
     }

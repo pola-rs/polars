@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::{BinaryArray, MutableBinaryValuesArray, MutableBinaryValuesIter};
 use crate::array::physical_binary::*;
@@ -172,12 +172,12 @@ impl<O: Offset> MutableBinaryArray<O> {
     }
 
     /// Returns an iterator of `Option<&[u8]>`
-    pub fn iter(&self) -> ZipValidity<&[u8], MutableBinaryValuesIter<O>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&[u8], MutableBinaryValuesIter<'_, O>, BitmapIter<'_>> {
         ZipValidity::new(self.values_iter(), self.validity.as_ref().map(|x| x.iter()))
     }
 
     /// Returns an iterator over the values of this array
-    pub fn values_iter(&self) -> MutableBinaryValuesIter<O> {
+    pub fn values_iter(&self) -> MutableBinaryValuesIter<'_, O> {
         self.values.iter()
     }
 }

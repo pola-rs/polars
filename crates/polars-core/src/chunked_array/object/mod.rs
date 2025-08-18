@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::buffer::Buffer;
 use polars_utils::total_ord::TotalHash;
 
@@ -84,7 +85,7 @@ where
     }
 
     /// Returns an iterator of `Option<&T>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&T, ObjectValueIter<'_, T>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&T, ObjectValueIter<'_, T>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
     }
 
@@ -257,7 +258,7 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
         self.values_iter()
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         self.iter()
     }
 

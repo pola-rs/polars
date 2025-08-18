@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
-use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
+use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
@@ -50,7 +50,7 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                     // dtype is known
                     unsafe {
                         let s = Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::EMPTY,
+                            self.series_container.name().clone(),
                             vec![array_ref],
                             &self.inner_dtype.to_physical(),
                         )
@@ -124,7 +124,9 @@ impl ListChunked {
     ///
     /// If the returned `AmortSeries` is cloned, the local copy will be replaced and a new container
     /// will be set.
-    pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    pub fn amortized_iter(
+        &self,
+    ) -> AmortizedListIter<'_, impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name(PlSmallStr::EMPTY)
     }
 
@@ -132,7 +134,7 @@ impl ListChunked {
     pub fn amortized_iter_with_name(
         &self,
         name: PlSmallStr,
-    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    ) -> AmortizedListIter<'_, impl Iterator<Item = Option<ArrayBox>> + '_> {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
@@ -280,6 +282,52 @@ impl ListChunked {
             out.set_fast_explode();
         }
         out
+    }
+
+    pub fn try_binary_zip_and_apply_amortized<'a, T, U, F>(
+        &'a self,
+        ca1: &'a ChunkedArray<T>,
+        ca2: &'a ChunkedArray<U>,
+        mut f: F,
+    ) -> PolarsResult<Self>
+    where
+        T: PolarsDataType,
+        U: PolarsDataType,
+        F: FnMut(
+            Option<AmortSeries>,
+            Option<T::Physical<'a>>,
+            Option<U::Physical<'a>>,
+        ) -> PolarsResult<Option<Series>>,
+    {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+        let mut fast_explode = self.null_count() == 0;
+        let mut out: ListChunked = {
+            self.amortized_iter()
+                .zip(ca1.iter())
+                .zip(ca2.iter())
+                .map(|((opt_s, opt_u), opt_v)| {
+                    let out = f(opt_s, opt_u, opt_v)?;
+                    match out {
+                        Some(out) => {
+                            fast_explode &= !out.is_empty();
+                            Ok(Some(out))
+                        },
+                        None => {
+                            fast_explode = false;
+                            Ok(out)
+                        },
+                    }
+                })
+                .collect::<PolarsResult<_>>()?
+        };
+
+        out.rename(self.name().clone());
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        Ok(out)
     }
 
     pub fn try_zip_and_apply_amortized<'a, T, I, F>(

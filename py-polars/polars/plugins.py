@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -9,7 +10,7 @@ from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -32,6 +33,7 @@ def register_plugin_function(
     cast_to_supertype: bool = False,
     input_wildcard_expansion: bool = False,
     pass_name_to_apply: bool = False,
+    use_abs_path: bool = False,
 ) -> Expr:
     """
     Register a plugin function.
@@ -69,6 +71,10 @@ def register_plugin_function(
     pass_name_to_apply
         If set to `True`, the `Series` passed to the function in a group-by operation
         will ensure the name is set. This is an extra heap allocation per group.
+    use_abs_path
+        If set to `True`, the path will be resolved to an absolute path.
+        The path to the dynamic library is relative to the virtual environment by
+        default.
 
     Returns
     -------
@@ -84,7 +90,7 @@ def register_plugin_function(
     """
     pyexprs = parse_into_list_of_expressions(args)
     serialized_kwargs = _serialize_kwargs(kwargs)
-    plugin_path = _resolve_plugin_path(plugin_path)
+    plugin_path = _resolve_plugin_path(plugin_path, use_abs_path=use_abs_path)
 
     return wrap_expr(
         plr.register_plugin_function(
@@ -115,21 +121,35 @@ def _serialize_kwargs(kwargs: dict[str, Any] | None) -> bytes:
 
 
 @lru_cache(maxsize=16)
-def _resolve_plugin_path(path: Path | str) -> Path:
+def _resolve_plugin_path(path: Path | str, *, use_abs_path: bool = False) -> Path:
     """Get the file path of the dynamic library file."""
     if not isinstance(path, Path):
         path = Path(path)
 
     if path.is_file():
-        return path.resolve()
+        return _resolve_file_path(path, use_abs_path=use_abs_path)
 
     for p in path.iterdir():
         if _is_dynamic_lib(p):
-            return p.resolve()
-    else:
-        msg = f"no dynamic library found at path: {path}"
-        raise FileNotFoundError(msg)
+            return _resolve_file_path(p, use_abs_path=use_abs_path)
+
+    msg = f"no dynamic library found at path: {path}"
+    raise FileNotFoundError(msg)
 
 
 def _is_dynamic_lib(path: Path) -> bool:
     return path.is_file() and path.suffix in (".so", ".dll", ".pyd")
+
+
+def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
+    venv_path = Path(sys.prefix)
+
+    if use_abs_path:
+        return path.resolve()
+    else:
+        try:
+            file_path = path.relative_to(venv_path)
+        except ValueError:  # Fallback
+            file_path = path.resolve()
+
+    return file_path

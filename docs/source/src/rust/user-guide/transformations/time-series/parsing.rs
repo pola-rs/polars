@@ -22,7 +22,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish()
         .unwrap();
     let df = df
-        .clone()
         .lazy()
         .with_columns([col("Date").str().to_date(StrptimeOptions::default())])
         .collect()?;
@@ -40,7 +39,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:extract]
     let df_with_year = df
-        .clone()
         .lazy()
         .with_columns([col("Date").dt().year().alias("year")])
         .collect()?;
@@ -66,7 +64,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lit("raise"),
         )
         .dt()
-        .convert_time_zone("Europe/Brussels".into());
+        .convert_time_zone(
+            TimeZone::opt_try_new(Some("Europe/Brussels"))
+                .unwrap()
+                .unwrap(),
+        );
     let mixed_parsed = df!("date" => &data)?.lazy().select([q]).collect()?;
 
     println!("{}", &mixed_parsed);

@@ -437,9 +437,8 @@ class _NoDefault(Enum):
         return "<no_default>"
 
 
-# 'NoDefault' is a sentinel indicating that no default value has been set; note that
-# this should typically be used only when one of the valid parameter values is also
-# None, as otherwise we cannot determine if the caller has explicitly set that value.
+# the "no_default" sentinel should typically be used when one of the valid parameter
+# values is None, as otherwise we cannot determine if the caller has set that value.
 no_default = _NoDefault.no_default
 NoDefault = Literal[_NoDefault.no_default]
 
@@ -472,7 +471,7 @@ def find_stacklevel() -> int:
         # https://docs.python.org/3/library/inspect.html
         # > Though the cycle detector will catch these, destruction of the frames
         # > (and local variables) can be made deterministic by removing the cycle
-        # > in a finally clause.
+        # > in a 'finally' clause.
         del frame
     return n
 
@@ -665,7 +664,9 @@ def display_dot_graph(
         # we do not show a graph, nor save a graph to disk
         return dot
 
-    output_type = "svg" if _in_notebook() else "png"
+    output_type = (
+        "svg" if _in_notebook() or "POLARS_DOT_SVG_VIEWER" in os.environ else "png"
+    )
 
     try:
         graph = subprocess.check_output(
@@ -673,7 +674,7 @@ def display_dot_graph(
         )
     except (ImportError, FileNotFoundError):
         msg = (
-            "The graphviz `dot` binary should be on your PATH."
+            "the graphviz `dot` binary should be on your PATH."
             "(If not installed you can download here: https://graphviz.org/download/)"
         )
         raise ImportError(msg) from None
@@ -689,6 +690,16 @@ def display_dot_graph(
 
         return display(SVG(graph))
     else:
+        if (cmd := os.environ.get("POLARS_DOT_SVG_VIEWER", None)) is not None:
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(suffix=".svg") as file:
+                file.write(graph)
+                file.flush()
+                cmd = cmd.replace("%file%", file.name)
+                subprocess.run(cmd, shell=True)
+            return None
+
         import_optional(
             "matplotlib",
             err_prefix="",
@@ -699,6 +710,56 @@ def display_dot_graph(
 
         plt.figure(figsize=figsize)
         img = mpimg.imread(BytesIO(graph))
+        plt.axis("off")
         plt.imshow(img)
         plt.show()
         return None
+
+
+def qualified_type_name(obj: Any, *, qualify_polars: bool = False) -> str:
+    """
+    Return the module-qualified name of the given object as a string.
+
+    Parameters
+    ----------
+    obj
+        The object to get the qualified name for.
+    qualify_polars
+        If False (default), omit the module path for our own (Polars) objects.
+    """
+    if isinstance(obj, type):
+        module = obj.__module__
+        name = obj.__name__
+    else:
+        module = obj.__class__.__module__
+        name = obj.__class__.__name__
+
+    if (
+        not module
+        or module == "builtins"
+        or (not qualify_polars and module.startswith("polars."))
+    ):
+        return name
+
+    return f"{module}.{name}"
+
+
+def require_same_type(current: Any, other: Any) -> None:
+    """
+    Raise an error if the two arguments are not of the same type.
+
+    The check will not raise an error if one object is of a subclass of the other.
+
+    Parameters
+    ----------
+    current
+        The object the type of which is being checked against.
+    other
+        An object that has to be of the same type.
+    """
+    if not isinstance(other, type(current)) and not isinstance(current, type(other)):
+        msg = (
+            f"expected `other` to be a {qualified_type_name(current)!r}, "
+            f"not {qualified_type_name(other)!r}"
+        )
+        raise TypeError(msg)

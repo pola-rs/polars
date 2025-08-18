@@ -21,7 +21,10 @@ where
     T: PolarsNumericType,
 {
     fn full_null(name: PlSmallStr, length: usize) -> Self {
-        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(CompatLevel::newest()), length);
+        let arr = PrimitiveArray::new_null(
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
+            length,
+        );
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -80,7 +83,7 @@ impl ChunkFullNull for BinaryChunked {
 impl<'a> ChunkFull<&'a [u8]> for BinaryOffsetChunked {
     fn full(name: PlSmallStr, value: &'a [u8], length: usize) -> Self {
         let mut mutable = MutableBinaryArray::with_capacities(length, length * value.len());
-        mutable.extend_values(std::iter::repeat(value).take(length));
+        mutable.extend_values(std::iter::repeat_n(value, length));
         let arr: BinaryArray<i64> = mutable.into();
         let mut out = ChunkedArray::with_chunk(name, arr);
         out.set_sorted_flag(IsSorted::Ascending);
@@ -125,7 +128,7 @@ impl ArrayChunked {
         let arr = FixedSizeListArray::new_null(
             ArrowDataType::FixedSizeList(
                 Box::new(ArrowField::new(
-                    PlSmallStr::from_static("item"),
+                    LIST_VALUES_NAME,
                     inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
                     true,
                 )),
@@ -151,7 +154,7 @@ impl ChunkFull<&Series> for ArrayChunked {
         let dtype = value.dtype();
         let arrow_dtype = ArrowDataType::FixedSizeList(
             Box::new(ArrowField::new(
-                PlSmallStr::from_static("item"),
+                LIST_VALUES_NAME,
                 dtype.to_physical().to_arrow(CompatLevel::newest()),
                 true,
             )),
@@ -186,7 +189,7 @@ impl ListChunked {
     ) -> ListChunked {
         let arr: ListArray<i64> = ListArray::new_null(
             ArrowDataType::LargeList(Box::new(ArrowField::new(
-                PlSmallStr::from_static("item"),
+                LIST_VALUES_NAME,
                 inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
                 true,
             ))),

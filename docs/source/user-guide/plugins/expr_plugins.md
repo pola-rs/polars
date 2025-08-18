@@ -95,13 +95,12 @@ same directory as our Rust `src` folder named `expression_lib` and we create an
 └── pyproject.toml
 ```
 
-Then we create a new class `Language` that will hold the expressions for our new `expr.language`
-namespace. The function name of our expression can be registered. Note that it is important that
-this name is correct, otherwise the main Polars package cannot resolve the function name.
-Furthermore we can set additional keyword arguments that explain to Polars how this expression
-behaves. In this case we tell Polars that this function is elementwise. This allows Polars to run
-this expression in batches. Whereas for other operations this would not be allowed, think for
-instance of a sort, or a slice.
+Then we create new expressions. The function name of our expression can be registered. Note that it
+is important that this name is correct, otherwise the main Polars package cannot resolve the
+function name. Furthermore we can set additional keyword arguments that explain to Polars how this
+expression behaves. In this case we tell Polars that this function is elementwise. This allows
+Polars to run this expression in batches. Whereas for other operations this would not be allowed,
+think for instance of a sort, or a slice.
 
 ```python
 # expression_lib/__init__.py
@@ -143,7 +142,7 @@ out = df.with_columns(pig_latin=pig_latinnify("convert"))
 
 Alternatively, you can
 [register a custom namespace](https://docs.pola.rs/api/python/stable/reference/api/polars.api.register_expr_namespace.html#polars.api.register_expr_namespace),
-which enables you to write:
+which enables you to create a `Expr.language` namespace, allowing users to write:
 
 ```python
 out = df.with_columns(

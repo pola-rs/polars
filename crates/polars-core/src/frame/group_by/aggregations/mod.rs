@@ -4,24 +4,26 @@ mod dispatch;
 mod string;
 
 use std::borrow::Cow;
-use std::cmp::Ordering;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::rolling;
-use arrow::legacy::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
-};
-use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
 use arrow::legacy::kernels::take_agg::*;
-use arrow::legacy::prelude::QuantileMethod;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_compute::rolling::no_nulls::{
+    MaxWindow, MeanWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
+    SumWindow,
+};
+use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
+use polars_compute::rolling::quantile_filter::SealedRolling;
+use polars_compute::rolling::{
+    self, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams, quantile_filter,
+};
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
+use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
 use crate::chunked_array::cast::CastOptions;
@@ -31,10 +33,10 @@ use crate::frame::group_by::GroupsIdx;
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
+use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{apply_method_physical_integer, POOL};
+use crate::{POOL, apply_method_physical_integer};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -84,7 +86,7 @@ where
     // start with a dummy index, will be overwritten on first iteration.
     // SAFETY:
     // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params) };
+    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params, None) };
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);
@@ -134,7 +136,7 @@ where
         return PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None);
     }
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0, params);
+    let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     offsets
         .map(|(start, len)| {
@@ -162,7 +164,6 @@ pub fn _agg_helper_idx<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
@@ -173,7 +174,6 @@ pub fn _agg_helper_idx_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_inner().into_series()
@@ -185,7 +185,6 @@ fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
@@ -196,7 +195,6 @@ fn agg_helper_idx_on_all_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn(&IdxVec) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> =
         POOL.install(|| groups.all().into_par_iter().map(f).collect());
@@ -207,7 +205,6 @@ pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
@@ -217,80 +214,10 @@ pub fn _agg_helper_slice_no_null<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_inner().into_series()
 }
-
-pub trait TakeExtremum {
-    fn take_min(self, other: Self) -> Self;
-
-    fn take_max(self, other: Self) -> Self;
-}
-
-macro_rules! impl_take_extremum {
-    ($tp:ty) => {
-        impl TakeExtremum for $tp {
-            #[inline(always)]
-            fn take_min(self, other: Self) -> Self {
-                if self < other {
-                    self
-                } else {
-                    other
-                }
-            }
-
-            #[inline(always)]
-            fn take_max(self, other: Self) -> Self {
-                if self > other {
-                    self
-                } else {
-                    other
-                }
-            }
-        }
-    };
-
-    (float: $tp:ty) => {
-        impl TakeExtremum for $tp {
-            #[inline(always)]
-            fn take_min(self, other: Self) -> Self {
-                if matches!(compare_fn_nan_max(&self, &other), Ordering::Less) {
-                    self
-                } else {
-                    other
-                }
-            }
-
-            #[inline(always)]
-            fn take_max(self, other: Self) -> Self {
-                if matches!(compare_fn_nan_min(&self, &other), Ordering::Greater) {
-                    self
-                } else {
-                    other
-                }
-            }
-        }
-    };
-}
-
-#[cfg(feature = "dtype-u8")]
-impl_take_extremum!(u8);
-#[cfg(feature = "dtype-u16")]
-impl_take_extremum!(u16);
-impl_take_extremum!(u32);
-impl_take_extremum!(u64);
-#[cfg(feature = "dtype-i8")]
-impl_take_extremum!(i8);
-#[cfg(feature = "dtype-i16")]
-impl_take_extremum!(i16);
-impl_take_extremum!(i32);
-impl_take_extremum!(i64);
-#[cfg(any(feature = "dtype-decimal", feature = "dtype-i128"))]
-impl_take_extremum!(i128);
-impl_take_extremum!(float: f32);
-impl_take_extremum!(float: f64);
 
 /// Intermediate helper trait so we can have a single generic implementation
 /// This trait will ensure the specific dispatch works without complicating
@@ -305,7 +232,6 @@ impl<T> QuantileDispatcher<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Ord,
-    ChunkedArray<T>: IntoSeries,
 {
     fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
         self.quantile_faster(quantile, method)
@@ -341,9 +267,8 @@ unsafe fn agg_quantile_generic<T, K>(
 where
     T: PolarsNumericType,
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
-    ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
@@ -366,7 +291,7 @@ where
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
                 let s = ca
-                    .cast_with_options(&K::get_dtype(), CastOptions::Overflowing)
+                    .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
@@ -395,7 +320,7 @@ where
                 };
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
-                ChunkedArray::from(arr).into_series()
+                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<K, _>(groups, |[first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
@@ -421,9 +346,8 @@ unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsType) ->
 where
     T: PolarsNumericType,
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
-    ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
 {
     match groups {
         GroupsType::Idx(groups) => {
@@ -453,8 +377,7 @@ unsafe fn bitwise_agg<T: PolarsNumericType>(
     f: fn(&ChunkedArray<T>) -> Option<T::Native>,
 ) -> Series
 where
-    ChunkedArray<T>:
-        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
 {
     // Prevent a rechunk for every individual group.
 
@@ -490,8 +413,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>:
-        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
 {
     /// # Safety
     ///
@@ -518,15 +440,8 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: NativeType
-        + PartialOrd
-        + Num
-        + NumCast
-        + Zero
-        + Bounded
-        + std::iter::Sum<T::Native>
-        + TakeExtremum,
-    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native>,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Bounded + std::iter::Sum<T::Native>,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
@@ -554,10 +469,12 @@ where
                         take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
-                            |a, b| a.take_min(b),
+                            |a, b| a.min_ignore_nan(b),
                         )
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_min(b))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
+                            a.min_ignore_nan(b)
+                        })
                     }
                 })
             },
@@ -628,10 +545,12 @@ where
                         take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
-                            |a, b| a.take_max(b),
+                            |a, b| a.max_ignore_nan(b),
                         )
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_max(b))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
+                            a.max_ignore_nan(b)
+                        })
                     }
                 })
             },
@@ -702,18 +621,18 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<SumWindow<_>, _, _>(
-                            values,
-                            offset_iter,
-                            None,
-                        ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::SumWindow<_>,
+                        None => _rolling_apply_agg_window_no_nulls::<
+                            SumWindow<T::Native, T::Native>,
                             _,
                             _,
-                        >(
-                            values, validity, offset_iter, None
-                        ),
+                        >(values, offset_iter, None),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<
+                                rolling::nulls::SumWindow<T::Native, T::Native>,
+                                _,
+                                _,
+                            >(values, validity, offset_iter, None)
+                        },
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -737,8 +656,7 @@ where
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries
-        + ChunkVar
+    ChunkedArray<T>: ChunkVar
         + VarAggSeries
         + ChunkQuantile<T::Native>
         + QuantileAggSeries
@@ -807,7 +725,7 @@ where
                             values, validity, offset_iter, None
                         ),
                     };
-                    ChunkedArray::from(arr).into_series()
+                    ChunkedArray::<T>::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -854,21 +772,27 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<
+                            MomentWindow<_, VarianceMoment>,
+                            _,
+                            _,
+                        >(
                             values,
                             offset_iter,
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MomentWindow<_, VarianceMoment>,
+                            _,
+                            _,
+                        >(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                        ),
                     };
-                    ChunkedArray::from(arr).into_series()
+                    ChunkedArray::<T>::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -919,19 +843,25 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<
+                            MomentWindow<_, VarianceMoment>,
+                            _,
+                            _,
+                        >(
                             values,
                             offset_iter,
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
+                            _,
+                            _,
+                        >(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                        ),
                     };
 
                     let mut ca = ChunkedArray::<T>::from(arr);
@@ -991,7 +921,7 @@ impl Float64Chunked {
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native> + ChunkVar,
+    ChunkedArray<T>: ChunkAgg<T::Native> + ChunkVar,
     T::Native: NumericNative + Ord,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsType) -> Series {

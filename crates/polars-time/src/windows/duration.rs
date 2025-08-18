@@ -6,14 +6,14 @@ use std::ops::{Mul, Neg};
 use arrow::legacy::kernels::{Ambiguous, NonExistent};
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MICROSECONDS,
-    MILLISECONDS, NANOSECONDS,
+    MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_us_to_datetime,
 };
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
-    PolarsResult,
+    PolarsResult, TimeZone, datetime_to_timestamp_ms, datetime_to_timestamp_ns,
+    datetime_to_timestamp_us, polars_bail,
 };
 use polars_error::polars_ensure;
 #[cfg(feature = "serde")]
@@ -24,10 +24,11 @@ use super::calendar::{
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
-use crate::windows::calendar::{is_leap_year, DAYS_PER_MONTH};
+use crate::windows::calendar::{DAYS_PER_MONTH, is_leap_year};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Duration {
     // the number of months for the duration
     months: i64,
@@ -90,11 +91,11 @@ impl Display for Duration {
         if self.nsecs > 0 {
             let secs = self.nsecs / NANOSECONDS;
             if secs * NANOSECONDS == self.nsecs {
-                write!(f, "{}s", secs)?
+                write!(f, "{secs}s")?
             } else {
                 let us = self.nsecs / 1_000;
                 if us * 1_000 == self.nsecs {
-                    write!(f, "{}us", us)?
+                    write!(f, "{us}us")?
                 } else {
                     write!(f, "{}ns", self.nsecs)?
                 }
@@ -215,6 +216,7 @@ impl Duration {
         // reserve capacity for the longest valid unit ("microseconds")
         let mut unit = String::with_capacity(12);
         let mut parsed_int = false;
+        let mut last_ch_opt: Option<char> = None;
 
         while let Some((i, mut ch)) = iter.next() {
             if !ch.is_ascii_digit() {
@@ -286,7 +288,16 @@ impl Duration {
                 }
                 unit.clear();
             }
+            last_ch_opt = Some(ch);
         }
+        if let Some(last_ch) = last_ch_opt {
+            if last_ch.is_ascii_digit() {
+                polars_bail!(InvalidOperation:
+                    "expected a unit to follow integer in the {} string '{}'",
+                    parse_type, s
+                );
+            }
+        };
 
         Ok(Duration {
             months: months.abs(),
@@ -299,11 +310,7 @@ impl Duration {
     }
 
     fn to_positive(v: i64) -> (bool, i64) {
-        if v < 0 {
-            (true, -v)
-        } else {
-            (false, v)
-        }
+        if v < 0 { (true, -v) } else { (false, v) }
     }
 
     /// Normalize the duration within the interval.
@@ -440,8 +447,8 @@ impl Duration {
         self.nsecs == 0
     }
 
-    pub fn is_constant_duration(&self, time_zone: Option<&str>) -> bool {
-        if time_zone.is_none() || time_zone == Some("UTC") {
+    pub fn is_constant_duration(&self, time_zone: Option<&TimeZone>) -> bool {
+        if time_zone.is_none() || time_zone == Some(&TimeZone::UTC) {
             self.months == 0
         } else {
             // For non-native, non-UTC time zones, 1 calendar day is not
@@ -724,7 +731,7 @@ impl Duration {
             original_dt_local.year() as i64,
             original_dt_local.month() as i64,
         );
-        let total = (year * 12) + (month - 1);
+        let total = ((year - 1970) * 12) + (month - 1);
         let mut remainder_months = total % self.months;
         if remainder_months < 0 {
             remainder_months += self.months
@@ -827,7 +834,7 @@ impl Duration {
                 )
             },
             _ => {
-                polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
+                polars_bail!(ComputeError: "cannot mix month, week, day, and sub-daily units for this operation")
             },
         }
     }
@@ -870,7 +877,7 @@ impl Duration {
 
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
-        t: i64,
+        mut t: i64,
         tz: Option<&Tz>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
@@ -882,7 +889,6 @@ impl Duration {
         J: Fn(NaiveDateTime) -> i64,
     {
         let d = self;
-        let mut new_t = t;
 
         if d.months > 0 {
             let ts = match tz {
@@ -894,7 +900,7 @@ impl Duration {
                 _ => timestamp_to_datetime(t),
             };
             let dt = Self::add_month(ts, d.months, d.negative);
-            new_t = match tz {
+            t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => datetime_to_timestamp(
@@ -911,12 +917,11 @@ impl Duration {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    new_t =
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
-                    new_t += if d.negative { -t_weeks } else { t_weeks };
-                    new_t = datetime_to_timestamp(
+                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    t += if d.negative { -t_weeks } else { t_weeks };
+                    t = datetime_to_timestamp(
                         try_localize_datetime(
-                            timestamp_to_datetime(new_t),
+                            timestamp_to_datetime(t),
                             tz,
                             Ambiguous::Raise,
                             NonExistent::Raise,
@@ -924,7 +929,7 @@ impl Duration {
                         .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                     );
                 },
-                _ => new_t += if d.negative { -t_weeks } else { t_weeks },
+                _ => t += if d.negative { -t_weeks } else { t_weeks },
             };
         }
 
@@ -934,12 +939,11 @@ impl Duration {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    new_t =
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
-                    new_t += if d.negative { -t_days } else { t_days };
-                    new_t = datetime_to_timestamp(
+                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    t += if d.negative { -t_days } else { t_days };
+                    t = datetime_to_timestamp(
                         try_localize_datetime(
-                            timestamp_to_datetime(new_t),
+                            timestamp_to_datetime(t),
                             tz,
                             Ambiguous::Raise,
                             NonExistent::Raise,
@@ -947,11 +951,11 @@ impl Duration {
                         .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                     );
                 },
-                _ => new_t += if d.negative { -t_days } else { t_days },
+                _ => t += if d.negative { -t_days } else { t_days },
             };
         }
 
-        Ok(new_t)
+        Ok(t)
     }
 
     pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
@@ -1026,7 +1030,7 @@ fn new_datetime(
 
 pub fn ensure_is_constant_duration(
     duration: Duration,
-    time_zone: Option<&str>,
+    time_zone: Option<&TimeZone>,
     variable_name: &str,
 ) -> PolarsResult<()> {
     polars_ensure!(duration.is_constant_duration(time_zone),

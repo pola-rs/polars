@@ -4,12 +4,13 @@ use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 use polars_utils::slice::load_padded_le_u64;
 
 use super::iterator::FastU56BitmapIter;
-use super::utils::{count_zeros, fmt, BitmapIter};
+use super::utils::{BitmapIter, count_zeros, fmt};
 use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
 /// zero-based, nth_set_bit_u32(w, 0) returns the least significant set bit in w.
-fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
+#[inline]
+pub fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
     // If we have BMI2's PDEP available, we use it. It takes the lower order
     // bits of the first argument and spreads it along its second argument
     // where those bits are 1. So PDEP(abcdefgh, 11001001) becomes ef00g00h.
@@ -165,7 +166,7 @@ impl<'a> BitMask<'a> {
         self.len - self.unset_bits()
     }
 
-    pub fn fast_iter_u56(&self) -> FastU56BitmapIter {
+    pub fn fast_iter_u56(&self) -> FastU56BitmapIter<'_> {
         FastU56BitmapIter::new(self.bytes, self.offset, self.len)
     }
 
@@ -305,7 +306,7 @@ impl<'a> BitMask<'a> {
         }
     }
 
-    pub fn iter(&self) -> BitmapIter {
+    pub fn iter(&self) -> BitmapIter<'_> {
         BitmapIter::new(self.bytes, self.offset, self.len)
     }
 }

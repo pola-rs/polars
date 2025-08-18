@@ -1,14 +1,20 @@
 use arrow::datatypes::{
-    ArrowDataType, ArrowSchema, Field, Metadata, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES,
+    ArrowDataType, ArrowSchema, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW,
+    DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Field, IntegerType, Metadata,
 };
 use arrow::io::ipc::read::deserialize_schema;
-use base64::engine::general_purpose;
 use base64::Engine as _;
-use polars_error::{polars_bail, PolarsResult};
+use base64::engine::general_purpose;
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::super::ARROW_SCHEMA_META_KEY;
 pub use crate::parquet::metadata::KeyValue;
+
+/// Reads custom key value metadata from a Parquet's key value file metadata.
+pub fn read_custom_key_value_metadata(key_value_metadata: &Option<Vec<KeyValue>>) -> Metadata {
+    parse_key_value_metadata(key_value_metadata)
+}
 
 /// Reads an arrow schema from Parquet's file metadata. Returns `None` if no schema was found.
 /// # Errors
@@ -25,9 +31,16 @@ fn convert_field(field: &mut Field) {
     // generic dictionary type.
     field.dtype = match std::mem::take(&mut field.dtype) {
         ArrowDataType::Dictionary(key_type, value_type, sorted) => {
-            let is_pl_enum_or_categorical = field.metadata.as_ref().is_some_and(|md| {
-                md.contains_key(DTYPE_ENUM_VALUES) || md.contains_key(DTYPE_CATEGORICAL)
-            });
+            let is_pl_enum_or_categorical =
+                field.metadata.as_ref().is_some_and(|md| {
+                    md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
+                        || md.contains_key(DTYPE_ENUM_VALUES_NEW)
+                        || md.contains_key(DTYPE_CATEGORICAL_NEW)
+                        || md.contains_key(DTYPE_CATEGORICAL_LEGACY)
+                }) && matches!(
+                    key_type,
+                    IntegerType::UInt8 | IntegerType::UInt16 | IntegerType::UInt32
+                ) && matches!(value_type.as_ref(), ArrowDataType::Utf8View);
             let is_int_to_str = matches!(
                 value_type.as_ref(),
                 ArrowDataType::Utf8View | ArrowDataType::Utf8 | ArrowDataType::LargeUtf8

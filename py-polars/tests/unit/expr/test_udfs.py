@@ -14,7 +14,7 @@ def test_pass_name_alias_18914() -> None:
             lambda x: x,
             skip_nulls=False,
             pass_name=True,
-            return_dtype=pl.List(pl.Int64),
+            return_dtype=pl.Int64,
         )
         .over("id")
     ).to_dict(as_series=False) == {"id": [1], "value": [2]}
@@ -34,9 +34,10 @@ def test_pass_name_alias_18914() -> None:
 )
 def test_raises_udf(dtype: pl.DataType) -> None:
     def raise_f(item: Any) -> None:
-        raise ValueError
+        msg = "test error"
+        raise ValueError(msg)
 
-    with pytest.raises(pl.exceptions.ComputeError):
+    with pytest.raises(ValueError, match="test error"):
         pl.select(
             pl.lit(1).map_elements(
                 raise_f,

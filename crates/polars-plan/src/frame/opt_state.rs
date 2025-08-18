@@ -14,8 +14,8 @@ bitflags! {
         const TYPE_COERCION = 1 << 4;
         /// Run many expression optimization rules until fixed point.
         const SIMPLIFY_EXPR = 1 << 5;
-        /// Cache file reads.
-        const FILE_CACHING = 1 << 6;
+        /// Do type checking of the IR.
+        const TYPE_CHECK = 1 << 6;
         /// Pushdown slices/limits.
         const SLICE_PUSHDOWN = 1 << 7;
         /// Run common-subplan-elimination. This elides duplicate plans and caches their
@@ -24,8 +24,9 @@ bitflags! {
         /// Run common-subexpression-elimination. This elides duplicate expressions and caches their
         /// outputs.
         const COMM_SUBEXPR_ELIM = 1 << 9;
-        /// Run nodes that are capably of doing so on the streaming engine.
-        const STREAMING = 1 << 10;
+
+        // const STREAMING = 1 << 10; // Legacy flag for removed old streaming engine.
+
         const NEW_STREAMING = 1 << 11;
         /// Run every node eagerly. This turns off multi-node optimizations.
         const EAGER = 1 << 12;
@@ -38,8 +39,6 @@ bitflags! {
         /// Check if operations are order dependent and unset maintaining_order if
         /// the order would not be observed.
         const CHECK_ORDER_OBSERVE = 1 << 16;
-        /// Do type checking of the IR.
-        const TYPE_CHECK = 1 << 17;
     }
 }
 
@@ -73,9 +72,6 @@ impl OptFlags {
     pub fn slice_pushdown(&self) -> bool {
         self.contains(OptFlags::SLICE_PUSHDOWN)
     }
-    pub fn streaming(&self) -> bool {
-        self.contains(OptFlags::STREAMING)
-    }
     pub fn new_streaming(&self) -> bool {
         self.contains(OptFlags::NEW_STREAMING)
     }
@@ -86,9 +82,7 @@ impl OptFlags {
 
 impl Default for OptFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::STREAMING & !Self::EAGER
-            // will be toggled by a scan operation such as csv scan or parquet scan
-            & !Self::FILE_CACHING
+        Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::EAGER
     }
 }
 

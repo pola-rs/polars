@@ -2,20 +2,20 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use num_traits::NumCast;
+use polars_compute::rolling::QuantileMethod;
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::DirtyHash;
 use rayon::prelude::*;
 
 use self::hashing::*;
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
-use crate::POOL;
 
 pub mod aggregations;
 pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
-mod perfect;
 mod position;
 
 pub use into_groups::*;
@@ -31,27 +31,29 @@ impl DataFrame {
         mut by: Vec<Column>,
         multithreaded: bool,
         sorted: bool,
-    ) -> PolarsResult<GroupBy> {
+    ) -> PolarsResult<GroupBy<'_>> {
         polars_ensure!(
             !by.is_empty(),
             ComputeError: "at least one key is required in a group_by operation"
         );
-        let minimal_by_len = by.iter().map(|s| s.len()).min().expect("at least 1 key");
-        let df_height = self.height();
 
-        // we only throw this error if self.width > 0
-        // so that we can still call this on a dummy dataframe where we provide the keys
-        if (minimal_by_len != df_height) && (self.width() > 0) {
-            polars_ensure!(
-                minimal_by_len == 1,
-                ShapeMismatch: "series used as keys should have the same length as the DataFrame"
-            );
-            for by_key in by.iter_mut() {
-                if by_key.len() == minimal_by_len {
-                    *by_key = by_key.new_from_index(0, df_height)
-                }
-            }
+        // Ensure all 'by' columns have the same common_height
+        // The condition self.width > 0 ensures we can still call this on a
+        // dummy dataframe where we provide the keys
+        let common_height = if self.width() > 0 {
+            self.height()
+        } else {
+            by.iter().map(|s| s.len()).max().expect("at least 1 key")
         };
+        for by_key in by.iter_mut() {
+            if by_key.len() != common_height {
+                polars_ensure!(
+                    by_key.len() == 1,
+                    ShapeMismatch: "series used as keys should have the same length as the DataFrame"
+                );
+                *by_key = by_key.new_from_index(0, common_height)
+            }
+        }
 
         let groups = if by.len() == 1 {
             let column = &by[0];
@@ -113,7 +115,7 @@ impl DataFrame {
     ///     .sum()
     /// }
     /// ```
-    pub fn group_by<I, S>(&self, by: I) -> PolarsResult<GroupBy>
+    pub fn group_by<I, S>(&self, by: I) -> PolarsResult<GroupBy<'_>>
     where
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
@@ -124,7 +126,7 @@ impl DataFrame {
 
     /// Group DataFrame using a Series column.
     /// The groups are ordered by their smallest row index.
-    pub fn group_by_stable<I, S>(&self, by: I) -> PolarsResult<GroupBy>
+    pub fn group_by_stable<I, S>(&self, by: I) -> PolarsResult<GroupBy<'_>>
     where
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
@@ -593,7 +595,6 @@ impl<'a> GroupBy<'a> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// # use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.group_by(["date"])?.select(["temp"]).quantile(0.2, QuantileMethod::default())
@@ -846,7 +847,7 @@ impl<'a> GroupBy<'a> {
         match slice {
             None => self,
             Some((offset, length)) => {
-                self.groups = (self.groups.slice(offset, length)).clone();
+                self.groups = self.groups.slice(offset, length);
                 self.selected_keys = self.keys_sliced(slice);
                 self
             },
@@ -1116,7 +1117,7 @@ mod test {
         .unwrap();
 
         df.apply("foo", |s| {
-            s.cast(&DataType::Categorical(None, Default::default()))
+            s.cast(&DataType::from_categories(Categories::global()))
                 .unwrap()
         })
         .unwrap();
@@ -1197,7 +1198,7 @@ mod test {
         ]?;
 
         df.try_apply("g", |s| {
-            s.cast(&DataType::Categorical(None, Default::default()))
+            s.cast(&DataType::from_categories(Categories::global()))
         })?;
 
         // Use of deprecated `sum()` for testing purposes

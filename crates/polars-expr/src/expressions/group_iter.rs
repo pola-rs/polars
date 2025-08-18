@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::rc::Rc;
 
 use polars_core::series::amortized_iter::AmortSeries;
@@ -10,7 +11,7 @@ impl AggregationContext<'_> {
         keep_names: bool,
     ) -> Box<dyn Iterator<Item = Option<AmortSeries>> + '_> {
         match self.agg_state() {
-            AggState::Literal(_) => {
+            AggState::LiteralScalar(_) => {
                 self.groups();
                 let c = self.get_values().rechunk();
                 let name = if keep_names {
@@ -182,6 +183,6 @@ impl Iterator for FlatIter {
         }
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len, Some(self.offset))
+        (self.len - self.offset, Some(self.len - self.offset))
     }
 }

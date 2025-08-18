@@ -1,7 +1,7 @@
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::utils::arrow::ffi;
-use polars_core::POOL;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -17,7 +17,49 @@ pub fn field_to_rust_arrow(obj: Bound<'_, PyAny>) -> PyResult<ArrowField> {
     // make the conversion through PyArrow's private API
     obj.call_method1("_export_to_c", (schema_ptr as Py_uintptr_t,))?;
     let field = unsafe { ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsErr::from)? };
-    Ok(field.clone())
+    Ok(normalize_arrow_fields(&field))
+}
+
+pub(crate) fn normalize_arrow_fields(field: &ArrowField) -> ArrowField {
+    // normalize fields with extension dtypes that are otherwise standard dtypes associated
+    // with (for us) irrelevant metadata; recreate the field using the inner (standard) dtype
+    match field {
+        ArrowField {
+            dtype: ArrowDataType::Struct(fields),
+            ..
+        } => {
+            let mut normalized = false;
+            let normalized_fields: Vec<_> = fields
+                .iter()
+                .map(|f| {
+                    // note: google bigquery column data is returned as a standard arrow dtype, but the
+                    // sql type it was loaded from is associated as metadata (resulting in an extension dtype)
+                    if let ArrowDataType::Extension(ext_type) = &f.dtype {
+                        if ext_type.name.starts_with("google:sqlType:") {
+                            normalized = true;
+                            return ArrowField::new(
+                                f.name.clone(),
+                                ext_type.inner.clone(),
+                                f.is_nullable,
+                            );
+                        }
+                    }
+                    f.clone()
+                })
+                .collect();
+
+            if normalized {
+                ArrowField::new(
+                    field.name.clone(),
+                    ArrowDataType::Struct(normalized_fields),
+                    field.is_nullable,
+                )
+            } else {
+                field.clone()
+            }
+        },
+        _ => field.clone(),
+    }
 }
 
 pub fn field_to_rust(obj: Bound<'_, PyAny>) -> PyResult<Field> {
@@ -51,11 +93,40 @@ pub fn array_to_rust(obj: &Bound<PyAny>) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn to_rust_df(py: Python, rb: &[Bound<PyAny>], schema: Bound<PyAny>) -> PyResult<DataFrame> {
+pub fn to_rust_df(
+    py: Python<'_>,
+    rb: &[Bound<PyAny>],
+    schema: Bound<PyAny>,
+) -> PyResult<DataFrame> {
     let ArrowDataType::Struct(fields) = field_to_rust_arrow(schema)?.dtype else {
         return Err(PyPolarsErr::Other("invalid top-level schema".into()).into());
     };
-    let schema = ArrowSchema::from_iter(fields);
+
+    let schema = ArrowSchema::from_iter(fields.iter().cloned());
+
+    // Verify that field names are not duplicated. Arrow permits duplicate field names, we do not.
+    // Required to uphold safety invariants for unsafe block below.
+    if schema.len() != fields.len() {
+        let mut field_map: PlHashMap<PlSmallStr, u64> = PlHashMap::with_capacity(fields.len());
+        fields.iter().for_each(|field| {
+            field_map
+                .entry(field.name.clone())
+                .and_modify(|c| {
+                    *c += 1;
+                })
+                .or_insert(1);
+        });
+        let duplicate_fields: Vec<_> = field_map
+            .into_iter()
+            .filter_map(|(k, v)| (v > 1).then_some(k))
+            .collect();
+
+        return Err(PyPolarsErr::Polars(PolarsError::Duplicate(
+            format!("column appears more than once; names must be unique: {duplicate_fields:?}")
+                .into(),
+        ))
+        .into());
+    }
 
     if rb.is_empty() {
         let columns = schema

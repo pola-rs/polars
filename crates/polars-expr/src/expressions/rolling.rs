@@ -13,7 +13,6 @@ pub(crate) struct RollingExpr {
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
-    pub(crate) out_name: Option<PlSmallStr>,
     pub(crate) options: RollingGroupOptions,
     pub(crate) expr: Expr,
 }
@@ -24,7 +23,7 @@ impl PhysicalExpr for RollingExpr {
 
         let groups = {
             // Groups must be set by expression runner.
-            state.window_cache.get_groups(&groups_key).clone()
+            state.window_cache.get_groups(&groups_key)
         };
 
         // There can be multiple rolling expressions in a single expr.
@@ -33,20 +32,17 @@ impl PhysicalExpr for RollingExpr {
         let groups = match groups {
             Some(groups) => groups,
             None => {
-                let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
+                let (_time_key, groups) = df.rolling(None, &self.options)?;
                 state.window_cache.insert_groups(groups_key, groups.clone());
                 groups
             },
         };
 
-        let mut out = self
+        let out = self
             .phys_function
             .evaluate_on_groups(df, &groups, state)?
             .finalize();
         polars_ensure!(out.len() == groups.len(), agg_len = out.len(), groups.len());
-        if let Some(name) = &self.out_name {
-            out.rename(name.clone());
-        }
         Ok(out.into_column())
     }
 
@@ -60,7 +56,7 @@ impl PhysicalExpr for RollingExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.function.to_field(input_schema, Context::Default)
+        self.function.to_field(input_schema)
     }
 
     fn as_expression(&self) -> Option<&Expr> {

@@ -10,23 +10,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut schema = Schema::default();
     schema.with_column(
         "first_name".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "gender".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "type".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "state".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "party".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column("birthday".into(), DataType::Date);
 
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:basic]
 
     // --8<-- [start:conditional]
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:conditional]
 
     // --8<-- [start:nested]
@@ -110,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:nested]
 
     // --8<-- [start:filter]
@@ -122,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         compute_age()
             .filter(col("gender").eq(lit(gender)))
             .mean()
-            .alias(format!("avg {} birthday", gender))
+            .alias(format!("avg {gender} birthday"))
     }
 
     let df = dataset
@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:filter]
 
     // --8<-- [start:filter-nested]
@@ -156,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:filter-nested]
 
     // --8<-- [start:sort]
@@ -181,7 +181,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort]
 
     // --8<-- [start:sort2]
@@ -206,12 +206,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort2]
 
     // --8<-- [start:sort3]
     let df = dataset
-        .clone()
         .lazy()
         .sort(
             ["birthday"],
@@ -235,7 +234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort3]
 
     Ok(())

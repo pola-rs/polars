@@ -1,8 +1,9 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::IntoLazy;
-use polars_plan::prelude::{GetOutput, UserDefinedFunction};
-use polars_sql::function_registry::FunctionRegistry;
+use polars_plan::dsl::BaseColumnUdf;
+use polars_plan::prelude::UserDefinedFunction;
 use polars_sql::SQLContext;
+use polars_sql::function_registry::FunctionRegistry;
 
 struct MyFunctionRegistry {
     functions: PlHashMap<String, UserDefinedFunction>,
@@ -34,16 +35,24 @@ impl FunctionRegistry for MyFunctionRegistry {
 fn test_udfs() -> PolarsResult<()> {
     let my_custom_sum = UserDefinedFunction::new(
         "my_custom_sum".into(),
-        vec![
-            Field::new("a".into(), DataType::Int32),
-            Field::new("b".into(), DataType::Int32),
-        ],
-        GetOutput::same_type(),
-        move |c: &mut [Column]| {
-            let first = c[0].as_materialized_series().clone();
-            let second = c[1].as_materialized_series().clone();
-            (first + second).map(Column::from).map(Some)
-        },
+        BaseColumnUdf::new(
+            move |c: &mut [Column]| {
+                let first = c[0].as_materialized_series().clone();
+                let second = c[1].as_materialized_series().clone();
+                (first + second).map(Column::from)
+            },
+            |_: &Schema, fs: &[Field]| {
+                // UDF is responsible for schema validation
+                polars_ensure!(fs.len() == 2, SchemaMismatch: "expected two arguments");
+                let first = &fs[0];
+                let second = &fs[1];
+
+                if first.dtype() != second.dtype() {
+                    polars_bail!(SchemaMismatch: "mismatched types")
+                }
+                Ok(first.clone())
+            },
+        ),
     );
 
     let mut ctx = SQLContext::new()
@@ -62,23 +71,32 @@ fn test_udfs() -> PolarsResult<()> {
     assert!(res.is_ok());
 
     // schema is invalid so it will fail
-    assert!(ctx
-        .execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo")
-        .is_err());
+    assert!(matches!(
+        ctx.execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo"),
+        Err(PolarsError::SchemaMismatch(_))
+    ));
 
     // create a new UDF to be registered on the context
     let my_custom_divide = UserDefinedFunction::new(
         "my_custom_divide".into(),
-        vec![
-            Field::new("a".into(), DataType::Int32),
-            Field::new("b".into(), DataType::Int32),
-        ],
-        GetOutput::same_type(),
-        move |c: &mut [Column]| {
-            let first = c[0].as_materialized_series().clone();
-            let second = c[1].as_materialized_series().clone();
-            (first / second).map(Column::from).map(Some)
-        },
+        BaseColumnUdf::new(
+            move |c: &mut [Column]| {
+                let first = c[0].as_materialized_series().clone();
+                let second = c[1].as_materialized_series().clone();
+                (first / second).map(Column::from)
+            },
+            |_: &Schema, fs: &[Field]| {
+                // UDF is responsible for schema validation
+                polars_ensure!(fs.len() == 2, SchemaMismatch: "expected two arguments");
+                let first = &fs[0];
+                let second = &fs[1];
+
+                if first.dtype() != second.dtype() {
+                    polars_bail!(SchemaMismatch: "mismatched types")
+                }
+                Ok(first.clone())
+            },
+        ),
     );
 
     // register a new UDF on an existing context

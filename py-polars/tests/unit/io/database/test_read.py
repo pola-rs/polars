@@ -9,6 +9,8 @@ from pathlib import Path
 from types import GeneratorType
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
+with suppress(ModuleNotFoundError):  # not available on windows
+    import adbc_driver_sqlite.dbapi
 import pyarrow as pa
 import pytest
 import sqlalchemy
@@ -32,11 +34,8 @@ if TYPE_CHECKING:
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
-    with suppress(ModuleNotFoundError):  # not available on windows
-        from adbc_driver_sqlite.dbapi import connect
-
-        args = tuple(str(a) if isinstance(a, Path) else a for a in args)
-        return connect(*args, **kwargs)
+    args = tuple(str(a) if isinstance(a, Path) else a for a in args)
+    return adbc_driver_sqlite.dbapi.connect(*args, **kwargs)
 
 
 class MockConnection:
@@ -308,7 +307,7 @@ def test_read_database(
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
         # externally instantiated adbc connections
-        with connect_using(tmp_sqlite_db) as conn, conn.cursor():
+        with connect_using(tmp_sqlite_db) as conn:
             df = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data",
@@ -371,16 +370,16 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
             expected,
         )
 
-    batches = list(
-        pl.read_database(
-            selectable_query,
-            connection=conn,
-            iter_batches=True,
-            batch_size=1,
+        batches = list(
+            pl.read_database(
+                selectable_query,
+                connection=conn,
+                iter_batches=True,
+                batch_size=1,
+            )
         )
-    )
-    assert len(batches) == 1
-    assert_frame_equal(batches[0], expected)
+        assert len(batches) == 1
+        assert_frame_equal(batches[0], expected)
 
 
 def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
@@ -406,19 +405,29 @@ def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
             expected,
         )
 
-    batches = list(
-        pl.read_database(
-            textclause_query,
-            connection=conn,
-            iter_batches=True,
-            batch_size=1,
+        batches = list(
+            pl.read_database(
+                textclause_query,
+                connection=conn,
+                iter_batches=True,
+                batch_size=1,
+            )
         )
-    )
-    assert len(batches) == 1
-    assert_frame_equal(batches[0], expected)
+        assert len(batches) == 1
+        assert_frame_equal(batches[0], expected)
 
 
-def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
+@pytest.mark.parametrize(
+    ("param", "param_value"),
+    [
+        (":n", {"n": 0}),
+        ("?", (0,)),
+        ("?", [0]),
+    ],
+)
+def test_read_database_parameterised(
+    param: str, param_value: Any, tmp_sqlite_db: Path
+) -> None:
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
@@ -433,31 +442,42 @@ def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
     """
     expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
 
-    for param, param_value in (
-        (":n", {"n": 0}),
-        ("?", (0,)),
-        ("?", [0]),
-    ):
-        for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
-            if alchemy_session is conn and param == "?":
-                continue  # alchemy session.execute() doesn't support positional params
-            if parse_version(sqlalchemy.__version__) < (2, 0) and param == ":n":
-                continue  # skip for older sqlalchemy versions
+    for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
+        if conn is alchemy_session and param == "?":
+            continue  # alchemy session.execute() doesn't support positional params
+        if parse_version(sqlalchemy.__version__) < (2, 0) and param == ":n":
+            continue  # skip for older sqlalchemy versions
 
-            assert_frame_equal(
-                expected_frame,
-                pl.read_database(
-                    query.format(n=param),
-                    connection=conn,
-                    execute_options={"parameters": param_value},
-                ),
-            )
+        assert_frame_equal(
+            expected_frame,
+            pl.read_database(
+                query.format(n=param),
+                connection=conn,
+                execute_options={"parameters": param_value},
+            ),
+        )
 
 
 @pytest.mark.parametrize(
     ("param", "param_value"),
     [
-        (":n", {"n": 0}),
+        pytest.param(
+            ":n",
+            pa.Table.from_pydict({"n": [0]}),
+            marks=pytest.mark.skip(
+                reason="Named binding not currently supported. See https://github.com/apache/arrow-adbc/issues/3262"
+            ),
+        ),
+        pytest.param(
+            ":n",
+            {"n": 0},
+            marks=pytest.mark.skip(
+                reason="Named binding not currently supported. See https://github.com/apache/arrow-adbc/issues/3262",
+            ),
+        ),
+        ("?", pa.Table.from_pydict({"data": [0]})),
+        ("?", pl.DataFrame({"data": [0]})),
+        ("?", pl.Series([{"data": 0}])),
         ("?", (0,)),
         ("?", [0]),
     ],
@@ -465,7 +485,144 @@ def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
 @pytest.mark.skipif(
     sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
 )
-def test_read_database_parameterised_uri(
+def test_read_database_parameterised_adbc(
+    param: str, param_value: Any, tmp_sqlite_db: Path
+) -> None:
+    # establish parameterised queries and validate usage
+    query = """
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data
+        WHERE value < {n}
+    """
+    expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
+    # ADBC will complain in pytest if the connection isn't closed
+    with adbc_driver_sqlite.dbapi.connect(str(tmp_sqlite_db)) as conn:
+        assert_frame_equal(
+            expected_frame,
+            pl.read_database(
+                query.format(n=param),
+                connection=conn,
+                execute_options={"parameters": param_value},
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("params", "param_value"),
+    [
+        ([":lo", ":hi"], {"lo": 90, "hi": 100}),
+        (["?", "?"], (90, 100)),
+        (["?", "?"], [90, 100]),
+    ],
+)
+def test_read_database_parameterised_multiple(
+    params: list[str], param_value: Any, tmp_sqlite_db: Path
+) -> None:
+    param_1, param_2 = params
+    # establish parameterised queries and validate usage
+    query = """
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data
+        WHERE value BETWEEN {param_1} AND {param_2}
+    """
+    expected_frame = pl.DataFrame({"year": [2020], "name": ["misc"], "value": [100.0]})
+
+    # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
+    raw_conn: ConnectionOrCursor = sqlite3.connect(tmp_sqlite_db)
+    for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
+        if alchemy_session is conn and param_1 == "?":
+            continue  # alchemy session.execute() doesn't support positional params
+        if parse_version(sqlalchemy.__version__) < (2, 0) and isinstance(
+            param_value, dict
+        ):
+            continue  # skip for older sqlalchemy versions
+
+        assert_frame_equal(
+            expected_frame,
+            pl.read_database(
+                query.format(param_1=param_1, param_2=param_2),
+                connection=conn,
+                execute_options={"parameters": param_value},
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("params", "param_value"),
+    [
+        pytest.param(
+            [":lo", ":hi"],
+            {"lo": 90, "hi": 100},
+            marks=pytest.mark.skip(
+                reason="Named binding not currently supported. See https://github.com/apache/arrow-adbc/issues/3262"
+            ),
+        ),
+        (["?", "?"], pa.Table.from_pydict({"data_1": [90], "data_2": [100]})),
+        (["?", "?"], pl.DataFrame({"data_1": [90], "data_2": [100]})),
+        (["?", "?"], pl.Series([{"data_1": 90, "data_2": 100}])),
+        (["?", "?"], (90, 100)),
+        (["?", "?"], [90, 100]),
+    ],
+)
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
+)
+def test_read_database_parameterised_multiple_adbc(
+    params: list[str], param_value: Any, tmp_sqlite_db: Path
+) -> None:
+    param_1, param_2 = params
+    # establish parameterised queries and validate usage
+    query = """
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data
+        WHERE value BETWEEN {param_1} AND {param_2}
+    """
+    expected_frame = pl.DataFrame({"year": [2020], "name": ["misc"], "value": [100.0]})
+
+    # ADBC will complain in pytest if the connection isn't closed
+    with adbc_driver_sqlite.dbapi.connect(str(tmp_sqlite_db)) as conn:
+        assert_frame_equal(
+            expected_frame,
+            pl.read_database(
+                query.format(param_1=param_1, param_2=param_2),
+                connection=conn,
+                execute_options={"parameters": param_value},
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("param", "param_value"),
+    [
+        pytest.param(
+            ":n",
+            pa.Table.from_pydict({"n": [0]}),
+            marks=pytest.mark.skip(
+                reason="Named binding not currently supported. See https://github.com/apache/arrow-adbc/issues/3262"
+            ),
+        ),
+        pytest.param(
+            ":n",
+            {"n": 0},
+            marks=pytest.mark.skip(
+                reason="Named binding not currently supported. See https://github.com/apache/arrow-adbc/issues/3262",
+            ),
+        ),
+        ("?", pa.Table.from_pydict({"data": [0]})),
+        ("?", pl.DataFrame({"data": [0]})),
+        ("?", pl.Series([{"data": 0}])),
+        ("?", (0,)),
+        ("?", [0]),
+    ],
+)
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
+)
+def test_read_database_uri_parameterised(
     param: str, param_value: Any, tmp_sqlite_db: Path
 ) -> None:
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
@@ -477,21 +634,16 @@ def test_read_database_parameterised_uri(
     """
     expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
 
-    for param, param_value in (
-        (":n", pa.Table.from_pydict({"n": [0]})),
-        ("?", (0,)),
-        ("?", [0]),
-    ):
-        # test URI read method (adbc only)
-        assert_frame_equal(
-            expected_frame,
-            pl.read_database_uri(
-                query.format(n=param),
-                uri=uri,
-                engine="adbc",
-                execute_options={"parameters": param_value},
-            ),
-        )
+    # test URI read method (adbc only)
+    assert_frame_equal(
+        expected_frame,
+        pl.read_database_uri(
+            query.format(n=param),
+            uri=uri,
+            engine="adbc",
+            execute_options={"parameters": param_value},
+        ),
+    )
 
     #  no connectorx support for execute_options
     with pytest.raises(
@@ -503,6 +655,64 @@ def test_read_database_parameterised_uri(
             uri=uri,
             engine="connectorx",
             execute_options={"parameters": (":n", {"n": 0})},
+        )
+
+
+@pytest.mark.parametrize(
+    ("params", "param_value"),
+    [
+        pytest.param(
+            [":lo", ":hi"],
+            {"lo": 90, "hi": 100},
+            marks=pytest.mark.xfail(
+                reason="Named binding not supported. See https://github.com/apache/arrow-adbc/issues/3262",
+                strict=True,
+            ),
+        ),
+        (["?", "?"], pa.Table.from_pydict({"data_1": [90], "data_2": [100]})),
+        (["?", "?"], pl.DataFrame({"data_1": [90], "data_2": [100]})),
+        (["?", "?"], pl.Series([{"data_1": 90, "data_2": 100}])),
+        (["?", "?"], (90, 100)),
+        (["?", "?"], [90, 100]),
+    ],
+)
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
+)
+def test_read_database_uri_parameterised_multiple(
+    params: list[str], param_value: Any, tmp_sqlite_db: Path
+) -> None:
+    param_1, param_2 = params
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    uri = alchemy_engine.url.render_as_string(hide_password=False)
+    query = """
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data
+        WHERE value BETWEEN {param_1} AND {param_2}
+    """
+    expected_frame = pl.DataFrame({"year": [2020], "name": ["misc"], "value": [100.0]})
+
+    # test URI read method (ADBC only)
+    assert_frame_equal(
+        expected_frame,
+        pl.read_database_uri(
+            query.format(param_1=param_1, param_2=param_2),
+            uri=uri,
+            engine="adbc",
+            execute_options={"parameters": param_value},
+        ),
+    )
+
+    #  no connectorx support for execute_options
+    with pytest.raises(
+        ValueError,
+        match="connectorx.*does not support.*execute_options",
+    ):
+        pl.read_database_uri(
+            query.format(param_1="?", param_2="?"),
+            uri=uri,
+            engine="connectorx",
+            execute_options={"parameters": (90, 100)},
         )
 
 
@@ -823,14 +1033,24 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
             "date": ["2020-01-01", "2021-12-31"],
         }
     )
-    expected_series = expected_frame.to_struct()
-
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
-    with alchemy_engine.connect() as conn:
-        query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
-        df = pl.DataFrame(list(query_result))
-        assert_frame_equal(expected_frame, df)
+    query = text("SELECT * FROM test_data ORDER BY name")
 
-        query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
-        s = pl.Series(list(query_result))
-        assert_series_equal(expected_series, s)
+    with alchemy_engine.connect() as conn:
+        # note: sqlalchemy `Row` is a NamedTuple-like object; it additionally has
+        # a `_mapping` attribute that returns a `RowMapping` dict-like object. we
+        # validate frame/series init from each flavour of query result.
+        query_result = list(conn.execute(query))
+        for df in (
+            pl.DataFrame(query_result),
+            pl.DataFrame([row._mapping for row in query_result]),
+            pl.from_records([row._mapping for row in query_result]),
+        ):
+            assert_frame_equal(expected_frame, df)
+
+        expected_series = expected_frame.to_struct()
+        for s in (
+            pl.Series(query_result),
+            pl.Series([row._mapping for row in query_result]),
+        ):
+            assert_series_equal(expected_series, s)

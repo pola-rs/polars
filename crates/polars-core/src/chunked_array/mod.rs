@@ -1,4 +1,5 @@
 //! The typed heart of every Series column.
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::iter::Map;
 use std::sync::Arc;
 
@@ -25,6 +26,7 @@ pub(crate) mod ndarray;
 #[cfg(feature = "dtype-array")]
 pub(crate) mod array;
 mod binary;
+mod binary_offset;
 mod bitwise;
 #[cfg(feature = "object")]
 mod drop;
@@ -257,7 +259,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Set flags for the [`ChunkedArray`]
-    pub(crate) fn set_flags(&mut self, flags: StatisticsFlags) {
+    pub fn set_flags(&mut self, flags: StatisticsFlags) {
         self.flags = StatisticsFlagsIM::new(flags);
     }
 
@@ -437,7 +439,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Returns an iterator over the lengths of the chunks of the array.
-    pub fn chunk_lengths(&self) -> ChunkLenIter {
+    pub fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 
@@ -614,7 +616,7 @@ where
     /// Should be used to match the chunk_id of another [`ChunkedArray`].
     /// # Panics
     /// It is the callers responsibility to ensure that this [`ChunkedArray`] has a single chunk.
-    pub(crate) fn match_chunks<I>(&self, chunk_id: I) -> Self
+    pub fn match_chunks<I>(&self, chunk_id: I) -> Self
     where
         I: Iterator<Item = usize>,
     {
@@ -819,7 +821,7 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
     PrimitiveArray::new(
-        T::get_dtype().to_arrow(CompatLevel::newest()),
+        T::get_static_dtype().to_arrow(CompatLevel::newest()),
         values.into(),
         validity,
     )
@@ -834,7 +836,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
-        let dtype = T::get_dtype();
+        let dtype = T::get_static_dtype();
         let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         ChunkedArray {
             field: Arc::new(Field::new(PlSmallStr::EMPTY, dtype)),
@@ -897,7 +899,7 @@ pub(crate) mod test {
     fn limit() {
         let a = get_chunked_array();
         let b = a.limit(2);
-        println!("{:?}", b);
+        println!("{b:?}");
         assert_eq!(b.len(), 2)
     }
 
@@ -1010,17 +1012,17 @@ pub(crate) mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_iter_categorical() {
-        use crate::{disable_string_cache, SINGLE_LOCK};
-        let _lock = SINGLE_LOCK.lock();
-        disable_string_cache();
         let ca = StringChunked::new(
             PlSmallStr::EMPTY,
             &[Some("foo"), None, Some("bar"), Some("ham")],
         );
-        let ca = ca
-            .cast(&DataType::Categorical(None, Default::default()))
-            .unwrap();
-        let ca = ca.categorical().unwrap();
+        let cats = Categories::new(
+            PlSmallStr::EMPTY,
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U32,
+        );
+        let ca = ca.cast(&DataType::from_categories(cats)).unwrap();
+        let ca = ca.cat32().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }

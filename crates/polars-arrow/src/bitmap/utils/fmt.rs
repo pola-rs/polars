@@ -54,7 +54,7 @@ pub fn fmt(
         return Ok(());
     }
 
-    let last = bytes[std::cmp::min((length + offset + 7) / 8, bytes.len() - 1)];
+    let last = bytes[std::cmp::min((length + offset).div_ceil(8), bytes.len() - 1)];
     let remaining = (length + offset) % 8;
     f.write_str(", ")?;
     f.write_str("0b")?;

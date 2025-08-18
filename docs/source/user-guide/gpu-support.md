@@ -7,7 +7,9 @@ available in Open Beta and is undergoing rapid development.
 ### System Requirements
 
 - NVIDIA Volta™ or higher GPU with [compute capability](https://developer.nvidia.com/cuda-gpus) 7.0+
-- CUDA 11 or CUDA 12
+- CUDA 12 (CUDA 11 support ends with RAPIDS v25.06; see
+  [RSN 48](https://docs.rapids.ai/notices/rsn0048/); if you're using CUDA 11, see the installation
+  note below)
 - Linux or Windows Subsystem for Linux 2 (WSL2)
 
 See the [RAPIDS installation guide](https://docs.rapids.ai/install#system-req) for full details.
@@ -25,11 +27,13 @@ pip install polars[gpu]
 
 !!! note Installation on a CUDA 11 system
 
-    If you have CUDA 11, the installation line also needs the NVIDIA package index to get the CUDA 11 package.
+    RAPIDS cuDF will **drop CUDA 11 support** starting with version **25.08**.
+    If you are using CUDA 11, you must pin to `cudf-polars-cu11==25.06`.
+    See the official [deprecation notice (RSN 48)](https://docs.rapids.ai/notices/rsn0048/) for details.
 
     === ":fontawesome-brands-python: Python"
     ```bash
-    pip install --extra-index-url=https://pypi.nvidia.com polars cudf-polars-cu11
+    pip install polars cudf-polars-cu11
     ```
 
 ### Usage

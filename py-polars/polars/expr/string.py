@@ -6,32 +6,40 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    issue_deprecation_warning,
-)
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import find_stacklevel, no_default
+from polars._utils.various import (
+    find_stacklevel,
+    issue_warning,
+    no_default,
+    qualified_type_name,
+)
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Time, parse_into_dtype
-from polars.datatypes.constants import N_INFER_DEFAULT
+from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
 from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
+    import sys
+
     from polars import Expr
     from polars._typing import (
         Ambiguous,
         IntoExpr,
         IntoExprColumn,
         PolarsDataType,
+        PolarsIntegerType,
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
         UnicodeForm,
     )
     from polars._utils.various import NoDefault
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprStringNameSpace:
@@ -316,19 +324,25 @@ class ExprStringNameSpace:
             raise ValueError(msg)
 
     @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
-    def to_decimal(
-        self,
-        inference_length: int = 100,
-    ) -> Expr:
+    @unstable()
+    def to_decimal(self, *, scale: int) -> Expr:
         """
         Convert a String column into a Decimal column.
 
-        This method infers the needed parameters `precision` and `scale`.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.20.0
+            Parameter `inference_length` should now be passed as a keyword argument.
+
+        .. versionchanged:: 1.33.0
+            Parameter `inference_length` was removed and `scale` was made non-optional.
 
         Parameters
         ----------
-        inference_length
-            Number of elements to parse to determine the `precision` and `scale`.
+        scale
+            Number of digits after the comma to use for the decimals.
 
         Examples
         --------
@@ -345,7 +359,7 @@ class ExprStringNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> df.with_columns(numbers_decimal=pl.col("numbers").str.to_decimal())
+        >>> df.with_columns(numbers_decimal=pl.col("numbers").str.to_decimal(scale=2))
         shape: (7, 2)
         ┌───────────┬─────────────────┐
         │ numbers   ┆ numbers_decimal │
@@ -361,7 +375,7 @@ class ExprStringNameSpace:
         │ 143.9     ┆ 143.90          │
         └───────────┴─────────────────┘
         """
-        return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
+        return wrap_expr(self._pyexpr.str_to_decimal(scale=scale))
 
     def len_bytes(self) -> Expr:
         """
@@ -581,8 +595,8 @@ class ExprStringNameSpace:
         │ world  ┆              │
         └────────┴──────────────┘
         """
-        characters = parse_into_expression(characters, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_strip_chars(characters))
+        characters_pyexpr = parse_into_expression(characters, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_strip_chars(characters_pyexpr))
 
     def strip_chars_start(self, characters: IntoExpr = None) -> Expr:
         r"""
@@ -650,8 +664,8 @@ class ExprStringNameSpace:
         │ aabcdef ┆ def             │
         └─────────┴─────────────────┘
         """
-        characters = parse_into_expression(characters, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
+        characters_pyexpr = parse_into_expression(characters, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_strip_chars_start(characters_pyexpr))
 
     def strip_chars_end(self, characters: IntoExpr = None) -> Expr:
         r"""
@@ -731,8 +745,8 @@ class ExprStringNameSpace:
         │ abcdeff ┆ abc           │
         └─────────┴───────────────┘
         """
-        characters = parse_into_expression(characters, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
+        characters_pyexpr = parse_into_expression(characters, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_strip_chars_end(characters_pyexpr))
 
     def strip_prefix(self, prefix: IntoExpr) -> Expr:
         """
@@ -771,8 +785,8 @@ class ExprStringNameSpace:
         │ bar       ┆ bar      │
         └───────────┴──────────┘
         """
-        prefix = parse_into_expression(prefix, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
+        prefix_pyexpr = parse_into_expression(prefix, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_strip_prefix(prefix_pyexpr))
 
     def strip_suffix(self, suffix: IntoExpr) -> Expr:
         """
@@ -811,18 +825,18 @@ class ExprStringNameSpace:
         │ bar       ┆          │
         └───────────┴──────────┘
         """
-        suffix = parse_into_expression(suffix, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
+        suffix_pyexpr = parse_into_expression(suffix, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_strip_suffix(suffix_pyexpr))
 
-    def pad_start(self, length: int, fill_char: str = " ") -> Expr:
+    def pad_start(self, length: int | IntoExprColumn, fill_char: str = " ") -> Expr:
         """
         Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -847,17 +861,21 @@ class ExprStringNameSpace:
         │ null         ┆ null         │
         └──────────────┴──────────────┘
         """
-        return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
+        length_pyexpr = parse_into_expression(length)
+        if not isinstance(fill_char, str):
+            msg = f'"pad_start" expects a `str`, given a {qualified_type_name(fill_char)!r}'
+            raise TypeError(msg)
+        return wrap_expr(self._pyexpr.str_pad_start(length_pyexpr, fill_char))
 
-    def pad_end(self, length: int, fill_char: str = " ") -> Expr:
+    def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Expr:
         """
         Pad the end of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is. Can be int or expression.
         fill_char
             The character to pad the string with.
 
@@ -881,7 +899,13 @@ class ExprStringNameSpace:
         │ null         ┆ null         │
         └──────────────┴──────────────┘
         """
-        return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
+        length_pyexpr = parse_into_expression(length)
+        if not isinstance(fill_char, str):
+            msg = (
+                f'"pad_end" expects a `str`, given a {qualified_type_name(fill_char)!r}'
+            )
+            raise TypeError(msg)
+        return wrap_expr(self._pyexpr.str_pad_end(length_pyexpr, fill_char))
 
     def zfill(self, length: int | IntoExprColumn) -> Expr:
         """
@@ -920,9 +944,27 @@ class ExprStringNameSpace:
         │ 999999 ┆ 999999 │
         │ null   ┆ null   │
         └────────┴────────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [-1, 123, 999999, None],
+        ...         "length": [8, 4, 1, 2],
+        ...     }
+        ... )
+        >>> df.with_columns(zfill=pl.col("a").cast(pl.String).str.zfill("length"))
+        shape: (4, 3)
+        ┌────────┬────────┬──────────┐
+        │ a      ┆ length ┆ zfill    │
+        │ ---    ┆ ---    ┆ ---      │
+        │ i64    ┆ i64    ┆ str      │
+        ╞════════╪════════╪══════════╡
+        │ -1     ┆ 8      ┆ -0000001 │
+        │ 123    ┆ 4      ┆ 0123     │
+        │ 999999 ┆ 1      ┆ 999999   │
+        │ null   ┆ 2      ┆ null     │
+        └────────┴────────┴──────────┘
         """
-        length = parse_into_expression(length)
-        return wrap_expr(self._pyexpr.str_zfill(length))
+        length_pyexpr = parse_into_expression(length)
+        return wrap_expr(self._pyexpr.str_zfill(length_pyexpr))
 
     def contains(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
@@ -991,8 +1033,8 @@ class ExprStringNameSpace:
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
         """
-        pattern = parse_into_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
+        pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_contains(pattern_pyexpr, literal, strict))
 
     def find(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
@@ -1084,8 +1126,8 @@ class ExprStringNameSpace:
         │ Crustacean ┆ (?i)A[BC] ┆ 5        │
         └────────────┴───────────┴──────────┘
         """
-        pattern = parse_into_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_find(pattern, literal, strict))
+        pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_find(pattern_pyexpr, literal, strict))
 
     def ends_with(self, suffix: str | Expr) -> Expr:
         """
@@ -1147,8 +1189,8 @@ class ExprStringNameSpace:
         │ mango  ┆ go     │
         └────────┴────────┘
         """
-        suffix = parse_into_expression(suffix, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_ends_with(suffix))
+        suffix_pyexpr = parse_into_expression(suffix, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_ends_with(suffix_pyexpr))
 
     def starts_with(self, prefix: str | Expr) -> Expr:
         """
@@ -1210,14 +1252,14 @@ class ExprStringNameSpace:
         │ apple  ┆ app    │
         └────────┴────────┘
         """
-        prefix = parse_into_expression(prefix, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_starts_with(prefix))
+        prefix_pyexpr = parse_into_expression(prefix, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_starts_with(prefix_pyexpr))
 
     def json_decode(
         self,
-        dtype: PolarsDataType | None = None,
+        dtype: PolarsDataType | pl.DataTypeExpr,
         *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
+        infer_schema_length: int | None = None,
     ) -> Expr:
         """
         Parse string values as JSON.
@@ -1227,11 +1269,13 @@ class ExprStringNameSpace:
         Parameters
         ----------
         dtype
-            The dtype to cast the extracted value to. If None, the dtype will be
-            inferred from the JSON value.
+            The dtype to cast the extracted value to.
         infer_schema_length
-            The maximum number of rows to scan for schema inference.
-            If set to `None`, the full data may be scanned *(this is slow)*.
+            Deprecated and ignored.
+
+        .. versionchanged: 1.33.0
+            Deprecate `infer_schema_length` and make `dtype` non-optional to
+            ensure that the planner can determine the output datatype.
 
         See Also
         --------
@@ -1256,9 +1300,18 @@ class ExprStringNameSpace:
         │ {"a":2, "b": false} ┆ {2,false} │
         └─────────────────────┴───────────┘
         """
-        if dtype is not None:
-            dtype = parse_into_dtype(dtype)
-        return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
+        if dtype is None:
+            msg = "`Expr.str.json_decode` needs an explicitly given `dtype` otherwise Polars is not able to determine the output type. If you want to eagerly infer datatype you can use `Series.str.json_decode`."
+            raise TypeError(msg)
+
+        if infer_schema_length is not None:
+            issue_warning(
+                "`Expr.str.json_decode` with `infer_schema_length` is deprecated and has no effect on execution.",
+                DeprecationWarning,
+            )
+
+        dtype_expr = parse_into_datatype_expr(dtype)._pydatatype_expr
+        return wrap_expr(self._pyexpr.str_json_decode(dtype_expr))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
@@ -1300,8 +1353,8 @@ class ExprStringNameSpace:
         │ {"a":true} ┆ true    │
         └────────────┴─────────┘
         """
-        json_path = parse_into_expression(json_path, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_json_path_match(json_path))
+        json_path_pyexpr = parse_into_expression(json_path, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_json_path_match(json_path_pyexpr))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         r"""
@@ -1460,8 +1513,8 @@ class ExprStringNameSpace:
         │ ronaldo   ┆ polars  ┆ null  │
         └───────────┴─────────┴───────┘
         """
-        pattern = parse_into_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
+        pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_extract(pattern_pyexpr, group_index))
 
     def extract_all(self, pattern: str | Expr) -> Expr:
         r'''
@@ -1546,8 +1599,8 @@ class ExprStringNameSpace:
         └────────────────┘
 
         '''
-        pattern = parse_into_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_extract_all(pattern))
+        pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_extract_all(pattern_pyexpr))
 
     def extract_groups(self, pattern: str) -> Expr:
         r"""
@@ -1634,6 +1687,9 @@ class ExprStringNameSpace:
         │ http://vote.com/ballon_dor?err… ┆ {null,null}           ┆ null     │
         └─────────────────────────────────┴───────────────────────┴──────────┘
         """
+        if not isinstance(pattern, str):
+            msg = f'"extract_groups" expects a `str`, given a {qualified_type_name(pattern)!r}'
+            raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
     def count_matches(self, pattern: str | Expr, *, literal: bool = False) -> Expr:
@@ -1690,8 +1746,8 @@ class ExprStringNameSpace:
         │ null       ┆ null         │
         └────────────┴──────────────┘
         """
-        pattern = parse_into_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_count_matches(pattern, literal))
+        pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_count_matches(pattern_pyexpr, literal))
 
     def split(self, by: IntoExpr, *, inclusive: bool = False) -> Expr:
         """
@@ -1747,10 +1803,10 @@ class ExprStringNameSpace:
         Expr
             Expression of data type :class:`String`.
         """
-        by = parse_into_expression(by, str_as_lit=True)
+        by_pyexpr = parse_into_expression(by, str_as_lit=True)
         if inclusive:
-            return wrap_expr(self._pyexpr.str_split_inclusive(by))
-        return wrap_expr(self._pyexpr.str_split(by))
+            return wrap_expr(self._pyexpr.str_split_inclusive(by_pyexpr))
+        return wrap_expr(self._pyexpr.str_split(by_pyexpr))
 
     def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Expr:
         """
@@ -1815,10 +1871,10 @@ class ExprStringNameSpace:
         │ d_4  ┆ d          ┆ 4           │
         └──────┴────────────┴─────────────┘
         """
-        by = parse_into_expression(by, str_as_lit=True)
+        by_pyexpr = parse_into_expression(by, str_as_lit=True)
         if inclusive:
-            return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
-        return wrap_expr(self._pyexpr.str_split_exact(by, n))
+            return wrap_expr(self._pyexpr.str_split_exact_inclusive(by_pyexpr, n))
+        return wrap_expr(self._pyexpr.str_split_exact(by_pyexpr, n))
 
     def splitn(self, by: IntoExpr, n: int) -> Expr:
         """
@@ -1878,8 +1934,8 @@ class ExprStringNameSpace:
         │ foo bar baz ┆ foo        ┆ bar baz     │
         └─────────────┴────────────┴─────────────┘
         """
-        by = parse_into_expression(by, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_splitn(by, n))
+        by_pyexpr = parse_into_expression(by, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_splitn(by_pyexpr, n))
 
     def replace(
         self,
@@ -1998,9 +2054,11 @@ class ExprStringNameSpace:
         │ Philadelphia ┆ Winter ┆ Sunny   │
         └──────────────┴────────┴─────────┘
         """
-        pattern = parse_into_expression(pattern, str_as_lit=True)
-        value = parse_into_expression(value, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_replace_n(pattern, value, literal, n))
+        pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
+        value_pyexpr = parse_into_expression(value, str_as_lit=True)
+        return wrap_expr(
+            self._pyexpr.str_replace_n(pattern_pyexpr, value_pyexpr, literal, n)
+        )
 
     def replace_all(
         self, pattern: str | Expr, value: str | Expr, *, literal: bool = False
@@ -2118,9 +2176,11 @@ class ExprStringNameSpace:
         │ Philadelphia ┆ Winter ┆ Sunny   │
         └──────────────┴────────┴─────────┘
         """
-        pattern = parse_into_expression(pattern, str_as_lit=True)
-        value = parse_into_expression(value, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
+        pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
+        value_pyexpr = parse_into_expression(value, str_as_lit=True)
+        return wrap_expr(
+            self._pyexpr.str_replace_all(pattern_pyexpr, value_pyexpr, literal)
+        )
 
     def reverse(self) -> Expr:
         """
@@ -2202,9 +2262,9 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ onf   │
         └─────────────┴───────┘
         """
-        offset = parse_into_expression(offset)
-        length = parse_into_expression(length)
-        return wrap_expr(self._pyexpr.str_slice(offset, length))
+        offset_pyexpr = parse_into_expression(offset)
+        length_pyexpr = parse_into_expression(length)
+        return wrap_expr(self._pyexpr.str_slice(offset_pyexpr, length_pyexpr))
 
     def head(self, n: int | IntoExprColumn) -> Expr:
         """
@@ -2276,8 +2336,8 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ -5  ┆ dragon   │
         └─────────────┴─────┴──────────┘
         """
-        n = parse_into_expression(n)
-        return wrap_expr(self._pyexpr.str_head(n))
+        n_pyexpr = parse_into_expression(n)
+        return wrap_expr(self._pyexpr.str_head(n_pyexpr))
 
     def tail(self, n: int | IntoExprColumn) -> Expr:
         """
@@ -2349,25 +2409,24 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ -5  ┆ nfruit   │
         └─────────────┴─────┴──────────┘
         """
-        n = parse_into_expression(n)
-        return wrap_expr(self._pyexpr.str_tail(n))
+        n_pyexpr = parse_into_expression(n)
+        return wrap_expr(self._pyexpr.str_tail(n_pyexpr))
 
-    @deprecate_function(
-        'Use `.str.split("").explode()` instead.'
+    @deprecated(
+        '`str.explode` is deprecated; use `str.split("").explode()` instead.'
         " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use when/then/otherwise"
-        " to handle the empty list before exploding.",
-        version="0.20.31",
+        " To get the exact same behavior, split first and then use a `pl.when...then...otherwise`"
+        " expression to handle the empty list before exploding."
     )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use `.str.split("").explode()` instead.
-            Note that empty strings will result in null instead of being preserved.
-            To get the exact same behavior, split first and then use when/then/otherwise
-            to handle the empty list before exploding.
+            Use the `.str.split("").explode()` method instead. Note that empty strings
+            will result in null instead of being preserved. To get the exact same
+            behavior, split first and then use a `pl.when...then...otherwise`
+            expression to handle the empty list before exploding.
 
         Returns
         -------
@@ -2396,7 +2455,11 @@ class ExprStringNameSpace:
         return F.when(split.ne_missing([])).then(split).otherwise([""]).explode()
 
     def to_integer(
-        self, *, base: int | IntoExprColumn = 10, strict: bool = True
+        self,
+        *,
+        base: int | IntoExprColumn = 10,
+        dtype: PolarsIntegerType = Int64,
+        strict: bool = True,
     ) -> Expr:
         """
         Convert a String column into an Int64 column with base radix.
@@ -2419,12 +2482,16 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.with_columns(parsed=pl.col("bin").str.to_integer(base=2, strict=False))
+        >>> df.with_columns(
+        ...     parsed=pl.col("bin").str.to_integer(
+        ...         base=2, dtype=pl.Int32, strict=False
+        ...     )
+        ... )
         shape: (4, 2)
         ┌─────────┬────────┐
         │ bin     ┆ parsed │
         │ ---     ┆ ---    │
-        │ str     ┆ i64    │
+        │ str     ┆ i32    │
         ╞═════════╪════════╡
         │ 110     ┆ 6      │
         │ 101     ┆ 5      │
@@ -2446,8 +2513,8 @@ class ExprStringNameSpace:
         │ null ┆ null   │
         └──────┴────────┘
         """
-        base = parse_into_expression(base, str_as_lit=False)
-        return wrap_expr(self._pyexpr.str_to_integer(base, strict))
+        base_pyexpr = parse_into_expression(base, str_as_lit=False)
+        return wrap_expr(self._pyexpr.str_to_integer(base_pyexpr, dtype, strict))
 
     def contains_any(
         self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
@@ -2497,11 +2564,9 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ true         │
         └────────────────────────────────────────────────────┴──────────────┘
         """
-        patterns = parse_into_expression(
-            patterns, str_as_lit=False, list_as_series=True
-        )
+        patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
-            self._pyexpr.str_contains_any(patterns, ascii_case_insensitive)
+            self._pyexpr.str_contains_any(patterns_pyexpr, ascii_case_insensitive)
         )
 
     def replace_many(
@@ -2572,8 +2637,8 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 
-        Broadcast a replacement for many patterns by passing a string or a sequence of
-        length 1 to the `replace_with` parameter.
+        Broadcast a replacement for many patterns by passing sequence of length 1 to the
+        `replace_with` parameter.
 
         >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> df = pl.DataFrame(
@@ -2589,7 +2654,7 @@ class ExprStringNameSpace:
         ...     pl.col("lyrics")
         ...     .str.replace_many(
         ...         ["me", "you", "they"],
-        ...         "",
+        ...         [""],
         ...     )
         ...     .alias("removes_pronouns")
         ... )
@@ -2640,20 +2705,17 @@ class ExprStringNameSpace:
             # Early return in case of an empty mapping.
             if not patterns:
                 return wrap_expr(self._pyexpr)
-            replace_with = pl.Series(patterns.values())
-            patterns = pl.Series(patterns.keys())
+            replace_with = list(patterns.values())
+            patterns = list(patterns.keys())
 
-        patterns = parse_into_expression(
+        patterns_pyexpr = parse_into_expression(
             patterns,  # type: ignore[arg-type]
             str_as_lit=False,
-            list_as_series=True,
         )
-        replace_with = parse_into_expression(
-            replace_with, str_as_lit=True, list_as_series=True
-        )
+        replace_with_pyexpr = parse_into_expression(replace_with, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.str_replace_many(
-                patterns, replace_with, ascii_case_insensitive
+                patterns_pyexpr, replace_with_pyexpr, ascii_case_insensitive
             )
         )
 
@@ -2724,13 +2786,12 @@ class ExprStringNameSpace:
         │ ["disco"]       │
         │ ["rhap", "ody"] │
         └─────────────────┘
-
         """
-        patterns = parse_into_expression(
-            patterns, str_as_lit=False, list_as_series=True
-        )
+        patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
-            self._pyexpr.str_extract_many(patterns, ascii_case_insensitive, overlapping)
+            self._pyexpr.str_extract_many(
+                patterns_pyexpr, ascii_case_insensitive, overlapping
+            )
         )
 
     @unstable()
@@ -2770,20 +2831,20 @@ class ExprStringNameSpace:
         >>> patterns = ["winter", "disco", "onte", "discontent"]
         >>> df.with_columns(
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=False)
+        ...     .str.find_many(patterns, overlapping=False)
         ...     .alias("matches"),
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=True)
+        ...     .str.find_many(patterns, overlapping=True)
         ...     .alias("matches_overlapping"),
         ... )
         shape: (1, 3)
-        ┌────────────┬───────────┬─────────────────────────────────┐
-        │ values     ┆ matches   ┆ matches_overlapping             │
-        │ ---        ┆ ---       ┆ ---                             │
-        │ str        ┆ list[str] ┆ list[str]                       │
-        ╞════════════╪═══════════╪═════════════════════════════════╡
-        │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
-        └────────────┴───────────┴─────────────────────────────────┘
+        ┌────────────┬───────────┬─────────────────────┐
+        │ values     ┆ matches   ┆ matches_overlapping │
+        │ ---        ┆ ---       ┆ ---                 │
+        │ str        ┆ list[u32] ┆ list[u32]           │
+        ╞════════════╪═══════════╪═════════════════════╡
+        │ discontent ┆ [0]       ┆ [0, 4, 0]           │
+        └────────────┴───────────┴─────────────────────┘
         >>> df = pl.DataFrame(
         ...     {
         ...         "values": ["discontent", "rhapsody"],
@@ -2803,13 +2864,12 @@ class ExprStringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
-
         """
-        patterns = parse_into_expression(
-            patterns, str_as_lit=False, list_as_series=True
-        )
+        patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
-            self._pyexpr.str_find_many(patterns, ascii_case_insensitive, overlapping)
+            self._pyexpr.str_find_many(
+                patterns_pyexpr, ascii_case_insensitive, overlapping
+            )
         )
 
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Expr:
@@ -2854,6 +2914,10 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
 
+    @deprecated(
+        "`str.concat` is deprecated; use `str.join` instead. Note also that the "
+        "default `delimiter` for `str.join` is an empty string, not a hyphen."
+    )
     def concat(
         self, delimiter: str | None = None, *, ignore_nulls: bool = True
     ) -> Expr:
@@ -2903,11 +2967,6 @@ class ExprStringNameSpace:
         └──────┘
         """
         if delimiter is None:
-            issue_deprecation_warning(
-                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
-                " Pass a delimiter to silence this warning.",
-                version="0.20.5",
-            )
             delimiter = "-"
         return self.join(delimiter, ignore_nulls=ignore_nulls)
 

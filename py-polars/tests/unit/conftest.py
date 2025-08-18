@@ -6,7 +6,7 @@ import random
 import string
 import sys
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 import pytest
@@ -250,25 +250,6 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     #     tracemalloc.stop()
 
 
-@pytest.fixture(params=[True, False])
-def test_global_and_local(
-    request: FixtureRequest,
-) -> Generator[Any, Any, Any]:
-    """
-    Setup fixture which runs each test with and without global string cache.
-
-    Usage: @pytest.mark.usefixtures("test_global_and_local")
-    """
-    use_global = request.param
-    if use_global:
-        with pl.StringCache():
-            # Pre-fill some global items to ensure physical repr isn't 0..n.
-            pl.Series(["eapioejf", "2m4lmv", "3v3v9dlf"], dtype=pl.Categorical)
-            yield
-    else:
-        yield
-
-
 @contextmanager
 def mock_module_import(
     name: str, module: ModuleType, *, replace_if_exists: bool = False
@@ -297,3 +278,17 @@ def mock_module_import(
                 sys.modules[name] = original
             else:
                 del sys.modules[name]
+
+
+def time_func(func: Callable[[], Any], *, iterations: int = 3) -> float:
+    """Minimum time over 3 iterations."""
+    from time import perf_counter
+
+    times = []
+    for _ in range(iterations):
+        t = perf_counter()
+        func()
+        times.append(perf_counter() - t)
+        times = [min(times)]
+
+    return min(times)

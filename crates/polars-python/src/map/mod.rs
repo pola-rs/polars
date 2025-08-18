@@ -7,9 +7,10 @@ use std::collections::BTreeMap;
 use arrow::bitmap::BitmapBuilder;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
-use polars_core::utils::CustomIterTools;
 use polars_core::POOL;
+use polars_core::utils::CustomIterTools;
 use polars_utils::pl_str::PlSmallStr;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
@@ -34,11 +35,21 @@ impl PyPolarsNumericType for Int128Type {}
 impl PyPolarsNumericType for Float32Type {}
 impl PyPolarsNumericType for Float64Type {}
 
-fn iterator_to_struct<'a>(
-    py: Python,
-    it: impl Iterator<Item = PyResult<Option<Bound<'a, PyAny>>>>,
+pub(super) fn check_nested_object(dt: &DataType) -> PyResult<()> {
+    if dt.contains_objects() {
+        Err(PyValueError::new_err(
+            "nested objects are not allowed\n\nSet `return_dtype=polars.Object` to use Python's native nesting.",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn iterator_to_struct<'py>(
+    py: Python<'py>,
+    it: impl Iterator<Item = PyResult<Option<Bound<'py, PyAny>>>>,
     init_null_count: usize,
-    first_value: AnyValue<'a>,
+    first_value: AnyValue<'static>,
     name: PlSmallStr,
     capacity: usize,
 ) -> PyResult<PySeries> {
@@ -48,7 +59,7 @@ fn iterator_to_struct<'a>(
         _ => {
             return Err(crate::exceptions::ComputeError::new_err(format!(
                 "expected struct got {first_value:?}",
-            )))
+            )));
         },
     };
 
@@ -320,7 +331,7 @@ fn iterator_to_list(
         match opt_val? {
             None => builder.append_null(),
             Some(s) => {
-                if s.len() == 0 && s.dtype() != dt {
+                if s.is_empty() && s.dtype() != dt {
                     builder
                         .append_series(&Series::full_null(PlSmallStr::EMPTY, 0, dt))
                         .unwrap()

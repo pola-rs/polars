@@ -12,28 +12,27 @@ description = "Lazy query engine for the Polars DataFrame library"
 arrow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true, optional = true }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
-polars-pipe = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-stream = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
-ahash = { workspace = true }
 bitflags = { workspace = true }
 either = { workspace = true }
 memchr = { workspace = true }
-once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
+bytes = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
@@ -41,13 +40,11 @@ version_check = { workspace = true }
 
 [features]
 catalog = ["polars-io/catalog"]
-nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
-streaming = ["polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids", "polars-expr/streaming"]
+nightly = ["polars-core/nightly", "polars-plan/nightly"]
 new_streaming = ["polars-stream"]
 parquet = [
   "polars-io/parquet",
   "polars-plan/parquet",
-  "polars-pipe?/parquet",
   "polars-expr/parquet",
   "polars-mem-engine/parquet",
   "polars-stream?/parquet",
@@ -55,28 +52,25 @@ parquet = [
 async = [
   "polars-plan/async",
   "polars-io/cloud",
-  "polars-pipe?/async",
   "polars-mem-engine/async",
 ]
 cloud = [
   "async",
-  "polars-pipe?/cloud",
   "polars-plan/cloud",
   "tokio",
   "futures",
   "polars-mem-engine/cloud",
   "polars-stream?/cloud",
 ]
-ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc", "polars-stream?/ipc"]
+ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-mem-engine/ipc", "polars-stream?/ipc"]
 json = [
   "polars-io/json",
   "polars-plan/json",
   "polars-json",
-  "polars-pipe?/json",
   "polars-mem-engine/json",
   "polars-stream?/json",
 ]
-csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv", "polars-mem-engine/csv", "polars-stream?/csv"]
+csv = ["polars-io/csv", "polars-plan/csv", "polars-mem-engine/csv", "polars-stream?/csv"]
 temporal = [
   "dtype-datetime",
   "dtype-date",
@@ -109,13 +103,12 @@ dtype-full = [
 ]
 dtype-array = [
   "polars-plan/dtype-array",
-  "polars-pipe?/dtype-array",
+  "polars-stream?/dtype-array",
   "polars-ops/dtype-array",
   "polars-expr/dtype-array",
 ]
 dtype-categorical = [
   "polars-plan/dtype-categorical",
-  "polars-pipe?/dtype-categorical",
   "polars-stream?/dtype-categorical",
   "polars-expr/dtype-categorical",
   "polars-mem-engine/dtype-categorical",
@@ -136,7 +129,6 @@ dtype-datetime = [
 ]
 dtype-decimal = [
   "polars-plan/dtype-decimal",
-  "polars-pipe?/dtype-decimal",
   "polars-expr/dtype-decimal",
   "polars-mem-engine/dtype-decimal",
 ]
@@ -147,9 +139,14 @@ dtype-duration = [
   "polars-expr/dtype-duration",
   "polars-mem-engine/dtype-duration",
 ]
-dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16", "polars-expr/dtype-i16", "polars-mem-engine/dtype-i16"]
-dtype-i128 = ["polars-plan/dtype-i128", "polars-pipe?/dtype-i128", "polars-expr/dtype-i128"]
-dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8"]
+dtype-i16 = [
+  "polars-plan/dtype-i16",
+  "polars-expr/dtype-i16",
+  "polars-mem-engine/dtype-i16",
+  "polars-stream?/dtype-i16",
+]
+dtype-i128 = ["polars-plan/dtype-i128", "polars-expr/dtype-i128", "polars-stream?/dtype-i128"]
+dtype-i8 = ["polars-plan/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8", "polars-stream?/dtype-i8"]
 dtype-struct = [
   "polars-plan/dtype-struct",
   "polars-ops/dtype-struct",
@@ -163,8 +160,13 @@ dtype-time = [
   "polars-expr/dtype-time",
   "polars-mem-engine/dtype-time",
 ]
-dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dtype-u16", "polars-mem-engine/dtype-u16"]
-dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8"]
+dtype-u16 = [
+  "polars-plan/dtype-u16",
+  "polars-expr/dtype-u16",
+  "polars-mem-engine/dtype-u16",
+  "polars-stream?/dtype-u16",
+]
+dtype-u8 = ["polars-plan/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8", "polars-stream?/dtype-u8"]
 
 object = ["polars-plan/object", "polars-mem-engine/object", "polars-stream?/object"]
 month_start = ["polars-plan/month_start"]
@@ -173,6 +175,7 @@ offset_by = ["polars-plan/offset_by"]
 trigonometry = ["polars-plan/trigonometry"]
 sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
+list_filter = ["polars-ops/list_filter", "polars-plan/list_filter"]
 list_gather = ["polars-ops/list_gather", "polars-plan/list_gather"]
 list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 array_count = ["polars-ops/array_count", "polars-plan/array_count", "dtype-array"]
@@ -188,21 +191,25 @@ bitwise = [
   "polars-ops/bitwise",
 ]
 approx_unique = ["polars-plan/approx_unique"]
-is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in"]
+is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in", "polars-stream?/is_in"]
 repeat_by = ["polars-plan/repeat_by"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series", "polars-expr/round_series"]
 is_first_distinct = ["polars-plan/is_first_distinct"]
 is_last_distinct = ["polars-plan/is_last_distinct"]
 is_between = ["polars-plan/is_between", "polars-expr/is_between"]
+is_close = ["polars-plan/is_close"]
 is_unique = ["polars-plan/is_unique"]
-cross_join = ["polars-plan/cross_join", "polars-pipe?/cross_join", "polars-ops/cross_join"]
+cross_join = ["polars-plan/cross_join", "polars-ops/cross_join"]
 asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join", "polars-mem-engine/asof_join"]
 iejoin = ["polars-plan/iejoin"]
 business = ["polars-plan/business"]
 concat_str = ["polars-plan/concat_str"]
-range = ["polars-plan/range"]
+range = [
+  "polars-plan/range",
+  "polars-stream?/range",
+]
 mode = ["polars-plan/mode"]
-cum_agg = ["polars-plan/cum_agg"]
+cum_agg = ["polars-plan/cum_agg", "polars-stream?/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
 interpolate_by = ["polars-plan/interpolate_by"]
 rolling_window = [
@@ -256,8 +263,8 @@ search_sorted = ["polars-plan/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted", "polars-mem-engine/merge_sorted"]
 meta = ["polars-plan/meta"]
 pivot = ["polars-core/rows", "polars-ops/pivot", "polars-plan/pivot"]
-top_k = ["polars-plan/top_k"]
-semi_anti_join = ["polars-plan/semi_anti_join"]
+top_k = ["polars-plan/top_k", "polars-stream?/top_k"]
+semi_anti_join = ["polars-plan/semi_anti_join", "polars-stream?/semi_anti_join"]
 cse = ["polars-plan/cse"]
 propagate_nans = ["polars-plan/propagate_nans", "polars-expr/propagate_nans"]
 coalesce = ["polars-plan/coalesce"]
@@ -270,6 +277,7 @@ serde = [
   "polars-io/serde",
   "polars-ops/serde",
   "polars-utils/serde",
+  "polars-compute/serde",
 ]
 fused = ["polars-plan/fused", "polars-ops/fused"]
 list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
@@ -283,13 +291,21 @@ extract_groups = ["polars-plan/extract_groups"]
 peaks = ["polars-plan/peaks"]
 cov = ["polars-ops/cov", "polars-plan/cov"]
 hist = ["polars-plan/hist"]
-replace = ["polars-plan/replace"]
+replace = ["polars-plan/replace", "polars-stream?/replace"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 string_encoding = ["polars-plan/string_encoding"]
 
 bigidx = ["polars-plan/bigidx", "polars-utils/bigidx"]
-polars_cloud = ["polars-plan/polars_cloud"]
+polars_cloud_client = ["polars-plan/polars_cloud_client"]
+polars_cloud_server = ["polars-plan/polars_cloud_server"]
+allow_unused = [
+  "polars-expr/allow_unused",
+  "polars-mem-engine/allow_unused",
+  "polars-time?/allow_unused",
+  "polars-io/allow_unused",
+  "polars-plan/allow_unused",
+]
 
 test = [
   "polars-plan/debugging",
@@ -376,6 +392,7 @@ features = [
   "list_count",
   "list_drop_nulls",
   "list_eval",
+  "list_filter",
   "list_gather",
   "list_sample",
   "list_sets",
@@ -413,7 +430,6 @@ features = [
   "semi_anti_join",
   "serde",
   "sign",
-  "streaming",
   "string_encoding",
   "string_normalize",
   "string_pad",
@@ -430,3 +446,6 @@ features = [
 ]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

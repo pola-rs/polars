@@ -1,3 +1,5 @@
+use polars_compute::rolling::QuantileMethod;
+
 use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
@@ -10,7 +12,7 @@ macro_rules! impl_dyn_series {
             fn compute_len(&mut self) {
                 self.0.compute_len()
             }
-            fn _field(&self) -> Cow<Field> {
+            fn _field(&self) -> Cow<'_, Field> {
                 Cow::Borrowed(self.0.ref_field())
             }
             fn _dtype(&self) -> &DataType {
@@ -50,7 +52,7 @@ macro_rules! impl_dyn_series {
 
             fn vec_hash(
                 &self,
-                random_state: PlRandomState,
+                random_state: PlSeedableRandomStateQuality,
                 buf: &mut Vec<u64>,
             ) -> PolarsResult<()> {
                 self.0.vec_hash(random_state, buf)?;
@@ -59,7 +61,7 @@ macro_rules! impl_dyn_series {
 
             fn vec_hash_combine(
                 &self,
-                build_hasher: PlRandomState,
+                build_hasher: PlSeedableRandomStateQuality,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
                 self.0.vec_hash_combine(build_hasher, hashes)?;
@@ -142,7 +144,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "rolling_window")]
             fn rolling_map(
                 &self,
-                _f: &dyn Fn(&Series) -> Series,
+                _f: &dyn Fn(&Series) -> PolarsResult<Series>,
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
@@ -152,7 +154,7 @@ macro_rules! impl_dyn_series {
                 self.0.rename(name);
             }
 
-            fn chunk_lengths(&self) -> ChunkLenIter {
+            fn chunk_lengths(&self) -> ChunkLenIter<'_> {
                 self.0.chunk_lengths()
             }
             fn name(&self) -> &PlSmallStr {
@@ -251,7 +253,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
-            unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+            unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
                 self.0.get_any_value_unchecked(index)
             }
 
@@ -333,21 +335,21 @@ macro_rules! impl_dyn_series {
             }
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.and_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
             }
             #[cfg(feature = "bitwise")]
             fn or_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.or_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
             }
             #[cfg(feature = "bitwise")]
             fn xor_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.xor_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -362,6 +364,10 @@ macro_rules! impl_dyn_series {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
 
+            fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+                self.0.find_validity_mismatch(other, idxs)
+            }
+
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
@@ -373,6 +379,10 @@ macro_rules! impl_dyn_series {
 
             fn as_any_mut(&mut self) -> &mut dyn Any {
                 &mut self.0
+            }
+
+            fn as_phys_any(&self) -> &dyn Any {
+                &self.0
             }
 
             fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

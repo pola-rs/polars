@@ -36,7 +36,7 @@ fn extract_groups_array(
     }
 
     let values = builders.into_iter().map(|a| a.freeze().boxed()).collect();
-    Ok(StructArray::new(dtype.clone(), arr.len(), values, arr.validity().cloned()).boxed())
+    Ok(StructArray::new(dtype, arr.len(), values, arr.validity().cloned()).boxed())
 }
 
 #[cfg(feature = "extract_groups")]
@@ -45,15 +45,11 @@ pub(super) fn extract_groups(
     pat: &str,
     dtype: &DataType,
 ) -> PolarsResult<Series> {
-    let reg = Regex::new(pat)?;
+    let reg = polars_utils::regex_cache::compile_regex(pat)?;
     let n_fields = reg.captures_len();
     if n_fields == 1 {
-        return StructChunked::from_series(
-            ca.name().clone(),
-            ca.len(),
-            [Series::new_null(ca.name().clone(), ca.len())].iter(),
-        )
-        .map(|ca| ca.into_series());
+        return StructChunked::from_series(ca.name().clone(), ca.len(), [].iter())
+            .map(|ca| ca.into_series());
     }
 
     let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
@@ -105,7 +101,7 @@ fn extract_group_array_lit(
 
     for opt_pat in pat {
         if let Some(pat) = opt_pat {
-            let reg = Regex::new(pat)?;
+            let reg = polars_utils::regex_cache::compile_regex(pat)?;
             let mut locs = reg.capture_locations();
             if reg.captures_read(&mut locs, s).is_some() {
                 builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
@@ -130,7 +126,7 @@ fn extract_group_binary(
     for (opt_s, opt_pat) in zip(arr, pat) {
         match (opt_s, opt_pat) {
             (Some(s), Some(pat)) => {
-                let reg = Regex::new(pat)?;
+                let reg = polars_utils::regex_cache::compile_regex(pat)?;
                 let mut locs = reg.capture_locations();
                 if reg.captures_read(&mut locs, s).is_some() {
                     builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
@@ -154,7 +150,7 @@ pub(super) fn extract_group(
     match (ca.len(), pat.len()) {
         (_, 1) => {
             if let Some(pat) = pat.get(0) {
-                let reg = Regex::new(pat)?;
+                let reg = polars_utils::regex_cache::compile_regex(pat)?;
                 try_unary_mut_with_options(ca, |arr| extract_group_reg_lit(arr, &reg, group_index))
             } else {
                 Ok(StringChunked::full_null(ca.name().clone(), ca.len()))

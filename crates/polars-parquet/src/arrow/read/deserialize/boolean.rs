@@ -7,13 +7,13 @@ use polars_compute::filter::filter_boolean_kernel;
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
-    self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity, Decoded, Decoder,
+    self, Decoded, Decoder, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity,
 };
 use super::{Filter, PredicateFilter};
-use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -438,13 +438,13 @@ impl Decoder for BooleanDecoder {
                         decode_masked_optional_rle(values, target, &page_validity, &filter)
                     },
                     (Some(Filter::Range(rng)), None) => {
-                        decode_masked_required_rle(values, target, &filter_from_range(rng.clone()))
+                        decode_masked_required_rle(values, target, &filter_from_range(rng))
                     },
                     (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional_rle(
                         values,
                         target,
                         &page_validity,
-                        &filter_from_range(rng.clone()),
+                        &filter_from_range(rng),
                     ),
                     (Some(Filter::Predicate(_)), _) => todo!(),
                 }?;

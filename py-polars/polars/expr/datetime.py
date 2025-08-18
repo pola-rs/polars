@@ -6,12 +6,15 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
+from polars._utils.unstable import unstable
+from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Iterable
 
     from polars import Expr
@@ -25,6 +28,11 @@ if TYPE_CHECKING:
         TimeUnit,
     )
 
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
+
 
 class ExprDateTimeNameSpace:
     """Namespace for datetime related expressions."""
@@ -34,6 +42,7 @@ class ExprDateTimeNameSpace:
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    @unstable()
     @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.12.0")
     def add_business_days(
         self,
@@ -44,6 +53,13 @@ class ExprDateTimeNameSpace:
     ) -> Expr:
         """
         Offset by `n` business days.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.12.0
+            Parameters after `n` should now be passed as keyword arguments.
 
         Parameters
         ----------
@@ -66,7 +82,7 @@ class ExprDateTimeNameSpace:
 
                 my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
 
-            and pass `holidays=my_holidays` when you call `business_day_count`.
+            and pass `holidays=my_holidays` when you call `add_business_days`.
         roll
             What to do when the start date lands on a non-business day. Options are:
 
@@ -148,7 +164,7 @@ class ExprDateTimeNameSpace:
         return wrap_expr(
             self._pyexpr.dt_add_business_days(
                 n_pyexpr,
-                week_mask,
+                list(week_mask),
                 [(holiday - unix_epoch).days for holiday in holidays],
                 roll,
             )
@@ -159,20 +175,24 @@ class ExprDateTimeNameSpace:
         Divide the date/datetime range into buckets.
 
         Each date/datetime is mapped to the start of its bucket using the corresponding
-        local datetime. Note that weekly buckets start on Monday.
-        Ambiguous results are localised using the DST offset of the original timestamp -
-        for example, truncating `'2022-11-06 01:30:00 CST'` by `'1h'` results in
-        `'2022-11-06 01:00:00 CST'`, whereas truncating `'2022-11-06 01:30:00 CDT'` by
-        `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
+        local datetime. Note that:
+
+        - Weekly buckets start on Monday.
+        - All other buckets start on the Unix epoch (1970-01-01).
+        - Ambiguous results are localised using the DST offset of the original
+          timestamp - for example, truncating `'2022-11-06 01:30:00 CST'` by
+          `'1h'` results in `'2022-11-06 01:00:00 CST'`, whereas truncating
+          `'2022-11-06 01:30:00 CDT'` by `'1h'` results in
+          `'2022-11-06 01:00:00 CDT'`.
 
         Parameters
         ----------
         every
-            Every interval start and period length
+            The size of each bucket.
 
         Notes
         -----
-        The `every` argument is created with the
+        The `every` argument is created with
         the following string language:
 
         - 1ns   (1 nanosecond)
@@ -186,11 +206,6 @@ class ExprDateTimeNameSpace:
         - 1mo   (1 calendar month)
         - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
-
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -276,8 +291,8 @@ class ExprDateTimeNameSpace:
         """
         if isinstance(every, dt.timedelta):
             every = parse_as_duration_string(every)
-        every = parse_into_expression(every, str_as_lit=True)
-        return wrap_expr(self._pyexpr.dt_truncate(every))
+        every_pyexpr = parse_into_expression(every, str_as_lit=True)
+        return wrap_expr(self._pyexpr.dt_truncate(every_pyexpr))
 
     def round(self, every: str | dt.timedelta | IntoExprColumn) -> Expr:
         """
@@ -306,7 +321,7 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        The `every` argument is created with the
+        The `every` argument is created with
         the following small string formatting language:
 
         - 1ns   (1 nanosecond)
@@ -320,8 +335,6 @@ class ExprDateTimeNameSpace:
         - 1mo   (1 calendar month)
         - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
-
-        eg: 3d12h4m25s  # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -381,8 +394,8 @@ class ExprDateTimeNameSpace:
         """
         if isinstance(every, dt.timedelta):
             every = parse_as_duration_string(every)
-        every = parse_into_expression(every, str_as_lit=True)
-        return wrap_expr(self._pyexpr.dt_round(every))
+        every_pyexpr = parse_into_expression(every, str_as_lit=True)
+        return wrap_expr(self._pyexpr.dt_round(every_pyexpr))
 
     def replace(
         self,
@@ -459,21 +472,27 @@ class ExprDateTimeNameSpace:
         │ 2025-03-16 ┆ 15      ┆ 1800-03-16 │
         └────────────┴─────────┴────────────┘
         """
-        day, month, year, hour, minute, second, microsecond = (
-            parse_into_list_of_expressions(
-                day, month, year, hour, minute, second, microsecond
-            )
+        (
+            day_pyexpr,
+            month_pyexpr,
+            year_pyexpr,
+            hour_pyexpr,
+            minute_pyexpr,
+            second_pyexpr,
+            microsecond_pyexpr,
+        ) = parse_into_list_of_expressions(
+            day, month, year, hour, minute, second, microsecond
         )
         ambiguous_expr = parse_into_expression(ambiguous, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.dt_replace(
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-                microsecond,
+                year_pyexpr,
+                month_pyexpr,
+                day_pyexpr,
+                hour_pyexpr,
+                minute_pyexpr,
+                second_pyexpr,
+                microsecond_pyexpr,
                 ambiguous_expr,
             )
         )
@@ -533,10 +552,10 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴─────────────────────────┴─────────────────────┘
         """
         if not isinstance(time, (dt.time, pl.Expr)):
-            msg = f"expected 'time' to be a Python time or Polars expression, found {type(time).__name__!r}"
+            msg = f"expected 'time' to be a Python time or Polars expression, found {qualified_type_name(time)!r}"
             raise TypeError(msg)
-        time = parse_into_expression(time)
-        return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
+        time_pyexpr = parse_into_expression(time)
+        return wrap_expr(self._pyexpr.dt_combine(time_pyexpr, time_unit))
 
     def to_string(self, format: str | None = None) -> Expr:
         """
@@ -885,6 +904,101 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_year())
 
+    @unstable()
+    def is_business_day(
+        self,
+        *,
+        week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
+        holidays: Iterable[dt.date] = (),
+    ) -> Expr:
+        """
+        Determine whether each day lands on a business day.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        week_mask
+            Which days of the week to count. The default is Monday to Friday.
+            If you wanted to count only Monday to Thursday, you would pass
+            `(True, True, True, True, False, False, False)`.
+        holidays
+            Holidays to exclude from the count. The Python package
+            `python-holidays <https://github.com/vacanza/python-holidays>`_
+            may come in handy here. You can install it with ``pip install holidays``,
+            and then, to get all Dutch holidays for years 2020-2024:
+
+            .. code-block:: python
+
+                import holidays
+
+                my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
+
+            and pass `holidays=my_holidays` when you call `is_business_day`.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame({"start": [date(2020, 1, 3), date(2020, 1, 5)]})
+        >>> df.with_columns(is_business_day=pl.col("start").dt.is_business_day())
+        shape: (2, 2)
+        ┌────────────┬─────────────────┐
+        │ start      ┆ is_business_day │
+        │ ---        ┆ ---             │
+        │ date       ┆ bool            │
+        ╞════════════╪═════════════════╡
+        │ 2020-01-03 ┆ true            │
+        │ 2020-01-05 ┆ false           │
+        └────────────┴─────────────────┘
+
+        You can pass a custom weekend - for example, if you only take Sunday off:
+
+        >>> week_mask = (True, True, True, True, True, True, False)
+        >>> df.with_columns(
+        ...     is_business_day=pl.col("start").dt.is_business_day(week_mask=week_mask)
+        ... )
+        shape: (2, 2)
+        ┌────────────┬─────────────────┐
+        │ start      ┆ is_business_day │
+        │ ---        ┆ ---             │
+        │ date       ┆ bool            │
+        ╞════════════╪═════════════════╡
+        │ 2020-01-03 ┆ true            │
+        │ 2020-01-05 ┆ false           │
+        └────────────┴─────────────────┘
+
+        You can also pass a list of holidays:
+
+        >>> from datetime import date
+        >>> holidays = [date(2020, 1, 3), date(2020, 1, 6)]
+        >>> df.with_columns(
+        ...     is_business_day=pl.col("start").dt.is_business_day(holidays=holidays)
+        ... )
+        shape: (2, 2)
+        ┌────────────┬─────────────────┐
+        │ start      ┆ is_business_day │
+        │ ---        ┆ ---             │
+        │ date       ┆ bool            │
+        ╞════════════╪═════════════════╡
+        │ 2020-01-03 ┆ false           │
+        │ 2020-01-05 ┆ false           │
+        └────────────┴─────────────────┘
+        """
+        unix_epoch = dt.date(1970, 1, 1)
+        return wrap_expr(
+            self._pyexpr.dt_is_business_day(
+                list(week_mask),
+                [(holiday - unix_epoch).days for holiday in holidays],
+            )
+        )
+
     def is_leap_year(self) -> Expr:
         """
         Determine whether the year of the underlying date is a leap year.
@@ -1022,6 +1136,45 @@ class ExprDateTimeNameSpace:
         └────────────┴───────┘
         """
         return wrap_expr(self._pyexpr.dt_month())
+
+    def days_in_month(self) -> Expr:
+        """
+        Extract the number of days in the month from the underlying Date representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the number of days in the month.
+        The return value ranges from 28 to 31.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int8`.
+
+        See Also
+        --------
+        month
+        is_leap_year
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {"date": [date(2001, 1, 1), date(2001, 2, 1), date(2000, 2, 1)]}
+        ... )
+        >>> df.with_columns(pl.col("date").dt.days_in_month().alias("days_in_month"))
+        shape: (3, 2)
+        ┌────────────┬───────────────┐
+        │ date       ┆ days_in_month │
+        │ ---        ┆ ---           │
+        │ date       ┆ i8            │
+        ╞════════════╪═══════════════╡
+        │ 2001-01-01 ┆ 31            │
+        │ 2001-02-01 ┆ 28            │
+        │ 2000-02-01 ┆ 29            │
+        └────────────┴───────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_days_in_month())
 
     def week(self) -> Expr:
         """
@@ -1274,13 +1427,15 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_date())
 
-    @deprecate_function("Use `dt.replace_time_zone(None)` instead.", version="0.20.4")
+    @deprecated(
+        "`dt.datetime` is deprecated; use `dt.replace_time_zone(None)` instead."
+    )
     def datetime(self) -> Expr:
         """
         Return datetime.
 
         .. deprecated:: 0.20.4
-            Use `dt.replace_time_zone(None)` instead.
+            Use the `dt.replace_time_zone(None)` method instead.
 
         Applies to Datetime columns.
 
@@ -1678,9 +1833,9 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
 
-    @deprecate_function(
-        "Instead, first cast to `Int64` and then cast to the desired data type.",
-        version="0.20.5",
+    @deprecated(
+        "`dt.with_time_unit` is deprecated; instead, first cast "
+        "to `Int64` and then cast to the desired data type."
     )
     def with_time_unit(self, time_unit: TimeUnit) -> Expr:
         """
@@ -2285,8 +2440,8 @@ class ExprDateTimeNameSpace:
         │ 2005-01-01 00:00:00 ┆ 1y     ┆ 2006-01-01 00:00:00 │
         └─────────────────────┴────────┴─────────────────────┘
         """
-        by = parse_into_expression(by, str_as_lit=True)
-        return wrap_expr(self._pyexpr.dt_offset_by(by))
+        by_pyexpr = parse_into_expression(by, str_as_lit=True)
+        return wrap_expr(self._pyexpr.dt_offset_by(by_pyexpr))
 
     def month_start(self) -> Expr:
         """

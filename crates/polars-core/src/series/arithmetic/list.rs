@@ -1,7 +1,7 @@
 //! Allow arithmetic operations for ListChunked.
 //! use polars_error::{feature_gated, PolarsResult};
 
-use polars_error::{feature_gated, PolarsResult};
+use polars_error::{PolarsResult, feature_gated};
 
 use super::list_utils::NumericOp;
 use super::{IntoSeries, ListChunked, ListType, NumOpsDispatchInner, Series};
@@ -28,6 +28,7 @@ impl NumOpsDispatchInner for ListType {
     }
 }
 
+#[cfg_attr(not(feature = "list_arithmetic"), allow(unused))]
 #[derive(Clone)]
 pub struct NumericListOp(NumericOp);
 
@@ -61,13 +62,22 @@ impl NumericListOp {
     #[cfg_attr(not(feature = "list_arithmetic"), allow(unused))]
     pub fn execute(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
         feature_gated!("list_arithmetic", {
+            use std::borrow::Cow;
+
             use either::Either;
 
             // `trim_to_normalized_offsets` ensures we don't perform excessive
             // memory allocation / compute on memory regions that have been
             // sliced out.
-            let lhs = lhs.list_rechunk_and_trim_to_normalized_offsets();
-            let rhs = rhs.list_rechunk_and_trim_to_normalized_offsets();
+            let lhs = lhs
+                .trim_lists_to_normalized_offsets()
+                .map_or(Cow::Borrowed(lhs), Cow::Owned);
+            let rhs = rhs
+                .trim_lists_to_normalized_offsets()
+                .map_or(Cow::Borrowed(rhs), Cow::Owned);
+
+            let lhs = lhs.rechunk();
+            let rhs = rhs.rechunk();
 
             let binary_op_exec = match ListNumericOpHelper::try_new(
                 self.clone(),
@@ -263,7 +273,7 @@ mod inner {
                 ) && validity_rhs.as_ref().is_some_and(|x| x.set_bits() == 0))
             {
                 return Ok(Either::Right(ListChunked::full_null_with_dtype(
-                    output_name.clone(),
+                    output_name,
                     output_len,
                     output_inner_dtype.as_ref(),
                 )));
@@ -825,7 +835,7 @@ mod inner {
                 | v @ (BinaryOpApplyType::PrimitiveToList, Broadcast::Left)
                 | v @ (BinaryOpApplyType::PrimitiveToList, Broadcast::NoBroadcast) => {
                     if cfg!(debug_assertions) {
-                        panic!("operation was not re-written: {:?}", v)
+                        panic!("operation was not re-written: {v:?}")
                     } else {
                         unreachable!()
                     }

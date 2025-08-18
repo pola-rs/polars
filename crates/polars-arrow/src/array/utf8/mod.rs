@@ -2,10 +2,10 @@ use either::Either;
 
 use super::specification::try_check_utf8;
 use super::{Array, GenericBinaryArray, Splitable};
-use crate::array::iterator::NonNullValuesIter;
 use crate::array::BinaryArray;
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
@@ -123,12 +123,12 @@ impl<O: Offset> Utf8Array<O> {
     }
 
     /// Returns an iterator of `Option<&str>`
-    pub fn iter(&self) -> ZipValidity<&str, Utf8ValuesIter<O>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&str, Utf8ValuesIter<'_, O>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity())
     }
 
     /// Returns an iterator of `&str`
-    pub fn values_iter(&self) -> Utf8ValuesIter<O> {
+    pub fn values_iter(&self) -> Utf8ValuesIter<'_, O> {
         Utf8ValuesIter::new(self)
     }
 
@@ -395,7 +395,7 @@ impl<O: Offset> Utf8Array<O> {
     /// Creates a new [`Utf8Array`].
     /// # Panics
     /// This function panics iff:
-    /// * The last offset is greater than the values' length.
+    /// * `offsets.last()` is greater than `values.len()`.
     /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8

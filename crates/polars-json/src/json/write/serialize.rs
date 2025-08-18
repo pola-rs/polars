@@ -10,12 +10,12 @@ use arrow::offset::Offset;
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
-    date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_s_to_duration,
-    duration_us_to_duration, parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_s_to_datetime, timestamp_to_datetime, timestamp_us_to_datetime,
+    date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_us_to_duration,
+    parse_offset, time64ns_to_time, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use streaming_iterator::StreamingIterator;
 
 use super::utf8;
@@ -73,7 +73,7 @@ fn null_serializer(
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + Send + Sync> {
     let f = |_x: (), buf: &mut Vec<u8>| buf.extend_from_slice(b"null");
-    materialize_serializer(f, std::iter::repeat(()).take(len), offset, take)
+    materialize_serializer(f, std::iter::repeat_n((), len), offset, take)
 }
 
 fn primitive_serializer<'a, T: NativeType + itoa::Integer>(
@@ -240,8 +240,15 @@ fn list_serializer<'a, O: Offset>(
     let end = offsets.last().unwrap().to_usize();
     let mut serializer = new_serializer(array.values().as_ref(), start, end - start);
 
+    let mut prev_offset = start;
     let f = move |offset: Option<&[O]>, buf: &mut Vec<u8>| {
         if let Some(offset) = offset {
+            if offset[0].to_usize() > prev_offset {
+                for _ in 0..(offset[0].to_usize() - prev_offset) {
+                    serializer.next().unwrap();
+                }
+            }
+
             let length = (offset[1] - offset[0]).to_usize();
             buf.push(b'[');
             let mut is_first_row = true;
@@ -253,6 +260,7 @@ fn list_serializer<'a, O: Offset>(
                 buf.extend(serializer.next().unwrap());
             }
             buf.push(b']');
+            prev_offset = offset[1].to_usize();
         } else {
             buf.extend(b"null");
         }
@@ -268,7 +276,11 @@ fn fixed_size_list_serializer<'a>(
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
-    let mut serializer = new_serializer(array.values().as_ref(), offset, take);
+    let mut serializer = new_serializer(
+        array.values().as_ref(),
+        offset * array.size(),
+        take * array.size(),
+    );
 
     Box::new(BufStreamingIterator::new(
         ZipValidity::new(0..array.len(), array.validity().map(|x| x.iter())),
@@ -337,6 +349,28 @@ where
     materialize_serializer(f, array.iter(), offset, take)
 }
 
+fn time_serializer<'a, T, F>(
+    array: &'a PrimitiveArray<T>,
+    convert: F,
+    offset: usize,
+    take: usize,
+) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
+where
+    T: NativeType,
+    F: Fn(T) -> NaiveTime + 'static + Send + Sync,
+{
+    let f = move |x: Option<&T>, buf: &mut Vec<u8>| {
+        if let Some(x) = x {
+            let time = convert(*x);
+            write!(buf, "\"{time}\"").unwrap();
+        } else {
+            buf.extend_from_slice(b"null")
+        }
+    };
+
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
 fn timestamp_serializer<'a, F>(
     array: &'a PrimitiveArray<i64>,
     convert: F,
@@ -392,7 +426,7 @@ fn timestamp_tz_serializer<'a>(
                 materialize_serializer(f, array.iter(), offset, take)
             },
             _ => {
-                panic!("Timezone {} is invalid or not supported", tz);
+                panic!("Timezone {tz} is invalid or not supported");
             },
         },
         #[cfg(not(feature = "timezones"))]
@@ -461,6 +495,20 @@ pub(crate) fn new_serializer<'a>(
             list_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Dictionary(k, v, _) => match (k, &**v) {
+            (IntegerType::UInt8, ArrowDataType::Utf8View) => {
+                let array = array
+                    .as_any()
+                    .downcast_ref::<DictionaryArray<u8>>()
+                    .unwrap();
+                dictionary_utf8view_serializer::<u8>(array, offset, take)
+            },
+            (IntegerType::UInt16, ArrowDataType::Utf8View) => {
+                let array = array
+                    .as_any()
+                    .downcast_ref::<DictionaryArray<u16>>()
+                    .unwrap();
+                dictionary_utf8view_serializer::<u16>(array, offset, take)
+            },
             (IntegerType::UInt32, ArrowDataType::Utf8View) => {
                 let array = array
                     .as_any()
@@ -484,7 +532,7 @@ pub(crate) fn new_serializer<'a>(
                 TimeUnit::Nanosecond => timestamp_ns_to_datetime,
                 TimeUnit::Microsecond => timestamp_us_to_datetime,
                 TimeUnit::Millisecond => timestamp_ms_to_datetime,
-                TimeUnit::Second => timestamp_s_to_datetime,
+                tu => panic!("Invalid time unit '{tu:?}' for Datetime."),
             };
             timestamp_serializer(
                 array.as_any().downcast_ref().unwrap(),
@@ -505,9 +553,21 @@ pub(crate) fn new_serializer<'a>(
                 TimeUnit::Nanosecond => duration_ns_to_duration,
                 TimeUnit::Microsecond => duration_us_to_duration,
                 TimeUnit::Millisecond => duration_ms_to_duration,
-                TimeUnit::Second => duration_s_to_duration,
+                tu => panic!("Invalid time unit '{tu:?}' for Duration."),
             };
             duration_serializer(
+                array.as_any().downcast_ref().unwrap(),
+                convert,
+                offset,
+                take,
+            )
+        },
+        ArrowDataType::Time64(tu) => {
+            let convert = match tu {
+                TimeUnit::Nanosecond => time64ns_to_time,
+                tu => panic!("Invalid time unit '{tu:?}' for Time."),
+            };
+            time_serializer(
                 array.as_any().downcast_ref().unwrap(),
                 convert,
                 offset,

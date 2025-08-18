@@ -107,19 +107,19 @@ def test_linear_space_date() -> None:
     lf = pl.LazyFrame()
 
     result = lf.select(ls=pl.linear_space(d1, d2, 4, closed="both"))
-    expected = lf.select(ls=pl.Series(out_values, dtype=pl.Datetime("ms")))
+    expected = lf.select(ls=pl.Series(out_values, dtype=pl.Datetime("us")))
     assert_frame_equal(result, expected)
 
     result = lf.select(ls=pl.linear_space(d1, d2, 3, closed="left"))
-    expected = lf.select(ls=pl.Series(out_values[:-1], dtype=pl.Datetime("ms")))
+    expected = lf.select(ls=pl.Series(out_values[:-1], dtype=pl.Datetime("us")))
     assert_frame_equal(result, expected)
 
     result = lf.select(ls=pl.linear_space(d1, d2, 3, closed="right"))
-    expected = lf.select(ls=pl.Series(out_values[1:], dtype=pl.Datetime("ms")))
+    expected = lf.select(ls=pl.Series(out_values[1:], dtype=pl.Datetime("us")))
     assert_frame_equal(result, expected)
 
     result = lf.select(ls=pl.linear_space(d1, d2, 2, closed="none"))
-    expected = lf.select(ls=pl.Series(out_values[1:-1], dtype=pl.Datetime("ms")))
+    expected = lf.select(ls=pl.Series(out_values[1:-1], dtype=pl.Datetime("us")))
     assert_frame_equal(result, expected)
 
 
@@ -208,9 +208,7 @@ def test_linear_space_num_samples_expr() -> None:
 
 def test_linear_space_invalid_num_samples_expr() -> None:
     lf = pl.LazyFrame({"x": [1, 2, 3]})
-    with pytest.raises(
-        ComputeError, match="`num_samples` must contain exactly one value, got 3 values"
-    ):
+    with pytest.raises(ShapeError):
         lf.select(pl.linear_space(0, 1, pl.col("x"))).collect()
 
 
@@ -523,7 +521,7 @@ def test_linear_spaces_date() -> None:
                         datetime(2025, 2, 1),
                     ],
                 ],
-                dtype=pl.List(pl.Datetime(time_unit="ms")),
+                dtype=pl.List(pl.Datetime(time_unit="us")),
             )
         }
     )
