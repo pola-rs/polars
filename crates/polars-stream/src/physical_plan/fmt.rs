@@ -238,6 +238,16 @@ fn visualize_plan_rec(
             offset,
             length,
         } => ("slice".to_owned(), &[*input, *offset, *length][..]),
+        PhysNodeKind::Shift {
+            input,
+            offset,
+            fill: Some(fill),
+        } => ("shift".to_owned(), &[*input, *offset, *fill][..]),
+        PhysNodeKind::Shift {
+            input,
+            offset,
+            fill: None,
+        } => ("shift".to_owned(), &[*input, *offset][..]),
         PhysNodeKind::Filter { input, predicate } => (
             format!(
                 "filter\\n{}",

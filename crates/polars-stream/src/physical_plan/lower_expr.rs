@@ -1490,6 +1490,38 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: func @ (IRFunctionExpr::Shift | IRFunctionExpr::ShiftAndFill),
+                options: _,
+            } => {
+                let out_name = unique_column_name();
+                let data_col_expr = inner_exprs[0].with_alias(out_name.clone());
+                let trans_data_column = build_select_stream_with_ctx(input, &[data_col_expr], ctx)?;
+                let trans_offset =
+                    build_select_stream_with_ctx(input, &[inner_exprs[1].clone()], ctx)?;
+
+                let trans_fill = if func == IRFunctionExpr::ShiftAndFill {
+                    let fill_expr = inner_exprs[2].with_alias(out_name.clone());
+                    Some(build_select_stream_with_ctx(input, &[fill_expr], ctx)?)
+                } else {
+                    None
+                };
+
+                let output_schema = ctx.phys_sm[trans_data_column.node].output_schema.clone();
+                let node_key = ctx.phys_sm.insert(PhysNode::new(
+                    output_schema,
+                    PhysNodeKind::Shift {
+                        input: trans_data_column,
+                        offset: trans_offset,
+                        fill: trans_fill,
+                    },
+                ));
+
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }
             | AExpr::Window { .. }
