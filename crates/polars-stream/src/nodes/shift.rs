@@ -94,9 +94,8 @@ impl ShiftState {
             let shift_needed = shift.saturating_sub(self.rows_received);
             self.rows_received += morsel.df().height();
             if shift_needed > 0 {
-                morsel = morsel.map(|df| {
-                    df.slice(shift_needed.min(df.height()) as i64, df.height())
-                });
+                morsel =
+                    morsel.map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()));
             }
             if morsel.df().is_empty() {
                 continue;
