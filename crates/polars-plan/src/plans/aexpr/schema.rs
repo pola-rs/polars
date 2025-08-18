@@ -235,8 +235,8 @@ impl AExpr {
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
-                    Count(expr, _) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                    Count { input, .. } => {
+                        let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
@@ -369,7 +369,7 @@ impl AExpr {
             | Agg(Std(expr, _))
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))
-            | Agg(Count(expr, _))
+            | Agg(Count { input: expr, .. })
             | Agg(AggGroups(expr))
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
             AnonymousFunction { input, fmt_str, .. } => {

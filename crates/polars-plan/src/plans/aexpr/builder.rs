@@ -133,6 +133,40 @@ impl AExprBuilder {
         )
     }
 
+    pub fn sum(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::Sum(self.node()), arena)
+    }
+
+    pub fn len(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls: true,
+            },
+            arena,
+        )
+    }
+
+    pub fn count(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls: false,
+            },
+            arena,
+        )
+    }
+
+    pub fn count_opt_nulls(self, include_nulls: bool, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls,
+            },
+            arena,
+        )
+    }
+
     pub fn explode_skip_empty(self, arena: &mut Arena<AExpr>) -> Self {
         Self::new_from_aexpr(
             AExpr::Explode {
@@ -243,6 +277,14 @@ impl AExprBuilder {
                 other.into_aexpr_builder().expr_ir_unnamed(),
             ],
             IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            arena,
+        )
+    }
+
+    pub fn to_physical(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_unnamed()],
+            IRFunctionExpr::ToPhysical,
             arena,
         )
     }

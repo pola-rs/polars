@@ -64,7 +64,7 @@ impl TreeWalker for Expr {
                 Last(x) => Last(am(x, f)?),
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
-                Count(x, nulls) => Count(am(x, f)?, nulls),
+                Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
                 Quantile { expr, quantile, method: interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, method: interpol },
                 Sum(x) => Sum(am(x, f)?),
                 AggGroups(x) => AggGroups(am(x, f)?),
