@@ -707,10 +707,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Count(n, include_null) => Agg {
+            IRAggExpr::Count {
+                input: n,
+                include_nulls,
+            } => Agg {
                 name: "count".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: include_null.into_py_any(py)?,
+                options: include_nulls.into_py_any(py)?,
             },
             IRAggExpr::Std(n, ddof) => Agg {
                 name: "std".into_py_any(py)?,

@@ -333,7 +333,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Sum(input)
                 | IRAggExpr::Var(input, ..)
                 | IRAggExpr::Std(input, ..)
-                | IRAggExpr::Count(input, ..) => {
+                | IRAggExpr::Count { input, .. } => {
                     let agg = agg.clone();
                     let input = *input;
                     if is_input_independent(input, expr_arena, expr_cache) {

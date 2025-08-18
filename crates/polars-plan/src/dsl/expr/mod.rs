@@ -39,8 +39,10 @@ pub enum AggExpr {
     Last(Arc<Expr>),
     Mean(Arc<Expr>),
     Implode(Arc<Expr>),
-    // include_nulls
-    Count(Arc<Expr>, bool),
+    Count {
+        input: Arc<Expr>,
+        include_nulls: bool,
+    },
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
@@ -64,7 +66,7 @@ impl AsRef<Expr> for AggExpr {
             Last(e) => e,
             Mean(e) => e,
             Implode(e) => e,
-            Count(e, _) => e,
+            Count { input, .. } => input,
             Quantile { expr, .. } => expr,
             Sum(e) => e,
             AggGroups(e) => e,

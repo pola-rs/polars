@@ -155,9 +155,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Arc::new(exp)).into()
             },
-            IRAggExpr::Count(expr, include_nulls) => {
-                let expr = node_to_expr(expr, expr_arena);
-                AggExpr::Count(Arc::new(expr), include_nulls).into()
+            IRAggExpr::Count {
+                input,
+                include_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::Count {
+                    input: Arc::new(input),
+                    include_nulls,
+                }
+                .into()
             },
         },
         AExpr::Ternary {

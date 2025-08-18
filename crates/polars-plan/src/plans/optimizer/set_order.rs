@@ -15,7 +15,7 @@ fn is_order_independent_agg(agg: &IRAggExpr) -> bool {
         IRAggExpr::Implode(_) => false,
         IRAggExpr::Quantile { .. } => true,
         IRAggExpr::Sum(_) => true,
-        IRAggExpr::Count(_, _) => true,
+        IRAggExpr::Count { input: _, .. } => true,
         IRAggExpr::Std(_, _) => true,
         IRAggExpr::Var(_, _) => true,
         IRAggExpr::AggGroups(_) => false,

@@ -375,7 +375,10 @@ fn create_physical_expr_inner(
                         I::Implode(_) => GBM::Implode,
                         I::Quantile { .. } => unreachable!(),
                         I::Sum(_) => GBM::Sum,
-                        I::Count(_, include_nulls) => GBM::Count {
+                        I::Count {
+                            input: _,
+                            include_nulls,
+                        } => GBM::Count {
                             include_nulls: *include_nulls,
                         },
                         I::Std(_, ddof) => GBM::Std(*ddof),

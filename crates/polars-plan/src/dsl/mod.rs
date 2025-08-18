@@ -868,11 +868,19 @@ impl Expr {
     /// or
     /// Get counts of the group by operation.
     pub fn count(self) -> Self {
-        AggExpr::Count(Arc::new(self), false).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: false,
+        }
+        .into()
     }
 
     pub fn len(self) -> Self {
-        AggExpr::Count(Arc::new(self), true).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: true,
+        }
+        .into()
     }
 
     /// Get a mask of duplicated values.

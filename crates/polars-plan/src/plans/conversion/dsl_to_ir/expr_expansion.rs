@@ -464,13 +464,21 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Implode(Arc::new(e))),
                 )?,
-                AggExpr::Count(expr, include_nulls) => expand_single(
-                    expr.as_ref(),
+                AggExpr::Count {
+                    input,
+                    include_nulls,
+                } => expand_single(
+                    input.as_ref(),
                     ignored_selector_columns,
                     schema,
                     out,
                     opt_flags,
-                    |e| Expr::Agg(AggExpr::Count(Arc::new(e), *include_nulls)),
+                    |e| {
+                        Expr::Agg(AggExpr::Count {
+                            input: Arc::new(e),
+                            include_nulls: *include_nulls,
+                        })
+                    },
                 )?,
                 AggExpr::Sum(expr) => expand_single(
                     expr.as_ref(),
