@@ -92,6 +92,7 @@ pub struct CloudOptions {
     pub(crate) credential_provider: Option<PlCredentialProvider>,
     #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
     /// Note: This is mainly used by Rust users. Python client options go through `CloudConfig`
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
     pub(crate) client_options: Option<PlClientOptions>,
 }
 
