@@ -3,13 +3,20 @@ pub mod join;
 pub mod pivot;
 
 pub use join::*;
-#[cfg(feature = "to_dummies")]
 use polars_core::POOL;
 use polars_core::prelude::*;
 #[cfg(feature = "to_dummies")]
 use polars_core::utils::accumulate_dataframes_horizontal;
-#[cfg(feature = "to_dummies")]
 use rayon::prelude::*;
+
+use crate::series::SeriesMethods;
+
+// distinguish between "unsorted" and actual errors
+#[derive(Debug)]
+enum IsSortedResult {
+    Unsorted,
+    Error(PolarsError),
+}
 
 pub trait IntoDf {
     fn to_df(&self) -> &DataFrame;
@@ -121,5 +128,97 @@ pub trait DataFrameOps: IntoDf {
         })?;
 
         accumulate_dataframes_horizontal(cols)
+    }
+
+    /// Checks if a [`DataFrame`] is sorted. Tries to fail fast.
+    fn is_sorted(
+        &self,
+        subset: Option<Vec<PlSmallStr>>,
+        mut sort_options: SortMultipleOptions,
+    ) -> PolarsResult<bool> {
+        let df = self.to_df();
+
+        // early exit opportunities
+        if df.height() <= 1 || df.width() == 0 {
+            return Ok(true);
+        }
+
+        // get col subset if specified, else get all cols
+        let sort_cols = if let Some(subset) = subset {
+            let subset = PlHashSet::from_iter(subset);
+            df.get_columns()
+                .iter()
+                .filter(|s| subset.contains(s.name()))
+                .collect::<Vec<_>>()
+        } else {
+            df.get_columns().iter().collect::<Vec<_>>()
+        };
+
+        // broadcast single desc/nulls_last to match number of sort columns
+        let n_cols = sort_cols.len();
+        if sort_options.descending.len() == 1 && n_cols > 1 {
+            let descending = sort_options.descending[0];
+            sort_options.descending = vec![descending; n_cols];
+        } else {
+            polars_ensure!(
+                sort_options.descending.len() == n_cols,
+                InvalidOperation: "length mismatch: `descending` has length {} but there are {} sort columns",
+                sort_options.descending.len(), n_cols
+            );
+        }
+        if sort_options.nulls_last.len() == 1 && n_cols > 1 {
+            let nulls_last = sort_options.nulls_last[0];
+            sort_options.nulls_last = vec![nulls_last; n_cols];
+        } else {
+            polars_ensure!(
+                sort_options.nulls_last.len() == n_cols,
+                InvalidOperation: "length mismatch: `nulls_last` has length {} but there are {} sort columns",
+                sort_options.nulls_last.len(), n_cols
+            );
+        }
+
+        // check each component series to confirm frame-level sorted order
+        if n_cols > 1 && sort_options.multithreaded {
+            // parallelized col check with early exit (on first unsorted col or error)
+            let result = POOL.install(|| {
+                sort_cols.par_iter().enumerate().try_for_each(
+                    |(i, col)| -> Result<(), IsSortedResult> {
+                        let opts = SortOptions {
+                            descending: sort_options.descending[i],
+                            nulls_last: sort_options.nulls_last[i],
+                            multithreaded: sort_options.multithreaded,
+                            maintain_order: sort_options.maintain_order,
+                            limit: sort_options.limit,
+                        };
+                        let s = col.as_materialized_series();
+                        match s.is_sorted(opts) {
+                            Ok(true) => Ok(()),
+                            Ok(false) => Err(IsSortedResult::Unsorted),
+                            Err(e) => Err(IsSortedResult::Error(e)),
+                        }
+                    },
+                )
+            });
+            match result {
+                Ok(()) => Ok(true), // all cols sorted
+                Err(IsSortedResult::Unsorted) => Ok(false),
+                Err(IsSortedResult::Error(e)) => Err(e),
+            }
+        } else {
+            for (i, col) in sort_cols.iter().enumerate() {
+                let opts = SortOptions {
+                    descending: sort_options.descending[i],
+                    nulls_last: sort_options.nulls_last[i],
+                    multithreaded: sort_options.multithreaded,
+                    maintain_order: sort_options.maintain_order,
+                    limit: sort_options.limit,
+                };
+                let s = col.as_materialized_series();
+                if !s.is_sorted(opts)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
     }
 }

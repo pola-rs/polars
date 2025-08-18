@@ -10721,7 +10721,7 @@ class DataFrame:
         Parameters
         ----------
         subset
-            Column name(s) or selector(s), to consider when identifying
+            Column name(s) or selector(s) to consider when identifying
             duplicate rows. If set to `None` (default), use all columns.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
@@ -11813,6 +11813,113 @@ class DataFrame:
         True
         """
         return self._df.is_empty()
+
+    def is_sorted(
+        self,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+        *,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool | Sequence[bool] = False,
+        multithreaded: bool = True,
+    ) -> bool:
+        """
+        Check if DataFrame columns are sorted, according to the given criteria.
+
+        Parameters
+        ----------
+        subset
+            Column name(s) or selector(s) to use when determining the sorted state; if
+            set to `None` (the default), look at all DataFrame columns.
+        descending
+            Check if the columns are sorted in descending order. If given as a single
+            boolean then that value is used for all columns; if given multiple values
+            then the direction is considered per-column.
+        nulls_last
+            Indicate that we expect null values to sort after non-null values.
+        multithreaded
+            Check sorted status using multiple threads.
+
+        Notes
+        -----
+        The DataFrame is considered "sorted" if each individual column is sorted,
+        according to the given criteria. If you want to check that multiple
+        columns are considered sorted *together*, you need to make the columns
+        under consideration a `Struct` first. For example:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": [1, 2, 3, 4, 5],
+        ...         "first_name": ["Alice", "Alice", "Bob", "Bob", "Charlie"],
+        ...         "last_name": ["Johnson", "Smith", "Brown", "Davis", "Williams"],
+        ...         "age": [30, 25, 45, 35, 28],
+        ...     }
+        ... )
+        >>> df.is_sorted(subset=["first_name", "last_name"])
+        False
+        >>> df.with_columns(
+        ...     full_name=pl.struct(["first_name", "last_name"]),
+        ... ).is_sorted(subset=["id", "full_name"])
+        True
+
+        Examples
+        --------
+        Check if the frame as a whole is considered sorted (e.g.: all columns are
+        sorted in ascending order):
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "colx": [1, 2, 3, 4],
+        ...         "coly": [5, 6, 7, 8],
+        ...     }
+        ... )
+        >>> df.is_sorted()
+        True
+
+        Check that a DataFrame is sorted with an *ascending* `dt` column and
+        a *descending* `value` column`:
+
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "dt": [date(1999, 12, 31), date(2010, 7, 5), date(2025, 8, 19)],
+        ...         "value": [300, 200, 100],
+        ...     }
+        ... )
+        >>> df2.is_sorted(descending=[False, True])
+        True
+        >>> df2.is_sorted(descending=True)
+        False
+
+        Check that a DataFrame is sorted with nulls at the end:
+
+        >>> df3 = pl.DataFrame(
+        ...     {
+        ...         "colx": [None, 1000, 2000, 3000],
+        ...         "coly": [-10.5, 50.25, 88.0, None],
+        ...     }
+        ... )
+        >>> df3.is_sorted()
+        False
+        >>> df3.is_sorted(nulls_last=True)
+        False
+        >>> df3.is_sorted(nulls_last=[False, True])
+        True
+        """
+        n_columns = self.width
+
+        if isinstance(descending, bool):
+            descending = [descending]
+        elif (n_desc := len(descending)) != n_columns:
+            msg = f"`descending` has length {n_desc} but DataFrame has {n_columns} columns"
+            raise ValueError(msg)
+
+        if isinstance(nulls_last, bool):
+            nulls_last = [nulls_last]
+        elif (n_nulls_last := len(nulls_last)) != n_columns:
+            msg = f"`nulls_last` has length {n_nulls_last} but DataFrame has {n_columns} columns"
+            raise ValueError(msg)
+
+        subset = None if subset is None else _expand_selectors(self, subset)
+        return self._df.is_sorted(subset, descending, nulls_last, multithreaded)
 
     def to_struct(self, name: str = "") -> Series:
         """

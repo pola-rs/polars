@@ -263,30 +263,6 @@ def test_sorted_flag_singletons(value: Any) -> None:
     assert pl.DataFrame({"x": [value]})["x"].flags["SORTED_ASC"] is True
 
 
-def test_is_sorted() -> None:
-    assert not pl.Series([1, 2, 5, None, 2, None]).is_sorted()
-    assert pl.Series([1, 2, 4, None, None]).is_sorted(nulls_last=True)
-    assert pl.Series([None, None, 1, 2, 4]).is_sorted(nulls_last=False)
-    assert not pl.Series([None, 1, None, 2, 4]).is_sorted()
-    assert not pl.Series([None, 1, 2, 3, -1, 4]).is_sorted(nulls_last=False)
-    assert not pl.Series([1, 2, 3, -1, 4, None, None]).is_sorted(nulls_last=True)
-    assert not pl.Series([1, 2, 3, -1, 4]).is_sorted()
-    assert pl.Series([1, 2, 3, 4]).is_sorted()
-    assert pl.Series([5, 2, 1, 1, -1]).is_sorted(descending=True)
-    assert pl.Series([None, None, 5, 2, 1, 1, -1]).is_sorted(
-        descending=True, nulls_last=False
-    )
-    assert pl.Series([5, 2, 1, 1, -1, None, None]).is_sorted(
-        descending=True, nulls_last=True
-    )
-    assert not pl.Series([5, None, 2, 1, 1, -1, None, None]).is_sorted(
-        descending=True, nulls_last=True
-    )
-    assert not pl.Series([5, 2, 1, 10, 1, -1, None, None]).is_sorted(
-        descending=True, nulls_last=True
-    )
-
-
 def test_sorted_flag() -> None:
     s = pl.arange(0, 7, eager=True)
     assert s.flags["SORTED_ASC"]
@@ -399,8 +375,33 @@ def test_sorted_flag_group_by_dynamic() -> None:
     )
 
 
-def test_is_sorted_rle_id() -> None:
-    assert pl.Series([12, 3345, 12, 3, 4, 4, 1, 12]).rle_id().flags["SORTED_ASC"]
+def test_is_sorted() -> None:
+    assert not pl.Series([1, 2, 5, None, 2, None]).is_sorted()
+    assert pl.Series([1, 2, 4, None, None]).is_sorted(nulls_last=True)
+    assert pl.Series([None, None, 1, 2, 4]).is_sorted(nulls_last=False)
+    assert not pl.Series([None, 1, None, 2, 4]).is_sorted()
+    assert not pl.Series([None, 1, 2, 3, -1, 4]).is_sorted(nulls_last=False)
+    assert not pl.Series([1, 2, 3, -1, 4, None, None]).is_sorted(nulls_last=True)
+    assert not pl.Series([1, 2, 3, -1, 4]).is_sorted()
+    assert pl.Series([1, 2, 3, 4]).is_sorted()
+    assert pl.Series([5, 2, 1, 1, -1]).is_sorted(descending=True)
+    assert pl.Series([None, None, 5, 2, 1, 1, -1]).is_sorted(
+        descending=True, nulls_last=False
+    )
+    assert pl.Series([5, 2, 1, 1, -1, None, None]).is_sorted(
+        descending=True, nulls_last=True
+    )
+    assert not pl.Series([5, None, 2, 1, 1, -1, None, None]).is_sorted(
+        descending=True, nulls_last=True
+    )
+    assert not pl.Series([5, 2, 1, 10, 1, -1, None, None]).is_sorted(
+        descending=True, nulls_last=True
+    )
+
+
+def test_is_sorted_arithmetic_overflow_14106() -> None:
+    s = pl.Series([0, 200], dtype=pl.UInt8).sort()
+    assert not (s + 200).is_sorted()
 
 
 @pytest.mark.may_fail_cloud
@@ -414,9 +415,8 @@ def test_is_sorted_chunked_select() -> None:
     )["b"].flags["SORTED_ASC"]
 
 
-def test_is_sorted_arithmetic_overflow_14106() -> None:
-    s = pl.Series([0, 200], dtype=pl.UInt8).sort()
-    assert not (s + 200).is_sorted()
+def test_is_sorted_rle_id() -> None:
+    assert pl.Series([12, 3345, 12, 3, 4, 4, 1, 12]).rle_id().flags["SORTED_ASC"]
 
 
 def test_is_sorted_struct() -> None:
@@ -427,3 +427,93 @@ def test_is_sorted_struct() -> None:
     s = s.sort(descending=True)
     assert s.flags["SORTED_DESC"]
     assert not s.flags["SORTED_ASC"]
+
+
+def test_dataframe_is_sorted_basic() -> None:
+    # ascending
+    df_asc = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    assert df_asc.is_sorted()
+
+    # descending
+    df_desc = pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4]})
+    assert df_desc.is_sorted(descending=True)
+
+    # mixed
+    df_mixed = pl.DataFrame({"a": [1, 2, 3], "b": [6, 5, 4]})
+    assert not df_mixed.is_sorted()  # default expects all cols to be ascending
+    assert not df_mixed.is_sorted(descending=False)  # single bool sets all cols
+    assert not df_mixed.is_sorted(
+        descending=[True, False]
+    )  # `a` descending, `b` ascending
+    assert df_mixed.is_sorted(descending=[False, True])  # `a` ascending, `b` descending
+
+    # unsorted data
+    df_unsorted = pl.DataFrame({"a": [1, 3, 2], "b": [4, 5, 6]})
+    for desc in (False, True, [False, True], [True, False]):
+        assert not df_unsorted.is_sorted(descending=desc)
+
+
+def test_dataframe_is_sorted_misc() -> None:
+    # empty frame
+    df_empty = pl.DataFrame({"a": [], "b": []})
+    assert df_empty.is_sorted()
+    assert df_empty.is_sorted(descending=True)
+
+    # parameter length validation
+    df_multi = pl.DataFrame({"a": [1, 2], "b": [3.3, 4.5], "c": [5.7, 6.2]})
+    with pytest.raises(
+        ValueError,
+        match="`descending` has length 2 but DataFrame has 3 columns",
+    ):
+        df_multi.is_sorted(descending=[True, False])
+
+    with pytest.raises(
+        ValueError,
+        match="`nulls_last` has length 4 but DataFrame has 3 columns",
+    ):
+        df_multi.is_sorted(nulls_last=[True, False, True, False])
+
+    # single row is always considered sorted
+    single_row = pl.DataFrame({"a": [1], "b": [2]})
+    for desc in (False, True, [False, True], [True, False]):
+        assert single_row.is_sorted(descending=desc)
+
+
+def test_dataframe_is_sorted_subset() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "first_name": ["Alice", "Alice", "Bob", "Bob", "Charlie"],
+            "last_name": ["Johnson", "Smith", "Brown", "Davis", "Williams"],
+            "age": [30, 25, 45, 35, 28],
+        }
+    )
+    assert not df.is_sorted()
+    assert not df.is_sorted(subset=["id", "first_name", "last_name"])
+
+    df = df.with_columns(full_name=pl.struct(["first_name", "last_name"]))
+    assert df.is_sorted(subset=["id", "full_name"])
+    assert df.is_sorted("id")
+
+
+def test_dataframe_is_sorted_with_nulls() -> None:
+    # with nulls
+    df_nulls = pl.DataFrame({"a": [1, 2, None], "b": [3, 4, None]})
+    assert not df_nulls.is_sorted()  # nulls first by default
+    assert df_nulls.is_sorted(nulls_last=True)
+
+    # nulls with mixed configuration
+    df_nulls_mixed = pl.DataFrame(
+        {
+            "a": [None, 1, 2],  # nulls first, ascending
+            "b": [5, 4, None],  # descending, nulls last
+        }
+    )
+    assert df_nulls_mixed.is_sorted(
+        descending=[False, True],
+        nulls_last=[False, True],
+    )
+    assert not df_nulls_mixed.is_sorted(
+        descending=[False, True],
+        nulls_last=[True, False],
+    )

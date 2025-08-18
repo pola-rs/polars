@@ -7086,7 +7086,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         subset
-            Column name(s) or selector(s), to consider when identifying
+            Column name(s) or selector(s) to consider when identifying
             duplicate rows. If set to `None` (default), use all columns.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
