@@ -14,10 +14,13 @@ const MORSELS_PER_THREAD: usize = 256;
 /// Given a Vec<Morsel> for each pipe, it will output a vec of the contained dataframes.
 /// If the morsels are ordered by their sequence ids within each vec, and no
 /// sequence ID occurs in multiple vecs, the output will follow the same order globally.
-pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<DataFrame> {
+pub fn linearize_into(
+    mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>,
+    out: &mut Vec<DataFrame>,
+) {
     let num_morsels: usize = morsels_per_pipe.iter().map(|p| p.len()).sum();
     if num_morsels == 0 {
-        return vec![];
+        return;
     }
 
     let n_threads = num_morsels
@@ -33,8 +36,8 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<
     let seqs_per_thread = (max_seq + 1).div_ceil(n_threads);
 
     let morsels_per_p = &morsels_per_pipe;
-    let mut dataframes: Vec<DataFrame> = Vec::with_capacity(num_morsels);
-    let dataframes_ptr = unsafe { SyncPtr::new(dataframes.as_mut_ptr()) };
+    out.reserve(num_morsels);
+    let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr().add(out.len())) };
     POOL.scope(|s| {
         let mut out_offset = 0;
         let mut stop_idx_per_pipe = vec![0; morsels_per_p.len()];
@@ -62,7 +65,7 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<
                         morsels_per_p,
                         cur_idx_per_pipe,
                         &stop_idx_per_pipe,
-                        dataframes_ptr.get().add(this_thread_out_offset),
+                        out_ptr.get().add(this_thread_out_offset),
                     )
                 });
             }
@@ -75,9 +78,8 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<
         for morsels in morsels_per_pipe.iter_mut() {
             morsels.set_len(0);
         }
-        dataframes.set_len(num_morsels);
+        out.set_len(out.len() + num_morsels);
     }
-    dataframes
 }
 
 unsafe fn fill_partition(
