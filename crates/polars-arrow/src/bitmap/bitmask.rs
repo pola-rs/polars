@@ -75,16 +75,8 @@ pub fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
     }
 }
 
-/// Returns the nth set bit in w, if n+1 bits are set. The indexing is
-/// zero-based, nth_set_bit_u64(w, 0) returns the least significant set bit in w.
 #[inline]
 pub fn nth_set_bit_u64(w: u64, n: u64) -> Option<u64> {
-    // If we have BMI2's PDEP available, we use it. It takes the lower order
-    // bits of the first argument and spreads it along its second argument
-    // where those bits are 1. So PDEP(abcdefgh, 11001001) becomes ef00g00h.
-    // We use this by setting the first argument to 1 << n, which means the
-    // first n-1 zero bits of it will spread to the first n-1 one bits of w,
-    // after which the one bit will exactly get copied to the nth one bit of w.
     #[cfg(all(not(miri), target_feature = "bmi2"))]
     {
         if n >= 64 {
