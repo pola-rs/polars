@@ -370,6 +370,27 @@ def test_scalar_agg_schema_20044() -> None:
     ).schema == pl.Schema([("c", pl.String), ("d", pl.Float64)])
 
 
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [None, True, False], "b": 3 * [128]}),
+        pl.DataFrame(
+            {"a": [[None, True, False]], "b": [3 * [128]]},
+            schema={"a": pl.Array(pl.Boolean, 3), "b": pl.Array(pl.Int64, 3)},
+        ),
+        pl.DataFrame(
+            {"a": [[None, True, False]], "b": [3 * [128]]},
+            schema={"a": pl.List(pl.Boolean), "b": pl.List(pl.Int64)},
+        ),
+    ],
+)
+def test_div_collect_schema_matches_23993(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.col("a") / pl.col("b"))
+    expected = q.collect().schema
+    actual = q.collect_schema()
+    assert actual == expected
+
+
 def test_mean_on_invalid_type_24008() -> None:
     df = pl.DataFrame({"s": ["bob", "foo"]})
     q = df.lazy().select(pl.col("s").mean())

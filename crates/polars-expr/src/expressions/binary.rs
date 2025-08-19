@@ -82,6 +82,9 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
             _ if right.dtype().is_array() => left / right,
             List(_) => left / right,
             _ if right.dtype().is_list() => left / right,
+            _ if left.dtype().is_string() || right.dtype().is_string() => {
+                polars_bail!(InvalidOperation: "cannot divide usings string")
+            },
             _ => {
                 if right.dtype().is_temporal() {
                     return left / right;

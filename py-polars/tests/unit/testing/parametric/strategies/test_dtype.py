@@ -1,6 +1,5 @@
-import pytest
-
 import hypothesis.strategies as st
+import pytest
 from hypothesis import given
 
 import polars as pl
@@ -65,6 +64,13 @@ def test_dtypes_allowed_uninstantiated_nested(dtype: pl.DataType) -> None:
 @pytest.mark.parametrize(
     "expr",
     [
+        # TODO: Add more (bitwise) operators once their types are resolved correctly
+        pl.col("col0") > pl.col("col1"),
+        pl.col("col0") >= pl.col("col1"),
+        pl.col("col0") < pl.col("col1"),
+        pl.col("col0") <= pl.col("col1"),
+        pl.col("col0") == pl.col("col1"),
+        pl.col("col0") != pl.col("col1"),
         pl.col("col0") + pl.col("col1"),
         pl.col("col0") - pl.col("col1"),
         pl.col("col0") * pl.col("col1"),
@@ -77,8 +83,9 @@ def test_dtypes_allowed_uninstantiated_nested(dtype: pl.DataType) -> None:
 @given(
     df=dataframes(
         excluded_dtypes=[
-            # At the moment, these dtypes are known to be mismatched between the
-            # in-memory engine and the planner.
+            # TODO: At the moment, these dtypes are known to be mismatched
+            # between the in-memory engine and the planner.
+            # We should include more types going forward.
             pl.Struct,
             pl.Decimal,
             pl.Categorical,
@@ -91,10 +98,9 @@ def test_dtypes_allowed_uninstantiated_nested(dtype: pl.DataType) -> None:
         max_size=1,
     ),
 )
-def test_lazy_collect_schema_matches_inmemory_schema(
+def test_lazy_collect_schema_matches_computed_schema(
     expr: pl.Expr, df: pl.DataFrame
 ) -> None:
-    print(df)
     lazy_df = df.lazy().select(expr)
 
     expected_schema = None
@@ -109,6 +115,6 @@ def test_lazy_collect_schema_matches_inmemory_schema(
 
     actual_schema = lazy_df.collect_schema()
     assert actual_schema == expected_schema, (
-        f"expected {expected_schema} does not match actual {actual_schema} for expression {expr} from data types {df.dtypes}\n"
+        f"{expr} on {df.dtypes} results in {actual_schema} instead of {expected_schema}\n"
         f"result of computation is:\n{lazy_df.collect()}\n"
     )
