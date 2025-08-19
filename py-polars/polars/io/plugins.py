@@ -9,12 +9,12 @@ import polars._reexport as pl
 from polars._utils.unstable import unstable
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from typing import Callable
 
+    import pyarrow as pa
     from polars import DataFrame, Expr, LazyFrame
     from polars._typing import SchemaDict
-    import pyarrow as pa
 
 
 @unstable()
