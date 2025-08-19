@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 
 use crate::prelude::*;
 
+#[cfg(feature = "cse")]
 mod cache_states;
 mod delay_rechunk;
 
@@ -139,7 +140,7 @@ pub fn optimize(
     }
 
     #[cfg(feature = "cse")]
-    let _cse_plan_changed = if comm_subplan_elim {
+    let cse_plan_changed = if comm_subplan_elim {
         let members = get_or_init_members!();
         if (members.has_sink_multiple || members.has_joins_or_unions)
             && members.has_duplicate_scans()
@@ -162,8 +163,6 @@ pub fn optimize(
     } else {
         false
     };
-    #[cfg(not(feature = "cse"))]
-    let _cse_plan_changed = false;
 
     // Should be run before predicate pushdown.
     if opt_flags.projection_pushdown() {
@@ -242,7 +241,8 @@ pub fn optimize(
         cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
     }
 
-    if _cse_plan_changed
+    #[cfg(feature = "cse")]
+    if cse_plan_changed
         && get_members_opt!().is_some_and(|members| {
             (members.has_joins_or_unions | members.has_sink_multiple) && members.has_cache
         })

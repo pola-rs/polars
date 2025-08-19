@@ -56,6 +56,62 @@ fn get_upper_predicates(
 
 type TwoParents = [Option<Node>; 2];
 
+#[derive(Default)]
+struct NonCacheNodeVisitor {
+    trace: Vec<IRNode>,
+}
+
+impl Visitor for NonCacheNodeVisitor {
+    type Node = IRNode;
+    type Arena = IRNodeArena;
+
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        match arena.0.get(node.node()) {
+            IR::Cache { .. } => {},
+            _ => self.trace.push(node.clone()),
+        };
+        Ok(VisitRecursion::Continue)
+    }
+}
+
+fn get_non_cache_trace(
+    root: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Vec<IRNode> {
+    let mut visitor = NonCacheNodeVisitor::default();
+    let ir_node = IRNode::new(root);
+    with_ir_arena(lp_arena, expr_arena, |arena| {
+        ir_node.visit(&mut visitor, arena).unwrap();
+    });
+    visitor.trace
+}
+
+fn lps_equal(
+    root: Node,
+    lhs_arena: (&mut Arena<IR>, &mut Arena<AExpr>),
+    rhs_arena: (&mut Arena<IR>, &mut Arena<AExpr>),
+) -> bool {
+    let lhs_trace = get_non_cache_trace(root, lhs_arena.0, lhs_arena.1);
+    let rhs_trace = get_non_cache_trace(root, rhs_arena.0, rhs_arena.1);
+    for (lhs_node, rhs_node) in lhs_trace.into_iter().zip(rhs_trace) {
+        let lhs_cmp = lhs_node
+            .hashable_and_cmp(lhs_arena.0, lhs_arena.1)
+            .ignore_caches();
+        let rhs_cmp = rhs_node
+            .hashable_and_cmp(rhs_arena.0, rhs_arena.1)
+            .ignore_caches();
+        if lhs_cmp != rhs_cmp {
+            return false;
+        }
+    }
+    true
+}
+
 // 1. This will ensure that all equal caches communicate the amount of columns
 //    they need to project.
 // 2. This will ensure we apply predicate in the subtrees below the caches.
@@ -116,8 +172,8 @@ type TwoParents = [Option<Node>; 2];
 // Possible cases:
 // - NO FILTERS: run predicate pd from the cache nodes -> finish
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
-// - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
-// - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+// - There is a cache without predicates above the cache node -> run predicate from the cache nodes -> finish
+// - The predicates above the cache nodes are all different -> remove the cache nodes only if predicate pushdown changes the tree -> finish
 #[expect(clippy::too_many_arguments)]
 pub(super) fn set_cache_states(
     root: Node,
@@ -263,17 +319,18 @@ pub(super) fn set_cache_states(
                 .block_at_cache(false);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
-            // If we encounter multiple predicates we remove the cache nodes completely as we don't
-            // want to loose predicate pushdown in favor of scan sharing.
+            // If we encounter multiple predicates, we check whether removing the cache nodes
+            // completely changes something. If yes, we remove the cache nodes as we don't want to
+            // lose predicate pushdown in favor of scan sharing. Otherwise, we keep the cache to
+            // realize efficiency gains.
             if v.predicate_union.len() > 1 {
-                if verbose {
-                    eprintln!("cache nodes will be removed because predicates don't match")
-                }
+                let mut lp_arena_scratch = lp_arena.clone();
+                let mut expr_arena_scratch = expr_arena.clone();
                 for ((&child, cache), parents) in
                     v.children.iter().zip(v.cache_nodes).zip(v.parents)
                 {
                     // Remove the cache and assign the child the cache location.
-                    lp_arena.swap(child, cache);
+                    lp_arena_scratch.swap(child, cache);
 
                     // Restart predicate and projection pushdown from most top parent.
                     // This to ensure we continue the optimization where it was blocked initially.
@@ -281,7 +338,7 @@ pub(super) fn set_cache_states(
                     let mut node = cache;
                     for p_node in parents.into_iter().flatten() {
                         if matches!(
-                            lp_arena.get(p_node),
+                            lp_arena_scratch.get(p_node),
                             IR::Filter { .. } | IR::SimpleProjection { .. }
                         ) {
                             node = p_node
@@ -290,12 +347,26 @@ pub(super) fn set_cache_states(
                         }
                     }
 
-                    let lp = lp_arena.take(node);
-                    let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
-                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(node, lp);
+                    let lp = lp_arena_scratch.take(node);
+                    let lp =
+                        proj_pd.optimize(lp, &mut lp_arena_scratch, &mut expr_arena_scratch)?;
+                    let lp =
+                        pred_pd.optimize(lp, &mut lp_arena_scratch, &mut expr_arena_scratch)?;
+                    lp_arena_scratch.replace(node, lp);
                 }
-                return Ok(());
+                if !lps_equal(
+                    root,
+                    (lp_arena, expr_arena),
+                    (&mut lp_arena_scratch, &mut expr_arena_scratch),
+                ) {
+                    // If there was a change, we remove the cache nodes entirely
+                    if verbose {
+                        eprintln!("cache nodes will be removed because predicates don't match")
+                    }
+                    std::mem::swap(lp_arena, &mut lp_arena_scratch);
+                    std::mem::swap(expr_arena, &mut expr_arena_scratch);
+                }
+                continue;
             }
             // Below we restart projection and predicates pushdown
             // on the first cache node. As it are cache nodes, the others are the same

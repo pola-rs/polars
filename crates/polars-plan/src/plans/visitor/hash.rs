@@ -221,7 +221,7 @@ fn opt_expr_ir_eq(l: &Option<ExprIR>, r: &Option<ExprIR>, expr_arena: &Arena<AEx
 impl HashableEqLP<'_> {
     fn is_equal(&self, other: &Self) -> bool {
         let alp_l = self.node.to_alp(self.lp_arena);
-        let alp_r = other.node.to_alp(self.lp_arena);
+        let alp_r = other.node.to_alp(other.lp_arena);
         if std::mem::discriminant(alp_l) != std::mem::discriminant(alp_r) {
             return false;
         }
@@ -469,7 +469,7 @@ impl PartialEq for HashableEqLP<'_> {
                     let l = IRNode::new(l);
                     let r = IRNode::new(r);
                     let l_alp = l.to_alp(self.lp_arena);
-                    let r_alp = r.to_alp(self.lp_arena);
+                    let r_alp = r.to_alp(other.lp_arena);
 
                     if self.ignore_cache {
                         match (l_alp, r_alp) {
@@ -494,7 +494,7 @@ impl PartialEq for HashableEqLP<'_> {
 
                     if !l
                         .hashable_and_cmp(self.lp_arena, self.expr_arena)
-                        .is_equal(&r.hashable_and_cmp(self.lp_arena, self.expr_arena))
+                        .is_equal(&r.hashable_and_cmp(other.lp_arena, other.expr_arena))
                     {
                         return false;
                     }
