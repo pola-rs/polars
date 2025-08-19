@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from typing import Callable
 
     import pyarrow as pa
+
     from polars import DataFrame, Expr, LazyFrame
     from polars._typing import SchemaDict
 
