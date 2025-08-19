@@ -1,7 +1,7 @@
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
-use super::*;
+use super::super::*;
 
 impl AExpr {
     pub(crate) fn is_leaf(&self) -> bool {

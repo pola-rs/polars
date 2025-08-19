@@ -560,6 +560,26 @@ impl EvalVariant {
             _ => polars_bail!(op = self.to_name(), dtype),
         }
     }
+
+    pub fn is_elementwise(&self) -> bool {
+        match self {
+            EvalVariant::List => true,
+            EvalVariant::Cumulative { min_samples: _ } => false,
+        }
+    }
+
+    pub fn is_row_separable(&self) -> bool {
+        match self {
+            EvalVariant::List => true,
+            EvalVariant::Cumulative { min_samples: _ } => false,
+        }
+    }
+
+    pub fn is_length_preserving(&self) -> bool {
+        match self {
+            EvalVariant::List | EvalVariant::Cumulative { .. } => true,
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
