@@ -331,7 +331,7 @@ def _cast_repr_strings_with_schema(
             if td is None
             else sum(
                 int(value) * duration_scaling[unit.strip()]
-                for value, unit in re.findall(r"(\d+)(\D+)", td)
+                for value, unit in re.findall(r"([+-]?\d+)(\D+)", td)
             )
         )
 
