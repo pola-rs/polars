@@ -257,38 +257,47 @@ def test_max_min(
         pl.col("col0") % pl.col("col1"),
     ],
 )
-def test_lazy_collect_schema_matches_computed_schema(expr: pl.Expr) -> None:
-    dtypes = set(SIMPLE_DTYPES)
+@pytest.mark.parametrize(
+    ("dtype1", "dtype2"),
+    itertools.product(
+        sorted(
+            # TODO: some of the simple dtypes are known to still cause issues at
+            # the moment
+            set(SIMPLE_DTYPES) - {pl.Null, pl.Binary, pl.Object, pl.Unknown},
+            key=lambda dt: repr(dt),
+        ),
+        repeat=2,
+    ),
+)
+def test_lazy_collect_schema_matches_computed_schema(
+    expr: pl.Expr, dtype1: pl.DataType, dtype2: pl.DataType
+) -> None:
+    df = pl.DataFrame(
+        {
+            "col0": [None],
+            "col1": [None],
+        },
+        schema={
+            "col0": dtype1,
+            "col1": dtype2,
+        },
+    )
+    lazy_df = df.lazy().select(expr)
 
-    # TODO: These dtypes are known to cause issues at the moment
-    dtypes -= {pl.Null, pl.Binary, pl.Object, pl.Unknown}
+    expected_schema = None
+    try:
+        expected_schema = lazy_df.collect().schema
+    except (
+        # Applying the operator to these dtypes will result in an error,
+        # so they their output dtype is undefined
+        pl.exceptions.InvalidOperationError,
+        pl.exceptions.SchemaError,
+        pl.exceptions.ComputeError,
+    ):
+        return
 
-    for dtype1, dtype2 in itertools.product(dtypes, repeat=2):
-        df = pl.DataFrame(
-            {
-                "col0": [None],
-                "col1": [None],
-            },
-            schema={
-                "col0": dtype1,
-                "col1": dtype2,
-            },
-        )
-        lazy_df = df.lazy().select(expr)
-
-        expected_schema = None
-        try:
-            expected_schema = lazy_df.collect().schema
-        except (
-            # These dtypes will not compute, so they their output dtype is undefined
-            pl.exceptions.InvalidOperationError,
-            pl.exceptions.SchemaError,
-            pl.exceptions.ComputeError,
-        ):
-            continue
-
-        actual_schema = lazy_df.collect_schema()
-        assert actual_schema == expected_schema, (
-            f"{expr} on {df.dtypes} results in {actual_schema} instead of {expected_schema}\n"
-            f"result of computation is:\n{lazy_df.collect()}\n"
-        )
+    actual_schema = lazy_df.collect_schema()
+    assert actual_schema == expected_schema, (
+        f"{expr} on {df.dtypes} results in {actual_schema} instead of {expected_schema}\n"
+        f"result of computation is:\n{lazy_df.collect()}\n"
+    )
