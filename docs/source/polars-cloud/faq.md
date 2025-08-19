@@ -36,10 +36,11 @@ capabilities:
 
 ## What are the main use cases for Polars Cloud?
 
-Polars Cloud offers both a batch as an interactive mode to users. Batch mode can be used for ETL
-workloads or one-off large scale analytic jobs. Interactive mode is for users that are looking to do
-data exploration on a larger scale data processing that requires more compute than their own machine
-can offer.
+Polars Cloud offers a way to run Polars queries at scale without infrastructure management. By
+default, Polars Cloud connects directly to a cluster allowing any user to run data processing
+workloads that require more compute than their local environment can offer. Job mode can be used for
+ETL workloads, analytics jobs or workloads that execute in cloud environments that requirement an
+additional security layer.
 
 ## How can Polars Cloud integrate with my workflow?
 
@@ -53,9 +54,16 @@ your queries wherever it best fits your workflow.
 
 ## What is the pricing model of Polars Cloud?
 
-Polars Cloud is available at no additional cost in this early stage. You only pay for the resources
-you use in your own cloud environment. We are exploring different usage based pricing models that
-are geared towards running queries as fast and efficient as possible.
+Polars Cloud has a 'Pay-as-you-go' model. You pay a fixed price per vCPU per hour and only for the
+resources you use for executing your queries. This is on top of AWS related costs for used compute
+instances. Polars Cloud scales down to zero if no queries run. Find more information on our
+[Payment and Billing](organization/billing.md) page.
+
+## Can I try Polars Cloud for my use case?
+
+Yes, Polars Cloud offers a 30 day free trial. The 30 day free trial will start, when you connect
+your first workspace to your cloud environment. During the trial period you can make full use of
+Polars Cloud features. See [the Trial page](organization/start-trial.md) for more details.
 
 ## Will the distributed engine be available in open source?
 
