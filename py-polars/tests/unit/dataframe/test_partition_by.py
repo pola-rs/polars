@@ -90,3 +90,9 @@ def test_partition_by_as_dict_include_keys_false_large() -> None:
 
     partitions = df.partition_by(["a", "b"], as_dict=True, include_key=False)
     assert all(key == value.row(0) for key, value in partitions.items())
+
+
+def test_partition_by_tuple_typing_24112() -> None:
+    df = pl.DataFrame({"id": ["a", "b", "a"], "val": [1, 2, 3]})
+    for (id_,) in df.partition_by("id", as_dict=True):
+        _should_work: str = id_
