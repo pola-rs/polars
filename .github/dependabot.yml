@@ -33,6 +33,21 @@ updates:
         patterns:
           - '*'
 
+  - package-ecosystem: rust-toolchain
+    directory: '/'
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-patch']
+    commit-message:
+      prefix: chore(rust)
+    labels: ['skip changelog']
+    groups:
+      documentation:
+        patterns:
+          - '*'
+
   # Python Polars
   - package-ecosystem: pip
     directory: py-polars
