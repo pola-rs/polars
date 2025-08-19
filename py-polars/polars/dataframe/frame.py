@@ -11878,6 +11878,7 @@ class DataFrame:
         Check that a DataFrame is sorted with an *ascending* `dt` column and
         a *descending* `value` column`:
 
+        >>> from datetime import date
         >>> df2 = pl.DataFrame(
         ...     {
         ...         "dt": [date(1999, 12, 31), date(2010, 7, 5), date(2025, 8, 19)],
