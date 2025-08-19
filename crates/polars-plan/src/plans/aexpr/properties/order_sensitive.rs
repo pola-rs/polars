@@ -59,7 +59,7 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
         } => false,
         AExpr::Cast {
             expr: _,
-            dtype,
+            dtype: _,
             options: _,
         } => false,
         AExpr::Sort { expr: _, options } => !options.maintain_order,
