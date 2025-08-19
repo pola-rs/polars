@@ -61,7 +61,7 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
             expr: _,
             dtype,
             options: _,
-        } => !matches!(dtype, DataType::Decimal(_, _)),
+        } => false,
         AExpr::Sort { expr: _, options } => !options.maintain_order,
         AExpr::Gather {
             expr: _,
@@ -70,7 +70,7 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
         } => false,
         AExpr::SortBy {
             expr: _,
-            by,
+            by: _,
             sort_options,
         } => !sort_options.maintain_order,
         AExpr::Filter { input: _, by: _ } => false,
