@@ -1139,13 +1139,11 @@ impl std::fmt::Debug for DataType {
                 }
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(opt_p, opt_s) => {
-                match (opt_p, opt_s) {
-                    (None, None) => write!(f, "Decimal(None, None)"),
-                    (None, Some(s)) => write!(f, "Decimal(None, {s})"),
-                    (Some(p), None) => write!(f, "Decimal({p}, None)"),
-                    (Some(p), Some(s)) => write!(f, "Decimal({p}, {s})"),
-                }
+            Decimal(opt_p, opt_s) => match (opt_p, opt_s) {
+                (None, None) => write!(f, "Decimal(None, None)"),
+                (None, Some(s)) => write!(f, "Decimal(None, {s})"),
+                (Some(p), None) => write!(f, "Decimal({p}, None)"),
+                (Some(p), Some(s)) => write!(f, "Decimal({p}, {s})"),
             },
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
