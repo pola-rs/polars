@@ -204,7 +204,7 @@ class ExprListNameSpace:
 
     def sum(self) -> Expr:
         """
-        Sum all the lists in the array.
+        Sum all the lists in the array, ignoring null values.
 
         Notes
         -----
@@ -228,7 +228,7 @@ class ExprListNameSpace:
 
     def max(self) -> Expr:
         """
-        Compute the max value of the lists in the array.
+        Compute the max value of the lists in the array, ignoring null values.
 
         Examples
         --------
@@ -248,7 +248,7 @@ class ExprListNameSpace:
 
     def min(self) -> Expr:
         """
-        Compute the min value of the lists in the array.
+        Compute the min value of the lists in the array, ignoring null values.
 
         Examples
         --------
@@ -268,7 +268,7 @@ class ExprListNameSpace:
 
     def mean(self) -> Expr:
         """
-        Compute the mean value of the lists in the array.
+        Compute the mean value of the lists in the array, ignoring null values.
 
         Examples
         --------
@@ -288,7 +288,7 @@ class ExprListNameSpace:
 
     def median(self) -> Expr:
         """
-        Compute the median value of the lists in the array.
+        Compute the median value of the lists in the array, ignoring null values.
 
         Examples
         --------
@@ -308,7 +308,7 @@ class ExprListNameSpace:
 
     def std(self, ddof: int = 1) -> Expr:
         """
-        Compute the std value of the lists in the array.
+        Compute the std value of the lists in the array, ignoring null values.
 
         Parameters
         ----------
@@ -335,7 +335,7 @@ class ExprListNameSpace:
 
     def var(self, ddof: int = 1) -> Expr:
         """
-        Compute the var value of the lists in the array.
+        Compute the var value of the lists in the array, ignoring null values.
 
         Parameters
         ----------
@@ -433,6 +433,10 @@ class ExprListNameSpace:
         ----------
         maintain_order
             Maintain order of data. This requires more work.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -771,7 +775,7 @@ class ExprListNameSpace:
 
     def arg_min(self) -> Expr:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Retrieve the index of the minimal value in every sublist, ignoring null values.
 
         Returns
         -------
@@ -801,7 +805,7 @@ class ExprListNameSpace:
 
     def arg_max(self) -> Expr:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Retrieve the index of the maximum value in every sublist, ignoring null values.
 
         Returns
         -------

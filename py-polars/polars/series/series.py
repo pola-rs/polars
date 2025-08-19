@@ -2051,7 +2051,7 @@ class Series:
 
     def sum(self) -> int | float:
         """
-        Reduce this Series to the sum value.
+        Reduce this Series to the sum value, ignoring null values.
 
         Notes
         -----
@@ -2072,7 +2072,7 @@ class Series:
 
     def mean(self) -> PythonLiteral | None:
         """
-        Reduce this Series to the mean value.
+        Reduce this Series to the mean value, ignoring null values.
 
         Examples
         --------
@@ -2084,7 +2084,7 @@ class Series:
 
     def product(self) -> int | float:
         """
-        Reduce this Series to the product value.
+        Reduce this Series to the product value, ignoring null values.
 
         Notes
         -----
@@ -2147,7 +2147,7 @@ class Series:
 
     def min(self) -> PythonLiteral | None:
         """
-        Get the minimal value in this Series.
+        Get the minimal value in this Series, ignoring null values.
 
         Examples
         --------
@@ -2159,7 +2159,7 @@ class Series:
 
     def max(self) -> PythonLiteral | None:
         """
-        Get the maximum value in this Series.
+        Get the maximum value in this Series, ignoring null values.
 
         Examples
         --------
@@ -2209,7 +2209,7 @@ class Series:
 
     def std(self, ddof: int = 1) -> float | timedelta | None:
         """
-        Get the standard deviation of this Series.
+        Get the standard deviation of this Series, ignoring null values.
 
         Parameters
         ----------
@@ -2228,7 +2228,7 @@ class Series:
 
     def var(self, ddof: int = 1) -> float | timedelta | None:
         """
-        Get variance of this Series.
+        Get variance of this Series, ignoring null values.
 
         Parameters
         ----------
@@ -2247,7 +2247,7 @@ class Series:
 
     def median(self) -> PythonLiteral | None:
         """
-        Get the median of this Series.
+        Get the median of this Series, ignoring null values.
 
         Examples
         --------
@@ -2664,6 +2664,10 @@ class Series:
         DataFrame
             Columns map the unique values to their count (or proportion).
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
         >>> s = pl.Series("color", ["red", "blue", "red", "green", "blue", "blue"])
@@ -2716,6 +2720,10 @@ class Series:
     def unique_counts(self) -> Series:
         """
         Return a count of the unique values in the order of appearance.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -3602,6 +3610,10 @@ class Series:
         -------
         Series
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 2, 3])
@@ -3617,7 +3629,7 @@ class Series:
 
     def arg_min(self) -> int | None:
         """
-        Get the index of the minimal value.
+        Get the index of the minimal value, ignoring null values.
 
         Returns
         -------
@@ -3633,7 +3645,7 @@ class Series:
 
     def arg_max(self) -> int | None:
         """
-        Get the index of the maximal value.
+        Get the index of the maximal value, ignoring null values.
 
         Returns
         -------
@@ -3739,6 +3751,10 @@ class Series:
         ----------
         maintain_order
             Maintain order of data. This requires more work.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -4113,6 +4129,10 @@ class Series:
         Series
             Series of data type :class:`Boolean`.
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 2, 3])
@@ -4135,6 +4155,10 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -4159,6 +4183,10 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -7986,14 +8014,13 @@ class Series:
 
     def skew(self, *, bias: bool = True) -> float | None:
         r"""
-        Compute the sample skewness of a data set.
+        Compute the sample skewness of a data set, ignoring null values.
 
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
         that there is more weight in the right tail of the distribution. The
         function `skewtest` can be used to determine if the skewness value
         is close enough to zero, statistically speaking.
-
 
         See scipy.stats for more information.
 
@@ -8032,7 +8059,7 @@ class Series:
 
     def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> float | None:
         """
-        Compute the kurtosis (Fisher or Pearson) of a dataset.
+        Compute the kurtosis (Fisher or Pearson) of a dataset, ignoring null values.
 
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
@@ -9026,6 +9053,10 @@ class Series:
         Approximate count of unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
         """
         return self._s.approx_n_unique()
 

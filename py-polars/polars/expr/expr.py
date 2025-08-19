@@ -2324,7 +2324,7 @@ class Expr:
 
     def arg_max(self) -> Expr:
         """
-        Get the index of the maximal value.
+        Get the index of the maximal value, ignoring null values.
 
         Examples
         --------
@@ -2347,7 +2347,7 @@ class Expr:
 
     def arg_min(self) -> Expr:
         """
-        Get the index of the minimal value.
+        Get the index of the minimal value, ignoring null values.
 
         Examples
         --------
@@ -3000,7 +3000,7 @@ class Expr:
 
     def std(self, ddof: int = 1) -> Expr:
         """
-        Get standard deviation.
+        Get standard deviation, ignoring null values.
 
         Parameters
         ----------
@@ -3026,7 +3026,7 @@ class Expr:
 
     def var(self, ddof: int = 1) -> Expr:
         """
-        Get variance.
+        Get variance, ignoring null values, ignoring null values.
 
         Parameters
         ----------
@@ -3052,7 +3052,7 @@ class Expr:
 
     def max(self) -> Expr:
         """
-        Get maximum value.
+        Get maximum value, ignoring null values.
 
         Examples
         --------
@@ -3071,7 +3071,7 @@ class Expr:
 
     def min(self) -> Expr:
         """
-        Get minimum value.
+        Get minimum value, ignoring null values, ignoring null values.
 
         Examples
         --------
@@ -3134,7 +3134,7 @@ class Expr:
 
     def sum(self) -> Expr:
         """
-        Get sum value.
+        Get sum value, ignoring null values.
 
         Notes
         -----
@@ -3162,7 +3162,7 @@ class Expr:
 
     def mean(self) -> Expr:
         """
-        Get mean value.
+        Get mean value, ignoring null values, ignoring null values.
 
         Examples
         --------
@@ -3181,7 +3181,7 @@ class Expr:
 
     def median(self) -> Expr:
         """
-        Get median value using linear interpolation.
+        Get median value, ignoring null values, using linear interpolation.
 
         Examples
         --------
@@ -3200,10 +3200,11 @@ class Expr:
 
     def product(self) -> Expr:
         """
-        Compute the product of an expression.
+        Compute the product of an expression, ignoring null values.
 
         Notes
         -----
+        Null values are ignored.
         If there are no non-null values, then the output is `1`.
         If you would prefer empty products to return `None`, you can
         use `pl.when(expr.count()>0).then(expr.product())` instead
@@ -3255,6 +3256,10 @@ class Expr:
         Approximate count of unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -3338,6 +3343,10 @@ class Expr:
         """
         Get index of first unique value.
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -3378,6 +3387,10 @@ class Expr:
         ----------
         maintain_order
             Maintain order of data. This requires more work.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -3741,6 +3754,10 @@ class Expr:
         """
         Get mask of unique values.
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
@@ -3766,6 +3783,10 @@ class Expr:
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -3794,6 +3815,10 @@ class Expr:
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -3892,7 +3917,7 @@ class Expr:
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
-        Get quantile value.
+        Get quantile value, ignoring null values.
 
         Parameters
         ----------
@@ -8660,6 +8685,10 @@ Consider using {self}.implode() instead"""
         seed
             If `method="random"`, use this as seed.
 
+        Notes
+        -----
+        Null values are preserved.
+
         Examples
         --------
         The 'average' method:
@@ -8836,7 +8865,7 @@ Consider using {self}.implode() instead"""
 
     def skew(self, *, bias: bool = True) -> Expr:
         r"""
-        Compute the sample skewness of a data set.
+        Compute the sample skewness of a data set, ignoring null values.
 
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
@@ -8889,7 +8918,7 @@ Consider using {self}.implode() instead"""
 
     def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> Expr:
         """
-        Compute the kurtosis (Fisher or Pearson) of a dataset.
+        Compute the kurtosis (Fisher or Pearson) of a dataset, ignoring null values.
 
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
@@ -10051,6 +10080,10 @@ Consider using {self}.implode() instead"""
             Expression of type :class:`Struct`, mapping unique values to their
             count (or proportion).
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -10124,6 +10157,10 @@ Consider using {self}.implode() instead"""
 
         This method differs from `value_counts` in that it does not return the
         values, only the counts and might be faster
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
