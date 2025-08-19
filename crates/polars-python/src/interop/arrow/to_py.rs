@@ -5,7 +5,7 @@ use arrow::ffi;
 use arrow::record_batch::RecordBatch;
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
-use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
+use polars::prelude::{ArrayRef, ArrowField, DataType, PlSmallStr, SchemaExt};
 use polars::series::Series;
 use polars_core::utils::arrow;
 use polars_error::PolarsResult;
@@ -71,7 +71,17 @@ pub(crate) fn series_to_stream<'py>(
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let field = series.field().to_arrow(CompatLevel::newest());
-    let iter = Box::new(series.chunks().clone().into_iter().map(Ok)) as _;
+    let series = series.clone();
+    let iter = Box::new((0..series.n_chunks()).map(move |i| {
+        use DataType::{Categorical, Date, Datetime, Decimal, Time};
+        match series.dtype() {
+            Decimal(_, _) | Date | Datetime(_, _) | Time | Categorical(_, _) => {
+                Ok(series.to_arrow(i, CompatLevel::newest()))
+            },
+            _ => Ok(series.chunks()[i].clone()),
+        }
+    })) as _;
+
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
     PyCapsule::new(py, stream, Some(stream_capsule_name))
