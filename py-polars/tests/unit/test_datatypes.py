@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import pickle
 from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING
@@ -235,3 +236,59 @@ def test_max_min(
     df = pl.select(min=dtype.min(), max=dtype.max())
     assert df.to_series(0).item() == lower
     assert df.to_series(1).item() == upper
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # TODO: Add more (bitwise) operators once their types are resolved correctly
+        pl.col("col0") > pl.col("col1"),
+        pl.col("col0") >= pl.col("col1"),
+        pl.col("col0") < pl.col("col1"),
+        pl.col("col0") <= pl.col("col1"),
+        pl.col("col0") == pl.col("col1"),
+        pl.col("col0") != pl.col("col1"),
+        pl.col("col0") + pl.col("col1"),
+        pl.col("col0") - pl.col("col1"),
+        pl.col("col0") * pl.col("col1"),
+        pl.col("col0") / pl.col("col1"),
+        pl.col("col0").truediv(pl.col("col1")),
+        pl.col("col0") // pl.col("col1"),
+        pl.col("col0") % pl.col("col1"),
+    ],
+)
+def test_lazy_collect_schema_matches_computed_schema(expr: pl.Expr) -> None:
+    dtypes = set(SIMPLE_DTYPES)
+
+    # TODO: These dtypes are known to cause issues at the moment
+    dtypes -= {pl.Null, pl.Binary, pl.Object, pl.Unknown}
+
+    for dtype1, dtype2 in itertools.product(dtypes, repeat=2):
+        df = pl.DataFrame(
+            {
+                "col0": [None],
+                "col1": [None],
+            },
+            schema={
+                "col0": dtype1,
+                "col1": dtype2,
+            },
+        )
+        lazy_df = df.lazy().select(expr)
+
+        expected_schema = None
+        try:
+            expected_schema = lazy_df.collect().schema
+        except (
+            # These dtypes will not compute, so they their output dtype is undefined
+            pl.exceptions.InvalidOperationError,
+            pl.exceptions.SchemaError,
+            pl.exceptions.ComputeError,
+        ):
+            continue
+
+        actual_schema = lazy_df.collect_schema()
+        assert actual_schema == expected_schema, (
+            f"{expr} on {df.dtypes} results in {actual_schema} instead of {expected_schema}\n"
+            f"result of computation is:\n{lazy_df.collect()}\n"
+        )
