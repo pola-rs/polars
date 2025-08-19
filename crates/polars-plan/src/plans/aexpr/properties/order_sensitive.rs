@@ -1,18 +1,22 @@
-//! Order sensitivity describes the following property
+//! Order sensitivity is a property of an operation that says that if the inputs' rows are
+//! reordered before the operation takes place, the operation returns different results even when
+//! not regarding order.
 //!
-//! Given a permutation P of values 0..length. A shuffle of a DF with P is given as:
+//! This is a superset of operations that are *row separable*, usually because the operation (e.g.
+//! aggregations) need to see the whole data before being about to provide the correct output.
 //!
-//! Shuffle(A, P) = {
-//!     A,                                  if A is a scalar,
-//!     CONCAT[A[P[i]] for i in 0..length], otherwise.
-//! }
+//! Below is a formal definition.
 //!
-//! An operation f(A1, ..., An) is not order sensitive i.f.f.
+//! A shuffle of a series A with seed S is given as:
 //!
-//! 1. if A1, ..., An are of equal length or scalars, and
-//! 2. Either
-//!     * f(A1, ..., An) == f(Shuffle(A1, P), ..., Shuffle(An, P)) for all P, or,
-//!     * f(A1, ..., An) == Shuffle(f(Shuffle(A1, P), ..., Shuffle(An, P)), P) for all P.
+//! Shuffle(A, S) =
+//!     CONCAT(A[P[i]] for i in [0, |A|))
+//!     where
+//!         P is a seeded by S random permutation of all integers in [0, |A|)
+//!
+//! An operation f(A1, ..., An) is order sensitive i.f.f.
+//!
+//! sort(f(A1, ..., An)) != sort(f(Shuffle(A1, S), ..., Shuffle(An, S))) for any seed S
 
 use super::super::*;
 use crate::plans::IRAggExpr;
