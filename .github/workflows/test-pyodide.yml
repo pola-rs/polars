@@ -23,6 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CARGO_BUILD_JOBS: 1
   RUSTFLAGS: -C link-self-contained=no -C debuginfo=0
   CFLAGS: -fPIC
 
