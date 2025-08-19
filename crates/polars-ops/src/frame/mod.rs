@@ -162,7 +162,7 @@ pub trait DataFrameOps: IntoDf {
         } else {
             polars_ensure!(
                 sort_options.descending.len() == n_cols,
-                InvalidOperation: "length mismatch: `descending` has length {} but there are {} sort columns",
+                InvalidOperation: "`descending` has length {} but there are {} sort columns",
                 sort_options.descending.len(), n_cols
             );
         }
@@ -172,12 +172,12 @@ pub trait DataFrameOps: IntoDf {
         } else {
             polars_ensure!(
                 sort_options.nulls_last.len() == n_cols,
-                InvalidOperation: "length mismatch: `nulls_last` has length {} but there are {} sort columns",
+                InvalidOperation: "`nulls_last` has length {} but there are {} sort columns",
                 sort_options.nulls_last.len(), n_cols
             );
         }
 
-        // check each component series to confirm frame-level sorted order
+        // check each component series to confirm frame-level sorted status
         if n_cols > 1 && sort_options.multithreaded {
             // parallelized col check with early exit (on first unsorted col or error)
             let result = POOL.install(|| {

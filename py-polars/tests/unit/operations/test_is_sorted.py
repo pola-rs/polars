@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 
@@ -462,14 +463,14 @@ def test_dataframe_is_sorted_misc() -> None:
     # parameter length validation
     df_multi = pl.DataFrame({"a": [1, 2], "b": [3.3, 4.5], "c": [5.7, 6.2]})
     with pytest.raises(
-        ValueError,
-        match="`descending` has length 2 but DataFrame has 3 columns",
+        InvalidOperationError,
+        match="`descending` has length 2 but there are 3 sort columns",
     ):
         df_multi.is_sorted(descending=[True, False])
 
     with pytest.raises(
-        ValueError,
-        match="`nulls_last` has length 4 but DataFrame has 3 columns",
+        InvalidOperationError,
+        match="`nulls_last` has length 4 but there are 3 sort columns",
     ):
         df_multi.is_sorted(nulls_last=[True, False, True, False])
 

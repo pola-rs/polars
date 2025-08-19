@@ -11905,19 +11905,10 @@ class DataFrame:
         >>> df3.is_sorted(nulls_last=[False, True])
         True
         """
-        n_columns = self.width
-
         if isinstance(descending, bool):
             descending = [descending]
-        elif (n_desc := len(descending)) != n_columns:
-            msg = f"`descending` has length {n_desc} but DataFrame has {n_columns} columns"
-            raise ValueError(msg)
-
         if isinstance(nulls_last, bool):
             nulls_last = [nulls_last]
-        elif (n_nulls_last := len(nulls_last)) != n_columns:
-            msg = f"`nulls_last` has length {n_nulls_last} but DataFrame has {n_columns} columns"
-            raise ValueError(msg)
 
         subset = None if subset is None else _expand_selectors(self, subset)
         return self._df.is_sorted(subset, descending, nulls_last, multithreaded)
