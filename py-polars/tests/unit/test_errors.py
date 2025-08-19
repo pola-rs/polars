@@ -744,3 +744,10 @@ def test_raise_on_different_results_20104() -> None:
             .gather_every(2, offset=1)
             .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )
+
+
+def test_shift_with_null_deprecated_24105() -> None:
+    with pytest.deprecated_call(
+        match=r"shift value `n` is not a valid integer \(Null\), which currently returns a column of null values. This will become an error in the future.",
+    ):
+        pl.Series([1, 2, 3]).shift(None)
