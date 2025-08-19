@@ -72,7 +72,7 @@ impl Visitor for NonCacheNodeVisitor {
     ) -> PolarsResult<VisitRecursion> {
         match arena.0.get(node.node()) {
             IR::Cache { .. } => {},
-            _ => self.trace.push(node.clone()),
+            _ => self.trace.push(*node),
         };
         Ok(VisitRecursion::Continue)
     }
