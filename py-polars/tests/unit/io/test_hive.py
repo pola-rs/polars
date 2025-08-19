@@ -723,7 +723,7 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
             pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
         ):
             if perc_escape:
-                date2 = urllib.parse.quote(date2)  # type: ignore[call-overload]
+                date2 = urllib.parse.quote(date2)
 
             path = root / f"date1={date1}/date2={date2}/data.bin"
             path.parent.mkdir(exist_ok=True, parents=True)

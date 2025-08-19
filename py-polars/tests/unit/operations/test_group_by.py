@@ -1456,3 +1456,9 @@ def test_group_by_shift_filter_23910(maintain_order: bool) -> None:
         ),
         check_row_order=maintain_order,
     )
+
+
+def test_group_by_tuple_typing_24112() -> None:
+    df = pl.DataFrame({"id": ["a", "b", "a"], "val": [1, 2, 3]})
+    for (id_,), _ in df.group_by("id"):
+        _should_work: str = id_

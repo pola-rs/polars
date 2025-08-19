@@ -9508,7 +9508,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
-    ) -> dict[tuple[object, ...], DataFrame]: ...
+    ) -> dict[tuple[Any, ...], DataFrame]: ...
 
     @overload
     def partition_by(
@@ -9518,7 +9518,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: bool,
-    ) -> list[DataFrame] | dict[tuple[object, ...], DataFrame]: ...
+    ) -> list[DataFrame] | dict[tuple[Any, ...], DataFrame]: ...
 
     def partition_by(
         self,
@@ -9527,7 +9527,7 @@ class DataFrame:
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
-    ) -> list[DataFrame] | dict[tuple[object, ...], DataFrame]:
+    ) -> list[DataFrame] | dict[tuple[Any, ...], DataFrame]:
         """
         Group by the given columns and return the groups as separate dataframes.
 
