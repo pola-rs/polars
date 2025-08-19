@@ -2,8 +2,9 @@
 //! reordered before the operation takes place, the operation returns different results even when
 //! not regarding order.
 //!
-//! This is a superset of operations that are *row separable*, usually because the operation (e.g.
-//! aggregations) need to see the whole data before being about to provide the correct output.
+//! Operations that are not order sensitive are a superset of *row separable* operations.
+//! Usually operations that are not row separable and not order sensitive (e.g. aggregations) need
+//! to see the whole data before being about to provide the correct output.
 //!
 //! Below is a formal definition.
 //!
