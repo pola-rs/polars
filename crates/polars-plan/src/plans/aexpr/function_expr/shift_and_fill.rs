@@ -113,11 +113,18 @@ pub fn shift(args: &[Column]) -> PolarsResult<Column> {
     ComputeError: "n must be a single value."
     );
 
-    let n_s = n_s.cast(&DataType::Int64)?;
-    let n = n_s.i64()?;
+    let n_cast_s = n_s.cast(&DataType::Int64)?;
+    let n = n_cast_s.i64()?;
 
     match n.get(0) {
         Some(n) => Ok(s.shift(n)),
-        None => Ok(Column::full_null(s.name().clone(), s.len(), s.dtype())),
+        None => {
+            polars_warn!(
+                Deprecation, // @2.0
+                "shift value `n` is not a valid integer ({:?}), which currently returns a column of null values. This will become an error in the future.",
+                &n_s.get(0)?,
+            );
+            Ok(Column::full_null(s.name().clone(), s.len(), s.dtype()))
+        },
     }
 }
