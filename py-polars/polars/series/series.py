@@ -72,6 +72,7 @@ from polars.datatypes import (
     Null,
     Object,
     String,
+    Struct,
     Time,
     UInt16,
     UInt32,
@@ -3827,28 +3828,53 @@ class Series:
         """
         return self.len() == 0
 
-    def is_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> bool:
+    def is_sorted(
+        self,
+        *,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool | Sequence[bool] = False,
+    ) -> bool:
         """
-        Check if the Series is sorted.
+        Check if the Series is sorted, according to the given criteria.
 
         Parameters
         ----------
         descending
-            Check if the Series is sorted in descending order
+            Check if the Series is sorted in descending order. For Struct-dtype
+            columns this can be a sequence of bools to specify per-field sort order.
         nulls_last
-            Set nulls at the end of the Series in sorted check.
+            Set nulls at the end of the Series in sorted check. For Struct-dtype
+            columns this can be a sequence of bools to specify per-field null
+            sorting behaviour.
 
         Examples
         --------
         >>> s = pl.Series([1, 3, 2])
         >>> s.is_sorted()
         False
-
-        >>> s = pl.Series([3, 2, 1])
+        >>> s = pl.Series([30.5, 22.25, -10.0])
         >>> s.is_sorted(descending=True)
         True
+
+        For Struct Series you can set per-field `descending` and  `nulls_last` values:
+
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 2, "b": 1}])
+        >>> s.is_sorted(descending=[False, True])
+        True
         """
-        return self._s.is_sorted(descending, nulls_last)
+        if not isinstance(self.dtype, Struct):
+            if not isinstance(descending, bool):
+                msg = f"`descending` must be a bool, not {type(descending).__name__}, for non-Struct Series (dtype={self.dtype})"
+                raise TypeError(msg)
+            if not isinstance(nulls_last, bool):
+                msg = f"`nulls_last` must be a bool, not {type(nulls_last).__name__}, for non-Struct Series (dtype={self.dtype})"
+                raise TypeError(msg)
+            return self._s.is_sorted(descending, nulls_last)
+
+        return self._s.is_sorted_struct(
+            [descending] if isinstance(descending, bool) else list(descending),
+            [nulls_last] if isinstance(nulls_last, bool) else list(nulls_last),
+        )
 
     def not_(self) -> Series:
         """

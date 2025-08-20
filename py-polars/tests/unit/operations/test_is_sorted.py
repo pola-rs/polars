@@ -263,7 +263,7 @@ def test_sorted_flag_singletons(value: Any) -> None:
     assert pl.DataFrame({"x": [value]})["x"].flags["SORTED_ASC"] is True
 
 
-def test_is_sorted() -> None:
+def test_series_is_sorted() -> None:
     assert not pl.Series([1, 2, 5, None, 2, None]).is_sorted()
     assert pl.Series([1, 2, 4, None, None]).is_sorted(nulls_last=True)
     assert pl.Series([None, None, 1, 2, 4]).is_sorted(nulls_last=False)
@@ -274,17 +274,95 @@ def test_is_sorted() -> None:
     assert pl.Series([1, 2, 3, 4]).is_sorted()
     assert pl.Series([5, 2, 1, 1, -1]).is_sorted(descending=True)
     assert pl.Series([None, None, 5, 2, 1, 1, -1]).is_sorted(
-        descending=True, nulls_last=False
+        descending=True,
+        nulls_last=False,
     )
     assert pl.Series([5, 2, 1, 1, -1, None, None]).is_sorted(
-        descending=True, nulls_last=True
+        descending=True,
+        nulls_last=True,
     )
     assert not pl.Series([5, None, 2, 1, 1, -1, None, None]).is_sorted(
-        descending=True, nulls_last=True
+        descending=True,
+        nulls_last=True,
     )
     assert not pl.Series([5, 2, 1, 10, 1, -1, None, None]).is_sorted(
-        descending=True, nulls_last=True
+        descending=True,
+        nulls_last=True,
     )
+
+
+def test_struct_series_is_sorted() -> None:
+    struct_data = [
+        {"a": 1, "b": 3},
+        {"a": 1, "b": 4},
+        {"a": 1, "b": 5},
+        {"a": 2, "b": 6},
+        {"a": 2, "b": 7},
+        {"a": 2, "b": 8},
+    ]
+    s1 = pl.Series(struct_data)
+    assert s1.is_sorted()
+    assert not s1.is_sorted(descending=True)
+
+    s2 = pl.Series(reversed(struct_data))
+    assert not s2.is_sorted()
+    assert s2.is_sorted(descending=True)
+
+
+def test_struct_series_is_sorted_mixed() -> None:
+    # create a struct series from a sorted frame
+    df = pl.DataFrame({"a": [1, 2, 1, 2, 1, 2], "b": [3, 8, 2, 7, 1, None]})
+    s = df.sort(
+        by=["a", "b"],
+        descending=[False, True],
+        nulls_last=[False, True],
+    ).to_struct("sorted_struct")
+
+    assert_series_equal(
+        s,
+        pl.Series(
+            name="sorted_struct",
+            values=[
+                {"a": 1, "b": 3},
+                {"a": 1, "b": 2},
+                {"a": 1, "b": 1},
+                {"a": 2, "b": 8},
+                {"a": 2, "b": 7},
+                {"a": 2, "b": None},
+            ],
+        ),
+    )
+
+    # there is no way to confirm the struct series was sorted without
+    # setting the same mixed `descending` and `nulls_last` parameters
+    assert not s.is_sorted()
+    assert not s.is_sorted(descending=True)
+    assert not s.is_sorted(descending=False)
+    assert not s.is_sorted(descending=[True, False])
+    assert not s.is_sorted(descending=[True, False], nulls_last=True)
+    assert not s.is_sorted(descending=[True, False], nulls_last=[False, True])
+
+    # these checks will match: `a` ascending, `b` descending, nulls last
+    assert s.is_sorted(descending=[False, True], nulls_last=True)
+    assert s.is_sorted(descending=[False, True], nulls_last=[False, True])
+
+    # <= 1 row is always sorted, irrespective of `descending` and `nulls_last`
+    assert s[:1].is_sorted()
+    assert s[:1].is_sorted(descending=True)
+    assert s.clear().is_sorted(nulls_last=True)
+    assert s.clear().is_sorted(descending=True)
+
+
+def test_struct_series_is_sorted_errors() -> None:
+    for param_name, param_value in (
+        ("descending", [True, False]),
+        ("nulls_last", [False, True]),
+    ):
+        with pytest.raises(
+            TypeError,
+            match=rf"`{param_name}` must be a bool, not list, for non-Struct Series \(dtype=Int64\)",
+        ):
+            pl.Series([1, 2, 3]).is_sorted(**{param_name: param_value})
 
 
 def test_sorted_flag() -> None:
