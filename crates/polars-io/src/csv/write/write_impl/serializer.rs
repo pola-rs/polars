@@ -386,6 +386,30 @@ fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serial
     })
 }
 
+#[cfg(feature = "dtype-decimal")]
+fn decimal_serializer_decimal_comma(
+    array: &PrimitiveArray<i128>,
+    scale: usize,
+) -> impl Serializer<'_> {
+    let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
+
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let formatted = fmt_buf.format(item, scale, trim_zeros);
+        for ch in formatted.as_bytes() {
+            buf.push(if *ch == b'.' { b',' } else { *ch });
+        }
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<i128>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-time",
@@ -669,6 +693,17 @@ pub(super) fn serializer_for<'a>(
                 QuoteStyle::Never => false,
             }
         },
+        DataType::Decimal(_, scale) => {
+            // Similar to logic for float data-types, but need to consider scale rather than precision
+            let should_quote =
+                options.decimal_comma && options.separator == b',' && scale.unwrap_or(0) > 0;
+
+            match options.quote_style {
+                QuoteStyle::Always => true,
+                QuoteStyle::Necessary | QuoteStyle::NonNumeric => should_quote,
+                QuoteStyle::Never => false,
+            }
+        },
         _ => options.quote_style == QuoteStyle::Always,
     };
 
@@ -906,7 +941,11 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
-            quote_wrapper!(decimal_serializer, scale.unwrap_or(0))
+            if options.decimal_comma {
+                quote_wrapper!(decimal_serializer_decimal_comma, scale.unwrap_or(0))
+            } else {
+                quote_wrapper!(decimal_serializer, scale.unwrap_or(0))
+            }
         },
         _ => {
             polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or a binary format.")
