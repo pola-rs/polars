@@ -3856,10 +3856,22 @@ class Series:
         >>> s.is_sorted(descending=True)
         True
 
-        For Struct Series you can set per-field `descending` and  `nulls_last` values:
+        For Struct Series you can (optionally) set per-field `descending`
+        and `nulls_last` values:
 
-        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 2, "b": 1}])
-        >>> s.is_sorted(descending=[False, True])
+        >>> s = pl.Series(
+        ...     [
+        ...         {"a": 1, "b": 3},
+        ...         {"a": 1, "b": 2},
+        ...         {"a": 1, "b": 1},
+        ...         {"a": 2, "b": 8},
+        ...         {"a": 2, "b": 7},
+        ...         {"a": 2, "b": None},
+        ...     ]
+        ... )
+        >>> s.is_sorted()
+        False
+        >>> s.is_sorted(descending=[False, True], nulls_last=True)
         True
         """
         if not isinstance(self.dtype, Struct):
