@@ -4334,13 +4334,14 @@ class DataFrame:
                         cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
                         mode = "create"
 
+                # As of adbc_driver_manager 1.6.0, adbc_ingest can take a Polars
+                # DataFrame via the PyCapsule interface
+                data = self if driver_manager_version >= (1, 6) else self.to_arrow()
+
                 # use of schema-qualified table names was released in
                 # adbc-driver-manager 0.7.0 and is working without bugs from driver
                 # version (e.g., adbc-driver-postgresql) version 0.8.0
                 if driver_manager_version >= (0, 7) and adbc_driver_version >= (0, 8):
-                    # As of adbc_driver_manager 1.6.0, adbc_ingest can take a Polars
-                    # DataFrame via the PyCapsule interface
-                    data = self if driver_manager_version >= (1, 6) else self.to_arrow()
                     n_rows = cursor.adbc_ingest(
                         unpacked_table_name,
                         data=data,
@@ -4365,7 +4366,7 @@ class DataFrame:
                 else:
                     n_rows = cursor.adbc_ingest(
                         table_name=unpacked_table_name,
-                        data=self.to_arrow(),
+                        data=data,
                         mode=mode,
                         **(engine_options or {}),
                     )
