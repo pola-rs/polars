@@ -32,7 +32,7 @@ pub(super) fn convert_functions(
         let struct_node = struct_input.node();
         let struct_schema = Schema::from_iter(fields.iter().cloned());
 
-        let mut e: Vec<ExprIR> = Vec::with_capacity(input.len());
+        let mut e = Vec::with_capacity(input.len());
         e.push(struct_input);
 
         let prev = ctx.with_fields.replace((struct_node, struct_schema));
