@@ -98,6 +98,9 @@ fn lps_equal(
 ) -> bool {
     let lhs_trace = get_non_cache_trace(root, lhs_arena.0, lhs_arena.1);
     let rhs_trace = get_non_cache_trace(root, rhs_arena.0, rhs_arena.1);
+    if lhs_trace.len() != rhs_trace.len() {
+        return false;
+    }
     for (lhs_node, rhs_node) in lhs_trace.into_iter().zip(rhs_trace) {
         let lhs_cmp = lhs_node
             .hashable_and_cmp(lhs_arena.0, lhs_arena.1)
