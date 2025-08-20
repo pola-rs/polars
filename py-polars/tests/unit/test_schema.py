@@ -1,4 +1,3 @@
-import itertools
 import pickle
 from datetime import datetime
 from typing import Any
@@ -8,6 +7,11 @@ import pytest
 import polars as pl
 from polars.datatypes.group import NUMERIC_DTYPES, TEMPORAL_DTYPES
 from polars.testing.asserts.frame import assert_frame_equal
+
+# Used by test_lazy_collect_schema_matches_computed_schema
+_TEST_COLLECT_SCHEMA_M_DTYPES = (
+    {pl.Boolean, pl.String} | NUMERIC_DTYPES | TEMPORAL_DTYPES
+) - {pl.Decimal}
 
 
 def test_schema() -> None:
@@ -159,18 +163,8 @@ def test_schema_in_map_elements_returns_scalar() -> None:
         pl.col("col0") % pl.col("col1"),
     ],
 )
-@pytest.mark.parametrize(
-    ("dtype1", "dtype2"),
-    itertools.product(
-        sorted(
-            # TODO: some of the simple dtypes are known to still cause issues at
-            # the moment (Unknown, Null, Object, Binary)
-            ({pl.Boolean, pl.String} | NUMERIC_DTYPES | TEMPORAL_DTYPES) - {pl.Decimal},
-            key=lambda dt: repr(dt),
-        ),
-        repeat=2,
-    ),
-)
+@pytest.mark.parametrize("dtype1", _TEST_COLLECT_SCHEMA_M_DTYPES)
+@pytest.mark.parametrize("dtype2", _TEST_COLLECT_SCHEMA_M_DTYPES)
 def test_lazy_collect_schema_matches_computed_schema(
     expr: pl.Expr, dtype1: pl.DataType, dtype2: pl.DataType
 ) -> None:
