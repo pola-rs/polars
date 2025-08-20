@@ -4310,8 +4310,8 @@ class DataFrame:
                 raise ValueError(msg)
 
             with (
-                conn if can_close_conn else contextlib.nullcontext(),  # type: ignore[union-attr]
-                conn.cursor() as cursor,  # type: ignore[union-attr]
+                conn if can_close_conn else contextlib.nullcontext(),
+                conn.cursor() as cursor,
             ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
@@ -4376,7 +4376,7 @@ class DataFrame:
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()  # type: ignore[union-attr]
+                conn.commit()
             return n_rows
 
         elif engine == "sqlalchemy":
