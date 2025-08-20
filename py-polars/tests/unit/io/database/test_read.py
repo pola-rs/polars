@@ -806,7 +806,7 @@ def test_read_database_mocked(
                 query="SELECT * FROM test_data",
                 protocol="mysql",
                 errclass=ModuleNotFoundError,
-                errmsg="ADBC 'adbc_driver_mysql.dbapi' driver not detected.",
+                errmsg="ADBC 'adbc_driver_mysql' driver not detected.",
                 engine="adbc",
             ),
             id="Unavailable adbc driver",

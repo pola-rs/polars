@@ -236,6 +236,22 @@ class TestWriteDatabase:
         ):
             df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
 
+    def test_write_database_adbc_missing_driver_error(
+        self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
+    ) -> None:
+        # Skip for sqlalchemy
+        if engine == "sqlalchemy":
+            return
+        df = pl.DataFrame({"colx": [1, 2, 3]})
+        with pytest.raises(
+            ModuleNotFoundError, match="ADBC 'adbc_driver_mysql' driver not detected."
+        ):
+            df.write_database(
+                table_name="my_schema.my_table",
+                connection="mysql:///:memory:",
+                engine="adbc",
+            )
+
 
 @pytest.mark.write_disk
 def test_write_database_using_sa_session(tmp_path: str) -> None:
