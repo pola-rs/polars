@@ -1191,6 +1191,18 @@ def test_caching_sink_multiple() -> None:
     assert "CACHE[id:" in pl.explain_all([expr1, expr2])
 
 
+def test_caching_sink_multiple_different_select() -> None:
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(
+        valid=(pl.col("foo") > 2) & (pl.col("bar") < 8)
+    )
+
+    expr1 = common_subplan.filter(valid=True).select("foo")
+    expr2 = common_subplan.filter(valid=False).select("bar")
+
+    assert "CACHE[id:" in pl.explain_all([expr1, expr2])
+
+
 def test_no_caching_scan(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
     df.write_parquet(tmp_path / "df.parquet")

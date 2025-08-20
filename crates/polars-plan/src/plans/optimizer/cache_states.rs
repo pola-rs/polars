@@ -56,65 +56,6 @@ fn get_upper_predicates(
 
 type TwoParents = [Option<Node>; 2];
 
-#[derive(Default)]
-struct NonCacheNodeVisitor {
-    trace: Vec<IRNode>,
-}
-
-impl Visitor for NonCacheNodeVisitor {
-    type Node = IRNode;
-    type Arena = IRNodeArena;
-
-    fn pre_visit(
-        &mut self,
-        node: &Self::Node,
-        arena: &Self::Arena,
-    ) -> PolarsResult<VisitRecursion> {
-        match arena.0.get(node.node()) {
-            IR::Cache { .. } => {},
-            _ => self.trace.push(*node),
-        };
-        Ok(VisitRecursion::Continue)
-    }
-}
-
-fn get_non_cache_trace(
-    root: Node,
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-) -> Vec<IRNode> {
-    let mut visitor = NonCacheNodeVisitor::default();
-    let ir_node = IRNode::new(root);
-    with_ir_arena(lp_arena, expr_arena, |arena| {
-        ir_node.visit(&mut visitor, arena).unwrap();
-    });
-    visitor.trace
-}
-
-fn lps_equal(
-    root: Node,
-    lhs_arena: (&mut Arena<IR>, &mut Arena<AExpr>),
-    rhs_arena: (&mut Arena<IR>, &mut Arena<AExpr>),
-) -> bool {
-    let lhs_trace = get_non_cache_trace(root, lhs_arena.0, lhs_arena.1);
-    let rhs_trace = get_non_cache_trace(root, rhs_arena.0, rhs_arena.1);
-    if lhs_trace.len() != rhs_trace.len() {
-        return false;
-    }
-    for (lhs_node, rhs_node) in lhs_trace.into_iter().zip(rhs_trace) {
-        let lhs_cmp = lhs_node
-            .hashable_and_cmp(lhs_arena.0, lhs_arena.1)
-            .ignore_caches();
-        let rhs_cmp = rhs_node
-            .hashable_and_cmp(rhs_arena.0, rhs_arena.1)
-            .ignore_caches();
-        if lhs_cmp != rhs_cmp {
-            return false;
-        }
-    }
-    true
-}
-
 // 1. This will ensure that all equal caches communicate the amount of columns
 //    they need to project.
 // 2. This will ensure we apply predicate in the subtrees below the caches.
@@ -357,11 +298,15 @@ pub(super) fn set_cache_states(
                         pred_pd.optimize(lp, &mut lp_arena_scratch, &mut expr_arena_scratch)?;
                     lp_arena_scratch.replace(node, lp);
                 }
-                if !lps_equal(
-                    root,
-                    (lp_arena, expr_arena),
-                    (&mut lp_arena_scratch, &mut expr_arena_scratch),
-                ) {
+
+                let root_ir = IRNode::new(root);
+                let cmp_existing = root_ir
+                    .hashable_and_cmp(lp_arena, expr_arena)
+                    .ignore_caches();
+                let cmp_scratch = root_ir
+                    .hashable_and_cmp(&lp_arena_scratch, &expr_arena_scratch)
+                    .ignore_caches();
+                if cmp_existing != cmp_scratch {
                     // If there was a change, we remove the cache nodes entirely
                     if verbose {
                         eprintln!("cache nodes will be removed because predicates don't match")
@@ -371,6 +316,7 @@ pub(super) fn set_cache_states(
                 }
                 continue;
             }
+
             // Below we restart projection and predicates pushdown
             // on the first cache node. As it are cache nodes, the others are the same
             // and we can reuse the optimized state for all inputs.

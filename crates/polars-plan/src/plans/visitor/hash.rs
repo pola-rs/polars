@@ -277,14 +277,14 @@ impl HashableEqLP<'_> {
                 IR::DataFrameScan {
                     df: dfl,
                     schema: _,
-                    output_schema: s_l,
+                    output_schema: _,
                 },
                 IR::DataFrameScan {
                     df: dfr,
                     schema: _,
-                    output_schema: s_r,
+                    output_schema: _,
                 },
-            ) => std::ptr::eq(Arc::as_ptr(dfl), Arc::as_ptr(dfr)) && s_l == s_r,
+            ) => std::ptr::eq(Arc::as_ptr(dfl), Arc::as_ptr(dfr)),
             (
                 IR::SimpleProjection {
                     input: _,
