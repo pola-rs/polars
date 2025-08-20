@@ -9,9 +9,10 @@ from polars.datatypes.group import NUMERIC_DTYPES, TEMPORAL_DTYPES
 from polars.testing.asserts.frame import assert_frame_equal
 
 # Used by test_lazy_collect_schema_matches_computed_schema
-_TEST_COLLECT_SCHEMA_M_DTYPES = (
-    {pl.Boolean, pl.String} | NUMERIC_DTYPES | TEMPORAL_DTYPES
-) - {pl.Decimal}
+_TEST_COLLECT_SCHEMA_M_DTYPES = sorted(
+    ({pl.Boolean, pl.String} | NUMERIC_DTYPES | TEMPORAL_DTYPES) - {pl.Decimal},
+    key=repr,
+)
 
 
 def test_schema() -> None:
