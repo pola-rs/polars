@@ -735,7 +735,7 @@ pub(super) fn convert_functions(
         F::Append { upcast } => I::Append { upcast },
         shift_function @ (F::ShiftAndFill | F::Shift) => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            let n_dtype = e[1].dtype(&ctx.schema, &ctx.arena)?;
+            let n_dtype = e[1].dtype(ctx.schema, ctx.arena)?;
             // @2.0: This should become an error in 2.0.
             if !n_dtype.is_numeric() {
                 polars_warn!(

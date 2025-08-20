@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -750,4 +750,4 @@ def test_shift_with_null_deprecated_24105() -> None:
     with pytest.deprecated_call(
         match=r"'n' is not a valid integer \(but of type Null\), which currently returns a column of null values. This will become an error in the future."
     ):
-        pl.Series([1, 2, 3]).shift(None)
+        pl.Series([1, 2, 3]).shift(cast(int, None))
