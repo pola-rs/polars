@@ -733,23 +733,14 @@ pub(super) fn convert_functions(
             }
         },
         F::Append { upcast } => I::Append { upcast },
-        shift_function @ (F::ShiftAndFill | F::Shift) => {
+        F::ShiftAndFill => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            let n_dtype = e[1].dtype(ctx.schema, ctx.arena)?;
-            // @2.0: This should become an error in 2.0.
-            if !n_dtype.is_numeric() {
-                polars_warn!(
-                    Deprecation,
-                    "'n' is not a valid integer (but of type {:?}), which currently returns a column of null values. This will become an error in the future.",
-                    n_dtype
-                );
-            }
-            if shift_function == F::ShiftAndFill {
-                polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'fill_value' must be a scalar value");
-                I::ShiftAndFill
-            } else {
-                I::Shift
-            }
+            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'fill_value' must be a scalar value");
+            I::ShiftAndFill
+        },
+        F::Shift => {
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
+            I::Shift
         },
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
