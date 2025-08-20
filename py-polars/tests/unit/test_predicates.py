@@ -1181,6 +1181,16 @@ def test_no_caching_19479() -> None:
     assert "CACHE[id:" not in result.explain()
 
 
+def test_caching_sink_multiple() -> None:
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+
+    expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
+    expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
+
+    assert "CACHE[id:" in pl.explain_all([expr1, expr2])
+
+
 def test_no_caching_scan(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
     df.write_parquet(tmp_path / "df.parquet")

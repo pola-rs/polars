@@ -450,6 +450,7 @@ impl HashableEqLP<'_> {
                         l == r
                     })
             },
+            (IR::SinkMultiple { .. }, IR::SinkMultiple { .. }) => true,
             _ => false,
         }
     }
