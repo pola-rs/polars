@@ -4279,6 +4279,12 @@ class DataFrame:
             )
 
             driver_manager = import_optional("adbc_driver_manager")
+
+            # base class for ADBC connections
+            if not isinstance(conn, driver_manager.dbapi.Connection):
+                msg = f"unrecognised connection type {connection!r}"
+                raise TypeError(msg)
+
             driver_manager_str_version = getattr(driver_manager, "__version__", "0.0")
             driver_manager_version = parse_version(driver_manager_str_version)
 
@@ -4398,8 +4404,8 @@ class DataFrame:
             elif isinstance(connection, Connectable):
                 sa_object = connection
             else:
-                error_msg = f"unexpected connection type {type(connection)}"
-                raise TypeError(error_msg)
+                msg = f"unrecognised connection type {connection!r}"
+                raise TypeError(msg)
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:

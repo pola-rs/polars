@@ -232,9 +232,9 @@ class TestWriteDatabase:
 
         with pytest.raises(
             TypeError,
-            match="unrecognised connection type",
+            match="unrecognised connection type.*",
         ):
-            df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
+            df.write_database(connection=True, table_name="misc", engine=engine)  # type: ignore[arg-type]
 
     def test_write_database_adbc_missing_driver_error(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
@@ -249,7 +249,7 @@ class TestWriteDatabase:
             df.write_database(
                 table_name="my_schema.my_table",
                 connection="mysql:///:memory:",
-                engine="adbc",
+                engine=engine,
             )
 
 
