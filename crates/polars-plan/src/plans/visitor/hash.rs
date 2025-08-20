@@ -91,11 +91,10 @@ impl Hash for HashableEqLP<'_> {
             IR::DataFrameScan {
                 df,
                 schema: _,
-                output_schema,
+                output_schema: _,
                 ..
             } => {
                 (Arc::as_ptr(df) as usize).hash(state);
-                output_schema.hash(state);
             },
             IR::SimpleProjection { columns, input: _ } => {
                 columns.hash(state);
