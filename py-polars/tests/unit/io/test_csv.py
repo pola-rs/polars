@@ -2677,7 +2677,7 @@ x"y,b,c
         (";", "never", None, None, True, b"123,75;60,0;9\n"),
     ],
 )
-def test_write_csv_decimal_comma(
+def test_write_csv_float_type_decimal_comma(
     separator: str,
     quote_style: CsvQuoteStyle | None,
     scientific: bool | None,
@@ -2749,6 +2749,102 @@ def test_write_csv_decimal_comma(
             quote_style=quote_style,
             float_precision=precision,
             float_scientific=scientific,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        buf.seek(0)
+        out = pl.scan_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        ).collect()
+        assert_frame_equal(df, out)
+
+
+@pytest.mark.parametrize(
+    (
+        "separator",
+        "quote_style",
+        "scale",
+        "decimal_comma",
+        "expected",
+    ),
+    [
+        (",", None, 0, False, b"123,60,9\n"),
+        (",", None, 0, True, b"123,60,9\n"),
+        (",", None, 1, False, b"123.7,60.0,9\n"),
+        (",", None, 1, True, b'"123,7","60,0",9\n'),
+        (",", None, 2, False, b"123.75,60.00,9\n"),
+        (",", None, 2, True, b'"123,75","60,00",9\n'),
+        (";", None, 2, False, b"123.75;60.00;9\n"),
+        (";", None, 2, True, b"123,75;60,00;9\n"),
+        (",", "always", 0, True, b'"123","60","9"\n'),
+        (",", "necessary", 0, True, b"123,60,9\n"),
+        (",", "non_numeric", 2, True, b'"123,75","60,00",9\n'),
+        (",", "never", 2, True, b"123,75,60,00,9\n"),
+        (";", "always", 2, True, b'"123,75";"60,00";"9"\n'),
+        (";", "necessary", 2, True, b"123,75;60,00;9\n"),
+    ],
+)
+def test_write_csv_decimal_type_decimal_comma(
+    separator: str,
+    quote_style: CsvQuoteStyle | None,
+    scale: int,
+    decimal_comma: bool,
+    expected: bytes,
+) -> None:
+    # as Float32 (implicitly)
+    df = pl.DataFrame(
+        {
+            "decimal_a": [123.75],
+            "decimal_b": [60.0],
+            "int": [9],
+        }
+    )
+
+    # as Decimal (explicitly)
+    df_typed = df.with_columns(
+        pl.col("decimal_a").cast(pl.Decimal(scale=scale)),
+        pl.col("decimal_b").cast(pl.Decimal(scale=scale)),
+    )
+
+    buf = io.BytesIO()
+    df_typed.write_csv(
+        buf,
+        separator=separator,
+        quote_style=quote_style,
+        decimal_comma=decimal_comma,
+        include_header=False,
+    )
+    buf.seek(0)
+    assert buf.read() == expected
+
+    # Round-trip testing: assert df == read_csv(write_csv(df)), unless:
+    # - scale affects the value
+    # - quote_style = 'never' generates malformed csv
+    round_trip = not (
+        (scale < 2) or (quote_style == "never" and decimal_comma and separator == ",")
+    )
+    if round_trip:
+        # eager
+        buf.seek(0)
+        df.write_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        buf.seek(0)
+        out = pl.read_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        )
+        assert_frame_equal(df, out)
+
+        # lazy
+        buf.seek(0)
+        df.lazy().sink_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
             decimal_comma=decimal_comma,
             include_header=True,
         )
