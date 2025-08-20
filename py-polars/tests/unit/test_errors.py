@@ -748,6 +748,6 @@ def test_raise_on_different_results_20104() -> None:
 
 def test_shift_with_null_deprecated_24105() -> None:
     with pytest.deprecated_call(
-        match=r"shift value `n` is not a valid integer \(Null\), which currently returns a column of null values. This will become an error in the future.",
+        match=r"'n' is not a valid integer \(but of type Null\), which currently returns a column of null values. This will become an error in the future."
     ):
         pl.Series([1, 2, 3]).shift(None)
