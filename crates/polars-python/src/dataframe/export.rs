@@ -82,11 +82,14 @@ impl PyDataFrame {
         py.enter_polars_ok(|| self.df.align_chunks_par())?;
         let pyarrow = py.import("pyarrow")?;
 
-        let rbs = self
-            .df
-            .iter_chunks(compat_level.0, true)
-            .map(|rb| interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow))
-            .collect::<PyResult<_>>()?;
+        let mut chunks = self.df.iter_chunks(compat_level.0, true);
+        let mut rbs = Vec::with_capacity(chunks.size_hint().0);
+        // df.iter_chunks() iteration could internally try to acquire the GIL on another thread,
+        // so we make sure to run chunks.next() within enter_polars().
+        while let Some(rb) = py.enter_polars_ok(|| chunks.next())? {
+            let rb = interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow)?;
+            rbs.push(rb);
+        }
         Ok(rbs)
     }
 
