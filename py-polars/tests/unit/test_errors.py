@@ -383,7 +383,7 @@ def test_sort_by_different_lengths() -> None:
     )
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -393,7 +393,7 @@ def test_sort_by_different_lengths() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -613,7 +613,7 @@ def test_sort_by_error() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="expressions in 'sort_by' produced a different number of groups",
+        match="expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
