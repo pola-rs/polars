@@ -267,8 +267,9 @@ pub(super) fn set_cache_states(
             // completely changes something. If yes, we remove the cache nodes as we don't want to
             // lose predicate pushdown in favor of scan sharing. Otherwise, we keep the cache to
             // realize efficiency gains.
-            // Note that we only run projection pushdown if predicate pushdown made a difference.
-            // We prefer CSE over projection pushdown.
+            // Note that we only remove the cache nodes if _predicate pushdown_ made a difference.
+            // We do _not_ remove the cache nodes as a result of projection pushdown. This is
+            // performed independently below.
             if v.predicate_union.len() > 1 {
                 fn alter_arena_from_value(
                     v: &Value,
