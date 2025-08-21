@@ -369,35 +369,22 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 }
 
 #[cfg(feature = "dtype-decimal")]
-fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer<'_> {
-    let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
-
-    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        buf.extend_from_slice(fmt_buf.format(item, scale, trim_zeros).as_bytes());
-    };
-
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i128>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
-}
-
-#[cfg(feature = "dtype-decimal")]
-fn decimal_serializer_decimal_comma(
+fn decimal_serializer(
     array: &PrimitiveArray<i128>,
     scale: usize,
+    decimal_comma: bool,
 ) -> impl Serializer<'_> {
     let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
     let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let formatted = fmt_buf.format(item, scale, trim_zeros);
-        for ch in formatted.as_bytes() {
-            buf.push(if *ch == b'.' { b',' } else { *ch });
+        let formatted = fmt_buf.format(item, scale, trim_zeros).as_bytes();
+        if decimal_comma {
+            for ch in formatted {
+                buf.push(if *ch == b'.' { b',' } else { *ch });
+            }
+        } else {
+            buf.extend_from_slice(fmt_buf.format(item, scale, trim_zeros).as_bytes());
         }
     };
 
@@ -941,11 +928,11 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
-            if options.decimal_comma {
-                quote_wrapper!(decimal_serializer_decimal_comma, scale.unwrap_or(0))
-            } else {
-                quote_wrapper!(decimal_serializer, scale.unwrap_or(0))
-            }
+            quote_wrapper!(
+                decimal_serializer,
+                scale.unwrap_or(0),
+                options.decimal_comma
+            )
         },
         _ => {
             polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or a binary format.")
