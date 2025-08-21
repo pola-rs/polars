@@ -359,7 +359,7 @@ fn insert_fitting_join(
                     && !streaming
                     && is_elementwise_rec(*pred, expr_arena)
             }) {
-                options.options = Some(JoinTypeOptionsIR::Cross {
+                options.options = Some(JoinTypeOptionsIR::CrossAndFilter {
                     predicate: ExprIR::from_node(pred, expr_arena),
                 })
             }
