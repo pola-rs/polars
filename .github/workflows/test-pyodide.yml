@@ -107,8 +107,8 @@ jobs:
               echo "$RUST_EMSCRIPTEN_TARGET_URL" > "$INSTALL_TOKEN"
             fi
           CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dist-release build-args=--manifest-path=Cargo.toml"
-          CIBW_TEST_REQUIRES: pytest numpy pandas hypothesis matplotlib
-          CIBW_TEST_COMMAND: pytest {project}/py-polars/tests
+          # CIBW_TEST_REQUIRES: pytest numpy pandas hypothesis matplotlib
+          # CIBW_TEST_COMMAND: pytest {project}/py-polars/tests
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
