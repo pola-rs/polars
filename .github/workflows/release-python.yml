@@ -337,8 +337,8 @@ jobs:
 
       - name: Set CFLAGS and RUSTFLAGS for wasm32
         run: |
-            echo "CFLAGS=-fPIC" >> $GITHUB_ENV
-            echo "RUSTFLAGS=-C link-self-contained=no" >> $GITHUB_ENV
+            echo "CFLAGS=-fPIC -fwasm-exceptions" >> $GITHUB_ENV
+            echo "RUSTFLAGS=-C link-self-contained=no -Zemscripten-wasm-eh" >> $GITHUB_ENV
 
       - name: Check out Emscripten v4.0.9 patches for Pyodide
         uses: actions/checkout@v4
