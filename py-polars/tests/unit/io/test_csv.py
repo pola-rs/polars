@@ -2797,13 +2797,14 @@ def test_write_csv_decimal_type_decimal_comma(
         "c": pl.Int64,
     }
 
+    # TODO: Look at type hints for `schema` argument of `pl.DataFrame`, as this works
     df = pl.DataFrame(
         data={
             "a": [123.75],
             "b": [60.0],
             "c": [9],
         },
-        schema=schema,
+        schema=schema,  # type: ignore
     )
 
     buf = io.BytesIO()
