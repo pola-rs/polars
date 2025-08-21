@@ -24,8 +24,9 @@ concurrency:
 
 env:
   CARGO_BUILD_JOBS: 1
-  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0 -C codegen-units=1
-  CFLAGS: -fPIC
+  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0 -Zemscripten-wasm-eh -C codegen-units=1
+  CFLAGS: -fPIC -fwasm-exceptions
+  RUST_TOOLCHAIN: nightly-2025-06-27
 
 defaults:
   run:
@@ -81,6 +82,37 @@ jobs:
 
             # Add Rust target
             rustup target add wasm32-unknown-emscripten
-          CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dev build-args=--manifest-path=Cargo.toml"
+
+            # Install custom Rust sysroot with emscripten-wasm-eh support
+            RUST_EMSCRIPTEN_TARGET_URL="https://github.com/pyodide/rust-emscripten-wasm-eh-sysroot/releases/download/emcc-4.0.9_${RUST_TOOLCHAIN}/emcc-4.0.9_${RUST_TOOLCHAIN}.tar.bz2"
+
+            # Install Rust toolchain
+            rustup toolchain install $RUST_TOOLCHAIN
+            rustup default $RUST_TOOLCHAIN
+
+            # Get toolchain rootdir
+            TOOLCHAIN_ROOT=$(dirname $(dirname $(rustup which --toolchain $RUST_TOOLCHAIN rustc)))
+            RUSTLIB="$TOOLCHAIN_ROOT/lib/rustlib"
+            INSTALL_TOKEN="$RUSTLIB/wasm32-unknown-emscripten_install-url.txt"
+
+            # Check if custom sysroot is already installed
+            if [ -f "$INSTALL_TOKEN" ] && [ "$(cat "$INSTALL_TOKEN")" = "$RUST_EMSCRIPTEN_TARGET_URL" ]; then
+              echo "Custom sysroot already installed"
+            else
+              echo "Installing custom wasm32-unknown-emscripten sysroot with emscripten-wasm-eh support"
+              # Remove existing sysroot
+              rm -rf "$RUSTLIB/wasm32-unknown-emscripten"
+
+              curl -L "$RUST_EMSCRIPTEN_TARGET_URL" | tar -xj -C "$RUSTLIB"
+              echo "$RUST_EMSCRIPTEN_TARGET_URL" > "$INSTALL_TOKEN"
+            fi
+          CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dist-release build-args=--manifest-path=Cargo.toml"
           CIBW_TEST_REQUIRES: pytest numpy pandas hypothesis matplotlib
           CIBW_TEST_COMMAND: pytest {project}/py-polars/tests
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pyodide-wasm-wheel
+          path: wasm-dist/*.whl
