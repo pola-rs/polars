@@ -267,54 +267,80 @@ pub(super) fn set_cache_states(
             // completely changes something. If yes, we remove the cache nodes as we don't want to
             // lose predicate pushdown in favor of scan sharing. Otherwise, we keep the cache to
             // realize efficiency gains.
+            // Note that we only run projection pushdown if predicate pushdown made a difference.
+            // We prefer CSE over projection pushdown.
             if v.predicate_union.len() > 1 {
-                let mut lp_arena_scratch = lp_arena.clone();
-                let mut expr_arena_scratch = expr_arena.clone();
-                for ((&child, cache), parents) in
-                    v.children.iter().zip(v.cache_nodes).zip(v.parents)
-                {
-                    // Remove the cache and assign the child the cache location.
-                    lp_arena_scratch.swap(child, cache);
+                fn alter_arena_from_value(
+                    v: &Value,
+                    lp_arena: &mut Arena<IR>,
+                    expr_arena: &mut Arena<AExpr>,
+                    mut exec: impl FnMut(IR, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<IR>,
+                ) -> PolarsResult<()> {
+                    // Remove the cache nodes and replace them with the children.
+                    for ((&child, &cache), &parents) in v
+                        .children
+                        .iter()
+                        .zip(v.cache_nodes.iter())
+                        .zip(v.parents.iter())
+                    {
+                        // Remove the cache and assign the child the cache location.
+                        lp_arena.swap(child, cache);
 
-                    // Restart predicate and projection pushdown from most top parent.
-                    // This to ensure we continue the optimization where it was blocked initially.
-                    // We pick up the blocked filter and projection.
-                    let mut node = cache;
-                    for p_node in parents.into_iter().flatten() {
-                        if matches!(
-                            lp_arena_scratch.get(p_node),
-                            IR::Filter { .. } | IR::SimpleProjection { .. }
-                        ) {
-                            node = p_node
-                        } else {
-                            break;
+                        // Restart projection and predicate pushdown from most top parent.
+                        // This to ensure we continue the optimization where it was blocked
+                        // initially. We pick up the blocked filter and projection.
+                        let mut node = cache;
+                        for p_node in parents.into_iter().flatten() {
+                            if matches!(
+                                lp_arena.get(p_node),
+                                IR::Filter { .. } | IR::SimpleProjection { .. }
+                            ) {
+                                node = p_node
+                            } else {
+                                break;
+                            }
                         }
-                    }
 
-                    let lp = lp_arena_scratch.take(node);
-                    let lp =
-                        proj_pd.optimize(lp, &mut lp_arena_scratch, &mut expr_arena_scratch)?;
-                    let lp =
-                        pred_pd.optimize(lp, &mut lp_arena_scratch, &mut expr_arena_scratch)?;
-                    lp_arena_scratch.replace(node, lp);
+                        let lp = lp_arena.take(node);
+                        let lp = exec(lp, lp_arena, expr_arena)?;
+                        lp_arena.replace(node, lp);
+                    }
+                    Ok(())
                 }
 
+                // Run predicate pushdown only
+                let mut lp_arena_tmp = lp_arena.clone();
+                let mut expr_arena_tmp = expr_arena.clone();
+                let mut pred_pd_tmp =
+                    PredicatePushDown::new(expr_eval, pushdown_maintain_errors, new_streaming)
+                        .block_at_cache(false);
+                alter_arena_from_value(
+                    &v,
+                    &mut lp_arena_tmp,
+                    &mut expr_arena_tmp,
+                    |lp, lp_arena, expr_arena| pred_pd_tmp.optimize(lp, lp_arena, expr_arena),
+                );
+
+                // Check for equivalence
                 let root_ir = IRNode::new(root);
                 let cmp_existing = root_ir
                     .hashable_and_cmp(lp_arena, expr_arena)
                     .ignore_caches();
                 let cmp_scratch = root_ir
-                    .hashable_and_cmp(&lp_arena_scratch, &expr_arena_scratch)
+                    .hashable_and_cmp(&lp_arena_tmp, &expr_arena_tmp)
                     .ignore_caches();
                 if cmp_existing != cmp_scratch {
-                    // If there was a change, we remove the cache nodes entirely
+                    // If there was a change, we remove the cache nodes by altering the actual arena
+                    // and running both projection and predicate pushdown
                     if verbose {
                         eprintln!("cache nodes will be removed because predicates don't match")
                     }
-                    std::mem::swap(lp_arena, &mut lp_arena_scratch);
-                    std::mem::swap(expr_arena, &mut expr_arena_scratch);
+                    alter_arena_from_value(&v, lp_arena, expr_arena, |lp, lp_arena, expr_arena| {
+                        let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
+                        pred_pd.optimize(lp, lp_arena, expr_arena)
+                    });
+                    continue;
                 }
-                continue;
             }
 
             // Below we restart projection and predicates pushdown
