@@ -680,6 +680,7 @@ pub(super) fn serializer_for<'a>(
                 QuoteStyle::Never => false,
             }
         },
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
             // Similar to logic for float data-types, but need to consider scale rather than precision
             let should_quote =
