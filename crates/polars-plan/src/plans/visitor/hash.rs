@@ -198,22 +198,30 @@ impl Hash for HashableEqLP<'_> {
     }
 }
 
-fn expr_irs_eq(l: &[ExprIR], r: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
-    l.len() == r.len() && l.iter().zip(r).all(|(l, r)| expr_ir_eq(l, r, expr_arena))
+fn expr_irs_eq(l: &[ExprIR], r: &[ExprIR], l_arena: &Arena<AExpr>, r_arena: &Arena<AExpr>) -> bool {
+    l.len() == r.len()
+        && l.iter()
+            .zip(r)
+            .all(|(l, r)| expr_ir_eq(l, r, l_arena, r_arena))
 }
 
-fn expr_ir_eq(l: &ExprIR, r: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+fn expr_ir_eq(l: &ExprIR, r: &ExprIR, l_arena: &Arena<AExpr>, r_arena: &Arena<AExpr>) -> bool {
     l.get_alias() == r.get_alias() && {
         let l = AexprNode::new(l.node());
         let r = AexprNode::new(r.node());
-        l.hashable_and_cmp(expr_arena) == r.hashable_and_cmp(expr_arena)
+        l.hashable_and_cmp(l_arena) == r.hashable_and_cmp(r_arena)
     }
 }
 
-fn opt_expr_ir_eq(l: &Option<ExprIR>, r: &Option<ExprIR>, expr_arena: &Arena<AExpr>) -> bool {
+fn opt_expr_ir_eq(
+    l: &Option<ExprIR>,
+    r: &Option<ExprIR>,
+    l_arena: &Arena<AExpr>,
+    r_arena: &Arena<AExpr>,
+) -> bool {
     match (l, r) {
         (None, None) => true,
-        (Some(l), Some(r)) => expr_ir_eq(l, r, expr_arena),
+        (Some(l), Some(r)) => expr_ir_eq(l, r, l_arena, r_arena),
         _ => false,
     }
 }
@@ -247,7 +255,7 @@ impl HashableEqLP<'_> {
                     input: _,
                     predicate: r,
                 },
-            ) => expr_ir_eq(l, r, self.expr_arena),
+            ) => expr_ir_eq(l, r, self.expr_arena, other.expr_arena),
             (
                 IR::Scan {
                     sources: pl,
@@ -271,7 +279,7 @@ impl HashableEqLP<'_> {
                 pl == pr
                     && stl == str
                     && ol == or
-                    && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena)
+                    && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena, other.expr_arena)
             },
             (
                 IR::DataFrameScan {
@@ -308,7 +316,7 @@ impl HashableEqLP<'_> {
                     options: or,
                     schema: _,
                 },
-            ) => ol == or && expr_irs_eq(el, er, self.expr_arena),
+            ) => ol == or && expr_irs_eq(el, er, self.expr_arena, other.expr_arena),
             (
                 IR::Sort {
                     input: _,
@@ -324,7 +332,7 @@ impl HashableEqLP<'_> {
                 },
             ) => {
                 (l_slice == r_slice && l_options == r_options)
-                    && expr_irs_eq(cl, cr, self.expr_arena)
+                    && expr_irs_eq(cl, cr, self.expr_arena, other.expr_arena)
             },
             (
                 IR::GroupBy {
@@ -350,8 +358,8 @@ impl HashableEqLP<'_> {
                     && apply_r.is_none()
                     && ol == or
                     && maintain_l == maintain_r
-                    && expr_irs_eq(keys_l, keys_r, self.expr_arena)
-                    && expr_irs_eq(aggs_l, aggs_r, self.expr_arena)
+                    && expr_irs_eq(keys_l, keys_r, self.expr_arena, other.expr_arena)
+                    && expr_irs_eq(aggs_l, aggs_r, self.expr_arena, other.expr_arena)
             },
             (
                 IR::Join {
@@ -372,8 +380,8 @@ impl HashableEqLP<'_> {
                 },
             ) => {
                 ol == or
-                    && expr_irs_eq(ll, lr, self.expr_arena)
-                    && expr_irs_eq(rl, rr, self.expr_arena)
+                    && expr_irs_eq(ll, lr, self.expr_arena, other.expr_arena)
+                    && expr_irs_eq(rl, rr, self.expr_arena, other.expr_arena)
             },
             (
                 IR::HStack {
@@ -388,7 +396,7 @@ impl HashableEqLP<'_> {
                     schema: _,
                     options: or,
                 },
-            ) => ol == or && expr_irs_eq(el, er, self.expr_arena),
+            ) => ol == or && expr_irs_eq(el, er, self.expr_arena, other.expr_arena),
             (
                 IR::Distinct {
                     input: _,
