@@ -1082,3 +1082,51 @@ def test_schema_constructor_from_schema_capsule() -> None:
 def test_to_arrow_24142() -> None:
     df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
     df.to_arrow(compat_level=CompatLevel.oldest())
+
+
+def test_from_arrow_non_struct_series() -> None:
+    """Test that pl.from_arrow works correctly with various non-struct series types.
+
+    Verifies that different series types can be successfully converted to DataFrames
+    using the Arrow interface with proper dtype preservation.
+    """
+    # Test integer series
+    s_int = pl.Series("integers", [1, 2, 3, 4])
+    result_int = cast(pl.DataFrame, pl.from_arrow(s_int))
+    assert result_int.shape == (4, 1)
+    assert result_int.dtypes == [pl.Int64]
+    assert result_int.to_series().to_list() == [1, 2, 3, 4]
+
+    # Test string series
+    s_str = pl.Series("strings", ["a", "b", "c"])
+    result_str = cast(pl.DataFrame, pl.from_arrow(s_str))
+    assert result_str.shape == (3, 1)
+    assert result_str.dtypes == [pl.String]
+    assert result_str.to_series().to_list() == ["a", "b", "c"]
+
+    # Test boolean series
+    s_bool = pl.Series("booleans", [True, False, True])
+    result_bool = cast(pl.DataFrame, pl.from_arrow(s_bool))
+    assert result_bool.shape == (3, 1)
+    assert result_bool.dtypes == [pl.Boolean]
+    assert result_bool.to_series().to_list() == [True, False, True]
+
+    # Test float series
+    s_float = pl.Series("floats", [1.1, 2.2, 3.3])
+    result_float = cast(pl.DataFrame, pl.from_arrow(s_float))
+    assert result_float.shape == (3, 1)
+    assert result_float.dtypes == [pl.Float64]
+    assert result_float.to_series().to_list() == [1.1, 2.2, 3.3]
+
+    # Test series with nulls
+    s_nulls = pl.Series("with_nulls", [1, None, 3])
+    result_nulls = cast(pl.DataFrame, pl.from_arrow(s_nulls))
+    assert result_nulls.shape == (3, 1)
+    assert result_nulls.dtypes == [pl.Int64]
+    assert result_nulls.to_series().to_list() == [1, None, 3]
+
+    # Test empty series
+    s_empty = pl.Series("empty", [], pl.String)
+    result_empty = cast(pl.DataFrame, pl.from_arrow(s_empty))
+    assert result_empty.shape == (0, 1)
+    assert result_empty.dtypes == [pl.String]

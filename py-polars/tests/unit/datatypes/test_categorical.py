@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import operator
-from typing import Callable
+from typing import Callable, cast
 
 import pytest
 
@@ -841,3 +841,42 @@ def test_categorical_min_max() -> None:
     q_alt = lf.max()
     result_alt = q_alt.collect()
     assert result_alt.to_dict(as_series=False) == result.to_dict(as_series=False)
+
+
+def test_from_arrow_categorical_dataframe() -> None:
+    """Test that pl.from_arrow works correctly with categorical data via DataFrame.
+
+    Verifies that DataFrames containing categorical columns can be successfully
+    converted via Arrow interface with proper dtype preservation.
+    """
+    # Test DataFrame with categorical column
+    df = pl.DataFrame({"cat_col": ["foo", "bar", "baz"]}).with_columns(
+        pl.col("cat_col").cast(pl.Categorical)
+    )
+    arrow_table = df.to_arrow()
+    result = cast(pl.DataFrame, pl.from_arrow(arrow_table))
+
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape == (3, 1)
+    assert result.dtypes == [pl.Categorical]
+    assert result.to_series().to_list() == ["foo", "bar", "baz"]
+
+    # Test DataFrame with categorical column and nulls
+    df_nulls = pl.DataFrame({"cat_nulls": ["x", None, "y"]}).with_columns(
+        pl.col("cat_nulls").cast(pl.Categorical)
+    )
+    arrow_table_nulls = df_nulls.to_arrow()
+    result_nulls = cast(pl.DataFrame, pl.from_arrow(arrow_table_nulls))
+
+    assert result_nulls.shape == (3, 1)
+    assert result_nulls.dtypes == [pl.Categorical]
+    assert result_nulls.to_series().to_list() == ["x", None, "y"]
+
+    # Test empty DataFrame with categorical column
+    df_empty = pl.DataFrame({"empty_cat": []}, schema={"empty_cat": pl.Categorical})
+    arrow_table_empty = df_empty.to_arrow()
+    result_empty = cast(pl.DataFrame, pl.from_arrow(arrow_table_empty))
+
+    assert result_empty.shape == (0, 1)
+    assert result_empty.dtypes == [pl.Categorical]
+    assert result_empty.to_series().to_list() == []
