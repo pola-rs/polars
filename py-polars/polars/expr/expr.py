@@ -407,7 +407,7 @@ class Expr:
         >>> import io
         >>> expr = pl.col("foo").sum().over("bar")
         >>> bytes = expr.meta.serialize()
-        >>> pl.Expr.deserialize(io.BytesIO(bytes))  # doctest: +ELLIPSIS
+        >>> pl.Expr.deserialize(io.BytesIO(bytes))
         <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
         if isinstance(source, StringIO):

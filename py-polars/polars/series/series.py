@@ -4815,7 +4815,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s = s.to_arrow()
-        >>> s  # doctest: +ELLIPSIS
+        >>> s
         <pyarrow.lib.Int64Array object at ...>
         [
           1,

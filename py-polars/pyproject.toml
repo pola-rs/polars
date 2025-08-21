@@ -225,6 +225,11 @@ strict = true
 docstring-code-format = true
 
 [tool.pytest.ini_options]
+doctest_optionflags = [
+  "DONT_ACCEPT_TRUE_FOR_1",
+  "NORMALIZE_WHITESPACE",
+  "ELLIPSIS",
+]
 addopts = [
   "--tb=short",
   "--strict-config",
