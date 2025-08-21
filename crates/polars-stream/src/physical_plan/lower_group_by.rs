@@ -501,6 +501,19 @@ fn try_build_streaming_group_by(
         input_exprs.push(ExprIR::new(node, OutputName::Alias(name.clone())));
     }
 
+    // If all inputs are input independent add a dummy column so the group sizes are correct. See #23868.
+    if input_exprs
+        .iter()
+        .all(|e| is_input_independent(e.node(), expr_arena, expr_cache))
+    {
+        let dummy_col_name = phys_sm[input.node].output_schema.get_at_index(0).unwrap().0;
+        let dummy_col = expr_arena.add(AExpr::Column(dummy_col_name.clone()));
+        input_exprs.push(ExprIR::new(
+            dummy_col,
+            OutputName::ColumnLhs(dummy_col_name.clone()),
+        ));
+    }
+
     let pre_select =
         build_select_stream(input, &input_exprs, expr_arena, phys_sm, expr_cache, ctx).ok()?;
 
