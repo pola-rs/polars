@@ -82,3 +82,5 @@ jobs:
             # Add Rust target
             rustup target add wasm32-unknown-emscripten
           CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dev build-args=--manifest-path=Cargo.toml"
+          CIBW_TEST_REQUIRES: pytest numpy pandas hypothesis matplotlib
+          CIBW_TEST_COMMAND: pytest {project}/py-polars/tests
