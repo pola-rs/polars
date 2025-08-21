@@ -349,6 +349,15 @@ jobs:
           sparse-checkout: |
             emsdk/patches/
 
+      - name: Increase swapfile
+        run: |
+          sudo swapoff -a
+          sudo fallocate -l 15G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          sudo swapon --show
+
       - name: Build Pyodide wheel
         uses: pypa/cibuildwheel@v3.1.4
         with:
