@@ -2791,23 +2791,23 @@ def test_write_csv_decimal_type_decimal_comma(
     decimal_comma: bool,
     expected: bytes,
 ) -> None:
-    # as Float32 (implicitly)
-    df = pl.DataFrame(
-        {
-            "decimal_a": [123.75],
-            "decimal_b": [60.0],
-            "int": [9],
-        }
-    )
+    schema = {
+        "a": pl.Decimal(scale=scale),
+        "b": pl.Decimal(scale=scale),
+        "c": pl.Int64,
+    }
 
-    # as Decimal (explicitly)
-    df_typed = df.with_columns(
-        pl.col("decimal_a").cast(pl.Decimal(scale=scale)),
-        pl.col("decimal_b").cast(pl.Decimal(scale=scale)),
+    df = pl.DataFrame(
+        data={
+            "a": [123.75],
+            "b": [60.0],
+            "c": [9],
+        },
+        schema=schema,
     )
 
     buf = io.BytesIO()
-    df_typed.write_csv(
+    df.write_csv(
         buf,
         separator=separator,
         quote_style=quote_style,
@@ -2817,14 +2817,10 @@ def test_write_csv_decimal_type_decimal_comma(
     buf.seek(0)
     assert buf.read() == expected
 
-    # Round-trip testing: assert df == read_csv(write_csv(df)), unless:
-    # - scale affects the value
-    # - quote_style = 'never' generates malformed csv
-    round_trip = not (
-        (scale < 2) or (quote_style == "never" and decimal_comma and separator == ",")
-    )
+    # Round-trip testing: assert df == read_csv(write_csv(df))
+    # eager
+    round_trip = not (quote_style == "never" and decimal_comma and separator == ",")
     if round_trip:
-        # eager
         buf.seek(0)
         df.write_csv(
             buf,
