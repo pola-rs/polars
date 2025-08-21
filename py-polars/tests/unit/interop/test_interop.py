@@ -1163,3 +1163,46 @@ def test_comprehensive_pycapsule_interface() -> None:
     df_roundtrip_direct = pl.DataFrame(PyCapsuleStreamWrap(df))
 
     assert_frame_equal(df_roundtrip_direct, df)
+
+
+# https://github.com/pola-rs/polars/issues/21660
+def test_pycapsule_struct_vs_non_struct() -> None:
+    import pytest
+
+    from polars._utils.pycapsule import pycapsule_to_frame
+
+    s_int = pl.Series("test_col", [1, 2, 3])
+    int_arrow_array = s_int.to_arrow()
+    result_int_array = pycapsule_to_frame(int_arrow_array)
+    assert result_int_array.shape == (3, 1)
+
+    class ArrowStreamOnly:
+        def __init__(self, stream: object) -> None:
+            self.stream = stream
+
+        def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+            return self.stream
+
+    int_stream_only = ArrowStreamOnly(s_int.__arrow_c_stream__())
+    result_int_stream = pycapsule_to_frame(int_stream_only)
+    assert result_int_stream.shape == (3, 1)
+
+    struct_series = pl.Series(
+        "struct_col",
+        [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
+        dtype=pl.Struct({"a": pl.Int64, "b": pl.String}),
+    )
+    struct_arrow_array = struct_series.to_arrow()
+    result_struct_array = pycapsule_to_frame(struct_arrow_array)
+    assert result_struct_array.shape == (2, 2)
+
+    struct_stream_only = ArrowStreamOnly(struct_series.__arrow_c_stream__())
+    result_struct_stream = pycapsule_to_frame(struct_stream_only)
+    assert result_struct_stream.shape == (2, 2)
+
+    class NotPyCapsuleObject:
+        pass
+
+    not_pycapsule_obj = NotPyCapsuleObject()
+    with pytest.raises(TypeError, match="does not support PyCapsule interface"):
+        pycapsule_to_frame(not_pycapsule_obj)
