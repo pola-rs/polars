@@ -25,7 +25,7 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } => Self::InMemoryFallback,
+            K::InMemoryMap { .. } | K::InMemoryJoin { .. } => Self::InMemoryFallback,
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -34,7 +34,6 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::InMemoryJoin { .. }
             | K::Multiplexer { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
