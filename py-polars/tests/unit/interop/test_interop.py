@@ -1077,3 +1077,8 @@ def test_schema_constructor_from_schema_capsule() -> None:
         match="iterable passed to pl.Schema contained duplicate name 'a'",
     ):
         pl.Schema([pa.field("a", pa.int32()), pa.field("a", pa.int64())])
+
+
+def test_to_arrow_24142() -> None:
+    df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
+    df.to_arrow(compat_level=CompatLevel.oldest())
