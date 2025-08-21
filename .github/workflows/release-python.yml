@@ -350,7 +350,7 @@ jobs:
             emsdk/patches/
 
       - name: Build Pyodide wheel
-        uses: agriyakhetarpal/cibuildwheel@bump-dependencies
+        uses: pypa/cibuildwheel@v3.1.4
         with:
           package-dir: py-polars
           output-dir: wasm-dist
