@@ -19,7 +19,7 @@ pytestmark = [
         reason="Causes intermittent failures in CI. See: "
         "https://github.com/pola-rs/polars/issues/16910"
     ),
-    pytest.mark.xdist_group("aws"),
+    # pytest.mark.xdist_group("aws"),
     pytest.mark.slow(),
 ]
 
