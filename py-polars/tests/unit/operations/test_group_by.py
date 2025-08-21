@@ -1466,4 +1466,10 @@ def test_group_by_tuple_typing_24112() -> None:
 
 def test_group_by_input_independent_with_len_23868() -> None:
     out = pl.DataFrame({"a": ["A", "B", "C"]}).group_by(pl.lit("G")).agg(pl.len())
-    assert_frame_equal(out, pl.DataFrame({"literal": "G", "len": 3}))
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {"literal": "G", "len": 3},
+            schema={"literal": pl.String, "len": pl.get_index_type()},
+        ),
+    )
