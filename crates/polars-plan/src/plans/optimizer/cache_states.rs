@@ -320,7 +320,7 @@ pub(super) fn set_cache_states(
                     &mut lp_arena_tmp,
                     &mut expr_arena_tmp,
                     |lp, lp_arena, expr_arena| pred_pd_tmp.optimize(lp, lp_arena, expr_arena),
-                );
+                )?;
 
                 // Check for equivalence
                 let root_ir = IRNode::new(root);
@@ -336,10 +336,15 @@ pub(super) fn set_cache_states(
                     if verbose {
                         eprintln!("cache nodes will be removed because predicates don't match")
                     }
-                    alter_arena_from_value(&v, lp_arena, expr_arena, |lp, lp_arena, expr_arena| {
-                        let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
-                        pred_pd.optimize(lp, lp_arena, expr_arena)
-                    });
+                    alter_arena_from_value(
+                        &v,
+                        lp_arena,
+                        expr_arena,
+                        |lp, lp_arena, expr_arena| {
+                            let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
+                            pred_pd.optimize(lp, lp_arena, expr_arena)
+                        },
+                    )?;
                     continue;
                 }
             }
