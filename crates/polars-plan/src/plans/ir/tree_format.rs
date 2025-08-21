@@ -816,7 +816,7 @@ impl From<TreeView<'_>> for Canvas {
         }
 
         fn even_odd(a: usize, b: usize) -> usize {
-            if a % 2 == 0 && b % 2 == 1 { 1 } else { 0 }
+            if a.is_multiple_of(2) && b % 2 == 1 { 1 } else { 0 }
         }
 
         for (i, row) in value.matrix.iter().enumerate() {
