@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from polars._utils.construction.dataframe import dataframe_to_pydf
 from polars._utils.wrap import wrap_df, wrap_s
+from polars.datatypes import Struct
 
 with contextlib.suppress(ImportError):
     from polars._plr import PySeries
@@ -28,18 +29,26 @@ def pycapsule_to_frame(
 ) -> DataFrame:
     """Convert PyCapsule object to DataFrame."""
     if hasattr(obj, "__arrow_c_array__"):
-        # This uses the fact that PySeries.from_arrow_c_array will create a
-        # struct-typed Series. Then we unpack that to a DataFrame.
         tmp_col_name = ""
         s = wrap_s(PySeries.from_arrow_c_array(obj))
-        df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+        # Check if it's actually a struct (can be unnested) or just a regular series
+        if isinstance(s.dtype, Struct):
+            # Original behavior for struct types (e.g., RecordBatch)
+            df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+        else:
+            # Direct conversion for regular series types (e.g., Categorical, Int64)
+            df = s.to_frame()
 
     elif hasattr(obj, "__arrow_c_stream__"):
-        # This uses the fact that PySeries.from_arrow_c_stream will create a
-        # struct-typed Series. Then we unpack that to a DataFrame.
         tmp_col_name = ""
         s = wrap_s(PySeries.from_arrow_c_stream(obj))
-        df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+        # Check if it's actually a struct (can be unnested) or just a regular series
+        if isinstance(s.dtype, Struct):
+            # Original behavior for struct types (e.g., RecordBatch)
+            df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+        else:
+            # Direct conversion for regular series types (e.g., Categorical, Int64)
+            df = s.to_frame()
     else:
         msg = f"object does not support PyCapsule interface; found {obj!r} "
         raise TypeError(msg)
