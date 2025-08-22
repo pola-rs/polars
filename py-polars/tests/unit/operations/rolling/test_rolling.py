@@ -1639,12 +1639,26 @@ def test_wtd_min_periods_less_window() -> None:
     assert_frame_equal(df, expected)
 
     df = pl.DataFrame({"a": [1, 2]}).with_columns(
-        pl.col("a").rolling_mean(window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True).alias("kernel_mean")
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_mean")
     )
-    # At row 0: available = [1,2], weights = [0.5, 0.25] => (0.5*1 + 0.25*2)/(0.5+0.25) = 1.333333
-    # At row 1: available = [1,2], weights = [0.25, 0.5] => (0.25*1 + 0.5*2)/(0.25+0.5) = 1.666667
+
+    # Handle edge case where the window size is larger than the number of elements
     expected = pl.DataFrame({"a": [1, 2], "kernel_mean": [1.333333, 1.666667]})
     assert_frame_equal(df, expected)
+
+    df = pl.DataFrame({"a": [1, 2]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.25, 0.5], min_samples=1, center=False
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame({"a": [1, 2], "kernel_mean": [1.0, 2 * 2 / 3 + 1 * 1 / 3]})
 
 
 def test_rolling_median_23480() -> None:

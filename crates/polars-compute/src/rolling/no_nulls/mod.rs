@@ -81,6 +81,7 @@ pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     det_offsets_fn: Fo,
     aggregator: Fa,
     weights: &[T],
+    centered: bool,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + num_traits::Zero + std::ops::Div<Output = T> + Copy,
@@ -94,8 +95,11 @@ where
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
             let win_len = end - start;
-            let weights_slice = if start == 0 && end == len {
-                // Edge case
+            let weights_slice = if start == 0 && end == len && centered {
+                // Edge case: There are fewer elements than the window size
+                // in the array. We'll get the same array of values at each idx
+                // so we need to use the idx to know how to slide the weights
+                // along when centered.
                 let slice_start = weights.len() - win_len - idx;
                 let slice_end = slice_start + win_len;
                 &weights[slice_start..slice_end]
