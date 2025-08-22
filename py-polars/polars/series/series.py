@@ -4828,10 +4828,6 @@ class Series:
             compat_level_py = False
         elif isinstance(compat_level, CompatLevel):
             compat_level_py = compat_level._version
-        elif isinstance(compat_level, int):
-            # Not documented in our signature, but we call to_arrow with an
-            # integer compat_level in pyo3-polars.
-            compat_level_py = compat_level
         else:
             msg = f"`compat_level` has invalid type: {qualified_type_name(compat_level)!r}"
             raise TypeError(msg)
