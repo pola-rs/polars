@@ -1,33 +1,11 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
+use polars_core::utils::try_get_supertype;
 use polars_time::Duration;
 use polars_utils::arena::Arena;
 
-use super::get_aexpr_and_type;
 use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction, LiteralValue};
 use crate::prelude::FunctionOptions;
-
-macro_rules! unpack {
-    ($packed:expr) => {
-        match $packed {
-            Some(payload) => payload,
-            None => return Ok(None),
-        }
-    };
-}
-
-macro_rules! extract_date {
-    ($input:expr, $expr_arena:expr, $schema:expr, $idx:literal, $arg:literal) => {{
-        let (_, dtype) =
-            unpack!(get_aexpr_and_type($expr_arena, $input[$idx].node(), $schema));
-        polars_ensure!(
-            matches!(dtype, DataType::Datetime(_, _) | DataType::Date),
-            ComputeError: "'{}' must be Date or Datetime, got {:?}", $arg, dtype
-        );
-        dtype
-    }}
-}
 
 /// Cast a date or datetime node to a supertype.
 ///
@@ -165,18 +143,22 @@ pub(super) fn build_datetime_supertype(
     Ok(dtype_out)
 }
 
+#[inline(always)]
+fn get_dtype(expr: &ExprIR, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<DataType> {
+    expr_arena.get(expr.node()).get_dtype(schema, expr_arena)
+}
+
 #[cfg(all(feature = "dtype-date", feature = "range"))]
 pub(super) fn update_date_range_types(
     input: &mut [ExprIR],
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<Option<(Vec<DataType>, Vec<DataType>)>> {
-    let dt_date = DataType::Date;
-    let type_start = extract_date!(input, expr_arena, schema, 0, "start");
-    let type_end = extract_date!(input, expr_arena, schema, 1, "end");
+) -> PolarsResult<(Vec<DataType>, Vec<DataType>)> {
+    let type_start = get_dtype(&input[0], schema, expr_arena)?;
+    let type_end = get_dtype(&input[1], schema, expr_arena)?;
     let from_types = vec![type_start, type_end];
-    let to_types = vec![dt_date.clone(), dt_date];
-    Ok(Some((from_types, to_types)))
+    let to_types = vec![DataType::Date, DataType::Date];
+    Ok((from_types, to_types))
 }
 
 #[cfg(all(feature = "dtype-datetime", feature = "range"))]
@@ -187,13 +169,12 @@ pub(super) fn update_datetime_range_types(
     interval: &Duration,
     tu: &Option<TimeUnit>,
     tz: &Option<TimeZone>,
-) -> PolarsResult<Option<(Vec<DataType>, Vec<DataType>)>> {
-    // Determine supertype of input types.
-    let type_start = extract_date!(input, expr_arena, schema, 0, "start");
-    let type_end = extract_date!(input, expr_arena, schema, 1, "end");
-    let default = unpack!(get_supertype(&type_start, &type_end));
+) -> PolarsResult<(Vec<DataType>, Vec<DataType>)> {
+    let type_start = get_dtype(&input[0], schema, expr_arena)?;
+    let type_end = get_dtype(&input[1], schema, expr_arena)?;
+    let default = try_get_supertype(&type_start, &type_end)?;
     let supertype = build_datetime_supertype(default, tu, tz, interval)?;
     let from_types = vec![type_start, type_end];
     let to_types = vec![supertype.clone(), supertype];
-    Ok(Some((from_types, to_types)))
+    Ok((from_types, to_types))
 }

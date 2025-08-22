@@ -824,7 +824,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let mut input = input.clone();
 
                 let (from_types, to_types) =
-                    unpack!(update_date_range_types(&mut input, expr_arena, schema)?);
+                    update_date_range_types(&mut input, expr_arena, schema)?;
 
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();
@@ -867,9 +867,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let mut input = input.clone();
                 let function = function.clone();
 
-                let (from_types, to_types) = unpack!(update_datetime_range_types(
-                    &mut input, expr_arena, schema, interval, tu, tz,
-                )?);
+                let (from_types, to_types) =
+                    update_datetime_range_types(&mut input, expr_arena, schema, interval, tu, tz)?;
 
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();
