@@ -515,12 +515,16 @@ pub fn lower_ir(
                     },
                 ));
 
+                let trans_by_column;
+                (stream, trans_by_column) =
+                    lower_exprs(stream, &by_column, expr_arena, phys_sm, expr_cache, ctx)?;
+
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
                     output_schema: Arc::new(cur_out_schema.clone()),
                     kind: PhysNodeKind::TopK {
                         input: stream,
                         k: PhysStream::first(k_node),
-                        by_column: by_column.clone(),
+                        by_column: trans_by_column,
                         reverse: sort_options.descending.iter().map(|x| !x).collect(),
                         nulls_last: sort_options.nulls_last.clone(),
                     },
