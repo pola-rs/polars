@@ -4,6 +4,7 @@ import gzip
 import io
 import os
 import sys
+import tempfile
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
@@ -21,6 +22,8 @@ from polars._utils.various import normalize_filepath
 from polars.exceptions import ComputeError, InvalidOperationError, NoDataError
 from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
+
+from docs.tets import read_valid_files_from_path
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -125,6 +128,42 @@ def test_infer_schema_false() -> None:
     df = pl.read_csv(f, infer_schema=False)
     assert df.dtypes == [pl.String, pl.String, pl.String]
 
+def test_read_valid_csv_files():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create two small CSV files
+        file1 = os.path.join(tmpdir, "file1.csv")
+        file2 = os.path.join(tmpdir, "file2.csv")
+        with open(file1, "w") as f:
+            f.write("id,name\n1,Alice\n2,Bob")
+        with open(file2, "w") as f:
+            f.write("id,name\n3,Charlie\n4,Diana")
+
+        # Read them using the function
+        df = read_valid_files_from_path(f"{tmpdir}/*.csv", filetype="csv")
+
+        # Check result
+        assert df.shape == (4, 2)
+        assert df.columns == ["id", "name"]
+
+
+def test_skip_empty_file():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Empty file
+        empty_file = os.path.join(tmpdir, "empty.csv")
+        with open(empty_file, "w"):
+            pass  # create empty file
+
+        # Valid file
+        valid_file = os.path.join(tmpdir, "valid.csv")
+        with open(valid_file, "w") as f:
+            f.write("id,name\n5,Eve")
+
+        # Read files
+        df = read_valid_files_from_path(f"{tmpdir}/*.csv")
+
+        # Should only contain 1 row from valid file
+        assert df.shape == (1, 2)
+        assert df["name"][0] == "Eve"
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_null_values() -> None:
