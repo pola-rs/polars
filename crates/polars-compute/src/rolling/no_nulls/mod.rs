@@ -94,7 +94,12 @@ where
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
             let win_len = end - start;
-            let weights_slice = if start == 0 {
+            let weights_slice = if start == 0 && end == len {
+                // Edge case
+                let slice_start = weights.len() - win_len - idx;
+                let slice_end = slice_start + win_len;
+                &weights[slice_start..slice_end]
+            } else if start == 0 {
                 // Truncated at the start: take the last win_len weights
                 &weights[weights.len() - win_len..]
             } else if end == len {
