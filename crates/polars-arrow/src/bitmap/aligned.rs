@@ -108,7 +108,7 @@ impl<'a, T: BitChunk> AlignedBitmapSlice<'a, T> {
         let suffix_len = rest_len % chunk_len_bits;
         let bulk_len = rest_len - suffix_len;
         debug_assert!(prefix_len < chunk_len_bits);
-        debug_assert!(bulk_len % chunk_len_bits == 0);
+        debug_assert!(bulk_len.is_multiple_of(chunk_len_bits));
         debug_assert!(suffix_len < chunk_len_bits);
 
         // Now we just have to load.

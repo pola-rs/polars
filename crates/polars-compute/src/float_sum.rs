@@ -159,7 +159,7 @@ where
     [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<F>,
     F: Add<Output = F>,
 {
-    debug_assert!(!f.is_empty() && f.len() % PAIRWISE_RECURSION_LIMIT == 0);
+    debug_assert!(!f.is_empty() && f.len().is_multiple_of(PAIRWISE_RECURSION_LIMIT));
 
     let block: Option<&[T; PAIRWISE_RECURSION_LIMIT]> = f.try_into().ok();
     if let Some(block) = block {
@@ -185,7 +185,7 @@ where
     [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<F>,
     F: Add<Output = F>,
 {
-    debug_assert!(!f.is_empty() && f.len() % PAIRWISE_RECURSION_LIMIT == 0);
+    debug_assert!(!f.is_empty() && f.len().is_multiple_of(PAIRWISE_RECURSION_LIMIT));
     debug_assert!(f.len() == mask.len());
 
     let block: Option<&[T; PAIRWISE_RECURSION_LIMIT]> = f.try_into().ok();

@@ -97,7 +97,7 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
     /// Needs to be called when a valid value was extended to this array.
     /// This is a relatively low level function, prefer `try_push` when you can.
     pub fn try_push_valid(&mut self) -> PolarsResult<()> {
-        if self.values.len() % self.size != 0 {
+        if !self.values.len().is_multiple_of(self.size) {
             polars_bail!(ComputeError: "overflow")
         };
         if let Some(validity) = &mut self.validity {
