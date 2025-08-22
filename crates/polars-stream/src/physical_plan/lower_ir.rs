@@ -33,7 +33,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
-use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
+use crate::physical_plan::lower_expr::{build_select_stream, lower_exprs, ExprCache};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -459,9 +459,6 @@ pub fn lower_ir(
             let mut sort_options = sort_options.clone();
             let phys_input = lower_ir!(*input)?;
 
-            let mut cur_out_schema = (*output_schema).clone();
-            let mut with_row_idx = None;
-
             // See if we can insert a top k.
             let mut limit = u64::MAX;
             if let Some((0, l)) = slice {
@@ -477,24 +474,13 @@ pub fn lower_ir(
                 // If we need to maintain order augment with row index.
                 if sort_options.maintain_order {
                     let row_idx_name = unique_column_name();
-                    with_row_idx = Some(row_idx_name.clone());
-                    cur_out_schema
-                        .insert_at_index(0, row_idx_name.clone(), DataType::IDX_DTYPE)
-                        .unwrap();
-                    stream = PhysStream::first(phys_sm.insert(PhysNode {
-                        output_schema: Arc::new(cur_out_schema.clone()),
-                        kind: PhysNodeKind::WithRowIndex {
-                            input: stream,
-                            name: row_idx_name.clone(),
-                            offset: None,
-                        },
-                    }));
+                    stream = build_row_idx_stream(stream, row_idx_name.clone(), None, phys_sm);
 
                     // Add row index to sort columns.
                     let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
                     by_column.push(ExprIR::new(
                         row_idx_node,
-                        OutputName::ColumnLhs(row_idx_name.clone()),
+                        OutputName::ColumnLhs(row_idx_name),
                     ));
                     sort_options.descending.push(false);
                     sort_options.nulls_last.push(true);
@@ -520,7 +506,7 @@ pub fn lower_ir(
                     lower_exprs(stream, &by_column, expr_arena, phys_sm, expr_cache, ctx)?;
 
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
-                    output_schema: Arc::new(cur_out_schema.clone()),
+                    output_schema: phys_sm[stream.node].output_schema.clone(),
                     kind: PhysNodeKind::TopK {
                         input: stream,
                         k: PhysStream::first(k_node),
@@ -532,7 +518,7 @@ pub fn lower_ir(
             }
 
             stream = PhysStream::first(phys_sm.insert(PhysNode {
-                output_schema: Arc::new(cur_out_schema),
+                output_schema: phys_sm[stream.node].output_schema.clone(),
                 kind: PhysNodeKind::Sort {
                     input: stream,
                     by_column,
@@ -541,17 +527,15 @@ pub fn lower_ir(
                 },
             }));
 
-            // Remove the temporary row index column we added.
-            if with_row_idx.is_some() {
-                let exprs: Vec<_> = output_schema
-                    .iter_names()
-                    .map(|name| {
-                        let node = expr_arena.add(AExpr::Column(name.clone()));
-                        ExprIR::new(node, OutputName::ColumnLhs(name.clone()))
-                    })
-                    .collect();
-                stream = build_select_stream(stream, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;
-            }
+            // Remove any temporary columns we may have added.
+            let exprs: Vec<_> = output_schema
+                .iter_names()
+                .map(|name| {
+                    let node = expr_arena.add(AExpr::Column(name.clone()));
+                    ExprIR::new(node, OutputName::ColumnLhs(name.clone()))
+                })
+                .collect();
+            stream = build_select_stream(stream, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;
 
             return Ok(stream);
         },
