@@ -23,8 +23,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0
-  CFLAGS: -fPIC
+  CARGO_BUILD_JOBS: 1
+  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0 -Zemscripten-wasm-eh -C codegen-units=1
+  CFLAGS: -fPIC -fwasm-exceptions
+  RUST_TOOLCHAIN: nightly-2025-06-27
 
 defaults:
   run:
@@ -46,27 +48,71 @@ jobs:
           sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
 
-      - name: Setup emsdk
-        uses: mymindstorm/setup-emsdk@v14
+      - name: Check out Emscripten v4.0.9 patches for Pyodide
+        uses: actions/checkout@v4
         with:
-          # This should match the exact version of Emscripten used by Pyodide
-          version: 3.1.58
+          ref: 0.28.1
+          path: pyodide-patches
+          repository: pyodide/pyodide
+          sparse-checkout: |
+            emsdk/patches/
 
-      - name: Install LLVM
-        # This should match the major version of LLVM expected by Emscripten
+      - name: Increase swapfile
         run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 19
-          echo "EM_LLVM_ROOT=/usr/lib/llvm-19/bin" >> $GITHUB_ENV
+          sudo swapoff -a
+          sudo fallocate -l 15G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          sudo swapon --show
 
-      - name: Build wheel
-        uses: PyO3/maturin-action@v1
+      - name: Build Pyodide wheel
+        uses: pypa/cibuildwheel@v3.1.4
         with:
-          command: build
-          target: wasm32-unknown-emscripten
-          args: >
-            --profile dev
-            --manifest-path py-polars/Cargo.toml
-            --interpreter python3.10
-          maturin-version: 1.7.4
+          package-dir: py-polars
+          output-dir: wasm-dist
+          # TODO: Add back cp312-pyodide_wasm32?
+          only: cp313-pyodide_wasm32
+        env:
+          CIBW_BEFORE_BUILD: |
+            # Apply Emscripten patches for Pyodide
+            for patch in pyodide-patches/emsdk/patches/*.patch; do
+              patch -p1 --verbose -d /home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/ < "$patch"
+            done
+
+            # Add Rust target
+            rustup target add wasm32-unknown-emscripten
+
+            # Install custom Rust sysroot with emscripten-wasm-eh support
+            RUST_EMSCRIPTEN_TARGET_URL="https://github.com/pyodide/rust-emscripten-wasm-eh-sysroot/releases/download/emcc-4.0.9_${RUST_TOOLCHAIN}/emcc-4.0.9_${RUST_TOOLCHAIN}.tar.bz2"
+
+            # Install Rust toolchain
+            rustup toolchain install $RUST_TOOLCHAIN
+            rustup default $RUST_TOOLCHAIN
+
+            # Get toolchain rootdir
+            TOOLCHAIN_ROOT=$(dirname $(dirname $(rustup which --toolchain $RUST_TOOLCHAIN rustc)))
+            RUSTLIB="$TOOLCHAIN_ROOT/lib/rustlib"
+            INSTALL_TOKEN="$RUSTLIB/wasm32-unknown-emscripten_install-url.txt"
+
+            # Check if custom sysroot is already installed
+            if [ -f "$INSTALL_TOKEN" ] && [ "$(cat "$INSTALL_TOKEN")" = "$RUST_EMSCRIPTEN_TARGET_URL" ]; then
+              echo "Custom sysroot already installed"
+            else
+              echo "Installing custom wasm32-unknown-emscripten sysroot with emscripten-wasm-eh support"
+              # Remove existing sysroot
+              rm -rf "$RUSTLIB/wasm32-unknown-emscripten"
+
+              curl -L "$RUST_EMSCRIPTEN_TARGET_URL" | tar -xj -C "$RUSTLIB"
+              echo "$RUST_EMSCRIPTEN_TARGET_URL" > "$INSTALL_TOKEN"
+            fi
+          CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dist-release build-args=--manifest-path=Cargo.toml"
+          # CIBW_TEST_REQUIRES: pytest numpy pandas hypothesis matplotlib
+          # CIBW_TEST_COMMAND: pytest {project}/py-polars/tests
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pyodide-wasm-wheel
+          path: wasm-dist/*.whl

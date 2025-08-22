@@ -14,7 +14,7 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from pathlib import Path
 
-pytestmark = pytest.mark.xdist_group("streaming")
+# pytestmark = pytest.mark.xdist_group("streaming")
 
 
 @pytest.mark.slow

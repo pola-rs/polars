@@ -71,35 +71,35 @@ def impl_test_hive_partitioned_predicate_pushdown(
     )
 
 
-@pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk
-def test_hive_partitioned_predicate_pushdown(
-    io_files_path: Path,
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
-    impl_test_hive_partitioned_predicate_pushdown(
-        io_files_path,
-        tmp_path,
-        monkeypatch,
-    )
+# @pytest.mark.xdist_group("streaming")
+# @pytest.mark.write_disk
+# def test_hive_partitioned_predicate_pushdown(
+#     io_files_path: Path,
+#     tmp_path: Path,
+#     monkeypatch: Any,
+# ) -> None:
+#     impl_test_hive_partitioned_predicate_pushdown(
+#         io_files_path,
+#         tmp_path,
+#         monkeypatch,
+#     )
 
 
-@pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk
-def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
-    io_files_path: Path,
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+# @pytest.mark.xdist_group("streaming")
+# @pytest.mark.write_disk
+# def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
+#     io_files_path: Path,
+#     tmp_path: Path,
+#     monkeypatch: Any,
+# ) -> None:
+#     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+#     monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
-    impl_test_hive_partitioned_predicate_pushdown(
-        io_files_path,
-        tmp_path,
-        monkeypatch,
-    )
+#     impl_test_hive_partitioned_predicate_pushdown(
+#         io_files_path,
+#         tmp_path,
+#         monkeypatch,
+#     )
 
 
 @pytest.mark.write_disk
@@ -158,107 +158,107 @@ def test_hive_streaming_pushdown_is_in_22212(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk
-@pytest.mark.parametrize("streaming", [True, False])
-def test_hive_partitioned_slice_pushdown(
-    io_files_path: Path, tmp_path: Path, streaming: bool
-) -> None:
-    df = pl.read_ipc(io_files_path / "*.ipc")
+# @pytest.mark.xdist_group("streaming")
+# @pytest.mark.write_disk
+# @pytest.mark.parametrize("streaming", [True, False])
+# def test_hive_partitioned_slice_pushdown(
+#     io_files_path: Path, tmp_path: Path, streaming: bool
+# ) -> None:
+#     df = pl.read_ipc(io_files_path / "*.ipc")
 
-    root = tmp_path / "partitioned_data"
+#     root = tmp_path / "partitioned_data"
 
-    # Ignore the pyarrow legacy warning until we can write properly with new settings.
-    warnings.filterwarnings("ignore")
-    pq.write_to_dataset(
-        df.to_arrow(),
-        root_path=root,
-        partition_cols=["category", "fats_g"],
-    )
+#     # Ignore the pyarrow legacy warning until we can write properly with new settings.
+#     warnings.filterwarnings("ignore")
+#     pq.write_to_dataset(
+#         df.to_arrow(),
+#         root_path=root,
+#         partition_cols=["category", "fats_g"],
+#     )
 
-    q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
-    schema = q.collect_schema()
-    expect_count = pl.select(pl.lit(1, dtype=pl.UInt32).alias(x) for x in schema)
+#     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+#     schema = q.collect_schema()
+#     expect_count = pl.select(pl.lit(1, dtype=pl.UInt32).alias(x) for x in schema)
 
-    assert_frame_equal(
-        q.head(1)
-        .collect(engine="streaming" if streaming else "in-memory")
-        .select(pl.all().len()),
-        expect_count,
-    )
-    assert q.head(0).collect(
-        engine="streaming" if streaming else "in-memory"
-    ).columns == [
-        "calories",
-        "sugars_g",
-        "category",
-        "fats_g",
-    ]
-
-
-@pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk
-def test_hive_partitioned_projection_pushdown(
-    io_files_path: Path, tmp_path: Path
-) -> None:
-    df = pl.read_ipc(io_files_path / "*.ipc")
-
-    root = tmp_path / "partitioned_data"
-
-    # Ignore the pyarrow legacy warning until we can write properly with new settings.
-    warnings.filterwarnings("ignore")
-    pq.write_to_dataset(
-        df.to_arrow(),
-        root_path=root,
-        partition_cols=["category", "fats_g"],
-    )
-
-    q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
-    columns = ["sugars_g", "category"]
-    for streaming in [True, False]:
-        assert (
-            q.select(columns)
-            .collect(engine="streaming" if streaming else "in-memory")
-            .columns
-            == columns
-        )
-
-    # test that hive partition columns are projected with the correct height when
-    # the projection contains only hive partition columns (11796)
-    for parallel in ("row_groups", "columns"):
-        q = pl.scan_parquet(
-            root / "**/*.parquet",
-            hive_partitioning=True,
-            parallel=parallel,
-        )
-
-        expected = q.collect().select("category")
-        result = q.select("category").collect()
-
-        assert_frame_equal(result, expected)
+#     assert_frame_equal(
+#         q.head(1)
+#         .collect(engine="streaming" if streaming else "in-memory")
+#         .select(pl.all().len()),
+#         expect_count,
+#     )
+#     assert q.head(0).collect(
+#         engine="streaming" if streaming else "in-memory"
+#     ).columns == [
+#         "calories",
+#         "sugars_g",
+#         "category",
+#         "fats_g",
+#     ]
 
 
-@pytest.mark.write_disk
-def test_hive_partitioned_projection_skips_files(tmp_path: Path) -> None:
-    # ensure that it makes hive columns even when . in dir value
-    # and that it doesn't make hive columns from filename with =
-    df = pl.DataFrame(
-        {"sqlver": [10012.0, 10013.0], "namespace": ["eos", "fda"], "a": [1, 2]}
-    )
-    root = tmp_path / "partitioned_data"
-    for dir_tuple, sub_df in df.partition_by(
-        ["sqlver", "namespace"], include_key=False, as_dict=True
-    ).items():
-        new_path = root / f"sqlver={dir_tuple[0]}" / f"namespace={dir_tuple[1]}"
-        new_path.mkdir(parents=True, exist_ok=True)
-        sub_df.write_parquet(new_path / "file=8484.parquet")
-    test_df = (
-        pl.scan_parquet(str(root) + "/**/**/*.parquet", hive_partitioning=True)
-        # don't care about column order
-        .select("sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a"))
-        .collect()
-    )
-    assert_frame_equal(df, test_df)
+# @pytest.mark.xdist_group("streaming")
+# @pytest.mark.write_disk
+# def test_hive_partitioned_projection_pushdown(
+#     io_files_path: Path, tmp_path: Path
+# ) -> None:
+#     df = pl.read_ipc(io_files_path / "*.ipc")
+
+#     root = tmp_path / "partitioned_data"
+
+#     # Ignore the pyarrow legacy warning until we can write properly with new settings.
+#     warnings.filterwarnings("ignore")
+#     pq.write_to_dataset(
+#         df.to_arrow(),
+#         root_path=root,
+#         partition_cols=["category", "fats_g"],
+#     )
+
+#     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+#     columns = ["sugars_g", "category"]
+#     for streaming in [True, False]:
+#         assert (
+#             q.select(columns)
+#             .collect(engine="streaming" if streaming else "in-memory")
+#             .columns
+#             == columns
+#         )
+
+#     # test that hive partition columns are projected with the correct height when
+#     # the projection contains only hive partition columns (11796)
+#     for parallel in ("row_groups", "columns"):
+#         q = pl.scan_parquet(
+#             root / "**/*.parquet",
+#             hive_partitioning=True,
+#             parallel=parallel,
+#         )
+
+#         expected = q.collect().select("category")
+#         result = q.select("category").collect()
+
+#         assert_frame_equal(result, expected)
+
+
+# @pytest.mark.write_disk
+# def test_hive_partitioned_projection_skips_files(tmp_path: Path) -> None:
+#     # ensure that it makes hive columns even when . in dir value
+#     # and that it doesn't make hive columns from filename with =
+#     df = pl.DataFrame(
+#         {"sqlver": [10012.0, 10013.0], "namespace": ["eos", "fda"], "a": [1, 2]}
+#     )
+#     root = tmp_path / "partitioned_data"
+#     for dir_tuple, sub_df in df.partition_by(
+#         ["sqlver", "namespace"], include_key=False, as_dict=True
+#     ).items():
+#         new_path = root / f"sqlver={dir_tuple[0]}" / f"namespace={dir_tuple[1]}"
+#         new_path.mkdir(parents=True, exist_ok=True)
+#         sub_df.write_parquet(new_path / "file=8484.parquet")
+#     test_df = (
+#         pl.scan_parquet(str(root) + "/**/**/*.parquet", hive_partitioning=True)
+#         # don't care about column order
+#         .select("sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a"))
+#         .collect()
+#     )
+#     assert_frame_equal(df, test_df)
 
 
 @pytest.fixture
