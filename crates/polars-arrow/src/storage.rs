@@ -326,7 +326,9 @@ impl<T: Pod> SharedStorage<T> {
 
         // The length of the array in bytes must be a multiple of the target size.
         // We can skip this check if the size of U divides the size of T.
-        if !size_of::<T>().is_multiple_of(size_of::<U>()) && !inner.length_in_bytes.is_multiple_of(size_of::<U>()) {
+        if !size_of::<T>().is_multiple_of(size_of::<U>())
+            && !inner.length_in_bytes.is_multiple_of(size_of::<U>())
+        {
             return Err(self);
         }
 
