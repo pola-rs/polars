@@ -33,7 +33,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
-use crate::physical_plan::lower_expr::{build_select_stream, lower_exprs, ExprCache};
+use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
