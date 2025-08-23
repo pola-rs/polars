@@ -69,6 +69,14 @@ fn modify_supertype(
     st
 }
 
+fn try_get_dtype(
+    expr: &ExprIR,
+    schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<DataType> {
+    expr_arena.get(expr.node()).get_dtype(schema, expr_arena)
+}
+
 fn get_aexpr_and_type<'a>(
     expr_arena: &'a Arena<AExpr>,
     e: Node,

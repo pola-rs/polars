@@ -4,6 +4,7 @@ use polars_core::utils::try_get_supertype;
 use polars_time::Duration;
 use polars_utils::arena::Arena;
 
+use super::try_get_dtype;
 use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction, LiteralValue};
 use crate::prelude::FunctionOptions;
 
@@ -143,19 +144,14 @@ pub(super) fn build_datetime_supertype(
     Ok(dtype_out)
 }
 
-#[inline(always)]
-fn get_dtype(expr: &ExprIR, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<DataType> {
-    expr_arena.get(expr.node()).get_dtype(schema, expr_arena)
-}
-
 #[cfg(all(feature = "dtype-date", feature = "range"))]
 pub(super) fn update_date_range_types(
     input: &mut [ExprIR],
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
 ) -> PolarsResult<(Vec<DataType>, Vec<DataType>)> {
-    let type_start = get_dtype(&input[0], schema, expr_arena)?;
-    let type_end = get_dtype(&input[1], schema, expr_arena)?;
+    let type_start = try_get_dtype(&input[0], schema, expr_arena)?;
+    let type_end = try_get_dtype(&input[1], schema, expr_arena)?;
     let from_types = vec![type_start, type_end];
     let to_types = vec![DataType::Date, DataType::Date];
     Ok((from_types, to_types))
@@ -170,8 +166,8 @@ pub(super) fn update_datetime_range_types(
     tu: &Option<TimeUnit>,
     tz: &Option<TimeZone>,
 ) -> PolarsResult<(Vec<DataType>, Vec<DataType>)> {
-    let type_start = get_dtype(&input[0], schema, expr_arena)?;
-    let type_end = get_dtype(&input[1], schema, expr_arena)?;
+    let type_start = try_get_dtype(&input[0], schema, expr_arena)?;
+    let type_end = try_get_dtype(&input[1], schema, expr_arena)?;
     let default = try_get_supertype(&type_start, &type_end)?;
     let supertype = build_datetime_supertype(default, tu, tz, interval)?;
     let from_types = vec![type_start, type_end];
