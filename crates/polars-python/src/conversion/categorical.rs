@@ -25,6 +25,14 @@ impl PyCategories {
         }
     }
 
+    fn __getnewargs__(&self) -> (String, String, String) {
+        (
+            self.categories.name().to_string(),
+            self.categories.namespace().to_string(),
+            self.categories.physical().as_str().to_owned(),
+        )
+    }
+
     #[staticmethod]
     pub fn global_categories() -> Self {
         Self {
