@@ -95,24 +95,23 @@ where
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
             let win_len = end - start;
-            let weights_slice = if start == 0 && end == len && centered {
-                // Edge case: There are fewer elements than the window size
-                // in the array. We'll get the same array of values at each idx
-                // so we need to use the idx to know how to slide the weights
-                // along when centered.
-                let slice_start = weights.len() - win_len - idx;
-                let slice_end = slice_start + win_len;
-                &weights[slice_start..slice_end]
+            let weights_start = if centered {
+                // When using centered weights, we need to find the right location
+                // in the weights array specifically by aligning the center of the
+                // window with idx, to handle cases where the window is smaller than
+                // weights array.
+                let center = (window_size / 2) as isize;
+                let offset = center - (idx as isize - start as isize);
+                offset.max(0) as usize
             } else if start == 0 {
-                // Truncated at the start: take the last win_len weights
-                &weights[weights.len() - win_len..]
-            } else if end == len {
-                // Truncated at the end: take the first win_len weights
-                &weights[..win_len]
+                // When start is 0, we need to work backwards from the end of the
+                // weights array to ensure we are lined up correctly (since the
+                // start of the values array is implicitly cut off)
+                weights.len() - win_len
             } else {
-                // Full window
-                weights
+                0
             };
+            let weights_slice = &weights[weights_start..weights_start + win_len];
             aggregator(vals, weights_slice)
         })
         .collect_trusted::<Vec<T>>();

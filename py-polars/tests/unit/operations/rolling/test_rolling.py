@@ -1660,6 +1660,16 @@ def test_wtd_min_periods_less_window() -> None:
 
     expected = pl.DataFrame({"a": [1, 2], "kernel_mean": [1.0, 2 * 2 / 3 + 1 * 1 / 3]})
 
+    df = pl.DataFrame({"a": [1]}).with_columns(
+        pl.col("a")
+        .rolling_sum(
+            6, center=True, min_samples=0, weights=[1, 10, 100, 1000, 10_000, 100_000]
+        )
+        .alias("kernel_sum")
+    )
+    expected = pl.DataFrame({"a": [1], "kernel_sum": [1000.0]})
+    assert_frame_equal(df, expected)
+
 
 def test_rolling_median_23480() -> None:
     vals = [None] * 17 + [3262645.8, 856191.4, 1635379.0, 34707156.0]
