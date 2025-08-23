@@ -23,7 +23,7 @@ use slotmap::SlotMap;
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
-use crate::physical_plan::lower_ir::build_row_idx_stream;
+use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
 
 type ExprNodeKey = Node;
 
@@ -1435,6 +1435,43 @@ fn lower_exprs_with_ctx(
                 let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(reduce_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::ArgWhere,
+                options: _,
+            } => {
+                // pl.arg_where(expr)
+                //
+                // ->
+                // .select(predicate_name = expr)
+                // .with_row_index(out_name)
+                // .filter(predicate_name)
+                // .select(out_name)
+                let out_name = unique_column_name();
+                let predicate_name = unique_column_name();
+                let predicate = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(predicate_name.clone())],
+                    ctx,
+                )?;
+                let row_index =
+                    build_row_idx_stream(predicate, out_name.clone(), None, ctx.phys_sm);
+
+                let filter_stream = build_filter_stream(
+                    row_index,
+                    AExprBuilder::col(predicate_name.clone(), ctx.expr_arena)
+                        .expr_ir(predicate_name),
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext {
+                        prepare_visualization: ctx.prepare_visualization,
+                    },
+                )?;
+                input_streams.insert(filter_stream);
+                transformed_exprs.push(AExprBuilder::col(out_name.clone(), ctx.expr_arena).node());
             },
 
             // pl.row_index() maps to this.
