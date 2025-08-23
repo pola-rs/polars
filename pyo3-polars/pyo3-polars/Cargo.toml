@@ -24,7 +24,7 @@ pyo3 = { workspace = true }
 pyo3-polars-derive = { workspace = true, optional = true }
 serde = { version = "1", optional = true }
 serde-pickle = { version = "1", optional = true }
-thiserror = "1"
+thiserror = "2"
 
 [features]
 # Polars python is needed because all variants need to be activated of the DSL.
