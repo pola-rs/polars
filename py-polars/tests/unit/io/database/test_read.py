@@ -458,8 +458,8 @@ def test_read_database_iter_batches(
                 batch_size=batch_size,
             )
             # must consume the iterators while the connection is open
-            dfs = list(dfs)
-            empty_dfs = list(empty_dfs)
+            dfs = iter(list(dfs))
+            empty_dfs = iter(list(empty_dfs))
     else:
         # other user-supplied connections
         dfs = pl.read_database(
