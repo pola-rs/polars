@@ -98,10 +98,16 @@ impl AExpr {
                 let e = ctx.arena.get(*function);
                 let mut field = e.to_field_impl(ctx)?;
 
-                if let WindowType::Over(WindowMapping::Join) = options {
-                    if !is_scalar_ae(*function, ctx.arena) {
-                        field.dtype = DataType::List(Box::new(field.dtype));
-                    }
+                let mut implicit_implode = false;
+
+                implicit_implode |= matches!(options, WindowType::Over(WindowMapping::Join));
+                #[cfg(feature = "dynamic_group_by")]
+                {
+                    implicit_implode |= matches!(options, WindowType::Rolling(_));
+                }
+
+                if implicit_implode && !is_scalar_ae(*function, ctx.arena) {
+                    field.dtype = field.dtype.implode();
                 }
 
                 Ok(field)
@@ -188,7 +194,7 @@ impl AExpr {
                     Median(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
+                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
                             _ => {
                                 let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                                 let mapper = FieldsMapper::new(&field);
@@ -200,7 +206,7 @@ impl AExpr {
                     Mean(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
+                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
                             _ => {
                                 let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                                 let mapper = FieldsMapper::new(&field);
@@ -229,8 +235,8 @@ impl AExpr {
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
-                    Count(expr, _) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                    Count { input, .. } => {
+                        let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
@@ -363,7 +369,7 @@ impl AExpr {
             | Agg(Std(expr, _))
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))
-            | Agg(Count(expr, _))
+            | Agg(Count { input: expr, .. })
             | Agg(AggGroups(expr))
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
             AnonymousFunction { input, fmt_str, .. } => {
@@ -439,7 +445,7 @@ fn get_arithmetic_field(
                 (_, Datetime(_, _)) | (Datetime(_, _), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
-                (Date, Date) => Duration(TimeUnit::Milliseconds),
+                (Date, Date) => Duration(TimeUnit::Microseconds),
                 (_, Date) | (Date, _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
@@ -691,6 +697,9 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
             list_dtype.cast_leaf(dtype)
         },
+        (Boolean, Float32) => Float32,
+        (Boolean, b) if b.is_numeric() => Float64,
+        (Boolean, Boolean) => Float64,
         #[cfg(feature = "dtype-u8")]
         (Float32, UInt8 | Int8) => Float32,
         #[cfg(feature = "dtype-u16")]
@@ -698,11 +707,18 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Float32, other) if other.is_integer() => Float64,
         (Float32, Float64) => Float64,
         (Float32, _) => Float32,
+        (String, _) | (_, String) => polars_bail!(
+            InvalidOperation: "division with 'String' datatypes is not allowed"
+        ),
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, Some(scale_left)), Decimal(_, _)) => {
             let scale = _get_decimal_scale_div(*scale_left);
             Decimal(None, Some(scale))
         },
+        #[cfg(feature = "dtype-u8")]
+        (UInt8 | Int8, Float32) => Float32,
+        #[cfg(feature = "dtype-u16")]
+        (UInt16 | Int16, Float32) => Float32,
         (dt, _) if dt.is_primitive_numeric() => Float64,
         #[cfg(feature = "dtype-duration")]
         (Duration(_), Duration(_)) => Float64,

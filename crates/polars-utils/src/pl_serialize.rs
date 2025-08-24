@@ -161,7 +161,7 @@ where
 {
     // Lets us avoid monomorphizing the visitor
     let mut out: Option<O> = None;
-    struct V<'f>(&'f mut (dyn for<'b> FnMut(std::borrow::Cow<'b, [u8]>)));
+    struct V<'f>(&'f mut dyn for<'b> FnMut(std::borrow::Cow<'b, [u8]>));
 
     deserializer.deserialize_bytes(V(&mut |v| drop(out.replace(func(v)))))?;
 

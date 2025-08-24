@@ -9,18 +9,18 @@ from polars import functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import find_stacklevel, no_default, qualified_type_name
+from polars._utils.various import (
+    find_stacklevel,
+    issue_warning,
+    no_default,
+    qualified_type_name,
+)
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
-from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
-    import contextlib
     import sys
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        import polars._plr as plr
 
     from polars import Expr
     from polars._typing import (
@@ -324,22 +324,25 @@ class ExprStringNameSpace:
             raise ValueError(msg)
 
     @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
-    def to_decimal(
-        self,
-        inference_length: int = 100,
-    ) -> Expr:
+    @unstable()
+    def to_decimal(self, *, scale: int) -> Expr:
         """
         Convert a String column into a Decimal column.
 
-        This method infers the needed parameters `precision` and `scale`.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         .. versionchanged:: 1.20.0
             Parameter `inference_length` should now be passed as a keyword argument.
 
+        .. versionchanged:: 1.33.0
+            Parameter `inference_length` was removed and `scale` was made non-optional.
+
         Parameters
         ----------
-        inference_length
-            Number of elements to parse to determine the `precision` and `scale`.
+        scale
+            Number of digits after the comma to use for the decimals.
 
         Examples
         --------
@@ -356,7 +359,7 @@ class ExprStringNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> df.with_columns(numbers_decimal=pl.col("numbers").str.to_decimal())
+        >>> df.with_columns(numbers_decimal=pl.col("numbers").str.to_decimal(scale=2))
         shape: (7, 2)
         ┌───────────┬─────────────────┐
         │ numbers   ┆ numbers_decimal │
@@ -372,7 +375,7 @@ class ExprStringNameSpace:
         │ 143.9     ┆ 143.90          │
         └───────────┴─────────────────┘
         """
-        return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
+        return wrap_expr(self._pyexpr.str_to_decimal(scale=scale))
 
     def len_bytes(self) -> Expr:
         """
@@ -1254,9 +1257,9 @@ class ExprStringNameSpace:
 
     def json_decode(
         self,
-        dtype: PolarsDataType | pl.DataTypeExpr | None = None,
+        dtype: PolarsDataType | pl.DataTypeExpr,
         *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
+        infer_schema_length: int | None = None,
     ) -> Expr:
         """
         Parse string values as JSON.
@@ -1266,11 +1269,13 @@ class ExprStringNameSpace:
         Parameters
         ----------
         dtype
-            The dtype to cast the extracted value to. If None, the dtype will be
-            inferred from the JSON value.
+            The dtype to cast the extracted value to.
         infer_schema_length
-            The maximum number of rows to scan for schema inference.
-            If set to `None`, the full data may be scanned *(this is slow)*.
+            Deprecated and ignored.
+
+        .. versionchanged: 1.33.0
+            Deprecate `infer_schema_length` and make `dtype` non-optional to
+            ensure that the planner can determine the output datatype.
 
         See Also
         --------
@@ -1295,10 +1300,18 @@ class ExprStringNameSpace:
         │ {"a":2, "b": false} ┆ {2,false} │
         └─────────────────────┴───────────┘
         """
-        dtype_expr: plr.PyDataTypeExpr | None = None
-        if dtype is not None:
-            dtype_expr = parse_into_datatype_expr(dtype)._pydatatype_expr
-        return wrap_expr(self._pyexpr.str_json_decode(dtype_expr, infer_schema_length))
+        if dtype is None:
+            msg = "`Expr.str.json_decode` needs an explicitly given `dtype` otherwise Polars is not able to determine the output type. If you want to eagerly infer datatype you can use `Series.str.json_decode`."
+            raise TypeError(msg)
+
+        if infer_schema_length is not None:
+            issue_warning(
+                "`Expr.str.json_decode` with `infer_schema_length` is deprecated and has no effect on execution.",
+                DeprecationWarning,
+            )
+
+        dtype_expr = parse_into_datatype_expr(dtype)._pydatatype_expr
+        return wrap_expr(self._pyexpr.str_json_decode(dtype_expr))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
@@ -2818,20 +2831,20 @@ class ExprStringNameSpace:
         >>> patterns = ["winter", "disco", "onte", "discontent"]
         >>> df.with_columns(
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=False)
+        ...     .str.find_many(patterns, overlapping=False)
         ...     .alias("matches"),
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=True)
+        ...     .str.find_many(patterns, overlapping=True)
         ...     .alias("matches_overlapping"),
         ... )
         shape: (1, 3)
-        ┌────────────┬───────────┬─────────────────────────────────┐
-        │ values     ┆ matches   ┆ matches_overlapping             │
-        │ ---        ┆ ---       ┆ ---                             │
-        │ str        ┆ list[str] ┆ list[str]                       │
-        ╞════════════╪═══════════╪═════════════════════════════════╡
-        │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
-        └────────────┴───────────┴─────────────────────────────────┘
+        ┌────────────┬───────────┬─────────────────────┐
+        │ values     ┆ matches   ┆ matches_overlapping │
+        │ ---        ┆ ---       ┆ ---                 │
+        │ str        ┆ list[u32] ┆ list[u32]           │
+        ╞════════════╪═══════════╪═════════════════════╡
+        │ discontent ┆ [0]       ┆ [0, 4, 0]           │
+        └────────────┴───────────┴─────────────────────┘
         >>> df = pl.DataFrame(
         ...     {
         ...         "values": ["discontent", "rhapsody"],

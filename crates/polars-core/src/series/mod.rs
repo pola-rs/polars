@@ -1019,6 +1019,26 @@ impl Series {
         out.set_inner_dtype(s.dtype().clone());
         out
     }
+
+    pub fn row_encode_unordered(&self) -> PolarsResult<BinaryOffsetChunked> {
+        row_encode::_get_rows_encoded_ca_unordered(
+            self.name().clone(),
+            &[self.clone().into_column()],
+        )
+    }
+
+    pub fn row_encode_ordered(
+        &self,
+        descending: bool,
+        nulls_last: bool,
+    ) -> PolarsResult<BinaryOffsetChunked> {
+        row_encode::_get_rows_encoded_ca(
+            self.name().clone(),
+            &[self.clone().into_column()],
+            &[descending],
+            &[nulls_last],
+        )
+    }
 }
 
 impl Deref for Series {
@@ -1029,7 +1049,7 @@ impl Deref for Series {
     }
 }
 
-impl<'a> AsRef<(dyn SeriesTrait + 'a)> for Series {
+impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
     }

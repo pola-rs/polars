@@ -1092,12 +1092,15 @@ def map_batches(
     *,
     is_elementwise: bool = False,
     returns_scalar: bool = False,
-    _is_ufunc: bool = False,
 ) -> Expr:
     """
     Map a custom function over multiple columns/expressions.
 
     Produces a single Series result.
+
+    .. warning::
+        This method is much slower than the native expressions API.
+        Only use it if you cannot implement your logic otherwise.
 
     Parameters
     ----------
@@ -1106,7 +1109,11 @@ def map_batches(
     function
         Function to apply over the input.
     return_dtype
-        dtype of the output Series.
+        Datatype of the output Series.
+
+        It is recommended to set this whenever possible. If this is `None`, it tries
+        to infer the datatype by calling the function with dummy data and looking at
+        the output.
     is_elementwise
         Set to true if the operations is elementwise for better performance
         and optimization.
@@ -1118,6 +1125,12 @@ def map_batches(
         a list in the output, since the assumption is that the function
         always returns something Series-like. If you want to keep the
         result as a scalar, set this argument to True.
+
+    Notes
+    -----
+    A UDF passed to `map_batches` must be pure, meaning that it cannot modify
+    or depend on state other than its arguments. We may call the function
+    with arbitrary input data.
 
     Returns
     -------
@@ -1169,7 +1182,6 @@ def map_batches(
             return_dtype_expr,
             is_elementwise=is_elementwise,
             returns_scalar=returns_scalar,
-            is_ufunc=_is_ufunc,
         )
     )
 
@@ -1196,7 +1208,11 @@ def map_groups(
     function
         Function to apply over the input; should be of type Callable[[Series], Series].
     return_dtype
-        dtype of the output Series.
+        Datatype of the output Series.
+
+        It is recommended to set this whenever possible. If this is `None`, it tries
+        to infer the datatype by calling the function with dummy data and looking at
+        the output.
     is_elementwise
         Set to true if the operations is elementwise for better performance
         and optimization.
@@ -1205,6 +1221,12 @@ def map_groups(
         and can be ran sequentially on slices without results being affected.
     returns_scalar
         If the function returns a single scalar as output.
+
+    Notes
+    -----
+    A UDF passed to `map_batches` must be pure, meaning that it cannot modify
+    or depend on state other than its arguments. Polars may call the function
+    with arbitrary input data.
 
     Returns
     -------
@@ -1264,7 +1286,6 @@ def map_groups(
         return_dtype,
         is_elementwise=is_elementwise,
         returns_scalar=returns_scalar,
-        _is_ufunc=False,
     )
 
 
@@ -1369,7 +1390,7 @@ def fold(
     ┌─────┐
     │ sum │
     │ --- │
-    │ i64 │
+    │ i32 │
     ╞═════╡
     │ 10  │
     │ 13  │

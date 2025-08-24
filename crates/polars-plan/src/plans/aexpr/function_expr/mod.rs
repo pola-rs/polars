@@ -64,7 +64,6 @@ pub(super) mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
-mod shrink_type;
 #[cfg(feature = "sign")]
 mod sign;
 #[cfg(feature = "strings")]
@@ -266,7 +265,6 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
     Coalesce,
-    ShrinkType,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
     #[cfg(feature = "pct_change")]
@@ -416,7 +414,7 @@ pub enum IRFunctionExpr {
     Reinterpret(bool),
     ExtendConstant,
 
-    RowEncode(RowEncodingVariant),
+    RowEncode(Vec<DataType>, RowEncodingVariant),
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
 }
@@ -611,7 +609,6 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             Coalesce => {},
-            ShrinkType => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
             #[cfg(feature = "log")]
@@ -712,7 +709,10 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
 
-            RowEncode(variants) => variants.hash(state),
+            RowEncode(dts, variants) => {
+                dts.hash(state);
+                variants.hash(state);
+            },
             #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 fs.hash(state);
@@ -828,7 +828,6 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             Coalesce => "coalesce",
-            ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
             #[cfg(feature = "pct_change")]
@@ -1215,7 +1214,6 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => map!(dispatch::approx_n_unique),
             Coalesce => map_as_slice!(fill_null::coalesce),
-            ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
             Diff(null_behavior) => map_as_slice!(dispatch::diff, null_behavior),
             #[cfg(feature = "pct_change")]
@@ -1399,7 +1397,9 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),
             ExtendConstant => map_as_slice!(dispatch::extend_constant),
 
-            RowEncode(variants) => map_as_slice!(row_encode::encode, variants.clone()),
+            RowEncode(dts, variants) => {
+                map_as_slice!(row_encode::encode, dts.clone(), variants.clone())
+            },
             #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 map_as_slice!(row_encode::decode, fs.clone(), variants.clone())
@@ -1518,7 +1518,6 @@ impl IRFunctionExpr {
             F::Coalesce => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
-            F::ShrinkType => FunctionOptions::length_preserving(),
             #[cfg(feature = "diff")]
             F::Diff(NullBehavior::Drop) => FunctionOptions::groupwise(),
             #[cfg(feature = "diff")]

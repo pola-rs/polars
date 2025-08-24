@@ -42,13 +42,13 @@ def test_sqrt_neg_inf() -> None:
 
 
 def test_arithmetic_with_logical_on_series_4920() -> None:
-    assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("ms")
+    assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("us")
 
 
 @pytest.mark.parametrize(
     ("left", "right", "expected_value", "expected_dtype"),
     [
-        (date(2021, 1, 1), date(2020, 1, 1), timedelta(days=366), pl.Duration("ms")),
+        (date(2021, 1, 1), date(2020, 1, 1), timedelta(days=366), pl.Duration("us")),
         (
             datetime(2021, 1, 1),
             datetime(2020, 1, 1),

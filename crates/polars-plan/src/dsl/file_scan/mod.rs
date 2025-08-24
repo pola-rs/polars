@@ -522,6 +522,13 @@ impl CastColumnsPolicy {
 
         debug_assert!(!target_dtype.is_nested());
 
+        // If we were to drop cast on an `Unknown` incoming_dtype, it could eventually
+        // lead to dtype errors. The reason is that the logic used by type coercion differs
+        // from the casting logic used by `materialize_unknown`.
+        if incoming_dtype.contains_unknown() {
+            return Ok(true);
+        }
+
         // Note: Only call this with non-nested types for performance
         let materialize_unknown = |dtype: &DataType| -> std::borrow::Cow<DataType> {
             dtype
@@ -531,7 +538,7 @@ impl CastColumnsPolicy {
                 .unwrap_or(std::borrow::Cow::Borrowed(incoming_dtype))
         };
 
-        let incoming_dtype = materialize_unknown(incoming_dtype);
+        let incoming_dtype = std::borrow::Cow::Borrowed(incoming_dtype);
         let target_dtype = materialize_unknown(target_dtype);
 
         if target_dtype == incoming_dtype {
@@ -540,6 +547,11 @@ impl CastColumnsPolicy {
 
         let incoming_dtype = incoming_dtype.as_ref();
         let target_dtype = target_dtype.as_ref();
+
+        // If the incoming type is always allowed to be cast.
+        if incoming_dtype.does_match_schema_type(target_dtype) {
+            return Ok(true);
+        }
 
         //
         // After this point the dtypes are mismatching.

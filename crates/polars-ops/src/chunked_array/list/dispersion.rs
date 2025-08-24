@@ -1,3 +1,5 @@
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
+
 use super::*;
 
 pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {
@@ -10,13 +12,12 @@ pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {
         },
         #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
-            const MS_IN_DAY: i64 = 86_400_000;
             let out: Int64Chunked = ca
                 .apply_amortized_generic(|s| {
-                    s.and_then(|s| s.as_ref().median().map(|v| (v * (MS_IN_DAY as f64)) as i64))
+                    s.and_then(|s| s.as_ref().median().map(|v| (v * (US_IN_DAY as f64)) as i64))
                 })
                 .with_name(ca.name().clone());
-            out.into_datetime(TimeUnit::Milliseconds, None)
+            out.into_datetime(TimeUnit::Microseconds, None)
                 .into_series()
         },
         dt if dt.is_temporal() => {

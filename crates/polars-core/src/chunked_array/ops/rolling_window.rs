@@ -139,19 +139,32 @@ mod inner_mod {
                         let s = if size == options.window_size {
                             f(&series_container.multiply(&weights_series).unwrap())?
                         } else {
+                            // Determine which side to slice weights from
                             let weights_cutoff: Series = match self.dtype() {
-                                DataType::Float64 => weights_series
-                                    .f64()
-                                    .unwrap()
-                                    .into_iter()
-                                    .take(series_container.len())
-                                    .collect(),
-                                _ => weights_series // Float32 case
-                                    .f32()
-                                    .unwrap()
-                                    .into_iter()
-                                    .take(series_container.len())
-                                    .collect(),
+                                DataType::Float64 => {
+                                    let ws = weights_series.f64().unwrap();
+                                    if start == 0 {
+                                        ws.slice(
+                                            (ws.len() - series_container.len()) as i64,
+                                            series_container.len(),
+                                        )
+                                        .into_series()
+                                    } else {
+                                        ws.slice(0, series_container.len()).into_series()
+                                    }
+                                },
+                                _ => {
+                                    let ws = weights_series.f32().unwrap();
+                                    if start == 0 {
+                                        ws.slice(
+                                            (ws.len() - series_container.len()) as i64,
+                                            series_container.len(),
+                                        )
+                                        .into_series()
+                                    } else {
+                                        ws.slice(0, series_container.len()).into_series()
+                                    }
+                                },
                             };
                             f(&series_container.multiply(&weights_cutoff).unwrap())?
                         };

@@ -49,7 +49,7 @@ macro_rules! push_expr {
                     First(e) => $push($c, e),
                     Last(e) => $push($c, e),
                     Implode(e) => $push($c, e),
-                    Count(e, _) => $push($c, e),
+                    Count { input, .. } => $push($c, input),
                     Quantile { expr, .. } => $push($c, expr),
                     Sum(e) => $push($c, e),
                     AggGroups(e) => $push($c, e),

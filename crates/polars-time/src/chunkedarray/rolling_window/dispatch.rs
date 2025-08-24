@@ -89,7 +89,7 @@ where
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
         DataType::Date => (
-            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+            by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
             &None,
         ),
         DataType::Int64 => (

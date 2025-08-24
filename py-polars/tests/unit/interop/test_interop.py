@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, cast
 
 import numpy as np
@@ -585,6 +585,37 @@ def test_dataframe_from_repr() -> None:
     }
 
 
+def test_dataframe_from_repr_24110() -> None:
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr("""
+            shape: (7, 1)
+            ┌──────────────┐
+            │ time_offset  │
+            │ ---          │
+            │ duration[μs] │
+            ╞══════════════╡
+            │ -2h          │
+            │ 0µs          │
+            │ 2h           │
+            │ +2h          │
+            └──────────────┘
+    """),
+    )
+    expected = pl.DataFrame(
+        {
+            "time_offset": [
+                timedelta(hours=-2),
+                timedelta(),
+                timedelta(hours=2),
+                timedelta(hours=2),
+            ]
+        },
+        schema={"time_offset": pl.Duration("us")},
+    )
+    assert_frame_equal(df, expected)
+
+
 def test_dataframe_from_duckdb_repr() -> None:
     df = cast(
         pl.DataFrame,
@@ -1046,3 +1077,8 @@ def test_schema_constructor_from_schema_capsule() -> None:
         match="iterable passed to pl.Schema contained duplicate name 'a'",
     ):
         pl.Schema([pa.field("a", pa.int32()), pa.field("a", pa.int64())])
+
+
+def test_to_arrow_24142() -> None:
+    df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
+    df.to_arrow(compat_level=CompatLevel.oldest())
