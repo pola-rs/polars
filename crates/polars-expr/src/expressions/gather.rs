@@ -77,7 +77,12 @@ impl PhysicalExpr for GatherExpr {
                     s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
                 }
             },
-            _ => unreachable!(),
+            _ => Err(PolarsError::InvalidOperation(
+                format!(
+                    "Invalid dtype {:?} for gather indices; expected integer type",
+                    s.dtype()
+                ).into()
+            )),
         })?;
 
         let taken = if idx.inner_dtype() == &IDX_DTYPE {
