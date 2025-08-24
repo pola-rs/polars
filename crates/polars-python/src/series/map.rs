@@ -21,14 +21,6 @@ impl PySeries {
     ) -> PyResult<PySeries> {
         let series = &self.series;
 
-        if return_dtype.is_none() {
-            polars_warn!(
-                MapWithoutReturnDtypeWarning,
-                "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
-                Specify `return_dtype` to silence this warning."
-            )
-        }
-
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(return_dtype) = return_dtype {
                 return Ok(
@@ -258,7 +250,11 @@ impl PySeries {
                         PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
                             Python::with_gil(|py| {
                                 let out = function_owned.call1(py, args)?;
-                                pl_series(py).call1(py, ("", out, &dtype_py))
+                                if out.is_none(py) {
+                                    Ok(py.None())
+                                } else {
+                                    pl_series(py).call1(py, ("", out, &dtype_py))
+                                }
                             })
                         })?
                         .into_any()
@@ -293,6 +289,7 @@ impl PySeries {
                 _ => return dispatch_apply!(series, apply_lambda_unknown, py, function),
             };
 
+            assert!(out.dtype().is_known());
             Ok(out.into())
         })
     }

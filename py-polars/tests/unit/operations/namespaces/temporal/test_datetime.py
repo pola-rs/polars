@@ -1302,6 +1302,15 @@ def test_datetime_median_with_tu(
     assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median
 
 
+def test_date_median_upcast() -> None:
+    df = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]})
+    result = df.select(pl.col("a").median())
+    expected = pl.DataFrame(
+        {"a": pl.Series([datetime(2022, 1, 2)], dtype=pl.Datetime("us"))}
+    )
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     ("values", "expected_mean"),
     [
@@ -1378,7 +1387,7 @@ def test_agg_mean_expr() -> None:
 
     expected = pl.DataFrame(
         {
-            "date": pl.Series([datetime(2023, 1, 2, 8, 0)], dtype=pl.Datetime("ms")),
+            "date": pl.Series([datetime(2023, 1, 2, 8, 0)], dtype=pl.Datetime("us")),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 2, 8, 0, 0)], dtype=pl.Datetime("ms")
             ),
@@ -1444,7 +1453,7 @@ def test_agg_median_expr() -> None:
 
     expected = pl.DataFrame(
         {
-            "date": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
+            "date": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("us")),
             "datetime_ms": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
             "datetime_us": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("us")),
             "datetime_ns": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ns")),

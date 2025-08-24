@@ -64,7 +64,7 @@ def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str,
     """Create lookup of potential Expr methods (in the given namespace)."""
     # dummy Expr object that we can introspect
     expr = pl.Expr()
-    expr._pyexpr = None
+    expr._pyexpr = None  # type: ignore[assignment]
 
     # optional indirection to "expr.str", "expr.dt", etc
     if namespace is not None:

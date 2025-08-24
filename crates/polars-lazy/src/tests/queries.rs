@@ -1970,3 +1970,43 @@ fn test_over_with_options_empty_join() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "serde")]
+fn test_named_udfs() -> PolarsResult<()> {
+    use polars_plan::dsl::named_serde::{ExprRegistry, set_named_serde_registry};
+
+    let lf = DataFrame::new(vec![Column::new("a".into(), vec![1, 2, 3, 4])])?.lazy();
+
+    struct X;
+    impl ExprRegistry for X {
+        fn get_function(&self, name: &str, payload: &[u8]) -> Option<Arc<dyn AnonymousColumnsUdf>> {
+            assert_eq!(name, "test-function");
+            assert_eq!(payload, b"check");
+            Some(Arc::new(BaseColumnUdf::new(
+                |c: &mut [Column]| Ok(std::mem::take(&mut c[0]) * 2),
+                |_: &Schema, f: &[Field]| Ok(f[0].clone()),
+            )))
+        }
+    }
+
+    set_named_serde_registry(Arc::new(X) as _);
+
+    let expr = Expr::AnonymousFunction {
+        input: vec![Expr::Column("a".into())],
+        function: LazySerde::Named {
+            name: "test-function".into(),
+            payload: Some(bytes::Bytes::from("check")),
+            value: None,
+        },
+        options: FunctionOptions::default(),
+        fmt_str: Box::new("test".into()),
+    };
+
+    assert_eq!(
+        lf.select(&[expr]).collect()?,
+        DataFrame::new(vec![Column::new("a".into(), vec![2, 4, 6, 8])])?,
+    );
+
+    Ok(())
+}

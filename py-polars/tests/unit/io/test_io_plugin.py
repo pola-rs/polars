@@ -55,6 +55,7 @@ def test_defer_validate_true() -> None:
         lf.collect()
 
 
+@pytest.mark.may_fail_cloud
 @pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_defer_validate_false() -> None:
     lf = pl.defer(
@@ -136,6 +137,7 @@ This allows it to read into multiple rows.
     )
 
 
+@pytest.mark.may_fail_cloud
 @pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_datetime_io_predicate_pushdown_21790() -> None:
     recorded: dict[str, pl.Expr | None] = {"predicate": None}

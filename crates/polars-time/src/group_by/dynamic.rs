@@ -141,8 +141,8 @@ impl Wrap<&DataFrame> {
         let (dt, tu, tz): (Column, TimeUnit, Option<TimeZone>) = match time_type {
             Datetime(tu, tz) => (time.clone(), *tu, tz.clone()),
             Date => (
-                time.cast(&Datetime(TimeUnit::Milliseconds, None))?,
-                TimeUnit::Milliseconds,
+                time.cast(&Datetime(TimeUnit::Microseconds, None))?,
+                TimeUnit::Microseconds,
                 None,
             ),
             UInt32 | UInt64 | Int32 => {
@@ -212,8 +212,8 @@ impl Wrap<&DataFrame> {
         let (dt, tu) = match time_type {
             Datetime(tu, _) => (time.clone(), *tu),
             Date => (
-                time.cast(&Datetime(TimeUnit::Milliseconds, None))?,
-                TimeUnit::Milliseconds,
+                time.cast(&Datetime(TimeUnit::Microseconds, None))?,
+                TimeUnit::Microseconds,
             ),
             Int32 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);

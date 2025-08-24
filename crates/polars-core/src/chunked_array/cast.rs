@@ -309,7 +309,7 @@ impl ChunkCast for StringChunked {
                         .into_decimal_unchecked(*precision, *scale)
                         .into_series())
                 },
-                (None, None) => self.to_decimal(100),
+                (None, None) => self.to_decimal_infer(100),
                 _ => {
                     polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
                 },

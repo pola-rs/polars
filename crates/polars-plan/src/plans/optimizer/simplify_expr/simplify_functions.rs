@@ -35,10 +35,10 @@ pub(super) fn optimize_functions(
                             AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                 op: Operator::Lt,
                                 left: expr_arena.add(new_null_count(input)),
-                                right: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
-                                    is_not_null_input_node,
-                                    true,
-                                ))),
+                                right: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                    input: is_not_null_input_node,
+                                    include_nulls: true,
+                                })),
                             }),
                             _ => None,
                         }
@@ -67,8 +67,10 @@ pub(super) fn optimize_functions(
                             AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                 op: Operator::Eq,
                                 right: expr_arena.add(new_null_count(input)),
-                                left: expr_arena
-                                    .add(AExpr::Agg(IRAggExpr::Count(is_null_input_node, true))),
+                                left: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                    input: is_null_input_node,
+                                    include_nulls: true,
+                                })),
                             }),
                             _ => None,
                         }

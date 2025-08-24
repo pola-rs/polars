@@ -707,10 +707,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Count(n, include_null) => Agg {
+            IRAggExpr::Count {
+                input: n,
+                include_nulls,
+            } => Agg {
                 name: "count".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: include_null.into_py_any(py)?,
+                options: include_nulls.into_py_any(py)?,
             },
             IRAggExpr::Std(n, ddof) => Agg {
                 name: "std".into_py_any(py)?,
@@ -812,10 +815,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRStringFunction::LenChars => (PyStringFunction::LenChars,).into_py_any(py),
                     IRStringFunction::Lowercase => (PyStringFunction::Lowercase,).into_py_any(py),
                     #[cfg(feature = "extract_jsonpath")]
-                    IRStringFunction::JsonDecode {
-                        dtype: _,
-                        infer_schema_len,
-                    } => (PyStringFunction::JsonDecode, infer_schema_len).into_py_any(py),
+                    IRStringFunction::JsonDecode(_) => {
+                        (PyStringFunction::JsonDecode, <Option<usize>>::None).into_py_any(py)
+                    },
                     #[cfg(feature = "extract_jsonpath")]
                     IRStringFunction::JsonPathMatch => {
                         (PyStringFunction::JsonPathMatch,).into_py_any(py)
@@ -886,8 +888,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRStringFunction::Split(inclusive) => {
                         (PyStringFunction::Split, inclusive).into_py_any(py)
                     },
-                    IRStringFunction::ToDecimal(inference_length) => {
-                        (PyStringFunction::ToDecimal, inference_length).into_py_any(py)
+                    IRStringFunction::ToDecimal { scale } => {
+                        (PyStringFunction::ToDecimal, scale).into_py_any(py)
                     },
                     #[cfg(feature = "nightly")]
                     IRStringFunction::Titlecase => (PyStringFunction::Titlecase,).into_py_any(py),
@@ -1235,7 +1237,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::UniqueCounts => ("unique_counts",).into_py_any(py),
                 IRFunctionExpr::ApproxNUnique => ("approx_n_unique",).into_py_any(py),
                 IRFunctionExpr::Coalesce => ("coalesce",).into_py_any(py),
-                IRFunctionExpr::ShrinkType => ("shrink_dtype",).into_py_any(py),
                 IRFunctionExpr::Diff(null_behaviour) => (
                     "diff",
                     match null_behaviour {
@@ -1379,7 +1380,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::EwmMeanBy { half_life: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm_mean_by"));
                 },
-                IRFunctionExpr::RowEncode(_) => {
+                IRFunctionExpr::RowEncode(..) => {
                     return Err(PyNotImplementedError::new_err("row_encode"));
                 },
                 IRFunctionExpr::RowDecode(..) => {

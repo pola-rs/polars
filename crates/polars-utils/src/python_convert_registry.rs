@@ -12,12 +12,16 @@ pub struct FromPythonConvertRegistry {
     pub partition_target_cb_result: FromPython,
     pub series: FromPython,
     pub df: FromPython,
+    pub dsl_plan: FromPython,
+    pub schema: FromPython,
 }
 
 #[derive(Clone)]
 pub struct ToPythonConvertRegistry {
     pub df: ToPython,
     pub series: ToPython,
+    pub dsl_plan: ToPython,
+    pub schema: ToPython,
 }
 
 #[derive(Clone)]

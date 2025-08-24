@@ -38,14 +38,8 @@ pub fn map_expr(
     output_type: Option<PyDataTypeExpr>,
     is_elementwise: bool,
     returns_scalar: bool,
-    is_ufunc: bool,
 ) -> PyExpr {
-    let output_type = if is_ufunc {
-        debug_assert!(output_type.is_none());
-        Some(DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc)))
-    } else {
-        output_type.map(|v| v.inner)
-    };
+    let output_type = output_type.map(|v| v.inner);
     let func =
         python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
     let exprs = pyexpr.iter().map(|pe| pe.clone().inner).collect::<Vec<_>>();

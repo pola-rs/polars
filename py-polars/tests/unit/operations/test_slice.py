@@ -350,3 +350,21 @@ def test_slice_pushdown_pushes_past_fallible(
     assert plan.index("BARRIER") > plan.index("SLICE") > plan.index("MARKER")
 
     assert_frame_equal(q.collect(), pl.DataFrame(schema=q.collect_schema()))
+
+
+@pytest.mark.slow
+def test_slice_slice_pushdown() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3, 4]})
+    for outer_offset in range(-10, 10):
+        for outer_len in range(10):
+            for inner_offset in range(-10, 10):
+                for inner_len in range(10):
+                    assert_frame_equal(
+                        df.slice(inner_offset, inner_len).slice(
+                            outer_offset, outer_len
+                        ),
+                        df.lazy()
+                        .slice(inner_offset, inner_len)
+                        .slice(outer_offset, outer_len)
+                        .collect(),
+                    )

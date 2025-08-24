@@ -648,7 +648,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
 
 // see https://users.rust-lang.org/t/generic-for-dyn-a-or-box-dyn-a-or-arc-dyn-a/69430/3
 // for details
-impl<'a> AsRef<(dyn Array + 'a)> for dyn Array {
+impl<'a> AsRef<dyn Array + 'a> for dyn Array {
     fn as_ref(&self) -> &(dyn Array + 'a) {
         self
     }

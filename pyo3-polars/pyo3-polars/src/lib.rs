@@ -60,5 +60,9 @@ pub use types::*;
 pub(crate) static POLARS: Lazy<Py<PyModule>> =
     Lazy::new(|| Python::with_gil(|py| PyModule::import(py, "polars").unwrap().unbind()));
 
+pub(crate) static POLARS_INTERCHANGE: Lazy<Py<PyModule>> = Lazy::new(|| {
+    Python::with_gil(|py| PyModule::import(py, "polars.interchange").unwrap().unbind())
+});
+
 pub(crate) static SERIES: Lazy<Py<PyAny>> =
     Lazy::new(|| Python::with_gil(|py| POLARS.getattr(py, "Series").unwrap()));

@@ -117,6 +117,12 @@ pub(crate) fn write<W: Write>(
 
     let mut n_rows_finished = 0;
 
+    // To comply with the safety requirements for the buf_writer closure, we need to make sure
+    // the column dtype references have a lifetime that exceeds the scope of the serializer, i.e.
+    // the full dataframe. If not, we can run into use-after-free memory issues for types that
+    // allocate, such as Enum or Categorical dtype (see GH issue #23939).
+    let col_dtypes: Vec<_> = df.get_columns().iter().map(|c| c.dtype()).collect();
+
     let mut buffers: Vec<_> = (0..n_threads).map(|_| (Vec::new(), Vec::new())).collect();
     while n_rows_finished < len {
         let buf_writer = |thread_no, write_buffer: &mut Vec<_>, serializers_vec: &mut Vec<_>| {
@@ -142,14 +148,14 @@ pub(crate) fn write<W: Write>(
             }
 
             if serializers_vec.is_empty() {
-                *serializers_vec = cols
-                    .iter()
+                debug_assert_eq!(cols.len(), col_dtypes.len());
+                *serializers_vec = std::iter::zip(cols, &col_dtypes)
                     .enumerate()
-                    .map(|(i, col)| {
+                    .map(|(i, (col, &col_dtype))| {
                         serializer_for(
                             &*col.as_materialized_series().chunks()[0],
                             options,
-                            col.dtype(),
+                            col_dtype,
                             datetime_formats[i],
                             time_zones[i],
                         )

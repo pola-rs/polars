@@ -1,8 +1,8 @@
 # Getting started
 
 Polars Cloud is a managed compute platform for your Polars queries. It allows you to effortlessly
-run your local queries in your cloud environment, both in an interactive setting as well as for ETL
-or batch jobs. By working in a 'Bring your own Cloud' model the data never leaves your environment.
+run your local queries in your cloud environment without infrastructure management. By working in a
+'Bring your own Cloud' model the data never leaves your environment.
 
 ## Installation
 

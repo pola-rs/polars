@@ -275,6 +275,15 @@ impl DataTypeExpr {
         Self::WrapInArray(Box::new(self), width)
     }
 
+    pub fn default_value(self, n: usize, numeric_to_one: bool, num_list_values: usize) -> Expr {
+        Expr::DataTypeFunction(DataTypeFunction::DefaultValue {
+            dt_expr: self,
+            n,
+            numeric_to_one,
+            num_list_values,
+        })
+    }
+
     pub fn int(self) -> DataTypeExprIntNameSpace {
         DataTypeExprIntNameSpace(self)
     }

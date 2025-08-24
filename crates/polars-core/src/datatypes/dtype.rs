@@ -86,7 +86,7 @@ impl UnknownKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -934,6 +934,39 @@ impl DataType {
         }
     }
 
+    pub fn does_match_schema_type(&self, schema_type: &DataType) -> bool {
+        if self == schema_type {
+            return true;
+        }
+
+        match (self, schema_type) {
+            (DataType::List(l), DataType::List(r)) => l.does_match_schema_type(r),
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(l, sl), DataType::Array(r, sr)) => {
+                sl == sr && l.does_match_schema_type(r)
+            },
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(l), DataType::Struct(r)) => {
+                if l.len() != r.len() {
+                    return false;
+                }
+                let mut matches = true;
+                for (l, r) in l.iter().zip(r.iter()) {
+                    matches &= l.dtype.does_match_schema_type(&r.dtype);
+                }
+                matches
+            },
+            (DataType::Null, DataType::Null) => true,
+            #[cfg(feature = "dtype-decimal")]
+            (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => s1 == s2,
+            // We don't allow the other way around, only if our current type is
+            // null and the schema isn't we allow it.
+            (DataType::Null, _) => true,
+
+            _ => false,
+        }
+    }
+
     /// Answers if this type matches the given type of a schema.
     ///
     /// Allows (nested) Null types in this type to match any type in the schema,
@@ -1106,6 +1139,85 @@ impl Display for DataType {
             DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
+    }
+}
+
+impl std::fmt::Debug for DataType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use DataType::*;
+        match self {
+            Boolean => write!(f, "Boolean"),
+            UInt8 => write!(f, "UInt8"),
+            UInt16 => write!(f, "UInt16"),
+            UInt32 => write!(f, "UInt32"),
+            UInt64 => write!(f, "UInt64"),
+            Int8 => write!(f, "Int8"),
+            Int16 => write!(f, "Int16"),
+            Int32 => write!(f, "Int32"),
+            Int64 => write!(f, "Int64"),
+            Int128 => write!(f, "Int128"),
+            Float32 => write!(f, "Float32"),
+            Float64 => write!(f, "Float64"),
+            String => write!(f, "String"),
+            Binary => write!(f, "Binary"),
+            BinaryOffset => write!(f, "BinaryOffset"),
+            Date => write!(f, "Date"),
+            Time => write!(f, "Time"),
+            Duration(unit) => write!(f, "Duration('{unit}')"),
+            Datetime(unit, opt_tz) => {
+                if let Some(tz) = opt_tz {
+                    write!(f, "Datetime('{unit}', '{tz}')")
+                } else {
+                    write!(f, "Datetime('{unit}')")
+                }
+            },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(opt_p, opt_s) => match (opt_p, opt_s) {
+                (None, None) => write!(f, "Decimal(None, None)"),
+                (None, Some(s)) => write!(f, "Decimal(None, {s})"),
+                (Some(p), None) => write!(f, "Decimal({p}, None)"),
+                (Some(p), Some(s)) => write!(f, "Decimal({p}, {s})"),
+            },
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
+            List(inner) => write!(f, "List({inner:?})"),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let mut first = true;
+                write!(f, "Struct({{")?;
+                for field in fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "'{}': {:?}", field.name(), field.dtype())?;
+                    first = false;
+                }
+                write!(f, "}})")
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(cats, _) => {
+                if cats.is_global() {
+                    write!(f, "Categorical")
+                } else if cats.namespace().is_empty() && cats.physical() == CategoricalPhysical::U32
+                {
+                    write!(f, "Categorical('{}')", cats.name())
+                } else {
+                    write!(
+                        f,
+                        "Categorical('{}', '{}', {:?})",
+                        cats.name(),
+                        cats.namespace(),
+                        cats.physical()
+                    )
+                }
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => write!(f, "Enum([...])"),
+            #[cfg(feature = "object")]
+            Object(_) => write!(f, "Object"),
+            Null => write!(f, "Null"),
+            Unknown(kind) => write!(f, "Unknown({kind:?})"),
+        }
     }
 }
 

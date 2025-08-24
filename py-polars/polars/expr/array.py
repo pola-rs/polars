@@ -94,9 +94,9 @@ class ExprArrayNameSpace:
         │ [4]           │
         └───────────────┘
         """
-        offset = parse_into_expression(offset)
-        length = parse_into_expression(length) if length is not None else None
-        return wrap_expr(self._pyexpr.arr_slice(offset, length, as_array))
+        offset_pyexpr = parse_into_expression(offset)
+        length_pyexpr = parse_into_expression(length) if length is not None else None
+        return wrap_expr(self._pyexpr.arr_slice(offset_pyexpr, length_pyexpr, as_array))
 
     def head(self, n: int | str | Expr = 5, *, as_array: bool = False) -> Expr:
         """
@@ -186,8 +186,8 @@ class ExprArrayNameSpace:
         │ [3]           │
         └───────────────┘
         """
-        n = parse_into_expression(n)
-        return wrap_expr(self._pyexpr.arr_tail(n, as_array))
+        n_pyexpr = parse_into_expression(n)
+        return wrap_expr(self._pyexpr.arr_tail(n_pyexpr, as_array))
 
     def min(self) -> Expr:
         """
@@ -664,8 +664,8 @@ class ExprArrayNameSpace:
         │ [7, 8, 9]     ┆ 0   ┆ 7   │
         └───────────────┴─────┴─────┘
         """
-        index = parse_into_expression(index)
-        return wrap_expr(self._pyexpr.arr_get(index, null_on_oob))
+        index_pyexpr = parse_into_expression(index)
+        return wrap_expr(self._pyexpr.arr_get(index_pyexpr, null_on_oob))
 
     def first(self) -> Expr:
         """
@@ -756,8 +756,8 @@ class ExprArrayNameSpace:
         │ ["x", "y"]    ┆ _         ┆ x_y  │
         └───────────────┴───────────┴──────┘
         """
-        separator = parse_into_expression(separator, str_as_lit=True)
-        return wrap_expr(self._pyexpr.arr_join(separator, ignore_nulls))
+        separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
+        return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
     def explode(self) -> Expr:
         """
@@ -824,8 +824,8 @@ class ExprArrayNameSpace:
         │ ["a", "c"]    ┆ true     │
         └───────────────┴──────────┘
         """
-        item = parse_into_expression(item, str_as_lit=True)
-        return wrap_expr(self._pyexpr.arr_contains(item, nulls_equal))
+        item_pyexpr = parse_into_expression(item, str_as_lit=True)
+        return wrap_expr(self._pyexpr.arr_contains(item_pyexpr, nulls_equal))
 
     def count_matches(self, element: IntoExpr) -> Expr:
         """
@@ -853,8 +853,8 @@ class ExprArrayNameSpace:
         │ [2, 2]        ┆ 2              │
         └───────────────┴────────────────┘
         """
-        element = parse_into_expression(element, str_as_lit=True)
-        return wrap_expr(self._pyexpr.arr_count_matches(element))
+        element_pyexpr = parse_into_expression(element, str_as_lit=True)
+        return wrap_expr(self._pyexpr.arr_count_matches(element_pyexpr))
 
     def to_struct(
         self, fields: Sequence[str] | Callable[[int], str] | None = None
@@ -960,5 +960,5 @@ class ExprArrayNameSpace:
         │ [4, 5, 6]     ┆ [6, null, null] │
         └───────────────┴─────────────────┘
         """
-        n = parse_into_expression(n)
-        return wrap_expr(self._pyexpr.arr_shift(n))
+        n_pyexpr = parse_into_expression(n)
+        return wrap_expr(self._pyexpr.arr_shift(n_pyexpr))

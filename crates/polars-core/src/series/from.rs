@@ -62,15 +62,11 @@ impl Series {
     ) -> Self {
         use DataType::*;
         match dtype {
-            #[cfg(feature = "dtype-i8")]
             Int8 => Int8Chunked::from_chunks(name, chunks).into_series(),
-            #[cfg(feature = "dtype-i16")]
             Int16 => Int16Chunked::from_chunks(name, chunks).into_series(),
             Int32 => Int32Chunked::from_chunks(name, chunks).into_series(),
             Int64 => Int64Chunked::from_chunks(name, chunks).into_series(),
-            #[cfg(feature = "dtype-u8")]
             UInt8 => UInt8Chunked::from_chunks(name, chunks).into_series(),
-            #[cfg(feature = "dtype-u16")]
             UInt16 => UInt16Chunked::from_chunks(name, chunks).into_series(),
             UInt32 => UInt32Chunked::from_chunks(name, chunks).into_series(),
             UInt64 => UInt64Chunked::from_chunks(name, chunks).into_series(),

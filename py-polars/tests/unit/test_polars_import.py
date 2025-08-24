@@ -10,10 +10,10 @@ import pytest
 import polars as pl
 from polars import selectors as cs
 
-# set a maximum cutoff at 0.3 secs; note that we are typically much faster
+# set a maximum cutoff at 0.5 secs; note that we are typically much faster
 # than this (more like ~0.07 secs, depending on hardware), but we allow a
 # margin of error to account for frequent noise from slow/contended CI.
-MAX_ALLOWED_IMPORT_TIME = 300_000  # << microseconds
+MAX_ALLOWED_IMPORT_TIME = 500_000  # << microseconds
 
 
 def _import_time_from_frame(tm: pl.DataFrame) -> int:

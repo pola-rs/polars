@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{InitHashMaps, PlIndexMap};
+use polars_core::prelude::{InitHashMaps, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
@@ -21,7 +21,7 @@ use crate::physical_plan::lower_expr::{
     build_select_stream, compute_output_schema, is_elementwise_rec_cached,
     is_fake_elementwise_function, is_input_independent,
 };
-use crate::physical_plan::lower_ir::build_slice_stream;
+use crate::physical_plan::lower_ir::{build_row_idx_stream, build_slice_stream};
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 #[allow(clippy::too_many_arguments)]
@@ -333,7 +333,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Sum(input)
                 | IRAggExpr::Var(input, ..)
                 | IRAggExpr::Std(input, ..)
-                | IRAggExpr::Count(input, ..) => {
+                | IRAggExpr::Count { input, .. } => {
                     let agg = agg.clone();
                     let input = *input;
                     if is_input_independent(input, expr_arena, expr_cache) {
@@ -396,7 +396,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
 #[allow(clippy::too_many_arguments)]
 fn try_build_streaming_group_by(
-    input: PhysStream,
+    mut input: PhysStream,
     keys: &[ExprIR],
     aggs: &[ExprIR],
     maintain_order: bool,
@@ -407,7 +407,7 @@ fn try_build_streaming_group_by(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
 ) -> Option<PolarsResult<PhysStream>> {
-    if apply.is_some() || maintain_order {
+    if apply.is_some() {
         return None; // TODO
     }
 
@@ -421,6 +421,20 @@ fn try_build_streaming_group_by(
             polars_err!(ComputeError: "at least one key is required in a group_by operation"),
         ));
     }
+
+    // Augment with row index if maintaining order.
+    let row_idx_name = unique_column_name();
+    let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
+    let mut agg_storage;
+    let aggs = if maintain_order {
+        input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
+        let first_agg_node = expr_arena.add(AExpr::Agg(IRAggExpr::First(row_idx_node)));
+        agg_storage = aggs.to_vec();
+        agg_storage.push(ExprIR::from_node(first_agg_node, expr_arena));
+        &agg_storage
+    } else {
+        aggs
+    };
 
     let all_independent = keys
         .iter()
@@ -487,6 +501,19 @@ fn try_build_streaming_group_by(
         input_exprs.push(ExprIR::new(node, OutputName::Alias(name.clone())));
     }
 
+    // If all inputs are input independent add a dummy column so the group sizes are correct. See #23868.
+    if input_exprs
+        .iter()
+        .all(|e| is_input_independent(e.node(), expr_arena, expr_cache))
+    {
+        let dummy_col_name = phys_sm[input.node].output_schema.get_at_index(0).unwrap().0;
+        let dummy_col = expr_arena.add(AExpr::Column(dummy_col_name.clone()));
+        input_exprs.push(ExprIR::new(
+            dummy_col,
+            OutputName::ColumnLhs(dummy_col_name.clone()),
+        ));
+    }
+
     let pre_select =
         build_select_stream(input, &input_exprs, expr_arena, phys_sm, expr_cache, ctx).ok()?;
 
@@ -498,7 +525,7 @@ fn try_build_streaming_group_by(
     )
     .unwrap();
     let agg_node = phys_sm.insert(PhysNode::new(
-        group_by_output_schema,
+        group_by_output_schema.clone(),
         PhysNodeKind::GroupBy {
             input: pre_select,
             key: trans_keys,
@@ -506,14 +533,32 @@ fn try_build_streaming_group_by(
         },
     ));
 
+    // Sort the input based on the first row index if maintaining order.
+    let post_select_input = if maintain_order {
+        let sort_node = phys_sm.insert(PhysNode::new(
+            group_by_output_schema,
+            PhysNodeKind::Sort {
+                input: PhysStream::first(agg_node),
+                by_column: vec![ExprIR::from_node(row_idx_node, expr_arena)],
+                slice: None,
+                sort_options: SortMultipleOptions::new(),
+            },
+        ));
+        trans_output_exprs.pop(); // Remove row idx from post-select.
+        PhysStream::first(sort_node)
+    } else {
+        PhysStream::first(agg_node)
+    };
+
     let post_select = build_select_stream(
-        PhysStream::first(agg_node),
+        post_select_input,
         &trans_output_exprs,
         expr_arena,
         phys_sm,
         expr_cache,
         ctx,
     );
+
     let out = if let Some((offset, len)) = options.slice {
         post_select.map(|s| build_slice_stream(s, offset, len, phys_sm))
     } else {
