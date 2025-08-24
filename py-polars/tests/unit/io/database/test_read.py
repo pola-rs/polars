@@ -7,7 +7,7 @@ from contextlib import suppress
 from datetime import date
 from pathlib import Path
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 with suppress(ModuleNotFoundError):  # not available on windows
     import adbc_driver_sqlite.dbapi
@@ -128,7 +128,7 @@ class MockResultSet:
 class DatabaseReadTestParams(NamedTuple):
     """Clarify read test params."""
 
-    read_method: str
+    read_method: Literal["read_database", "read_database_uri"]
     connect_using: Any
     expected_dtypes: SchemaDefinition
     expected_dates: list[date | str]
@@ -223,7 +223,7 @@ class ExceptionTestParams(NamedTuple):
                 schema_overrides={"id": pl.Int32, "value": pl.Float32},
                 batch_size=1,
             ),
-            id="conn: sqlite3",
+            id="conn: sqlite3 (batched)",
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -282,7 +282,7 @@ class ExceptionTestParams(NamedTuple):
     ],
 )
 def test_read_database(
-    read_method: str,
+    read_method: Literal["read_database", "read_database_uri"],
     connect_using: Any,
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
@@ -342,6 +342,154 @@ def test_read_database(
 
     # note: 'cursor.description' is not reliable when no query
     # data is returned, so no point comparing expected dtypes
+    assert df_empty.columns == ["id", "name", "value", "date"]
+    assert df_empty.shape == (0, 4)
+    assert df_empty["date"].to_list() == []
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    (
+        "read_method",
+        "connect_using",
+        "expected_dtypes",
+        "expected_dates",
+        "schema_overrides",
+        "batch_size",
+    ),
+    [
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: sqlite3.connect(path, detect_types=True),
+                expected_dtypes={
+                    "id": pl.Int32,
+                    "name": pl.String,
+                    "value": pl.Float32,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.Int32, "value": pl.Float32},
+                batch_size=1,
+            ),
+            id="conn: sqlite3",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: create_engine(
+                    f"sqlite:///{path}",
+                    connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
+                ).connect(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                batch_size=1,
+            ),
+            id="conn: sqlalchemy",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=adbc_sqlite_connect,
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="conn: adbc",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=adbc_sqlite_connect,
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+                batch_size=1,
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="conn: adbc (ignore batch_size)",
+        ),
+    ],
+)
+def test_read_database_iter_batches(
+    read_method: Literal["read_database"],
+    connect_using: Any,
+    expected_dtypes: dict[str, pl.DataType],
+    expected_dates: list[date | str],
+    schema_overrides: SchemaDict | None,
+    batch_size: int | None,
+    tmp_sqlite_db: Path,
+) -> None:
+    if "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
+        # externally instantiated adbc connections
+        with connect_using(tmp_sqlite_db) as conn:
+            dfs = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data",
+                schema_overrides=schema_overrides,
+                iter_batches=True,
+                batch_size=batch_size,
+            )
+            empty_dfs = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+                schema_overrides=schema_overrides,
+                iter_batches=True,
+                batch_size=batch_size,
+            )
+            # must consume the iterators while the connection is open
+            dfs = list(dfs)
+            empty_dfs = list(empty_dfs)
+    else:
+        # other user-supplied connections
+        dfs = pl.read_database(
+            connection=connect_using(tmp_sqlite_db),
+            query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
+            schema_overrides=schema_overrides,
+            iter_batches=True,
+            batch_size=batch_size,
+        )
+        empty_dfs = pl.read_database(
+            connection=connect_using(tmp_sqlite_db),
+            query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+            schema_overrides=schema_overrides,
+            iter_batches=True,
+            batch_size=batch_size,
+        )
+
+    df: pl.DataFrame = pl.concat(dfs)
+    # validate the expected query return (data and schema)
+    assert df.schema == expected_dtypes
+    assert df.shape == (2, 4)
+    assert df["date"].to_list() == expected_dates
+
+    # some drivers return an empty iterator when there is no result
+    try:
+        df_empty: pl.DataFrame = pl.concat(empty_dfs)
+    except ValueError:
+        return
+    # # note: 'cursor.description' is not reliable when no query
+    # # data is returned, so no point comparing expected dtypes
     assert df_empty.columns == ["id", "name", "value", "date"]
     assert df_empty.shape == (0, 4)
     assert df_empty["date"].to_list() == []
@@ -728,9 +876,9 @@ def test_read_database_uri_parameterised_multiple(
         ("turbodbc", None, False, "fetchallarrow"),
         ("turbodbc", 50_000, False, "fetchallarrow"),
         ("turbodbc", 50_000, True, "fetcharrowbatches"),
-        ("adbc_driver_postgresql", None, False, "fetch_arrow_table"),
-        ("adbc_driver_postgresql", 75_000, False, "fetch_arrow_table"),
-        ("adbc_driver_postgresql", 75_000, True, "fetch_arrow_table"),
+        ("adbc_driver_postgresql", None, False, "fetch_arrow"),
+        ("adbc_driver_postgresql", 75_000, False, "fetch_arrow"),
+        ("adbc_driver_postgresql", 75_000, True, "fetch_record_batch"),
     ],
 )
 def test_read_database_mocked(
@@ -740,7 +888,7 @@ def test_read_database_mocked(
     # mock them so we can check that we're calling the expected methods
     arrow = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
 
-    reg = ARROW_DRIVER_REGISTRY.get(driver, {})  # type: ignore[var-annotated]
+    reg = ARROW_DRIVER_REGISTRY.get(driver, [{}])[0]  # type: ignore[var-annotated]
     exact_batch_size = reg.get("exact_batch_size", False)
     repeat_batch_calls = reg.get("repeat_batch_calls", False)
 
