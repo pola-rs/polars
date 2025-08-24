@@ -23,6 +23,7 @@ const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[allow(clippy::large_enum_variant)]
 pub enum DslPlan {
     #[cfg(feature = "python")]
     PythonScan {
