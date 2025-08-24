@@ -63,7 +63,7 @@ def _read_sql_adbc(
 ) -> DataFrame:
     module_name = _get_adbc_module_name_from_uri(connection_uri)
     # import the driver first, to ensure a good error message if not installed
-    adbc_driver = _import_optional_adbc_driver(module_name, dbapi_submodule=False)
+    _import_optional_adbc_driver(module_name, dbapi_submodule=False)
     adbc_driver_manager = import_optional("adbc_driver_manager")
     adbc_str_version = getattr(adbc_driver_manager, "__version__", "0.0")
     adbc_version = parse_version(adbc_str_version)
