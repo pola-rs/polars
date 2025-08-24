@@ -3529,3 +3529,18 @@ def test_literal_predicate_23901() -> None:
 
     f.seek(0)
     assert_frame_equal(pl.scan_parquet(f).filter(pl.lit(1) == 1).collect(), df)
+
+
+def test_str_plain_is_in_more_than_4_values_24167() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": ["a"]})
+    pq.write_table(df.to_arrow(), f, use_dictionary=False)
+
+    f.seek(0)
+    lf = pl.scan_parquet(f).filter(pl.col.a.is_in(["a", "y", "z", "w", "x"]))
+
+    assert_frame_equal(
+        lf.collect(),
+        lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
