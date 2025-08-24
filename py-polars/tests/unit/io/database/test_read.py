@@ -877,21 +877,30 @@ def test_read_database_uri_parameterised_multiple(
         ("turbodbc", 50_000, False, "fetchallarrow"),
         ("turbodbc", 50_000, True, "fetcharrowbatches"),
         pytest.param(
-            ("adbc_driver_postgresql", None, False, "fetch_arrow"),
+            "adbc_driver_postgresql",
+            None,
+            False,
+            "fetch_arrow",
             marks=pytest.mark.skipif(
                 sys.platform == "win32",
                 reason="adbc_driver_postgresql not available on Windows",
             ),
         ),
         pytest.param(
-            ("adbc_driver_postgresql", 75_000, False, "fetch_arrow"),
+            "adbc_driver_postgresql",
+            75_000,
+            False,
+            "fetch_arrow",
             marks=pytest.mark.skipif(
                 sys.platform == "win32",
                 reason="adbc_driver_postgresql not available on Windows",
             ),
         ),
         pytest.param(
-            ("adbc_driver_postgresql", 75_000, True, "fetch_record_batch"),
+            "adbc_driver_postgresql",
+            75_000,
+            True,
+            "fetch_record_batch",
             marks=pytest.mark.skipif(
                 sys.platform == "win32",
                 reason="adbc_driver_postgresql not available on Windows",
