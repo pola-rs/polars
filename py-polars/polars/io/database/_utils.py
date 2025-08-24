@@ -61,10 +61,32 @@ def _read_sql_adbc(
     schema_overrides: SchemaDict | None,
     execute_options: dict[str, Any] | None = None,
 ) -> DataFrame:
-    conn = _open_adbc_connection(connection_uri)
+    module_name = _get_adbc_module_name_from_uri(connection_uri)
+    # import the driver first, to ensure a good error message if not installed
+    adbc_driver = _import_optional_adbc_driver(module_name, dbapi_submodule=False)
     adbc_driver_manager = import_optional("adbc_driver_manager")
     adbc_str_version = getattr(adbc_driver_manager, "__version__", "0.0")
     adbc_version = parse_version(adbc_str_version)
+
+    # adbc_driver_manager must be >= 1.7.0 to support passing Python sequences into
+    # parameterised queries (via execute_options) without PyArrow installed
+    adbc_version_no_pyarrow_required = "1.7.0"
+    has_required_adbc_version = adbc_version >= parse_version(
+        adbc_version_no_pyarrow_required
+    )
+
+    if (
+        execute_options is not None
+        and not _PYARROW_AVAILABLE
+        and not has_required_adbc_version
+    ):
+        msg = (
+            "pyarrow is required for adbc-driver-manager < "
+            f"{adbc_version_no_pyarrow_required} when using parameterized queries (via "
+            f"`execute_options`), found {adbc_str_version}.\nEither upgrade "
+            "`adbc-driver-manager` (suggested) or install `pyarrow`"
+        )
+        raise ModuleUpgradeRequiredError(msg)
 
     # From adbc_driver_manager version 1.6.0 Cursor.fetch_arrow() was introduced,
     # returning an object implementing the Arrow PyCapsule interface. This should be
@@ -73,30 +95,7 @@ def _read_sql_adbc(
         "fetch_arrow" if adbc_version >= (1, 6, 0) else "fetch_arrow_table"
     )
 
-    # From version 1.6.0 adbc_driver_manager no longer requires PyArrow for ordinary
-    # (non-parameterised) queries.
-    # From version 1.7.0 adbc_driver_manager no longer requires PyArrow for
-    # passing Python sequences into parameterised queries (via execute_options)
-    adbc_version_no_pyarrow_required = "1.6.0" if execute_options is None else "1.7.0"
-
-    # Whether the user has the ADBC version they require to not have PyArrow
-    has_required_adbc_version = adbc_version >= parse_version(
-        adbc_version_no_pyarrow_required
-    )
-
-    if not has_required_adbc_version and not _PYARROW_AVAILABLE:
-        msg_helper = (
-            " when using parameterized queries (via `execute_options`)"
-            if execute_options is not None
-            else ""
-        )
-        msg = (
-            f"pyarrow is required for adbc-driver-manager < "
-            f"{adbc_version_no_pyarrow_required}{msg_helper}, found {adbc_str_version}.\n"
-            "Either upgrade `adbc-driver-manager` (suggested) or install `pyarrow`"
-        )
-        raise ModuleUpgradeRequiredError(msg)
-    with conn, conn.cursor() as cursor:
+    with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
         cursor.execute(query, **(execute_options or {}))
         tbl = getattr(cursor, fetch_method_name)()
         return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
