@@ -282,7 +282,7 @@ impl SlicePushDown {
                 left_on,
                 right_on,
                 mut options
-            }, Some(state)) if !matches!(options.options, Some(JoinTypeOptionsIR::Cross { .. })) => {
+            }, Some(state)) if !matches!(options.options, Some(JoinTypeOptionsIR::CrossAndFilter { .. })) => {
                 // first restart optimization in both inputs and get the updated LP
                 let lp_left = lp_arena.take(input_left);
                 let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;

@@ -48,9 +48,39 @@ autolabeler:
   - label: fix
     title:
       - '/^fix/'
-  - label: sql
+  - label: A-sql
     title:
       - '/\bsql\b/i'
+  - label: A-io-avro
+    title:
+      - '/\bavro\b/i'
+  - label: A-io-catalog
+    title:
+      - '/catalog/i'
+  - label: A-io-csv
+    title:
+      - '/\bcsv\b/i'
+  - label: A-io-database
+    title:
+      - '/database/i'
+  - label: A-io-iceberg
+    title:
+      - '/iceberg/i'
+  - label: A-io-json
+    title:
+      - '/json/i'
+  - label: A-io-parquet
+    title:
+      - '/parquet/i'
+  - label: A-io-spreadsheet
+    title:
+      - '/spreadsheet|excel/i'
+  - label: A-interop-numpy
+    title:
+      - '/numpy/i'
+  - label: A-interop-pandas
+    title:
+      - '/pandas/i'
   - label: performance
     title:
       - '/^perf/'

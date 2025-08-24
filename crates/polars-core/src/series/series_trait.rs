@@ -619,7 +619,7 @@ pub trait SeriesTrait:
     }
 }
 
-impl (dyn SeriesTrait + '_) {
+impl dyn SeriesTrait + '_ {
     pub fn unpack<T: PolarsPhysicalType>(&self) -> PolarsResult<&ChunkedArray<T>> {
         polars_ensure!(&T::get_static_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())

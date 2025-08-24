@@ -60,11 +60,15 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
     }
 }
 
-unsafe fn retrieve_error_msg(lib: &Library) -> &CStr {
-    let symbol: libloading::Symbol<unsafe extern "C" fn() -> *mut std::os::raw::c_char> =
-        lib.get(b"_polars_plugin_get_last_error_message\0").unwrap();
-    let msg_ptr = symbol();
-    CStr::from_ptr(msg_ptr)
+fn retrieve_error_msg(lib: &Library) -> String {
+    unsafe {
+        // SAFETY: _polars_plugin_get_last_error_message returns data stored
+        // in a null-terminated thread-local so we immediately clone it.
+        let symbol: libloading::Symbol<unsafe extern "C" fn() -> *mut std::os::raw::c_char> =
+            lib.get(b"_polars_plugin_get_last_error_message\0").unwrap();
+        let msg_ptr = symbol();
+        CStr::from_ptr(msg_ptr).to_string_lossy().into_owned()
+    }
 }
 
 pub(super) unsafe fn call_plugin(
@@ -128,7 +132,6 @@ pub(super) unsafe fn call_plugin(
             import_series(return_value).map(Column::from)
         } else {
             let msg = retrieve_error_msg(lib);
-            let msg = msg.to_string_lossy();
             check_panic(msg.as_ref())?;
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }
@@ -209,7 +212,6 @@ pub(super) unsafe fn plugin_field(
             Ok(out)
         } else {
             let msg = retrieve_error_msg(lib);
-            let msg = msg.to_string_lossy();
             check_panic(msg.as_ref())?;
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }

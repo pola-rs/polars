@@ -383,7 +383,7 @@ def test_sort_by_different_lengths() -> None:
     )
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -393,7 +393,7 @@ def test_sort_by_different_lengths() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -613,7 +613,7 @@ def test_sort_by_error() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="expressions in 'sort_by' produced a different number of groups",
+        match="expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
@@ -744,3 +744,21 @@ def test_raise_on_different_results_20104() -> None:
             .gather_every(2, offset=1)
             .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )
+
+
+@pytest.mark.parametrize("fill_value", [None, -1])
+def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    df_shift = None
+    with pytest.deprecated_call(  # @2.0
+        match=r"shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+    ):
+        df_shift = df.select(
+            pl.col.x.shift(pl.col.x.filter(pl.col.x > 3).first(), fill_value=fill_value)
+        )
+    # Check that the result is a column of nulls, even if the fill_value is different
+    assert_frame_equal(
+        df_shift,
+        pl.DataFrame({"x": [None, None, None]}),
+        check_dtypes=False,
+    )

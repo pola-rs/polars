@@ -523,7 +523,7 @@ fn prune_splits_on_duplicates(time: &[i64], thread_offsets: &mut Vec<(usize, usi
         }
     }
     // Check last block
-    if thread_offsets.len() % 2 == 0 {
+    if thread_offsets.len().is_multiple_of(2) {
         let window = &thread_offsets[thread_offsets.len() - 2..];
         if is_valid(window) {
             new.push(thread_offsets[thread_offsets.len() - 1])

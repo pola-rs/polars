@@ -23,5 +23,5 @@ pub fn get_length(values: &[u8]) -> Option<usize> {
 /// Returns the ceil of value / 8
 #[inline]
 pub fn ceil8(value: usize) -> usize {
-    value / 8 + ((value % 8 != 0) as usize)
+    value / 8 + (!value.is_multiple_of(8) as usize)
 }

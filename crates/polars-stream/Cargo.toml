@@ -39,7 +39,7 @@ polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "unique_counts", "dtype-struct"] }
+polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
 
 [build-dependencies]
 version_check = { workspace = true }

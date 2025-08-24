@@ -1049,7 +1049,7 @@ impl Deref for Series {
     }
 }
 
-impl<'a> AsRef<(dyn SeriesTrait + 'a)> for Series {
+impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
     }
