@@ -368,3 +368,142 @@ def test_slice_slice_pushdown() -> None:
                         .slice(outer_offset, outer_len)
                         .collect(),
                     )
+
+
+@pytest.mark.parametrize("groupby", [True, False])
+@pytest.mark.parametrize(
+    "len",
+    [
+        0,
+        pl.lit(0),
+        pl.col("b").first(),
+    ],
+)
+@pytest.mark.parametrize(
+    "offset",
+    [
+        0,
+        pl.lit(0),
+        pl.col("a").first(),
+    ],
+)
+@pytest.mark.parametrize(
+    "lit",
+    [
+        pl.lit(7),
+        pl.lit([7]),
+        pl.lit([[7]]),
+        pl.lit(pl.Series([7, 8, 9])),
+        pl.col("c"),  # baseline, no literal
+    ],
+)
+def test_schema_slice_on_literal_23999(
+    lit: pl.Expr, offset: pl.Expr, len: pl.Expr, groupby: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [10, 10, 10, 20, 20, 30],
+            "a": [0, 0, 0, 0, 0, 0],
+            "b": [1, 1, 1, 1, 1, 1],
+            "c": [11, 12, 13, 21, 22, 31],
+        }
+    )
+
+    # slice
+    if not groupby:
+        q = df.lazy().select(lit.slice(offset, len))
+    else:
+        q = df.lazy().group_by("g").agg(lit.slice(offset, len))
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("groupby", [True, False])
+@pytest.mark.parametrize(
+    "idx",
+    [
+        0,
+        pl.lit(0),
+        pl.col("a").first(),
+    ],
+)
+@pytest.mark.parametrize(
+    "lit",
+    [
+        pl.lit(7),
+        pl.lit([7]),
+        pl.lit([[7]]),
+        pl.lit(pl.Series([7, 8, 9])),
+        pl.col("c"),  # baseline, no literal
+    ],
+)
+def test_schema_gather_get_on_literal_24101(
+    lit: pl.Expr, idx: pl.Expr, groupby: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [10, 10, 10, 20, 20, 30],
+            "a": [0, 0, 0, 0, 0, 0],
+            "b": [1, 1, 1, 1, 1, 1],
+            "c": [11, 12, 13, 21, 22, 31],
+        }
+    )
+
+    # gather
+    if not groupby:
+        q = df.lazy().select(lit.gather(idx))
+    else:
+        q = df.lazy().group_by("g").agg(lit.gather(idx))
+    assert q.collect_schema() == q.collect().schema
+
+    # get
+    if not groupby:
+        q = df.lazy().select(lit.get(idx))
+    else:
+        q = df.lazy().group_by("g").agg(lit.get(idx))
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("groupby", [True, False])
+@pytest.mark.parametrize(
+    "len",
+    [
+        1,
+        pl.lit(1),
+        pl.col("b").first(),
+    ],
+)
+@pytest.mark.parametrize(
+    "lit",
+    [
+        pl.lit(7),
+        pl.lit([7]),
+        pl.lit([[7]]),
+        pl.lit(pl.Series([7, 8, 9])),
+        pl.col("c"),  # baseline, no literal
+    ],
+)
+def test_schema_head_tail_on_literal_24102(
+    lit: pl.Expr, len: pl.Expr, groupby: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [10, 10, 10, 20, 20, 30],
+            "a": [0, 0, 0, 0, 0, 0],
+            "b": [1, 1, 1, 1, 1, 1],
+            "c": [11, 12, 13, 21, 22, 31],
+        }
+    )
+
+    # head
+    if not groupby:
+        q = df.lazy().select(lit.head(len))
+    else:
+        q = df.lazy().group_by("g").agg(lit.head(len))
+    assert q.collect_schema() == q.collect().schema
+
+    # tail
+    if not groupby:
+        q = df.lazy().select(lit.tail(len))
+    else:
+        q = df.lazy().group_by("g").agg(lit.tail(len))
+    assert q.collect_schema() == q.collect().schema
