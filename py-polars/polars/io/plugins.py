@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from typing import Callable
 
+    import pyarrow as pa
+
     from polars import DataFrame, Expr, LazyFrame
     from polars._typing import SchemaDict
 
@@ -22,7 +24,7 @@ def register_io_source(
         [list[str] | None, Expr | None, int | None, int | None], Iterator[DataFrame]
     ],
     *,
-    schema: Callable[[], SchemaDict] | SchemaDict,
+    schema: pa.Schema | Callable[[], SchemaDict] | SchemaDict,
     validate_schema: bool = False,
 ) -> LazyFrame:
     """
