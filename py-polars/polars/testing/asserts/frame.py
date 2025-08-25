@@ -99,7 +99,7 @@ def assert_frame_equal(
     >>> from polars.testing import assert_frame_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 5, 3]})
-    >>> assert_frame_equal(df1, df2)  # doctest: +ELLIPSIS
+    >>> assert_frame_equal(df1, df2)
     Traceback (most recent call last):
     ...
     AssertionError: DataFrames are different (value mismatch for column "a")

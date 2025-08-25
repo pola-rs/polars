@@ -1541,7 +1541,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     lf.with_columns(pl.col("foo").cum_sum().alias("bar"))
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
-        ... )  # doctest: +ELLIPSIS
+        ... )
         <LazyFrame at ...>
         """
 
@@ -3611,7 +3611,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> lf.lazy()  # doctest: +ELLIPSIS
+        >>> lf.lazy()
         <LazyFrame at ...>
         """
         return self
@@ -3795,7 +3795,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> lf.clone()  # doctest: +ELLIPSIS
+        >>> lf.clone()
         <LazyFrame at ...>
         """
         return self._from_pyldf(self._ldf.clone())
