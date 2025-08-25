@@ -3827,16 +3827,24 @@ class Series:
         """
         return self.len() == 0
 
-    def is_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> bool:
+    def is_sorted(
+        self,
+        *,
+        descending: bool = False,
+        nulls_last: bool = False,
+        multithreaded: bool = True,
+    ) -> bool:
         """
-        Check if the Series is sorted.
+        Check if the Series is sorted, according to the given criteria..
 
         Parameters
         ----------
         descending
-            Check if the Series is sorted in descending order
+            Check if the Series is sorted in descending order.
         nulls_last
             Set nulls at the end of the Series in sorted check.
+        multithreaded
+            Check sorted status using multiple threads.
 
         Examples
         --------
@@ -3848,7 +3856,7 @@ class Series:
         >>> s.is_sorted(descending=True)
         True
         """
-        return self._s.is_sorted(descending, nulls_last)
+        return self._s.is_sorted(descending, nulls_last, multithreaded)
 
     def not_(self) -> Series:
         """

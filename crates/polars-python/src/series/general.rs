@@ -403,11 +403,17 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, py: Python<'_>, descending: bool, nulls_last: bool) -> PyResult<bool> {
+    fn is_sorted(
+        &self,
+        py: Python<'_>,
+        descending: bool,
+        nulls_last: bool,
+        multithreaded: bool,
+    ) -> PyResult<bool> {
         let options = SortOptions {
             descending,
             nulls_last,
-            multithreaded: true,
+            multithreaded,
             maintain_order: false,
             limit: None,
         };

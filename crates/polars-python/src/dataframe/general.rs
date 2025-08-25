@@ -176,6 +176,25 @@ impl PyDataFrame {
         self.df.is_empty()
     }
 
+    pub fn is_sorted(
+        &self,
+        py: Python<'_>,
+        subset: Option<Vec<PyBackedStr>>,
+        descending: Vec<bool>,
+        nulls_last: Vec<bool>,
+        multithreaded: bool,
+    ) -> PyResult<bool> {
+        let sort_options = SortMultipleOptions {
+            descending,
+            nulls_last,
+            multithreaded,
+            maintain_order: false,
+            limit: None,
+        };
+        let subset = subset.map(strings_to_pl_smallstr);
+        py.enter_polars(|| self.df.is_sorted(subset, sort_options))
+    }
+
     pub fn hstack(&self, py: Python<'_>, columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
         // @scalar-opt
