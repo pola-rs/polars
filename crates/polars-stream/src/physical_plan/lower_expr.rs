@@ -983,13 +983,18 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
-                function: IRFunctionExpr::Diff(NullBehavior::Drop),
+                function: IRFunctionExpr::Diff(null_behavior),
                 options: _,
             } => {
                 assert_eq!(inner_exprs.len(), 2);
 
-                // Transform:
+                // Transforms:
                 //    expr.diff(offset, "ignore")
+                //      ->
+                //    let expr = expr.cast(<signed datatype>)
+                //    in expr.shift(offset) - expr
+                //
+                //    expr.diff(offset, "drop")
                 //      ->
                 //    let expr = expr.cast(<signed datatype>)
                 //    let output_len = expr.len() - offset
@@ -1003,10 +1008,6 @@ fn lower_exprs_with_ctx(
                 let base_expr = inner_exprs[0].with_alias(base_name.clone());
                 let offset_expr = inner_exprs[1].with_alias(offset_name.clone());
 
-                let zero_literal = ctx
-                    .expr_arena
-                    .add(AExpr::Literal(LiteralValue::new_idxsize(0)));
-
                 // IR: expr = expr.cast(<signed datatype>)
                 let cast_expr = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Cast {
@@ -1019,102 +1020,73 @@ fn lower_exprs_with_ctx(
                     OutputName::Alias(base_name.clone()),
                 );
 
-                // IR: expr.len()
-                let len_expr = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Len),
-                    OutputName::Alias(base_name.clone()),
-                );
+                let shifted_expr;
+                let unshifted_expr;
+                match null_behavior {
+                    NullBehavior::Ignore => {
+                        // IR: expr.shift(offset, fill_value=None)
+                        let function = IRFunctionExpr::Shift;
+                        let options = function.function_options();
+                        unshifted_expr = ExprIR::new(
+                            ctx.expr_arena.add(AExpr::Function {
+                                input: vec![cast_expr.clone(), offset_expr.clone()],
+                                function,
+                                options,
+                            }),
+                            OutputName::Alias(subtract_rhs_name),
+                        );
+                        shifted_expr = cast_expr;
+                    },
+                    NullBehavior::Drop => {
+                        // IR: zero_literal = 0
+                        let zero_literal = ctx
+                            .expr_arena
+                            .add(AExpr::Literal(LiteralValue::new_idxsize(0)));
 
-                // IR: output_len = expr.len() - offset
-                let output_len_expr = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::BinaryExpr {
-                        left: len_expr.node(),
-                        op: Operator::Minus,
-                        right: offset_expr.node(),
-                    }),
-                    OutputName::Alias(output_len_name.clone()),
-                );
+                        // IR: expr.len()
+                        let len_expr = ExprIR::new(
+                            ctx.expr_arena.add(AExpr::Len),
+                            OutputName::Alias(base_name.clone()),
+                        );
 
-                // IR: expr.slice(offset, output_len)
-                let subtract_lhs_expr = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Slice {
-                        input: cast_expr.node(),
-                        offset: offset_expr.node(),
-                        length: output_len_expr.node(),
-                    }),
-                    OutputName::Alias(subtract_lhs_name.clone()),
-                );
+                        // IR: output_len = expr.len() - offset
+                        let output_len_expr = ExprIR::new(
+                            ctx.expr_arena.add(AExpr::BinaryExpr {
+                                left: len_expr.node(),
+                                op: Operator::Minus,
+                                right: offset_expr.node(),
+                            }),
+                            OutputName::Alias(output_len_name.clone()),
+                        );
 
-                // IR: expr.slice(0, output_len)
-                let subtract_rhs_expr = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Slice {
-                        input: cast_expr.node(),
-                        offset: zero_literal,
-                        length: output_len_expr.node(),
-                    }),
-                    OutputName::Alias(subtract_rhs_name.clone()),
-                );
+                        // IR: expr.slice(offset, output_len)
+                        shifted_expr = ExprIR::new(
+                            ctx.expr_arena.add(AExpr::Slice {
+                                input: cast_expr.node(),
+                                offset: offset_expr.node(),
+                                length: output_len_expr.node(),
+                            }),
+                            OutputName::Alias(subtract_lhs_name.clone()),
+                        );
 
-                // IR: expr.slice(offset, expr.len()) - expr.slice(0, expr.len())
+                        // IR: expr.slice(0, output_len)
+                        unshifted_expr = ExprIR::new(
+                            ctx.expr_arena.add(AExpr::Slice {
+                                input: cast_expr.node(),
+                                offset: zero_literal,
+                                length: output_len_expr.node(),
+                            }),
+                            OutputName::Alias(subtract_rhs_name.clone()),
+                        );
+                    },
+                }
+
+                // IR:
+                //   - <shifted column> - <unshifted column>
                 let output_expr = ctx.expr_arena.add(AExpr::BinaryExpr {
-                    left: subtract_lhs_expr.node(),
+                    left: shifted_expr.node(),
                     op: Operator::Minus,
-                    right: subtract_rhs_expr.node(),
-                });
-
-                let (stream, nodes) = lower_exprs_with_ctx(input, &[output_expr], ctx)?;
-                input_streams.insert(stream);
-                transformed_exprs.extend(nodes);
-            },
-
-            AExpr::Function {
-                input: ref inner_exprs,
-                function: IRFunctionExpr::Diff(NullBehavior::Ignore),
-                options: _,
-            } => {
-                assert_eq!(inner_exprs.len(), 2);
-
-                // Transform:
-                //    expr.diff(offset, "ignore")
-                //      ->
-                //    let expr = expr.cast(<signed datatype>)
-                //    in expr.shift(offset, fill_value=None) - expr
-
-                let base_name = unique_column_name();
-                let offset_name = unique_column_name();
-                let shifted_name = unique_column_name();
-                let base_expr = inner_exprs[0].with_alias(base_name.clone());
-                let offset_expr = inner_exprs[1].with_alias(offset_name.clone());
-
-                // IR: expr = expr.cast(<signed datatype>)
-                let cast_expr = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Cast {
-                        expr: base_expr.node(),
-                        dtype: base_expr
-                            .dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?
-                            .try_to_signed()?,
-                        options: CastOptions::NonStrict,
-                    }),
-                    OutputName::Alias(base_name.clone()),
-                );
-
-                // IR: expr.shift(offset, fill_value=None)
-                let function = IRFunctionExpr::Shift;
-                let options = function.function_options();
-                let shift_expr = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Function {
-                        input: vec![cast_expr.clone(), offset_expr.clone()],
-                        function,
-                        options,
-                    }),
-                    OutputName::Alias(shifted_name),
-                );
-
-                // IR: expr.shift(...) - expr
-                let output_expr = ctx.expr_arena.add(AExpr::BinaryExpr {
-                    left: cast_expr.node(),
-                    op: Operator::Minus,
-                    right: shift_expr.node(),
+                    right: unshifted_expr.node(),
                 });
 
                 let (stream, nodes) = lower_exprs_with_ctx(input, &[output_expr], ctx)?;
