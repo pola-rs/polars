@@ -6,6 +6,7 @@ use polars::io::csv::read::OwnedBatchedCsvReader;
 use polars::io::mmap::MmapBytesReader;
 use polars::prelude::*;
 use polars_utils::open_file;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
@@ -24,7 +25,7 @@ pub struct PyBatchedCsv {
 impl PyBatchedCsv {
     #[staticmethod]
     #[pyo3(signature = (
-        infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows, skip_lines,
+        infer_schema_length, batch_size_options, has_header, ignore_errors, n_rows, skip_rows, skip_lines,
         projection, separator, rechunk, columns, encoding, n_threads, path, schema_overrides,
         overwrite_dtype_slice, low_memory, comment_prefix, quote_char, null_values,
         missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header, row_index,
@@ -32,7 +33,7 @@ impl PyBatchedCsv {
     )]
     fn new(
         infer_schema_length: Option<usize>,
-        chunk_size: usize,
+        batch_size_options: Option<(String, usize)>,
         has_header: bool,
         ignore_errors: bool,
         n_rows: Option<usize>,
@@ -93,6 +94,24 @@ impl PyBatchedCsv {
                 .collect::<Vec<_>>()
         });
 
+        let batch_size_options = match batch_size_options {
+            None => BatchSizeOptions::UseDefault,
+            Some((s, _)) if s.as_str() == "default" => BatchSizeOptions::UseDefault,
+            Some((s, n)) if s.as_str() == "bytes" => BatchSizeOptions::EachBatchNBytes(n),
+            Some((s, n)) if s.as_str() == "bytes-strict" => {
+                BatchSizeOptions::EachBatchNBytesStrict(n)
+            },
+            Some((s, n)) if s.as_str() == "rows" => BatchSizeOptions::EachBatchNRows(n),
+            Some((s, n)) if s.as_str() == "rows-total" => {
+                BatchSizeOptions::TotalNextBatchesNRows(n)
+            },
+            _ => {
+                return Err(PyErr::new::<PyValueError, _>(
+                    "Invalid value for batch_size_options",
+                ));
+            },
+        };
+
         let file = open_file(&path).map_err(PyPolarsErr::from)?;
         let reader = Box::new(file) as Box<dyn MmapBytesReader>;
         let reader = CsvReadOptions::default()
@@ -104,7 +123,7 @@ impl PyBatchedCsv {
             .with_ignore_errors(ignore_errors)
             .with_projection(projection.map(Arc::new))
             .with_rechunk(rechunk)
-            .with_chunk_size(chunk_size)
+            .with_batch_size_options(batch_size_options)
             .with_columns(columns.map(|x| x.into_iter().map(PlSmallStr::from_string).collect()))
             .with_n_threads(n_threads)
             .with_dtype_overwrite(overwrite_dtype_slice.map(Arc::new))
