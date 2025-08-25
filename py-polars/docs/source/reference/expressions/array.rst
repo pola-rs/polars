@@ -13,6 +13,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.any
     Expr.arr.arg_max
     Expr.arr.arg_min
+    Expr.arr.concat
     Expr.arr.contains
     Expr.arr.count_matches
     Expr.arr.explode
