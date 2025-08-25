@@ -69,6 +69,7 @@ where
                 offset_fn,
                 no_nulls::compute_mean_weights,
                 &wts,
+                center,
             )
         },
     }
