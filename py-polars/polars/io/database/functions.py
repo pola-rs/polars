@@ -269,6 +269,7 @@ def read_database_uri(
     engine: Literal["adbc"],
     schema_overrides: SchemaDict | None = None,
     execute_options: dict[str, Any] | None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame: ...
 
 
@@ -284,6 +285,7 @@ def read_database_uri(
     engine: Literal["connectorx"] | None = None,
     schema_overrides: SchemaDict | None = None,
     execute_options: None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame: ...
 
 
@@ -299,6 +301,7 @@ def read_database_uri(
     engine: DbReadEngine | None = None,
     schema_overrides: None = None,
     execute_options: dict[str, Any] | None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame: ...
 
 
@@ -313,6 +316,7 @@ def read_database_uri(
     engine: DbReadEngine | None = None,
     schema_overrides: SchemaDict | None = None,
     execute_options: dict[str, Any] | None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame:
     """
     Read the results of a SQL query into a DataFrame, given a URI.
@@ -360,6 +364,11 @@ def read_database_uri(
         These options will be passed to the underlying query execution method as
         kwargs. Note that connectorx does not support this parameter and ADBC currently
         only supports positional 'qmark' style parameterization.
+    pre_execution_query
+        SQL query or list of SQL queries executed before main query (connectorx>=0.4.2).
+        Can be used to set runtime configurations using SET statements.
+        Only applicable for Postgres and MySQL source.
+        Only applicable with the connectorx engine.
 
     Notes
     -----
@@ -459,10 +468,14 @@ def read_database_uri(
             partition_num=partition_num,
             protocol=protocol,
             schema_overrides=schema_overrides,
+            pre_execution_query=pre_execution_query,
         )
     elif engine == "adbc":
         if not isinstance(query, str):
             msg = "only a single SQL query string is accepted for adbc"
+            raise ValueError(msg)
+        if pre_execution_query:
+            msg = "the 'adbc' engine does not support use of `pre_execution_query`"
             raise ValueError(msg)
         return _read_sql_adbc(
             query,
