@@ -81,7 +81,9 @@ def test_sort_on_agg_maintain_order() -> None:
             "val": [[1, 2, 33], [4, 5, 66], [7, 8, 99]],
         }
     )
-    assert_frame_equal(out.collect(optimizations=opts).sort("grp"), expected)
+    assert_frame_equal(
+        out.collect(optimizations=opts).sort("grp"), expected, check_row_order=False
+    )
 
 
 @pytest.mark.parametrize(

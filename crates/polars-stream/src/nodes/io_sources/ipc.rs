@@ -20,15 +20,15 @@ use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 use polars_utils::slice_enum::Slice;
 
-use super::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
-use super::multi_file_reader::reader_interface::{BeginReadArgs, calc_row_position_after_slice};
+use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
+use super::multi_scan::reader_interface::{BeginReadArgs, calc_row_position_after_slice};
 use crate::async_executor::{AbortOnDropHandle, JoinHandle, TaskPriority, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
-    FileReader, FileReaderCallbacks,
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::{
+    FileReader, FileReaderCallbacks, Projection,
 };
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
@@ -41,9 +41,9 @@ pub mod builder {
     use polars_plan::dsl::ScanSource;
 
     use super::IpcFileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+    use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
+    use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+    use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
     #[derive(Debug)]
     pub struct IpcReaderBuilder {
@@ -196,7 +196,7 @@ impl FileReader for IpcFileReader {
         } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
-            projected_schema,
+            projection: Projection::Plain(projected_schema),
             row_index,
             pre_slice: pre_slice_arg,
             predicate: None,
@@ -242,8 +242,8 @@ impl FileReader for IpcFileReader {
             if verbose {
                 eprintln!(
                     "[IpcFileReader]: early return: \
-                    n_rows_in_file: {} \
-                    pre_slice: {:?} \
+                    n_rows_in_file: {}, \
+                    pre_slice: {:?}, \
                     resolved_pre_slice: {:?} \
                     ",
                     self._n_rows_in_file()?,
@@ -458,11 +458,10 @@ impl FileReader for IpcFileReader {
             })
             .collect::<Vec<_>>();
 
-        let memslice = memslice.clone();
-        let metadata = metadata.clone();
-        let slice = slice.clone();
-        let row_index = row_index.clone();
-        let projection_info = projection_info.clone();
+        let memslice = memslice;
+        let metadata = metadata;
+        let row_index = row_index;
+        let projection_info = projection_info;
 
         // Walker task.
         //

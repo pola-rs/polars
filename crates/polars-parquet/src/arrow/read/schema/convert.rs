@@ -1,5 +1,8 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, TimeUnit};
+use std::sync::Arc;
+
+use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit};
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::arrow::read::schema::SchemaInferenceOptions;
@@ -309,11 +312,27 @@ pub(crate) fn is_nullable(field_info: &FieldInfo) -> bool {
 /// Returns `None` iff the parquet type has no associated primitive types,
 /// i.e. if it is a column-less group type.
 fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> Option<Field> {
-    Some(Field::new(
-        type_.get_field_info().name.clone(),
+    let field_info = type_.get_field_info();
+
+    let metadata: Option<Arc<Metadata>> = field_info.id.map(|x: i32| {
+        Arc::new(
+            [(
+                PlSmallStr::from_static("PARQUET:field_id"),
+                format_pl_smallstr!("{x}"),
+            )]
+            .into(),
+        )
+    });
+
+    let mut arrow_field = Field::new(
+        field_info.name.clone(),
         to_dtype(type_, options)?,
         is_nullable(type_.get_field_info()),
-    ))
+    );
+
+    arrow_field.metadata = metadata;
+
+    Some(arrow_field)
 }
 
 /// Converts a parquet list to arrow list.

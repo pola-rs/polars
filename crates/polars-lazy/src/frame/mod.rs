@@ -34,7 +34,6 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
-use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -486,7 +485,7 @@ impl LazyFrame {
             .collect();
 
         if cast_cols.is_empty() {
-            self.clone()
+            self
         } else {
             self.with_columns(cast_cols)
         }
@@ -499,19 +498,6 @@ impl LazyFrame {
         } else {
             col(PlSmallStr::from_static("*")).cast(dtype)
         }])
-    }
-
-    /// Fetch is like a collect operation, but it overwrites the number of rows read by every scan
-    /// operation. This is a utility that helps debug a query on a smaller number of rows.
-    ///
-    /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
-    /// Filter, join operations and a lower number of rows available in the scanned file influence
-    /// the final number of rows.
-    pub fn fetch(self, n_rows: usize) -> PolarsResult<DataFrame> {
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
-        let res = self.collect();
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
-        res
     }
 
     pub fn optimize(
@@ -709,10 +695,6 @@ impl LazyFrame {
                 );
                 result.map(|v| v.unwrap_single())
             }),
-            _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
-                InvalidOperation: "partition sinks are not supported on for the '{}' engine",
-                engine.into_static_str()
-            )),
             Engine::Gpu => {
                 Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
             },
@@ -1139,7 +1121,7 @@ impl LazyFrame {
         );
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
-            payload: payload.clone(),
+            payload,
         };
         Ok(self)
     }
@@ -1312,7 +1294,7 @@ impl LazyFrame {
             options.index_column = name;
         } else {
             let output_field = index_column
-                .to_field(&self.collect_schema().unwrap(), Context::Default)
+                .to_field(&self.collect_schema().unwrap())
                 .unwrap();
             return self.with_column(index_column).rolling(
                 Expr::Column(output_field.name().clone()),
@@ -1357,7 +1339,7 @@ impl LazyFrame {
             options.index_column = name;
         } else {
             let output_field = index_column
-                .to_field(&self.collect_schema().unwrap(), Context::Default)
+                .to_field(&self.collect_schema().unwrap())
                 .unwrap();
             return self.with_column(index_column).group_by_dynamic(
                 Expr::Column(output_field.name().clone()),
@@ -1716,6 +1698,12 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().pipe_with_schema(callback).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     fn with_columns_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(exprs, options).build();
@@ -1955,8 +1943,6 @@ impl LazyFrame {
     }
 
     /// Limit the DataFrame to the first `n` rows.
-    ///
-    /// Note if you don't want the rows to be scanned, use [`fetch`](LazyFrame::fetch).
     pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
@@ -2185,10 +2171,7 @@ impl LazyGroupBy {
     ///
     /// **It is not recommended that you use this as materializing the DataFrame is very
     /// expensive.**
-    pub fn apply<F>(self, f: F, schema: SchemaRef) -> LazyFrame
-    where
-        F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
-    {
+    pub fn apply(self, f: PlanCallback<DataFrame, DataFrame>, schema: SchemaRef) -> LazyFrame {
         #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
             dynamic: self.dynamic_options,
@@ -2203,7 +2186,7 @@ impl LazyGroupBy {
             input: Arc::new(self.logical_plan),
             keys: self.keys,
             aggs: vec![],
-            apply: Some((Arc::new(f), schema)),
+            apply: Some((f, schema)),
             maintain_order: self.maintain_order,
             options: Arc::new(options),
         };
@@ -2490,10 +2473,14 @@ mod streaming_dispatch {
             _ => false,
         };
 
-        let node = ir_arena.add(IR::Sink {
-            input: node,
-            payload: SinkTypeIR::Memory,
-        });
+        let node = match ir_arena.get(node) {
+            IR::SinkMultiple { .. } => panic!("SinkMultiple not supported"),
+            IR::Sink { .. } => node,
+            _ => ir_arena.add(IR::Sink {
+                input: node,
+                payload: SinkTypeIR::Memory,
+            }),
+        };
 
         polars_stream::StreamingQuery::build(node, ir_arena, expr_arena)
             .map(Some)

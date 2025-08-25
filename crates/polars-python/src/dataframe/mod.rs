@@ -25,6 +25,12 @@ impl From<DataFrame> for PyDataFrame {
     }
 }
 
+impl From<PyDataFrame> for DataFrame {
+    fn from(pdf: PyDataFrame) -> Self {
+        pdf.df
+    }
+}
+
 impl PyDataFrame {
     pub(crate) fn new(df: DataFrame) -> Self {
         PyDataFrame { df }

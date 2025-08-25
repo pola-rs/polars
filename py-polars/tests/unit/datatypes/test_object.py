@@ -18,6 +18,7 @@ def test_series_init_instantiated_object() -> None:
     assert isinstance(s.dtype, pl.Object)
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_object_empty_filter_5911() -> None:
     df = pl.DataFrame(
         data=[
@@ -37,6 +38,7 @@ def test_object_empty_filter_5911() -> None:
     assert out.shape == (0, 1)
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_object_in_struct() -> None:
     np_a = np.array([1, 2, 3])
     np_b = np.array([4, 5, 6])
@@ -46,6 +48,7 @@ def test_object_in_struct() -> None:
         df.select([pl.struct(["B"])])
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_nullable_object_13538() -> None:
     df = pl.DataFrame(
         data=[
@@ -78,6 +81,7 @@ def test_nullable_object_13538() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # dtype is not set
+@pytest.mark.may_fail_cloud  # reason: eager
 def test_nullable_object_17936() -> None:
     class Custom:
         value: int
@@ -98,6 +102,7 @@ def test_nullable_object_17936() -> None:
     ).null_count().row(0) == (1, 1)
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_empty_sort() -> None:
     df = pl.DataFrame(
         data=[
@@ -172,6 +177,7 @@ def test_object_apply_to_struct() -> None:
     assert out.dtype == pl.Struct([pl.Field("a", pl.String), pl.Field("b", pl.Int64)])
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_null_obj_str_13512() -> None:
     # https://github.com/pola-rs/polars/issues/13512
 
@@ -225,6 +231,7 @@ def test_raise_list_object() -> None:
         pl.Series([[object()]], dtype=pl.List(pl.Object()))
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_object_null_slice() -> None:
     s = pl.Series("x", [1, None, 42], dtype=pl.Object)
     assert_series_equal(s.is_null(), pl.Series("x", [False, True, False]))
@@ -233,6 +240,7 @@ def test_object_null_slice() -> None:
     assert_series_equal(s.slice(2, 1).is_null(), pl.Series("x", [False]))
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_object_sort_scalar_19925() -> None:
     a = object()
     assert pl.DataFrame({"a": [0], "obj": [a]}).sort("a")["obj"].item() == a
@@ -271,7 +279,8 @@ def test_err_nested_object() -> None:
     def mapper(x: object) -> list[object]:
         return [x]
 
-    with pytest.raises(ValueError):
+    # cannot infer datatype
+    with pytest.raises(pl.exceptions.InvalidOperationError):
         df.select(pl.col("obj").map_elements(mapper))
 
     with pytest.raises(ValueError):

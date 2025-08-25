@@ -27,8 +27,8 @@ from polars.io.cloud.credential_provider._builder import (
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PyLazyFrame
-    from polars.polars import read_ipc_schema as _read_ipc_schema
+    from polars._plr import PyDataFrame, PyLazyFrame
+    from polars._plr import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

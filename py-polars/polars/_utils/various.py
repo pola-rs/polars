@@ -331,7 +331,7 @@ def _cast_repr_strings_with_schema(
             if td is None
             else sum(
                 int(value) * duration_scaling[unit.strip()]
-                for value, unit in re.findall(r"(\d+)(\D+)", td)
+                for value, unit in re.findall(r"([+-]?\d+)(\D+)", td)
             )
         )
 
@@ -437,9 +437,8 @@ class _NoDefault(Enum):
         return "<no_default>"
 
 
-# 'NoDefault' is a sentinel indicating that no default value has been set; note that
-# this should typically be used only when one of the valid parameter values is also
-# None, as otherwise we cannot determine if the caller has explicitly set that value.
+# the "no_default" sentinel should typically be used when one of the valid parameter
+# values is None, as otherwise we cannot determine if the caller has set that value.
 no_default = _NoDefault.no_default
 NoDefault = Literal[_NoDefault.no_default]
 
@@ -472,7 +471,7 @@ def find_stacklevel() -> int:
         # https://docs.python.org/3/library/inspect.html
         # > Though the cycle detector will catch these, destruction of the frames
         # > (and local variables) can be made deterministic by removing the cycle
-        # > in a finally clause.
+        # > in a 'finally' clause.
         del frame
     return n
 
@@ -665,7 +664,9 @@ def display_dot_graph(
         # we do not show a graph, nor save a graph to disk
         return dot
 
-    output_type = "svg" if _in_notebook() else "png"
+    output_type = (
+        "svg" if _in_notebook() or "POLARS_DOT_SVG_VIEWER" in os.environ else "png"
+    )
 
     try:
         graph = subprocess.check_output(
@@ -689,6 +690,16 @@ def display_dot_graph(
 
         return display(SVG(graph))
     else:
+        if (cmd := os.environ.get("POLARS_DOT_SVG_VIEWER", None)) is not None:
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(suffix=".svg") as file:
+                file.write(graph)
+                file.flush()
+                cmd = cmd.replace("%file%", file.name)
+                subprocess.run(cmd, shell=True)
+            return None
+
         import_optional(
             "matplotlib",
             err_prefix="",

@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -77,7 +77,6 @@ def test_shift_expr() -> None:
     assert out.to_dict(as_series=False) == {"a": [5, 5, 1, 2, 3], "b": [5, 5, 1, 2, 3]}
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_shift_categorical() -> None:
     df = pl.Series("a", ["a", "b"], dtype=pl.Categorical).to_frame()
 
@@ -146,16 +145,16 @@ def test_shift_n_nonscalar() -> None:
         }
     )
     with pytest.raises(
-        ComputeError,
-        match="'n' must be scalar value",
+        ShapeError,
+        match="'n' must be a scalar value",
     ):
         # Note: Expressions are not in the signature for `n`, but they work.
         # We can still verify that n is scalar up-front.
         df.shift(pl.col("b"), fill_value=1)  # type: ignore[arg-type]
 
     with pytest.raises(
-        ComputeError,
-        match="'n' must be scalar value",
+        ShapeError,
+        match="'n' must be a scalar value",
     ):
         df.select(pl.col("a").shift(pl.col("b"), fill_value=1))
 
@@ -168,13 +167,13 @@ def test_shift_fill_value_nonscalar() -> None:
         }
     )
     with pytest.raises(
-        ComputeError,
-        match="'fill_value' must be scalar value",
+        ShapeError,
+        match="'fill_value' must be a scalar value",
     ):
         df.shift(1, fill_value=pl.col("b"))
 
     with pytest.raises(
-        ComputeError,
-        match="'fill_value' must be scalar value",
+        ShapeError,
+        match="'fill_value' must be a scalar value",
     ):
         df.select(pl.col("a").shift(1, fill_value=pl.col("b")))

@@ -12,7 +12,6 @@ pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursiv
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -63,15 +62,6 @@ pub enum IR {
         scan_type: Box<FileScanIR>,
         /// generic options that can be used for all file types.
         unified_scan_args: Box<UnifiedScanArgs>,
-        /// This used as part of a hack to prevent deadlocks when we run the in-memory engine with
-        /// scans dispatched to new-streaming. This ID is used as the ID of the CacheExec that
-        /// wraps this scan. It will not be needed once everything runs in new-streaming.
-        ///
-        /// We use this instead of the Arc-address of the ScanSources as it's possible to pass the
-        /// same set of ScanSources with different scan options.
-        ///
-        /// NOTE: This must be reset to a new ID during e.g. predicate / slice pushdown.
-        id: UniqueId,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -103,8 +93,6 @@ pub enum IR {
         input: Node,
         /// This holds the `Arc<DslPlan>` to guarantee uniqueness.
         id: UniqueId,
-        /// How many hits the cache must be saved in memory.
-        cache_hits: u32,
     },
     GroupBy {
         input: Node,
@@ -113,8 +101,7 @@ pub enum IR {
         schema: SchemaRef,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<PlanCallback<DataFrame, DataFrame>>,
     },
     Join {
         input_left: Node,

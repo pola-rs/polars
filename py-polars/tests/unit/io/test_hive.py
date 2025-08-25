@@ -723,7 +723,7 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
             pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
         ):
             if perc_escape:
-                date2 = urllib.parse.quote(date2)  # type: ignore[call-overload]
+                date2 = urllib.parse.quote(date2)
 
             path = root / f"date1={date1}/date2={date2}/data.bin"
             path.parent.mkdir(exist_ok=True, parents=True)
@@ -987,6 +987,30 @@ def test_hive_auto_enables_when_unspecified_and_hive_schema_passed(
 
 
 @pytest.mark.write_disk
+def test_hive_file_as_uri_with_hive_start_idx_23830(
+    tmp_path: Path,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "a=1").mkdir(exist_ok=True)
+
+    pl.DataFrame({"x": 1}).write_parquet(tmp_path / "a=1/1")
+
+    # ensure we have a trailing "/"
+    uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
+    uri = "file://" + uri
+
+    lf = pl.scan_parquet(uri, hive_schema={"a": pl.UInt8})
+
+    assert_frame_equal(
+        lf.collect(),
+        pl.select(
+            pl.Series("x", [1]),
+            pl.Series("a", [1], dtype=pl.UInt8),
+        ),
+    )
+
+
+@pytest.mark.write_disk
 @pytest.mark.parametrize("force_single_thread", [True, False])
 def test_hive_parquet_prefiltered_20894_21327(
     tmp_path: Path, force_single_thread: bool
@@ -1046,3 +1070,37 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+def test_hive_decode_reserved_ascii_23241(tmp_path: Path) -> None:
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    start, stop = 32, 127
+    df = pl.DataFrame(
+        {
+            "a": list(range(start, stop)),
+            "strings": [chr(i) for i in range(start, stop)],
+        }
+    )
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "strings": [
+                "Türkiye And Egpyt",
+                "résumé père forêt Noël",
+                "😊",
+                "北极熊",  # a polar bear perhaps ?!
+            ],
+            "a": [10, 20, 30, 40],
+        }
+    )
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)

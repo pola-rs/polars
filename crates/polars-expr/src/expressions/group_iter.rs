@@ -11,7 +11,7 @@ impl AggregationContext<'_> {
         keep_names: bool,
     ) -> Box<dyn Iterator<Item = Option<AmortSeries>> + '_> {
         match self.agg_state() {
-            AggState::Literal(_) => {
+            AggState::LiteralScalar(_) => {
                 self.groups();
                 let c = self.get_values().rechunk();
                 let name = if keep_names {

@@ -1,4 +1,5 @@
 mod builder;
+mod equality;
 mod evaluate;
 mod function_expr;
 #[cfg(feature = "cse")]
@@ -55,8 +56,10 @@ pub enum IRAggExpr {
         method: QuantileMethod,
     },
     Sum(Node),
-    // include_nulls
-    Count(Node, bool),
+    Count {
+        input: Node,
+        include_nulls: bool,
+    },
     Std(Node, u8),
     Var(Node, u8),
     AggGroups(Node),
@@ -66,14 +69,22 @@ impl Hash for IRAggExpr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
-            Self::Min { propagate_nans, .. } | Self::Max { propagate_nans, .. } => {
-                propagate_nans.hash(state)
-            },
+            Self::Min {
+                input: _,
+                propagate_nans,
+            }
+            | Self::Max {
+                input: _,
+                propagate_nans,
+            } => propagate_nans.hash(state),
             Self::Quantile {
                 method: interpol, ..
             } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
-            Self::Count(_, include_nulls) => include_nulls.hash(state),
+            Self::Count {
+                input: _,
+                include_nulls,
+            } => include_nulls.hash(state),
             _ => {},
         }
     }
@@ -112,14 +123,20 @@ impl From<IRAggExpr> for GroupByMethod {
     fn from(value: IRAggExpr) -> Self {
         use IRAggExpr::*;
         match value {
-            Min { propagate_nans, .. } => {
+            Min {
+                input: _,
+                propagate_nans,
+            } => {
                 if propagate_nans {
                     GroupByMethod::NanMin
                 } else {
                     GroupByMethod::Min
                 }
             },
-            Max { propagate_nans, .. } => {
+            Max {
+                input: _,
+                propagate_nans,
+            } => {
                 if propagate_nans {
                     GroupByMethod::NanMax
                 } else {
@@ -133,7 +150,10 @@ impl From<IRAggExpr> for GroupByMethod {
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,
             Sum(_) => GroupByMethod::Sum,
-            Count(_, include_nulls) => GroupByMethod::Count { include_nulls },
+            Count {
+                input: _,
+                include_nulls,
+            } => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
@@ -189,7 +209,6 @@ pub enum AExpr {
     AnonymousFunction {
         input: Vec<ExprIR>,
         function: OpaqueColumnUdf,
-        output_type: GetOutput,
         options: FunctionOptions,
         fmt_str: Box<PlSmallStr>,
     },
@@ -237,13 +256,52 @@ impl AExpr {
     }
 
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
-    pub fn get_type(
-        &self,
-        schema: &Schema,
-        ctxt: Context,
-        arena: &Arena<AExpr>,
-    ) -> PolarsResult<DataType> {
-        self.to_field(schema, ctxt, arena)
-            .map(|f| f.dtype().clone())
+    pub fn get_dtype(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<DataType> {
+        self.to_field(schema, arena).map(|f| f.dtype().clone())
+    }
+
+    #[recursive::recursive]
+    fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
+        match self {
+            AExpr::Literal(lv) => lv.is_scalar(),
+            AExpr::Function { options, input, .. }
+            | AExpr::AnonymousFunction { options, input, .. } => {
+                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
+                    true
+                } else if options.is_elementwise()
+                    || options.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+                {
+                    input.iter().all(|e| e.is_scalar(arena))
+                } else {
+                    false
+                }
+            },
+            AExpr::BinaryExpr { left, right, .. } => {
+                is_scalar_ae(*left, arena) && is_scalar_ae(*right, arena)
+            },
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                is_scalar_ae(*predicate, arena)
+                    && is_scalar_ae(*truthy, arena)
+                    && is_scalar_ae(*falsy, arena)
+            },
+            AExpr::Agg(_) | AExpr::Len => true,
+            AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Eval { expr, variant, .. } => match variant {
+                EvalVariant::List => is_scalar_ae(*expr, arena),
+                EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
+            },
+            AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Gather { returns_scalar, .. } => *returns_scalar,
+            AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Window { function, .. } => is_scalar_ae(*function, arena),
+            AExpr::Explode { .. }
+            | AExpr::Column(_)
+            | AExpr::Filter { .. }
+            | AExpr::Slice { .. } => false,
+        }
     }
 }

@@ -119,6 +119,7 @@ module = [
   "moto.server",
   "openpyxl",
   "polars.polars",
+  "polars._plr",
   "polars_cloud",
   "pyarrow.*",
   "pydantic",
@@ -142,7 +143,7 @@ follow_imports = "skip"
 module = ["polars.*"]
 # We exclude the polars module from warn_return_any, because the PyO3 api does not have Python
 # type annotations. See https://github.com/PyO3/pyo3/issues/1112 for a discussion on adding
-# this capability. We could add a stub file for polars.polars (the PyO3 api), but that
+# this capability. We could add a stub file for polars._plr (the PyO3 api), but that
 # amounts to duplicating almost all type annotations on our api, as the Python api itself is a
 # thin wrapper around the PyO3 api to start with.
 warn_return_any = false

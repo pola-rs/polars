@@ -25,7 +25,7 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } => Self::InMemoryFallback,
+            K::InMemoryMap { .. } | K::InMemoryJoin { .. } => Self::InMemoryFallback,
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -34,7 +34,6 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::InMemoryJoin { .. }
             | K::Multiplexer { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
@@ -233,6 +232,21 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::DynamicSlice {
+            input,
+            offset,
+            length,
+        } => ("slice".to_owned(), &[*input, *offset, *length][..]),
+        PhysNodeKind::Shift {
+            input,
+            offset,
+            fill: Some(fill),
+        } => ("shift".to_owned(), &[*input, *offset, *fill][..]),
+        PhysNodeKind::Shift {
+            input,
+            offset,
+            fill: None,
+        } => ("shift".to_owned(), &[*input, *offset][..]),
         PhysNodeKind::Filter { input, predicate } => (
             format!(
                 "filter\\n{}",
@@ -312,6 +326,51 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
+        PhysNodeKind::TopK {
+            input,
+            k,
+            by_column,
+            reverse,
+            nulls_last: _,
+        } => {
+            let name = if reverse.iter().all(|r| *r) {
+                "bottom-k"
+            } else {
+                "top-k"
+            };
+            (
+                format!(
+                    "{name}\\n{}",
+                    fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases)
+                ),
+                &[*input, *k][..],
+            )
+        },
+        PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        #[cfg(feature = "cum_agg")]
+        PhysNodeKind::CumAgg { input, kind } => {
+            use crate::nodes::cum_agg::CumAggKind;
+
+            (
+                format!(
+                    "cum_{}",
+                    match kind {
+                        CumAggKind::Min => "min",
+                        CumAggKind::Max => "max",
+                        CumAggKind::Sum => "sum",
+                        CumAggKind::Count => "count",
+                        CumAggKind::Prod => "prod",
+                    }
+                ),
+                &[*input][..],
+            )
+        },
+        PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
+        PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
+        PhysNodeKind::PeakMinMax { input, is_peak_max } => (
+            if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
+            &[*input][..],
+        ),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,
@@ -329,7 +388,7 @@ fn visualize_plan_rec(
             scan_sources,
             file_reader_builder,
             cloud_options: _,
-            projected_file_schema,
+            file_projection_builder,
             output_schema,
             row_index,
             pre_slice,
@@ -338,7 +397,7 @@ fn visualize_plan_rec(
             include_file_paths,
             cast_columns_policy: _,
             missing_columns_policy: _,
-            extra_columns_policy: _,
+            forbid_extra_columns: _,
             deletion_files,
             file_schema: _,
         } => {
@@ -355,7 +414,7 @@ fn visualize_plan_rec(
                 f,
                 "\nproject: {} total, {} from file",
                 output_schema.len(),
-                projected_file_schema.len()
+                file_projection_builder.num_projections(),
             )
             .unwrap();
 
@@ -484,15 +543,7 @@ fn visualize_plan_rec(
         PhysNodeKind::MergeSorted {
             input_left,
             input_right,
-            key,
-        } => {
-            let mut out = "merge-sorted".to_string();
-            let mut f = EscapeLabel(&mut out);
-
-            write!(f, "\nkey: {key}").unwrap();
-
-            (out, &[*input_left, *input_right][..])
-        },
+        } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
     };
 
     let node_id = node_key.data().as_ffi();

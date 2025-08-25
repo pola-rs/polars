@@ -89,7 +89,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal_width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
+        .select([col("sepal_width").map(|s| Ok(s * 200.0), |_, f| Ok(f.clone()))])
         .collect()
         .unwrap();
     assert_eq!(
@@ -248,7 +248,7 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(Some(s * 2)), GetOutput::same_type()))
+        .with_column(col("a").map(|s| Ok(s * 2), |_, f| Ok(f.clone())))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
@@ -284,10 +284,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
         .agg([
             col("day").alias("day"),
             col("cumcases")
-                .apply(
-                    |s: Column| (&s - &(s.shift(1))).map(Some),
-                    GetOutput::same_type(),
-                )
+                .apply(|s: Column| (&s - &(s.shift(1))), |_, f| Ok(f.clone()))
                 .alias("diff_cases"),
         ])
         .explode(by_name(["day", "diff_cases"], true))
@@ -586,10 +583,11 @@ fn test_simplify_expr() {
         &mut OptFlags::SIMPLIFY_EXPR,
     )
     .unwrap();
-    let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-    assert!(
-        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(2.0)))))
-    );
+
+    assert!(matches!(
+        lp_arena.get(lp_top),
+        IR::Select { expr, .. }  if matches!(expr_arena.get(expr[0].node()), AExpr::BinaryExpr{ left, ..} if matches!(expr_arena.get(*left), &AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(2.0)))))
+    ));
 }
 
 #[test]
@@ -666,13 +664,12 @@ fn test_type_coercion() {
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
     let lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
-    let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-    if let DslPlan::Select { expr, .. } = lp {
-        if let Expr::BinaryExpr { left, right, .. } = &expr[0] {
-            assert!(matches!(&**left, Expr::Cast { .. }));
+    if let IR::Select { expr, .. } = lp_arena.get(lp_top) {
+        if let AExpr::BinaryExpr { left, right, .. } = expr_arena.get(expr[0].node()) {
+            assert!(matches!(expr_arena.get(*left), AExpr::Cast { .. }));
             // bar is already float, does not have to be coerced
-            assert!(matches!(&**right, Expr::Column { .. }));
+            assert!(matches!(expr_arena.get(*right), AExpr::Column { .. }));
         } else {
             panic!()
         }
@@ -731,8 +728,8 @@ fn test_lazy_group_by_apply() {
     df.lazy()
         .group_by([col("fruits")])
         .agg([col("cars").apply(
-            |s: Column| Ok(Some(Column::new("".into(), &[s.len() as u32]))),
-            GetOutput::from_type(DataType::UInt32),
+            |s: Column| Ok(Column::new("".into(), &[s.len() as u32])),
+            |_, f| Ok(Field::new(f.name().clone(), DataType::UInt32)),
         )])
         .collect()
         .unwrap();
@@ -1664,15 +1661,7 @@ fn test_single_group_result() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("a")
-            .arg_sort(SortOptions {
-                descending: false,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .over([col("a")])])
+        .select([col("a").arg_sort(false, false).over([col("a")])])
         .collect()?;
 
     let a = out.column("a")?.idx()?;
@@ -1978,6 +1967,46 @@ fn test_over_with_options_empty_join() -> PolarsResult<()> {
     let sc: Schema = Schema::from_iter(vec![f1]);
 
     assert_eq!(&**empty_df_out.schema(), &sc);
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "serde")]
+fn test_named_udfs() -> PolarsResult<()> {
+    use polars_plan::dsl::named_serde::{ExprRegistry, set_named_serde_registry};
+
+    let lf = DataFrame::new(vec![Column::new("a".into(), vec![1, 2, 3, 4])])?.lazy();
+
+    struct X;
+    impl ExprRegistry for X {
+        fn get_function(&self, name: &str, payload: &[u8]) -> Option<Arc<dyn AnonymousColumnsUdf>> {
+            assert_eq!(name, "test-function");
+            assert_eq!(payload, b"check");
+            Some(Arc::new(BaseColumnUdf::new(
+                |c: &mut [Column]| Ok(std::mem::take(&mut c[0]) * 2),
+                |_: &Schema, f: &[Field]| Ok(f[0].clone()),
+            )))
+        }
+    }
+
+    set_named_serde_registry(Arc::new(X) as _);
+
+    let expr = Expr::AnonymousFunction {
+        input: vec![Expr::Column("a".into())],
+        function: LazySerde::Named {
+            name: "test-function".into(),
+            payload: Some(bytes::Bytes::from("check")),
+            value: None,
+        },
+        options: FunctionOptions::default(),
+        fmt_str: Box::new("test".into()),
+    };
+
+    assert_eq!(
+        lf.select(&[expr]).collect()?,
+        DataFrame::new(vec![Column::new("a".into(), vec![2, 4, 6, 8])])?,
+    );
 
     Ok(())
 }

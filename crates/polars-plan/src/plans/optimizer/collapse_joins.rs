@@ -14,7 +14,7 @@ use polars_utils::arena::{Arena, Node};
 use super::{AExpr, ExprOrigin, IR, JoinOptionsIR, aexpr_to_leaf_names_iter};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
 use crate::plans::optimizer::join_utils::remove_suffix;
-use crate::plans::{ExprIR, MintermIter};
+use crate::plans::{ExprIR, MintermIter, is_elementwise_rec};
 
 fn and_expr(left: Node, right: Node, expr_arena: &mut Arena<AExpr>) -> Node {
     expr_arena.add(AExpr::BinaryExpr {
@@ -354,10 +354,12 @@ fn insert_fitting_join(
             );
 
             let mut remaining_predicates = remaining_predicates;
-            if let Some(pred) = remaining_predicates.take_if(|_| {
-                matches!(options.args.maintain_order, MaintainOrderJoin::None) && !streaming
+            if let Some(pred) = remaining_predicates.take_if(|pred| {
+                matches!(options.args.maintain_order, MaintainOrderJoin::None)
+                    && !streaming
+                    && is_elementwise_rec(*pred, expr_arena)
             }) {
-                options.options = Some(JoinTypeOptionsIR::Cross {
+                options.options = Some(JoinTypeOptionsIR::CrossAndFilter {
                     predicate: ExprIR::from_node(pred, expr_arena),
                 })
             }

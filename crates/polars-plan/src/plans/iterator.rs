@@ -11,7 +11,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Column(_) | Literal(_) | Len => {},
+            DataTypeFunction(_) | Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             Field(_) => {},
             Alias(e, _) => $push($c, e),
@@ -49,7 +49,7 @@ macro_rules! push_expr {
                     First(e) => $push($c, e),
                     Last(e) => $push($c, e),
                     Implode(e) => $push($c, e),
-                    Count(e, _) => $push($c, e),
+                    Count { input, .. } => $push($c, input),
                     Quantile { expr, .. } => $push($c, expr),
                     Sum(e) => $push($c, e),
                     AggGroups(e) => $push($c, e),
@@ -141,9 +141,9 @@ impl Expr {
         push_expr!(self, container, push, push, iter);
     }
 
-    pub fn nodes_owned(self, container: &mut UnitVec<Expr>) {
-        let push_arc = |c: &mut UnitVec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
-        let push_owned = |c: &mut UnitVec<Expr>, e: Expr| c.push(e);
+    pub fn nodes_owned(self, container: &mut Vec<Expr>) {
+        let push_arc = |c: &mut Vec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
+        let push_owned = |c: &mut Vec<Expr>, e: Expr| c.push(e);
         push_expr!(self, container, push_arc, push_owned, into_iter);
     }
 
@@ -189,11 +189,11 @@ impl<'a> Iterator for AExprIter<'a> {
 }
 
 pub trait ArenaExprIter<'a> {
-    fn iter(&self, root: Node) -> AExprIter<'a>;
+    fn iter(&'a self, root: Node) -> AExprIter<'a>;
 }
 
-impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
-    fn iter(&self, root: Node) -> AExprIter<'a> {
+impl<'a> ArenaExprIter<'a> for Arena<AExpr> {
+    fn iter(&'a self, root: Node) -> AExprIter<'a> {
         let stack = unitvec![root];
         AExprIter {
             stack,
@@ -208,11 +208,11 @@ pub struct AlpIter<'a> {
 }
 
 pub trait ArenaLpIter<'a> {
-    fn iter(&self, root: Node) -> AlpIter<'a>;
+    fn iter(&'a self, root: Node) -> AlpIter<'a>;
 }
 
-impl<'a> ArenaLpIter<'a> for &'a Arena<IR> {
-    fn iter(&self, root: Node) -> AlpIter<'a> {
+impl<'a> ArenaLpIter<'a> for Arena<IR> {
+    fn iter(&'a self, root: Node) -> AlpIter<'a> {
         let stack = unitvec![root];
         AlpIter { stack, arena: self }
     }

@@ -303,7 +303,6 @@ def test_is_in_invalid_shape() -> None:
         pl.Series("a", [1, 2, 3]).is_in([[], []])
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_is_in_list_rhs() -> None:
     assert_series_equal(
         pl.Series([1, 2, 3, 4, 5]).is_in(pl.Series([[1], [2, 9], [None], None, None])),
@@ -513,7 +512,7 @@ def test_is_in_with_wildcard_13809() -> None:
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(pl.Categorical, marks=pytest.mark.may_fail_auto_streaming),
+        pl.Categorical,
         pl.Enum(["a", "b", "c", "d"]),
     ],
 )
@@ -528,7 +527,6 @@ def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
-@pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         [
@@ -554,7 +552,6 @@ def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
         ("e", [False, False, False, None, False]),
     ],
 )
-@pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat_single(val: str | None, expected: list[bool]) -> None:
     df = pl.Series(
         "li",

@@ -32,7 +32,7 @@ from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PyLazyFrame
+    from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -742,6 +742,7 @@ def read_csv_batched(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
+    skip_lines: int = 0,
     schema_overrides: (
         Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
     ) = None,
@@ -806,7 +807,13 @@ def read_csv_batched(
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
-        Start reading after `skip_rows` lines.
+        Start reading after ``skip_rows`` rows. The header will be parsed at this
+        offset. Note that we respect CSV escaping/comments when skipping rows.
+        If you want to skip by newline char only, use `skip_lines`.
+    skip_lines
+        Start reading after `skip_lines` lines. The header will be parsed at this
+        offset. Note that CSV escaping will not be respected when skipping lines.
+        If you want to skip valid CSV rows, use ``skip_rows``.
     schema_overrides
         Overwrite dtypes during inference.
     null_values
@@ -1019,6 +1026,7 @@ def read_csv_batched(
         comment_prefix=comment_prefix,
         quote_char=quote_char,
         skip_rows=skip_rows,
+        skip_lines=skip_lines,
         schema_overrides=schema_overrides,
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,

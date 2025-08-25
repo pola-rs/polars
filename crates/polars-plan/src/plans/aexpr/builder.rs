@@ -5,7 +5,7 @@ use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr};
+use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, RowEncodingVariant};
 use crate::dsl::Operator;
 use crate::plans::{ExprIR, LiteralValue, OutputName};
 
@@ -47,6 +47,19 @@ impl AExprBuilder {
                 function,
                 options,
             },
+            arena,
+        )
+    }
+
+    pub fn row_encode_unary(
+        self,
+        variant: RowEncodingVariant,
+        dtype: DataType,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        Self::function(
+            vec![ExprIR::from_node(self.node(), arena)],
+            IRFunctionExpr::RowEncode(vec![dtype], variant),
             arena,
         )
     }
@@ -115,6 +128,40 @@ impl AExprBuilder {
             IRAggExpr::Max {
                 input: self.node(),
                 propagate_nans: true,
+            },
+            arena,
+        )
+    }
+
+    pub fn sum(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::Sum(self.node()), arena)
+    }
+
+    pub fn len(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls: true,
+            },
+            arena,
+        )
+    }
+
+    pub fn count(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls: false,
+            },
+            arena,
+        )
+    }
+
+    pub fn count_opt_nulls(self, include_nulls: bool, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls,
             },
             arena,
         )
@@ -230,6 +277,14 @@ impl AExprBuilder {
                 other.into_aexpr_builder().expr_ir_unnamed(),
             ],
             IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            arena,
+        )
+    }
+
+    pub fn to_physical(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_unnamed()],
+            IRFunctionExpr::ToPhysical,
             arena,
         )
     }

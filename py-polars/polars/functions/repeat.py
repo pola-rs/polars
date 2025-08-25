@@ -20,7 +20,7 @@ from polars.datatypes import (
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 
 if TYPE_CHECKING:
@@ -142,8 +142,8 @@ def repeat(
     if not hasattr(n, "_pyexpr"):
         msg = f"`n` parameter of `repeat expected a `int` or `Expr` got a `{qualified_type_name(n)}`"
         raise TypeError(msg)
-    value = parse_into_expression(value, str_as_lit=True, dtype=dtype)
-    expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
+    value_pyexpr = parse_into_expression(value, str_as_lit=True, dtype=dtype)
+    expr = wrap_expr(plr.repeat(value_pyexpr, n._pyexpr, dtype))
     if eager:
         return F.select(expr).to_series()
     return expr

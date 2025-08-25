@@ -551,6 +551,7 @@ def test_series_to_list() -> None:
     assert a.to_list() == [1, None, 2]
 
 
+@pytest.mark.may_fail_cloud  # reason: list.to_struct is a eager operation
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
@@ -776,7 +777,6 @@ def test_init_nested_tuple() -> None:
     assert s3.dtype == pl.List(pl.Int32)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     s = pl.Series("a", [1, 2, None])
     assert_series_equal(s.fill_null(strategy="forward"), pl.Series("a", [1, 2, 2]))
@@ -1562,14 +1562,30 @@ def test_dot() -> None:
         s1 @ [4, 5, 6, 7, 8]
 
 
-def test_peak_max_peak_min() -> None:
-    s = pl.Series("a", [4, 1, 3, 2, 5])
+@pytest.mark.parametrize(
+    ("dtype"),
+    [pl.Int8, pl.Int16, pl.Int32, pl.Float32, pl.Float64],
+)
+def test_peak_max_peak_min(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [4, 1, 3, 2, 5], dtype=dtype)
+
     result = s.peak_min()
     expected = pl.Series("a", [False, True, False, True, False])
     assert_series_equal(result, expected)
 
     result = s.peak_max()
     expected = pl.Series("a", [True, False, True, False, True])
+    assert_series_equal(result, expected)
+
+
+def test_peak_max_peak_min_bool() -> None:
+    s = pl.Series("a", [False, True, False, True, True, False], dtype=pl.Boolean)
+    result = s.peak_min()
+    expected = pl.Series("a", [False, False, True, False, False, False])
+    assert_series_equal(result, expected)
+
+    result = s.peak_max()
+    expected = pl.Series("a", [False, True, False, False, False, False])
     assert_series_equal(result, expected)
 
 
@@ -2086,16 +2102,16 @@ def test_from_epoch_seq_input() -> None:
 def test_symmetry_for_max_in_names() -> None:
     # int
     a = pl.Series("a", [1])
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # float
     a = pl.Series("a", [1.0])
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # duration
     a = pl.Series("a", [1], dtype=pl.Duration("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # datetime
     a = pl.Series("a", [1], dtype=pl.Datetime("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
 
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
@@ -2290,7 +2306,7 @@ def test_is_close_invalid_abs_tol() -> None:
 
 def test_is_close_invalid_rel_tol() -> None:
     with pytest.raises(pl.exceptions.ComputeError):
-        pl.select(pl.lit(1.0).is_close(1, rel_tol=1.0))
+        pl.select(pl.lit(1.0).is_close(1, rel_tol=-1.0))
 
 
 def test_comparisons_structs_raise() -> None:

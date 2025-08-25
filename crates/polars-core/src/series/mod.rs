@@ -383,7 +383,7 @@ impl Series {
 
         use DataType as D;
         let do_clone = match dtype {
-            D::Unknown(UnknownKind::Any) => true,
+            D::Unknown(UnknownKind::Any | UnknownKind::Ufunc) => true,
             D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
             D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)
@@ -428,7 +428,7 @@ impl Series {
                     new_fields.extend(fields.iter().skip(new_fields.len()).cloned().map(|field| {
                         let dtype = cast_dtype(&field.dtype).unwrap_or(field.dtype);
                         Field {
-                            name: field.name.clone(),
+                            name: field.name,
                             dtype,
                         }
                     }));
@@ -496,7 +496,7 @@ impl Series {
     ///
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
-        debug_assert!(!self.dtype().is_logical());
+        debug_assert!(!self.dtype().is_logical(), "{:?}", self.dtype());
 
         if self.dtype() == dtype {
             return Ok(self.clone());
@@ -1019,6 +1019,26 @@ impl Series {
         out.set_inner_dtype(s.dtype().clone());
         out
     }
+
+    pub fn row_encode_unordered(&self) -> PolarsResult<BinaryOffsetChunked> {
+        row_encode::_get_rows_encoded_ca_unordered(
+            self.name().clone(),
+            &[self.clone().into_column()],
+        )
+    }
+
+    pub fn row_encode_ordered(
+        &self,
+        descending: bool,
+        nulls_last: bool,
+    ) -> PolarsResult<BinaryOffsetChunked> {
+        row_encode::_get_rows_encoded_ca(
+            self.name().clone(),
+            &[self.clone().into_column()],
+            &[descending],
+            &[nulls_last],
+        )
+    }
 }
 
 impl Deref for Series {
@@ -1029,7 +1049,7 @@ impl Deref for Series {
     }
 }
 
-impl<'a> AsRef<(dyn SeriesTrait + 'a)> for Series {
+impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
     }
@@ -1104,7 +1124,7 @@ mod test {
             PlSmallStr::from_static("a"),
             [ListArray::new(
                 ArrowDataType::LargeList(Box::new(ArrowField::new(
-                    PlSmallStr::from_static("item"),
+                    LIST_VALUES_NAME,
                     ArrowDataType::Int32,
                     true,
                 ))),
@@ -1163,7 +1183,7 @@ mod test {
         }
 
         {
-            let mut s2 = s2.clone();
+            let mut s2 = s2;
             s2.extend(&s1).unwrap();
             assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
         }

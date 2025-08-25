@@ -104,223 +104,6 @@ pub enum AnyValue<'a> {
     Decimal(i128, usize),
 }
 
-#[cfg(feature = "serde")]
-mod _serde {
-    use serde::{Deserialize, Serialize};
-
-    use super::*;
-
-    impl Serialize for AnyValue<'_> {
-        fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            SerializableAnyValue::try_from(self)
-                .map_err(serde::ser::Error::custom)?
-                .serialize(serializer)
-        }
-    }
-
-    impl<'a> Deserialize<'a> for AnyValue<'static> {
-        fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-        where
-            D: Deserializer<'a>,
-        {
-            SerializableAnyValue::deserialize(deserializer).map(Self::from)
-        }
-    }
-
-    #[cfg(feature = "dsl-schema")]
-    impl schemars::JsonSchema for AnyValue<'_> {
-        fn schema_name() -> String {
-            SerializableAnyValue::schema_name()
-        }
-
-        fn schema_id() -> std::borrow::Cow<'static, str> {
-            SerializableAnyValue::schema_id()
-        }
-
-        fn json_schema(
-            generator: &mut schemars::r#gen::SchemaGenerator,
-        ) -> schemars::schema::Schema {
-            SerializableAnyValue::json_schema(generator)
-        }
-    }
-
-    #[derive(Serialize, Deserialize)]
-    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-    #[serde(rename = "AnyValue")]
-    pub enum SerializableAnyValue<'a> {
-        Null,
-        /// An 8-bit integer number.
-        Int8(i8),
-        /// A 16-bit integer number.
-        Int16(i16),
-        /// A 32-bit integer number.
-        Int32(i32),
-        /// A 64-bit integer number.
-        Int64(i64),
-        /// A 128-bit integer number.
-        Int128(i128),
-        /// An unsigned 8-bit integer number.
-        UInt8(u8),
-        /// An unsigned 16-bit integer number.
-        UInt16(u16),
-        /// An unsigned 32-bit integer number.
-        UInt32(u32),
-        /// An unsigned 64-bit integer number.
-        UInt64(u64),
-        /// A 32-bit floating point number.
-        Float32(f32),
-        /// A 64-bit floating point number.
-        Float64(f64),
-        /// Nested type, contains arrays that are filled with one of the datatypes.
-        List(Cow<'a, Series>),
-        /// A binary true or false.
-        Boolean(bool),
-        /// A UTF8 encoded string type.
-        String(Cow<'a, str>),
-        Binary(Cow<'a, [u8]>),
-
-        /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
-        /// in days (32 bits).
-        #[cfg(feature = "dtype-date")]
-        Date(i32),
-
-        /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
-        /// in nanoseconds (64 bits).
-        #[cfg(feature = "dtype-datetime")]
-        Datetime(i64, TimeUnit, Option<Cow<'a, TimeZone>>),
-
-        /// A 64-bit integer representing difference between date-times in [`TimeUnit`]
-        #[cfg(feature = "dtype-duration")]
-        Duration(i64, TimeUnit),
-
-        /// A 64-bit time representing the elapsed time since midnight in nanoseconds
-        #[cfg(feature = "dtype-time")]
-        Time(i64),
-
-        #[cfg(feature = "dtype-array")]
-        Array(Cow<'a, Series>, usize),
-
-        /// A 128-bit fixed point decimal number with a scale.
-        #[cfg(feature = "dtype-decimal")]
-        Decimal(i128, usize),
-    }
-
-    impl<'a, 'data: 'a> TryFrom<&'a AnyValue<'data>> for SerializableAnyValue<'a> {
-        type Error = &'static str;
-
-        fn try_from(value: &'a AnyValue<'data>) -> Result<Self, Self::Error> {
-            let out = match value {
-                AnyValue::Null => Self::Null,
-                AnyValue::Int8(v) => Self::Int8(*v),
-                AnyValue::Int16(v) => Self::Int16(*v),
-                AnyValue::Int32(v) => Self::Int32(*v),
-                AnyValue::Int64(v) => Self::Int64(*v),
-                AnyValue::Int128(v) => Self::Int128(*v),
-                AnyValue::UInt8(v) => Self::UInt8(*v),
-                AnyValue::UInt16(v) => Self::UInt16(*v),
-                AnyValue::UInt32(v) => Self::UInt32(*v),
-                AnyValue::UInt64(v) => Self::UInt64(*v),
-                AnyValue::Float32(v) => Self::Float32(*v),
-                AnyValue::Float64(v) => Self::Float64(*v),
-                AnyValue::List(series) => Self::List(Cow::Borrowed(series)),
-                AnyValue::Boolean(v) => Self::Boolean(*v),
-                AnyValue::String(v) => Self::String(Cow::Borrowed(v)),
-                AnyValue::StringOwned(v) => Self::String(Cow::Borrowed(v.as_str())),
-                AnyValue::Binary(v) => Self::Binary(Cow::Borrowed(v)),
-                AnyValue::BinaryOwned(v) => Self::Binary(Cow::Borrowed(v)),
-
-                #[cfg(feature = "dtype-date")]
-                AnyValue::Date(v) => Self::Date(*v),
-
-                #[cfg(feature = "dtype-datetime")]
-                AnyValue::Datetime(v, tu, tz) => Self::Datetime(*v, *tu, tz.map(Cow::Borrowed)),
-                #[cfg(feature = "dtype-datetime")]
-                AnyValue::DatetimeOwned(v, time_unit, time_zone) => Self::Datetime(
-                    *v,
-                    *time_unit,
-                    time_zone.as_ref().map(|t| Cow::Borrowed(t.as_ref())),
-                ),
-
-                #[cfg(feature = "dtype-duration")]
-                AnyValue::Duration(v, time_unit) => Self::Duration(*v, *time_unit),
-
-                #[cfg(feature = "dtype-time")]
-                AnyValue::Time(v) => Self::Time(*v),
-
-                #[cfg(feature = "dtype-categorical")]
-                AnyValue::Categorical(..) | AnyValue::CategoricalOwned(..) => {
-                    return Err("Cannot serialize categorical value.");
-                },
-                #[cfg(feature = "dtype-categorical")]
-                AnyValue::Enum(..) | AnyValue::EnumOwned(..) => {
-                    return Err("Cannot serialize enum value.");
-                },
-
-                #[cfg(feature = "dtype-array")]
-                AnyValue::Array(v, width) => Self::Array(Cow::Borrowed(v), *width),
-
-                #[cfg(feature = "object")]
-                AnyValue::Object(..) | AnyValue::ObjectOwned(..) => {
-                    return Err("Cannot serialize object value.");
-                },
-
-                #[cfg(feature = "dtype-struct")]
-                AnyValue::Struct(..) | AnyValue::StructOwned(..) => {
-                    return Err("Cannot serialize struct value.");
-                },
-
-                #[cfg(feature = "dtype-decimal")]
-                AnyValue::Decimal(v, scale) => Self::Decimal(*v, *scale),
-            };
-            Ok(out)
-        }
-    }
-
-    impl<'a> From<SerializableAnyValue<'a>> for AnyValue<'static> {
-        fn from(value: SerializableAnyValue<'a>) -> Self {
-            type S<'b> = SerializableAnyValue<'b>;
-            match value {
-                S::Null => Self::Null,
-                S::Int8(v) => Self::Int8(v),
-                S::Int16(v) => Self::Int16(v),
-                S::Int32(v) => Self::Int32(v),
-                S::Int64(v) => Self::Int64(v),
-                S::Int128(v) => Self::Int128(v),
-                S::UInt8(v) => Self::UInt8(v),
-                S::UInt16(v) => Self::UInt16(v),
-                S::UInt32(v) => Self::UInt32(v),
-                S::UInt64(v) => Self::UInt64(v),
-                S::Float32(v) => Self::Float32(v),
-                S::Float64(v) => Self::Float64(v),
-                S::List(v) => Self::List(v.into_owned()),
-                S::Boolean(v) => Self::Boolean(v),
-                S::String(v) => Self::StringOwned(match v {
-                    Cow::Borrowed(v) => PlSmallStr::from(v),
-                    Cow::Owned(v) => PlSmallStr::from(v),
-                }),
-                S::Binary(v) => Self::BinaryOwned(v.into_owned()),
-                #[cfg(feature = "dtype-date")]
-                S::Date(v) => Self::Date(v),
-                #[cfg(feature = "dtype-datetime")]
-                S::Datetime(v, time_unit, time_zone) => {
-                    Self::DatetimeOwned(v, time_unit, time_zone.map(Cow::into_owned).map(Arc::new))
-                },
-                #[cfg(feature = "dtype-duration")]
-                S::Duration(v, time_unit) => Self::Duration(v, time_unit),
-                #[cfg(feature = "dtype-time")]
-                S::Time(v) => Self::Time(v),
-                #[cfg(feature = "dtype-array")]
-                S::Array(v, width) => Self::Array(v.into_owned(), width),
-                #[cfg(feature = "dtype-decimal")]
-                S::Decimal(v, scale) => Self::Decimal(v, scale),
-            }
-        }
-    }
-}
-
 impl AnyValue<'static> {
     pub fn zero_sum(dtype: &DataType) -> Self {
         match dtype {
@@ -346,6 +129,83 @@ impl AnyValue<'static> {
     /// Can the [`AnyValue`] exist as having `dtype` as its `DataType`.
     pub fn can_have_dtype(&self, dtype: &DataType) -> bool {
         matches!(self, AnyValue::Null) || dtype == &self.dtype()
+    }
+
+    /// Generate a default dummy value for a given datatype.
+    pub fn default_value(
+        dtype: &DataType,
+        numeric_to_one: bool,
+        num_list_values: usize,
+    ) -> AnyValue<'static> {
+        use {AnyValue as AV, DataType as DT};
+        match dtype {
+            DT::Boolean => AV::Boolean(false),
+            DT::UInt8 => AV::UInt8(numeric_to_one.into()),
+            DT::UInt16 => AV::UInt16(numeric_to_one.into()),
+            DT::UInt32 => AV::UInt32(numeric_to_one.into()),
+            DT::UInt64 => AV::UInt64(numeric_to_one.into()),
+            DT::Int8 => AV::Int8(numeric_to_one.into()),
+            DT::Int16 => AV::Int16(numeric_to_one.into()),
+            DT::Int32 => AV::Int32(numeric_to_one.into()),
+            DT::Int64 => AV::Int64(numeric_to_one.into()),
+            DT::Int128 => AV::Int128(numeric_to_one.into()),
+            DT::Float32 => AV::Float32(numeric_to_one.into()),
+            DT::Float64 => AV::Float64(numeric_to_one.into()),
+            #[cfg(feature = "dtype-decimal")]
+            DT::Decimal(_, scale) => AV::Decimal(0, scale.unwrap()),
+            DT::String => AV::String(""),
+            DT::Binary => AV::Binary(&[]),
+            DT::BinaryOffset => AV::Binary(&[]),
+            DT::Date => feature_gated!("dtype-date", AV::Date(0)),
+            DT::Datetime(time_unit, time_zone) => feature_gated!(
+                "dtype-datetime",
+                AV::DatetimeOwned(0, *time_unit, time_zone.clone().map(Arc::new))
+            ),
+            DT::Duration(time_unit) => {
+                feature_gated!("dtype-duration", AV::Duration(0, *time_unit))
+            },
+            DT::Time => feature_gated!("dtype-time", AV::Time(0)),
+            #[cfg(feature = "dtype-array")]
+            DT::Array(inner_dtype, width) => {
+                let inner_value =
+                    AnyValue::default_value(inner_dtype, numeric_to_one, num_list_values);
+                AV::Array(
+                    Scalar::new(inner_dtype.as_ref().clone(), inner_value)
+                        .into_series(PlSmallStr::EMPTY)
+                        .new_from_index(0, *width),
+                    *width,
+                )
+            },
+            DT::List(inner_dtype) => AV::List(if num_list_values == 0 {
+                Series::new_empty(PlSmallStr::EMPTY, inner_dtype.as_ref())
+            } else {
+                let inner_value =
+                    AnyValue::default_value(inner_dtype, numeric_to_one, num_list_values);
+
+                Scalar::new(inner_dtype.as_ref().clone(), inner_value)
+                    .into_series(PlSmallStr::EMPTY)
+                    .new_from_index(0, num_list_values)
+            }),
+            #[cfg(feature = "object")]
+            DT::Object(_) => AV::Null,
+            DT::Null => AV::Null,
+            #[cfg(feature = "dtype-categorical")]
+            DT::Categorical(_, _) => AV::Null,
+            #[cfg(feature = "dtype-categorical")]
+            DT::Enum(categories, mapping) => match categories.categories().is_empty() {
+                true => AV::Null,
+                false => AV::EnumOwned(0, mapping.clone()),
+            },
+            #[cfg(feature = "dtype-struct")]
+            DT::Struct(fields) => AV::StructOwned(Box::new((
+                fields
+                    .iter()
+                    .map(|f| AnyValue::default_value(f.dtype(), numeric_to_one, num_list_values))
+                    .collect(),
+                fields.clone(),
+            ))),
+            DT::Unknown(_) => unreachable!(),
+        }
     }
 }
 
@@ -1859,7 +1719,7 @@ mod test {
             (ArrowDataType::Time32(ArrowTimeUnit::Second), DataType::Time),
             (
                 ArrowDataType::List(Box::new(ArrowField::new(
-                    PlSmallStr::from_static("item"),
+                    LIST_VALUES_NAME,
                     ArrowDataType::Float64,
                     true,
                 ))),
@@ -1867,7 +1727,7 @@ mod test {
             ),
             (
                 ArrowDataType::LargeList(Box::new(ArrowField::new(
-                    PlSmallStr::from_static("item"),
+                    LIST_VALUES_NAME,
                     ArrowDataType::Float64,
                     true,
                 ))),

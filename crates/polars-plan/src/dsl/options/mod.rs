@@ -75,9 +75,9 @@ impl Default for StrptimeOptions {
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    // Fused cross join and filter (only in in-memory engine)
-    Cross {
-        predicate: ExprIR,
+    // Fused cross join and filter (only used in the in-memory engine)
+    CrossAndFilter {
+        predicate: ExprIR, // Must be elementwise.
     },
 }
 
@@ -87,7 +87,7 @@ impl Hash for JoinTypeOptionsIR {
         match self {
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => opt.hash(state),
-            Cross { predicate } => predicate.node().hash(state),
+            CrossAndFilter { predicate } => predicate.node().hash(state),
         }
     }
 }
@@ -99,7 +99,7 @@ impl JoinTypeOptionsIR {
     ) -> PolarsResult<JoinTypeOptions> {
         use JoinTypeOptionsIR::*;
         match self {
-            Cross { predicate } => {
+            CrossAndFilter { predicate } => {
                 let predicate = plan(&predicate)?;
 
                 Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
@@ -110,7 +110,7 @@ impl JoinTypeOptionsIR {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct JoinOptionsIR {
     pub allow_parallel: bool,
@@ -136,7 +136,7 @@ impl From<JoinOptions> for JoinOptionsIR {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct JoinOptions {

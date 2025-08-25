@@ -6,8 +6,8 @@ from functools import lru_cache, partial
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars as pl
+from polars._plr import _ir_nodes
 from polars._utils.wrap import wrap_df
-from polars.polars import _ir_nodes
 
 if TYPE_CHECKING:
     from pathlib import Path

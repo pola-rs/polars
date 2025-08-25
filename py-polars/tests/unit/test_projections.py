@@ -123,6 +123,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_unnest_columns_available() -> None:
     df = pl.DataFrame(
         {
@@ -139,9 +140,7 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(
-            n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}", _eager=True
-        )
+        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
     ).unnest("genres")
 
     out = q.collect()

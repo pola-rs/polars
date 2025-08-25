@@ -177,15 +177,13 @@ def test_series_add_datetime() -> None:
 def test_diff_datetime() -> None:
     df = pl.DataFrame(
         {
-            "timestamp": ["2021-02-01", "2021-03-1", "2850-04-1"],
+            "timestamp": [date(2021, 2, 1), date(2021, 3, 1), date(2850, 4, 1)],
             "guild": [1, 2, 3],
             "char": ["a", "a", "b"],
         }
     )
-    out = (
-        df.with_columns(
-            pl.col("timestamp").str.strptime(pl.Date, format="%Y-%m-%d"),
-        ).with_columns(pl.col("timestamp").diff().over("char", mapping_strategy="join"))
+    out = df.with_columns(
+        pl.col("timestamp").diff().over("char", mapping_strategy="join")
     )["timestamp"]
     assert_series_equal(out[0], out[1])
 
@@ -729,24 +727,31 @@ def test_asof_join() -> None:
         1464183000048,
         1464183000048,
     ]
-    assert trades.join_asof(quotes, on="dates", strategy="forward")[
-        "bid_right"
-    ].to_list() == [720.5, 51.99, 720.5, 720.5, 720.5]
+    assert_series_equal(
+        trades.join_asof(quotes, on="dates", strategy="forward")["bid_right"],
+        pl.Series("bid_right", [720.5, 51.99, 720.5, 720.5, 720.5]),
+    )
 
     out = trades.join_asof(quotes, on="dates", by="ticker")
     assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
 
     out = quotes.join_asof(trades, on="dates", by="ticker")
-    assert out["bid_right"].to_list() == [
-        None,
-        51.95,
-        51.95,
-        51.95,
-        720.92,
-        98.0,
-        720.92,
-        51.95,
-    ]
+    assert_series_equal(
+        out["bid_right"],
+        pl.Series(
+            "bid_right",
+            [
+                None,
+                51.95,
+                51.95,
+                51.95,
+                720.92,
+                98.0,
+                720.92,
+                51.95,
+            ],
+        ),
+    )
     assert quotes.join_asof(trades, on="dates", strategy="backward", tolerance="5ms")[
         "bid_right"
     ].to_list() == [51.95, 51.95, None, 51.95, 98.0, 98.0, None, None]
@@ -2113,7 +2118,7 @@ def test_truncate_by_multiple_weeks_diffs() -> None:
             "2w": [timedelta(0), timedelta(days=14)],
             "3w": [timedelta(0), timedelta(days=21)],
         }
-    ).select(pl.all().cast(pl.Duration("ms")))
+    ).select(pl.all().cast(pl.Duration("us")))
     assert_frame_equal(result, expected)
 
 

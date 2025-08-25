@@ -421,7 +421,7 @@ impl PyLazyFrame {
         use crate::dataset::dataset_provider_funcs;
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
-            reader_name: dataset_provider_funcs::reader_name,
+            name: dataset_provider_funcs::name,
             schema: dataset_provider_funcs::schema,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });
@@ -633,7 +633,7 @@ impl PyLazyFrame {
         ldf.with_optimizations(optflags.inner).into()
     }
 
-    #[pyo3(signature = (lambda_post_opt=None))]
+    #[pyo3(signature = (lambda_post_opt))]
     fn profile(
         &self,
         py: Python<'_>,
@@ -652,7 +652,7 @@ impl PyLazyFrame {
         Ok((df.into(), time_df.into()))
     }
 
-    #[pyo3(signature = (engine, lambda_post_opt=None))]
+    #[pyo3(signature = (engine, lambda_post_opt))]
     fn collect(
         &self,
         py: Python<'_>,
@@ -980,11 +980,6 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn fetch(&self, py: Python<'_>, n_rows: usize) -> PyResult<PyDataFrame> {
-        let ldf = self.ldf.clone();
-        py.enter_polars_df(|| ldf.fetch(n_rows))
-    }
-
     fn filter(&mut self, predicate: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.filter(predicate.inner).into()
@@ -1128,7 +1123,11 @@ impl PyLazyFrame {
                 strategy: strategy.0,
                 left_by: left_by.map(strings_to_pl_smallstr),
                 right_by: right_by.map(strings_to_pl_smallstr),
-                tolerance: tolerance.map(|t| t.0.into_static()),
+                tolerance: tolerance.map(|t| {
+                    let av = t.0.into_static();
+                    let dtype = av.dtype();
+                    Scalar::new(dtype, av)
+                }),
                 tolerance_str: tolerance_str.map(|s| s.into()),
                 allow_eq,
                 check_sortedness,
@@ -1331,6 +1330,13 @@ impl PyLazyFrame {
             .into())
     }
 
+    fn pipe_with_schema(&self, callback: PyObject) -> Self {
+        let ldf = self.ldf.clone();
+        let function = PythonObject(callback);
+        ldf.pipe_with_schema(PlanCallback::new_python(function))
+            .into()
+    }
+
     fn rename(&mut self, existing: Vec<String>, new: Vec<String>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
         ldf.rename(existing, new, strict).into()
@@ -1474,10 +1480,10 @@ impl PyLazyFrame {
         ldf.with_row_index(name, offset).into()
     }
 
-    #[pyo3(signature = (lambda, predicate_pushdown, projection_pushdown, slice_pushdown, streamable, schema, validate_output))]
+    #[pyo3(signature = (function, predicate_pushdown, projection_pushdown, slice_pushdown, streamable, schema, validate_output))]
     fn map_batches(
         &self,
-        lambda: PyObject,
+        function: PyObject,
         predicate_pushdown: bool,
         projection_pushdown: bool,
         slice_pushdown: bool,
@@ -1494,7 +1500,7 @@ impl PyLazyFrame {
         self.ldf
             .clone()
             .map_python(
-                lambda.into(),
+                function.into(),
                 opt,
                 schema.map(|s| Arc::new(s.0)),
                 validate_output,

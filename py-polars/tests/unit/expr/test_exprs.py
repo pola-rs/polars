@@ -286,6 +286,7 @@ def test_power_by_expression() -> None:
     assert out["pow_op_left"].to_list() == [2.0, 4.0, None, 16.0, None, 64.0]
 
 
+@pytest.mark.may_fail_cloud  # reason: chunking
 @pytest.mark.may_fail_auto_streaming
 def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
@@ -580,12 +581,12 @@ def test_tail() -> None:
 
 
 def test_repr_short_expression() -> None:
-    expr = pl.functions.all().len().name.prefix("length:")
+    expr = pl.functions.all().len().name.prefix("length-long:")
     # we cut off the last ten characters because that includes the
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
-    expected = "<Expr ['cs.all().count().prefix(length…'] at "
+    expected = "<Expr ['cs.all().len().prefix(length-l…'] at "
     assert result == expected
 
 
@@ -644,12 +645,16 @@ def test_slice() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: shrink_dtype
 def test_function_expr_scalar_identification_18755() -> None:
     # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
-    assert_frame_equal(
-        pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
-        pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
-    )
+    with pytest.warns(DeprecationWarning):
+        assert_frame_equal(
+            pl.DataFrame({"a": [1, 2]}).with_columns(
+                pl.lit(5, pl.Int64).shrink_dtype().alias("b")
+            ),
+            pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int64)}),
+        )
 
 
 def test_concat_deprecation() -> None:

@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
@@ -11,6 +11,7 @@ use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -121,6 +122,10 @@ impl SinkNode for PartedPartitionSinkNode {
         self.sink_options.maintain_order
     }
 
+    fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
+        Ok(())
+    }
+
     fn spawn_sink(
         &mut self,
         mut recv_port_recv: Receiver<(PhaseOutcome, SinkInputPort)>,
@@ -131,12 +136,12 @@ impl SinkNode for PartedPartitionSinkNode {
         let (mut retire_tx, retire_rxs) = distributor_channel(self.num_retire_tasks, 1);
 
         // Whether an error has been observed in the retire tasks.
-        let has_error_occurred = Arc::new(AtomicBool::new(false));
+        let has_error_occurred = Arc::new(RelaxedCell::from(false));
 
         // Main Task.
         //
         // Takes the morsels coming in and passes them to underlying sink.
-        let state = state.clone();
+        let task_state = state.clone();
         let sink_input_schema = self.sink_input_schema.clone();
         let key_cols = self.key_cols.clone();
         let base_path = self.base_path.clone();
@@ -152,7 +157,7 @@ impl SinkNode for PartedPartitionSinkNode {
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
                 value: AnyValue<'static>,
                 keys: Vec<Column>,
-                node: Box<dyn SinkNode + Send + Sync>,
+                node: Box<dyn SinkNode + Send>,
             }
 
             let verbose = config::verbose();
@@ -180,7 +185,7 @@ impl SinkNode for PartedPartitionSinkNode {
                     polars_ops::series::rle_lengths(&c, &mut lengths)?;
 
                     for &length in &lengths {
-                        if retire_error.load(Ordering::Relaxed) {
+                        if retire_error.load() {
                             return Ok(());
                         }
 
@@ -228,7 +233,7 @@ impl SinkNode for PartedPartitionSinkNode {
                                     "parted",
                                     ext.as_str(),
                                     verbose,
-                                    &state,
+                                    &task_state,
                                     per_partition_sort_by.as_ref(),
                                 )
                                 .await?;
@@ -294,13 +299,15 @@ impl SinkNode for PartedPartitionSinkNode {
         join_handles.extend(retire_rxs.into_iter().map(|mut retire_rx| {
             let global_partition_metrics = self.partition_metrics.clone();
             let has_error_occurred = has_error_occurred.clone();
+            let task_state = state.clone();
+
             spawn(TaskPriority::High, async move {
                 let mut partition_metrics = Vec::new();
 
-                while let Ok((mut join_handles, node, keys)) = retire_rx.recv().await {
+                while let Ok((mut join_handles, mut node, keys)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
                         ret.inspect_err(|_| {
-                            has_error_occurred.store(true, Ordering::Relaxed);
+                            has_error_occurred.store(true);
                         })?;
                     }
                     if let Some(mut metrics) = node.get_metrics()? {
@@ -311,7 +318,9 @@ impl SinkNode for PartedPartitionSinkNode {
                         );
                         partition_metrics.push(metrics);
                     }
-                    node.finish()?;
+                    if let Some(finalize) = node.finalize(&task_state) {
+                        finalize.await?;
+                    }
                 }
 
                 {
@@ -324,21 +333,32 @@ impl SinkNode for PartedPartitionSinkNode {
         }));
     }
 
-    fn finish(&self) -> PolarsResult<()> {
-        if let Some(finish_callback) = &self.finish_callback {
-            let mut written_partitions = self.partition_metrics.lock().unwrap();
-            let written_partitions =
-                std::mem::take::<Vec<Vec<WriteMetrics>>>(written_partitions.as_mut())
-                    .into_iter()
-                    .flatten()
-                    .collect();
-            let df = WriteMetrics::collapse_to_df(
-                written_partitions,
-                &self.sink_input_schema,
-                Some(&self.input_schema.try_project(self.key_cols.iter()).unwrap()),
-            );
-            finish_callback.call(df)?;
-        }
-        Ok(())
+    fn finalize(
+        &mut self,
+        _state: &StreamingExecutionState,
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
+        let finish_callback = self.finish_callback.clone();
+        let partition_metrics = self.partition_metrics.clone();
+        let sink_input_schema = self.sink_input_schema.clone();
+        let input_schema = self.input_schema.clone();
+        let key_cols = self.key_cols.clone();
+
+        Some(Box::pin(async move {
+            if let Some(finish_callback) = &finish_callback {
+                let mut written_partitions = partition_metrics.lock().unwrap();
+                let written_partitions =
+                    std::mem::take::<Vec<Vec<WriteMetrics>>>(written_partitions.as_mut())
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                let df = WriteMetrics::collapse_to_df(
+                    written_partitions,
+                    &sink_input_schema,
+                    Some(&input_schema.try_project(key_cols.iter()).unwrap()),
+                );
+                finish_callback.call(df)?;
+            }
+            Ok(())
+        }))
     }
 }

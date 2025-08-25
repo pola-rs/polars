@@ -112,7 +112,7 @@ class ColumnInfo:
             "`get_polars_dtype` functionality is considered unstable."
         )
 
-        from polars.polars import PyCatalogClient
+        from polars._plr import PyCatalogClient
 
         return PyCatalogClient.type_json_to_polars_type(self.type_json)
 

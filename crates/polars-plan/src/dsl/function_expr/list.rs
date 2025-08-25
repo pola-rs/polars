@@ -56,7 +56,7 @@ pub enum ListFunction {
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
-    ToStruct(ListToStructArgs),
+    ToStruct(Arc<[PlSmallStr]>),
 }
 
 impl Display for ListFunction {
@@ -121,5 +121,11 @@ impl Display for ListFunction {
             ToStruct(_) => "to_struct",
         };
         write!(f, "list.{name}")
+    }
+}
+
+impl From<ListFunction> for FunctionExpr {
+    fn from(value: ListFunction) -> Self {
+        Self::ListExpr(value)
     }
 }

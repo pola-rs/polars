@@ -45,6 +45,7 @@ impl TreeWalker for Expr {
             Alias(l, r) => Alias(am(l, f)?, r),
             Column(_) => self,
             Literal(_) => self,
+            DataTypeFunction(_) => self,
             #[cfg(feature = "dtype-struct")]
             Field(_) => self,
             BinaryExpr { left, op, right } => {
@@ -63,7 +64,7 @@ impl TreeWalker for Expr {
                 Last(x) => Last(am(x, f)?),
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
-                Count(x, nulls) => Count(am(x, f)?, nulls),
+                Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
                 Quantile { expr, quantile, method: interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, method: interpol },
                 Sum(x) => Sum(am(x, f)?),
                 AggGroups(x) => AggGroups(am(x, f)?),
@@ -82,8 +83,8 @@ impl TreeWalker for Expr {
             KeepName(expr) => KeepName(am(expr, f)?),
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
-            AnonymousFunction { input, function, output_type, options, fmt_str } => {
-                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options, fmt_str }
+            AnonymousFunction { input, function, options, fmt_str } => {
+                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             SubPlan(_, _) => self,
@@ -118,7 +119,7 @@ impl AexprNode {
 
     pub fn to_field(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<Field> {
         let aexpr = arena.get(self.node);
-        aexpr.to_field(schema, Context::Default, arena)
+        aexpr.to_field(schema, arena)
     }
 
     pub fn assign(&mut self, ae: AExpr, arena: &mut Arena<AExpr>) {

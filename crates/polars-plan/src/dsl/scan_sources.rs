@@ -365,6 +365,7 @@ impl ScanSourceRef<'_> {
     }
 
     #[cfg(not(feature = "cloud"))]
+    #[allow(clippy::wrong_self_convention)]
     fn to_memslice_async(&self, run_async: bool) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {

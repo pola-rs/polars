@@ -101,37 +101,52 @@ pub(super) fn repeat_by(s: &[Column]) -> PolarsResult<Column> {
         .map(|ok| ok.into_column())
 }
 
-pub(super) fn max_horizontal(s: &mut [Column]) -> PolarsResult<Option<Column>> {
-    polars_ops::prelude::max_horizontal(s)
+pub(super) fn max_horizontal(s: &mut [Column]) -> PolarsResult<Column> {
+    polars_ops::prelude::max_horizontal(s).map(Option::unwrap)
 }
 
-pub(super) fn min_horizontal(s: &mut [Column]) -> PolarsResult<Option<Column>> {
-    polars_ops::prelude::min_horizontal(s)
+pub(super) fn min_horizontal(s: &mut [Column]) -> PolarsResult<Column> {
+    polars_ops::prelude::min_horizontal(s).map(Option::unwrap)
 }
 
-pub(super) fn sum_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsResult<Option<Column>> {
+pub(super) fn sum_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsResult<Column> {
     let null_strategy = if ignore_nulls {
         NullStrategy::Ignore
     } else {
         NullStrategy::Propagate
     };
-    polars_ops::prelude::sum_horizontal(s, null_strategy)
+    polars_ops::prelude::sum_horizontal(s, null_strategy).map(Option::unwrap)
 }
 
-pub(super) fn mean_horizontal(
-    s: &mut [Column],
-    ignore_nulls: bool,
-) -> PolarsResult<Option<Column>> {
+pub(super) fn mean_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsResult<Column> {
     let null_strategy = if ignore_nulls {
         NullStrategy::Ignore
     } else {
         NullStrategy::Propagate
     };
-    polars_ops::prelude::mean_horizontal(s, null_strategy)
+    polars_ops::prelude::mean_horizontal(s, null_strategy).map(Option::unwrap)
 }
 
 pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     Ok(s.drop_nulls())
+}
+
+pub fn append(s: &[Column], upcast: bool) -> PolarsResult<Column> {
+    assert_eq!(s.len(), 2);
+
+    let a = &s[0];
+    let b = &s[1];
+
+    if upcast {
+        let dtype = try_get_supertype(a.dtype(), b.dtype())?;
+        let mut a = a.cast(&dtype)?;
+        a.append_owned(b.cast(&dtype)?)?;
+        Ok(a)
+    } else {
+        let mut a = a.clone();
+        a.append(b)?;
+        Ok(a)
+    }
 }
 
 #[cfg(feature = "mode")]
@@ -160,6 +175,46 @@ pub(super) fn arg_unique(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
         .arg_unique()
         .map(|ok| ok.into_column())
+}
+
+pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_min()
+        .map_or(Scalar::null(IDX_DTYPE), |v| {
+            Scalar::from(IdxSize::try_from(v).expect("idxsize"))
+        })
+        .into_column(s.name().clone()))
+}
+
+pub(super) fn arg_max(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_max()
+        .map_or(Scalar::null(IDX_DTYPE), |v| {
+            Scalar::from(IdxSize::try_from(v).expect("idxsize"))
+        })
+        .into_column(s.name().clone()))
+}
+
+pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_sort(SortOptions {
+            descending,
+            nulls_last,
+            multithreaded: true,
+            maintain_order: false,
+            limit: None,
+        })
+        .into_column())
+}
+
+pub(super) fn product(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .product()
+        .map(|sc| sc.into_column(s.name().clone()))
 }
 
 #[cfg(feature = "rank")]

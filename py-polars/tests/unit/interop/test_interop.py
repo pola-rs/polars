@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, cast
 
 import numpy as np
@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, UnstableWarning
+from polars.exceptions import ComputeError, DuplicateError, UnstableWarning
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
@@ -585,6 +585,37 @@ def test_dataframe_from_repr() -> None:
     }
 
 
+def test_dataframe_from_repr_24110() -> None:
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr("""
+            shape: (7, 1)
+            ┌──────────────┐
+            │ time_offset  │
+            │ ---          │
+            │ duration[μs] │
+            ╞══════════════╡
+            │ -2h          │
+            │ 0µs          │
+            │ 2h           │
+            │ +2h          │
+            └──────────────┘
+    """),
+    )
+    expected = pl.DataFrame(
+        {
+            "time_offset": [
+                timedelta(hours=-2),
+                timedelta(),
+                timedelta(hours=2),
+                timedelta(hours=2),
+            ]
+        },
+        schema={"time_offset": pl.Duration("us")},
+    )
+    assert_frame_equal(df, expected)
+
+
 def test_dataframe_from_duckdb_repr() -> None:
     df = cast(
         pl.DataFrame,
@@ -827,15 +858,15 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
     oldest = CompatLevel.oldest()
     assert oldest is CompatLevel.oldest()  # test singleton
-    assert oldest._version == 0  # type: ignore[attr-defined]
+    assert oldest._version == 0
     with pytest.warns(UnstableWarning):
         newest = CompatLevel.newest()
         assert newest is CompatLevel.newest()
-    assert newest._version == 1  # type: ignore[attr-defined]
+    assert newest._version == 1
 
     str_col = pl.Series(["awd"])
     bin_col = pl.Series([b"dwa"])
-    assert str_col._newest_compat_level() == newest._version  # type: ignore[attr-defined]
+    assert str_col._newest_compat_level() == newest._version
     assert isinstance(str_col.to_arrow(), pa.LargeStringArray)
     assert isinstance(str_col.to_arrow(compat_level=oldest), pa.LargeStringArray)
     assert isinstance(str_col.to_arrow(compat_level=newest), pa.StringViewArray)
@@ -944,3 +975,110 @@ def test_from_arrow_recorbatch() -> None:
             }
         ),
     )
+
+
+def test_from_arrow_map_containing_timestamp_23658() -> None:
+    arrow_tbl = pa.Table.from_pydict(
+        {
+            "column_1": [
+                [
+                    {
+                        "field_1": [
+                            {"key": 1, "value": datetime(2025, 1, 1)},
+                            {"key": 2, "value": datetime(2025, 1, 2)},
+                            {"key": 2, "value": None},
+                        ]
+                    },
+                    {"field_1": []},
+                    None,
+                ]
+            ],
+        },
+        schema=pa.schema(
+            [
+                (
+                    "column_1",
+                    pa.list_(
+                        pa.struct(
+                            [
+                                ("field_1", pa.map_(pa.int32(), pa.timestamp("ms"))),
+                            ]
+                        )
+                    ),
+                )
+            ]
+        ),
+    )
+
+    expect = pl.DataFrame(
+        {
+            "column_1": [
+                [
+                    {
+                        "field_1": [
+                            {"key": 1, "value": datetime(2025, 1, 1)},
+                            {"key": 2, "value": datetime(2025, 1, 2)},
+                            {"key": 2, "value": None},
+                        ]
+                    },
+                    {"field_1": []},
+                    None,
+                ]
+            ],
+        },
+        schema={
+            "column_1": pl.List(
+                pl.Struct(
+                    {
+                        "field_1": pl.List(
+                            pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")})
+                        )
+                    }
+                )
+            )
+        },
+    )
+
+    out = pl.DataFrame(arrow_tbl)
+
+    assert_frame_equal(out, expect)
+
+
+def test_schema_constructor_from_schema_capsule() -> None:
+    arrow_schema = pa.schema(
+        [pa.field("test", pa.map_(pa.int32(), pa.timestamp("ms")))]
+    )
+
+    assert pl.Schema(arrow_schema) == {
+        "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
+    }
+
+    arrow_schema = pa.schema([pa.field("a", pa.int32()), pa.field("a", pa.int32())])
+
+    with pytest.raises(
+        DuplicateError,
+        match="arrow schema contained duplicate name: a",
+    ):
+        pl.Schema(arrow_schema)
+
+    with pytest.raises(
+        ValueError,
+        match="object passed to pl.Schema did not return struct dtype: object: pyarrow.Field<a: int32>, dtype: Int32",
+    ):
+        pl.Schema(pa.field("a", pa.int32()))
+
+    assert pl.Schema([pa.field("a", pa.int32()), pa.field("b", pa.string())]) == {
+        "a": pl.Int32,
+        "b": pl.String,
+    }
+
+    with pytest.raises(
+        DuplicateError,
+        match="iterable passed to pl.Schema contained duplicate name 'a'",
+    ):
+        pl.Schema([pa.field("a", pa.int32()), pa.field("a", pa.int64())])
+
+
+def test_to_arrow_24142() -> None:
+    df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
+    df.to_arrow(compat_level=CompatLevel.oldest())

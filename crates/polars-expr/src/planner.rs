@@ -285,10 +285,7 @@ fn create_physical_expr_inner(
             )))
         },
         BinaryExpr { left, op, right } => {
-            let output_field =
-                expr_arena
-                    .get(expression)
-                    .to_field(schema, Context::Default, expr_arena)?;
+            let output_field = expr_arena.get(expression).to_field(schema, expr_arena)?;
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
@@ -378,7 +375,10 @@ fn create_physical_expr_inner(
                         I::Implode(_) => GBM::Implode,
                         I::Quantile { .. } => unreachable!(),
                         I::Sum(_) => GBM::Sum,
-                        I::Count(_, include_nulls) => GBM::Count {
+                        I::Count {
+                            input: _,
+                            include_nulls,
+                        } => GBM::Count {
                             include_nulls: *include_nulls,
                         },
                         I::Std(_, ddof) => GBM::Std(*ddof),
@@ -407,7 +407,7 @@ fn create_physical_expr_inner(
                         return Ok(Arc::new(AggQuantileExpr::new(input, quantile, *interpol)));
                     }
 
-                    let field = expr_arena.get(expression).to_field(
+                    let field = expr_arena.get(expression).to_field_with_ctx(
                         schema,
                         Context::Aggregation,
                         expr_arena,
@@ -433,7 +433,6 @@ fn create_physical_expr_inner(
                 dtype: dtype.clone(),
                 expr: node_to_expr(expression, expr_arena),
                 options: *options,
-                inlined_eval: Default::default(),
             }))
         },
         Ternary {
@@ -465,21 +464,23 @@ fn create_physical_expr_inner(
         AnonymousFunction {
             input,
             function,
-            output_type: _,
             options,
             fmt_str: _,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
-                .to_field(schema, ctxt, expr_arena)?;
+                .to_field_with_ctx(schema, ctxt, expr_arena)?;
 
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
 
+            let function = function.clone().materialize()?;
+            let function = function.into_inner().as_column_udf();
+
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function.clone().materialize()?,
+                SpecialEq::new(function),
                 node_to_expr(expression, expr_arena),
                 *options,
                 state.allow_threading,
@@ -497,15 +498,15 @@ fn create_physical_expr_inner(
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
-            let output_field = expr_arena
+
+            let output_field_with_ctx = expr_arena
                 .get(expression)
-                .to_field(schema, ctxt, expr_arena)?;
+                .to_field_with_ctx(schema, ctxt, expr_arena)?;
             let non_aggregated_output_field =
-                expr_arena
-                    .get(expression)
-                    .to_field(schema, Context::Default, expr_arena)?;
-            let input_field = expr_arena.get(*expr).to_field(schema, ctxt, expr_arena)?;
-            let expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
+                expr_arena.get(expression).to_field(schema, expr_arena)?;
+            let input_field = expr_arena.get(*expr).to_field(schema, expr_arena)?;
+            let expr =
+                create_physical_expr_inner(*expr, Context::Default, expr_arena, schema, state)?;
 
             let element_dtype = variant.element_dtype(&input_field.dtype)?;
             let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
@@ -523,7 +524,7 @@ fn create_physical_expr_inner(
                 *variant,
                 node_to_expr(expression, expr_arena),
                 state.allow_threading,
-                output_field,
+                output_field_with_ctx,
                 non_aggregated_output_field.dtype,
                 is_scalar,
                 pd_group,
@@ -538,7 +539,7 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
-                .to_field(schema, ctxt, expr_arena)?;
+                .to_field_with_ctx(schema, ctxt, expr_arena)?;
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
 
@@ -561,7 +562,8 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
             let offset = create_physical_expr_inner(*offset, ctxt, expr_arena, schema, state)?;
             let length = create_physical_expr_inner(*length, ctxt, expr_arena, schema, state)?;
-            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by a slice during aggregation is not allowed");
+            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)),
+                InvalidOperation: "'implode' followed by a slice during aggregation is not allowed");
             Ok(Arc::new(SliceExpr {
                 input,
                 offset,
@@ -573,14 +575,12 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             let skip_empty = *skip_empty;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| {
-                    c[0].explode(skip_empty).map(Some)
-                },
+                move |c: &mut [polars_core::frame::column::Column]| c[0].explode(skip_empty),
             ) as Arc<dyn ColumnsUdf>);
 
             let field = expr_arena
                 .get(expression)
-                .to_field(schema, ctxt, expr_arena)?;
+                .to_field_with_ctx(schema, ctxt, expr_arena)?;
 
             Ok(Arc::new(ApplyExpr::new(
                 vec![input],

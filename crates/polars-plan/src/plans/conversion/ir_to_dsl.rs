@@ -101,6 +101,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 .into()
             },
 
+            IRAggExpr::Mean(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::Mean(Arc::new(exp)).into()
+            },
             IRAggExpr::Median(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Median(Arc::new(exp)).into()
@@ -116,10 +120,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Last(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
-            },
-            IRAggExpr::Mean(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Mean(Arc::new(exp)).into()
             },
             IRAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -155,9 +155,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Arc::new(exp)).into()
             },
-            IRAggExpr::Count(expr, include_nulls) => {
-                let expr = node_to_expr(expr, expr_arena);
-                AggExpr::Count(Arc::new(expr), include_nulls).into()
+            IRAggExpr::Count {
+                input,
+                include_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::Count {
+                    input: Arc::new(input),
+                    include_nulls,
+                }
+                .into()
             },
         },
         AExpr::Ternary {
@@ -178,13 +185,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
             fmt_str,
         } => Expr::AnonymousFunction {
             input: expr_irs_to_exprs(input, expr_arena),
             function,
-            output_type,
             options,
             fmt_str,
         },
@@ -239,36 +244,6 @@ fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()
 }
 
-pub fn node_to_lp_cloned(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    mut lp_arena: &Arena<IR>,
-) -> DslPlan {
-    // we borrow again mutably only to make the types happy
-    // we want to initialize `to_lp` from a mutable and a immutable lp_arena
-    // by borrowing an immutable mutably, we still are immutable down the line.
-    let alp = lp_arena.get(node).clone();
-    alp.into_lp(
-        &|node, lp_arena: &mut &Arena<IR>| lp_arena.get(node).clone(),
-        &mut lp_arena,
-        expr_arena,
-    )
-}
-
-/// converts a node from the IR arena to a LogicalPlan
-pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR>) -> DslPlan {
-    let alp = lp_arena.get_mut(node);
-    let alp = std::mem::take(alp);
-    alp.into_lp(
-        &|node, lp_arena: &mut Arena<IR>| {
-            let lp = lp_arena.get_mut(node);
-            std::mem::take(lp)
-        },
-        lp_arena,
-        expr_arena,
-    )
-}
-
 pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
     use {FunctionExpr as F, IRFunctionExpr as IF};
 
@@ -287,6 +262,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::NUnique => A::NUnique,
                 IA::Std(v) => A::Std(v),
                 IA::Var(v) => A::Var(v),
+                IA::Mean => A::Mean,
                 IA::Median => A::Median,
                 #[cfg(feature = "array_any_all")]
                 IA::Any => A::Any,
@@ -305,6 +281,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Shift => A::Shift,
                 IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode { skip_empty } => A::Explode { skip_empty },
+                #[cfg(feature = "array_to_struct")]
+                IA::ToStruct(ng) => A::ToStruct(ng),
             })
         },
         IF::BinaryExpr(f) => {
@@ -437,13 +415,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::LenChars => B::LenChars,
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
-                IB::JsonDecode {
-                    dtype,
-                    infer_schema_len,
-                } => B::JsonDecode {
-                    dtype: dtype.map(Into::into),
-                    infer_schema_len,
-                },
+                IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonPathMatch => B::JsonPathMatch,
                 #[cfg(feature = "regex")]
@@ -483,7 +455,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 },
                 IB::Split(v) => B::Split(v),
                 #[cfg(feature = "dtype-decimal")]
-                IB::ToDecimal(v) => B::ToDecimal(v),
+                IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
                 IB::Titlecase => B::Titlecase,
                 IB::Uppercase => B::Uppercase,
@@ -547,6 +519,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::IsoYear => B::IsoYear,
                 IB::Quarter => B::Quarter,
                 IB::Month => B::Month,
+                IB::DaysInMonth => B::DaysInMonth,
                 IB::Week => B::Week,
                 IB::WeekDay => B::WeekDay,
                 IB::Day => B::Day,
@@ -825,6 +798,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                         corr_cov_options,
                         is_corr,
                     },
+                    IR::Map(f) => R::Map(f),
                 },
                 options,
             }
@@ -848,6 +822,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
+        IF::Append { upcast } => F::Append { upcast },
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,
@@ -863,6 +838,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "repeat_by")]
         IF::RepeatBy => F::RepeatBy,
         IF::ArgUnique => F::ArgUnique,
+        IF::ArgMin => F::ArgMin,
+        IF::ArgMax => F::ArgMax,
+        IF::ArgSort {
+            descending,
+            nulls_last,
+        } => F::ArgSort {
+            descending,
+            nulls_last,
+        },
+        IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
         IF::Repeat => F::Repeat,
@@ -902,7 +887,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
         IF::Coalesce => F::Coalesce,
-        IF::ShrinkType => F::ShrinkType,
         #[cfg(feature = "diff")]
         IF::Diff(nb) => F::Diff(nb),
         #[cfg(feature = "pct_change")]
@@ -1023,6 +1007,48 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             symbol,
             kwargs,
         },
+
+        IF::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        IF::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        #[cfg(feature = "dtype-struct")]
+        IF::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        #[cfg(feature = "dtype-struct")]
+        IF::CumFoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+            include_init,
+        } => F::CumFoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+            include_init,
+        },
+
         IF::MaxHorizontal => F::MaxHorizontal,
         IF::MinHorizontal => F::MinHorizontal,
         IF::SumHorizontal { ignore_nulls } => F::SumHorizontal { ignore_nulls },
@@ -1045,6 +1071,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "reinterpret")]
         IF::Reinterpret(v) => F::Reinterpret(v),
         IF::ExtendConstant => F::ExtendConstant,
+
+        IF::RowEncode(_, v) => F::RowEncode(v),
+        #[cfg(feature = "dtype-struct")]
+        IF::RowDecode(fs, v) => F::RowDecode(
+            fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
+            v,
+        ),
     };
 
     Expr::Function { input, function }

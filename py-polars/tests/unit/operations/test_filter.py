@@ -73,7 +73,8 @@ def test_group_by_filter_all_true() -> None:
     assert out.to_dict(as_series=False) == {"n_unique": [1, 1]}
 
 
-def test_filter_is_in_4572() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_filter_is_in_4572(maintain_order: bool) -> None:
     df = pl.DataFrame({"id": [1, 2, 1, 2], "k": ["a"] * 2 + ["b"] * 2})
     expected = df.group_by("id").agg(pl.col("k").filter(k="a").implode()).sort("id")
     result = (
@@ -84,14 +85,24 @@ def test_filter_is_in_4572() -> None:
     assert_frame_equal(result, expected)
     result = (
         df.sort("id")
-        .group_by("id")
+        .group_by("id", maintain_order=maintain_order)
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
 @pytest.mark.parametrize(
-    "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Binary, pl.List(pl.Int64), pl.Object]
+    "dtype",
+    [
+        pl.Int32,
+        pl.Boolean,
+        pl.String,
+        pl.Binary,
+        pl.List(pl.Int64),
+        pytest.param(
+            pl.Object, marks=pytest.mark.may_fail_cloud
+        ),  # reason: object dtype
+    ],
 )
 def test_filter_on_empty(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"a": []}, schema={"a": dtype})
@@ -327,3 +338,25 @@ def test_filter_expand_20014() -> None:
         .count("FILTER")
         == 3
     )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_filter_group_by_23681(maintain_order: bool) -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "a": [1, 2, 3, 300],
+                "b": [1, 1, 2, 2],
+            }
+        )
+        .group_by("b", maintain_order=maintain_order)
+        .agg(pl.col.a.filter(pl.Series([True, False])))
+    )
+    expected = pl.DataFrame(
+        {
+            "b": [1, 2],
+            "a": [[1], [3]],
+        }
+    )
+
+    assert_frame_equal(df, expected, check_row_order=maintain_order)

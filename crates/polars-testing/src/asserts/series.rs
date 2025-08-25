@@ -60,8 +60,8 @@ mod tests {
         assert!(options.check_names);
         assert!(options.check_order);
         assert!(options.check_exact);
-        assert_eq!(options.rtol, 1e-5);
-        assert_eq!(options.atol, 1e-8);
+        assert_eq!(options.rel_tol, 1e-5);
+        assert_eq!(options.abs_tol, 1e-8);
         assert!(!options.categorical_as_str);
     }
 
@@ -198,26 +198,26 @@ mod tests {
     }
 
     #[test]
-    fn test_series_float_custom_rtol() {
+    fn test_series_float_custom_rel_tol() {
         let s1 = Series::new("".into(), &[10.0, 100.0, 1000.0]);
         let s2 = Series::new("".into(), &[10.05, 100.1, 1000.2]);
 
         let options = crate::asserts::SeriesEqualOptions::default()
             .with_check_exact(false)
-            .with_rtol(0.01);
+            .with_rel_tol(0.01);
 
         assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
     #[should_panic(expected = "values not within tolerance")]
-    fn test_series_float_custom_atol() {
+    fn test_series_float_custom_abs_tol() {
         let s1 = Series::new("".into(), &[0.001, 0.01, 0.1]);
         let s2 = Series::new("".into(), &[0.001, 0.02, 0.1]);
 
         let options = crate::asserts::SeriesEqualOptions::default()
             .with_check_exact(false)
-            .with_atol(0.005);
+            .with_abs_tol(0.005);
 
         assert_series_equal!(&s1, &s2, options);
     }
@@ -465,7 +465,7 @@ mod tests {
         let field1 = Series::new("field1".into(), &["a", "d", "g"]);
         let field2 = Series::new("field2".into(), &["b", "e", "h"]);
 
-        let s1_fields = [field1.clone(), field2.clone()];
+        let s1_fields = [field1.clone(), field2];
         let s1_struct =
             StructChunked::from_series("".into(), field1.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
@@ -473,7 +473,7 @@ mod tests {
         let field1_alt = Series::new("field1".into(), &["a", "DIFFERENT", "g"]);
         let field2_alt = Series::new("field2".into(), &["b", "e", "h"]);
 
-        let s2_fields = [field1_alt.clone(), field2_alt.clone()];
+        let s2_fields = [field1_alt.clone(), field2_alt];
         let s2_struct =
             StructChunked::from_series("".into(), field1_alt.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
@@ -491,7 +491,7 @@ mod tests {
             StructChunked::from_series("".into(), field1.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
 
-        let s2_fields = [field1.clone(), field2.clone()];
+        let s2_fields = [field1.clone(), field2];
         let s2_struct =
             StructChunked::from_series("".into(), field1.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
@@ -511,7 +511,7 @@ mod tests {
         let s1 = s1_struct.into_series();
 
         let id_alt = Series::new("id".into(), &[1, 99, 3]);
-        let s2_fields = [id_alt.clone(), value.clone(), active.clone()];
+        let s2_fields = [id_alt, value, active];
         let s2_struct = StructChunked::from_series("".into(), id.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
 
@@ -528,7 +528,7 @@ mod tests {
         let s1_struct = StructChunked::from_series("".into(), id.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
 
-        let s2_fields = [id.clone(), value.clone(), active.clone()];
+        let s2_fields = [id.clone(), value, active];
         let s2_struct = StructChunked::from_series("".into(), id.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
 

@@ -19,15 +19,19 @@ from polars._utils.parse import (
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
-from polars._utils.wrap import wrap_df, wrap_expr
+from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.datatypes._parse import parse_into_datatype_expr
+from polars.dependencies import _check_for_numpy
+from polars.dependencies import numpy as np
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,
 )
+from polars.meta.index_type import get_index_type
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     import sys
@@ -938,13 +942,13 @@ def corr(
             corr(*exprs, eager=False, method=method, propagate_nans=propagate_nans)
         ).to_series()
     else:
-        a = parse_into_expression(a)
-        b = parse_into_expression(b)
+        a_pyexpr = parse_into_expression(a)
+        b_pyexpr = parse_into_expression(b)
 
         if method == "pearson":
-            return wrap_expr(plr.pearson_corr(a, b))
+            return wrap_expr(plr.pearson_corr(a_pyexpr, b_pyexpr))
         elif method == "spearman":
-            return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+            return wrap_expr(plr.spearman_rank_corr(a_pyexpr, b_pyexpr, propagate_nans))
         else:
             msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
             raise ValueError(msg)
@@ -1038,20 +1042,65 @@ def cov(
         exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (a, b))
         return frame.select(cov(*exprs, eager=False, ddof=ddof)).to_series()
     else:
-        a = parse_into_expression(a)
-        b = parse_into_expression(b)
-        return wrap_expr(plr.cov(a, b, ddof))
+        a_pyexpr = parse_into_expression(a)
+        b_pyexpr = parse_into_expression(b)
+        return wrap_expr(plr.cov(a_pyexpr, b_pyexpr, ddof))
+
+
+class _map_batches_wrapper:
+    def __init__(
+        self,
+        function: Callable[[Sequence[Series]], Series | Any],
+        *,
+        returns_scalar: bool,
+    ) -> None:
+        self.function = function
+        self.returns_scalar = returns_scalar
+
+    def __call__(
+        self, sl: list[plr.PySeries], *args: Any, **kwargs: Any
+    ) -> plr.PySeries:
+        return_dtype = kwargs["return_dtype"]
+        slp = [wrap_s(s) for s in sl]
+
+        # ufunc and numba don't expect return_dtype
+        try:
+            rv = self.function(slp, *args, **kwargs)
+        except TypeError as e:
+            if "unexpected keyword argument 'return_dtype'" in e.args[0]:
+                kwargs.pop("return_dtype")
+                rv = self.function(slp, *args, **kwargs)
+            else:
+                raise
+
+        if _check_for_numpy(rv) and isinstance(rv, np.ndarray):
+            rv = pl.Series(rv, dtype=return_dtype)
+
+        if isinstance(rv, pl.Series):
+            return rv._s
+        elif self.returns_scalar:
+            return pl.Series([rv], dtype=return_dtype)._s
+        else:
+            msg = f"`map` with `returns_scalar=False` must return a Series; found {qualified_type_name(rv)!r}.\n\nIf `returns_scalar` is set to `True`, a returned value can be a scalar value."
+            raise TypeError(msg)
 
 
 def map_batches(
-    exprs: Sequence[str] | Sequence[Expr],
-    function: Callable[[Sequence[Series]], Series],
-    return_dtype: PolarsDataType | None = None,
+    exprs: Sequence[str | Expr],
+    function: Callable[[Sequence[Series]], Series | Any],
+    return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
+    *,
+    is_elementwise: bool = False,
+    returns_scalar: bool = False,
 ) -> Expr:
     """
     Map a custom function over multiple columns/expressions.
 
     Produces a single Series result.
+
+    .. warning::
+        This method is much slower than the native expressions API.
+        Only use it if you cannot implement your logic otherwise.
 
     Parameters
     ----------
@@ -1060,7 +1109,28 @@ def map_batches(
     function
         Function to apply over the input.
     return_dtype
-        dtype of the output Series.
+        Datatype of the output Series.
+
+        It is recommended to set this whenever possible. If this is `None`, it tries
+        to infer the datatype by calling the function with dummy data and looking at
+        the output.
+    is_elementwise
+        Set to true if the operations is elementwise for better performance
+        and optimization.
+
+        An elementwise operations has unit or equal length for all inputs
+        and can be ran sequentially on slices without results being affected.
+    returns_scalar
+        If the function returns a scalar, by default it will be wrapped in
+        a list in the output, since the assumption is that the function
+        always returns something Series-like. If you want to keep the
+        result as a scalar, set this argument to True.
+
+    Notes
+    -----
+    A UDF passed to `map_batches` must be pure, meaning that it cannot modify
+    or depend on state other than its arguments. We may call the function
+    with arbitrary input data.
 
     Returns
     -------
@@ -1097,10 +1167,21 @@ def map_batches(
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
     """
-    exprs = parse_into_list_of_expressions(exprs)
+    pyexprs = parse_into_list_of_expressions(exprs)
+
+    return_dtype_expr = (
+        parse_into_datatype_expr(return_dtype)._pydatatype_expr
+        if return_dtype is not None
+        else None
+    )
+
     return wrap_expr(
-        plr.map_mul(
-            exprs, function, return_dtype, map_groups=False, returns_scalar=False
+        plr.map_expr(
+            pyexprs,
+            _map_batches_wrapper(function, returns_scalar=returns_scalar),
+            return_dtype_expr,
+            is_elementwise=is_elementwise,
+            returns_scalar=returns_scalar,
         )
     )
 
@@ -1108,8 +1189,9 @@ def map_batches(
 def map_groups(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
-    return_dtype: PolarsDataType | None = None,
+    return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     *,
+    is_elementwise: bool = False,
     returns_scalar: bool = False,
 ) -> Expr:
     """
@@ -1126,9 +1208,25 @@ def map_groups(
     function
         Function to apply over the input; should be of type Callable[[Series], Series].
     return_dtype
-        dtype of the output Series.
+        Datatype of the output Series.
+
+        It is recommended to set this whenever possible. If this is `None`, it tries
+        to infer the datatype by calling the function with dummy data and looking at
+        the output.
+    is_elementwise
+        Set to true if the operations is elementwise for better performance
+        and optimization.
+
+        An elementwise operations has unit or equal length for all inputs
+        and can be ran sequentially on slices without results being affected.
     returns_scalar
         If the function returns a single scalar as output.
+
+    Notes
+    -----
+    A UDF passed to `map_batches` must be pure, meaning that it cannot modify
+    or depend on state other than its arguments. Polars may call the function
+    with arbitrary input data.
 
     Returns
     -------
@@ -1182,16 +1280,48 @@ def map_groups(
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(
-        plr.map_mul(
-            exprs,
-            function,
-            return_dtype,
-            map_groups=True,
-            returns_scalar=returns_scalar,
-        )
+    return map_batches(
+        exprs,
+        function,
+        return_dtype,
+        is_elementwise=is_elementwise,
+        returns_scalar=returns_scalar,
     )
+
+
+def _row_encode(
+    exprs: pl.Selector | pl.Expr | Sequence[str | pl.Expr],
+    *,
+    unordered: bool = False,
+    descending: list[bool] | None = None,
+    nulls_last: list[bool] | None = None,
+) -> Expr:
+    if isinstance(exprs, pl.Selector):
+        exprs = [exprs.as_expr()]
+    elif isinstance(exprs, pl.Expr):
+        exprs = [exprs]
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+
+    if unordered:
+        assert descending is None
+        assert nulls_last is None
+
+        result = plr.PyExpr.row_encode_unordered(pyexprs)
+    else:
+        result = plr.PyExpr.row_encode_ordered(pyexprs, descending, nulls_last)
+
+    return wrap_expr(result)
+
+
+def _wrap_acc_lamba(
+    function: Callable[[Series, Series], Series],
+) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:
+    def wrapper(t: tuple[plr.PySeries, plr.PySeries]) -> plr.PySeries:
+        a, b = t
+        return function(wrap_s(a), wrap_s(b))._s
+
+    return wrapper
 
 
 def fold(
@@ -1200,7 +1330,7 @@ def fold(
     exprs: Sequence[Expr | str] | Expr,
     *,
     returns_scalar: bool = False,
-    return_dtype: PolarsDataType | None = None,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1219,9 +1349,9 @@ def fold(
         Whether or not `function` applied returns a scalar. This must be set correctly
         by the user.
     return_dtype
-            Output datatype.
-            If not set, the dtype will be inferred based on the dtype
-            of the accumulator.
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype
+        of the accumulator.
 
     Notes
     -----
@@ -1260,7 +1390,7 @@ def fold(
     ┌─────┐
     │ sum │
     │ --- │
-    │ i64 │
+    │ i32 │
     ╞═════╡
     │ 10  │
     │ 13  │
@@ -1304,18 +1434,22 @@ def fold(
     └─────┴─────┘
     """
     # in case of col("*")
-    acc = parse_into_expression(acc, str_as_lit=True)
+    pyacc = parse_into_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_into_list_of_expressions(exprs)
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
+    pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.fold(
-            acc,
-            function,
-            exprs,
+            pyacc,
+            _wrap_acc_lamba(function),
+            pyexprs,
             returns_scalar=returns_scalar,
-            return_dtype=return_dtype,
+            return_dtype=rt,
         )
     )
 
@@ -1323,6 +1457,9 @@ def fold(
 def reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1334,6 +1471,13 @@ def reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the input
+        expressions.
 
     Notes
     -----
@@ -1378,8 +1522,19 @@ def reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.reduce(function, exprs))
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+    return wrap_expr(
+        plr.reduce(
+            _wrap_acc_lamba(function),
+            pyexprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        )
+    )
 
 
 def cum_fold(
@@ -1387,6 +1542,8 @@ def cum_fold(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
     *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
     include_init: bool = False,
 ) -> Expr:
     """
@@ -1404,6 +1561,12 @@ def cum_fold(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the accumulator.
     include_init
         Include the initial accumulator state as struct field.
 
@@ -1436,17 +1599,33 @@ def cum_fold(
     └─────┴─────┴─────┴───────────┘
     """
     # in case of col("*")
-    acc = parse_into_expression(acc, str_as_lit=True)
+    pyacc = parse_into_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init).alias("cum_fold"))
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+    return wrap_expr(
+        plr.cum_fold(
+            pyacc,
+            _wrap_acc_lamba(function),
+            pyexprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+            include_init=include_init,
+        ).alias("cum_fold")
+    )
 
 
 def cum_reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Cumulatively reduce horizontally across columns with a left fold.
@@ -1460,6 +1639,12 @@ def cum_reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the input
+        expressions.
+    include_init
+        Include the initial accumulator state as struct field.
 
     Examples
     --------
@@ -1486,8 +1671,19 @@ def cum_reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_reduce(function, exprs).alias("cum_reduce"))
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
+    pyexprs = parse_into_list_of_expressions(exprs)
+    return wrap_expr(
+        plr.cum_reduce(
+            _wrap_acc_lamba(function),
+            pyexprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        ).alias("cum_reduce")
+    )
 
 
 def arctan2(y: str | Expr, x: str | Expr) -> Expr:
@@ -2153,8 +2349,8 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
             raise ValueError(msg)
         return condition.to_frame().select(arg_where(F.col(condition.name))).to_series()
     else:
-        condition = parse_into_expression(condition)
-        return wrap_expr(plr.arg_where(condition))
+        condition_pyexpr = parse_into_expression(condition)
+        return wrap_expr(plr.arg_where(condition_pyexpr))
 
 
 @overload
@@ -2474,3 +2670,82 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
         return wrap_expr(plr.sql_expr(sql))
     else:
         return [wrap_expr(plr.sql_expr(q)) for q in sql]
+
+
+@unstable()
+def row_index(name: str = "index") -> pl.Expr:
+    """
+    Generates a sequence of integers.
+
+    The length of the returned sequence will match the context length, and the
+    datatype will match the one returned by `get_index_dtype()`.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    If you would like to generate sequences with custom offsets / length /
+    step size / datatypes, it is recommended to use `int_range` instead.
+
+    Parameters
+    ----------
+    name
+        Name of the returned column.
+
+    Returns
+    -------
+    Expr
+        Column of integers.
+
+    See Also
+    --------
+    int_range : Generate a range of integers.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"x": ["A", "A", "B", "B", "B"]})
+    >>> df.with_columns(pl.row_index(), pl.row_index("another_index"))
+    shape: (5, 3)
+    ┌─────┬───────┬───────────────┐
+    │ x   ┆ index ┆ another_index │
+    │ --- ┆ ---   ┆ ---           │
+    │ str ┆ u32   ┆ u32           │
+    ╞═════╪═══════╪═══════════════╡
+    │ A   ┆ 0     ┆ 0             │
+    │ A   ┆ 1     ┆ 1             │
+    │ B   ┆ 2     ┆ 2             │
+    │ B   ┆ 3     ┆ 3             │
+    │ B   ┆ 4     ┆ 4             │
+    └─────┴───────┴───────────────┘
+    >>> df.group_by("x").agg(pl.row_index()).sort("x")
+    shape: (2, 2)
+    ┌─────┬───────────┐
+    │ x   ┆ index     │
+    │ --- ┆ ---       │
+    │ str ┆ list[u32] │
+    ╞═════╪═══════════╡
+    │ A   ┆ [0, 1]    │
+    │ B   ┆ [0, 1, 2] │
+    └─────┴───────────┘
+    >>> df.select(pl.row_index())
+    shape: (5, 1)
+    ┌───────┐
+    │ index │
+    │ ---   │
+    │ u32   │
+    ╞═══════╡
+    │ 0     │
+    │ 1     │
+    │ 2     │
+    │ 3     │
+    │ 4     │
+    └───────┘
+    """
+    # Notes
+    # * Dispatching to `int_range` means that we cannot accept an offset
+    #   parameter, as unlike `DataFrame.with_row_index()`, `int_range` will simply
+    #   truncate instead of raising an error.
+    return F.int_range(
+        F.len(),
+        dtype=get_index_type(),
+    ).alias(name)

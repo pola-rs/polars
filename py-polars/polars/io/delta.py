@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
@@ -304,8 +303,6 @@ def scan_delta(
         _get_credentials_from_provider_expiry_aware,
     )
 
-    if isinstance(source, DeltaTable) and storage_options is None:
-        storage_options = source._storage_options
     if not isinstance(source, DeltaTable):
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, source, storage_options, "scan_delta"
@@ -335,6 +332,11 @@ def scan_delta(
         ),
         delta_table_options=delta_table_options,
     )
+
+    if isinstance(source, DeltaTable) and (
+        source._storage_options is not None or storage_options is not None
+    ):
+        storage_options = {**(source._storage_options or {}), **(storage_options or {})}
 
     if use_pyarrow:
         pyarrow_options = pyarrow_options or {}
@@ -373,8 +375,8 @@ def scan_delta(
             msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
             raise DeltaProtocolError(msg)
 
-    delta_schema = dl_tbl.schema().to_arrow()
-    polars_schema = from_arrow(delta_schema.empty_table()).schema  # type: ignore[union-attr]
+    delta_schema = dl_tbl.schema()
+    polars_schema = Schema(delta_schema)
     partition_columns = dl_tbl.metadata().partition_columns
 
     def _split_schema(

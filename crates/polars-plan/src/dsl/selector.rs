@@ -207,7 +207,6 @@ impl Selector {
             Self::Difference(lhs, rhs) => {
                 let mut lhs = lhs.into_columns(schema, ignored_columns)?;
                 let rhs = rhs.into_columns(schema, ignored_columns)?;
-                eprintln!("{self}");
                 lhs.retain(|n| !rhs.contains(n));
                 sort_schema_order(&mut lhs, schema);
                 lhs
@@ -215,7 +214,6 @@ impl Selector {
             Self::ExclusiveOr(lhs, rhs) => {
                 let lhs = lhs.into_columns(schema, ignored_columns)?;
                 let rhs = rhs.into_columns(schema, ignored_columns)?;
-                eprintln!("{self}");
                 let mut out = PlIndexSet::with_capacity(lhs.len() + rhs.len());
                 out.extend(lhs.iter().filter(|n| !rhs.contains(*n)).cloned());
                 out.extend(rhs.into_iter().filter(|n| !lhs.contains(n)));
@@ -355,8 +353,11 @@ fn datetime_matches(stu: TimeUnitSet, stz: &TimeZoneSet, dtype: &DataType) -> bo
 
     use TimeZoneSet as TZS;
     match (stz, tz) {
-        (TZS::Any, _) | (TZS::Unset, None) | (TZS::AnySet, Some(_)) => true,
-        (TZS::AnyOf(stz), Some(tz)) => stz.contains(tz),
+        (TZS::Any, _)
+        | (TZS::Unset, None)
+        | (TZS::UnsetOrAnyOf(_), None)
+        | (TZS::AnySet, Some(_)) => true,
+        (TZS::AnyOf(stz) | TZS::UnsetOrAnyOf(stz), Some(tz)) => stz.contains(tz),
         _ => false,
     }
 }
@@ -375,7 +376,7 @@ fn duration_matches(stu: TimeUnitSet, dtype: &DataType) -> bool {
 }
 
 impl DataTypeSelector {
-    fn matches(&self, dtype: &DataType) -> bool {
+    pub fn matches(&self, dtype: &DataType) -> bool {
         match self {
             Self::Union(lhs, rhs) => lhs.matches(dtype) || rhs.matches(dtype),
             Self::Difference(lhs, rhs) => lhs.matches(dtype) && !rhs.matches(dtype),

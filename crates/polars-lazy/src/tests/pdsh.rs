@@ -94,7 +94,7 @@ fn test_q2() -> PolarsResult<()> {
         lp_top, lp_arena, ..
     } = q.clone().to_alp_optimized().unwrap();
     assert_eq!(
-        (&lp_arena)
+        lp_arena
             .iter(lp_top)
             .filter(|(_, alp)| matches!(alp, IR::Cache { .. }))
             .count(),

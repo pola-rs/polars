@@ -16,20 +16,18 @@ use pyo3::{IntoPyObjectExt, intern};
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
-use crate::map::lazy::{ToSeries, call_lambda_with_series};
+use crate::lazyframe::PyLazyFrame;
+use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
+use crate::series::PySeries;
 
 fn python_function_caller_series(
-    s: Column,
+    s: &[Column],
     output_dtype: Option<DataType>,
     lambda: &PyObject,
 ) -> PolarsResult<Column> {
-    Python::with_gil(|py| {
-        let object =
-            call_lambda_with_series(py, s.as_materialized_series(), Some(output_dtype), lambda)?;
-        object.to_series(py, polars(py), s.name()).map(Column::from)
-    })
+    Python::with_gil(|py| call_lambda_with_series(py, s, output_dtype, lambda))
 }
 
 fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame> {
@@ -143,10 +141,45 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                         ) as _)
                     })
                 }),
+                series: Arc::new(|py_f| {
+                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PySeries>(py)?.series) as _))
+                }),
+                df: Arc::new(|py_f| {
+                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df) as _))
+                }),
+                dsl_plan: Arc::new(|py_f| {
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<PyLazyFrame>(py)?.ldf.logical_plan) as _)
+                    })
+                }),
+                schema: Arc::new(|py_f| {
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<Wrap<polars_core::schema::Schema>>(py)?.0) as _)
+                    })
+                }),
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
                     Python::with_gil(|py| PyDataFrame::new(*df.downcast().unwrap()).into_py_any(py))
+                }),
+                series: Arc::new(|series| {
+                    Python::with_gil(|py| {
+                        PySeries::new(*series.downcast().unwrap()).into_py_any(py)
+                    })
+                }),
+                dsl_plan: Arc::new(|dsl_plan| {
+                    Python::with_gil(|py| {
+                        PyLazyFrame::from(LazyFrame::from(
+                            *dsl_plan.downcast::<polars_plan::dsl::DslPlan>().unwrap(),
+                        ))
+                        .into_py_any(py)
+                    })
+                }),
+                schema: Arc::new(|schema| {
+                    Python::with_gil(|py| {
+                        Wrap(*schema.downcast::<polars_core::schema::Schema>().unwrap())
+                            .into_py_any(py)
+                    })
                 }),
             },
         });

@@ -188,6 +188,14 @@ impl DslBuilder {
         .into()
     }
 
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+        DslPlan::PipeWithSchema {
+            input: Arc::new(self.0),
+            callback,
+        }
+        .into()
+    }
+
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
         DslPlan::ExtContext {
             input: Arc::new(self.0),
@@ -219,7 +227,7 @@ impl DslBuilder {
         self,
         keys: Vec<Expr>,
         aggs: E,
-        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
+        apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
         #[cfg(feature = "dynamic_group_by")] dynamic_options: Option<DynamicGroupOptions>,
         #[cfg(feature = "dynamic_group_by")] rolling_options: Option<RollingGroupOptions>,

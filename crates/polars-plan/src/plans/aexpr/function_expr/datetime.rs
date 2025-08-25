@@ -21,6 +21,7 @@ pub enum IRTemporalFunction {
     IsoYear,
     Quarter,
     Month,
+    DaysInMonth,
     Week,
     WeekDay,
     Day,
@@ -82,10 +83,9 @@ impl IRTemporalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRTemporalFunction::*;
         match self {
-            Millennium | Century => mapper.with_dtype(DataType::Int8),
-            Year | IsoYear => mapper.with_dtype(DataType::Int32),
+            Millennium | Century | Year | IsoYear => mapper.with_dtype(DataType::Int32),
             OrdinalDay => mapper.with_dtype(DataType::Int16),
-            Month | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
+            Month | DaysInMonth | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
                 mapper.with_dtype(DataType::Int8)
             },
             Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
@@ -93,8 +93,7 @@ impl IRTemporalFunction {
             TotalDays | TotalHours | TotalMinutes | TotalSeconds | TotalMilliseconds
             | TotalMicroseconds | TotalNanoseconds => mapper.with_dtype(DataType::Int64),
             ToString(_) => mapper.with_dtype(DataType::String),
-            WithTimeUnit(_) => mapper.with_same_dtype(),
-            CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
+            WithTimeUnit(tu) | CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),
                 DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
                 dtype => polars_bail!(ComputeError: "expected duration or datetime, got {}", dtype),
@@ -156,6 +155,7 @@ impl IRTemporalFunction {
             | T::IsoYear
             | T::Quarter
             | T::Month
+            | T::DaysInMonth
             | T::Week
             | T::WeekDay
             | T::Day
@@ -217,6 +217,7 @@ impl Display for IRTemporalFunction {
             IsoYear => "iso_year",
             Quarter => "quarter",
             Month => "month",
+            DaysInMonth => "days_in_month",
             Week => "week",
             WeekDay => "weekday",
             Day => "day",
@@ -300,6 +301,11 @@ pub(super) fn iso_year(s: &Column) -> PolarsResult<Column> {
 pub(super) fn month(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
         .month()
+        .map(|ca| ca.into_column())
+}
+pub(super) fn days_in_month(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .days_in_month()
         .map(|ca| ca.into_column())
 }
 pub(super) fn quarter(s: &Column) -> PolarsResult<Column> {

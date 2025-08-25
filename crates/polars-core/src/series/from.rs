@@ -1,6 +1,7 @@
 #[cfg(feature = "dtype-categorical")]
 use arrow::compute::concatenate::concatenate_unchecked;
 use arrow::datatypes::Metadata;
+use arrow::offset::OffsetsBuffer;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -20,6 +21,16 @@ use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
 impl Series {
+    pub fn from_array<A: ParameterFreeDtypeStaticArray>(name: PlSmallStr, array: A) -> Self {
+        unsafe {
+            Self::from_chunks_and_dtype_unchecked(
+                name,
+                vec![Box::new(array)],
+                &DataType::from_arrow_dtype(&A::get_dtype()),
+            )
+        }
+    }
+
     pub fn from_chunk_and_dtype(
         name: PlSmallStr,
         chunk: ArrayRef,
@@ -51,15 +62,11 @@ impl Series {
     ) -> Self {
         use DataType::*;
         match dtype {
-            #[cfg(feature = "dtype-i8")]
             Int8 => Int8Chunked::from_chunks(name, chunks).into_series(),
-            #[cfg(feature = "dtype-i16")]
             Int16 => Int16Chunked::from_chunks(name, chunks).into_series(),
             Int32 => Int32Chunked::from_chunks(name, chunks).into_series(),
             Int64 => Int64Chunked::from_chunks(name, chunks).into_series(),
-            #[cfg(feature = "dtype-u8")]
             UInt8 => UInt8Chunked::from_chunks(name, chunks).into_series(),
-            #[cfg(feature = "dtype-u16")]
             UInt16 => UInt16Chunked::from_chunks(name, chunks).into_series(),
             UInt32 => UInt32Chunked::from_chunks(name, chunks).into_series(),
             UInt64 => UInt64Chunked::from_chunks(name, chunks).into_series(),
@@ -510,31 +517,49 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
-            ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
+            ArrowDataType::Map(field, _is_ordered) => {
+                let struct_arrays = chunks
+                    .iter()
+                    .map(|arr| {
+                        let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
+                        arr.field().clone()
+                    })
+                    .collect::<Vec<_>>();
+
+                let (phys_struct_arrays, dtype) =
+                    to_physical_and_dtype(struct_arrays, field.metadata.as_deref());
+
+                let chunks = chunks
+                    .iter()
+                    .zip(phys_struct_arrays)
+                    .map(|(arr, values)| {
+                        let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
+                        let offsets: &OffsetsBuffer<i32> = arr.offsets();
+
+                        let validity = values.validity().cloned();
+
+                        Box::from(ListArray::<i64>::new(
+                            ListArray::<i64>::default_datatype(values.dtype().clone()),
+                            OffsetsBuffer::<i64>::from(offsets),
+                            values,
+                            validity,
+                        )) as ArrayRef
+                    })
+                    .collect();
+
+                unsafe {
+                    let out = ListChunked::from_chunks_and_dtype_unchecked(
+                        name,
+                        chunks,
+                        DataType::List(Box::new(dtype)),
+                    );
+
+                    Ok(out.into_series())
+                }
+            },
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
-}
-
-fn map_arrays_to_series(name: PlSmallStr, chunks: Vec<ArrayRef>) -> PolarsResult<Series> {
-    let chunks = chunks
-        .iter()
-        .map(|arr| {
-            // we convert the map to the logical type: List<struct<key, value>>
-            let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
-            let inner = arr.field().clone();
-
-            // map has i32 offsets
-            let dtype = ListArray::<i32>::default_datatype(inner.dtype().clone());
-            Box::new(ListArray::<i32>::new(
-                dtype,
-                arr.offsets().clone(),
-                inner,
-                arr.validity().cloned(),
-            )) as ArrayRef
-        })
-        .collect::<Vec<_>>();
-    Series::try_from((name, chunks))
 }
 
 fn convert<F: Fn(&dyn Array) -> ArrayRef>(arr: &[ArrayRef], f: F) -> Vec<ArrayRef> {
@@ -690,7 +715,8 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Timestamp(_, _)
         | ArrowDataType::Date32
         | ArrowDataType::Decimal(_, _)
-        | ArrowDataType::Date64) => {
+        | ArrowDataType::Date64
+        | ArrowDataType::Map(_, _)) => {
             let dt = dt.clone();
             let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt).unwrap();
             let dtype = s.dtype().clone();

@@ -48,6 +48,10 @@ impl ScalarColumn {
         }
     }
 
+    pub fn full_null(name: PlSmallStr, length: usize, dtype: DataType) -> Self {
+        Self::new(name, Scalar::null(dtype), length)
+    }
+
     pub fn name(&self) -> &PlSmallStr {
         &self.name
     }
@@ -140,7 +144,9 @@ impl ScalarColumn {
         sc
     }
 
-    /// Create a new [`ScalarColumn`] from a `length=1` Series and expand it `length`.
+    /// Create a new [`ScalarColumn`] from a `length<=1` Series and expand it `length`.
+    ///
+    /// If `series` is empty and `length` is non-zero, a full-NULL column of `length` will be returned.
     ///
     /// This will panic if the value cannot be made static.
     pub fn from_single_value_series(series: Series, length: usize) -> Self {
@@ -320,6 +326,21 @@ impl From<ScalarColumn> for Column {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for ScalarColumn {
+    fn schema_name() -> String {
+        "ScalarColumn".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "ScalarColumn"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        serde_impl::SerializeWrap::json_schema(generator)
+    }
+}
+
 #[cfg(feature = "serde")]
 mod serde_impl {
     use std::sync::OnceLock;
@@ -331,7 +352,8 @@ mod serde_impl {
     use crate::frame::{Scalar, Series};
 
     #[derive(serde::Serialize, serde::Deserialize)]
-    struct SerializeWrap {
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    pub struct SerializeWrap {
         name: PlSmallStr,
         /// Unit-length series for dispatching to IPC serialize
         unit_series: Series,

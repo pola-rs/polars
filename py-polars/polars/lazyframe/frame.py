@@ -105,7 +105,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, get_engine_affinity
+    from polars._plr import PyLazyFrame, get_engine_affinity
 
 if TYPE_CHECKING:
     import sys
@@ -116,7 +116,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyExpr, PyPartitioning, PySelector
+        from polars._plr import PyExpr, PyPartitioning, PySelector
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -181,7 +181,7 @@ def _to_sink_target(
     if isinstance(path, (str, Path)):
         return normalize_filepath(path)
     elif isinstance(path, io.IOBase):
-        return path
+        return path  # type: ignore[return-value]
     elif isinstance(path, PartitioningScheme):
         return path._py_partitioning
     elif callable(getattr(path, "write", None)):
@@ -225,8 +225,9 @@ def _gpu_engine_callback(
         install_message=(
             "Please install using the command "
             "`pip install cudf-polars-cu12` "
-            "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
-            "if your system has a CUDA 11 driver)."
+            "(CUDA 12 is required for RAPIDS cuDF v25.08 and later). "
+            "If your system has a CUDA 11 driver, install with "
+            "`pip install cudf-polars-cu11==25.06` "
         ),
     )
     if not is_config_obj:
@@ -888,6 +889,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **kwargs
             Keyword arguments to pass to the UDF.
 
+        See Also
+        --------
+        pipe_with_schema
+
         Examples
         --------
         >>> def cast_str_to_int(lf: pl.LazyFrame, col_name: str) -> pl.LazyFrame:
@@ -939,6 +944,68 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         return function(self, *args, **kwargs)
+
+    @unstable()
+    def pipe_with_schema(
+        self,
+        function: Callable[[LazyFrame, Schema], LazyFrame],
+    ) -> LazyFrame:
+        """
+        Allows to alter the lazy frame during the plan stage with the resolved schema.
+
+        In contrast to `pipe`, this method does not execute `function` immediately but
+        only during the plan stage. This allows to use the resolved schema of the input
+        to dynamically alter the lazy frame. This also means that any exceptions raised
+        by `function` will only be emitted during the plan stage.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed at any
+            point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        function
+            Callable; will receive the frame as the first parameter and the resolved
+            schema as the second parameter.
+
+        See Also
+        --------
+        pipe
+
+        Examples
+        --------
+        >>> def cast_to_float_if_necessary(
+        ...     lf: pl.LazyFrame, schema: pl.Schema
+        ... ) -> pl.LazyFrame:
+        ...     required_casts = [
+        ...         pl.col(name).cast(pl.Float64)
+        ...         for name, dtype in schema.items()
+        ...         if not dtype.is_float()
+        ...     ]
+        ...     return lf.with_columns(required_casts)
+        >>> lf = pl.LazyFrame(
+        ...     {"a": [1.0, 2.0], "b": ["1.0", "2.5"], "c": [2.0, 3.0]},
+        ...     schema={"a": pl.Float64, "b": pl.String, "c": pl.Float32},
+        ... )
+        >>> lf.pipe_with_schema(cast_to_float_if_necessary).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ f64 ┆ f64 ┆ f32 │
+        ╞═════╪═════╪═════╡
+        │ 1.0 ┆ 1.0 ┆ 2.0 │
+        │ 2.0 ┆ 2.5 ┆ 3.0 │
+        └─────┴─────┴─────┘
+        """
+        return self._from_pyldf(
+            self._ldf.pipe_with_schema(
+                lambda lf_and_schema: function(
+                    self._from_pyldf(lf_and_schema[0]),
+                    lf_and_schema[1],
+                )._ldf
+            )
+        )
 
     def describe(
         self,
@@ -2020,8 +2087,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if _kwargs.get("post_opt_callback") is not None:
             # Only for testing
             callback = _kwargs.get("post_opt_callback")
-        df, timings = ldf.profile(callback)
-        (df, timings) = wrap_df(df), wrap_df(timings)
+        df_py, timings_py = ldf.profile(callback)
+        (df, timings) = wrap_df(df_py), wrap_df(timings_py)
 
         if show_plot:
             import_optional(
@@ -2789,7 +2856,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 msg = f"field_overwrites got the wrong type {type(field_overwrites)}"
                 raise TypeError(msg)
 
-        ldf = self._ldf.sink_parquet(
+        ldf_py = self._ldf.sink_parquet(
             target=target,
             compression=compression,
             compression_level=compression_level,
@@ -2805,11 +2872,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         if not lazy:
-            ldf = ldf.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf)
+            ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf_py)
             ldf.collect(engine=engine)
             return None
-        return LazyFrame._from_pyldf(ldf)
+        return LazyFrame._from_pyldf(ldf_py)
 
     @overload
     def sink_ipc(
@@ -2990,18 +3057,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = True  # type: ignore[assignment]
+            compat_level_py = True
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
+            compat_level_py = compat_level._version
+        else:
+            msg = f"`compat_level` has invalid type: {qualified_type_name(compat_level)!r}"
+            raise TypeError(msg)
 
         if compression is None:
             compression = "uncompressed"
 
-        ldf = self._ldf.sink_ipc(
+        ldf_py = self._ldf.sink_ipc(
             target=target,
             compression=compression,
-            compat_level=compat_level,
+            compat_level=compat_level_py,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
@@ -3009,11 +3080,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         if not lazy:
-            ldf = ldf.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf)
+            ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf_py)
             ldf.collect(engine=engine)
             return None
-        return LazyFrame._from_pyldf(ldf)
+        return LazyFrame._from_pyldf(ldf_py)
 
     @overload
     def sink_csv(
@@ -3281,7 +3352,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
-        ldf = self._ldf.sink_csv(
+        ldf_py = self._ldf.sink_csv(
             target=target,
             include_bom=include_bom,
             include_header=include_header,
@@ -3304,11 +3375,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         if not lazy:
-            ldf = ldf.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf)
+            ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf_py)
             ldf.collect(engine=engine)
             return None
-        return LazyFrame._from_pyldf(ldf)
+        return LazyFrame._from_pyldf(ldf_py)
 
     @overload
     def sink_ndjson(
@@ -3474,7 +3545,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
-        ldf = self._ldf.sink_json(
+        ldf_py = self._ldf.sink_json(
             target=target,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
@@ -3483,11 +3554,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         if not lazy:
-            ldf = ldf.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf)
+            ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf_py)
             ldf.collect(engine=engine)
             return None
-        return LazyFrame._from_pyldf(ldf)
+        return LazyFrame._from_pyldf(ldf_py)
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
@@ -3496,18 +3567,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def fetch(
         self,
         n_rows: int = 500,
-        *,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
+        **kwargs: Any,
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
@@ -3529,133 +3589,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This is strictly a utility function that can help to debug queries using a
         smaller number of rows, and should *not* be used in production code.
         """
-        return self._fetch(
-            n_rows=n_rows,
-            type_coercion=type_coercion,
-            _type_check=_type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            no_optimization=no_optimization,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-        )
-
-    def _fetch(
-        self,
-        n_rows: int = 500,
-        *,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        _check_order: bool = True,
-    ) -> DataFrame:
-        """
-        Collect a small number of rows for debugging purposes.
-
-        Do not confuse with `collect`; this function will frequently return
-        incorrect data (see the warning for additional details).
-
-        Parameters
-        ----------
-        n_rows
-            Collect n_rows from the data sources.
-        type_coercion
-            Run type coercion optimization.
-        predicate_pushdown
-            Run predicate pushdown optimization.
-        projection_pushdown
-            Run projection pushdown optimization.
-        simplify_expression
-            Run simplify expressions optimization.
-        no_optimization
-            Turn off optimizations.
-        slice_pushdown
-            Slice pushdown optimization
-        comm_subplan_elim
-            Will try to cache branching subplans that occur on self-joins or unions.
-        comm_subexpr_elim
-            Common subexpressions will be cached and reused.
-        cluster_with_columns
-            Combine sequential independent calls to with_columns
-        collapse_joins
-            Collapse a join and filters into a faster join
-
-        Notes
-        -----
-        This is similar to a :func:`collect` operation, but it overwrites the number of
-        rows read by *every* scan operation. Be aware that `fetch` does not guarantee
-        the final number of rows in the DataFrame. Filters, join operations and fewer
-        rows being available in the scanned data will all influence the final number
-        of rows (joins are especially susceptible to this, and may return no data
-        at all if `n_rows` is too small as the join keys may not be present).
-
-        Warnings
-        --------
-        This is strictly a utility function that can help to debug queries using a
-        smaller number of rows, and should *not* be used in production code.
-
-        Returns
-        -------
-        DataFrame
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": ["a", "b", "a", "b", "b", "c"],
-        ...         "b": [1, 2, 3, 4, 5, 6],
-        ...         "c": [6, 5, 4, 3, 2, 1],
-        ...     }
-        ... )
-        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum())._fetch(2)
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 1   ┆ 6   │
-        │ b   ┆ 2   ┆ 5   │
-        └─────┴─────┴─────┘
-        """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-            comm_subplan_elim = False
-            comm_subexpr_elim = False
-            cluster_with_columns = False
-            collapse_joins = False
-
-        type_check = _type_check
-        lf = self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
-        return wrap_df(lf.fetch(n_rows))
+        return self.head(n_rows).collect(**kwargs)
 
     def lazy(self) -> LazyFrame:
         """
@@ -4638,7 +4572,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
         """
-        index_column = parse_into_expression(index_column)
+        index_column_py = parse_into_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
@@ -4648,7 +4582,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
-        lgb = self._ldf.rolling(index_column, period, offset, closed, pyexprs_by)
+        lgb = self._ldf.rolling(index_column_py, period, offset, closed, pyexprs_by)
         return LazyGroupBy(lgb)
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
@@ -4962,7 +4896,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
         """  # noqa: W505
-        index_column = parse_into_expression(index_column)
+        index_column_py = parse_into_expression(index_column)
         if offset is None:
             offset = "0ns"
 
@@ -4977,7 +4911,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             parse_into_list_of_expressions(group_by) if group_by is not None else []
         )
         lgb = self._ldf.group_by_dynamic(
-            index_column,
+            index_column_py,
             every,
             period,
             offset,
@@ -5618,6 +5552,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     suffix,
                     validate,
                     maintain_order,
+                    coalesce=None,
                 )
             )
 
@@ -6228,9 +6163,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         if fill_value is not None:
-            fill_value = parse_into_expression(fill_value, str_as_lit=True)
-        n = parse_into_expression(n)
-        return self._from_pyldf(self._ldf.shift(n, fill_value))
+            fill_value_py = parse_into_expression(fill_value, str_as_lit=True)
+        else:
+            fill_value_py = None
+        n_py = parse_into_expression(n)
+        return self._from_pyldf(self._ldf.shift(n_py, fill_value_py))
 
     def slice(self, offset: int, length: int | None = None) -> LazyFrame:
         """
@@ -7087,8 +7024,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3.0 ┆ 1.0 │
         └─────┴─────┘
         """  # noqa: W505
-        quantile = parse_into_expression(quantile)
-        return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
+        quantile_py = parse_into_expression(quantile)
+        return self._from_pyldf(self._ldf.quantile(quantile_py, interpolation))
 
     def explode(
         self,
@@ -7537,6 +7474,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         It is important that the optimization flags are correct. If the custom function
         for instance does an aggregation of a column, `predicate_pushdown` should not
         be allowed, as this prunes rows and will influence your aggregation results.
+
+        Notes
+        -----
+        A UDF passed to `map_batches` must be pure, meaning that it cannot modify or
+        depend on state other than its arguments.
 
         Examples
         --------
@@ -8093,7 +8035,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         context: pc.ComputeContext | None = None,
         plan_type: pc._typing.PlanTypePreference = "dot",
-    ) -> pc.LazyFrameExt:
+    ) -> pc.LazyFrameRemote:
         """
         Run a query remotely on Polars Cloud.
 
@@ -8146,7 +8088,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────────┘
 
         """
-        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
+        return pc.LazyFrameRemote(lf=self, context=context, plan_type=plan_type)
 
     @unstable()
     def match_to_schema(

@@ -3,7 +3,6 @@ name = "polars-plan"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
-exclude = ["dsl-schema.sha256"]
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
@@ -16,6 +15,7 @@ doctest = false
 libloading = { version = "0.8.0", optional = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
+polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy", "csv"] }
 polars-json = { workspace = true, optional = true }
@@ -47,6 +47,7 @@ sha2 = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
 [build-dependencies]
+sha2 = { workspace = true }
 version_check = { workspace = true }
 
 [features]
@@ -206,10 +207,11 @@ find_many = ["polars-ops/find_many"]
 month_start = ["polars-time/month_start"]
 month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
+allow_unused = ["polars-io/allow_unused", "polars-ops/allow_unused", "polars-time?/allow_unused"]
 
 bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
 polars_cloud_client = ["serde"]
-polars_cloud_server = ["serde", "polars-utils/polars_cloud_server"]
+polars_cloud_server = ["serde"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
 
 [package.metadata.docs.rs]

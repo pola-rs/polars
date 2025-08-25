@@ -10,7 +10,7 @@ pub(super) fn process_group_by(
     aggs: Vec<ExprIR>,
     schema: SchemaRef,
     maintain_order: bool,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     options: Arc<GroupbyOptions>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
@@ -42,7 +42,6 @@ pub(super) fn process_group_by(
     let key_schema = aexprs_to_schema(
         &keys,
         lp_arena.get(input).schema(lp_arena).as_ref(),
-        Context::Default,
         expr_arena,
     );
 

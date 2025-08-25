@@ -5,8 +5,8 @@ use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::ScanSource;
 
 use super::{FileReader, NDJsonFileReader};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
 #[cfg(feature = "json")]
 impl FileReaderBuilder for Arc<polars_plan::dsl::NDJsonReadOptions> {

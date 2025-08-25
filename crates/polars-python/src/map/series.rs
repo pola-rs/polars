@@ -245,14 +245,18 @@ fn call_lambda_series_out<'py, T>(
     py: Python<'py>,
     lambda: &Bound<'py, PyAny>,
     in_val: T,
-) -> PyResult<Series>
+) -> PyResult<Option<Series>>
 where
     T: IntoPyObject<'py>,
 {
     let arg = PyTuple::new(py, [in_val])?;
     let out = lambda.call1(arg)?;
-    let py_series = out.getattr("_s")?;
-    py_series.extract::<PySeries>().map(|s| s.series)
+    if out.is_none() {
+        Ok(None)
+    } else {
+        let py_series = out.getattr("_s")?;
+        py_series.extract::<PySeries>().map(|s| Some(s.series))
+    }
 }
 
 fn extract_anyvalues<'py, T, I>(
@@ -441,10 +445,9 @@ impl<'py> ApplyLambda<'py> for BooleanChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| {
-                    opt_val
-                        .map(|val| call_lambda_series_out(py, lambda, val))
-                        .transpose()
+                .map(|opt_val| match opt_val {
+                    None => Ok(None),
+                    Some(val) => call_lambda_series_out(py, lambda, val),
                 });
             iterator_to_list(
                 dt,
@@ -660,10 +663,9 @@ where
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| {
-                    opt_val
-                        .map(|val| call_lambda_series_out(py, lambda, val))
-                        .transpose()
+                .map(|opt_val| match opt_val {
+                    None => Ok(None),
+                    Some(val) => call_lambda_series_out(py, lambda, val),
                 });
             iterator_to_list(
                 dt,
@@ -874,10 +876,9 @@ impl<'py> ApplyLambda<'py> for StringChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| {
-                    opt_val
-                        .map(|val| call_lambda_series_out(py, lambda, val))
-                        .transpose()
+                .map(|opt_val| match opt_val {
+                    None => Ok(None),
+                    Some(val) => call_lambda_series_out(py, lambda, val),
                 });
             iterator_to_list(
                 dt,
@@ -1741,10 +1742,9 @@ impl<'py> ApplyLambda<'py> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| {
-                    opt_val
-                        .map(|val| call_lambda_series_out(py, lambda, val))
-                        .transpose()
+                .map(|opt_val| match opt_val {
+                    None => Ok(None),
+                    Some(val) => call_lambda_series_out(py, lambda, val),
                 });
             iterator_to_list(
                 dt,
@@ -1944,7 +1944,7 @@ impl<'py> ApplyLambda<'py> for StructChunked {
             .skip(init_null_count + skip)
             .map(|val| match val {
                 AnyValue::Null => Ok(None),
-                _ => call_lambda_series_out(py, lambda, Wrap(val)).map(Some),
+                _ => call_lambda_series_out(py, lambda, Wrap(val)),
             });
         iterator_to_list(
             dt,

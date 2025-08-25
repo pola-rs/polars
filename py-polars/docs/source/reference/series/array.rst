@@ -20,6 +20,7 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.get
     Series.arr.join
     Series.arr.last
+    Series.arr.len
     Series.arr.max
     Series.arr.median
     Series.arr.min

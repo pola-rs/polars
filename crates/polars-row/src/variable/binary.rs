@@ -35,7 +35,7 @@ pub(crate) const NON_EMPTY_SENTINEL: u8 = 2;
 pub fn ceil(value: usize, divisor: usize) -> usize {
     // Rewrite as `value.div_ceil(&divisor)` after
     // https://github.com/rust-lang/rust/issues/88581 is merged.
-    value / divisor + (0 != value % divisor) as usize
+    value / divisor + !value.is_multiple_of(divisor) as usize
 }
 
 #[inline]

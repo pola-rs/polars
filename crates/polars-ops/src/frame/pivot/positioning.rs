@@ -8,6 +8,7 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn position_aggregates(
     n_rows: usize,
     n_cols: usize,
@@ -16,8 +17,9 @@ pub(super) fn position_aggregates(
     value_agg_phys: &Series,
     logical_type: &DataType,
     headers: &StringChunked,
+    default_val: &AnyValue,
 ) -> Vec<Column> {
-    let mut buf = vec![AnyValue::Null; n_rows * n_cols];
+    let mut buf = vec![default_val.clone(); n_rows * n_cols];
     let start_ptr = buf.as_mut_ptr() as usize;
 
     let n_threads = POOL.current_num_threads();
@@ -99,6 +101,7 @@ pub(super) fn position_aggregates(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn position_aggregates_numeric<T: PolarsNumericType>(
     n_rows: usize,
     n_cols: usize,
@@ -107,8 +110,9 @@ pub(super) fn position_aggregates_numeric<T: PolarsNumericType>(
     value_agg_phys: &ChunkedArray<T>,
     logical_type: &DataType,
     headers: &StringChunked,
+    default_val: Option<T::Native>,
 ) -> Vec<Column> {
-    let mut buf = vec![None; n_rows * n_cols];
+    let mut buf = vec![default_val; n_rows * n_cols];
     let start_ptr = buf.as_mut_ptr() as usize;
 
     let n_threads = POOL.current_num_threads();
@@ -235,13 +239,13 @@ pub(super) fn compute_col_idx(
     use DataType as T;
     let col_locations = match column_agg_physical.dtype() {
         T::Int32 | T::UInt32 => {
-            let Some(BitRepr::Small(ca)) = column_agg_physical.bit_repr() else {
+            let Some(BitRepr::U32(ca)) = column_agg_physical.bit_repr() else {
                 polars_bail!(ComputeError: "Expected 32-bit representation to be available; this should never happen");
             };
             compute_col_idx_numeric(&ca)
         },
         T::Int64 | T::UInt64 => {
-            let Some(BitRepr::Large(ca)) = column_agg_physical.bit_repr() else {
+            let Some(BitRepr::U64(ca)) = column_agg_physical.bit_repr() else {
                 polars_bail!(ComputeError: "Expected 64-bit representation to be available; this should never happen");
             };
             compute_col_idx_numeric(&ca)
@@ -406,13 +410,13 @@ pub(super) fn compute_row_idx(
         use DataType as T;
         match index_agg_physical.dtype() {
             T::Int32 | T::UInt32 => {
-                let Some(BitRepr::Small(ca)) = index_agg_physical.bit_repr() else {
+                let Some(BitRepr::U32(ca)) = index_agg_physical.bit_repr() else {
                     polars_bail!(ComputeError: "Expected 32-bit representation to be available; this should never happen");
                 };
                 compute_row_index(index, &ca, count, index_s.dtype())
             },
             T::Int64 | T::UInt64 => {
-                let Some(BitRepr::Large(ca)) = index_agg_physical.bit_repr() else {
+                let Some(BitRepr::U64(ca)) = index_agg_physical.bit_repr() else {
                     polars_bail!(ComputeError: "Expected 64-bit representation to be available; this should never happen");
                 };
                 compute_row_index(index, &ca, count, index_s.dtype())

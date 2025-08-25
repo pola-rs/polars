@@ -102,14 +102,15 @@ def test_map_groups_none() -> None:
         if s[0][0] == 190:
             return None
         else:
-            return s[0]
+            return s[0].implode()
 
     out = (
         df.group_by("g", maintain_order=True).agg(
             pl.map_groups(
                 exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
                 function=func,
-                returns_scalar=False,
+                return_dtype=pl.self_dtype().wrap_in_list(),
+                returns_scalar=True,
             ).alias("multiple")
         )
     )["multiple"]
@@ -152,7 +153,10 @@ def test_map_groups_numpy_output_3057() -> None:
 
     result = df.group_by("id", maintain_order=True).agg(
         pl.map_groups(
-            ["y", "t"], lambda lst: np.mean([lst[0], lst[1]]), returns_scalar=True
+            ["y", "t"],
+            lambda lst: np.mean([lst[0], lst[1]]),
+            returns_scalar=True,
+            return_dtype=pl.self_dtype(),
         ).alias("result")
     )
 
@@ -161,13 +165,20 @@ def test_map_groups_numpy_output_3057() -> None:
 
 
 def test_map_groups_return_all_null_15260() -> None:
-    def foo(x: pl.Series) -> pl.Series:
+    def foo(x: Sequence[pl.Series]) -> pl.Series:
         return pl.Series([x[0][0]], dtype=x[0].dtype)
 
     assert_frame_equal(
         pl.DataFrame({"key": [0, 0, 1], "a": [None, None, None]})
         .group_by("key")
-        .agg(pl.map_groups(exprs=["a"], function=foo, returns_scalar=True))  # type: ignore[arg-type]
+        .agg(
+            pl.map_groups(
+                exprs=["a"],
+                function=foo,
+                returns_scalar=True,
+                return_dtype=pl.self_dtype(),
+            )
+        )
         .sort("key"),
         pl.DataFrame({"key": [0, 1], "a": [None, None]}),
     )

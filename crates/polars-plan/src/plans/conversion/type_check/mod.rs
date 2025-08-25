@@ -7,8 +7,7 @@ use polars_utils::arena::{Arena, Node};
 
 use super::{AExpr, IR, OptimizationRule};
 use crate::dsl::{FileSinkType, FileType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR};
-use crate::plans::Context;
-use crate::plans::conversion::get_schema;
+use crate::plans::conversion::get_input_schema;
 
 pub struct TypeCheckRule;
 
@@ -25,8 +24,8 @@ impl OptimizationRule for TypeCheckRule {
                 predicate: Some(predicate),
                 ..
             } => {
-                let input_schema = get_schema(ir_arena, node);
-                let dtype = predicate.dtype(input_schema.as_ref(), Context::Default, expr_arena)?;
+                let input_schema = get_input_schema(ir_arena, node);
+                let dtype = predicate.dtype(input_schema.as_ref(), expr_arena)?;
 
                 polars_ensure!(
                     matches!(dtype, DataType::Boolean | DataType::Unknown(_)),
@@ -36,8 +35,8 @@ impl OptimizationRule for TypeCheckRule {
                 Ok(None)
             },
             IR::Filter { predicate, .. } => {
-                let input_schema = get_schema(ir_arena, node);
-                let dtype = predicate.dtype(input_schema.as_ref(), Context::Default, expr_arena)?;
+                let input_schema = get_input_schema(ir_arena, node);
+                let dtype = predicate.dtype(input_schema.as_ref(), expr_arena)?;
 
                 polars_ensure!(
                     matches!(dtype, DataType::Boolean | DataType::Unknown(_)),
@@ -148,7 +147,7 @@ impl OptimizationRule for TypeCheckRule {
                         file_type: FileType::Parquet(write_options @ ParquetWriteOptions { .. }),
                         ..
                     }) if !write_options.field_overwrites.is_empty() => {
-                        let input_schema = get_schema(ir_arena, node);
+                        let input_schema = get_input_schema(ir_arena, node);
                         type_check_parquet_field_overwrites(
                             &write_options.field_overwrites,
                             &input_schema,
@@ -159,7 +158,7 @@ impl OptimizationRule for TypeCheckRule {
                         variant,
                         ..
                     }) if !write_options.field_overwrites.is_empty() => {
-                        let mut input_schema = get_schema(ir_arena, node);
+                        let mut input_schema = get_input_schema(ir_arena, node);
 
                         if let PartitionVariantIR::ByKey {
                             key_exprs,
@@ -172,8 +171,7 @@ impl OptimizationRule for TypeCheckRule {
                         {
                             let mut input_schema_mut = input_schema.as_ref().as_ref().clone();
                             for e in key_exprs {
-                                let field =
-                                    e.field(&input_schema_mut, Context::Default, expr_arena)?;
+                                let field = e.field(&input_schema_mut, expr_arena)?;
                                 if *include_key {
                                     input_schema_mut.insert(field.name, field.dtype);
                                 } else {

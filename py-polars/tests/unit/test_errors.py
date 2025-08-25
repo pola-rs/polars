@@ -21,6 +21,7 @@ from polars.exceptions import (
     ShapeError,
     StructFieldNotFoundError,
 )
+from polars.testing import assert_frame_equal
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
@@ -39,30 +40,45 @@ def test_error_on_reducing_map() -> None:
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
     with pytest.raises(
-        InvalidOperationError,
-        match=(
-            r"output length of `map` \(1\) must be equal to "
-            r"the input length \(6\); consider using `apply` instead"
-        ),
+        TypeError,
+        match=r"`map` with `returns_scalar=False`",
     ):
-        df.group_by("id").agg(pl.map_batches(["t", "y"], np.mean))
+        df.group_by("id").agg(
+            pl.map_batches(["t", "y"], np.mean, return_dtype=pl.Float64)
+        )
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
-    with pytest.raises(
-        InvalidOperationError,
-        match=(
-            r"output length of `map` \(1\) must be equal to "
-            r"the input length \(4\); consider using `apply` instead"
-        ),
-    ):
+    with pytest.raises(TypeError, match=r"`map` with `returns_scalar=False`"):
         df.select(
             pl.col("x")
             .map_batches(
                 lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
                 is_elementwise=True,
+                return_dtype=pl.Struct(
+                    {"breakpoint": pl.Int64, "cat": pl.Categorical()}
+                ),
             )
             .over("group")
         )
+
+    assert_frame_equal(
+        df.select(
+            pl.col("x")
+            .map_batches(
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True),
+                is_elementwise=True,
+            )
+            .struct.unnest()
+            .over("group")
+        ),
+        pl.DataFrame(
+            {
+                "breakpoint": [1.0, 2.0, 3.0, float("inf")],
+                "category": ["(-inf, 1]", "(1, 2]", "(2, 3]", "(3, inf]"],
+            },
+            schema_overrides={"category": pl.Categorical()},
+        ),
+    )
 
 
 def test_error_on_invalid_by_in_asof_join() -> None:
@@ -249,6 +265,7 @@ def test_is_nan_on_non_boolean() -> None:
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
@@ -343,9 +360,7 @@ def test_invalid_dtype() -> None:
 def test_arr_eval_named_cols() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
 
-    with pytest.raises(
-        ComputeError,
-    ):
+    with pytest.raises(ComputeError):
         df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
 
@@ -368,7 +383,7 @@ def test_sort_by_different_lengths() -> None:
     )
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -378,7 +393,7 @@ def test_sort_by_different_lengths() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -471,12 +486,12 @@ def test_with_column_duplicates() -> None:
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
-
     with pytest.raises(
-        ComputeError,
-        match=r"The output type of the 'map_elements' function cannot be determined",
+        pl.exceptions.InvalidOperationError,
+        match="UDF called without return type, but was not able to infer the output type.",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
@@ -598,7 +613,7 @@ def test_sort_by_error() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="expressions in 'sort_by' produced a different number of groups",
+        match="expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
@@ -651,6 +666,7 @@ def test_raise_array_of_cats() -> None:
         pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_raise_invalid_arithmetic() -> None:
     df = pl.Series("a", [object()]).to_frame()
 
@@ -687,7 +703,7 @@ def test_no_panic_pandas_nat() -> None:
 
 def test_list_to_struct_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.DataFrame({"a": 1}).to_series().list.to_struct()
+        pl.DataFrame({"a": 1}).to_series().list.to_struct(fields=["a", "b"])
 
 
 def test_raise_invalid_agg() -> None:
@@ -722,7 +738,27 @@ def test_raise_column_not_found_in_join_arg() -> None:
 def test_raise_on_different_results_20104() -> None:
     df = pl.DataFrame({"x": [1, 2]})
 
-    with pytest.raises(pl.exceptions.SchemaError):
+    with pytest.raises(TypeError):
         df.rolling("x", period="3i").agg(
-            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+            result=pl.col("x")
+            .gather_every(2, offset=1)
+            .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )
+
+
+@pytest.mark.parametrize("fill_value", [None, -1])
+def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    df_shift = None
+    with pytest.deprecated_call(  # @2.0
+        match=r"shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+    ):
+        df_shift = df.select(
+            pl.col.x.shift(pl.col.x.filter(pl.col.x > 3).first(), fill_value=fill_value)
+        )
+    # Check that the result is a column of nulls, even if the fill_value is different
+    assert_frame_equal(
+        df_shift,
+        pl.DataFrame({"x": [None, None, None]}),
+        check_dtypes=False,
+    )

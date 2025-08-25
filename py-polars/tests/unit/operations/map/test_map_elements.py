@@ -18,6 +18,7 @@ pytestmark = pytest.mark.filterwarnings(
 
 
 @pytest.mark.may_fail_auto_streaming  # dtype not set
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_infer_list() -> None:
     df = pl.DataFrame(
         {
@@ -39,6 +40,7 @@ def test_map_elements_upcast_null_dtype_empty_list() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
     with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
@@ -49,7 +51,7 @@ def test_map_elements_arithmetic_consistency() -> None:
         )["B"].to_list() == [[3.0, 4.0]]
 
 
-@pytest.mark.may_fail_auto_streaming  # dtype not set
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_struct() -> None:
     df = pl.DataFrame(
         {
@@ -60,6 +62,7 @@ def test_map_elements_struct() -> None:
             "E": [None, [1], [2, 3]],
         }
     )
+
     out = df.with_columns(pl.struct(df.columns).alias("struct")).select(
         pl.col("struct").map_elements(lambda x: x["A"]).alias("A_field"),
         pl.col("struct").map_elements(lambda x: x["B"]).alias("B_field"),
@@ -80,6 +83,7 @@ def test_map_elements_struct() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_numpy_int_out() -> None:
     df = pl.DataFrame({"col1": [2, 4, 8, 16]})
     result = df.with_columns(
@@ -174,6 +178,7 @@ def test_map_elements_type_propagation() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # dtype not set
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_empty_list_in_map_elements() -> None:
     df = pl.DataFrame(
         {"a": [[1], [1, 2], [3, 4], [5, 6]], "b": [[3], [1, 2], [1, 2], [4, 5]]}
@@ -198,6 +203,7 @@ def test_map_elements_skip_nulls(value: Any, return_value: Any) -> None:
     assert result == [return_value, return_value]
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_map_elements_object_dtypes() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
@@ -274,10 +280,13 @@ def test_map_elements_pass_name() -> None:
         return pl.Series([mapper[s.name]])
 
     assert df.group_by("bar", maintain_order=True).agg(
-        pl.col("foo").implode().map_elements(element_mapper, pass_name=True),
+        pl.col("foo")
+        .implode()
+        .map_elements(element_mapper, pass_name=True, return_dtype=pl.List(pl.String)),
     ).to_dict(as_series=False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_binary() -> None:
     assert pl.DataFrame({"bin": [b"\x11" * 12, b"\x22" * 12, b"\xaa" * 12]}).select(
         pl.col("bin").map_elements(bytes.hex)
@@ -298,11 +307,13 @@ def test_map_elements_set_datetime_output_8984() -> None:
     )["a"].to_list() == [payload]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_dict_order_10128() -> None:
     df = pl.select(pl.lit("").map_elements(lambda x: {"c": 1, "b": 2, "a": 3}))
     assert df.to_dict(as_series=False) == {"literal": [{"c": 1, "b": 2, "a": 3}]}
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_10237() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert (
@@ -310,6 +321,7 @@ def test_map_elements_10237() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_on_empty_col_10639() -> None:
     df = pl.DataFrame({"A": [], "B": []}, schema={"A": pl.Float32, "B": pl.Float32})
     res = df.group_by("B").agg(
@@ -353,26 +365,6 @@ def test_cabbage_strategy_14396() -> None:
         df.select(pl.col("x").map_elements(lambda x: 2 * x, strategy="cabbage"))  # type: ignore[arg-type]
 
 
-def test_unknown_map_elements() -> None:
-    df = pl.DataFrame(
-        {
-            "Amount": [10, 1, 1, 5],
-            "Flour": ["1000g", "100g", "50g", "75g"],
-        }
-    )
-
-    q = df.lazy().select(
-        pl.col("Amount"),
-        pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
-    )
-
-    assert q.collect().to_dict(as_series=False) == {
-        "Amount": [10, 1, 1, 5],
-        "Flour": [10.0, 100.0, 100.0, 20.0],
-    }
-    assert q.collect_schema().dtypes() == [pl.Int64, pl.Unknown]
-
-
 def test_map_elements_list_dtype_18472() -> None:
     s = pl.Series([[None], ["abc  ", None]])
     result = s.map_elements(lambda s: [i.strip() if i else None for i in s])
@@ -405,3 +397,14 @@ def test_map_elements_list_of_named_tuple_15425() -> None:
     )
     expected = pl.DataFrame({"a": [[], [{"x": 0}], [{"x": 0}, {"x": 1}]]})
     assert_frame_equal(result, expected)
+
+
+def test_map_elements_list_dtype_24006() -> None:
+    values = [None, [1, 2], [2, 3]]
+    dtype = pl.List(pl.Int64)
+
+    s1 = pl.Series([0, 1, 2]).map_elements(lambda x: values[x])
+    s2 = pl.Series([0, 1, 2]).map_elements(lambda x: values[x], return_dtype=dtype)
+
+    assert_series_equal(s1, s2)
+    assert_series_equal(s1, pl.Series(values, dtype=dtype))

@@ -320,6 +320,7 @@ def test_sorted_flag() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
     dfa = pl.DataFrame(
@@ -402,6 +403,7 @@ def test_is_sorted_rle_id() -> None:
     assert pl.Series([12, 3345, 12, 3, 4, 4, 1, 12]).rle_id().flags["SORTED_ASC"]
 
 
+@pytest.mark.may_fail_cloud
 def test_is_sorted_chunked_select() -> None:
     df = pl.DataFrame({"a": np.ones(14)})
 

@@ -54,18 +54,10 @@ impl Executor for JoinExec {
             let mut state_right = state.split();
             let mut state_left = state.split();
             state_right.branch_idx += 1;
-            // propagate the fetch_rows static value to the spawning threads.
-            let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
 
             POOL.join(
-                move || {
-                    FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                    input_left.execute(&mut state_left)
-                },
-                move || {
-                    FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                    input_right.execute(&mut state_right)
-                },
+                move || input_left.execute(&mut state_left),
+                move || input_right.execute(&mut state_right),
             )
         } else {
             (input_left.execute(state), input_right.execute(state))
@@ -122,15 +114,15 @@ impl Executor for JoinExec {
                                     TimeUnit::Microseconds => duration.duration_us(),
                                     TimeUnit::Milliseconds => duration.duration_ms(),
                                 };
-                                options.tolerance = Some(AnyValue::from(tolerance))
+                                options.tolerance = Some(Scalar::from(tolerance))
                             }
                             Date => {
                                 let days = (duration.duration_ms() / MILLISECONDS_IN_DAY) as i32;
-                                options.tolerance = Some(AnyValue::from(days))
+                                options.tolerance = Some(Scalar::from(days))
                             }
                             Time => {
                                 let tolerance = duration.duration_ns();
-                                options.tolerance = Some(AnyValue::from(tolerance))
+                                options.tolerance = Some(Scalar::from(tolerance))
                             }
                             _ => {
                                 panic!("can only use timedelta string language with Date/Datetime/Duration/Time dtypes")

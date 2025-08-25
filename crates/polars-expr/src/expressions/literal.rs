@@ -93,14 +93,6 @@ impl PhysicalExpr for LiteralExpr {
         self.as_column()
     }
 
-    fn evaluate_inline_impl(&self, _depth_limit: u8) -> Option<Column> {
-        use LiteralValue::*;
-        match &self.0 {
-            Range { .. } => None,
-            _ => self.as_column().ok(),
-        }
-    }
-
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -109,7 +101,40 @@ impl PhysicalExpr for LiteralExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
+
+        if self.0.is_scalar() {
+            Ok(AggregationContext::from_agg_state(
+                AggState::LiteralScalar(s),
+                Cow::Borrowed(groups),
+            ))
+        } else {
+            // A non-scalar literal value expands to those values for every group.
+
+            let lit_length = s.len() as IdxSize;
+            polars_ensure!(
+                (groups.len() as IdxSize).checked_mul(lit_length).is_some(),
+                bigidx,
+                ctx = "group_by",
+                size = groups.len() as u64 * lit_length as u64
+            );
+            let groups = GroupsType::Slice {
+                groups: (0..groups.len() as IdxSize)
+                    .map(|i| [i * lit_length, lit_length])
+                    .collect(),
+                rolling: false,
+            };
+            let agg_state = AggState::AggregatedList(Column::new_scalar(
+                s.name().clone(),
+                Scalar::new_list(s.take_materialized_series()),
+                groups.len(),
+            ));
+
+            let groups = groups.into_sliceable();
+            Ok(AggregationContext::from_agg_state(
+                agg_state,
+                Cow::Owned(groups),
+            ))
+        }
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

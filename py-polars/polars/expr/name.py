@@ -20,14 +20,6 @@ class ExprNameNameSpace:
         """
         Keep the original root name of the expression.
 
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
-
         See Also
         --------
         Expr.alias
@@ -72,14 +64,6 @@ class ExprNameNameSpace:
     def map(self, function: Callable[[str], str]) -> Expr:
         """
         Rename the output of an expression by mapping a function over the root name.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-
 
         Parameters
         ----------
@@ -129,18 +113,10 @@ class ExprNameNameSpace:
         prefix
             Prefix to add to the root column name.
 
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
-
         See Also
         --------
         suffix
+        map
 
         Examples
         --------
@@ -173,17 +149,10 @@ class ExprNameNameSpace:
         suffix
             Suffix to add to the root column name.
 
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
-
         See Also
         --------
         prefix
+        map
 
         Examples
         --------
@@ -211,19 +180,12 @@ class ExprNameNameSpace:
         """
         Make the root column name lowercase.
 
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
-
         See Also
         --------
         prefix
         suffix
         to_uppercase
+        map
 
         Examples
         --------
@@ -251,19 +213,12 @@ class ExprNameNameSpace:
         """
         Make the root column name uppercase.
 
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
-
         See Also
         --------
         prefix
         suffix
         to_lowercase
+        map
 
         Examples
         --------

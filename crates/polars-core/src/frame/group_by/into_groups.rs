@@ -167,13 +167,13 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             },
             DataType::Int64 => {
-                let BitRepr::Large(ca) = self.to_bit_repr() else {
+                let BitRepr::U64(ca) = self.to_bit_repr() else {
                     unreachable!()
                 };
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
             DataType::Int32 => {
-                let BitRepr::Small(ca) = self.to_bit_repr() else {
+                let BitRepr::U32(ca) = self.to_bit_repr() else {
                     unreachable!()
                 };
                 num_groups_proxy(&ca, multithreaded, sorted)
