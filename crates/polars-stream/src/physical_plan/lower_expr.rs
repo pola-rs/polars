@@ -983,6 +983,79 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: IRFunctionExpr::Diff(NullBehavior::Drop),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 2);
+
+                // Transform:
+                //    expr.diff(offset, "ignore")
+                //      ->
+                //    let output_len = expr.len() - offset
+                //    in expr.slice(offset, output_len) - expr.slice(0, output_len)
+
+                let base_name = unique_column_name();
+                let offset_name = unique_column_name();
+                let output_len_name = unique_column_name();
+                let subtract_lhs_name = unique_column_name();
+                let subtract_rhs_name = unique_column_name();
+                let base_expr = inner_exprs[0].with_alias(base_name.clone());
+                let offset_expr = inner_exprs[1].with_alias(offset_name.clone());
+
+                let zero_literal = ctx
+                    .expr_arena
+                    .add(AExpr::Literal(LiteralValue::new_idxsize(0)));
+
+                // IR: expr.len()
+                let len_expr = ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Len),
+                    OutputName::Alias(base_name.clone()),
+                );
+
+                // IR: output_len = expr.len() - offset
+                let output_len_expr = ExprIR::new(
+                    ctx.expr_arena.add(AExpr::BinaryExpr {
+                        left: len_expr.node(),
+                        op: Operator::Minus,
+                        right: offset_expr.node(),
+                    }),
+                    OutputName::Alias(output_len_name.clone()),
+                );
+
+                // IR: expr.slice(offset, output_len)
+                let subtract_lhs_expr = ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Slice {
+                        input: base_expr.node(),
+                        offset: offset_expr.node(),
+                        length: output_len_expr.node(),
+                    }),
+                    OutputName::Alias(subtract_lhs_name.clone()),
+                );
+
+                // IR: expr.slice(0, output_len)
+                let subtract_rhs_expr = ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Slice {
+                        input: base_expr.node(),
+                        offset: zero_literal,
+                        length: output_len_expr.node(),
+                    }),
+                    OutputName::Alias(subtract_rhs_name.clone()),
+                );
+
+                // IR: expr.slice(offset, expr.len()) - expr.slice(0, expr.len())
+                let output_expr = ctx.expr_arena.add(AExpr::BinaryExpr {
+                    left: subtract_lhs_expr.node(),
+                    op: Operator::Minus,
+                    right: subtract_rhs_expr.node(),
+                });
+
+                let (stream, nodes) = lower_exprs_with_ctx(input, &[output_expr], ctx)?;
+                input_streams.insert(stream);
+                transformed_exprs.extend(nodes);
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: IRFunctionExpr::Diff(NullBehavior::Ignore),
                 options: _,
             } => {
@@ -999,14 +1072,14 @@ fn lower_exprs_with_ctx(
                 let base_expr = inner_exprs[0].with_alias(base_name.clone());
                 let offset_expr = inner_exprs[1].with_alias(offset_name.clone());
 
-                dbg!(&base_name, &offset_name, &shifted_name);
-
                 // IR: expr.shift(offset, fill_value=None)
+                let function = IRFunctionExpr::Shift;
+                let options = function.function_options();
                 let shift_expr = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Function {
                         input: vec![base_expr.clone(), offset_expr.clone()],
-                        function: IRFunctionExpr::Shift,
-                        options: FunctionOptions::default(), // TODO: This is probably wrong
+                        function,
+                        options,
                     }),
                     OutputName::Alias(shifted_name),
                 );
@@ -1018,10 +1091,9 @@ fn lower_exprs_with_ctx(
                     right: shift_expr.node(),
                 });
 
-                let (stream, node) = lower_exprs_with_ctx(input, &[output_expr], ctx)?;
-
+                let (stream, nodes) = lower_exprs_with_ctx(input, &[output_expr], ctx)?;
                 input_streams.insert(stream);
-                transformed_exprs.push(*node.first().unwrap());
+                transformed_exprs.extend(nodes);
             },
 
             AExpr::Function {
