@@ -231,6 +231,9 @@ impl ReaderStarter {
                 }
             }
 
+            let should_update_row_position =
+                extra_ops.has_row_index_or_slice() && n_sources - scan_source_idx > 1;
+
             if let Some(skip_read_reason) = skip_read_reason {
                 if verbose {
                     eprintln!(
@@ -246,7 +249,7 @@ impl ReaderStarter {
                 }
 
                 // We are tracking the row position so we need the row count from this file even if it's skipped.
-                if extra_ops.has_row_index_or_slice() {
+                if should_update_row_position {
                     let Some(current_row_position) = current_row_position.as_mut() else {
                         panic!()
                     };
@@ -296,15 +299,13 @@ impl ReaderStarter {
                 continue;
             }
 
-            let (row_position_on_end_tx, row_position_on_end_rx) = if n_rows_in_file.is_none()
-                && extra_ops.has_row_index_or_slice()
-                && n_sources - scan_source_idx > 1
-            {
-                let (tx, rx) = connector::connector();
-                (Some(tx), Some(rx))
-            } else {
-                (None, None)
-            };
+            let (row_position_on_end_tx, row_position_on_end_rx) =
+                if should_update_row_position && n_rows_in_file.is_none() {
+                    let (tx, rx) = connector::connector();
+                    (Some(tx), Some(rx))
+                } else {
+                    (None, None)
+                };
 
             let callbacks = FileReaderCallbacks {
                 row_position_on_end_tx,

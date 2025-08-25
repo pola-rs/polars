@@ -182,6 +182,9 @@ pub struct CastColumnsPolicy {
     /// Allow casting to change time units.
     pub datetime_convert_timezone: bool,
 
+    /// DataType::Null to any
+    pub null_upcast: bool,
+
     pub missing_struct_fields: MissingColumnsPolicy,
     pub extra_struct_fields: ExtraColumnsPolicy,
 }
@@ -195,6 +198,7 @@ impl CastColumnsPolicy {
         datetime_nanoseconds_downcast: false,
         datetime_microseconds_downcast: false,
         datetime_convert_timezone: false,
+        null_upcast: true,
         missing_struct_fields: MissingColumnsPolicy::Raise,
         extra_struct_fields: ExtraColumnsPolicy::Raise,
     };
@@ -412,6 +416,14 @@ impl CastColumnsPolicy {
             )
         };
 
+        if incoming_dtype.is_null() && !target_dtype.is_null() {
+            return if self.null_upcast {
+                Ok(true)
+            } else {
+                mismatch_err("unimplemented: 'null-upcast' in scan cast options")
+            };
+        }
+
         // We intercept the nested types first to prevent an expensive recursive eq - recursion
         // is instead done manually through this function.
 
@@ -547,11 +559,6 @@ impl CastColumnsPolicy {
 
         let incoming_dtype = incoming_dtype.as_ref();
         let target_dtype = target_dtype.as_ref();
-
-        // If the incoming type is always allowed to be cast.
-        if incoming_dtype.does_match_schema_type(target_dtype) {
-            return Ok(true);
-        }
 
         //
         // After this point the dtypes are mismatching.

@@ -69,6 +69,18 @@ impl ColumnSelectorBuilder {
             )
         };
 
+        if incoming_dtype.is_null() && !target_dtype.is_null() {
+            return if self.cast_columns_policy.null_upcast {
+                Ok(ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(input_selector))
+            } else {
+                mismatch_err("unimplemented: 'null-upcast' in scan cast options")
+            };
+        }
+
         // We intercept the nested types first to prevent an expensive recursive eq - recursion
         // is instead done manually through this function.
 
@@ -251,11 +263,6 @@ impl ColumnSelectorBuilder {
 
         let incoming_dtype = incoming_dtype.as_ref();
         let target_dtype = target_dtype.as_ref();
-
-        // If the incoming type is always allowed to be cast.
-        if incoming_dtype.does_match_schema_type(target_dtype) {
-            return attach_cast(CastOptions::NonStrict);
-        }
 
         if target_dtype.is_integer() && incoming_dtype.is_integer() {
             if !self.cast_columns_policy.integer_upcast {
