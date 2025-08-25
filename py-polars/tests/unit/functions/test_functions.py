@@ -517,9 +517,14 @@ def test_coalesce_eager() -> None:
 
 def test_overflow_diff() -> None:
     df = pl.DataFrame({"a": [20, 10, 30]})
-    assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(as_series=False) == {
-        "a": [None, -10, 20]
-    }
+    assert_frame_equal(
+        df.select(pl.col("a").cast(pl.UInt64).diff(null_behavior="ignore")),
+        pl.DataFrame({"a": [None, -10, 20]}),
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").cast(pl.UInt64).diff(null_behavior="drop")),
+        pl.DataFrame({"a": [-10, 20]}),
+    )
 
 
 @pytest.mark.may_fail_cloud  # reason: unknown type
