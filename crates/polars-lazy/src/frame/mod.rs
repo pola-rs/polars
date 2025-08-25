@@ -34,6 +34,7 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
+use polars_plan::plans::order::simplify_and_fetch_orderings;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -685,6 +686,18 @@ impl LazyFrame {
             _ => {},
         }
         let mut alp_plan = self.clone().to_alp_optimized()?;
+
+        let orderings = simplify_and_fetch_orderings(
+            &[alp_plan.lp_top],
+            &mut alp_plan.lp_arena,
+            &alp_plan.expr_arena,
+        );
+        // for (n, ordering) in orderings {
+        //     eprintln!("{:?}", alp_plan.lp_arena.get(n));
+        //     eprintln!("inputs: {:?}", &ordering.inputs);
+        //     eprintln!("outputs: {:?}", &ordering.outputs);
+        //     eprintln!();
+        // }
 
         match engine {
             Engine::Auto | Engine::Streaming => feature_gated!("new_streaming", {

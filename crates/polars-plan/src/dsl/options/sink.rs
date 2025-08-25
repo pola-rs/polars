@@ -544,6 +544,14 @@ impl SinkTypeIR {
             Self::Partition(f) => f.traverse_and_hash(expr_arena, state),
         }
     }
+
+    pub fn maintain_order(&self) -> bool {
+        match self {
+            SinkTypeIR::Memory => true,
+            SinkTypeIR::File(s) => s.sink_options.maintain_order,
+            SinkTypeIR::Partition(s) => s.sink_options.maintain_order,
+        }
+    }
 }
 
 #[cfg(feature = "cse")]
