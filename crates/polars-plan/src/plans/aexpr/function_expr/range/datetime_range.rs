@@ -37,7 +37,7 @@ pub(super) fn datetime_range(
             };
             datetime_range_impl(name.clone(), start, end, interval, closed, *tu, tz.as_ref())?
         },
-        _ => unimplemented!(),
+        _ => polars_bail!(ComputeError: "expected 'Datetime', got '{}'", dtype),
     };
     Ok(result.cast(dtype).unwrap().into_column())
 }
@@ -86,7 +86,7 @@ pub(super) fn datetime_ranges(
 
             temporal_ranges_impl_broadcast(start, end, range_impl, &mut builder)?
         },
-        _ => unimplemented!(),
+        _ => polars_bail!(ComputeError: "expected 'Datetime', got '{}'", dtype),
     };
 
     let to_type = DataType::List(Box::new(dtype.clone()));

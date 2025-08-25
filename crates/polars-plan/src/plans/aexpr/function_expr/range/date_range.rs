@@ -24,6 +24,8 @@ pub(super) fn date_range(
     );
 
     let name = start.name().clone();
+    polars_ensure!(start.dtype() == &DataType::Date, ComputeError: "expected 'Date', got '{}'", start.dtype());
+    polars_ensure!(end.dtype() == &DataType::Date, ComputeError: "expected 'Date', got '{}'", end.dtype());
     let start = temporal_series_to_i64_scalar(start)
         .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?
         * MICROSECONDS_IN_DAY;
@@ -52,6 +54,8 @@ pub(super) fn date_ranges(
     let start = &s[0];
     let end = &s[1];
 
+    polars_ensure!(start.dtype() == &DataType::Date, ComputeError: "Expected Date, got {}", start.dtype());
+    polars_ensure!(end.dtype() == &DataType::Date, ComputeError: "Expected Date, got {}", end.dtype());
     polars_ensure!(
         interval.is_full_days(),
         ComputeError: "`interval` input for `date_ranges` must consist of full days, got: {interval}"
