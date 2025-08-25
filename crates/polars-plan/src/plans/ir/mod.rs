@@ -2,6 +2,7 @@ mod dot;
 mod format;
 mod inputs;
 mod schema;
+pub mod order;
 pub(crate) mod tree_format;
 
 use std::borrow::Cow;
