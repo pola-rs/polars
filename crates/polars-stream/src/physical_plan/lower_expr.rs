@@ -1084,8 +1084,7 @@ fn lower_exprs_with_ctx(
                     },
                 }
 
-                // IR:
-                //   - <shifted column> - <unshifted column>
+                // IR: <shifted column> - <unshifted column>
                 let output_expr = ctx.expr_arena.add(AExpr::BinaryExpr {
                     left: shifted_expr.node(),
                     op: Operator::Minus,
