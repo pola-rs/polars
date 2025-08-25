@@ -1,10 +1,13 @@
 # Reconnect to compute cluster
 
-Polars Cloud allows you to reconnect to active compute clusters that are running in `proxy` mode. This lets you easily reconnect to run more queries on active clusters, without having to wait for machines to spin up.
+Polars Cloud allows you to reconnect to active compute clusters that are running in `proxy` mode.
+This lets you easily reconnect to run more queries on active clusters, without having to wait for
+machines to spin up.
 
 ## Start a cluster to reconnect to
 
-We will start a simple compute instance to demonstrate reconnection and save the cluster ID for later use:
+We will start a simple compute instance to demonstrate reconnection and save the cluster ID for
+later use:
 
 {{code_block('polars-cloud/reconnect','setup',['ComputeContext'])}}
 
@@ -18,7 +21,9 @@ ComputeContext(id=0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx, cpus=4, memory=16, insta
 
 ## Reconnect with Compute ID
 
-If you lost connection or if you want to connect to a running cluster in your workspace, use `.connect` on `pc.ComputeContext`. This connects directly using the `compute_id` of the running cluster:
+If you lost connection or if you want to connect to a running cluster in your workspace, use
+`.connect` on `pc.ComputeContext`. This connects directly using the `compute_id` of the running
+cluster:
 
 !!! note "Connection permissions and proxy mode requirement"
 
@@ -26,7 +31,8 @@ If you lost connection or if you want to connect to a running cluster in your wo
 
 {{code_block('polars-cloud/reconnect','connect_id',[])}}
 
-If you don't know your `compute_id`, use `.select()` to access an interactive interface where you can browse available clusters:
+If you don't know your `compute_id`, use `.select()` to access an interactive interface where you
+can browse available clusters:
 
 {{code_block('polars-cloud/reconnect','select',[])}}
 
@@ -40,7 +46,9 @@ Found 1 available clusters:
 
 ## Find clusters by workspace
 
-You can find your `compute_id` by listing workspaces and then finding your cluster within a specific workspace. First, get your workspace ID using `pc.Workspace.list()`, then list all ComputeContexts for that workspace:
+You can find your `compute_id` by listing workspaces and then finding your cluster within a specific
+workspace. First, get your workspace ID using `pc.Workspace.list()`, then list all ComputeContexts
+for that workspace:
 
 {{code_block('polars-cloud/reconnect','via_workspace',[])}}
 
@@ -49,6 +57,6 @@ You can find your `compute_id` by listing workspaces and then finding your clust
   IDLE),]
 ```
 
-With the cluster `id`, you can then reconnect directly to the clsuter:
+With the cluster `id`, you can then reconnect directly to the cluster:
 
 {{code_block('polars-cloud/reconnect','connect_id',[])}}
