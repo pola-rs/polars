@@ -1419,6 +1419,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             datetime_nanoseconds_downcast,
             datetime_microseconds_downcast: false,
             datetime_convert_timezone,
+            null_upcast: true,
             missing_struct_fields,
             extra_struct_fields,
         }));
