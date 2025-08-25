@@ -1003,8 +1003,8 @@ fn lower_exprs_with_ctx(
                 let base_name = unique_column_name();
                 let offset_name = unique_column_name();
                 let output_len_name = unique_column_name();
-                let subtract_lhs_name = unique_column_name();
-                let subtract_rhs_name = unique_column_name();
+                let shifted_name = unique_column_name();
+                let unshifted_name = unique_column_name();
                 let base_expr = inner_exprs[0].with_alias(base_name.clone());
                 let offset_expr = inner_exprs[1].with_alias(offset_name.clone());
 
@@ -1033,7 +1033,7 @@ fn lower_exprs_with_ctx(
                                 function,
                                 options,
                             }),
-                            OutputName::Alias(subtract_rhs_name),
+                            OutputName::Alias(unshifted_name),
                         );
                         shifted_expr = cast_expr;
                     },
@@ -1066,7 +1066,7 @@ fn lower_exprs_with_ctx(
                                 offset: offset_expr.node(),
                                 length: output_len_expr.node(),
                             }),
-                            OutputName::Alias(subtract_lhs_name.clone()),
+                            OutputName::Alias(shifted_name.clone()),
                         );
 
                         // IR: expr.slice(0, output_len)
@@ -1076,7 +1076,7 @@ fn lower_exprs_with_ctx(
                                 offset: zero_literal,
                                 length: output_len_expr.node(),
                             }),
-                            OutputName::Alias(subtract_rhs_name.clone()),
+                            OutputName::Alias(unshifted_name.clone()),
                         );
                     },
                 }
