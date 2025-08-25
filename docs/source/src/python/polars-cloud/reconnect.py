@@ -20,9 +20,7 @@ ctx = pc.ComputeContext.select()
 # --8<-- [end:select]
 
 # --8<-- [start:via_workspace]
-from uuid import UUID
-
 # List all clusters in the specified workspace
-pc.ComputeContext.list(UUID('019883d1-xxxx-xxxx-xxxx-xxxxxxxxxxxx'))
+pc.ComputeContext.list('your-workspace')
 # --8<-- [end:via_workspace]
 """
