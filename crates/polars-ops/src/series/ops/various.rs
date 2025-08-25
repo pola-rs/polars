@@ -11,6 +11,19 @@ use polars_utils::total_ord::TotalOrd;
 
 use crate::series::ops::SeriesSealed;
 
+fn field_sort_option(opt: &[bool], n_fields: usize, field_name: &str) -> PolarsResult<Vec<bool>> {
+    if opt.len() == 1 {
+        Ok(vec![opt[0]; n_fields])
+    } else if opt.len() == n_fields {
+        Ok(opt.to_vec())
+    } else {
+        polars_bail!(InvalidOperation:
+            "length of `{}` ({}) does not match the number of struct fields ({})",
+            field_name, opt.len(), n_fields
+        );
+    }
+}
+
 pub trait SeriesMethods: SeriesSealed {
     /// Create a [`DataFrame`] with the unique `values` of this [`Series`] and a column `"counts"`
     /// with dtype [`IdxType`]
@@ -27,6 +40,7 @@ pub trait SeriesMethods: SeriesSealed {
             Duplicate: "using `value_counts` on a column/series named '{}' would lead to duplicate \
             column names; change `name` to fix", name,
         );
+
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
         let values = unsafe { s.agg_first(&groups) }
@@ -82,7 +96,23 @@ pub trait SeriesMethods: SeriesSealed {
     /// Checks if a [`Series`] is sorted. Tries to fail fast.
     fn is_sorted(&self, options: SortOptions) -> PolarsResult<bool> {
         let s = self.as_series();
+
+        // early exit opportunities (<= 1 row, or all-null)
+        let s_len = s.len();
+        if s_len <= 1 {
+            return Ok(true);
+        }
         let null_count = s.null_count();
+        if null_count == s_len {
+            return Ok(true);
+        }
+
+        // for struct types we row-encode and recurse
+        #[cfg(feature = "dtype-struct")]
+        if matches!(s.dtype(), DataType::Struct(_)) {
+            let options = SortMultipleOptions::from(&options);
+            return self.is_sorted_struct(options);
+        };
 
         // fast paths
         if (options.descending
@@ -95,26 +125,9 @@ pub trait SeriesMethods: SeriesSealed {
             return Ok(true);
         }
 
-        // for struct types we row-encode and recurse
-        #[cfg(feature = "dtype-struct")]
-        if matches!(s.dtype(), DataType::Struct(_)) {
-            let encoded = _get_rows_encoded_ca(
-                PlSmallStr::EMPTY,
-                &[s.clone().into()],
-                &[options.descending],
-                &[options.nulls_last],
-            )?;
-            return encoded.into_series().is_sorted(options);
-        }
-
-        let s_len = s.len();
-        if null_count == s_len {
-            // All nulls is all equal
-            return Ok(true);
-        }
-        // Check if nulls are in the right location.
+        // check if nulls are in the right location.
         if null_count > 0 {
-            // The slice triggers a fast null count
+            // the slice triggers a fast null count
             if options.nulls_last {
                 if s.slice((s_len - null_count) as i64, null_count)
                     .null_count()
@@ -145,6 +158,56 @@ pub trait SeriesMethods: SeriesSealed {
             Series::lt_eq
         };
         Ok(cmp_op(&s1, &s2)?.all())
+    }
+
+    /// Checks if a Struct [`Series`] is sorted, taking SortMultipleOptions to
+    /// allow per-field column sorting options for the Struct dtype (if you
+    /// do not need to set per-field options, use `is_sorted` instead).
+    #[cfg(feature = "dtype-struct")]
+    fn is_sorted_struct(&self, options: SortMultipleOptions) -> PolarsResult<bool> {
+        // for struct types we row-encode and recurse
+        let s = self.as_series();
+        if !matches!(s.dtype(), DataType::Struct(_)) {
+            polars_bail!(InvalidOperation: "`is_sorted_struct` expected Struct, got {:?}", s.dtype());
+        }
+
+        // broadcast / validate length for field sort options
+        let n_fields = match s.dtype() {
+            DataType::Struct(fields) => fields.len(),
+            _ => unreachable!(),
+        };
+        let descending = field_sort_option(&options.descending, n_fields, "descending")?;
+        let nulls_last = field_sort_option(&options.nulls_last, n_fields, "nulls_last")?;
+
+        // each struct field is encoded with its respective options
+        let encoded_series = {
+            let struct_field_cols: Vec<Column> = {
+                let struct_ca = s
+                    .struct_()
+                    .map_err(|_| polars_err!(InvalidOperation: "expected Struct column"))?;
+                struct_ca
+                    .fields_as_series()
+                    .into_iter()
+                    .map(|s| s.into())
+                    .collect()
+            };
+            let encoded = _get_rows_encoded_ca(
+                PlSmallStr::EMPTY,
+                &struct_field_cols,
+                &descending,
+                &nulls_last,
+            )?;
+            encoded.into_series()
+        };
+
+        let encoded_options = SortOptions {
+            descending: false, // note: the 'descending' and 'nulls_last' options were
+            nulls_last: false, // applied in the row encoding, so we default them here
+            maintain_order: false,
+            multithreaded: options.multithreaded,
+            limit: options.limit,
+        };
+        encoded_series.is_sorted(encoded_options)
     }
 }
 
