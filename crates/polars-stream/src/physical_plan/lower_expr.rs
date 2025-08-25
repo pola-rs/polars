@@ -1009,7 +1009,7 @@ fn lower_exprs_with_ctx(
                 let cast_dtype = match dtype {
                     DataType::UInt8 => Some(DataType::Int16),
                     DataType::UInt16 => Some(DataType::Int32),
-                    DataType::UInt64 | DataType::UInt32 => Some(DataType::Int64),
+                    DataType::UInt32 | DataType::UInt64 => Some(DataType::Int64),
                     _ => None,
                 };
                 if let Some(cast_dtype) = cast_dtype {
