@@ -1035,29 +1035,6 @@ impl DataType {
     pub fn is_numeric(&self) -> bool {
         self.is_integer() || self.is_float() || self.is_decimal()
     }
-
-    pub fn try_to_signed(&self) -> PolarsResult<DataType> {
-        use DataType::*;
-        match self {
-            UInt8 | Int8 => Ok(Int8),
-            UInt16 | Int16 => Ok(Int16),
-            UInt32 | Int32 => Ok(Int32),
-            UInt64 | Int64 => Ok(Int64),
-            dt => polars_bail!(InvalidOperation: "`{dt}` has no signed equivalent"),
-        }
-    }
-
-    pub fn try_to_unsigned(&self) -> PolarsResult<DataType> {
-        use DataType::*;
-        match self {
-            UInt8 | Int8 => Ok(Int8),
-            UInt16 | Int16 => Ok(Int16),
-            UInt32 | Int32 => Ok(Int32),
-            UInt64 | Int64 => Ok(Int64),
-            Int128 => Ok(Int128),
-            dt => polars_bail!(InvalidOperation: "`{dt}` has no unsigned equivalent"),
-        }
-    }
 }
 
 impl Display for DataType {

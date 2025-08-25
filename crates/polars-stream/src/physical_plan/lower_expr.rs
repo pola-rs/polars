@@ -991,34 +991,37 @@ fn lower_exprs_with_ctx(
                 // Transforms:
                 //    expr.diff(offset, "ignore")
                 //      ->
-                //    let expr = expr.cast(<signed datatype>)
+                //    let expr = expr.cast(<signed datatype>) // if needed
                 //    in expr.shift(offset) - expr
                 //
                 //    expr.diff(offset, "drop")
                 //      ->
-                //    let expr = expr.cast(<signed datatype>)
+                //    let expr = expr.cast(<signed datatype>) // if needed
                 //    let output_len = expr.len() - offset
                 //    in expr.slice(offset, output_len) - expr.slice(0, output_len)
 
-                let base_name = unique_column_name();
-                let offset_name = unique_column_name();
-                let output_len_name = unique_column_name();
-                let shifted_name = unique_column_name();
-                let unshifted_name = unique_column_name();
-                let base_expr = inner_exprs[0].with_alias(base_name.clone());
-                let offset_expr = inner_exprs[1].with_alias(offset_name.clone());
+                let mut base_expr = inner_exprs[0].clone();
+                let offset_expr = &inner_exprs[1];
+                let dtype =
+                    base_expr.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
 
                 // IR: expr = expr.cast(<signed datatype>)
-                let cast_expr = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Cast {
-                        expr: base_expr.node(),
-                        dtype: base_expr
-                            .dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?
-                            .try_to_signed()?,
-                        options: CastOptions::NonStrict,
-                    }),
-                    OutputName::Alias(base_name.clone()),
-                );
+                let cast_dtype = match dtype {
+                    DataType::UInt8 => Some(DataType::Int16),
+                    DataType::UInt16 => Some(DataType::Int32),
+                    DataType::UInt64 | DataType::UInt32 => Some(DataType::Int64),
+                    _ => None,
+                };
+                if let Some(cast_dtype) = cast_dtype {
+                    base_expr = ExprIR::new(
+                        ctx.expr_arena.add(AExpr::Cast {
+                            expr: base_expr.node(),
+                            dtype: cast_dtype,
+                            options: CastOptions::NonStrict,
+                        }),
+                        OutputName::Alias(unique_column_name()),
+                    );
+                }
 
                 let shifted_expr;
                 let unshifted_expr;
@@ -1029,13 +1032,13 @@ fn lower_exprs_with_ctx(
                         let options = function.function_options();
                         unshifted_expr = ExprIR::new(
                             ctx.expr_arena.add(AExpr::Function {
-                                input: vec![cast_expr.clone(), offset_expr.clone()],
+                                input: vec![base_expr.clone(), offset_expr.clone()],
                                 function,
                                 options,
                             }),
-                            OutputName::Alias(unshifted_name),
+                            OutputName::Alias(unique_column_name()),
                         );
-                        shifted_expr = cast_expr;
+                        shifted_expr = base_expr;
                     },
                     NullBehavior::Drop => {
                         // IR: zero_literal = 0
@@ -1046,7 +1049,7 @@ fn lower_exprs_with_ctx(
                         // IR: expr.len()
                         let len_expr = ExprIR::new(
                             ctx.expr_arena.add(AExpr::Len),
-                            OutputName::Alias(base_name.clone()),
+                            OutputName::Alias(unique_column_name()),
                         );
 
                         // IR: output_len = expr.len() - offset
@@ -1056,27 +1059,27 @@ fn lower_exprs_with_ctx(
                                 op: Operator::Minus,
                                 right: offset_expr.node(),
                             }),
-                            OutputName::Alias(output_len_name.clone()),
+                            OutputName::Alias(unique_column_name()),
                         );
 
                         // IR: expr.slice(offset, output_len)
                         shifted_expr = ExprIR::new(
                             ctx.expr_arena.add(AExpr::Slice {
-                                input: cast_expr.node(),
+                                input: base_expr.node(),
                                 offset: offset_expr.node(),
                                 length: output_len_expr.node(),
                             }),
-                            OutputName::Alias(shifted_name.clone()),
+                            OutputName::Alias(unique_column_name()),
                         );
 
                         // IR: expr.slice(0, output_len)
                         unshifted_expr = ExprIR::new(
                             ctx.expr_arena.add(AExpr::Slice {
-                                input: cast_expr.node(),
+                                input: base_expr.node(),
                                 offset: zero_literal,
                                 length: output_len_expr.node(),
                             }),
-                            OutputName::Alias(unshifted_name.clone()),
+                            OutputName::Alias(unique_column_name()),
                         );
                     },
                 }

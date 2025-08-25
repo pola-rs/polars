@@ -10,7 +10,7 @@ from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import ConcatMethod, NullBehavior
+    from polars._typing import ConcatMethod
 
 
 def test_concat_align() -> None:
@@ -515,14 +515,15 @@ def test_coalesce_eager() -> None:
         pl.coalesce("x", "y", eager=True)
 
 
-@pytest.mark.parametrize(
-    ("null_behavior", "expected"), [("ignore", [None, -10, 20]), ("drop", [-10, 20])]
-)
-def test_overflow_diff(null_behavior: NullBehavior, expected: list[int | None]) -> None:
+def test_overflow_diff() -> None:
     df = pl.DataFrame({"a": [20, 10, 30]})
     assert_frame_equal(
-        df.select(pl.col("a").cast(pl.UInt64).diff(null_behavior=null_behavior)),
-        pl.DataFrame({"a": expected}),
+        df.select(pl.col("a").cast(pl.UInt64).diff("ignore")),
+        pl.DataFrame({"a": [None, -10, 20]}),
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").cast(pl.UInt64).diff("drop")),
+        pl.DataFrame({"a": [-10, 20]}),
     )
 
 
