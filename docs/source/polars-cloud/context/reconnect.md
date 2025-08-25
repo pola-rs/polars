@@ -4,10 +4,9 @@ Polars Cloud allows you to reconnect to active compute clusters that are running
 This lets you easily reconnect to run more queries on active clusters, without having to wait for
 machines to spin up.
 
-## Start a cluster to reconnect to
+## Set up a cluster
 
-We will start a simple compute instance to demonstrate reconnection and save the cluster ID for
-later use:
+We will start a simple cluster to show how you can reconnect. We will save the cluster ID so we can connect directly to the cluster in the following examples:
 
 {{code_block('polars-cloud/reconnect','setup',['ComputeContext'])}}
 
@@ -19,9 +18,9 @@ You can easily find the ID of your cluster by printing the ComputeContext to you
 ComputeContext(id=0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx, cpus=4, memory=16, instance_type=None, storage=16, big_instance_type=None, big_instance_multiplier=None, big_instance_storage=None, cluster_size=1, interactive=False, insecure=False, workspace_name='Dear Claude', labels=None, log_level=LogLevelSchema.Info
 ```
 
-## Reconnect with Compute ID
+## Reconnect to an existing cluster
 
-If you lost connection or if you want to connect to a running cluster in your workspace, use
+If you lose connection or want to connect to a running cluster in your workspace, use
 `.connect` on `pc.ComputeContext`. This connects directly using the `compute_id` of the running
 cluster:
 
@@ -57,6 +56,4 @@ for that workspace:
   IDLE),]
 ```
 
-With the cluster `id`, you can then reconnect directly to the cluster:
-
-{{code_block('polars-cloud/reconnect','connect_id',[])}}
+With the cluster `id` from the output above, you can then establish a connection using the same `.connect()` method shown in the previous section.
