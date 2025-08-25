@@ -6,6 +6,7 @@ use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap,
 };
 use polars_core::schema::{Schema, SchemaExt};
+use polars_core::series::ops::NullBehavior;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -978,6 +979,49 @@ fn lower_exprs_with_ctx(
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Diff(NullBehavior::Ignore),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 2);
+
+                // Transform:
+                //    expr.diff(offset, "ignore")
+                //      ->
+                //    expr.shift(offset, fill_value=None) - expr
+
+                let base_name = unique_column_name();
+                let offset_name = unique_column_name();
+                let shifted_name = unique_column_name();
+                let base_expr = inner_exprs[0].with_alias(base_name.clone());
+                let offset_expr = inner_exprs[1].with_alias(offset_name.clone());
+
+                dbg!(&base_name, &offset_name, &shifted_name);
+
+                // IR: expr.shift(offset, fill_value=None)
+                let shift_expr = ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Function {
+                        input: vec![base_expr.clone(), offset_expr.clone()],
+                        function: IRFunctionExpr::Shift,
+                        options: FunctionOptions::default(), // TODO: This is probably wrong
+                    }),
+                    OutputName::Alias(shifted_name),
+                );
+
+                // IR: expr.shift(...) - expr
+                let output_expr = ctx.expr_arena.add(AExpr::BinaryExpr {
+                    left: base_expr.node(),
+                    op: Operator::Minus,
+                    right: shift_expr.node(),
+                });
+
+                let (stream, node) = lower_exprs_with_ctx(input, &[output_expr], ctx)?;
+
+                input_streams.insert(stream);
+                transformed_exprs.push(*node.first().unwrap());
             },
 
             AExpr::Function {
