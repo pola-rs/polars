@@ -991,6 +991,7 @@ fn lower_exprs_with_ctx(
                 // Transform:
                 //    expr.diff(offset, "ignore")
                 //      ->
+                //    let expr = expr.cast(<signed datatype>)
                 //    let output_len = expr.len() - offset
                 //    in expr.slice(offset, output_len) - expr.slice(0, output_len)
 
@@ -1005,6 +1006,18 @@ fn lower_exprs_with_ctx(
                 let zero_literal = ctx
                     .expr_arena
                     .add(AExpr::Literal(LiteralValue::new_idxsize(0)));
+
+                // IR: expr = expr.cast(<signed datatype>)
+                let cast_expr = ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Cast {
+                        expr: base_expr.node(),
+                        dtype: base_expr
+                            .dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?
+                            .try_to_signed()?,
+                        options: CastOptions::NonStrict,
+                    }),
+                    OutputName::Alias(base_name.clone()),
+                );
 
                 // IR: expr.len()
                 let len_expr = ExprIR::new(
@@ -1025,7 +1038,7 @@ fn lower_exprs_with_ctx(
                 // IR: expr.slice(offset, output_len)
                 let subtract_lhs_expr = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Slice {
-                        input: base_expr.node(),
+                        input: cast_expr.node(),
                         offset: offset_expr.node(),
                         length: output_len_expr.node(),
                     }),
@@ -1035,7 +1048,7 @@ fn lower_exprs_with_ctx(
                 // IR: expr.slice(0, output_len)
                 let subtract_rhs_expr = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Slice {
-                        input: base_expr.node(),
+                        input: cast_expr.node(),
                         offset: zero_literal,
                         length: output_len_expr.node(),
                     }),
@@ -1064,7 +1077,8 @@ fn lower_exprs_with_ctx(
                 // Transform:
                 //    expr.diff(offset, "ignore")
                 //      ->
-                //    expr.shift(offset, fill_value=None) - expr
+                //    let expr = expr.cast(<signed datatype>)
+                //    in expr.shift(offset, fill_value=None) - expr
 
                 let base_name = unique_column_name();
                 let offset_name = unique_column_name();
@@ -1072,12 +1086,24 @@ fn lower_exprs_with_ctx(
                 let base_expr = inner_exprs[0].with_alias(base_name.clone());
                 let offset_expr = inner_exprs[1].with_alias(offset_name.clone());
 
+                // IR: expr = expr.cast(<signed datatype>)
+                let cast_expr = ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Cast {
+                        expr: base_expr.node(),
+                        dtype: base_expr
+                            .dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?
+                            .try_to_signed()?,
+                        options: CastOptions::NonStrict,
+                    }),
+                    OutputName::Alias(base_name.clone()),
+                );
+
                 // IR: expr.shift(offset, fill_value=None)
                 let function = IRFunctionExpr::Shift;
                 let options = function.function_options();
                 let shift_expr = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Function {
-                        input: vec![base_expr.clone(), offset_expr.clone()],
+                        input: vec![cast_expr.clone(), offset_expr.clone()],
                         function,
                         options,
                     }),
@@ -1086,7 +1112,7 @@ fn lower_exprs_with_ctx(
 
                 // IR: expr.shift(...) - expr
                 let output_expr = ctx.expr_arena.add(AExpr::BinaryExpr {
-                    left: base_expr.node(),
+                    left: cast_expr.node(),
                     op: Operator::Minus,
                     right: shift_expr.node(),
                 });
