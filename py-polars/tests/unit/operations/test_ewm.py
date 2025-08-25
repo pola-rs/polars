@@ -217,9 +217,8 @@ def test_ewm_with_multiple_chunks() -> None:
     )
     assert df0.n_chunks() == 1
 
-    # NOTE: We aren't testing whether `select` creates two chunks;
-    # we just need two chunks to properly test `ewm_mean`
-    df1 = df0.select(["ld_b", "ld_c"])
+    # We need two chunks to properly test `ewm_mean`
+    df1 = pl.concat((df0[:-1], df0[-1:])).select("ld_b", "ld_c")
     assert df1.n_chunks() == 2
 
     ewm_std = df1.with_columns(
