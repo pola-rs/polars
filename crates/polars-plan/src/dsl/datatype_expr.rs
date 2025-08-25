@@ -118,11 +118,31 @@ fn into_datatype_impl(
             }
         },
         D::Int(dt_expr, f) => {
+            use DataType as DT;
             let dt = into_datatype_impl(*dt_expr, schema, self_dtype)?;
             polars_ensure!(dt.is_integer(), InvalidOperation: "`{dt}` is not an integer type");
             match f {
-                IntDataTypeExpr::ToUnsigned => dt.try_to_unsigned()?,
-                IntDataTypeExpr::ToSigned => dt.try_to_signed()?,
+                IntDataTypeExpr::ToUnsigned => match dt {
+                    DT::UInt8 | DT::Int8 => DT::UInt8,
+                    DT::UInt16 | DT::Int16 => DT::UInt16,
+                    DT::UInt32 | DT::Int32 => DT::UInt32,
+                    DT::UInt64 | DT::Int64 => DT::UInt64,
+                    DT::Int128 => {
+                        polars_bail!(InvalidOperation: "`int128` has no unsigned equivalent")
+                    },
+                    _ => unreachable!(),
+                },
+                IntDataTypeExpr::ToSigned => {
+                    use DataType as DT;
+                    match dt {
+                        DT::UInt8 | DT::Int8 => DT::Int8,
+                        DT::UInt16 | DT::Int16 => DT::Int16,
+                        DT::UInt32 | DT::Int32 => DT::Int32,
+                        DT::UInt64 | DT::Int64 => DT::Int64,
+                        DT::Int128 => DT::Int128,
+                        _ => unreachable!(),
+                    }
+                },
             }
         },
         D::Struct(dt_expr, f) => {
