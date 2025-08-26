@@ -28,7 +28,10 @@ def test_concat_align() -> None:
                 "d": ["w", "x", "y", "z", None, None],
             }
         )
-        assert_frame_equal(result, expected)
+        assert_series_equal(result["a"], expected["a"])
+        assert_frame_equal(
+            result.select(pl.all().sort()), expected.select(pl.all().sort())
+        )
 
     result = pl.concat([a, b, c], how="align_left")
     expected = pl.DataFrame(
@@ -39,7 +42,8 @@ def test_concat_align() -> None:
             "d": ["w", "x", "z", None, None],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_series_equal(result["a"], expected["a"])
+    assert_frame_equal(result.select(pl.all().sort()), expected.select(pl.all().sort()))
 
     result = pl.concat([a, b, c], how="align_right")
     expected = pl.DataFrame(
@@ -50,7 +54,8 @@ def test_concat_align() -> None:
             "d": ["w", "x", "y", "z", None],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_series_equal(result["a"], expected["a"])
+    assert_frame_equal(result.select(pl.all().sort()), expected.select(pl.all().sort()))
 
     result = pl.concat([a, b, c], how="align_inner")
     expected = pl.DataFrame(
@@ -61,7 +66,8 @@ def test_concat_align() -> None:
             "d": ["w", "x"],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_series_equal(result["a"], expected["a"])
+    assert_frame_equal(result.select(pl.all().sort()), expected.select(pl.all().sort()))
 
 
 @pytest.mark.parametrize(

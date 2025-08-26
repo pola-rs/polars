@@ -145,3 +145,18 @@ def test_remove_sorts_on_unordered() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").unique()
     explain = lf.explain()
     assert explain.count("SORT") == 0
+
+
+def test_merge_sorted_to_union() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3]})
+    lf2 = pl.LazyFrame({"a": [2, 3, 4]})
+
+    lf = lf1.merge_sorted(lf2, "a").unique()
+
+    explain = lf.explain(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert "MERGE_SORTED" in explain
+    assert "UNION" not in explain
+
+    explain = lf.explain()
+    assert "MERGE_SORTED" not in explain
+    assert "UNION" in explain
