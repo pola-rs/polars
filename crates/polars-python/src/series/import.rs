@@ -159,6 +159,6 @@ impl PySeries {
             let export = location.read();
             polars_ffi::version_0::import_series(export).map_err(PyPolarsErr::from)?
         };
-        Ok(PySeries { series })
+        Ok(PySeries::from(series))
     }
 }

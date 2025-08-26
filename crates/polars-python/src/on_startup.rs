@@ -142,10 +142,10 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                     })
                 }),
                 series: Arc::new(|py_f| {
-                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PySeries>(py)?.series) as _))
+                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PySeries>(py)?.series.into_inner()) as _))
                 }),
                 df: Arc::new(|py_f| {
-                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df) as _))
+                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df.into_inner()) as _))
                 }),
                 dsl_plan: Arc::new(|py_f| {
                     Python::with_gil(|py| {

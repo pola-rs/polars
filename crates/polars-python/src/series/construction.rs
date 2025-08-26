@@ -289,7 +289,7 @@ impl PySeries {
 
     #[staticmethod]
     fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> PyResult<Self> {
-        let series = reinterpret_vec(values);
+        let series: Vec<_> = values.into_iter().map(|ops| ops.map(|ps| ps.series.into_inner())).collect();
         if let Some(s) = series.iter().flatten().next() {
             if s.dtype().is_object() {
                 return Err(PyValueError::new_err(

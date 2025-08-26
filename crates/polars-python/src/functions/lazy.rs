@@ -437,7 +437,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
-        let s = series.series;
+        let s = series.series.into_inner();
         if is_scalar {
             let av = s
                 .get(0)
@@ -464,7 +464,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
-                let s = PySeries::new_object(py, "", vec![value.extract()?], false).series;
+                let s = PySeries::new_object(py, "", vec![value.extract()?], false).series.into_inner();
                 Ok(dsl::lit(s).into())
             },
             _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
