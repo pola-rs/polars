@@ -506,7 +506,7 @@ impl PyDataFrame {
 
     #[pyo3(signature = (lambda, output_type, inference_size))]
     pub fn map_rows(
-        &mut self,
+        &self,
         lambda: Bound<PyAny>,
         output_type: Option<Wrap<DataType>>,
         inference_size: usize,
@@ -619,7 +619,7 @@ impl PyDataFrame {
     /// Export the columns via polars-ffi
     /// # Safety
     /// Needs a preallocated *mut SeriesExport that has allocated space for n_columns.
-    pub unsafe fn _export_columns(&mut self, location: usize) {
+    pub unsafe fn _export_columns(&self, location: usize) {
         use polars_ffi::version_0::export_column;
 
         let df = self.df.read();

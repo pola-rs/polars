@@ -102,7 +102,7 @@ impl PyDataFrame {
     /// since those can't be converted correctly via PyArrow. The calling Python
     /// code should make sure these are not included.
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_pandas(&mut self, py: Python) -> PyResult<Vec<PyObject>> {
+    pub fn to_pandas(&self, py: Python) -> PyResult<Vec<PyObject>> {
         let mut df = self.df.write();
         let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
         py.enter_polars_ok(|| dfr.as_single_chunk_par())?;
@@ -171,7 +171,7 @@ impl PyDataFrame {
     #[allow(unused_variables)]
     #[pyo3(signature = (requested_schema))]
     fn __arrow_c_stream__<'py>(
-        &mut self,
+        &self,
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {

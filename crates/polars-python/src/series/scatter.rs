@@ -7,7 +7,7 @@ use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
-    fn scatter(&mut self, py: Python<'_>, idx: PySeries, values: PySeries) -> PyResult<()> {
+    fn scatter(&self, py: Python<'_>, idx: PySeries, values: PySeries) -> PyResult<()> {
         py.enter_polars(|| {
             // we take the value because we want a ref count of 1 so that we can
             // have mutable access cheaply via _get_inner_mut().

@@ -232,7 +232,7 @@ impl PySeries {
     }
 
     fn sort(
-        &mut self,
+        &self,
         py: Python<'_>,
         descending: bool,
         nulls_last: bool,

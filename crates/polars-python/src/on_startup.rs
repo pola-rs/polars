@@ -35,7 +35,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         let pypolars = polars(py).bind(py);
 
         // create a PySeries struct/object for Python
-        let mut pydf = PyDataFrame::new(df);
+        let pydf = PyDataFrame::new(df);
         // Wrap this PySeries object in the python side Series wrapper
         let mut python_df_wrapper = pypolars
             .getattr("wrap_df")

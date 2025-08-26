@@ -42,7 +42,7 @@ impl PyDataFrame {
 
     /// Serialize into a JSON string.
     #[cfg(feature = "json")]
-    pub fn serialize_json(&mut self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
+    pub fn serialize_json(&self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
