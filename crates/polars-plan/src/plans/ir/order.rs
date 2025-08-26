@@ -1,3 +1,14 @@
+//! Pass to obtain and optimize using exhaustive row-order information.
+//!
+//! This pass attaches order information to all the IR node input and output ports.
+//!
+//! The pass performs two passes over the IR graph. First, it assigns and pushes ordering down from
+//! the sinks to the leafs. Second, it pulls those orderings back up from the leafs to the sinks.
+//! The two passes weaken order guarantees and simplify IR nodes where possible.
+//!
+//! When the two passes are done, we are left with a map from all the nodes to `PortOrder` which
+//! contains the input and output port ordering information.
+
 use std::sync::Arc;
 
 use polars_core::frame::UniqueKeepStrategy;
@@ -15,25 +26,40 @@ use crate::plans::{AExpr, is_order_sensitive_amortized, is_scalar_ae};
 pub enum InputOrder {
     /// The input may receive data in an undefined order.
     Unordered,
-    /// The input propagates ordering into one or more of its outputs.
+    /// The input may propagate ordering into one or more of its outputs.
     Preserving,
-    /// The input observes and propagates ordering into one or more of its outputs.
+    /// The input observes ordering and may propagate ordering into one or more of its outputs.
     Observing,
-    /// The input observes and terminates the ordering.
+    /// The input observes and terminates ordering.
     Consuming,
 }
 
+/// The ordering of the input and output ports of an IR node.
+///
+/// This gives information about how row ordering may be received, observed and passed an IR node.
+///
+/// Some general rules:
+/// - An input or output being `Unordered` signifies that on that port can receive rows in any
+/// order i.e. a shuffle could be inserted and the result would still be correct.
+/// - If any input is `Observing` or `Consuming`, it is important that the rows on this input are
+/// received in the order specified by the input.
+/// - If any output is ordered it is able to propgate on the ordering from any input that is
+/// `Preserving` or `Observing`. Conversely, if no output is ordered or no input is `Preserving` or
+/// `Observing`, no input order may be propagated to any of the outputs.
 #[derive(Debug)]
-pub struct NodeEdgeOrdering {
-    pub inputs: Box<[InputOrder]>,
-    pub output_ordered: Box<[bool]>,
+pub struct PortOrder {
+    pub inputs: UnitVec<InputOrder>,
+    pub output_ordered: UnitVec<bool>,
 }
 
-impl NodeEdgeOrdering {
-    fn new(inputs: impl Into<Box<[InputOrder]>>, output_ordered: impl Into<Box<[bool]>>) -> Self {
+impl PortOrder {
+    pub fn new(
+        inputs: impl IntoIterator<Item = InputOrder>,
+        output_ordered: impl IntoIterator<Item = bool>,
+    ) -> Self {
         Self {
-            inputs: inputs.into(),
-            output_ordered: output_ordered.into(),
+            inputs: inputs.into_iter().collect(),
+            output_ordered: output_ordered.into_iter().collect(),
         }
     }
 
@@ -56,8 +82,8 @@ fn pushdown_orders(
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
     outputs: &mut PlHashMap<Node, UnitVec<Node>>,
-) -> PlHashMap<Node, NodeEdgeOrdering> {
-    let mut orders: PlHashMap<Node, NodeEdgeOrdering> = PlHashMap::default();
+) -> PlHashMap<Node, PortOrder> {
+    let mut orders: PlHashMap<Node, PortOrder> = PlHashMap::default();
     let mut node_hits: PlHashMap<Node, Vec<(usize, Node)>> = PlHashMap::default();
     let mut aexpr_stack = Vec::new();
     let mut stack = Vec::new();
@@ -90,7 +116,7 @@ fn pushdown_orders(
 
         // Pushdown simplification rules.
         let ir = ir_arena.get_mut(node);
-        use {InputOrder as I, MaintainOrderJoin as MOJ, NodeEdgeOrdering as NEO};
+        use {InputOrder as I, MaintainOrderJoin as MOJ, PortOrder as NEO};
         let mut node_ordering = match ir {
             IR::Cache { .. } if all_outputs_unordered => NEO::new([I::Unordered], [false]),
             IR::Cache { .. } => NEO::new(
@@ -192,6 +218,7 @@ fn pushdown_orders(
 
                 NEO::new([input], [output])
             },
+            #[cfg(feature = "merge_sorted")]
             IR::MergeSorted {
                 input_left,
                 input_right,
@@ -401,10 +428,6 @@ fn pushdown_orders(
 
             IR::Union { inputs, options } => {
                 // @NOTE: It seems we cannot trust the `maintain_order` for now.
-                // if !options.maintain_order {
-                //     return NEO::new(vec![I::Unordered; inputs.len()], [false]);
-                // }
-
                 let input = if options.slice.is_some() {
                     I::Observing
                 } else {
@@ -445,9 +468,10 @@ fn pushdown_orders(
         // We make the code above simpler by pretending every node except caches always only has
         // one output. We correct for that here.
         if output_port_orderings.len() > 1 && node_ordering.output_ordered.len() == 1 {
-            node_ordering.output_ordered =
-                vec![node_ordering.output_ordered[0]; output_port_orderings.len()]
-                    .into_boxed_slice();
+            node_ordering.output_ordered = UnitVec::from(vec![
+                node_ordering.output_ordered[0];
+                output_port_orderings.len()
+            ])
         }
 
         let prev_value = orders.insert(node, node_ordering);
@@ -467,7 +491,7 @@ fn pullup_orders(
     leafs: &[Node],
     ir_arena: &mut Arena<IR>,
     outputs: &mut PlHashMap<Node, UnitVec<Node>>,
-    orders: &mut PlHashMap<Node, NodeEdgeOrdering>,
+    orders: &mut PlHashMap<Node, PortOrder>,
 ) {
     let mut hits: PlHashMap<Node, Vec<(usize, Node)>> = PlHashMap::default();
     let mut stack = Vec::new();
@@ -509,28 +533,12 @@ fn pullup_orders(
         // Pullup simplification rules.
         use {InputOrder as I, MaintainOrderJoin as MOJ};
         match ir {
-            IR::Cache { .. } => {
-                // Cache:
-                // Unordered -> [_]
-                //   to
-                // Unordered -> [Unordered]
-                if matches!(node_ordering.inputs[0], I::Unordered) {
-                    node_ordering
-                        .output_ordered
-                        .iter_mut()
-                        .for_each(|o| *o = false);
-                }
-            },
             IR::Sort { sort_options, .. } => {
-                if matches!(node_ordering.inputs[0], I::Unordered) && sort_options.maintain_order {
-                    // Unordered -> _   ==>   maintain_order=false
-                    sort_options.maintain_order = false;
-                }
+                // Unordered -> _     ==>    maintain_order=false
+                sort_options.maintain_order &= !matches!(node_ordering.inputs[0], I::Unordered);
             },
             IR::GroupBy { maintain_order, .. } => {
-                if matches!(node_ordering.inputs[0], I::Unordered)
-                    && (*maintain_order || !node_ordering.output_ordered[0])
-                {
+                if matches!(node_ordering.inputs[0], I::Unordered) {
                     // Unordered -> _
                     //   to
                     // maintain_order = false
@@ -551,14 +559,7 @@ fn pullup_orders(
                     }
                 }
             },
-            IR::Join {
-                input_left: _,
-                input_right: _,
-                schema: _,
-                left_on: _,
-                right_on: _,
-                options,
-            } => {
+            IR::Join { options, .. } => {
                 let left_unordered = matches!(node_ordering.inputs[0], I::Unordered);
                 let right_unordered = matches!(node_ordering.inputs[1], I::Unordered);
 
@@ -595,35 +596,33 @@ fn pullup_orders(
                     node_ordering.set_unordered_output();
                 }
             },
-            IR::MapFunction { input: _, function } => {
-                if function.is_streamable() && matches!(node_ordering.inputs[0], I::Unordered) {
-                    node_ordering.output_ordered[0] = false;
-                }
-            },
-            IR::SimpleProjection { .. }
-            | IR::Slice { .. }
-            | IR::HStack { .. }
-            | IR::Filter { .. }
-            | IR::Select { .. } => {
-                if matches!(node_ordering.inputs[0], I::Unordered) {
-                    node_ordering.set_unordered_output();
-                }
-            },
 
             #[cfg(feature = "python")]
             IR::PythonScan { .. } => {},
             IR::Scan { .. } | IR::DataFrameScan { .. } => {},
-
+            #[cfg(feature = "merge_sorted")]
             IR::MergeSorted { .. } => {
                 // An input being unordered is technically valid as it is possible for all values
                 // to be the same in which case the rows are sorted.
             },
-
             IR::Union { .. } => {
                 // Even if the inputs are unordered. The output still has an order given by the
                 // order of the inputs.
             },
-            IR::HConcat { .. } | IR::ExtContext { .. } => {
+            IR::MapFunction { input: _, function } => {
+                if function.is_streamable() && matches!(node_ordering.inputs[0], I::Unordered) {
+                    node_ordering.set_unordered_output();
+                }
+            },
+
+            IR::Cache { .. }
+            | IR::SimpleProjection { .. }
+            | IR::Slice { .. }
+            | IR::HStack { .. }
+            | IR::Filter { .. }
+            | IR::Select { .. }
+            | IR::HConcat { .. }
+            | IR::ExtContext { .. } => {
                 if node_ordering
                     .inputs
                     .iter()
@@ -653,7 +652,7 @@ pub fn simplify_and_fetch_orderings(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
-) -> PlHashMap<Node, NodeEdgeOrdering> {
+) -> PlHashMap<Node, PortOrder> {
     let mut leafs = Vec::new();
     let mut outputs = PlHashMap::default();
 
