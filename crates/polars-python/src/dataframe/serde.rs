@@ -26,6 +26,7 @@ impl PyDataFrame {
 
         Ok(slf
             .df
+            .write()
             .serialize_into_writer(&mut writer)
             .map_err(PyPolarsErr::from)?)
     }
@@ -45,7 +46,7 @@ impl PyDataFrame {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
-            serde_json::to_writer(writer, &self.df)
+            serde_json::to_writer(writer, &*self.df.read())
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
     }

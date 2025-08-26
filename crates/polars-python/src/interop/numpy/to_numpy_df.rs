@@ -26,7 +26,7 @@ impl PyDataFrame {
         writable: bool,
         allow_copy: bool,
     ) -> PyResult<PyObject> {
-        df_to_numpy(py, &self.df, order.0, writable, allow_copy)
+        df_to_numpy(py, &self.df.read(), order.0, writable, allow_copy)
     }
 }
 

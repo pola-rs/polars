@@ -77,7 +77,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         })?;
         // Downcast to Rust
         match py_pydf.extract::<PyDataFrame>(py) {
-            Ok(pydf) => Ok(pydf.df),
+            Ok(pydf) => Ok(pydf.df.into_inner()),
             Err(_) => python_df_to_rust(py, result_df_wrapper.into_bound(py)),
         }
     })
