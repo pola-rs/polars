@@ -17,7 +17,7 @@ polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
-polars-mem-engine = { workspace = true }
+polars-mem-engine = { workspace = true , features = ["python"] }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
