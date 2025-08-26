@@ -395,3 +395,4 @@ def test_gather_group_by_lit(maintain_order: bool) -> None:
         pl.DataFrame({"a": [1, 2, 3], "literal": [[[1], [1], [1]]] * 3}),
         check_row_order=maintain_order,
     )
+
