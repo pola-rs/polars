@@ -3,9 +3,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::UNIX_EPOCH;
 
 use polars_error::{PolarsError, PolarsResult};
-use polars_utils::either;
-use polars_utils::either::Either;
-use polars_utils::plpath::{CloudScheme, PlPath, PlPathRef};
+use polars_utils::plpath::{CloudScheme, PlPathRef};
 
 use super::cache::{FILE_CACHE, get_env_file_cache_ttl};
 use super::entry::FileCacheEntry;
