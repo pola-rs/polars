@@ -1041,6 +1041,19 @@ def test_diff() -> None:
     )
 
 
+def test_diff_negative() -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+    expected = pl.Series("a", [-1, -1, 1, 0, -1, 3])
+
+    assert_series_equal(s.diff(-1, null_behavior="drop"), expected)
+
+    df = pl.DataFrame([s])
+    assert_series_equal(
+        df.select(pl.col("a").diff(-1))["a"],
+        pl.Series("a", [-1, -1, 1, 0, -1, 3, None]),
+    )
+
+
 def test_pct_change() -> None:
     s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
     expected = pl.Series("a", [None, None, 3.0, 3.0, 3.0, 3.0, 3.0])
