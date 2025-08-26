@@ -24,19 +24,18 @@ Below we define a query that you would typically write on your local machine.
 
 To execute your query in the cloud, we must define a compute context. The compute context defines
 the hardware to use when executing the query in the cloud. It allows to define the workspace to
-execute your query, set compute resources and define if you want to execute in job mode. More
+execute your query, set compute resources and define if you want to execute in proxy mode. More
 elaborate options can be found on the
 [Compute context introduction page](../context/compute-context.md)
 
 {{code_block('polars-cloud/first-query','context',[])}}
 
-### Job mode
+### Proxy mode
 
-Job mode is used for systematic data processing pipelines, written for scheduled execution. They
-typically process large volumes of data in scheduled intervals (e.g. hourly, daily, etc.). A key
-characteristic the jobs typically runs without a human in the loop.
+In proxy mode the query is sent to your cluster via the Polars Cloud control plane. This adds an
+additional layer of security as no ports to the compute cluster are required to stay open.
 
-Read more about the differences on the [compute context page](../context/compute-context.md)
+Read more about the differences on the [compute context page](../context/compute-context.md).
 
 ### Distributed execution
 
@@ -63,9 +62,9 @@ as part of a data pipeline:
 {{code_block('polars-cloud/first-query','distributed',[])}}
 
 Running `.sink_parquet()` will write the results to the defined bucket on S3. The query you execute
-in job mode runs in your cloud environment, and the data and results remain secure in your own
-infrastructure. This approach is perfect for ETL workflows, scheduled jobs, or any time you need to
-persist large datasets without transferring them to your local machine.
+runs in your cloud environment, and the data and results remain secure in your own infrastructure.
+This approach is perfect for ETL workflows, scheduled jobs, or any time you need to persist large
+datasets without transferring them to your local machine.
 
 ### Inspect results in your local environment
 
