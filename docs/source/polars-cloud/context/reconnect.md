@@ -6,7 +6,8 @@ machines to spin up.
 
 ## Set up a cluster
 
-We will start a simple cluster to show how you can reconnect. We will save the cluster ID so we can connect directly to the cluster in the following examples:
+We will start a simple cluster to show how you can reconnect. We will save the cluster ID so we can
+connect directly to the cluster in the following examples:
 
 {{code_block('polars-cloud/reconnect','setup',['ComputeContext'])}}
 
@@ -20,9 +21,8 @@ ComputeContext(id=0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx, cpus=4, memory=16, insta
 
 ## Reconnect to an existing cluster
 
-If you lose connection or want to connect to a running cluster in your workspace, use
-`.connect` on `pc.ComputeContext`. This connects directly using the `compute_id` of the running
-cluster:
+If you lose connection or want to connect to a running cluster in your workspace, use `.connect` on
+`pc.ComputeContext`. This connects directly using the `compute_id` of the running cluster:
 
 !!! note "Connection permissions and proxy mode requirement"
 
@@ -56,4 +56,5 @@ for that workspace:
   IDLE),]
 ```
 
-With the cluster `id` from the output above, you can then establish a connection using the same `.connect()` method shown in the previous section.
+With the cluster `id` from the output above, you can then establish a connection using the same
+`.connect()` method shown in the previous section.
