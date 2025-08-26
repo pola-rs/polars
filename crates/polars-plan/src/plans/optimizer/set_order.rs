@@ -243,6 +243,7 @@ fn pushdown_orders(
                     NEO::new([I::Observing, I::Observing], [true])
                 }
             },
+            #[cfg(feature = "asof_join")]
             IR::Join { options, .. } if matches!(options.args.how, JoinType::AsOf(_)) => {
                 NEO::new([I::Observing, I::Observing], [!all_outputs_unordered])
             },

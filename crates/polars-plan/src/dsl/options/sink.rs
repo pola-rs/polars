@@ -544,7 +544,9 @@ impl SinkTypeIR {
             Self::Partition(f) => f.traverse_and_hash(expr_arena, state),
         }
     }
+}
 
+impl SinkTypeIR {
     pub fn maintain_order(&self) -> bool {
         match self {
             SinkTypeIR::Memory => true,
