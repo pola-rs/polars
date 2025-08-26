@@ -286,3 +286,22 @@ print("OK", end="", file=sys.stderr)
     )
 
     assert out == b"OK"
+
+
+def test_io_plugin_categorical_24172() -> None:
+    schema = {"cat": pl.Categorical}
+
+    df = pl.concat(
+        [
+            pl.DataFrame({"cat": ["X", "Y"]}, schema=schema),
+            pl.DataFrame({"cat": ["X", "Y"]}, schema=schema),
+        ],
+        rechunk=False,
+    )
+
+    assert df.n_chunks() == 2
+
+    assert_frame_equal(
+        register_io_source(lambda *_: iter([df]), schema=df.schema).collect(),
+        df,
+    )
