@@ -2,7 +2,9 @@
 
 PYTHONPATH=
 SHELL=bash
+ifeq ($(VENV),)
 VENV=../.venv
+endif
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts

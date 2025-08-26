@@ -166,7 +166,10 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.get_values().name().clone();
 
         // Literals cannot be aggregated except for implode.
-        polars_ensure!(!matches!(ac.agg_state(), AggState::LiteralScalar(_)), ComputeError: "cannot aggregate a literal");
+        polars_ensure!(
+            !matches!(ac.agg_state(), AggState::LiteralScalar(_)) || matches!(self.agg_type.groupby, GroupByMethod::Implode),
+            ComputeError: "cannot aggregate a literal"
+        );
 
         if let AggregatedScalar(_) = ac.agg_state() {
             match self.agg_type.groupby {

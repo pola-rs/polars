@@ -1155,6 +1155,18 @@ fn resolve_group_by(
         aggs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
+    let aggs = aggs
+        .into_iter()
+        .map(|mut agg| {
+            if !is_scalar_ae(agg.node(), expr_arena) {
+                let new_node = AExprBuilder::new_from_node(agg.node())
+                    .implode(expr_arena)
+                    .node();
+                agg.set_node(new_node);
+            }
+            agg
+        })
+        .collect::<Vec<_>>();
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
 

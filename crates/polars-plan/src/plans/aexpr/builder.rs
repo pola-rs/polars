@@ -93,6 +93,10 @@ impl AExprBuilder {
         Self::new_from_aexpr(AExpr::Agg(agg), arena)
     }
 
+    pub fn implode(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::Implode(self.node()), arena)
+    }
+
     pub fn min(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(
             IRAggExpr::Min {

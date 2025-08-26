@@ -1148,6 +1148,7 @@ def test_absence_off_null_prop_8224() -> None:
 
 
 @pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.xfail(reason="waiting for #24137")
 def test_grouped_slice_literals(maintain_order: bool) -> None:
     assert_frame_equal(
         pl.DataFrame({"idx": [1, 2, 3]})
@@ -1159,7 +1160,9 @@ def test_grouped_slice_literals(maintain_order: bool) -> None:
             x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
             x3=pl.lit(pl.Series([[1, 2]])).slice(-1, 1),
         ),
-        pl.DataFrame({"literal": [True], "x": [[1, 2]], "x2": [[2]], "x3": [[[1, 2]]]}),
+        pl.DataFrame(
+            {"literal": [True], "x": [[[1, 2]]], "x2": [[2]], "x3": [[[1, 2]]]}
+        ),
         check_row_order=maintain_order,
     )
 
