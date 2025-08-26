@@ -107,7 +107,7 @@ fn init_entries_from_uri_list_impl(
 
                     FILE_CACHE.init_entry(
                         uri.clone(),
-                        || {
+                        &|| {
                             let CloudLocation { prefix, .. } =
                                 CloudLocation::new(uri.as_ref(), false).unwrap();
                             let cloud_path = object_path_from_str(&prefix)?;
@@ -141,7 +141,7 @@ fn init_entries_from_uri_list_impl(
 
                 FILE_CACHE.init_entry(
                     uri.clone(),
-                    || Ok(Arc::new(LocalFileFetcher::from_uri(uri.clone()))),
+                    &|| Ok(Arc::new(LocalFileFetcher::from_uri(uri.clone()))),
                     file_cache_ttl,
                 )
             })
