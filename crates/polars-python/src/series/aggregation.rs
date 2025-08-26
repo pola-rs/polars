@@ -60,9 +60,7 @@ impl PySeries {
                 py,
             ),
             // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => {
-                scalar_to_py(py.enter_polars_ok(|| s.mean_reduce()), py)
-            },
+            dt if dt.is_temporal() => scalar_to_py(py.enter_polars_ok(|| s.mean_reduce()), py),
             _ => Ok(s.mean().into_pyobject(py)?),
         }
     }
@@ -75,9 +73,7 @@ impl PySeries {
                 py,
             ),
             // For non-numeric output types we require median_reduce.
-            dt if dt.is_temporal() => {
-                scalar_to_py(py.enter_polars(|| s.median_reduce()), py)
-            },
+            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.median_reduce()), py),
             _ => Ok(s.median().into_pyobject(py)?),
         }
     }
@@ -93,7 +89,11 @@ impl PySeries {
         interpolation: Wrap<QuantileMethod>,
     ) -> PyResult<Bound<'py, PyAny>> {
         scalar_to_py(
-            py.enter_polars(|| self.series.read().quantile_reduce(quantile, interpolation.0)),
+            py.enter_polars(|| {
+                self.series
+                    .read()
+                    .quantile_reduce(quantile, interpolation.0)
+            }),
             py,
         )
     }

@@ -116,7 +116,9 @@ pub fn col(name: &str) -> PyExpr {
 }
 
 fn lfs_to_plans(lfs: Vec<PyLazyFrame>) -> Vec<DslPlan> {
-    lfs.into_iter().map(|lf| lf.ldf.into_inner().logical_plan).collect()
+    lfs.into_iter()
+        .map(|lf| lf.ldf.into_inner().logical_plan)
+        .collect()
 }
 
 #[pyfunction]
@@ -147,7 +149,10 @@ pub fn collect_all_with_callback(
     lambda: PyObject,
     py: Python<'_>,
 ) {
-    let plans = lfs.into_iter().map(|lf| lf.ldf.into_inner().logical_plan).collect();
+    let plans = lfs
+        .into_iter()
+        .map(|lf| lf.ldf.into_inner().logical_plan)
+        .collect();
     let result = py
         .enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))
         .map(|dfs| {
@@ -464,7 +469,9 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
-                let s = PySeries::new_object(py, "", vec![value.extract()?], false).series.into_inner();
+                let s = PySeries::new_object(py, "", vec![value.extract()?], false)
+                    .series
+                    .into_inner();
                 Ok(dsl::lit(s).into())
             },
             _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),

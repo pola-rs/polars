@@ -27,7 +27,6 @@ use parking_lot::RwLock;
 use polars::prelude::{Column, Series};
 use pyo3::pyclass;
 
-
 #[pyclass]
 #[repr(transparent)]
 pub struct PySeries {
@@ -36,7 +35,9 @@ pub struct PySeries {
 
 impl Clone for PySeries {
     fn clone(&self) -> Self {
-        Self { series: RwLock::new(self.series.read().clone()) }
+        Self {
+            series: RwLock::new(self.series.read().clone()),
+        }
     }
 }
 
@@ -48,7 +49,9 @@ impl From<Series> for PySeries {
 
 impl PySeries {
     pub(crate) fn new(series: Series) -> Self {
-        PySeries { series: RwLock::new(series) }
+        PySeries {
+            series: RwLock::new(series),
+        }
     }
 }
 

@@ -9,11 +9,9 @@ mod io;
 #[cfg(feature = "pymethods")]
 mod serde;
 
+use parking_lot::RwLock;
 use polars::prelude::DataFrame;
 use pyo3::pyclass;
-
-use parking_lot::RwLock;
-
 
 #[pyclass]
 #[repr(transparent)]
@@ -43,6 +41,8 @@ impl From<PyDataFrame> for DataFrame {
 
 impl PyDataFrame {
     pub(crate) fn new(df: DataFrame) -> Self {
-        PyDataFrame { df: RwLock::new(df) }
+        PyDataFrame {
+            df: RwLock::new(df),
+        }
     }
 }

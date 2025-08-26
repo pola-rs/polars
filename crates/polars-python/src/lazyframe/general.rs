@@ -1079,7 +1079,10 @@ impl PyLazyFrame {
     }
 
     fn with_context(&self, contexts: Vec<Self>) -> Self {
-        let contexts = contexts.into_iter().map(|ldf| ldf.ldf.into_inner()).collect::<Vec<_>>();
+        let contexts = contexts
+            .into_iter()
+            .map(|ldf| ldf.ldf.into_inner())
+            .collect::<Vec<_>>();
         self.ldf.read().clone().with_context(contexts).into()
     }
 
@@ -1436,11 +1439,19 @@ impl PyLazyFrame {
     }
 
     fn drop_nans(&self, subset: Option<PySelector>) -> Self {
-        self.ldf.read().clone().drop_nans(subset.map(|e| e.inner)).into()
+        self.ldf
+            .read()
+            .clone()
+            .drop_nans(subset.map(|e| e.inner))
+            .into()
     }
 
     fn drop_nulls(&self, subset: Option<PySelector>) -> Self {
-        self.ldf.read().clone().drop_nulls(subset.map(|e| e.inner)).into()
+        self.ldf
+            .read()
+            .clone()
+            .drop_nulls(subset.map(|e| e.inner))
+            .into()
     }
 
     #[pyo3(signature = (offset, len=None))]

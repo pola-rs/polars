@@ -77,11 +77,7 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(
-        &self,
-        py: Python<'_>,
-        compat_level: PyCompatLevel,
-    ) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
         let mut df = self.df.write();
         let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
         py.enter_polars_ok(|| dfr.align_chunks_par())?;
@@ -113,8 +109,7 @@ impl PyDataFrame {
         let df = RwLockWriteGuard::downgrade(df);
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
-            let cat_columns = 
-                df
+            let cat_columns = df
                 .get_columns()
                 .iter()
                 .enumerate()
@@ -134,8 +129,7 @@ impl PyDataFrame {
             );
 
             let mut replaced_schema = None;
-            let rbs = 
-                df
+            let rbs = df
                 .iter_chunks(CompatLevel::oldest(), true)
                 .map(|rb| {
                     let length = rb.len();

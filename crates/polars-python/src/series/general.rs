@@ -86,9 +86,7 @@ impl PySeries {
     fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
         let s = self.series.read();
         let v = format!("{}", s.get(index).unwrap());
-        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) =
-            s.dtype()
-        {
+        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) = s.dtype() {
             let v_no_quotes = &v[1..v.len() - 1];
             let v_trunc = &v_no_quotes[..v_no_quotes
                 .char_indices()
@@ -318,7 +316,11 @@ impl PySeries {
         drop_first: bool,
         drop_nulls: bool,
     ) -> PyResult<PyDataFrame> {
-        py.enter_polars_df(|| self.series.read().to_dummies(separator, drop_first, drop_nulls))
+        py.enter_polars_df(|| {
+            self.series
+                .read()
+                .to_dummies(separator, drop_first, drop_nulls)
+        })
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {
@@ -353,11 +355,9 @@ impl PySeries {
         }
 
         let result: AnyValue = if lhs_dtype.is_float() || rhs_dtype.is_float() {
-            py.enter_polars(|| (s * o)?.sum::<f64>())?
-                .into()
+            py.enter_polars(|| (s * o)?.sum::<f64>())?.into()
         } else {
-            py.enter_polars(|| (s * o)?.sum::<i64>())?
-                .into()
+            py.enter_polars(|| (s * o)?.sum::<i64>())?.into()
         };
 
         Wrap(result).into_pyobject(py)
@@ -450,7 +450,8 @@ impl PySeries {
         normalize: bool,
     ) -> PyResult<PyDataFrame> {
         py.enter_polars_df(|| {
-            self.series.read()
+            self.series
+                .read()
                 .value_counts(sort, parallel, name.into(), normalize)
         })
     }
@@ -547,8 +548,7 @@ impl PySeries {
     ) -> PyResult<Self> {
         py.enter_polars(|| {
             let lock = self.series.read();
-            lock
-                .str()?
+            lock.str()?
                 .json_decode(None, infer_schema_length)
                 .map(|s| s.with_name(lock.name().clone()))
         })

@@ -100,7 +100,11 @@ impl PyDataFrame {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        py.enter_polars_df(|| self.df.read().sample_n(&n.series.read(), with_replacement, shuffle, seed))
+        py.enter_polars_df(|| {
+            self.df
+                .read()
+                .sample_n(&n.series.read(), with_replacement, shuffle, seed)
+        })
     }
 
     #[pyo3(signature = (frac, with_replacement, shuffle, seed=None))]
@@ -113,7 +117,8 @@ impl PyDataFrame {
         seed: Option<u64>,
     ) -> PyResult<Self> {
         py.enter_polars_df(|| {
-            self.df.read()
+            self.df
+                .read()
                 .sample_frac(&frac.series.read(), with_replacement, shuffle, seed)
         })
     }
@@ -138,7 +143,12 @@ impl PyDataFrame {
 
     /// Get column names
     pub fn columns(&self) -> Vec<String> {
-        self.df.read().get_columns().iter().map(|s| s.name().to_string()).collect()
+        self.df
+            .read()
+            .get_columns()
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect()
     }
 
     /// set column names
@@ -153,7 +163,9 @@ impl PyDataFrame {
     /// Get datatypes
     pub fn dtypes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let df = self.df.read();
-        let iter = df.iter().map(|s| Wrap(s.dtype().clone()).into_pyobject(py).unwrap());
+        let iter = df
+            .iter()
+            .map(|s| Wrap(s.dtype().clone()).into_pyobject(py).unwrap());
         PyList::new(py, iter)
     }
 
@@ -216,7 +228,11 @@ impl PyDataFrame {
     }
 
     pub fn drop_in_place(&self, name: &str) -> PyResult<PySeries> {
-        let s = self.df.write().drop_in_place(name).map_err(PyPolarsErr::from)?;
+        let s = self
+            .df
+            .write()
+            .drop_in_place(name)
+            .map_err(PyPolarsErr::from)?;
         let s = s.take_materialized_series();
         Ok(PySeries::from(s))
     }
@@ -301,9 +317,7 @@ impl PyDataFrame {
     pub fn slice(&self, py: Python<'_>, offset: i64, length: Option<usize>) -> PyResult<Self> {
         py.enter_polars_df(|| {
             let df = self.df.read();
-            Ok(
-                df
-                .slice(offset, length.unwrap_or_else(|| df.height())))
+            Ok(df.slice(offset, length.unwrap_or_else(|| df.height())))
         })
     }
 
@@ -458,7 +472,7 @@ impl PyDataFrame {
                 self.df.read().partition_by(by, include_key)
             }
         })?;
-        
+
         Ok(out.into_iter().map(PyDataFrame::from).collect())
     }
 
