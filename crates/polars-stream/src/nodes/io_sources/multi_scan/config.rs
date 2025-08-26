@@ -64,7 +64,8 @@ impl MultiScanConfig {
 
     pub fn reader_capabilities(&self) -> ReaderCapabilities {
         if std::env::var("POLARS_FORCE_EMPTY_READER_CAPABILITIES").as_deref() == Ok("1") {
-            ReaderCapabilities::empty()
+            self.file_reader_builder.reader_capabilities()
+                & ReaderCapabilities::NEEDS_FILE_CACHE_INIT
         } else {
             self.file_reader_builder.reader_capabilities()
         }

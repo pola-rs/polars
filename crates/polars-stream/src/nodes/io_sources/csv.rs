@@ -54,11 +54,12 @@ pub mod builder {
         fn reader_capabilities(&self) -> ReaderCapabilities {
             use ReaderCapabilities as RC;
 
-            if self.parse_options.comment_prefix.is_some() {
-                RC::empty()
-            } else {
-                RC::PRE_SLICE
-            }
+            RC::NEEDS_FILE_CACHE_INIT
+                | if self.parse_options.comment_prefix.is_some() {
+                    RC::empty()
+                } else {
+                    RC::PRE_SLICE
+                }
         }
 
         fn build_file_reader(

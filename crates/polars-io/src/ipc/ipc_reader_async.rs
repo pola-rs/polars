@@ -68,7 +68,8 @@ impl IpcReaderAsync {
         uri: &str,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<IpcReaderAsync> {
-        let cache_entry = init_entries_from_uri_list(&[Arc::from(uri)], cloud_options)?[0].clone();
+        let cache_entry =
+            init_entries_from_uri_list([Arc::from(uri)].into_iter(), cloud_options)?[0].clone();
         let (CloudLocation { prefix, .. }, store) =
             build_object_store(uri, cloud_options, false).await?;
 
