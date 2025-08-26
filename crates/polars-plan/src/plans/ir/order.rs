@@ -127,7 +127,9 @@ fn pushdown_orders(
                     .collect::<Box<[_]>>(),
             ),
             IR::Sort { input, slice, .. } if slice.is_none() && all_outputs_unordered => {
-                // Remove sort if output is unordered, and we are not slicing.
+                // _ -> Unordered
+                //
+                // Remove sort.
                 let input = *input;
                 let (to_input_idx, to_node) = outgoing.unwrap();
                 *ir_arena
@@ -434,12 +436,13 @@ fn pushdown_orders(
                     I::Preserving
                 };
 
-                NEO::new(vec![input; inputs.len()], [true])
+                NEO::new(std::iter::repeat_n(input, inputs.len()), [true])
             },
 
-            IR::HConcat { inputs, .. } => {
-                NEO::new(vec![I::Observing; inputs.len()], [!all_outputs_unordered])
-            },
+            IR::HConcat { inputs, .. } => NEO::new(
+                std::iter::repeat_n(I::Observing, inputs.len()),
+                [!all_outputs_unordered],
+            ),
 
             #[cfg(feature = "python")]
             IR::PythonScan { .. } => NEO::new([], [!all_outputs_unordered]),
@@ -457,7 +460,7 @@ fn pushdown_orders(
             IR::ExtContext { contexts, .. } => {
                 // This node is nonsense. Just do the most conservative thing you can.
                 NEO::new(
-                    vec![I::Consuming; contexts.len() + 1],
+                    std::iter::repeat_n(I::Consuming, contexts.len() + 1),
                     [!all_outputs_unordered],
                 )
             },
