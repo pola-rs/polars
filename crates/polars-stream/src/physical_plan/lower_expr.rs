@@ -1013,14 +1013,10 @@ fn lower_exprs_with_ctx(
                     _ => None,
                 };
                 if let Some(cast_dtype) = cast_dtype {
-                    base_expr = ExprIR::new(
-                        ctx.expr_arena.add(AExpr::Cast {
-                            expr: base_expr.node(),
-                            dtype: cast_dtype,
-                            options: CastOptions::NonStrict,
-                        }),
-                        OutputName::Alias(unique_column_name()),
-                    );
+                    let base_node = AExprBuilder::new_from_node(base_expr.node())
+                        .cast(cast_dtype, ctx.expr_arena)
+                        .node();
+                    base_expr = ExprIR::from_node(base_node, ctx.expr_arena);
                 }
 
                 let shifted_expr;
@@ -1028,70 +1024,50 @@ fn lower_exprs_with_ctx(
                 match null_behavior {
                     NullBehavior::Ignore => {
                         // IR: expr.shift(offset, fill_value=None)
-                        let function = IRFunctionExpr::Shift;
-                        let options = function.function_options();
-                        unshifted_expr = ExprIR::new(
-                            ctx.expr_arena.add(AExpr::Function {
-                                input: vec![base_expr.clone(), offset_expr.clone()],
-                                function,
-                                options,
-                            }),
-                            OutputName::Alias(unique_column_name()),
-                        );
+                        let unshifted_node = AExprBuilder::function(
+                            vec![base_expr.clone(), offset_expr.clone()],
+                            IRFunctionExpr::Shift,
+                            ctx.expr_arena,
+                        )
+                        .node();
+                        unshifted_expr = ExprIR::from_node(unshifted_node, ctx.expr_arena);
                         shifted_expr = base_expr;
                     },
                     NullBehavior::Drop => {
                         // IR: zero_literal = 0
-                        let zero_literal = ctx
-                            .expr_arena
-                            .add(AExpr::Literal(LiteralValue::new_idxsize(0)));
+                        let zero_literal =
+                            AExprBuilder::lit(LiteralValue::new_idxsize(0), ctx.expr_arena);
 
                         // IR: expr.len()
-                        let len_expr = ExprIR::new(
-                            ctx.expr_arena.add(AExpr::Len),
-                            OutputName::Alias(unique_column_name()),
-                        );
+                        let len_node = AExprBuilder::dataframe_length(ctx.expr_arena).node();
+                        let len_expr = ExprIR::from_node(len_node, ctx.expr_arena);
 
                         // IR: output_len = expr.len() - offset
-                        let output_len_expr = ExprIR::new(
-                            ctx.expr_arena.add(AExpr::BinaryExpr {
-                                left: len_expr.node(),
-                                op: Operator::Minus,
-                                right: offset_expr.node(),
-                            }),
-                            OutputName::Alias(unique_column_name()),
-                        );
+                        let output_len_node = AExprBuilder::new_from_node(len_expr.node())
+                            .minus(offset_expr.node(), ctx.expr_arena)
+                            .node();
+                        let output_len_expr = ExprIR::from_node(output_len_node, ctx.expr_arena);
 
                         // IR: expr.slice(offset, output_len)
-                        shifted_expr = ExprIR::new(
-                            ctx.expr_arena.add(AExpr::Slice {
-                                input: base_expr.node(),
-                                offset: offset_expr.node(),
-                                length: output_len_expr.node(),
-                            }),
-                            OutputName::Alias(unique_column_name()),
-                        );
+                        let shifted_node = AExprBuilder::new_from_node(base_expr.node())
+                            .slice(offset_expr.node(), output_len_expr.node(), ctx.expr_arena)
+                            .node();
+                        shifted_expr = ExprIR::from_node(shifted_node, ctx.expr_arena);
 
                         // IR: expr.slice(0, output_len)
-                        unshifted_expr = ExprIR::new(
-                            ctx.expr_arena.add(AExpr::Slice {
-                                input: base_expr.node(),
-                                offset: zero_literal,
-                                length: output_len_expr.node(),
-                            }),
-                            OutputName::Alias(unique_column_name()),
-                        );
+                        let unshifted_node = AExprBuilder::new_from_node(base_expr.node())
+                            .slice(zero_literal, output_len_expr.node(), ctx.expr_arena)
+                            .node();
+                        unshifted_expr = ExprIR::from_node(unshifted_node, ctx.expr_arena);
                     },
                 }
 
                 // IR: <shifted column> - <unshifted column>
-                let output_expr = ctx.expr_arena.add(AExpr::BinaryExpr {
-                    left: shifted_expr.node(),
-                    op: Operator::Minus,
-                    right: unshifted_expr.node(),
-                });
+                let output_node = AExprBuilder::new_from_node(shifted_expr.node())
+                    .minus(unshifted_expr.node(), ctx.expr_arena)
+                    .node();
 
-                let (stream, nodes) = lower_exprs_with_ctx(input, &[output_expr], ctx)?;
+                let (stream, nodes) = lower_exprs_with_ctx(input, &[output_node], ctx)?;
                 input_streams.insert(stream);
                 transformed_exprs.extend(nodes);
             },

@@ -23,15 +23,19 @@ impl AExprBuilder {
         Self::new_from_node(arena.add(expr))
     }
 
+    pub fn lit(lit: LiteralValue, arena: &mut Arena<AExpr>) -> Self {
+        Self::new_from_aexpr(AExpr::Literal(lit), arena)
+    }
+
     pub fn lit_scalar(scalar: Scalar, arena: &mut Arena<AExpr>) -> Self {
-        Self::new_from_aexpr(AExpr::Literal(LiteralValue::Scalar(scalar)), arena)
+        Self::lit(LiteralValue::Scalar(scalar), arena)
     }
 
     pub fn col(name: impl Into<PlSmallStr>, arena: &mut Arena<AExpr>) -> Self {
         Self::new_from_aexpr(AExpr::Column(name.into()), arena)
     }
 
-    pub fn dataframe_length(self, arena: &mut Arena<AExpr>) -> Self {
+    pub fn dataframe_length(arena: &mut Arena<AExpr>) -> Self {
         Self::new_from_aexpr(AExpr::Len, arena)
     }
 
