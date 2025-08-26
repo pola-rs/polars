@@ -326,13 +326,15 @@ impl<T: Pod> SharedStorage<T> {
 
         // The length of the array in bytes must be a multiple of the target size.
         // We can skip this check if the size of U divides the size of T.
-        if size_of::<T>() % size_of::<U>() != 0 && inner.length_in_bytes % size_of::<U>() != 0 {
+        if !size_of::<T>().is_multiple_of(size_of::<U>())
+            && !inner.length_in_bytes.is_multiple_of(size_of::<U>())
+        {
             return Err(self);
         }
 
         // The pointer must be properly aligned for U.
         // We can skip this check if the alignment of U divides the alignment of T.
-        if align_of::<T>() % align_of::<U>() != 0 && !inner.ptr.cast::<U>().is_aligned() {
+        if !align_of::<T>().is_multiple_of(align_of::<U>()) && !inner.ptr.cast::<U>().is_aligned() {
             return Err(self);
         }
 

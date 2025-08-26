@@ -327,22 +327,13 @@ impl ScanSourceRef<'_> {
     #[cfg(feature = "cloud")]
     fn to_memslice_async<F: Fn(Arc<FileCacheEntry>) -> PolarsResult<std::fs::File>>(
         &self,
-        assume: F,
+        open_cache_entry: F,
         run_async: bool,
     ) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = if run_async {
-                    feature_gated!("cloud", {
-                        // This isn't filled if we modified the DSL (e.g. in cloud)
-                        let entry = polars_io::file_cache::FILE_CACHE.get_entry(*path);
-
-                        if let Some(entry) = entry {
-                            assume(entry)?
-                        } else {
-                            polars_utils::open_file(path.as_local_path().unwrap())?
-                        }
-                    })
+                    open_cache_entry(polars_io::file_cache::FILE_CACHE.get_entry(*path).unwrap())?
                 } else {
                     polars_utils::open_file(path.as_local_path().unwrap())?
                 };
@@ -430,7 +421,7 @@ impl ScanSourceRef<'_> {
         }
     }
 
-    pub(crate) fn run_async(&self) -> bool {
+    pub fn run_async(&self) -> bool {
         matches!(self, Self::Path(p) if p.is_cloud_url() || polars_core::config::force_async())
     }
 }

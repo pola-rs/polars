@@ -11,6 +11,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import pytest
+
 
 def helper_dataset_test(
     file_path: Path,
@@ -225,3 +227,41 @@ def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     assert lf0.join(lf1, on="a", how="inner").collect().to_dict(as_series=False) == {
         "a": [1, 2]
     }
+
+
+def test_pyarrow_dataset_predicate_verbose_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path_0 = tmp_path / "0"
+
+    df.write_parquet(file_path_0)
+    dset = ds.dataset(file_path_0, format="parquet")
+
+    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("a") < 3)
+
+    capfd.readouterr()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2]}))
+    capture = capfd.readouterr().err
+
+    assert (
+        "[SENSITIVE]: python_scan_predicate: "
+        'predicate node: [(col("a")) < (3)], '
+        "converted pyarrow predicate: (pa.compute.field('a') < 3)"
+    ) in capture
+
+    q = pl.scan_pyarrow_dataset(dset).filter(pl.col("a").cast(pl.String) < "3")
+
+    capfd.readouterr()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2]}))
+    capture = capfd.readouterr().err
+
+    assert (
+        "[SENSITIVE]: python_scan_predicate: "
+        'predicate node: [(col("a").strict_cast(String)) < ("3")], '
+        "converted pyarrow predicate: <conversion failed>\n"
+    ) in capture

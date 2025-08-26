@@ -99,14 +99,14 @@ pub enum PhysNodeKind {
         extend_original: bool,
     },
 
+    InputIndependentSelect {
+        selectors: Vec<ExprIR>,
+    },
+
     WithRowIndex {
         input: PhysStream,
         name: PlSmallStr,
         offset: Option<IdxSize>,
-    },
-
-    InputIndependentSelect {
-        selectors: Vec<ExprIR>,
     },
 
     Reduce {
@@ -130,6 +130,12 @@ pub enum PhysNodeKind {
         input: PhysStream,
         offset: PhysStream,
         length: PhysStream,
+    },
+
+    Shift {
+        input: PhysStream,
+        offset: PhysStream,
+        fill: Option<PhysStream>,
     },
 
     Filter {
@@ -193,14 +199,31 @@ pub enum PhysNodeKind {
         sort_options: SortMultipleOptions,
     },
 
+    TopK {
+        input: PhysStream,
+        k: PhysStream,
+        by_column: Vec<ExprIR>,
+        reverse: Vec<bool>,
+        nulls_last: Vec<bool>,
+    },
+
     Repeat {
         value: PhysStream,
         repeats: PhysStream,
     },
 
-    RleId {
+    #[cfg(feature = "cum_agg")]
+    CumAgg {
         input: PhysStream,
-        name: PlSmallStr,
+        kind: crate::nodes::cum_agg::CumAggKind,
+    },
+
+    // Parameter is the input stream
+    Rle(PhysStream),
+    RleId(PhysStream),
+    PeakMinMax {
+        input: PhysStream,
+        is_peak_max: bool,
     },
 
     OrderedUnion {
@@ -298,8 +321,6 @@ pub enum PhysNodeKind {
     MergeSorted {
         input_left: PhysStream,
         input_right: PhysStream,
-
-        key: PlSmallStr,
     },
 }
 
@@ -340,8 +361,16 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
-            | PhysNodeKind::RleId { input, .. }
+            | PhysNodeKind::Rle(input)
+            | PhysNodeKind::RleId(input)
+            | PhysNodeKind::PeakMinMax { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "cum_agg")]
+            PhysNodeKind::CumAgg { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -384,6 +413,13 @@ fn visit_node_inputs_mut(
                 visit(input_right);
             },
 
+            PhysNodeKind::TopK { input, k, .. } => {
+                rec!(input.node);
+                rec!(k.node);
+                visit(input);
+                visit(k);
+            },
+
             PhysNodeKind::DynamicSlice {
                 input,
                 offset,
@@ -395,6 +431,23 @@ fn visit_node_inputs_mut(
                 visit(input);
                 visit(offset);
                 visit(length);
+            },
+
+            PhysNodeKind::Shift {
+                input,
+                offset,
+                fill,
+            } => {
+                rec!(input.node);
+                rec!(offset.node);
+                if let Some(fill) = fill {
+                    rec!(fill.node);
+                }
+                visit(input);
+                visit(offset);
+                if let Some(fill) = fill {
+                    visit(fill);
+                }
             },
 
             PhysNodeKind::Repeat { value, repeats } => {

@@ -37,8 +37,6 @@ pub use array::ArrayFunction;
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
-#[cfg(feature = "list_to_struct")]
-pub use list::ListToStruct;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
@@ -216,7 +214,6 @@ pub enum FunctionExpr {
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
     Coalesce,
-    ShrinkType,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
     #[cfg(feature = "pct_change")]
@@ -363,6 +360,10 @@ pub enum FunctionExpr {
     #[cfg(feature = "reinterpret")]
     Reinterpret(bool),
     ExtendConstant,
+
+    RowEncode(RowEncodingVariant),
+    #[cfg(feature = "dtype-struct")]
+    RowDecode(Vec<(PlSmallStr, DataTypeExpr)>, RowEncodingVariant),
 }
 
 impl Hash for FunctionExpr {
@@ -550,7 +551,6 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             Coalesce => {},
-            ShrinkType => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
             #[cfg(feature = "log")]
@@ -650,6 +650,13 @@ impl Hash for FunctionExpr {
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
+
+            RowEncode(variants) => variants.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            RowDecode(fs, variants) => {
+                fs.hash(state);
+                variants.hash(state);
+            },
         }
     }
 }
@@ -760,7 +767,6 @@ impl Display for FunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             Coalesce => "coalesce",
-            ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
             #[cfg(feature = "pct_change")]
@@ -848,6 +854,10 @@ impl Display for FunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(_) => "reinterpret",
             ExtendConstant => "extend_constant",
+
+            RowEncode(..) => "row_encode",
+            #[cfg(feature = "dtype-struct")]
+            RowDecode(..) => "row_decode",
         };
         write!(f, "{s}")
     }

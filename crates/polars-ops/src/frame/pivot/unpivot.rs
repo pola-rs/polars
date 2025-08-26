@@ -111,7 +111,7 @@ pub trait UnpivotDF: IntoDf {
                 let variable_col = Column::new_empty(variable_name, &DataType::String);
                 let value_col = Column::new_empty(value_name, &DataType::Null);
 
-                let mut out = self_.select(index).unwrap().clear().take_columns();
+                let mut out = self_.select(index)?.clear().take_columns();
 
                 out.push(variable_col);
                 out.push(value_col);

@@ -55,6 +55,7 @@ def test_defer_validate_true() -> None:
         lf.collect()
 
 
+@pytest.mark.may_fail_cloud
 @pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_defer_validate_false() -> None:
     lf = pl.defer(
@@ -136,6 +137,7 @@ This allows it to read into multiple rows.
     )
 
 
+@pytest.mark.may_fail_cloud
 @pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_datetime_io_predicate_pushdown_21790() -> None:
     recorded: dict[str, pl.Expr | None] = {"predicate": None}
@@ -284,3 +286,22 @@ print("OK", end="", file=sys.stderr)
     )
 
     assert out == b"OK"
+
+
+def test_io_plugin_categorical_24172() -> None:
+    schema = {"cat": pl.Categorical}
+
+    df = pl.concat(
+        [
+            pl.DataFrame({"cat": ["X", "Y"]}, schema=schema),
+            pl.DataFrame({"cat": ["X", "Y"]}, schema=schema),
+        ],
+        rechunk=False,
+    )
+
+    assert df.n_chunks() == 2
+
+    assert_frame_equal(
+        register_io_source(lambda *_: iter([df]), schema=df.schema).collect(),
+        df,
+    )

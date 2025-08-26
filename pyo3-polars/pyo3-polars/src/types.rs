@@ -98,7 +98,7 @@ impl<'py> FromPyObject<'py> for PyTimeUnit {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(PyTimeUnit(parsed))
@@ -180,10 +180,17 @@ impl<'a> FromPyObject<'a> for PySeries {
 
         let kwargs = PyDict::new(ob.py());
         if let Ok(compat_level) = ob.call_method0("_newest_compat_level") {
+            // Choose the maximum supported between both us and Python's compatibility level.
             let compat_level = compat_level.extract().unwrap();
             let compat_level =
                 CompatLevel::with_level(compat_level).unwrap_or(CompatLevel::newest());
-            kwargs.set_item("compat_level", compat_level.get_level())?;
+            let compat_level_type = POLARS_INTERCHANGE
+                .bind(ob.py())
+                .getattr("CompatLevel")
+                .unwrap();
+            let py_compat_level =
+                compat_level_type.call_method1("_with_version", (compat_level.get_level(),))?;
+            kwargs.set_item("compat_level", py_compat_level)?;
         }
         let arr = ob.call_method("to_arrow", (), Some(&kwargs))?;
         let arr = ffi::to_rust::array_to_rust(&arr)?;
@@ -429,6 +436,10 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 let class = pl.getattr(intern!(py, "Int64")).unwrap();
                 class.call0()
             },
+            DataType::Int128 => {
+                let class = pl.getattr(intern!(py, "Int128")).unwrap();
+                class.call0()
+            },
             DataType::UInt8 => {
                 let class = pl.getattr(intern!(py, "UInt8")).unwrap();
                 class.call0()
@@ -582,6 +593,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "Int16" => DataType::Int16,
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
+                    "Int128" => DataType::Int128,
                     "UInt8" => DataType::UInt8,
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,
@@ -592,7 +604,9 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
                     #[cfg(feature = "dtype-categorical")]
-                    "Categorical" => DataType::Categorical(Categories::global(), Categories::global().mapping()),
+                    "Categorical" => {
+                        DataType::Categorical(Categories::global(), Categories::global().mapping())
+                    },
                     #[cfg(feature = "dtype-categorical")]
                     "Enum" => {
                         let categories = FrozenCategories::new([]).unwrap();
@@ -617,7 +631,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     dt => {
                         return Err(PyTypeError::new_err(format!(
                             "'{dt}' is not a Polars data type, or the plugin isn't compiled with the right features",
-                        )))
+                        )));
                     },
                 }
             },
@@ -625,6 +639,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "Int16" => DataType::Int16,
             "Int32" => DataType::Int32,
             "Int64" => DataType::Int64,
+            "Int128" => DataType::Int128,
             "UInt8" => DataType::UInt8,
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
@@ -698,7 +713,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type, or the plugin isn't compiled with the right features",
-                )))
+                )));
             },
         };
         Ok(PyDataType(dtype))

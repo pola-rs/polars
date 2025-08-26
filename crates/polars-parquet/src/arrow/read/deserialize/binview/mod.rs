@@ -175,12 +175,40 @@ pub fn decode_plain(
                         inlinable_views[inline_idx] = view;
                         inline_idx += 1;
                     } else {
-                        needle_views.reserve(needles.len() - i);
-                        needle_set.reserve(needles.len() - i);
+                        needle_views.reserve(needles.len());
+                        needle_set.reserve(needles.len());
+
+                        for (i, needle) in needles.iter().enumerate().take(inline_idx) {
+                            assert!(!needle.is_null());
+
+                            let needle = if verify_utf8 {
+                                needle.as_str().unwrap().as_bytes()
+                            } else {
+                                needle.as_binary().unwrap()
+                            };
+
+                            // If there are duplicates we should only push one.
+                            if needle_set.insert(needle) {
+                                needle_views.push(inlinable_views[i]);
+                            }
+                        }
 
                         // If there are duplicates we should only push one.
                         if needle_set.insert(needle) {
                             needle_views.push(view);
+                        }
+
+                        for needle in needles.iter().skip(i + 1) {
+                            let needle = if verify_utf8 {
+                                needle.as_str().unwrap().as_bytes()
+                            } else {
+                                needle.as_binary().unwrap()
+                            };
+                            let view = target.push_value_into_buffer(needle);
+                            // If there are duplicates we should only push one.
+                            if needle_set.insert(needle) {
+                                needle_views.push(view);
+                            }
                         }
                     }
                 }

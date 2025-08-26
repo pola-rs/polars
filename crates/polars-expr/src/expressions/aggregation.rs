@@ -347,20 +347,15 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Implode => {
-                    // if the aggregation is already
-                    // in an aggregate flat state for instance by
-                    // a mean aggregation, we simply convert to list
+                    // If the aggregation is already in an aggregate flat state (AggregatedScalar), for instance by
+                    // a mean() aggregation, we simply wrap into a list and maintain the AggregatedScalar state
                     //
-                    // if it is not, we traverse the groups and create
-                    // a list per group.
+                    // If it is not, we traverse the groups and create a list per group.
                     let c = match ac.agg_state() {
                         // mean agg:
                         // -> f64 -> list<f64>
                         AggregatedScalar(c) => c
-                            .reshape_list(&[
-                                ReshapeDimension::Infer,
-                                ReshapeDimension::new_dimension(1),
-                            ])
+                            .cast(&DataType::List(Box::new(c.dtype().clone())))
                             .unwrap(),
                         // Auto-imploded
                         AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
@@ -372,7 +367,11 @@ impl PhysicalExpr for AggregationExpr {
                             agg.as_list().into_column()
                         },
                     };
-                    AggState::AggregatedList(c.with_name(keep_name))
+                    match ac.agg_state() {
+                        // An imploded scalar remains a scalar
+                        AggregatedScalar(_) => AggregatedScalar(c.with_name(keep_name)),
+                        _ => AggState::AggregatedList(c.with_name(keep_name)),
+                    }
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();

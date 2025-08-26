@@ -246,4 +246,4 @@ def test_trig() -> None:
         }
     )
 
-    assert_frame_equal(left=df_result, right=res, atol=1e-5)
+    assert_frame_equal(left=df_result, right=res, abs_tol=1e-5)

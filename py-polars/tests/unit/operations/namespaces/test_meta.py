@@ -185,3 +185,16 @@ def test_literal_output_name() -> None:
 
     e = pl.lit(pl.Series([1, 2, 3]))
     assert e.meta.output_name() == ""
+
+
+def test_struct_field_output_name_24003() -> None:
+    assert pl.col("ball").struct.field("radius").meta.output_name() == "radius"
+
+
+def test_selector_by_name_single() -> None:
+    assert cs.by_name("foo").meta.output_name() == "foo"
+
+
+def test_selector_by_name_multiple() -> None:
+    with pytest.raises(ComputeError):
+        cs.by_name(["foo", "bar"]).meta.output_name()

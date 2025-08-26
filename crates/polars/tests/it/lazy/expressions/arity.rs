@@ -58,9 +58,9 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
                     s.str()?
                         .to_lowercase()
                         .contains("not_exist", true)
-                        .map(|ca| Some(ca.into_column()))
+                        .map(|ca| ca.into_column())
                 },
-                GetOutput::from_type(DataType::Boolean),
+                |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),
             ))
             .then(lit("unexpected"))
             .when(col("a").eq(lit("a1".to_string())))
@@ -88,9 +88,9 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
                     s.str()?
                         .to_lowercase()
                         .contains_literal("non-existent")
-                        .map(|ca| Some(ca.into_column()))
+                        .map(|ca| ca.into_column())
                 },
-                GetOutput::from_type(DataType::Boolean),
+                |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),
             ))
             .then(lit("weird-1"))
             .when(col("a").eq(lit("a1".to_string())))

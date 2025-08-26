@@ -121,6 +121,13 @@ impl Field {
     pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowField {
         self.dtype.to_arrow_field(self.name.clone(), compat_level)
     }
+
+    pub fn to_physical(&self) -> Field {
+        Self {
+            name: self.name.clone(),
+            dtype: self.dtype().to_physical(),
+        }
+    }
 }
 
 impl AsRef<DataType> for Field {

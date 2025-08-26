@@ -65,8 +65,8 @@ mod tests {
         assert!(options.check_column_order);
         assert!(options.check_dtypes);
         assert!(!options.check_exact);
-        assert_eq!(options.rtol, 1e-5);
-        assert_eq!(options.atol, 1e-8);
+        assert_eq!(options.rel_tol, 1e-5);
+        assert_eq!(options.abs_tol, 1e-8);
         assert!(!options.categorical_as_str);
     }
 

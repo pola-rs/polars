@@ -2,9 +2,18 @@ use std::fmt::Formatter;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use polars_core::utils::try_get_supertype;
-
 use super::*;
+
+pub trait AnonymousColumnsUdf: ColumnsUdf {
+    fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf>;
+    fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf>;
+
+    fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
+        polars_bail!(ComputeError: "serialization not supported for this 'opaque' function")
+    }
+
+    fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field>;
+}
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait ColumnsUdf: Send + Sync {
@@ -12,28 +21,14 @@ pub trait ColumnsUdf: Send + Sync {
         unimplemented!("as_any not implemented for this 'opaque' function")
     }
 
-    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>>;
-
-    /// Called when converting from DSL to IR with the input schema to the expression.
-    fn resolve_dsl(
-        &self,
-        input_schema: &Schema,
-        self_dtype: Option<&DataType>,
-    ) -> PolarsResult<()> {
-        _ = (input_schema, self_dtype);
-        Ok(())
-    }
-
-    fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
-        polars_bail!(ComputeError: "serialization not supported for this 'opaque' function")
-    }
+    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Column>;
 }
 
 impl<F> ColumnsUdf for F
 where
-    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Column> + Send + Sync,
 {
-    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
+    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Column> {
         self(s)
     }
 }
@@ -41,39 +36,6 @@ where
 impl Debug for dyn ColumnsUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "ColumnUdf")
-    }
-}
-
-/// A wrapper trait for any binary closure `Fn(Column, Column) -> PolarsResult<Column>`
-pub trait ColumnBinaryUdf: Send + Sync {
-    fn call_udf(&self, a: Column, b: Column) -> PolarsResult<Column>;
-}
-
-impl<F> ColumnBinaryUdf for F
-where
-    F: Fn(Column, Column) -> PolarsResult<Column> + Send + Sync,
-{
-    fn call_udf(&self, a: Column, b: Column) -> PolarsResult<Column> {
-        self(a, b)
-    }
-}
-
-impl Debug for dyn ColumnBinaryUdf {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ColumnBinaryUdf")
-    }
-}
-
-impl Default for SpecialEq<Arc<dyn ColumnBinaryUdf>> {
-    fn default() -> Self {
-        panic!("implementation error");
-    }
-}
-
-impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
-    fn default() -> Self {
-        let output_field = move |_: &Schema, _: Context, _: &Field, _: &Field| None;
-        SpecialEq::new(Arc::new(output_field))
     }
 }
 
@@ -89,6 +51,12 @@ impl<T> SpecialEq<T> {
 
     pub fn into_inner(self) -> T {
         self.0
+    }
+}
+
+impl SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
+    pub fn deep_clone(self) -> Self {
+        SpecialEq(self.0.deep_clone())
     }
 }
 
@@ -126,178 +94,76 @@ impl<T> Deref for SpecialEq<T> {
     }
 }
 
-pub trait BinaryUdfOutputField: Send + Sync {
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        cntxt: Context,
-        field_a: &Field,
-        field_b: &Field,
-    ) -> Option<Field>;
+pub struct BaseColumnUdf<F, DT> {
+    f: F,
+    dt: DT,
 }
 
-impl<F> BinaryUdfOutputField for F
+impl<F, DT> BaseColumnUdf<F, DT> {
+    pub fn new(f: F, dt: DT) -> Self {
+        Self { f, dt }
+    }
+}
+
+impl<F, DT> ColumnsUdf for BaseColumnUdf<F, DT>
 where
-    F: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Column> + Send + Sync,
+    DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + Send + Sync,
 {
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        cntxt: Context,
-        field_a: &Field,
-        field_b: &Field,
-    ) -> Option<Field> {
-        self(input_schema, cntxt, field_a, field_b)
+    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Column> {
+        (self.f)(s)
     }
 }
 
-pub trait FunctionOutputField: Send + Sync {
-    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
-        _ = input_schema;
-        Ok(())
-    }
-
-    fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field>;
-
-    fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
-        polars_bail!(ComputeError: "serialization not supported for this output field")
-    }
-}
-
-pub type GetOutput = LazySerde<SpecialEq<Arc<dyn FunctionOutputField>>>;
-
-impl Default for GetOutput {
-    fn default() -> Self {
-        LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            |_input_schema: &Schema, fields: &[Field]| Ok(fields[0].clone()),
-        )))
-    }
-}
-
-impl GetOutput {
-    pub fn same_type() -> Self {
-        Default::default()
-    }
-
-    pub fn first() -> Self {
-        LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            |_input_schema: &Schema, fields: &[Field]| Ok(fields[0].clone()),
-        )))
-    }
-
-    pub fn from_type(dt: DataType) -> Self {
-        LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, flds: &[Field]| Ok(Field::new(flds[0].name().clone(), dt.clone())),
-        )))
-    }
-
-    pub fn map_field<F: 'static + Fn(&Field) -> PolarsResult<Field> + Send + Sync>(f: F) -> Self {
-        LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, flds: &[Field]| f(&flds[0]),
-        )))
-    }
-
-    pub fn map_fields<F: 'static + Fn(&[Field]) -> PolarsResult<Field> + Send + Sync>(
-        f: F,
-    ) -> Self {
-        LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, flds: &[Field]| f(flds),
-        )))
-    }
-
-    pub fn map_dtype<F: 'static + Fn(&DataType) -> PolarsResult<DataType> + Send + Sync>(
-        f: F,
-    ) -> Self {
-        LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, flds: &[Field]| {
-                let mut fld = flds[0].clone();
-                let new_type = f(fld.dtype())?;
-                fld.coerce(new_type);
-                Ok(fld)
-            },
-        )))
-    }
-
-    pub fn float_type() -> Self {
-        Self::map_dtype(|dt| {
-            Ok(match dt {
-                DataType::Float32 => DataType::Float32,
-                _ => DataType::Float64,
-            })
-        })
-    }
-
-    pub fn super_type() -> Self {
-        Self::map_dtypes(|dtypes| {
-            let mut st = dtypes[0].clone();
-            for dt in &dtypes[1..] {
-                st = try_get_supertype(&st, dt)?;
-            }
-            Ok(st)
-        })
-    }
-
-    pub fn map_dtypes<F>(f: F) -> Self
-    where
-        F: 'static + Fn(&[&DataType]) -> PolarsResult<DataType> + Send + Sync,
-    {
-        LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, flds: &[Field]| {
-                let mut fld = flds[0].clone();
-                let dtypes = flds.iter().map(|fld| fld.dtype()).collect::<Vec<_>>();
-                let new_type = f(&dtypes)?;
-                fld.coerce(new_type);
-                Ok(fld)
-            },
-        )))
-    }
-}
-
-impl<F> FunctionOutputField for F
+impl<F, DT> AnonymousColumnsUdf for BaseColumnUdf<F, DT>
 where
-    F: Fn(&Schema, &[Field]) -> PolarsResult<Field> + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+    DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
 {
+    fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf> {
+        self as _
+    }
+    fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf> {
+        self
+    }
+
     fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field> {
-        self(input_schema, fields)
+        (self.dt)(input_schema, fields)
     }
 }
 
-pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn ColumnsUdf>>>;
-pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
+pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn AnonymousColumnsUdf>>>;
+pub(crate) fn new_column_udf<F: AnonymousColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
     LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
 }
 
 impl OpaqueColumnUdf {
-    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
+    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn AnonymousColumnsUdf>>> {
         match self {
             Self::Deserialized(t) => Ok(t),
             Self::Named {
-                name: _,
-                payload: _,
-                value: _,
-            } => {
-                panic!("should not be hit")
-            },
+                name,
+                payload,
+                value,
+            } => feature_gated!("serde", {
+                use super::named_serde::NAMED_SERDE_REGISTRY_EXPR;
+                match value {
+                    Some(v) => Ok(v),
+                    None => Ok(SpecialEq(
+                        NAMED_SERDE_REGISTRY_EXPR
+                            .read()
+                            .unwrap()
+                            .as_ref()
+                            .expect("NAMED EXPR REGISTRY NOT SET")
+                            .get_function(&name, payload.unwrap().as_ref())
+                            .expect("NAMED FUNCTION NOT FOUND"),
+                    )),
+                }
+            }),
             Self::Bytes(_b) => {
                 feature_gated!("serde";"python", {
                     serde_expr::deserialize_column_udf(_b.as_ref()).map(SpecialEq::new)
                 })
-            },
-        }
-    }
-}
-
-impl GetOutput {
-    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn FunctionOutputField>>> {
-        match self {
-            Self::Deserialized(t) => Ok(t),
-            Self::Named {
-                name: _,
-                payload: _,
-                value,
-            } => value.ok_or_else(|| polars_err!(ComputeError: "GetOutput Value not set")),
-            Self::Bytes(_b) => {
-                polars_bail!(ComputeError: "should not be hit")
             },
         }
     }

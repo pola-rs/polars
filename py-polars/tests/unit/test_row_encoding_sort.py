@@ -153,7 +153,6 @@ def tuple_order(
 def test_series_sort_parametric(s: pl.Series) -> None:
     for descending in [False, True]:
         for nulls_last in [False, True]:
-            fields = [(descending, nulls_last, False)]
 
             def cmp(
                 lhs: Element,
@@ -168,12 +167,17 @@ def test_series_sort_parametric(s: pl.Series) -> None:
             rows = list(s)
             rows.sort(key=functools.cmp_to_key(cmp))  # type: ignore[arg-type, unused-ignore]
 
-            re = s.to_frame()._row_encode(fields)
+            re = s._row_encode(descending=descending, nulls_last=nulls_last)
             re_sorted = re.sort()
-            re_decoded = re_sorted._row_decode([("s", s.dtype)], fields)
+            re_decoded = re_sorted._row_decode(
+                ["s"],
+                [s.dtype],
+                descending=[descending],
+                nulls_last=[nulls_last],
+            )
 
             assert_series_equal(
-                pl.Series("s", rows, s.dtype), re_decoded.get_column("s")
+                pl.Series("s", rows, s.dtype), re_decoded.struct.unnest().to_series()
             )
 
 
@@ -196,11 +200,6 @@ def test_df_sort_parametric(df: pl.DataFrame) -> None:
         descending = [((i // (4**j)) % 4) in [2, 3] for j in range(df.width)]
         nulls_last = [((i // (4**j)) % 4) in [1, 3] for j in range(df.width)]
 
-        fields = [
-            (descending, nulls_last, False)
-            for (descending, nulls_last) in zip(descending, nulls_last)
-        ]
-
         def cmp(
             lhs: tuple[Element, ...],
             rhs: tuple[Element, ...],
@@ -212,11 +211,18 @@ def test_df_sort_parametric(df: pl.DataFrame) -> None:
         rows = df.rows()
         rows.sort(key=functools.cmp_to_key(cmp))  # type: ignore[arg-type, unused-ignore]
 
-        re = df._row_encode(fields)
+        re = df._row_encode(descending=descending, nulls_last=nulls_last)
         re_sorted = re.sort()
-        re_decoded = re_sorted._row_decode(df.schema.items(), fields)
+        re_decoded = re_sorted._row_decode(
+            df.schema.names(),
+            df.schema.dtypes(),
+            descending=descending,
+            nulls_last=nulls_last,
+        )
 
-        assert_frame_equal(pl.DataFrame(rows, df.schema, orient="row"), re_decoded)
+        assert_frame_equal(
+            pl.DataFrame(rows, df.schema, orient="row"), re_decoded.struct.unnest()
+        )
 
 
 def assert_order_series(
@@ -224,20 +230,21 @@ def assert_order_series(
     rhs: pl.series.series.ArrayLike,
     dtype: pl._typing.PolarsDataType,
 ) -> None:
-    lhs_df = pl.Series("lhs", lhs, dtype).to_frame()
-    rhs_df = pl.Series("rhs", rhs, dtype).to_frame()
+    lhs_s = pl.Series("lhs", lhs, dtype)
+    rhs_s = pl.Series("rhs", rhs, dtype)
 
     for descending in [False, True]:
         for nulls_last in [False, True]:
-            field = (descending, nulls_last, False)
-            l_re = lhs_df._row_encode([field]).cast(pl.Binary)
-            r_re = rhs_df._row_encode([field]).cast(pl.Binary)
+            l_re = lhs_s._row_encode(descending=descending, nulls_last=nulls_last).cast(
+                pl.Binary
+            )
+            r_re = rhs_s._row_encode(descending=descending, nulls_last=nulls_last).cast(
+                pl.Binary
+            )
 
             order = [
-                elem_order_sign(
-                    lh[0], rh[0], descending=descending, nulls_last=nulls_last
-                )
-                for (lh, rh) in zip(lhs_df.rows(), rhs_df.rows())
+                elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
+                for (lh, rh) in zip(lhs_s, rhs_s)
             ]
 
             assert_series_equal(
@@ -255,17 +262,15 @@ def parametric_order_base(df: pl.DataFrame) -> None:
     lhs = df.get_columns()[0]
     rhs = df.get_columns()[1]
 
-    field = (False, False, False)
-    lhs_re = lhs.to_frame()._row_encode([field]).cast(pl.Binary)
-    rhs_re = rhs.to_frame()._row_encode([field]).cast(pl.Binary)
+    lhs_re = lhs._row_encode().cast(pl.Binary)
+    rhs_re = rhs._row_encode().cast(pl.Binary)
 
     assert_series_equal(lhs < rhs, lhs_re < rhs_re, check_names=False)
     assert_series_equal(lhs == rhs, lhs_re == rhs_re, check_names=False)
     assert_series_equal(lhs > rhs, lhs_re > rhs_re, check_names=False)
 
-    field = (True, False, False)
-    lhs_re = lhs.to_frame()._row_encode([field]).cast(pl.Binary)
-    rhs_re = rhs.to_frame()._row_encode([field]).cast(pl.Binary)
+    lhs_re = lhs._row_encode(descending=True).cast(pl.Binary)
+    rhs_re = rhs._row_encode(descending=True).cast(pl.Binary)
 
     assert_series_equal(lhs > rhs, lhs_re < rhs_re, check_names=False)
     assert_series_equal(lhs == rhs, lhs_re == rhs_re, check_names=False)

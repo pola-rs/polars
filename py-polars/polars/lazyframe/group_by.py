@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Callable
 from polars import functions as F
 from polars._utils.deprecation import deprecated
 from polars._utils.parse import parse_into_list_of_expressions
-from polars._utils.wrap import wrap_ldf
+from polars._utils.wrap import wrap_df, wrap_ldf
 
 if TYPE_CHECKING:
     import sys
@@ -220,7 +220,9 @@ class LazyGroupBy:
         ...     pl.int_range(pl.len()).shuffle().over("color") < 2
         ... ).collect()  # doctest: +IGNORE_RESULT
         """
-        return wrap_ldf(self.lgb.map_groups(function, schema))
+        return wrap_ldf(
+            self.lgb.map_groups(lambda df: function(wrap_df(df))._df, schema)
+        )
 
     def head(self, n: int = 5) -> LazyFrame:
         """

@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
+from polars.testing import assert_frame_equal
 
 pytestmark = pytest.mark.benchmark()
 
@@ -109,3 +110,17 @@ def test_join_where_invalid_column() -> None:
             ((pl.col("a") - pl.col("b")) > (pl.col("c") == "a").cast(pl.Int32))
             > (pl.col("a") - pl.col("d")),
         )
+
+
+def test_join_where_not_elementwise_24134() -> None:
+    out = (
+        pl.LazyFrame({"a": [0, 1, 2, 16]})
+        .join_where(
+            pl.LazyFrame({"b": [0, 1, 2, 16]}),
+            pl.col.a == pl.len(),
+        )
+        .collect()
+    )
+
+    expected = pl.DataFrame({"a": [16, 16, 16, 16], "b": [0, 1, 2, 16]})
+    assert_frame_equal(out, expected, check_row_order=False)

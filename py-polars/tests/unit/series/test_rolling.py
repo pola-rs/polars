@@ -58,13 +58,13 @@ def test_series_rolling_median_by(values: pl.Series, by_col: pl.Series) -> None:
 def test_series_rolling_std_by(values: pl.Series, by_col: pl.Series) -> None:
     actual = values.rolling_std_by(by_col, "2i")
     expected = pl.Series([2.12, 2.12, 2.88, 2.88, 3.16, 3.16, 3.16, 3.16])
-    assert_series_equal(actual, expected, atol=1e-2)
+    assert_series_equal(actual, expected, abs_tol=1e-2)
 
 
 def test_series_rolling_var_by(values: pl.Series, by_col: pl.Series) -> None:
     actual = values.rolling_var_by(by_col, "2i")
     expected = pl.Series([4.5, 4.5, 8.33, 8.33, 10.0, 10.0, 10.0, 10.0])
-    assert_series_equal(actual, expected, atol=1e-2)
+    assert_series_equal(actual, expected, abs_tol=1e-2)
 
 
 def test_series_rolling_quantile_by(values: pl.Series, by_col: pl.Series) -> None:
@@ -118,7 +118,7 @@ def test_series_rolling_std_by_temporal(
 ) -> None:
     actual = values.rolling_std_by(by_col_temporal, "2h")
     expected = pl.Series([None, 2.12, 4.94, 2.12, 2.12, 4.94, 2.12, 2.12])
-    assert_series_equal(actual, expected, atol=1e-2)
+    assert_series_equal(actual, expected, abs_tol=1e-2)
 
 
 def test_series_rolling_var_by_temporal(
@@ -126,7 +126,7 @@ def test_series_rolling_var_by_temporal(
 ) -> None:
     actual = values.rolling_var_by(by_col_temporal, "2h")
     expected = pl.Series([None, 4.5, 24.5, 4.5, 4.5, 24.5, 4.5, 4.5])
-    assert_series_equal(actual, expected, atol=1e-2)
+    assert_series_equal(actual, expected, abs_tol=1e-2)
 
 
 def test_series_rolling_quantile_by_temporal(

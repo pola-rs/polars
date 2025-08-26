@@ -219,7 +219,6 @@ pub(super) fn rolling_corr_cov(
         );
         let denominator = pow(&mut [base.into_column(), sc.into_column("".into())])
             .unwrap()
-            .unwrap()
             .take_materialized_series();
 
         Ok((numerator / denominator)?.into_column())

@@ -31,6 +31,8 @@ def _assert_correct_input_type(
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
+@deprecate_renamed_parameter("rtol", "rel_tol", version="1.32.3")
+@deprecate_renamed_parameter("atol", "abs_tol", version="1.32.3")
 def assert_frame_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
@@ -39,8 +41,8 @@ def assert_frame_equal(
     check_column_order: bool = True,
     check_dtypes: bool = True,
     check_exact: bool = False,
-    rtol: float = 1e-5,
-    atol: float = 1e-8,
+    rel_tol: float = 1e-5,
+    abs_tol: float = 1e-8,
     categorical_as_str: bool = False,
 ) -> None:
     """
@@ -51,6 +53,10 @@ def assert_frame_equal(
 
     .. versionchanged:: 0.20.31
         The `check_dtype` parameter was renamed `check_dtypes`.
+
+    .. versionchanged:: 1.32.3
+        The `rtol` and `atol` parameters were renamed to `rel_tol` and `abs_tol`,
+        respectively.
 
     Parameters
     ----------
@@ -66,11 +72,11 @@ def assert_frame_equal(
         Requires data types to match.
     check_exact
         Requires float values to match exactly. If set to `False`, values are considered
-        equal when within tolerance of each other (see `rtol` and `atol`).
+        equal when within tolerance of each other (see `rel_tol` and `abs_tol`).
         Only affects columns with a Float data type.
-    rtol
+    rel_tol
         Relative tolerance for inexact checking. Fraction of values in `right`.
-    atol
+    abs_tol
         Absolute tolerance for inexact checking.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
@@ -121,7 +127,7 @@ def assert_frame_equal(
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
     # Tell type checker these are now DataFrames to prevent type errors
-    left, right = cast(DataFrame, left), cast(DataFrame, right)
+    left, right = cast("DataFrame", left), cast("DataFrame", right)
 
     assert_dataframe_equal_py(
         left._df,
@@ -130,13 +136,15 @@ def assert_frame_equal(
         check_column_order=check_column_order,
         check_dtypes=check_dtypes,
         check_exact=check_exact,
-        rtol=rtol,
-        atol=atol,
+        rel_tol=rel_tol,
+        abs_tol=abs_tol,
         categorical_as_str=categorical_as_str,
     )
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
+@deprecate_renamed_parameter("rtol", "rel_tol", version="1.32.3")
+@deprecate_renamed_parameter("atol", "abs_tol", version="1.32.3")
 def assert_frame_not_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
@@ -145,8 +153,8 @@ def assert_frame_not_equal(
     check_column_order: bool = True,
     check_dtypes: bool = True,
     check_exact: bool = False,
-    rtol: float = 1e-5,
-    atol: float = 1e-8,
+    rel_tol: float = 1e-5,
+    abs_tol: float = 1e-8,
     categorical_as_str: bool = False,
 ) -> None:
     """
@@ -156,6 +164,10 @@ def assert_frame_not_equal(
 
     .. versionchanged:: 0.20.31
         The `check_dtype` parameter was renamed `check_dtypes`.
+
+    .. versionchanged:: 1.32.3
+        The `rtol` and `atol` parameters were renamed to `rel_tol` and `abs_tol`,
+        respectively.
 
     Parameters
     ----------
@@ -171,11 +183,11 @@ def assert_frame_not_equal(
         Requires data types to match.
     check_exact
         Requires float values to match exactly. If set to `False`, values are considered
-        equal when within tolerance of each other (see `rtol` and `atol`).
+        equal when within tolerance of each other (see `rel_tol` and `abs_tol`).
         Only affects columns with a Float data type.
-    rtol
+    rel_tol
         Relative tolerance for inexact checking. Fraction of values in `right`.
-    atol
+    abs_tol
         Absolute tolerance for inexact checking.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
@@ -207,8 +219,8 @@ def assert_frame_not_equal(
             check_row_order=check_row_order,
             check_dtypes=check_dtypes,
             check_exact=check_exact,
-            rtol=rtol,
-            atol=atol,
+            rel_tol=rel_tol,
+            abs_tol=abs_tol,
             categorical_as_str=categorical_as_str,
         )
     except AssertionError:

@@ -9,7 +9,7 @@ impl StringChunked {
     ///
     /// If the decimal `precision` and `scale` are already known, consider
     /// using the `cast` method.
-    pub fn to_decimal(&self, infer_length: usize) -> PolarsResult<Series> {
+    pub fn to_decimal_infer(&self, infer_length: usize) -> PolarsResult<Series> {
         let mut scale = 0;
         let mut iter = self.into_iter();
         let mut valid_count = 0;
@@ -22,8 +22,12 @@ impl StringChunked {
             }
         }
 
+        self.to_decimal(scale as usize)
+    }
+
+    pub fn to_decimal(&self, scale: usize) -> PolarsResult<Series> {
         self.cast_with_options(
-            &DataType::Decimal(None, Some(scale as usize)),
+            &DataType::Decimal(None, Some(scale)),
             CastOptions::NonStrict,
         )
     }
@@ -44,7 +48,7 @@ mod test {
             "5.25251525353",
         ];
         let s = StringChunked::from_slice(PlSmallStr::from_str("test"), &vals);
-        let s = s.to_decimal(6).unwrap();
+        let s = s.to_decimal_infer(6).unwrap();
         assert_eq!(s.dtype(), &DataType::Decimal(None, Some(5)));
         assert_eq!(s.len(), 7);
         assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 5));

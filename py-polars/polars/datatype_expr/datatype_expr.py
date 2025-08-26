@@ -57,7 +57,7 @@ class DataTypeExpr:
     """
 
     # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
-    _pydatatype_expr: PyDataTypeExpr = None
+    _pydatatype_expr: PyDataTypeExpr = None  # type: ignore[assignment]
     _accessors: ClassVar[set[str]] = {
         "arr",
         "enum",
@@ -202,6 +202,55 @@ class DataTypeExpr:
         """
         return pl.DataTypeExpr._from_pydatatype_expr(
             self._pydatatype_expr.to_signed_integer()
+        )
+
+    def default_value(
+        self,
+        n: int = 1,
+        *,
+        numeric_to_one: bool = False,
+        num_list_values: int = 0,
+    ) -> pl.Expr:
+        """
+        Get a default value of a specific type.
+
+        - Integers and floats are their zero value as default, unless otherwise
+          specified
+        - Temporals are a physical zero as default
+        - `pl.Decimal` is zero as default
+        - `pl.String` and `pl.Binary` are an empty string
+        - `pl.List` is an empty list, unless otherwise specified
+        - `pl.Array` is the inner default value repeated over the shape
+        - `pl.Struct` is the inner default value for all fields
+        - `pl.Enum` is the first category if it exists
+        - `pl.Null`, `pl.Object` and `pl.Categorical` are `null`.
+
+        Parameters
+        ----------
+        n
+            Number of types you want the value
+        numeric_to_one
+            Use `1` instead of `0` as the default value for numeric types
+        num_list_values
+            The amount of values a list contains
+
+        Examples
+        --------
+        >>> uint32 = pl.UInt32.to_dtype_expr()
+        >>> pl.select(default=uint32.default_value())
+        shape: (1, 1)
+        ┌─────────┐
+        │ default │
+        │ ---     │
+        │ u32     │
+        ╞═════════╡
+        │ 0       │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(
+            self._pydatatype_expr.default_value(
+                n=n, numeric_to_one=numeric_to_one, num_list_values=num_list_values
+            )
         )
 
     @property

@@ -1,7 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use polars_error::polars_ensure;
-
 use super::*;
 
 pub struct MeanWindow<'a, T> {
@@ -63,21 +61,15 @@ where
             None,
         ),
         Some(weights) => {
-            // A weighted mean is a weighted sum with normalized weights
-            let mut wts = no_nulls::coerce_weights(weights);
-            let wsum = wts.iter().fold(T::zero(), |acc, x| acc + *x);
-            polars_ensure!(
-                wsum != T::zero(),
-                ComputeError: "Weighted mean is undefined if weights sum to 0"
-            );
-            wts.iter_mut().for_each(|w| *w = *w / wsum);
+            let wts = no_nulls::coerce_weights(weights);
             no_nulls::rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 offset_fn,
-                no_nulls::compute_sum_weights,
+                no_nulls::compute_mean_weights,
                 &wts,
+                center,
             )
         },
     }

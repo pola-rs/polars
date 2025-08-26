@@ -111,3 +111,8 @@ def test_unpivot_categorical() -> None:
         "variable": ["1", "1", "2", "2"],
         "value": ["a", "b", "b", "c"],
     }
+
+
+def test_unpivot_index_not_found_23165() -> None:
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        pl.DataFrame({"a": [1]}).unpivot(index="b")

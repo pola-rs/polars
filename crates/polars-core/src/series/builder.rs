@@ -174,4 +174,12 @@ impl SeriesBuilder {
         assert!(chunks.len() == 1);
         self.builder.opt_gather_extend(&*chunks[0], idxs, share);
     }
+
+    pub fn push_any_value(&mut self, value: AnyValue<'static>) {
+        // @PERF
+        self.extend(
+            &Scalar::new(self.dtype.clone(), value).into_series(PlSmallStr::EMPTY),
+            ShareStrategy::Always,
+        );
+    }
 }

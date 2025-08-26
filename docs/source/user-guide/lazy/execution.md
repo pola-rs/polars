@@ -82,7 +82,7 @@ It is very common that a query diverges at one point. In these cases it is recom
 # Some expensive LazyFrame
 lf: LazyFrame
 
-lf_1 = LazyFrame.select(pl.all().sum())
+lf_1 = lf.select(pl.all().sum())
 
 lf_2 = lf.some_other_computation()
 

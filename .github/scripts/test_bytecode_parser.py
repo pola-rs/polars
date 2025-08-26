@@ -28,21 +28,23 @@ from tests.unit.operations.map.test_inefficient_map_warning import (
 
 
 @pytest.mark.parametrize(
-    ("col", "func", "expected"),
+    ("col", "func", "expected", "dtype"),
     TEST_CASES,
 )
-def test_bytecode_parser_expression(col: str, func: str, expected: str) -> None:
+def test_bytecode_parser_expression(
+    col: str, func: str, expected: str, dtype: Any
+) -> None:
     bytecode_parser = BytecodeParser(eval(func), map_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
 
 
 @pytest.mark.parametrize(
-    ("col", "func", "expected"),
+    ("col", "func", "expected", "dtype"),
     TEST_CASES,
 )
 def test_bytecode_parser_expression_in_ipython(
-    col: str, func: Callable[[Any], Any], expected: str
+    col: str, func: Callable[[Any], Any], expected: str, dtype: Any
 ) -> None:
     script = (
         "from polars._utils.udfs import BytecodeParser; "

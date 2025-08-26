@@ -60,7 +60,7 @@ pub enum IRListFunction {
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
-    ToStruct(ListToStruct),
+    ToStruct(Arc<[PlSmallStr]>),
 }
 
 impl IRListFunction {
@@ -102,7 +102,7 @@ impl IRListFunction {
                     #[cfg(feature = "dtype-datetime")]
                     DataType::Datetime(tu, _) => DataType::Duration(*tu),
                     #[cfg(feature = "dtype-date")]
-                    DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
+                    DataType::Date => DataType::Duration(TimeUnit::Microseconds),
                     #[cfg(feature = "dtype-time")]
                     DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
                     DataType::UInt64 | DataType::UInt32 => DataType::Int64,
@@ -128,7 +128,7 @@ impl IRListFunction {
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
-            ToStruct(args) => mapper.try_map_dtype(|dtype| {
+            ToStruct(names) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
                     polars_bail!(
                         InvalidOperation:
@@ -137,29 +137,12 @@ impl IRListFunction {
                 };
                 let inner_dtype = inner_dtype.as_ref();
 
-                match args {
-                    ListToStruct::FixedWidth(names) => Ok(DataType::Struct(
-                        names
-                            .iter()
-                            .map(|x| Field::new(x.clone(), inner_dtype.clone()))
-                            .collect::<Vec<_>>(),
-                    )),
-                    ListToStruct::InferWidth {
-                        get_index_name,
-                        max_fields: Some(max_fields),
-                        ..
-                    } => (0..*max_fields)
-                        .map(|i| {
-                            let name = match get_index_name {
-                                None => _default_struct_name_gen(i),
-                                Some(ng) => PlSmallStr::from_string(ng.call(i)?),
-                            };
-                            Ok(Field::new(name, inner_dtype.as_ref().clone()))
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()
-                        .map(DataType::Struct),
-                    ListToStruct::InferWidth { .. } => Ok(DataType::Unknown(UnknownKind::Any)),
-                }
+                Ok(DataType::Struct(
+                    names
+                        .iter()
+                        .map(|x| Field::new(x.clone(), inner_dtype.clone()))
+                        .collect::<Vec<_>>(),
+                ))
             }),
         }
     }
@@ -212,9 +195,7 @@ impl IRListFunction {
             #[cfg(feature = "dtype-array")]
             L::ToArray(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
-            L::ToStruct(ListToStruct::FixedWidth(_)) => FunctionOptions::elementwise(),
-            #[cfg(feature = "list_to_struct")]
-            L::ToStruct(ListToStruct::InferWidth { .. }) => FunctionOptions::length_preserving(),
+            L::ToStruct(_) => FunctionOptions::elementwise(),
         }
     }
 }
@@ -350,7 +331,7 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             ToArray(width) => map!(to_array, width),
             NUnique => map!(n_unique),
             #[cfg(feature = "list_to_struct")]
-            ToStruct(args) => map!(to_struct, &args),
+            ToStruct(names) => map!(to_struct, &names),
         }
     }
 }
@@ -425,7 +406,7 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     list.lst_shift(periods).map(|ok| ok.into_column())
 }
 
-pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let list_ca = s.list()?;
     let offset_s = &args[1];
@@ -439,7 +420,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
                 .unwrap()
                 .extract::<usize>()
                 .unwrap_or(usize::MAX);
-            return Ok(Some(list_ca.lst_slice(offset, slice_len).into_column()));
+            return Ok(list_ca.lst_slice(offset, slice_len).into_column());
         },
         (1, length_slice_len) => {
             check_slice_arg_shape(length_slice_len, list_ca.len(), "length")?;
@@ -502,10 +483,10 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
         },
     };
     out.rename(s.name().clone());
-    Ok(Some(out.into_column()))
+    Ok(out.into_column())
 }
 
-pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
@@ -528,10 +509,10 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
         }
     }
 
-    first_ca.lst_concat(other).map(|ca| Some(ca.into_column()))
+    first_ca.lst_concat(other).map(IntoColumn::into_column)
 }
 
-pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Option<Column>> {
+pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Column> {
     let ca = s[0].list()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
@@ -693,26 +674,8 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "list_to_struct")]
-pub(super) fn to_struct(s: &Column, args: &ListToStruct) -> PolarsResult<Column> {
-    let args = args.clone();
-    let args = match args {
-        ListToStruct::FixedWidth(strs) => ListToStructArgs::FixedWidth(strs),
-        ListToStruct::InferWidth {
-            infer_field_strategy,
-            get_index_name,
-            max_fields,
-        } => {
-            let get_index_name = get_index_name.map(|f| {
-                NameGenerator(Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>)
-            });
-
-            ListToStructArgs::InferWidth {
-                infer_field_strategy,
-                get_index_name,
-                max_fields,
-            }
-        },
-    };
+pub(super) fn to_struct(s: &Column, names: &Arc<[PlSmallStr]>) -> PolarsResult<Column> {
+    let args = ListToStructArgs::FixedWidth(names.clone());
     Ok(s.list()?.to_struct(&args)?.into_column())
 }
 

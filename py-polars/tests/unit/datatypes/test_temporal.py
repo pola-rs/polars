@@ -177,15 +177,13 @@ def test_series_add_datetime() -> None:
 def test_diff_datetime() -> None:
     df = pl.DataFrame(
         {
-            "timestamp": ["2021-02-01", "2021-03-1", "2850-04-1"],
+            "timestamp": [date(2021, 2, 1), date(2021, 3, 1), date(2850, 4, 1)],
             "guild": [1, 2, 3],
             "char": ["a", "a", "b"],
         }
     )
-    out = (
-        df.with_columns(
-            pl.col("timestamp").str.strptime(pl.Date, format="%Y-%m-%d"),
-        ).with_columns(pl.col("timestamp").diff().over("char", mapping_strategy="join"))
+    out = df.with_columns(
+        pl.col("timestamp").diff().over("char", mapping_strategy="join")
     )["timestamp"]
     assert_series_equal(out[0], out[1])
 
@@ -2120,7 +2118,7 @@ def test_truncate_by_multiple_weeks_diffs() -> None:
             "2w": [timedelta(0), timedelta(days=14)],
             "3w": [timedelta(0), timedelta(days=21)],
         }
-    ).select(pl.all().cast(pl.Duration("ms")))
+    ).select(pl.all().cast(pl.Duration("us")))
     assert_frame_equal(result, expected)
 
 

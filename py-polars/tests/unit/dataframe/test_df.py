@@ -218,7 +218,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         ),
     ]
     for arrow_data in (tbl, record_batches, (rb for rb in record_batches)):
-        df = cast(pl.DataFrame, pl.from_arrow(arrow_data))
+        df = cast("pl.DataFrame", pl.from_arrow(arrow_data))
         assert df.schema == expected_schema
         assert df.rows() == expected_data
 
@@ -227,12 +227,12 @@ def test_from_arrow(monkeypatch: Any) -> None:
         (record_batches[0], 1),
         (record_batches[0][:0], 0),
     ):
-        df = cast(pl.DataFrame, pl.from_arrow(b))
+        df = cast("pl.DataFrame", pl.from_arrow(b))
         assert df.schema == expected_schema
         assert df.rows() == expected_data[:n_expected]
 
     empty_tbl = tbl[:0]  # no rows
-    df = cast(pl.DataFrame, pl.from_arrow(empty_tbl))
+    df = cast("pl.DataFrame", pl.from_arrow(empty_tbl))
     assert df.schema == expected_schema
     assert df.rows() == []
 
@@ -302,7 +302,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
     ],
 )
 def test_from_arrow_struct_column(data: pa.Table) -> None:
-    df = cast(pl.DataFrame, pl.from_arrow(data=data))
+    df = cast("pl.DataFrame", pl.from_arrow(data=data))
     expected_schema = pl.Schema({"struct": pl.Struct({"a": pl.Int32()})})
     expected_data = [({"a": 1},), ({"a": 2},)]
     assert df.schema == expected_schema
@@ -835,7 +835,7 @@ def test_from_arrow_table() -> None:
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df = cast(pl.DataFrame, pl.from_arrow(tbl))
+    df = cast("pl.DataFrame", pl.from_arrow(tbl))
     assert_frame_equal(df, pl.DataFrame(data))
 
 
@@ -911,7 +911,7 @@ def test_column_names() -> None:
         }
     )
     for a in (tbl, tbl[:0]):
-        df = cast(pl.DataFrame, pl.from_arrow(a))
+        df = cast("pl.DataFrame", pl.from_arrow(a))
         assert df.columns == ["a", "b"]
 
 
@@ -1060,7 +1060,7 @@ def test_is_nan_null_series() -> None:
 
 def test_len() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3]})
-    assert cast(int, df.select(pl.col("nrs").len()).item()) == 3
+    assert cast("int", df.select(pl.col("nrs").len()).item()) == 3
     assert len(pl.DataFrame()) == 0
 
 
@@ -1235,7 +1235,7 @@ def test_literal_series() -> None:
             orient="row",
         ),
         out,
-        atol=0.00001,
+        abs_tol=0.00001,
     )
 
 
@@ -1725,7 +1725,7 @@ def test_dot_product() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
-    assert typing.cast(int, df.select([pl.col("a").dot("b")])[0, "a"]) == 20
+    assert typing.cast("int", df.select([pl.col("a").dot("b")])[0, "a"]) == 20
 
     result = pl.Series([1, 2, 3]) @ pl.Series([4, 5, 6])
     assert isinstance(result, int)

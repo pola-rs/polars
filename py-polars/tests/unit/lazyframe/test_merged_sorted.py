@@ -1,7 +1,9 @@
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies import series
 
 
 def test_merge_sorted_valid_inputs() -> None:
@@ -52,3 +54,15 @@ def test_merge_sorted_bad_input_type() -> None:
 
     b = DummyLazyFrameSubclass(b.collect())
     a.merge_sorted(b, key="x")
+
+
+@given(s=series(name="x"))
+def test_merge_sorted_parametric(s: pl.Series) -> None:
+    lf = s.sort().to_frame().lazy()
+
+    lf = lf.merge_sorted(lf, "x")
+
+    assert_frame_equal(
+        lf.collect(engine="in-memory"),
+        lf.collect(engine="streaming"),
+    )

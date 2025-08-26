@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::mem::MaybeUninit;
 
 use num_traits::FromPrimitive;
@@ -122,5 +123,71 @@ where
         }
 
         &mut scratch_slice_aligned_to_idx[..n]
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Hash)]
+#[repr(transparent)]
+pub struct ReorderWithNulls<T, const DESCENDING: bool, const NULLS_LAST: bool>(pub Option<T>);
+
+impl<T: PartialOrd, const DESCENDING: bool, const NULLS_LAST: bool> PartialOrd
+    for ReorderWithNulls<T, DESCENDING, NULLS_LAST>
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (&self.0, &other.0) {
+            (None, None) => Some(Ordering::Equal),
+            (None, Some(_)) => {
+                if NULLS_LAST {
+                    Some(Ordering::Greater)
+                } else {
+                    Some(Ordering::Less)
+                }
+            },
+            (Some(_), None) => {
+                if NULLS_LAST {
+                    Some(Ordering::Less)
+                } else {
+                    Some(Ordering::Greater)
+                }
+            },
+            (Some(l), Some(r)) => {
+                if DESCENDING {
+                    r.partial_cmp(l)
+                } else {
+                    l.partial_cmp(r)
+                }
+            },
+        }
+    }
+}
+
+impl<T: Ord, const DESCENDING: bool, const NULLS_LAST: bool> Ord
+    for ReorderWithNulls<T, DESCENDING, NULLS_LAST>
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (&self.0, &other.0) {
+            (None, None) => Ordering::Equal,
+            (None, Some(_)) => {
+                if NULLS_LAST {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            },
+            (Some(_), None) => {
+                if NULLS_LAST {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            },
+            (Some(l), Some(r)) => {
+                if DESCENDING {
+                    r.cmp(l)
+                } else {
+                    l.cmp(r)
+                }
+            },
+        }
     }
 }

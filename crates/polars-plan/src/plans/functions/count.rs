@@ -229,9 +229,7 @@ pub(super) fn count_rows_ndjson(
                         .as_paths()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str()))
-                        .collect::<Vec<_>>()
-                        .as_slice(),
+                        .map(|path| Arc::from(path.to_str())),
                     cloud_options,
                 )?)
             })

@@ -78,3 +78,4 @@ pub mod python_convert_registry;
 pub mod pl_serialize;
 
 pub mod kahan_sum;
+pub use either;

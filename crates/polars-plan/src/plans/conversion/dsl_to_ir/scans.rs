@@ -346,9 +346,7 @@ pub fn csv_file_info(
                         .as_paths()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str()))
-                        .collect::<Vec<_>>()
-                        .as_slice(),
+                        .map(|path| Arc::from(path.to_str())),
                     cloud_options,
                 )?)
             })
@@ -462,9 +460,7 @@ pub fn ndjson_file_info(
                         .as_paths()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str()))
-                        .collect::<Vec<_>>()
-                        .as_slice(),
+                        .map(|path| Arc::from(path.to_str())),
                     cloud_options,
                 )?)
             })

@@ -516,7 +516,7 @@ pub fn timestamp_to_date64(from: &PrimitiveArray<i64>, from_unit: TimeUnit) -> P
     // math rounding down to zero
 
     match to_size.cmp(&from_size) {
-        std::cmp::Ordering::Less => unary(from, |x| (x / (from_size / to_size)), to_type),
+        std::cmp::Ordering::Less => unary(from, |x| x / (from_size / to_size), to_type),
         std::cmp::Ordering::Equal => primitive_to_same_primitive(from, &to_type),
         std::cmp::Ordering::Greater => fallible_unary(
             from,
@@ -578,7 +578,7 @@ pub fn timestamp_to_timestamp(
     let to_type = ArrowDataType::Timestamp(to_unit, tz.clone());
     // we either divide or multiply, depending on size of each unit
     if from_size >= to_size {
-        unary(from, |x| (x / (from_size / to_size)), to_type)
+        unary(from, |x| x / (from_size / to_size), to_type)
     } else {
         fallible_unary(
             from,

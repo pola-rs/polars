@@ -74,7 +74,7 @@ def test_group_by() -> None:
             [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
             [datetime(2023, 1, 2, 8, 0, 0), datetime(2023, 1, 5)],
             pl.Date,
-            pl.Datetime("ms"),
+            pl.Datetime("us"),
         ),
         (
             [
@@ -138,7 +138,7 @@ def test_group_by_mean_by_dtype(
     # groups are defined by first 3 values, then last value
     name = str(input_dtype)
     key = ["a", "a", "a", "b"]
-    df = pl.DataFrame(
+    df = pl.LazyFrame(
         {
             "key": key,
             name: pl.Series(input, dtype=input_dtype),
@@ -151,7 +151,8 @@ def test_group_by_mean_by_dtype(
             name: pl.Series(expected, dtype=output_dtype),
         }
     )
-    assert_frame_equal(result, df_expected)
+    assert result.collect_schema() == df_expected.schema
+    assert_frame_equal(result.collect(), df_expected)
 
 
 @pytest.mark.parametrize(
@@ -171,7 +172,7 @@ def test_group_by_mean_by_dtype(
             [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
             [datetime(2023, 1, 2), datetime(2023, 1, 5)],
             pl.Date,
-            pl.Datetime("ms"),
+            pl.Datetime("us"),
         ),
         (
             [
@@ -235,7 +236,7 @@ def test_group_by_median_by_dtype(
     # groups are defined by first 3 values, then last value
     name = str(input_dtype)
     key = ["a", "a", "a", "b"]
-    df = pl.DataFrame(
+    df = pl.LazyFrame(
         {
             "key": key,
             name: pl.Series(input, dtype=input_dtype),
@@ -248,7 +249,8 @@ def test_group_by_median_by_dtype(
             name: pl.Series(expected, dtype=output_dtype),
         }
     )
-    assert_frame_equal(result, df_expected)
+    assert result.collect_schema() == df_expected.schema
+    assert_frame_equal(result.collect(), df_expected)
 
 
 @pytest.fixture
@@ -1453,4 +1455,21 @@ def test_group_by_shift_filter_23910(maintain_order: bool) -> None:
             }
         ),
         check_row_order=maintain_order,
+    )
+
+
+def test_group_by_tuple_typing_24112() -> None:
+    df = pl.DataFrame({"id": ["a", "b", "a"], "val": [1, 2, 3]})
+    for (id_,), _ in df.group_by("id"):
+        _should_work: str = id_
+
+
+def test_group_by_input_independent_with_len_23868() -> None:
+    out = pl.DataFrame({"a": ["A", "B", "C"]}).group_by(pl.lit("G")).agg(pl.len())
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {"literal": "G", "len": 3},
+            schema={"literal": pl.String, "len": pl.get_index_type()},
+        ),
     )

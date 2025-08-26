@@ -21,7 +21,7 @@ def test_fold_regex_expand() -> None:
     )
     assert df.with_columns(
         pl.fold(
-            acc=pl.lit(0), function=lambda acc, x: acc + x, exprs=pl.col("^y_.*$")
+            acc=pl.lit(0.0), function=lambda acc, x: acc + x, exprs=pl.col("^y_.*$")
         ).alias("y_sum"),
     ).to_dict(as_series=False) == {
         "x": [0, 1, 2],

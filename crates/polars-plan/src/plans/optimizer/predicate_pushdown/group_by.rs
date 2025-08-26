@@ -10,7 +10,7 @@ pub(super) fn process_group_by(
     aggs: Vec<ExprIR>,
     schema: SchemaRef,
     maintain_order: bool,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     options: Arc<GroupbyOptions>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {

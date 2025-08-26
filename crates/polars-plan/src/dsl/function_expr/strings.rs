@@ -45,10 +45,7 @@ pub enum StringFunction {
     LenChars,
     Lowercase,
     #[cfg(feature = "extract_jsonpath")]
-    JsonDecode {
-        dtype: Option<DataTypeExpr>,
-        infer_schema_len: Option<usize>,
-    },
+    JsonDecode(DataTypeExpr),
     #[cfg(feature = "extract_jsonpath")]
     JsonPathMatch,
     #[cfg(feature = "regex")]
@@ -100,7 +97,9 @@ pub enum StringFunction {
     Strptime(DataTypeExpr, StrptimeOptions),
     Split(bool),
     #[cfg(feature = "dtype-decimal")]
-    ToDecimal(usize),
+    ToDecimal {
+        scale: usize,
+    },
     #[cfg(feature = "nightly")]
     Titlecase,
     Uppercase,
@@ -204,7 +203,7 @@ impl Display for StringFunction {
             #[cfg(feature = "nightly")]
             Titlecase => "titlecase",
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal(_) => "to_decimal",
+            ToDecimal { .. } => "to_decimal",
             Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
             ZFill => "zfill",

@@ -182,13 +182,8 @@ impl Hash for HashableEqLP<'_> {
                 payload.traverse_and_hash(self.expr_arena, state);
             },
             IR::SinkMultiple { .. } => {},
-            IR::Cache {
-                input: _,
-                id,
-                cache_hits,
-            } => {
+            IR::Cache { input: _, id } => {
                 id.hash(state);
-                cache_hits.hash(state);
             },
             #[cfg(feature = "merge_sorted")]
             IR::MergeSorted {

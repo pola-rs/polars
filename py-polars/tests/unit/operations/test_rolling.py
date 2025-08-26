@@ -739,3 +739,10 @@ def test_rolling_max_23066() -> None:
             {"data": [None, None, None, None, None, 40.0, 40.0, 10.0, 30.0, None]}
         ),
     )
+
+
+def test_rolling_non_aggregation_24012() -> None:
+    df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]})
+    q = df.lazy().select(pl.col("value").rolling("idx", period="2i"))
+
+    assert q.collect_schema() == q.collect().schema

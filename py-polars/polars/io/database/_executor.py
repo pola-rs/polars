@@ -380,6 +380,21 @@ class ConnectionExecutor:
         except ImportError:
             return False
 
+    @staticmethod
+    def _is_alchemy_result(result: Any) -> bool:
+        """Check if the given result is a SQLAlchemy Result object."""
+        try:
+            from sqlalchemy.engine import CursorResult
+
+            if isinstance(result, CursorResult):
+                return True
+
+            from sqlalchemy.ext.asyncio import AsyncResult
+
+            return isinstance(result, AsyncResult)
+        except ImportError:
+            return False
+
     def _normalise_cursor(self, conn: Any) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
         if self.driver_name == "sqlalchemy":
@@ -507,7 +522,7 @@ class ConnectionExecutor:
 
         # note: some cursors execute in-place, some access results via a property
         result = self.cursor if (result is None or result is True) else result
-        if self.driver_name == "duckdb":
+        if self.driver_name == "duckdb" and self._is_alchemy_result(result):
             result = result.cursor
 
         self.result = result

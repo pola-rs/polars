@@ -37,5 +37,9 @@ bitflags! {
 
         /// Supports applying an external filter mask.
         const EXTERNAL_FILTER_MASK = 1 << 6;
+
+        /// Signals to the multi-scan pipeline to initialize cloud paths in the file cache before
+        /// starting the reader.
+        const NEEDS_FILE_CACHE_INIT = 1 << 7;
     }
 }

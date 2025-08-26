@@ -26,26 +26,26 @@ def test_equal(df: pl.DataFrame) -> None:
         pytest.param(
             pl.DataFrame({"a": [0.2, 0.3]}),
             pl.DataFrame({"a": [0.2, 0.3]}),
-            {"atol": 1e-15},
-            id="equal_floats_low_atol",
+            {"abs_tol": 1e-15},
+            id="equal_floats_low_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [0.2, 0.3]}),
             pl.DataFrame({"a": [0.2, 0.3000000000000001]}),
-            {"atol": 1e-15},
-            id="approx_equal_float_low_atol",
+            {"abs_tol": 1e-15},
+            id="approx_equal_float_low_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [0.2, 0.3]}),
             pl.DataFrame({"a": [0.2, 0.31]}),
-            {"atol": 0.1},
-            id="approx_equal_float_high_atol",
+            {"abs_tol": 0.1},
+            id="approx_equal_float_high_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [0.2, 1.3]}),
             pl.DataFrame({"a": [0.2, 0.9]}),
-            {"atol": 1},
-            id="approx_equal_float_integer_atol",
+            {"abs_tol": 1},
+            id="approx_equal_float_integer_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [0.0, 1.0, 2.0]}, schema={"a": pl.Float64}),
@@ -74,50 +74,50 @@ def test_equal(df: pl.DataFrame) -> None:
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.300001]]}),
-            {"atol": 1e-5},
-            id="list_of_float_low_atol",
+            {"abs_tol": 1e-5},
+            id="list_of_float_low_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.31]]}),
-            {"atol": 0.1},
-            id="list_of_float_high_atol",
+            {"abs_tol": 0.1},
+            id="list_of_float_high_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 1.3]]}),
             pl.DataFrame({"a": [[0.2, 0.9]]}),
-            {"atol": 1},
-            id="list_of_float_integer_atol",
+            {"abs_tol": 1},
+            id="list_of_float_integer_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.300000001]]}),
-            {"rtol": 1e-5},
-            id="list_of_float_low_rtol",
+            {"rel_tol": 1e-5},
+            id="list_of_float_low_rel_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.301]]}),
-            {"rtol": 0.1},
-            id="list_of_float_high_rtol",
+            {"rel_tol": 0.1},
+            id="list_of_float_high_rel_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 1.3]]}),
             pl.DataFrame({"a": [[0.2, 0.9]]}),
-            {"rtol": 1},
-            id="list_of_float_integer_rtol",
+            {"rel_tol": 1},
+            id="list_of_float_integer_rel_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[None, 1.3]]}),
             pl.DataFrame({"a": [[None, 0.9]]}),
-            {"rtol": 1},
-            id="list_of_none_and_float_integer_rtol",
+            {"rel_tol": 1},
+            id="list_of_none_and_float_integer_rel_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[[0.2, 3.0]]]}),
             pl.DataFrame({"a": [[[0.2, 3.00000001]]]}),
-            {"atol": 0.1},
-            id="nested_list_of_float_atol_high",
+            {"abs_tol": 0.1},
+            id="nested_list_of_float_abs_tol_high",
         ),
     ],
 )
@@ -149,14 +149,14 @@ def test_assert_frame_equal_passes_assertion(
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.300001]]}),
-            {"atol": 1e-15, "rtol": 0},
-            id="list_of_float_too_low_atol",
+            {"abs_tol": 1e-15, "rel_tol": 0},
+            id="list_of_float_too_low_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[0.2, 0.3]]}),
             pl.DataFrame({"a": [[0.2, 0.30000001]]}),
-            {"atol": -1, "rtol": 0},
-            id="list_of_float_negative_atol",
+            {"abs_tol": -1, "rel_tol": 0},
+            id="list_of_float_negative_abs_tol",
         ),
         pytest.param(
             pl.DataFrame({"a": [[2.0, 3.0]]}),
@@ -167,20 +167,20 @@ def test_assert_frame_equal_passes_assertion(
         pytest.param(
             pl.DataFrame({"a": [[[0.2, math.nan, 3.0]]]}),
             pl.DataFrame({"a": [[[0.2, math.nan, 3.11]]]}),
-            {"atol": 0.1, "rtol": 0},
-            id="nested_list_of_float_and_nan_atol_high",
+            {"abs_tol": 0.1, "rel_tol": 0},
+            id="nested_list_of_float_and_nan_abs_tol_high",
         ),
         pytest.param(
             pl.DataFrame({"a": [[[[0.2, 3.0]]]]}),
             pl.DataFrame({"a": [[[[0.2, 3.11]]]]}),
-            {"atol": 0.1, "rtol": 0},
-            id="double_nested_list_of_float_atol_high",
+            {"abs_tol": 0.1, "rel_tol": 0},
+            id="double_nested_list_of_float_abs_tol_high",
         ),
         pytest.param(
             pl.DataFrame({"a": [[[[[0.2, 3.0]]]]]}),
             pl.DataFrame({"a": [[[[[0.2, 3.11]]]]]}),
-            {"atol": 0.1, "rtol": 0},
-            id="triple_nested_list_of_float_atol_high",
+            {"abs_tol": 0.1, "rel_tol": 0},
+            id="triple_nested_list_of_float_abs_tol_high",
         ),
     ],
 )
@@ -402,6 +402,25 @@ def test_assert_frame_equal_check_dtype_deprecated() -> None:
 
     with pytest.deprecated_call():
         assert_frame_not_equal(df1, df3, check_dtype=False)  # type: ignore[call-arg]
+
+
+def test_assert_dataframe_equal_all_nulls_passes_when_ignoring_dtypes() -> None:
+    x = pl.from_dict({"A": [None, None, None]})
+    y = pl.from_dict(
+        {"A": [None, None, None]}, schema_overrides={"A": pl.List(pl.Float64())}
+    )
+
+    assert_frame_equal(x, y, check_dtypes=False)
+
+
+def test_assert_dataframe_equal_all_nulls_fails_when_checking_dtypes() -> None:
+    x = pl.from_dict({"A": [None, None, None]})
+    y = pl.from_dict(
+        {"A": [None, None, None]}, schema_overrides={"A": pl.List(pl.Float64())}
+    )
+
+    with pytest.raises(AssertionError, match="dtypes do not match"):
+        assert_frame_equal(x, y, check_dtypes=True)
 
 
 def test_tracebackhide(testdir: pytest.Testdir) -> None:

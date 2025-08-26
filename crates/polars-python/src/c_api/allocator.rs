@@ -56,7 +56,7 @@ static ALLOCATOR_CAPSULE: AllocatorCapsule = AllocatorCapsule {
     realloc,
 };
 
-static ALLOCATOR_CAPSULE_NAME: &[u8] = b"polars._plr._allocator\0";
+static ALLOCATOR_CAPSULE_NAME: &[u8] = b"polars.polars._allocator\0";
 
 pub fn create_allocator_capsule(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     unsafe {

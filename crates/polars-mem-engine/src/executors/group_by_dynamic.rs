@@ -11,7 +11,7 @@ pub(crate) struct GroupByDynamicExec {
     pub(crate) options: DynamicGroupOptions,
     pub(crate) input_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
-    pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
+    pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
 
 impl GroupByDynamicExec {
@@ -47,7 +47,7 @@ impl GroupByDynamicExec {
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            let out = gb.apply(move |df| f.call_udf(df))?;
+            let out = gb.apply(move |df| f.call(df))?;
             return Ok(if let Some((offset, len)) = self.slice {
                 out.slice(offset, len)
             } else {

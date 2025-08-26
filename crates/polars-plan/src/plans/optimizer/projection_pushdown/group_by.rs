@@ -6,7 +6,7 @@ pub(super) fn process_group_by(
     input: Node,
     keys: Vec<ExprIR>,
     aggs: Vec<ExprIR>,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     schema: SchemaRef,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,

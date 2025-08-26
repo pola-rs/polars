@@ -5,7 +5,7 @@ use crate::PyDataFrame;
 use crate::error::PyPolarsErr;
 
 #[pyfunction]
-#[pyo3(signature = (left, right, *, check_row_order, check_column_order, check_dtypes, check_exact, rtol, atol, categorical_as_str))]
+#[pyo3(signature = (left, right, *, check_row_order, check_column_order, check_dtypes, check_exact, rel_tol, abs_tol, categorical_as_str))]
 pub fn assert_dataframe_equal_py(
     left: &PyDataFrame,
     right: &PyDataFrame,
@@ -13,8 +13,8 @@ pub fn assert_dataframe_equal_py(
     check_column_order: bool,
     check_dtypes: bool,
     check_exact: bool,
-    rtol: f64,
-    atol: f64,
+    rel_tol: f64,
+    abs_tol: f64,
     categorical_as_str: bool,
 ) -> PyResult<()> {
     let left_df = &left.df;
@@ -25,8 +25,8 @@ pub fn assert_dataframe_equal_py(
         check_column_order,
         check_dtypes,
         check_exact,
-        rtol,
-        atol,
+        rel_tol,
+        abs_tol,
         categorical_as_str,
     };
 

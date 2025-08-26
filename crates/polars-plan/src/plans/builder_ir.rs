@@ -271,7 +271,7 @@ impl<'a> IRBuilder<'a> {
         self,
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
     ) -> Self {

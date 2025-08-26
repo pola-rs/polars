@@ -52,7 +52,7 @@ impl FixedSizeListArray {
             polars_bail!(ComputeError: "FixedSizeListArray's child's DataType must match. However, the expected DataType is {child_dtype:?} while it got {values_dtype:?}.")
         }
 
-        polars_ensure!(size == 0 || values.len() % size == 0, ComputeError:
+        polars_ensure!(size == 0 || values.len().is_multiple_of(size), ComputeError:
             "values (of len {}) must be a multiple of size ({}) in FixedSizeListArray.",
             values.len(),
             size
@@ -88,7 +88,7 @@ impl FixedSizeListArray {
     fn has_invariants(&self) -> bool {
         let has_valid_length = (self.size == 0 && self.values().is_empty())
             || (self.size > 0
-                && self.values().len() % self.size() == 0
+                && self.values().len().is_multiple_of(self.size())
                 && self.values().len() / self.size() == self.length);
         let has_valid_validity = self
             .validity
@@ -191,7 +191,7 @@ impl FixedSizeListArray {
         );
 
         polars_ensure!(
-            size % total_dim_size == 0,
+            size.is_multiple_of(total_dim_size),
             InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
         );
 

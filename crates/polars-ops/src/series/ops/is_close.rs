@@ -16,8 +16,8 @@ pub fn is_close(
     if abs_tol < 0.0 {
         polars_bail!(ComputeError: "`abs_tol` must be non-negative but got {}", abs_tol);
     }
-    if !(0.0..1.0).contains(&rel_tol) {
-        polars_bail!(ComputeError: "`rel_tol` must be in the range [0, 1) but got {}", rel_tol);
+    if rel_tol < 0.0 {
+        polars_bail!(ComputeError: "`rel_tol` must be non-negative but got {}", rel_tol);
     }
     validate_numeric(s.dtype())?;
     validate_numeric(other.dtype())?;

@@ -123,6 +123,7 @@ where
                 offset_fn,
                 compute_var_weights,
                 &wts,
+                center,
             )
         },
     }

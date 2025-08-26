@@ -1,13 +1,12 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
-use polars_row::RowEncodingOptions;
+use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{IntoPyObjectExt, Python};
 
-use self::row_encode::get_row_encoding_context;
 use super::PySeries;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -297,7 +296,7 @@ impl PySeries {
         py.enter_polars_series(|| self.series.zip_with(mask, &other.series))
     }
 
-    #[pyo3(signature = (separator, drop_first=false, drop_nulls=false))]
+    #[pyo3(signature = (separator, drop_first, drop_nulls))]
     fn to_dummies(
         &self,
         py: Python<'_>,
@@ -441,7 +440,7 @@ impl PySeries {
         })
     }
 
-    #[pyo3(signature = (offset, length=None))]
+    #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let length = length.unwrap_or_else(|| self.series.len());
         self.series.slice(offset, length).into()
@@ -451,72 +450,89 @@ impl PySeries {
         py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series))
     }
 
-    /// Internal utility function to allow direct access to the row encoding from python.
-    #[pyo3(signature = (dtypes, opts))]
-    fn _row_decode(
+    pub fn shrink_dtype(&self, py: Python<'_>) -> PyResult<Self> {
+        py.enter_polars(|| {
+            self.series
+                .shrink_type()
+                .map(Into::into)
+                .map_err(PyPolarsErr::from)
+                .map_err(PyErr::from)
+        })
+    }
+
+    fn str_to_datetime_infer(
+        &self,
+        py: Python,
+        time_unit: Option<Wrap<TimeUnit>>,
+        strict: bool,
+        exact: bool,
+        ambiguous: PySeries,
+    ) -> PyResult<Self> {
+        Ok(py
+            .enter_polars(|| {
+                let datetime_strings = self.series.str()?;
+                let ambiguous = ambiguous.series.str()?;
+
+                polars_time::prelude::string::infer::to_datetime_with_inferred_tz(
+                    datetime_strings,
+                    time_unit.map_or(TimeUnit::Microseconds, |v| v.0),
+                    strict,
+                    exact,
+                    ambiguous,
+                )
+            })?
+            .into_series()
+            .into())
+    }
+
+    pub fn str_to_decimal_infer(&self, py: Python, inference_length: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| {
+            let ca = self.series.str()?;
+            ca.to_decimal_infer(inference_length).map(Series::from)
+        })
+    }
+
+    pub fn list_to_struct(
         &self,
         py: Python<'_>,
-        dtypes: Vec<(String, Wrap<DataType>)>,
-        opts: Vec<(bool, bool, bool)>,
-    ) -> PyResult<PyDataFrame> {
-        py.enter_polars_df(|| {
-            assert_eq!(dtypes.len(), opts.len());
-
-            let opts = opts
-                .into_iter()
-                .map(|(descending, nulls_last, no_order)| {
-                    let mut opt = RowEncodingOptions::default();
-
-                    opt.set(RowEncodingOptions::DESCENDING, descending);
-                    opt.set(RowEncodingOptions::NULLS_LAST, nulls_last);
-                    opt.set(RowEncodingOptions::NO_ORDER, no_order);
-
-                    opt
+        width_strat: Wrap<ListToStructWidthStrategy>,
+        name_gen: Option<PyObject>,
+    ) -> PyResult<Self> {
+        py.enter_polars(|| {
+            let get_index_name =
+                name_gen.map(|f| PlanCallback::<usize, String>::new_python(PythonObject(f)));
+            let get_index_name = get_index_name.map(|f| {
+                NameGenerator(Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>)
+            });
+            self.series
+                .list()?
+                .to_struct(&ListToStructArgs::InferWidth {
+                    infer_field_strategy: width_strat.0,
+                    get_index_name,
+                    max_fields: None,
                 })
-                .collect::<Vec<_>>();
-
-            // The polars-row crate expects the physical arrow types.
-            let arrow_dtypes = dtypes
-                .iter()
-                .map(|(_, dtype)| dtype.0.to_physical().to_arrow(CompatLevel::newest()))
-                .collect::<Vec<_>>();
-
-            let dicts = dtypes
-                .iter()
-                .map(|(_, dtype)| get_row_encoding_context(&dtype.0))
-                .collect::<Vec<_>>();
-
-            // Get the BinaryOffset array.
-            let arr = self.series.rechunk();
-            let arr = arr.binary_offset()?;
-            assert_eq!(arr.chunks().len(), 1);
-            let mut values = arr
-                .downcast_iter()
-                .next()
-                .unwrap()
-                .values_iter()
-                .collect::<Vec<&[u8]>>();
-
-            let columns = unsafe {
-                polars_row::decode::decode_rows(&mut values, &opts, &dicts, &arrow_dtypes)
-            };
-
-            // Construct a DataFrame from the result.
-            let columns = columns
-                .into_iter()
-                .zip(dtypes)
-                .map(|(arr, (name, dtype))| unsafe {
-                    Series::from_chunks_and_dtype_unchecked(
-                        PlSmallStr::from(name),
-                        vec![arr],
-                        &dtype.0.to_physical(),
-                    )
-                    .into_column()
-                    .from_physical_unchecked(&dtype.0)
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
-            DataFrame::new(columns)
+                .map(IntoSeries::into_series)
         })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
+    }
+
+    #[cfg(feature = "extract_jsonpath")]
+    fn str_json_decode(
+        &self,
+        py: Python<'_>,
+        infer_schema_length: Option<usize>,
+    ) -> PyResult<Self> {
+        py.enter_polars(|| {
+            self.series
+                .str()?
+                .json_decode(None, infer_schema_length)
+                .map(|s| s.with_name(self.series.name().clone()))
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
     }
 }
 

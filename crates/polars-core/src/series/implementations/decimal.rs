@@ -11,7 +11,7 @@ unsafe impl IntoSeries for DecimalChunked {
 
 impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {
     fn bit_repr(&self) -> Option<BitRepr> {
-        None
+        Some(self.0.physical().to_bit_repr())
     }
 }
 
