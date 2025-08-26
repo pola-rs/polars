@@ -294,9 +294,17 @@ def test_fast_explode_on_list_struct_6208() -> None:
 def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
-    assert df.group_by("a", maintain_order=True).agg(
-        pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
-    ).to_dict(as_series=False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+    q = (
+        df.lazy()
+        .group_by("a", maintain_order=True)
+        .agg(
+            pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
+        )
+    )
+
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {"a": [1, 2], "b": [[0.0, 1.0], [3.0, 4.0]]}
+    assert q.collect_schema() == out.schema
 
 
 def test_list_count_matches() -> None:
@@ -851,3 +859,21 @@ def test_list_agg_temporal(inner_dtype: PolarsDataType, agg: str) -> None:
     expected = lf.select(getattr(pl.col("a").explode(), agg)())
     assert result.collect_schema() == expected.collect_schema()
     assert_frame_equal(result.collect(), expected.collect())
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_list_implode_concat_agg_schema_23974(maintain_order: bool) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3]})
+    q = (
+        df.lazy()
+        .group_by("g", maintain_order=maintain_order)
+        .agg(
+            pl.concat_list(
+                [pl.col("a").first().implode(), pl.col("a").last().implode()]
+            )
+        )
+    )
+    expected = pl.DataFrame({"g": [10, 20], "a": [[1, 2], [3, 3]]})
+    out = q.collect()
+    assert_frame_equal(out, expected, check_row_order=maintain_order)
+    assert q.collect_schema() == out.schema
