@@ -396,3 +396,4 @@ def test_gather_group_by_lit(maintain_order: bool) -> None:
         check_row_order=maintain_order,
     )
 
+
