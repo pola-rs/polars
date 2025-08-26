@@ -99,15 +99,16 @@ impl IRListFunction {
                 };
 
                 let inner_dt = match inner.as_ref() {
-                    #[cfg(feature = "dtype-datetime")]
-                    DataType::Datetime(tu, _) => DataType::Duration(*tu),
+                    DataType::UInt8 => DataType::Int16,
+                    DataType::UInt16 => DataType::Int32,
+                    DataType::UInt32 => DataType::Int64,
+                    DataType::UInt64 => DataType::Int128,
                     #[cfg(feature = "dtype-date")]
                     DataType::Date => DataType::Duration(TimeUnit::Microseconds),
+                    #[cfg(feature = "dtype-datetime")]
+                    DataType::Datetime(tu, _) => DataType::Duration(*tu),
                     #[cfg(feature = "dtype-time")]
                     DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
-                    DataType::UInt64 | DataType::UInt32 => DataType::Int64,
-                    DataType::UInt16 => DataType::Int32,
-                    DataType::UInt8 => DataType::Int16,
                     inner_dt => inner_dt.clone(),
                 };
 
