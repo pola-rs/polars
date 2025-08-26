@@ -252,6 +252,25 @@ impl AExprBuilder {
         )
     }
 
+    pub fn shift(self, periods: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![
+                self.expr_ir_unnamed(),
+                periods.into_aexpr_builder().expr_ir_unnamed(),
+            ],
+            IRFunctionExpr::Shift,
+            arena,
+        )
+    }
+
+    pub fn abs(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(vec![self.expr_ir_unnamed()], IRFunctionExpr::Abs, arena)
+    }
+
+    pub fn negate(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(vec![self.expr_ir_unnamed()], IRFunctionExpr::Negate, arena)
+    }
+
     pub fn slice(
         self,
         offset: impl IntoAExprBuilder,
