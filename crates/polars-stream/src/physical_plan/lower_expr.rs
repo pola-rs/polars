@@ -981,6 +981,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
+            #[cfg(feature = "diff")]
             AExpr::Function {
                 input: ref inner_exprs,
                 function: IRFunctionExpr::Diff(null_behavior),
