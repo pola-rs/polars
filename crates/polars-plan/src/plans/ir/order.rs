@@ -3,14 +3,13 @@ use std::sync::Arc;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::PlHashMap;
 use polars_ops::frame::{JoinType, MaintainOrderJoin};
-use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 
 use super::IR;
 use crate::dsl::{SinkTypeIR, UnionOptions};
 use crate::plans::ir::inputs::Inputs;
-use crate::plans::{AExpr, IRPlanRef, is_order_sensitive_amortized};
+use crate::plans::{AExpr, is_order_sensitive_amortized, is_scalar_ae};
 
 #[derive(Debug, Clone, Copy)]
 pub enum InputOrder {
@@ -41,270 +40,6 @@ impl NodeEdgeOrdering {
     fn set_unordered_output(&mut self) {
         self.output_ordered.iter_mut().for_each(|o| *o = false);
     }
-
-    fn is_any_output_ordered(&self) -> bool {
-        self.output_ordered.iter().any(|o| *o)
-    }
-}
-
-struct IROrderContext<'a> {
-    aexpr_stack: &'a mut Vec<Node>,
-}
-
-fn ir_top_level_to_order(
-    node: Node,
-    ir_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-    ctx: &mut IROrderContext,
-    outputs: &PlHashMap<Node, UnitVec<Node>>,
-) -> NodeEdgeOrdering {
-    use {InputOrder as I, NodeEdgeOrdering as NEO};
-
-    let mut node_ordering = match ir_arena.get(node) {
-        #[cfg(feature = "python")]
-        IR::PythonScan { .. } => NEO::new([], [true]),
-        IR::Scan { .. } | IR::DataFrameScan { .. } => NEO::new([], [true]),
-
-        IR::Slice { .. } => NEO::new([I::Observing], [true]),
-        IR::Filter { predicate, .. } => {
-            let aexpr = expr_arena.get(predicate.node());
-            let input = if is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack) {
-                I::Observing
-            } else {
-                I::Preserving
-            };
-            NEO::new([input], [true])
-        },
-        IR::SimpleProjection { .. } => NEO::new([I::Preserving], [true]),
-        IR::Select { expr, .. } => {
-            let mut all_scalar = true;
-            let mut has_order_sensitive = false;
-
-            for e in expr {
-                let aexpr = expr_arena.get(e.node());
-                has_order_sensitive |=
-                    is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack);
-                all_scalar &= aexpr.is_scalar(expr_arena);
-            }
-
-            // @NOTE: If a select has all scalars, the output is a DF of height 1.
-            let (input, output) = match (has_order_sensitive, all_scalar) {
-                (true, false) => (I::Consuming, true),
-                (true, true) => (I::Consuming, false),
-                (false, true) => (I::Unordered, false),
-                (false, false) => (I::Preserving, true),
-            };
-
-            NEO::new([input], [output])
-        },
-        IR::Sort {
-            by_column,
-            sort_options,
-            ..
-        } => {
-            if sort_options.maintain_order {
-                return NEO::new([I::Consuming], [true]);
-            }
-
-            let mut has_order_sensitive = false;
-
-            for e in by_column {
-                let aexpr = expr_arena.get(e.node());
-                has_order_sensitive |=
-                    is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack);
-            }
-
-            let input = if has_order_sensitive {
-                I::Consuming
-            } else {
-                I::Unordered
-            };
-
-            NEO::new([input], [true])
-        },
-        IR::Cache { .. } => NEO::new([I::Preserving], vec![true; outputs[&node].len()]),
-        IR::GroupBy {
-            input: _,
-            keys,
-            aggs,
-            schema: _,
-            maintain_order,
-            options,
-            apply,
-        } => {
-            if *maintain_order {
-                return NEO::new([I::Observing], [true]);
-            }
-
-            if options.dynamic.is_some() || options.rolling.is_some() {
-                return NEO::new([I::Observing], [true]);
-            }
-
-            if apply.is_some() {
-                return NEO::new([I::Consuming], [false]);
-            }
-
-            let mut has_order_sensitive = false;
-
-            for e in keys.iter().chain(aggs) {
-                let aexpr = expr_arena.get(e.node());
-                has_order_sensitive |=
-                    is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack);
-            }
-
-            let input = if has_order_sensitive {
-                I::Consuming
-            } else {
-                I::Unordered
-            };
-
-            NEO::new([input], [false])
-        },
-        IR::Join {
-            input_left: _,
-            input_right: _,
-            schema: _,
-            left_on,
-            right_on,
-            options,
-        } => {
-            if matches!(options.args.how, JoinType::AsOf(_)) {
-                return NEO::new([I::Observing, I::Observing], [true]);
-            }
-
-            let mut left_has_order_sensitive = false;
-            let mut right_has_order_sensitive = false;
-
-            for e in left_on {
-                let aexpr = expr_arena.get(e.node());
-                left_has_order_sensitive |=
-                    is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack);
-            }
-            for e in right_on {
-                let aexpr = expr_arena.get(e.node());
-                right_has_order_sensitive |=
-                    is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack);
-            }
-
-            use MaintainOrderJoin as M;
-            NEO::new(
-                [
-                    match (
-                        options.args.maintain_order,
-                        left_has_order_sensitive,
-                        options.args.slice.is_some(),
-                    ) {
-                        (M::Left | M::LeftRight, true, _)
-                        | (M::Left | M::LeftRight | M::RightLeft, _, true) => I::Observing,
-                        (M::Left | M::LeftRight, false, _) => I::Preserving,
-                        (M::RightLeft, _, _) | (_, true, _) => I::Consuming,
-                        _ => I::Unordered,
-                    },
-                    match (
-                        options.args.maintain_order,
-                        right_has_order_sensitive,
-                        options.args.slice.is_some(),
-                    ) {
-                        (M::Right | M::RightLeft, true, _)
-                        | (M::Right | M::LeftRight | M::RightLeft, _, true) => I::Observing,
-                        (M::Right | M::RightLeft, false, _) => I::Preserving,
-                        (M::LeftRight, _, _) | (_, true, _) => I::Consuming,
-                        _ => I::Unordered,
-                    },
-                ],
-                [!matches!(options.args.maintain_order, M::None)],
-            )
-        },
-        IR::HStack { exprs, .. } => {
-            let mut has_order_sensitive = false;
-
-            for e in exprs {
-                let aexpr = expr_arena.get(e.node());
-                has_order_sensitive |=
-                    is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack);
-            }
-
-            let input = if has_order_sensitive {
-                I::Consuming
-            } else {
-                I::Preserving
-            };
-
-            NEO::new([input], [true])
-        },
-        IR::Distinct { input: _, options } => {
-            if options.maintain_order {
-                let input = if options.slice.is_some() {
-                    I::Observing
-                } else {
-                    I::Preserving
-                };
-                return NEO::new([input], [true]);
-            }
-
-            if matches!(
-                options.keep_strategy,
-                UniqueKeepStrategy::First | UniqueKeepStrategy::Last
-            ) {
-                return NEO::new([I::Consuming], [false]);
-            }
-
-            NEO::new([I::Unordered], [false])
-        },
-        IR::MapFunction { input: _, function } => {
-            let input = if function.is_streamable() {
-                I::Preserving
-            } else {
-                I::Consuming
-            };
-
-            NEO::new([input], [true])
-        },
-        IR::Union { inputs, options } => {
-            if !options.maintain_order {
-                return NEO::new(vec![I::Unordered; inputs.len()], [false]);
-            }
-
-            let input = if options.slice.is_some() {
-                I::Observing
-            } else {
-                I::Preserving
-            };
-
-            NEO::new(vec![input; inputs.len()], [true])
-        },
-        IR::HConcat { inputs, .. } => NEO::new(vec![I::Observing; inputs.len()], [true]),
-
-        IR::Sink { input: _, payload } => {
-            let input = if payload.maintain_order() {
-                I::Consuming
-            } else {
-                I::Unordered
-            };
-            NEO::new([input], [])
-        },
-        IR::MergeSorted {
-            input_left: _,
-            input_right: _,
-            key: _,
-        } => NEO::new([I::Observing, I::Observing], [true]),
-
-        IR::ExtContext {
-            input, contexts, ..
-        } => {
-            // This node is nonsense. Just do the most conservative thing you can.
-            NEO::new(vec![I::Consuming; contexts.len() + 1], [true])
-        },
-
-        IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
-    };
-
-    let outputs = outputs.get(&node).unwrap();
-    if outputs.len() > 1 {
-        node_ordering.output_ordered =
-            vec![node_ordering.output_ordered[0]; outputs.len()].into_boxed_slice();
-    }
-    node_ordering
 }
 
 /// Remove ordering from both sides if either side has an undefined order.
@@ -324,19 +59,16 @@ fn pushdown_orders(
 ) -> PlHashMap<Node, NodeEdgeOrdering> {
     let mut orders: PlHashMap<Node, NodeEdgeOrdering> = PlHashMap::default();
     let mut node_hits: PlHashMap<Node, Vec<(usize, Node)>> = PlHashMap::default();
-    let mut ctx = IROrderContext {
-        aexpr_stack: &mut Vec::new(),
-    };
+    let mut aexpr_stack = Vec::new();
     let mut stack = Vec::new();
+    let mut output_port_orderings = Vec::new();
 
     stack.extend(roots.iter().map(|n| (*n, None)));
 
     while let Some((node, outgoing)) = stack.pop() {
-        let node_outputs = &outputs[&node];
-        let ir = ir_arena.get(node);
-
         debug_assert!(!orders.contains_key(&node));
 
+        let node_outputs = &outputs[&node];
         let hits = node_hits.entry(node).or_default();
         if let Some(outgoing) = outgoing {
             hits.push(outgoing);
@@ -345,65 +77,73 @@ fn pushdown_orders(
             }
         }
 
-        let mut node_ordering =
-            ir_top_level_to_order(node, ir_arena, expr_arena, &mut ctx, outputs);
+        output_port_orderings.clear();
+        output_port_orderings.extend(
+            hits.iter().map(|(to_input_idx, to_node)| {
+                orders.get_mut(to_node).unwrap().inputs[*to_input_idx]
+            }),
+        );
 
-        // Simplify the edges ordering' that connect the node to all its outputs.
-        assert_eq!(hits.len(), node_ordering.output_ordered.len());
-        for (i, (to_input_idx, to_node)) in hits.iter().enumerate() {
-            // Edge: Node Out -> To In
-            let tx = &mut node_ordering.output_ordered[i];
-            let rx = &mut orders.get_mut(to_node).unwrap().inputs[*to_input_idx];
-            (*tx, *rx) = simplify_edge(*tx, *rx);
-        }
+        let all_outputs_unordered = output_port_orderings
+            .iter()
+            .all(|i| matches!(i, I::Unordered));
 
         // Pushdown simplification rules.
         let ir = ir_arena.get_mut(node);
-        use {InputOrder as I, MaintainOrderJoin as MOJ};
-        match ir {
-            IR::Cache { .. } => {
-                // _ -> [Unordered]
-                //   to
-                // Unordered -> [Unordered]
-                if node_ordering.output_ordered.iter().all(|o| *o) {
-                    node_ordering.inputs[0] = I::Unordered;
-                }
+        use {InputOrder as I, MaintainOrderJoin as MOJ, NodeEdgeOrdering as NEO};
+        let mut node_ordering = match ir {
+            IR::Cache { .. } if all_outputs_unordered => NEO::new([I::Unordered], [false]),
+            IR::Cache { .. } => NEO::new(
+                [I::Preserving],
+                output_port_orderings
+                    .iter()
+                    .map(|i| !matches!(i, I::Unordered))
+                    .collect::<Box<[_]>>(),
+            ),
+            IR::Sort { input, slice, .. } if slice.is_none() && all_outputs_unordered => {
+                // Remove sort if output is unordered, and we are not slicing.
+                let input = *input;
+                let (to_input_idx, to_node) = outgoing.unwrap();
+                *ir_arena
+                    .get_mut(to_node)
+                    .inputs_mut()
+                    .nth(to_input_idx)
+                    .unwrap() = input;
+
+                // @Performance: Linear search
+                *outputs
+                    .get_mut(&input)
+                    .unwrap()
+                    .iter_mut()
+                    .find(|o| **o == node)
+                    .unwrap() = to_node;
+
+                stack.push((input, outgoing));
+                continue;
             },
-            IR::Sort { input, slice, .. } => {
-                if !node_ordering.output_ordered[0] {
-                    match slice {
-                        None => {
-                            // Remove sort if output is Unordered
-                            let input = *input;
-                            let (to_input_idx, to_node) = outgoing.unwrap();
-                            *ir_arena
-                                .get_mut(to_node)
-                                .inputs_mut()
-                                .nth(to_input_idx)
-                                .unwrap() = input;
-
-                            // @Performance: Linear search
-                            *outputs
-                                .get_mut(&input)
-                                .unwrap()
-                                .iter_mut()
-                                .find(|o| **o == node)
-                                .unwrap() = to_node;
-
-                            stack.push((input, outgoing));
-                            continue;
-                        },
-                        Some((offset, len)) => {
-                            // Sort with unordered output and slice. Just remove the sort and keep the
-                            // slice.
-                            *ir = IR::Slice {
-                                input: *input,
-                                offset: *offset,
-                                len: *len as IdxSize,
-                            }
-                        },
+            IR::Sort {
+                by_column,
+                sort_options,
+                ..
+            } => {
+                let input = if sort_options.maintain_order {
+                    I::Consuming
+                } else {
+                    let mut has_order_sensitive = false;
+                    for e in by_column {
+                        let aexpr = expr_arena.get(e.node());
+                        has_order_sensitive |=
+                            is_order_sensitive_amortized(aexpr, expr_arena, &mut aexpr_stack);
                     }
-                }
+
+                    if has_order_sensitive {
+                        I::Consuming
+                    } else {
+                        I::Unordered
+                    }
+                };
+
+                NEO::new([input], [true])
             },
             IR::GroupBy {
                 keys,
@@ -413,36 +153,51 @@ fn pushdown_orders(
                 options,
                 ..
             } => {
-                if !node_ordering.is_any_output_ordered() && apply.is_none() && *maintain_order {
-                    if options.dynamic.is_none() && options.rolling.is_none() {
-                        node_ordering.inputs[0] = I::Consuming;
-                    } else {
-                        // _ -> Unordered
-                        //   to
-                        // maintain_order = false
-                        // and
-                        // Unordered -> Unordered (if no order sensitive expressions)
+                *maintain_order &= !all_outputs_unordered;
 
-                        *maintain_order = false;
-                        let mut has_order_sensitive = false;
-                        for e in keys.iter().chain(aggs.iter()) {
-                            let aexpr = expr_arena.get(e.node());
-                            has_order_sensitive |=
-                                is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack);
-                        }
+                let (input, output) = if apply.is_some()
+                    || options.dynamic.is_some()
+                    || options.rolling.is_some()
+                    || *maintain_order
+                {
+                    (I::Consuming, true)
+                } else {
+                    // _ -> Unordered
+                    //   to
+                    // maintain_order = false
+                    // and
+                    // Unordered -> Unordered (if no order sensitive expressions)
 
-                        if !has_order_sensitive {
-                            node_ordering.inputs[0] = I::Unordered;
-                        }
+                    *maintain_order = false;
+                    let mut has_order_sensitive = false;
+                    for e in keys.iter().chain(aggs.iter()) {
+                        let aexpr = expr_arena.get(e.node());
+                        has_order_sensitive |=
+                            is_order_sensitive_amortized(aexpr, expr_arena, &mut aexpr_stack);
                     }
-                }
+
+                    // The auto-implode is also other sensitive.
+                    has_order_sensitive |=
+                        aggs.iter().any(|agg| !is_scalar_ae(agg.node(), expr_arena));
+
+                    (
+                        if has_order_sensitive {
+                            I::Consuming
+                        } else {
+                            I::Unordered
+                        },
+                        false,
+                    )
+                };
+
+                NEO::new([input], [output])
             },
             IR::MergeSorted {
                 input_left,
                 input_right,
                 ..
             } => {
-                if !node_ordering.is_any_output_ordered() {
+                if all_outputs_unordered {
                     // MergeSorted
                     // (_, _) -> Unordered
                     //   to
@@ -454,10 +209,48 @@ fn pushdown_orders(
                             ..Default::default()
                         },
                     };
-
-                    node_ordering.inputs[0] = I::Unordered;
-                    node_ordering.inputs[1] = I::Unordered;
+                    NEO::new([I::Unordered, I::Unordered], [false])
+                } else {
+                    NEO::new([I::Observing, I::Observing], [true])
                 }
+            },
+            IR::Join { options, .. } if matches!(options.args.how, JoinType::AsOf(_)) => {
+                NEO::new([I::Observing, I::Observing], [!all_outputs_unordered])
+            },
+            IR::Join {
+                input_left: _,
+                input_right: _,
+                schema: _,
+                left_on,
+                right_on,
+                options,
+            } if all_outputs_unordered => {
+                // If the join maintains order, but the output has underfined order. Remove the
+                // ordering.
+                if !matches!(options.args.maintain_order, MOJ::None) {
+                    let mut new_options = options.as_ref().clone();
+                    new_options.args.maintain_order = MOJ::None;
+                    *options = Arc::new(new_options);
+                }
+
+                let mut inputs = [I::Consuming, I::Consuming];
+
+                // If either side does not need to maintain order, don't maintain the old on that
+                // side.
+                for (i, on) in [left_on, right_on].iter().enumerate() {
+                    let mut has_order_sensitive = false;
+                    for e in on.iter() {
+                        let aexpr = expr_arena.get(e.node());
+                        has_order_sensitive |=
+                            is_order_sensitive_amortized(aexpr, expr_arena, &mut aexpr_stack);
+                    }
+
+                    if !has_order_sensitive {
+                        inputs[i] = I::Unordered;
+                    }
+                }
+
+                NEO::new(inputs, [false])
             },
             IR::Join {
                 input_left: _,
@@ -467,129 +260,194 @@ fn pushdown_orders(
                 right_on,
                 options,
             } => {
-                if !node_ordering.is_any_output_ordered() {
-                    // If the join maintains order, but the output has underfined order. Remove the
-                    // ordering.
-                    if !matches!(options.args.maintain_order, MOJ::None) {
-                        let mut new_options = options.as_ref().clone();
-                        new_options.args.maintain_order = MOJ::None;
-                        *options = Arc::new(new_options);
-                    }
+                let mut left_has_order_sensitive = false;
+                let mut right_has_order_sensitive = false;
 
-                    match options.args.how {
-                        JoinType::AsOf(_) => {
-                            node_ordering.inputs[0] = I::Consuming;
-                            node_ordering.inputs[1] = I::Consuming;
-                        },
-                        _ => {
-                            // If either side does not need to maintain order, don't maintain the old on that
-                            // side.
-                            for (i, on) in [left_on, right_on].iter().enumerate() {
-                                if matches!(node_ordering.inputs[i], I::Unordered) {
-                                    continue;
-                                }
-
-                                let mut has_order_sensitive = false;
-                                for e in on.iter() {
-                                    let aexpr = expr_arena.get(e.node());
-                                    has_order_sensitive |= is_order_sensitive_amortized(
-                                        aexpr,
-                                        expr_arena,
-                                        ctx.aexpr_stack,
-                                    );
-                                }
-
-                                if !has_order_sensitive {
-                                    node_ordering.inputs[i] = I::Unordered;
-                                }
-                            }
-                        },
-                    }
+                for e in left_on {
+                    let aexpr = expr_arena.get(e.node());
+                    left_has_order_sensitive |=
+                        is_order_sensitive_amortized(aexpr, expr_arena, &mut aexpr_stack);
                 }
+                for e in right_on {
+                    let aexpr = expr_arena.get(e.node());
+                    right_has_order_sensitive |=
+                        is_order_sensitive_amortized(aexpr, expr_arena, &mut aexpr_stack);
+                }
+
+                use MaintainOrderJoin as M;
+                let left_input = match (
+                    options.args.maintain_order,
+                    left_has_order_sensitive,
+                    options.args.slice.is_some(),
+                ) {
+                    (M::Left | M::LeftRight, true, _)
+                    | (M::Left | M::LeftRight | M::RightLeft, _, true) => I::Observing,
+                    (M::Left | M::LeftRight, false, _) => I::Preserving,
+                    (M::RightLeft, _, _) | (_, true, _) => I::Consuming,
+                    _ => I::Unordered,
+                };
+                let right_input = match (
+                    options.args.maintain_order,
+                    right_has_order_sensitive,
+                    options.args.slice.is_some(),
+                ) {
+                    (M::Right | M::RightLeft, true, _)
+                    | (M::Right | M::LeftRight | M::RightLeft, _, true) => I::Observing,
+                    (M::Right | M::RightLeft, false, _) => I::Preserving,
+                    (M::LeftRight, _, _) | (_, true, _) => I::Consuming,
+                    _ => I::Unordered,
+                };
+                let output = !matches!(options.args.maintain_order, M::None);
+
+                NEO::new([left_input, right_input], [output])
             },
             IR::Distinct { input: _, options } => {
-                if !node_ordering.is_any_output_ordered() && options.maintain_order {
-                    options.maintain_order = false;
-                    if matches!(
+                options.maintain_order &= !all_outputs_unordered;
+
+                let input = if options.maintain_order
+                    || matches!(
                         options.keep_strategy,
-                        UniqueKeepStrategy::Any | UniqueKeepStrategy::None
+                        UniqueKeepStrategy::First | UniqueKeepStrategy::Last
                     ) {
-                        node_ordering.inputs[0] = I::Unordered;
-                    }
-                }
+                    I::Observing
+                } else {
+                    I::Unordered
+                };
+                NEO::new([input], [options.maintain_order])
             },
             IR::MapFunction { input: _, function } => {
-                if function.is_streamable() && !node_ordering.is_any_output_ordered() {
-                    node_ordering.inputs[0] = I::Unordered;
-                }
+                let input = if function.is_streamable() {
+                    if all_outputs_unordered {
+                        I::Unordered
+                    } else {
+                        I::Preserving
+                    }
+                } else {
+                    I::Consuming
+                };
+
+                NEO::new([input], [!all_outputs_unordered])
             },
             IR::SimpleProjection { .. } => {
-                if !node_ordering.is_any_output_ordered() {
-                    node_ordering.inputs[0] = I::Unordered;
-                }
+                let input = if all_outputs_unordered {
+                    I::Unordered
+                } else {
+                    I::Preserving
+                };
+                NEO::new([input], [!all_outputs_unordered])
             },
-            IR::Slice { .. } => {
-                if !node_ordering.is_any_output_ordered() {
-                    node_ordering.inputs[0] = I::Consuming;
+            IR::Slice { .. } => NEO::new([I::Observing], [!all_outputs_unordered]),
+            IR::HStack { exprs, .. } => {
+                let mut has_order_sensitive = false;
+                for e in exprs {
+                    let aexpr = expr_arena.get(e.node());
+                    has_order_sensitive |=
+                        is_order_sensitive_amortized(aexpr, expr_arena, &mut aexpr_stack);
                 }
+
+                let input = if has_order_sensitive {
+                    I::Observing
+                } else if all_outputs_unordered {
+                    I::Unordered
+                } else {
+                    I::Preserving
+                };
+
+                NEO::new([input], [!all_outputs_unordered])
             },
-            IR::HStack { exprs, .. } | IR::Select { expr: exprs, .. } => {
-                if !node_ordering.is_any_output_ordered() {
-                    let mut has_order_sensitive = false;
-                    for e in exprs {
-                        let aexpr = expr_arena.get(e.node());
-                        has_order_sensitive |=
-                            is_order_sensitive_amortized(aexpr, expr_arena, ctx.aexpr_stack);
-                    }
-                    if !has_order_sensitive {
-                        node_ordering.inputs[0] = I::Unordered;
-                    }
+            IR::Select { expr: exprs, .. } => {
+                let mut has_order_sensitive = false;
+                let mut all_scalar = true;
+
+                for e in exprs {
+                    let aexpr = expr_arena.get(e.node());
+                    has_order_sensitive |=
+                        is_order_sensitive_amortized(aexpr, expr_arena, &mut aexpr_stack);
+                    all_scalar &= is_scalar_ae(e.node(), expr_arena);
                 }
+
+                let input = if has_order_sensitive {
+                    I::Observing
+                } else if all_outputs_unordered {
+                    I::Unordered
+                } else {
+                    I::Preserving
+                };
+                let output = !all_outputs_unordered && !all_scalar;
+
+                NEO::new([input], [output])
             },
 
             IR::Filter {
                 input: _,
                 predicate,
             } => {
-                if !node_ordering.is_any_output_ordered()
-                    && !is_order_sensitive_amortized(
-                        expr_arena.get(predicate.node()),
-                        expr_arena,
-                        ctx.aexpr_stack,
-                    )
-                {
-                    node_ordering.inputs[0] = I::Unordered;
-                }
+                let is_order_sensitive = is_order_sensitive_amortized(
+                    expr_arena.get(predicate.node()),
+                    expr_arena,
+                    &mut aexpr_stack,
+                );
+
+                let input = if is_order_sensitive {
+                    I::Observing
+                } else if all_outputs_unordered {
+                    I::Unordered
+                } else {
+                    I::Preserving
+                };
+
+                NEO::new([input], [!all_outputs_unordered])
             },
 
-            IR::Union { options, .. } => {
-                if !node_ordering.is_any_output_ordered() && options.maintain_order {
-                    options.maintain_order = false;
-                    node_ordering
-                        .inputs
-                        .iter_mut()
-                        .for_each(|i| *i = I::Unordered);
-                }
+            IR::Union { inputs, options } => {
+                // @NOTE: It seems we cannot trust the `maintain_order` for now.
+                // if !options.maintain_order {
+                //     return NEO::new(vec![I::Unordered; inputs.len()], [false]);
+                // }
+
+                let input = if options.slice.is_some() {
+                    I::Observing
+                } else {
+                    I::Preserving
+                };
+
+                NEO::new(vec![input; inputs.len()], [true])
             },
 
-            IR::HConcat { .. } => {
-                if !node_ordering.is_any_output_ordered() {
-                    node_ordering
-                        .inputs
-                        .iter_mut()
-                        .for_each(|i| *i = I::Consuming);
-                }
+            IR::HConcat { inputs, .. } => {
+                NEO::new(vec![I::Observing; inputs.len()], [!all_outputs_unordered])
             },
 
             #[cfg(feature = "python")]
-            IR::PythonScan { .. } => {},
+            IR::PythonScan { .. } => NEO::new([], [!all_outputs_unordered]),
 
-            IR::Scan { .. }
-            | IR::DataFrameScan { .. }
-            | IR::Sink { .. }
-            | IR::ExtContext { .. } => {},
+            IR::Sink { payload, .. } => {
+                let input = if payload.maintain_order() {
+                    I::Consuming
+                } else {
+                    I::Unordered
+                };
+                NEO::new([input], [])
+            },
+            IR::Scan { .. } | IR::DataFrameScan { .. } => NEO::new([], [!all_outputs_unordered]),
+
+            IR::ExtContext { contexts, .. } => {
+                // This node is nonsense. Just do the most conservative thing you can.
+                NEO::new(
+                    vec![I::Consuming; contexts.len() + 1],
+                    [!all_outputs_unordered],
+                )
+            },
 
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
+        };
+
+        // We make the code above simpler by pretending every node except caches always only has
+        // one output. We correct for that here.
+        if output_port_orderings.len() > 1 && node_ordering.output_ordered.len() == 1 {
+            node_ordering.output_ordered =
+                vec![node_ordering.output_ordered[0]; output_port_orderings.len()]
+                    .into_boxed_slice();
         }
 
         let prev_value = orders.insert(node, node_ordering);
@@ -731,16 +589,9 @@ fn pullup_orders(
                 }
             },
             IR::Distinct { input: _, options } => {
-                if matches!(node_ordering.inputs[0], I::Unordered)
-                    && (options.maintain_order
-                        || matches!(
-                            options.keep_strategy,
-                            UniqueKeepStrategy::First | UniqueKeepStrategy::Last
-                        ))
-                {
+                if matches!(node_ordering.inputs[0], I::Unordered) {
                     options.maintain_order = false;
                     options.keep_strategy = UniqueKeepStrategy::Any;
-
                     node_ordering.set_unordered_output();
                 }
             },
@@ -766,24 +617,11 @@ fn pullup_orders(
             IR::MergeSorted { .. } => {
                 // An input being unordered is technically valid as it is possible for all values
                 // to be the same in which case the rows are sorted.
-
-                if node_ordering
-                    .inputs
-                    .iter()
-                    .all(|i| matches!(i, I::Unordered))
-                {
-                    node_ordering.set_unordered_output();
-                }
             },
 
-            IR::Union { options, .. } => {
-                if node_ordering
-                    .inputs
-                    .iter()
-                    .all(|i| matches!(i, I::Unordered))
-                {
-                    node_ordering.set_unordered_output();
-                }
+            IR::Union { .. } => {
+                // Even if the inputs are unordered. The output still has an order given by the
+                // order of the inputs.
             },
             IR::HConcat { .. } | IR::ExtContext { .. } => {
                 if node_ordering
