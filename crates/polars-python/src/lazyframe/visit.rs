@@ -235,6 +235,7 @@ impl PyLazyFrame {
         let mut expr_arena = Arena::with_capacity(16);
         let root = self
             .ldf
+            .read()
             .clone()
             .optimize(&mut lp_arena, &mut expr_arena)
             .map_err(PyPolarsErr::from)?;

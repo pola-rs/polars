@@ -488,28 +488,28 @@ impl PyLazyFrame {
     }
 
     fn describe_plan(&self, py: Python) -> PyResult<String> {
-        py.enter_polars(|| self.ldf.describe_plan())
+        py.enter_polars(|| self.ldf.read().describe_plan())
     }
 
     fn describe_optimized_plan(&self, py: Python) -> PyResult<String> {
-        py.enter_polars(|| self.ldf.describe_optimized_plan())
+        py.enter_polars(|| self.ldf.read().describe_optimized_plan())
     }
 
     fn describe_plan_tree(&self, py: Python) -> PyResult<String> {
-        py.enter_polars(|| self.ldf.describe_plan_tree())
+        py.enter_polars(|| self.ldf.read().describe_plan_tree())
     }
 
     fn describe_optimized_plan_tree(&self, py: Python) -> PyResult<String> {
-        py.enter_polars(|| self.ldf.describe_optimized_plan_tree())
+        py.enter_polars(|| self.ldf.read().describe_optimized_plan_tree())
     }
 
     fn to_dot(&self, py: Python<'_>, optimized: bool) -> PyResult<String> {
-        py.enter_polars(|| self.ldf.to_dot(optimized))
+        py.enter_polars(|| self.ldf.read().to_dot(optimized))
     }
 
     #[cfg(feature = "new_streaming")]
     fn to_dot_streaming_phys(&self, py: Python, optimized: bool) -> PyResult<String> {
-        py.enter_polars(|| self.ldf.to_dot_streaming_phys(optimized))
+        py.enter_polars(|| self.ldf.read().to_dot_streaming_phys(optimized))
     }
 
     fn optimization_toggle(
@@ -528,7 +528,7 @@ impl PyLazyFrame {
         _check_order: bool,
         #[allow(unused_variables)] new_streaming: bool,
     ) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let mut ldf = ldf
             .with_type_coercion(type_coercion)
             .with_type_check(type_check)
@@ -563,7 +563,7 @@ impl PyLazyFrame {
         maintain_order: bool,
         multithreaded: bool,
     ) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.sort(
             [by_column],
             SortMultipleOptions {
@@ -585,7 +585,7 @@ impl PyLazyFrame {
         maintain_order: bool,
         multithreaded: bool,
     ) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let exprs = by.to_exprs();
         ldf.sort_by_exprs(
             exprs,
@@ -601,7 +601,7 @@ impl PyLazyFrame {
     }
 
     fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let exprs = by.to_exprs();
         ldf.top_k(
             k,
@@ -612,7 +612,7 @@ impl PyLazyFrame {
     }
 
     fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let exprs = by.to_exprs();
         ldf.bottom_k(
             k,
@@ -623,13 +623,13 @@ impl PyLazyFrame {
     }
 
     fn cache(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.cache().into()
     }
 
     #[pyo3(signature = (optflags))]
     fn with_optimizations(&self, optflags: PyOptFlags) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.with_optimizations(optflags.inner).into()
     }
 
@@ -640,7 +640,7 @@ impl PyLazyFrame {
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<(PyDataFrame, PyDataFrame)> {
         let (df, time_df) = py.enter_polars(|| {
-            let ldf = self.ldf.clone();
+            let ldf = self.ldf.read().clone();
             if let Some(lambda) = lambda_post_opt {
                 ldf._profile_post_opt(|root, lp_arena, expr_arena, duration_since_start| {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, duration_since_start)
@@ -660,7 +660,7 @@ impl PyLazyFrame {
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<PyDataFrame> {
         py.enter_polars_df(|| {
-            let ldf = self.ldf.clone();
+            let ldf = self.ldf.read().clone();
             if let Some(lambda) = lambda_post_opt {
                 ldf._collect_post_opt(|root, lp_arena, expr_arena, _| {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
@@ -679,7 +679,7 @@ impl PyLazyFrame {
         lambda: PyObject,
     ) -> PyResult<()> {
         py.enter_polars_ok(|| {
-            let ldf = self.ldf.clone();
+            let ldf = self.ldf.read().clone();
 
             polars_core::POOL.spawn(move || {
                 let result = ldf
@@ -750,7 +750,7 @@ impl PyLazyFrame {
         };
 
         py.enter_polars(|| {
-            let ldf = self.ldf.clone();
+            let ldf = self.ldf.read().clone();
             match target {
                 SinkTarget::File(target) => {
                     ldf.sink_parquet(target, options, cloud_options, sink_options.0)
@@ -814,7 +814,7 @@ impl PyLazyFrame {
         let cloud_options = None;
 
         py.enter_polars(|| {
-            let ldf = self.ldf.clone();
+            let ldf = self.ldf.read().clone();
             match target {
                 SinkTarget::File(target) => {
                     ldf.sink_ipc(target, options, cloud_options, sink_options.0)
@@ -908,7 +908,7 @@ impl PyLazyFrame {
         let cloud_options = None;
 
         py.enter_polars(|| {
-            let ldf = self.ldf.clone();
+            let ldf = self.ldf.read().clone();
             match target {
                 SinkTarget::File(target) => {
                     ldf.sink_csv(target, options, cloud_options, sink_options.0)
@@ -959,7 +959,7 @@ impl PyLazyFrame {
         };
 
         py.enter_polars(|| {
-            let ldf = self.ldf.clone();
+            let ldf = self.ldf.read().clone();
             match target {
                 SinkTarget::File(path) => {
                     ldf.sink_json(path, options, cloud_options, sink_options.0)
@@ -980,30 +980,30 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn filter(&mut self, predicate: PyExpr) -> Self {
-        let ldf = self.ldf.clone();
+    fn filter(&self, predicate: PyExpr) -> Self {
+        let ldf = self.ldf.read().clone();
         ldf.filter(predicate.inner).into()
     }
 
-    fn remove(&mut self, predicate: PyExpr) -> Self {
-        let ldf = self.ldf.clone();
+    fn remove(&self, predicate: PyExpr) -> Self {
+        let ldf = self.ldf.read().clone();
         ldf.remove(predicate.inner).into()
     }
 
-    fn select(&mut self, exprs: Vec<PyExpr>) -> Self {
-        let ldf = self.ldf.clone();
+    fn select(&self, exprs: Vec<PyExpr>) -> Self {
+        let ldf = self.ldf.read().clone();
         let exprs = exprs.to_exprs();
         ldf.select(exprs).into()
     }
 
-    fn select_seq(&mut self, exprs: Vec<PyExpr>) -> Self {
-        let ldf = self.ldf.clone();
+    fn select_seq(&self, exprs: Vec<PyExpr>) -> Self {
+        let ldf = self.ldf.read().clone();
         let exprs = exprs.to_exprs();
         ldf.select_seq(exprs).into()
     }
 
-    fn group_by(&mut self, by: Vec<PyExpr>, maintain_order: bool) -> PyLazyGroupBy {
-        let ldf = self.ldf.clone();
+    fn group_by(&self, by: Vec<PyExpr>, maintain_order: bool) -> PyLazyGroupBy {
+        let ldf = self.ldf.read().clone();
         let by = by.to_exprs();
         let lazy_gb = if maintain_order {
             ldf.group_by_stable(by)
@@ -1015,7 +1015,7 @@ impl PyLazyFrame {
     }
 
     fn rolling(
-        &mut self,
+        &self,
         index_column: PyExpr,
         period: &str,
         offset: &str,
@@ -1023,7 +1023,7 @@ impl PyLazyFrame {
         by: Vec<PyExpr>,
     ) -> PyResult<PyLazyGroupBy> {
         let closed_window = closed.0;
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let by = by
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
@@ -1043,7 +1043,7 @@ impl PyLazyFrame {
     }
 
     fn group_by_dynamic(
-        &mut self,
+        &self,
         index_column: PyExpr,
         every: &str,
         period: &str,
@@ -1059,7 +1059,7 @@ impl PyLazyFrame {
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let lazy_gb = ldf.group_by_dynamic(
             index_column.inner,
             group_by,
@@ -1079,8 +1079,8 @@ impl PyLazyFrame {
     }
 
     fn with_context(&self, contexts: Vec<Self>) -> Self {
-        let contexts = contexts.into_iter().map(|ldf| ldf.ldf).collect::<Vec<_>>();
-        self.ldf.clone().with_context(contexts).into()
+        let contexts = contexts.into_iter().map(|ldf| ldf.ldf.into_inner()).collect::<Vec<_>>();
+        self.ldf.read().clone().with_context(contexts).into()
     }
 
     #[cfg(feature = "asof_join")]
@@ -1107,8 +1107,8 @@ impl PyLazyFrame {
         } else {
             JoinCoalesce::KeepColumns
         };
-        let ldf = self.ldf.clone();
-        let other = other.ldf;
+        let ldf = self.ldf.read().clone();
+        let other = other.ldf.into_inner();
         let left_on = left_on.inner;
         let right_on = right_on.inner;
         Ok(ldf
@@ -1157,8 +1157,8 @@ impl PyLazyFrame {
             Some(true) => JoinCoalesce::CoalesceColumns,
             Some(false) => JoinCoalesce::KeepColumns,
         };
-        let ldf = self.ldf.clone();
-        let other = other.ldf;
+        let ldf = self.ldf.read().clone();
+        let other = other.ldf.into_inner();
         let left_on = left_on
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
@@ -1186,8 +1186,8 @@ impl PyLazyFrame {
     }
 
     fn join_where(&self, other: Self, predicates: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
-        let ldf = self.ldf.clone();
-        let other = other.ldf;
+        let ldf = self.ldf.read().clone();
+        let other = other.ldf.into_inner();
 
         let predicates = predicates.to_exprs();
 
@@ -1199,13 +1199,13 @@ impl PyLazyFrame {
             .into())
     }
 
-    fn with_columns(&mut self, exprs: Vec<PyExpr>) -> Self {
-        let ldf = self.ldf.clone();
+    fn with_columns(&self, exprs: Vec<PyExpr>) -> Self {
+        let ldf = self.ldf.read().clone();
         ldf.with_columns(exprs.to_exprs()).into()
     }
 
-    fn with_columns_seq(&mut self, exprs: Vec<PyExpr>) -> Self {
-        let ldf = self.ldf.clone();
+    fn with_columns_seq(&self, exprs: Vec<PyExpr>) -> Self {
+        let ldf = self.ldf.read().clone();
         ldf.with_columns_seq(exprs.to_exprs()).into()
     }
 
@@ -1324,32 +1324,32 @@ impl PyLazyFrame {
             })
             .collect();
 
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         Ok(ldf
             .match_to_schema(Arc::new(schema.0), per_column, extra_columns.0)
             .into())
     }
 
     fn pipe_with_schema(&self, callback: PyObject) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let function = PythonObject(callback);
         ldf.pipe_with_schema(PlanCallback::new_python(function))
             .into()
     }
 
-    fn rename(&mut self, existing: Vec<String>, new: Vec<String>, strict: bool) -> Self {
-        let ldf = self.ldf.clone();
+    fn rename(&self, existing: Vec<String>, new: Vec<String>, strict: bool) -> Self {
+        let ldf = self.ldf.read().clone();
         ldf.rename(existing, new, strict).into()
     }
 
     fn reverse(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.reverse().into()
     }
 
     #[pyo3(signature = (n, fill_value=None))]
     fn shift(&self, n: PyExpr, fill_value: Option<PyExpr>) -> Self {
-        let lf = self.ldf.clone();
+        let lf = self.ldf.read().clone();
         let out = match fill_value {
             Some(v) => lf.shift_and_fill(n.inner, v.inner),
             None => lf.shift(n.inner),
@@ -1358,64 +1358,64 @@ impl PyLazyFrame {
     }
 
     fn fill_nan(&self, fill_value: PyExpr) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.fill_nan(fill_value.inner).into()
     }
 
     fn min(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let out = ldf.min();
         out.into()
     }
 
     fn max(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let out = ldf.max();
         out.into()
     }
 
     fn sum(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let out = ldf.sum();
         out.into()
     }
 
     fn mean(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let out = ldf.mean();
         out.into()
     }
 
     fn std(&self, ddof: u8) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let out = ldf.std(ddof);
         out.into()
     }
 
     fn var(&self, ddof: u8) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let out = ldf.var(ddof);
         out.into()
     }
 
     fn median(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let out = ldf.median();
         out.into()
     }
 
     fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileMethod>) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let out = ldf.quantile(quantile.inner, interpolation.0);
         out.into()
     }
 
     fn explode(&self, subset: PySelector) -> Self {
-        self.ldf.clone().explode(subset.inner).into()
+        self.ldf.read().clone().explode(subset.inner).into()
     }
 
     fn null_count(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.null_count().into()
     }
 
@@ -1426,7 +1426,7 @@ impl PyLazyFrame {
         subset: Option<PySelector>,
         keep: Wrap<UniqueKeepStrategy>,
     ) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         let subset = subset.map(|e| e.inner);
         match maintain_order {
             true => ldf.unique_stable_generic(subset, keep.0),
@@ -1436,21 +1436,21 @@ impl PyLazyFrame {
     }
 
     fn drop_nans(&self, subset: Option<PySelector>) -> Self {
-        self.ldf.clone().drop_nans(subset.map(|e| e.inner)).into()
+        self.ldf.read().clone().drop_nans(subset.map(|e| e.inner)).into()
     }
 
     fn drop_nulls(&self, subset: Option<PySelector>) -> Self {
-        self.ldf.clone().drop_nulls(subset.map(|e| e.inner)).into()
+        self.ldf.read().clone().drop_nulls(subset.map(|e| e.inner)).into()
     }
 
     #[pyo3(signature = (offset, len=None))]
     fn slice(&self, offset: i64, len: Option<IdxSize>) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.slice(offset, len.unwrap_or(IdxSize::MAX)).into()
     }
 
     fn tail(&self, n: IdxSize) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.tail(n).into()
     }
 
@@ -1470,13 +1470,13 @@ impl PyLazyFrame {
             variable_name: variable_name.map(|s| s.into()),
         };
 
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.unpivot(args).into()
     }
 
     #[pyo3(signature = (name, offset=None))]
     fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.with_row_index(name, offset).into()
     }
 
@@ -1498,6 +1498,7 @@ impl PyLazyFrame {
         opt.set(OptFlags::NEW_STREAMING, streamable);
 
         self.ldf
+            .read()
             .clone()
             .map_python(
                 function.into(),
@@ -1509,25 +1510,25 @@ impl PyLazyFrame {
     }
 
     fn drop(&self, columns: PySelector) -> Self {
-        self.ldf.clone().drop(columns.inner).into()
+        self.ldf.read().clone().drop(columns.inner).into()
     }
 
     fn cast(&self, dtypes: HashMap<PyBackedStr, Wrap<DataType>>, strict: bool) -> Self {
         let mut cast_map = PlHashMap::with_capacity(dtypes.len());
         cast_map.extend(dtypes.iter().map(|(k, v)| (k.as_ref(), v.0.clone())));
-        self.ldf.clone().cast(cast_map, strict).into()
+        self.ldf.read().clone().cast(cast_map, strict).into()
     }
 
     fn cast_all(&self, dtype: PyDataTypeExpr, strict: bool) -> Self {
-        self.ldf.clone().cast_all(dtype.inner, strict).into()
+        self.ldf.read().clone().cast_all(dtype.inner, strict).into()
     }
 
     fn clone(&self) -> Self {
-        self.ldf.clone().into()
+        self.ldf.read().clone().into()
     }
 
-    fn collect_schema<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let schema = py.enter_polars(|| self.ldf.collect_schema())?;
+    fn collect_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let schema = py.enter_polars(|| self.ldf.write().collect_schema())?;
 
         let schema_dict = PyDict::new(py);
         schema.iter_fields().for_each(|fld| {
@@ -1539,11 +1540,11 @@ impl PyLazyFrame {
     }
 
     fn unnest(&self, columns: PySelector) -> Self {
-        self.ldf.clone().unnest(columns.inner).into()
+        self.ldf.read().clone().unnest(columns.inner).into()
     }
 
     fn count(&self) -> Self {
-        let ldf = self.ldf.clone();
+        let ldf = self.ldf.read().clone();
         ldf.count().into()
     }
 
@@ -1551,8 +1552,9 @@ impl PyLazyFrame {
     fn merge_sorted(&self, other: Self, key: &str) -> PyResult<Self> {
         let out = self
             .ldf
+            .read()
             .clone()
-            .merge_sorted(other.ldf, key)
+            .merge_sorted(other.ldf.into_inner(), key)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

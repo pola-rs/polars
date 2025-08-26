@@ -8,6 +8,8 @@ mod sink;
 pub mod visit;
 pub mod visitor;
 
+use parking_lot::RwLock;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::PyInProcessQuery;
 use polars::prelude::{Engine, LazyFrame, OptFlags};
@@ -21,9 +23,14 @@ use crate::prelude::Wrap;
 
 #[pyclass]
 #[repr(transparent)]
-#[derive(Clone)]
 pub struct PyLazyFrame {
-    pub ldf: LazyFrame,
+    pub ldf: RwLock<LazyFrame>,
+}
+
+impl Clone for PyLazyFrame {
+    fn clone(&self) -> Self {
+        Self { ldf: RwLock::new(self.ldf.read().clone()) }
+    }
 }
 
 #[pyclass]
@@ -35,13 +42,13 @@ pub struct PyOptFlags {
 
 impl From<LazyFrame> for PyLazyFrame {
     fn from(ldf: LazyFrame) -> Self {
-        PyLazyFrame { ldf }
+        PyLazyFrame { ldf: RwLock::new(ldf) }
     }
 }
 
 impl From<PyLazyFrame> for LazyFrame {
     fn from(pldf: PyLazyFrame) -> Self {
-        pldf.ldf
+        pldf.ldf.into_inner()
     }
 }
 

@@ -112,7 +112,7 @@ pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
 
 pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
-    Ok(pydf.extract::<PyLazyFrame>()?.ldf)
+    Ok(pydf.extract::<PyLazyFrame>()?.ldf.into_inner())
 }
 
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {

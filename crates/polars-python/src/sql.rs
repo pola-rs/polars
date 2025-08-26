@@ -39,7 +39,7 @@ impl PySQLContext {
     }
 
     pub fn register(&mut self, name: &str, lf: PyLazyFrame) {
-        self.context.register(name, lf.ldf)
+        self.context.register(name, lf.ldf.into_inner())
     }
 
     pub fn unregister(&mut self, name: &str) {

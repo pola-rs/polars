@@ -116,7 +116,7 @@ pub fn col(name: &str) -> PyExpr {
 }
 
 fn lfs_to_plans(lfs: Vec<PyLazyFrame>) -> Vec<DslPlan> {
-    lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect()
+    lfs.into_iter().map(|lf| lf.ldf.into_inner().logical_plan).collect()
 }
 
 #[pyfunction]
@@ -147,7 +147,7 @@ pub fn collect_all_with_callback(
     lambda: PyObject,
     py: Python<'_>,
 ) {
-    let plans = lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect();
+    let plans = lfs.into_iter().map(|lf| lf.ldf.into_inner().logical_plan).collect();
     let result = py
         .enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))
         .map(|dfs| {

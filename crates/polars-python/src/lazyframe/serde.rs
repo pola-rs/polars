@@ -17,6 +17,7 @@ impl PyLazyFrame {
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
             self.ldf
+                .read()
                 .logical_plan
                 .serialize_versioned(writer, Default::default())
         })
@@ -28,7 +29,7 @@ impl PyLazyFrame {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
-            serde_json::to_writer(writer, &self.ldf.logical_plan)
+            serde_json::to_writer(writer, &self.ldf.read().logical_plan)
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
     }
