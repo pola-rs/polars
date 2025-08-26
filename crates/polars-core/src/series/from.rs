@@ -649,6 +649,7 @@ unsafe fn to_physical_and_dtype(
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 unsafe fn import_arrow_dictionary_array(
     name: PlSmallStr,
     arr: Box<dyn Array>,
