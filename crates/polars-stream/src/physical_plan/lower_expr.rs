@@ -6,7 +6,6 @@ use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap,
 };
 use polars_core::schema::{Schema, SchemaExt};
-use polars_core::series::ops::NullBehavior;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -987,26 +986,15 @@ fn lower_exprs_with_ctx(
                 function: IRFunctionExpr::Diff(null_behavior),
                 options: _,
             } => {
-                assert_eq!(inner_exprs.len(), 2);
+                use polars_core::series::ops::NullBehavior;
 
-                // Transforms:
-                //    expr.diff(offset, "ignore")
-                //      ->
-                //    let expr = expr.cast(<signed datatype>) // if needed
-                //    in expr.shift(offset) - expr
-                //
-                //    expr.diff(offset, "drop")
-                //      ->
-                //    let expr = expr.cast(<signed datatype>) // if needed
-                //    let output_len = expr.len() - offset
-                //    in expr.slice(offset, output_len) - expr.slice(0, output_len)
+                assert_eq!(inner_exprs.len(), 2);
 
                 let mut base_expr = inner_exprs[0].clone();
                 let offset_expr = &inner_exprs[1];
                 let dtype =
                     base_expr.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
 
-                // IR: expr = expr.cast(<signed datatype>)
                 let cast_dtype = match dtype {
                     DataType::UInt8 => Some(DataType::Int16),
                     DataType::UInt16 => Some(DataType::Int32),
@@ -1020,52 +1008,56 @@ fn lower_exprs_with_ctx(
                     base_expr = ExprIR::from_node(base_node, ctx.expr_arena);
                 }
 
-                let shifted_expr;
-                let unshifted_expr;
+                let lhs_expr;
+                let rhs_expr;
                 match null_behavior {
                     NullBehavior::Ignore => {
-                        // IR: expr.shift(offset, fill_value=None)
-                        let unshifted_node = AExprBuilder::function(
+                        // Transform:
+                        //    expr.diff(offset, "ignore")
+                        //      ->
+                        //    expr.shift(offset) - expr
+
+                        let rhs_node = AExprBuilder::function(
                             vec![base_expr.clone(), offset_expr.clone()],
                             IRFunctionExpr::Shift,
                             ctx.expr_arena,
                         )
                         .node();
-                        unshifted_expr = ExprIR::from_node(unshifted_node, ctx.expr_arena);
-                        shifted_expr = base_expr;
+                        rhs_expr = ExprIR::from_node(rhs_node, ctx.expr_arena);
+                        lhs_expr = base_expr;
                     },
                     NullBehavior::Drop => {
-                        // IR: zero_literal = 0
+                        // Transform:
+                        //    expr.diff(offset, "drop")
+                        //      ->
+                        //    let output_len = expr.len() - offset
+                        //    in expr.slice(offset, output_len) - expr.slice(0, output_len)
+
                         let zero_literal =
                             AExprBuilder::lit(LiteralValue::new_idxsize(0), ctx.expr_arena);
 
-                        // IR: expr.len()
                         let len_node = AExprBuilder::dataframe_length(ctx.expr_arena).node();
                         let len_expr = ExprIR::from_node(len_node, ctx.expr_arena);
 
-                        // IR: output_len = expr.len() - offset
                         let output_len_node = AExprBuilder::new_from_node(len_expr.node())
                             .minus(offset_expr.node(), ctx.expr_arena)
                             .node();
                         let output_len_expr = ExprIR::from_node(output_len_node, ctx.expr_arena);
 
-                        // IR: expr.slice(offset, output_len)
-                        let shifted_node = AExprBuilder::new_from_node(base_expr.node())
+                        let lhs_node = AExprBuilder::new_from_node(base_expr.node())
                             .slice(offset_expr.node(), output_len_expr.node(), ctx.expr_arena)
                             .node();
-                        shifted_expr = ExprIR::from_node(shifted_node, ctx.expr_arena);
+                        lhs_expr = ExprIR::from_node(lhs_node, ctx.expr_arena);
 
-                        // IR: expr.slice(0, output_len)
-                        let unshifted_node = AExprBuilder::new_from_node(base_expr.node())
+                        let rhs_node = AExprBuilder::new_from_node(base_expr.node())
                             .slice(zero_literal, output_len_expr.node(), ctx.expr_arena)
                             .node();
-                        unshifted_expr = ExprIR::from_node(unshifted_node, ctx.expr_arena);
+                        rhs_expr = ExprIR::from_node(rhs_node, ctx.expr_arena);
                     },
                 }
 
-                // IR: <shifted column> - <unshifted column>
-                let output_node = AExprBuilder::new_from_node(shifted_expr.node())
-                    .minus(unshifted_expr.node(), ctx.expr_arena)
+                let output_node = AExprBuilder::new_from_node(lhs_expr.node())
+                    .minus(rhs_expr.node(), ctx.expr_arena)
                     .node();
 
                 let (stream, nodes) = lower_exprs_with_ctx(input, &[output_node], ctx)?;
