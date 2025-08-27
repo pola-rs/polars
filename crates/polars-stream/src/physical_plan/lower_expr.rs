@@ -1024,7 +1024,7 @@ fn lower_exprs_with_ctx(
 
                 if null_behavior == NullBehavior::Drop {
                     // Without the column size, slice can only remove leading nulls.
-                    // So if the offset was negative, the nulls appeared and the end of the column.
+                    // So if the offset was negative, the nulls appeared at the end of the column.
                     // In that case, shift the column forward to move the nulls back to the front.
                     let zero_literal =
                         AExprBuilder::lit(LiteralValue::new_idxsize(0), ctx.expr_arena);
