@@ -35,7 +35,11 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
             .map(|ca| ca.into_series().into())
     } else if out.hasattr("_s")? {
         let py_pyseries = out.getattr("_s").unwrap();
-        let series = py_pyseries.extract::<PySeries>().unwrap().series;
+        let series = py_pyseries
+            .extract::<PySeries>()
+            .unwrap()
+            .series
+            .into_inner();
         let dt = series.dtype();
         applyer
             .apply_lambda_with_list_out_type(
@@ -49,7 +53,11 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
     } else if out.is_instance_of::<PyList>() || out.is_instance_of::<PyTuple>() {
         let series = pl_series(py).call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
-        let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
+        let series = py_pyseries
+            .extract::<PySeries>(py)
+            .unwrap()
+            .series
+            .into_inner();
 
         let dt = series.dtype();
         check_nested_object(dt)?;
@@ -255,7 +263,9 @@ where
         Ok(None)
     } else {
         let py_series = out.getattr("_s")?;
-        py_series.extract::<PySeries>().map(|s| Some(s.series))
+        py_series
+            .extract::<PySeries>()
+            .map(|s| Some(s.series.into_inner()))
     }
 }
 
@@ -954,7 +964,10 @@ fn call_series_lambda(
     let py_pyseries = out
         .getattr("_s")
         .expect("could not get Series attribute '_s'");
-    Ok(py_pyseries.extract::<PySeries>().ok().map(|s| s.series))
+    Ok(py_pyseries
+        .extract::<PySeries>()
+        .ok()
+        .map(|s| s.series.into_inner()))
 }
 
 impl<'py> ApplyLambda<'py> for ListChunked {

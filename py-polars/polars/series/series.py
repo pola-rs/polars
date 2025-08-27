@@ -3086,13 +3086,7 @@ class Series:
         2
         """
         require_same_type(self, other)
-        try:
-            self._s.append(other._s)
-        except RuntimeError as exc:
-            if str(exc) == "Already mutably borrowed":
-                self._s.append(other._s.clone())
-            else:
-                raise
+        self._s.append(other._s)
         return self
 
     def extend(self, other: Series) -> Self:
@@ -3150,13 +3144,7 @@ class Series:
         1
         """
         require_same_type(self, other)
-        try:
-            self._s.extend(other._s)
-        except RuntimeError as exc:
-            if str(exc) == "Already mutably borrowed":
-                self._s.extend(other._s.clone())
-            else:
-                raise
+        self._s.extend(other._s)
         return self
 
     def filter(self, predicate: Series | Iterable[bool]) -> Self:

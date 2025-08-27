@@ -23,25 +23,35 @@ mod numpy_ufunc;
 #[cfg(feature = "pymethods")]
 mod scatter;
 pub(crate) use import::import_schema_pycapsule;
+use parking_lot::RwLock;
 use polars::prelude::{Column, Series};
 use pyo3::pyclass;
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
-#[derive(Clone)]
 pub struct PySeries {
-    pub series: Series,
+    pub series: RwLock<Series>,
+}
+
+impl Clone for PySeries {
+    fn clone(&self) -> Self {
+        Self {
+            series: RwLock::new(self.series.read().clone()),
+        }
+    }
 }
 
 impl From<Series> for PySeries {
     fn from(series: Series) -> Self {
-        PySeries { series }
+        Self::new(series)
     }
 }
 
 impl PySeries {
     pub(crate) fn new(series: Series) -> Self {
-        PySeries { series }
+        PySeries {
+            series: RwLock::new(series),
+        }
     }
 }
 
@@ -51,8 +61,7 @@ pub(crate) trait ToSeries {
 
 impl ToSeries for Vec<PySeries> {
     fn to_series(self) -> Vec<Series> {
-        // SAFETY: repr is transparent.
-        unsafe { std::mem::transmute(self) }
+        self.into_iter().map(|s| s.series.into_inner()).collect()
     }
 }
 
@@ -62,8 +71,7 @@ pub(crate) trait ToPySeries {
 
 impl ToPySeries for Vec<Series> {
     fn to_pyseries(self) -> Vec<PySeries> {
-        // SAFETY: repr is transparent.
-        unsafe { std::mem::transmute(self) }
+        self.into_iter().map(PySeries::from).collect()
     }
 }
 

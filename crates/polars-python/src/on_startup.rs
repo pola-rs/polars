@@ -35,7 +35,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         let pypolars = polars(py).bind(py);
 
         // create a PySeries struct/object for Python
-        let mut pydf = PyDataFrame::new(df);
+        let pydf = PyDataFrame::new(df);
         // Wrap this PySeries object in the python side Series wrapper
         let mut python_df_wrapper = pypolars
             .getattr("wrap_df")
@@ -77,7 +77,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         })?;
         // Downcast to Rust
         match py_pydf.extract::<PyDataFrame>(py) {
-            Ok(pydf) => Ok(pydf.df),
+            Ok(pydf) => Ok(pydf.df.into_inner()),
             Err(_) => python_df_to_rust(py, result_df_wrapper.into_bound(py)),
         }
     })
@@ -142,14 +142,23 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                     })
                 }),
                 series: Arc::new(|py_f| {
-                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PySeries>(py)?.series) as _))
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<PySeries>(py)?.series.into_inner()) as _)
+                    })
                 }),
                 df: Arc::new(|py_f| {
-                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df) as _))
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df.into_inner()) as _)
+                    })
                 }),
                 dsl_plan: Arc::new(|py_f| {
                     Python::with_gil(|py| {
-                        Ok(Box::new(py_f.extract::<PyLazyFrame>(py)?.ldf.logical_plan) as _)
+                        Ok(Box::new(
+                            py_f.extract::<PyLazyFrame>(py)?
+                                .ldf
+                                .into_inner()
+                                .logical_plan,
+                        ) as _)
                     })
                 }),
                 schema: Arc::new(|py_f| {

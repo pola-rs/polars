@@ -3522,6 +3522,7 @@ dependencies = [
  "ndarray",
  "num-traits",
  "numpy",
+ "parking_lot",
  "polars",
  "polars-arrow",
  "polars-compute",

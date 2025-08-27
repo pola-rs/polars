@@ -10,8 +10,8 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::PySeries;
+use crate::conversion::Wrap;
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{Wrap, reinterpret_vec};
 use crate::error::PyPolarsErr;
 use crate::interop::arrow::to_rust::array_to_rust;
 use crate::prelude::ObjectValue;
@@ -289,7 +289,10 @@ impl PySeries {
 
     #[staticmethod]
     fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> PyResult<Self> {
-        let series = reinterpret_vec(values);
+        let series: Vec<_> = values
+            .into_iter()
+            .map(|ops| ops.map(|ps| ps.series.into_inner()))
+            .collect();
         if let Some(s) = series.iter().flatten().next() {
             if s.dtype().is_object() {
                 return Err(PyValueError::new_err(
