@@ -259,7 +259,7 @@ impl PartialEq for AExprArena<'_> {
             match (scratch1.pop(), scratch2.pop()) {
                 (Some(l), Some(r)) => {
                     let l = Self::new(l, self.arena);
-                    let r = Self::new(r, self.arena);
+                    let r = Self::new(r, other.arena);
 
                     if !l.is_equal_single(&r) {
                         return false;
