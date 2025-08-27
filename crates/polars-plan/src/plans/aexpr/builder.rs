@@ -263,14 +263,6 @@ impl AExprBuilder {
         )
     }
 
-    pub fn abs(self, arena: &mut Arena<AExpr>) -> Self {
-        Self::function(vec![self.expr_ir_unnamed()], IRFunctionExpr::Abs, arena)
-    }
-
-    pub fn negate(self, arena: &mut Arena<AExpr>) -> Self {
-        Self::function(vec![self.expr_ir_unnamed()], IRFunctionExpr::Negate, arena)
-    }
-
     pub fn slice(
         self,
         offset: impl IntoAExprBuilder,
@@ -310,6 +302,15 @@ impl AExprBuilder {
             IRFunctionExpr::ToPhysical,
             arena,
         )
+    }
+
+    #[cfg(feature = "abs")]
+    pub fn abs(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(vec![self.expr_ir_unnamed()], IRFunctionExpr::Abs, arena)
+    }
+
+    pub fn negate(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(vec![self.expr_ir_unnamed()], IRFunctionExpr::Negate, arena)
     }
 
     pub fn not(self, arena: &mut Arena<AExpr>) -> Self {
