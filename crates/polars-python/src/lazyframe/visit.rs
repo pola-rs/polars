@@ -43,7 +43,7 @@ impl From<&ExprIR> for PyExprIR {
 
 type Version = (u16, u16);
 
-#[pyclass(frozen)]
+#[pyclass]
 pub struct NodeTraverser {
     root: Node,
     lp_arena: Arc<Mutex<Arena<IR>>>,
