@@ -25,6 +25,7 @@ use crate::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags, PyPartitioning};
+use crate::lazyframe::streaming_unique::PyStreamingUniqueKeepStrategy;
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
@@ -97,6 +98,7 @@ pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyOptFlags>().unwrap();
+    m.add_class::<PyStreamingUniqueKeepStrategy>().unwrap();
     #[cfg(not(target_arch = "wasm32"))]
     m.add_class::<PyInProcessQuery>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();

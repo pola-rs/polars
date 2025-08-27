@@ -98,6 +98,13 @@ pub enum PhysNodeKind {
         selectors: Vec<ExprIR>,
         extend_original: bool,
     },
+    
+    Unique {
+        input: PhysStream,
+        subset: Option<Vec<PlSmallStr>>,
+        keep: crate::nodes::unique::UniqueKeepStrategy,
+        maintain_order: bool,
+    },
 
     InputIndependentSelect {
         selectors: Vec<ExprIR>,
@@ -364,6 +371,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. }
+            | PhysNodeKind::Unique { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);
