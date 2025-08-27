@@ -1003,20 +1003,20 @@ fn lower_exprs_with_ctx(
                 let offset_dtype =
                     offset_expr_ir.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
 
-                let cast_dtype = |dt: &DataType| match *dt {
+                let mut base = AExprBuilder::new_from_node(base_expr_ir.node());
+                let cast_dtype = match base_dtype {
                     DataType::UInt8 => Some(DataType::Int16),
                     DataType::UInt16 => Some(DataType::Int32),
                     DataType::UInt32 | DataType::UInt64 => Some(DataType::Int64),
                     _ => None,
                 };
-
-                let mut base = AExprBuilder::new_from_node(base_expr_ir.node());
-                if let Some(cast_dtype) = cast_dtype(base_dtype) {
-                    base = base.cast(cast_dtype, ctx.expr_arena);
+                if let Some(dtype) = cast_dtype {
+                    base = base.cast(dtype, ctx.expr_arena);
                 }
+
                 let mut offset = AExprBuilder::new_from_node(offset_expr_ir.node());
-                if let Some(cast_dtype) = cast_dtype(offset_dtype) {
-                    offset = offset.cast(cast_dtype, ctx.expr_arena);
+                if offset_dtype != &DataType::Int64 {
+                    offset = offset.cast(DataType::Int64, ctx.expr_arena);
                 }
 
                 let shifted = base.shift(offset.node(), ctx.expr_arena);
@@ -1028,8 +1028,7 @@ fn lower_exprs_with_ctx(
                     // In that case, shift the column forward to move the nulls back to the front.
                     let zero_literal =
                         AExprBuilder::lit(LiteralValue::new_idxsize(0), ctx.expr_arena);
-                    let offset_neg =
-                        AExprBuilder::new_from_node(offset.node()).negate(ctx.expr_arena);
+                    let offset_neg = offset.negate(ctx.expr_arena);
                     let offset_if_negative = AExprBuilder::function(
                         vec![offset_neg.expr_ir_unnamed(), zero_literal.expr_ir_unnamed()],
                         IRFunctionExpr::MaxHorizontal,
