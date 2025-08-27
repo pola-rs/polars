@@ -262,6 +262,6 @@ def test_lit_structs(item: Any) -> None:
         (np.uint64(1), pl.UInt64),
     ],
 )
-def test_numpy_lit(value: np.number, expected_dtype: PolarsDataType) -> None:
+def test_numpy_lit(value: Any, expected_dtype: PolarsDataType) -> None:
     result = pl.select(pl.lit(value)).get_column("literal")
     assert result.dtype == expected_dtype
