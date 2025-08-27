@@ -1473,3 +1473,38 @@ def test_group_by_input_independent_with_len_23868() -> None:
             schema={"literal": pl.String, "len": pl.get_index_type()},
         ),
     )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_head_tail_24215(maintain_order: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "station": ["A", "A", "B"],
+            "num_rides": [1, 2, 3],
+        }
+    )
+    expected = pl.DataFrame(
+        {"station": ["A", "B"], "num_rides": [1.5, 3], "rides_per_day": [[1, 2], [3]]}
+    )
+
+    result = (
+        df.group_by("station", maintain_order=maintain_order)
+        .agg(
+            cs.numeric().mean(),
+            pl.col("num_rides").alias("rides_per_day"),
+        )
+        .group_by("station", maintain_order=maintain_order)
+        .head(1)
+    )
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
+
+    result = (
+        df.group_by("station", maintain_order=maintain_order)
+        .agg(
+            cs.numeric().mean(),
+            pl.col("num_rides").alias("rides_per_day"),
+        )
+        .group_by("station", maintain_order=maintain_order)
+        .tail(1)
+    )
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
