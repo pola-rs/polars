@@ -57,7 +57,7 @@ pub struct PyOptFlags {
 impl Clone for PyOptFlags {
     fn clone(&self) -> Self {
         Self {
-            inner: RwLock::new(self.inner.read().clone()),
+            inner: RwLock::new(*self.inner.read()),
         }
     }
 }
