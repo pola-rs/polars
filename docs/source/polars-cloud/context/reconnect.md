@@ -1,6 +1,8 @@
 # Reconnect to compute cluster
 
-Polars Cloud allows you to reconnect to active compute clusters. This lets you reconnect to run multiple queries in a short time span, without having to wait for machines to spin up. You can also connect to clusters of team members, if these were started in `proxy` mode.
+Polars Cloud allows you to reconnect to active compute clusters. This lets you reconnect to run
+multiple queries in a short time span, without having to wait for machines to spin up. You can also
+connect to clusters of team members, if these were started in `proxy` mode.
 
 ## Set up a cluster
 
@@ -14,7 +16,7 @@ You can easily find the ID of your cluster by printing the ComputeContext to you
 {{code_block('polars-cloud/reconnect','print',[])}}
 
 ```text
-ComputeContext(id=0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx, cpus=4, memory=16, instance_type=None, storage=16, big_instance_type=None, big_instance_multiplier=None, big_instance_storage=None, cluster_size=1, interactive=False, insecure=False, workspace_name='your-workspace', labels=None, log_level=LogLevelSchema.Info
+ComputeContext(id=0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx, cpus=4, memory=16, instance_type=None, storage=16, ...)
 ```
 
 ## Reconnect to an existing cluster
@@ -35,10 +37,10 @@ can browse available clusters:
 
 ```text
 Found 1 available clusters:
-------------------------------------------------------------------------------------------
-#   Workspace       Type         vCPUs    Memory     Storage    Size       Runtime
-------------------------------------------------------------------------------------------
-1   your-workspace  Unknown      4        16 GiB     16 GiB     1          11m
+-----------------------------------------------------------------------------------------------------------------------------
+#   Workspace       Type         vCPUs    Memory     Storage    Size       Runtime    ID
+-----------------------------------------------------------------------------------------------------------------------------
+1   your-workspace     Unknown    4        16 GiB     16 GiB     1          14m        0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
 ## Find clusters by workspace
@@ -50,8 +52,7 @@ for that workspace:
 {{code_block('polars-cloud/reconnect','via_workspace',[])}}
 
 ```text
-[(ComputeContext(id=0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx, cpus=4, memory=16, instance_type=None, storage=16, big_instance_type=None, big_instance_multiplier=None, big_instance_storage=None, cluster_size=1, interactive=False, insecure=False, workspace_name='your-workspace', labels=None, log_level=LogLevelSchema.Info,
-  IDLE),]
+[(ComputeContext(id=0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx, cpus=4, memory=16, instance_type=None, storage=16, ...),]
 ```
 
 With the cluster `id` from the output above, you can then establish a connection using the same
