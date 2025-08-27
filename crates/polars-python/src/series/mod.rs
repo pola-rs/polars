@@ -27,7 +27,7 @@ use parking_lot::RwLock;
 use polars::prelude::{Column, Series};
 use pyo3::pyclass;
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 pub struct PySeries {
     pub series: RwLock<Series>,

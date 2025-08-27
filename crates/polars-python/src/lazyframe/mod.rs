@@ -20,7 +20,7 @@ pub use sink::{PyPartitioning, SinkTarget};
 
 use crate::prelude::Wrap;
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 pub struct PyLazyFrame {
     pub ldf: RwLock<LazyFrame>,
@@ -34,7 +34,7 @@ impl Clone for PyLazyFrame {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyOptFlags {

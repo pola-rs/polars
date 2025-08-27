@@ -13,7 +13,7 @@ use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, Wrap};
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 pub struct PyBatchedCsv {
     reader: Mutex<OwnedBatchedCsvReader>,

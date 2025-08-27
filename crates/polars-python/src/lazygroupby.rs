@@ -10,7 +10,7 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::{PyExpr, PyLazyFrame};
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 pub struct PyLazyGroupBy {
     // option because we cannot get a self by value in pyo3

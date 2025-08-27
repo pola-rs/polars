@@ -32,7 +32,7 @@ use std::mem::ManuallyDrop;
 use polars::lazy::dsl::Expr;
 use pyo3::pyclass;
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyExpr {

@@ -15,7 +15,7 @@ use crate::error::PyPolarsErr;
 use crate::{PyExpr, Wrap, raise_err};
 
 #[derive(Clone)]
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyExprIR {
     #[pyo3(get)]
     node: usize,
@@ -43,7 +43,7 @@ impl From<&ExprIR> for PyExprIR {
 
 type Version = (u16, u16);
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct NodeTraverser {
     root: Node,
     lp_arena: Arc<Mutex<Arena<IR>>>,

@@ -5,12 +5,12 @@ use polars::prelude::{
     DataType, DataTypeSelector, Selector, TimeUnit, TimeUnitSet, TimeZone, TimeZoneSet,
 };
 use polars_plan::dsl;
-use pyo3::PyResult;
+use pyo3::{pyclass, PyResult};
 use pyo3::exceptions::PyTypeError;
 
 use crate::prelude::Wrap;
 
-#[pyo3::pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PySelector {

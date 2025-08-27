@@ -6,7 +6,7 @@ use super::selector::{PySelector, parse_datatype_selector};
 use crate::error::PyPolarsErr;
 use crate::prelude::Wrap;
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyDataTypeExpr {
