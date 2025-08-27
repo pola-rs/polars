@@ -56,13 +56,17 @@ pub struct PyOptFlags {
 
 impl Clone for PyOptFlags {
     fn clone(&self) -> Self {
-        Self { inner: RwLock::new(self.inner.read().clone()) }
+        Self {
+            inner: RwLock::new(self.inner.read().clone()),
+        }
     }
 }
 
 impl From<OptFlags> for PyOptFlags {
     fn from(inner: OptFlags) -> Self {
-        PyOptFlags { inner: RwLock::new(inner) }
+        PyOptFlags {
+            inner: RwLock::new(inner),
+        }
     }
 }
 

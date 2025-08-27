@@ -5,8 +5,8 @@ use polars::prelude::{
     DataType, DataTypeSelector, Selector, TimeUnit, TimeUnitSet, TimeZone, TimeZoneSet,
 };
 use polars_plan::dsl;
-use pyo3::{pyclass, PyResult};
 use pyo3::exceptions::PyTypeError;
+use pyo3::{PyResult, pyclass};
 
 use crate::prelude::Wrap;
 

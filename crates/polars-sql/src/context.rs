@@ -227,7 +227,6 @@ impl SQLContext {
             .or_else(|| self.cte_map.get(name).cloned())
             .or_else(|| {
                 self.table_aliases
-                    
                     .get(name)
                     .and_then(|alias| self.table_map.get(alias).cloned())
             })
@@ -297,7 +296,7 @@ impl SQLContext {
     pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
         if let Some(aliases) = self.joined_aliases.get(tbl_name) {
             if let Some(name) = aliases.get(column_name) {
-                return name.to_string()
+                return name.to_string();
             }
         }
         column_name.to_string()

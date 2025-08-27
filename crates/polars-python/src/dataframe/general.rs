@@ -446,17 +446,7 @@ impl PyDataFrame {
         let df = self.df.read().clone(); // Clone to avoid dead lock on re-entrance in aggregate_expr.
         let fun = if maintain_order { pivot_stable } else { pivot };
         let agg_expr = aggregate_expr.map(|expr| expr.inner);
-        py.enter_polars_df(|| {
-            fun(
-                &df,
-                on,
-                index,
-                values,
-                sort_columns,
-                agg_expr,
-                separator,
-            )
-        })
+        py.enter_polars_df(|| fun(&df, on, index, values, sort_columns, agg_expr, separator))
     }
 
     pub fn partition_by(

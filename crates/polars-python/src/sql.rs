@@ -1,10 +1,9 @@
+use parking_lot::RwLock;
 use polars::sql::SQLContext;
 use pyo3::prelude::*;
 
 use crate::PyLazyFrame;
 use crate::error::PyPolarsErr;
-
-use parking_lot::RwLock;
 
 #[pyclass(frozen)]
 #[repr(transparent)]
@@ -14,7 +13,9 @@ pub struct PySQLContext {
 
 impl Clone for PySQLContext {
     fn clone(&self) -> Self {
-        Self { context: RwLock::new(self.context.read().clone()) }
+        Self {
+            context: RwLock::new(self.context.read().clone()),
+        }
     }
 }
 

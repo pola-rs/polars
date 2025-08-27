@@ -1,7 +1,6 @@
+use parking_lot::RwLock;
 use polars::prelude::OptFlags;
 use pyo3::pymethods;
-
-use parking_lot::RwLock;
 
 use super::PyOptFlags;
 
