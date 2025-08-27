@@ -132,8 +132,8 @@ impl PhysicalExpr for SliceExpr {
 
                 if let LiteralScalar(s) = ac.agg_state() {
                     let s1 = s.slice(offset, length);
-                    let s1 = s1.implode()?;
-                    ac.with_literal(s1.into_column());
+                    ac.with_literal(s1);
+                    ac.aggregated();
                     return Ok(ac);
                 }
                 let groups = ac.groups();
