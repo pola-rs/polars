@@ -1701,6 +1701,9 @@ def test_log_exp(dtype: pl.DataType) -> None:
     expected = pl.Series("a", np.log(a.cast(pl.Float64).to_numpy()))
     assert_series_equal(a.log(), expected)
 
+    expected = pl.Series("a", np.log10(a.cast(pl.Float64).to_numpy()))
+    assert_series_equal(a.log(base=pl.Series([10], dtype=dtype)), expected)
+
     expected = pl.Series("a", np.exp(b.cast(pl.Float64).to_numpy()))
     assert_series_equal(b.exp(), expected)
 

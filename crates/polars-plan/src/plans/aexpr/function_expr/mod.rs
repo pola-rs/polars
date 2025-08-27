@@ -279,9 +279,7 @@ pub enum IRFunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -617,7 +615,7 @@ impl Hash for IRFunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -1229,7 +1227,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
-            Log { base } => map!(log::log, base),
+            Log => map_as_slice!(log::log),
             #[cfg(feature = "log")]
             Log1p => map!(log::log1p),
             #[cfg(feature = "log")]

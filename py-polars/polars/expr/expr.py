@@ -10150,7 +10150,7 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.unique_counts())
 
-    def log(self, base: float = math.e) -> Expr:
+    def log(self, base: float | IntoExpr = math.e) -> Expr:
         """
         Compute the logarithm to a given base.
 
@@ -10174,7 +10174,8 @@ Consider using {self}.implode() instead"""
         │ 1.584963 │
         └──────────┘
         """
-        return wrap_expr(self._pyexpr.log(base))
+        base_pyexpr = parse_into_expression(base)
+        return wrap_expr(self._pyexpr.log(base_pyexpr))
 
     def log1p(self) -> Expr:
         """

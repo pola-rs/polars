@@ -10,8 +10,21 @@ pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Co
     }
 }
 
-pub(super) fn log(s: &Column, base: f64) -> PolarsResult<Column> {
-    Ok(s.as_materialized_series().log(base).into())
+pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
+    assert_eq!(columns.len(), 2);
+
+    let s = &columns[0].as_materialized_series();
+    let base = &columns[1];
+
+    polars_ensure!(
+        base.len() == 1,
+        ComputeError: "base must be a single value."
+    );
+    let base = base.strict_cast(&DataType::Float64)?;
+    match base.f64()?.get(0) {
+        Some(base) => Ok(s.log(base).into()),
+        None => polars_bail!(ComputeError: "'n' can not be None for diff"),
+    }
 }
 
 pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
