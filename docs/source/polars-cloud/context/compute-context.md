@@ -48,22 +48,22 @@ Once defined, you can apply your compute context to queries in three ways:
 
 1. By directly passing the context to the remote query:
 
-   ```python
-   query.remote(context=ctx).sink_parquet(...)
-   ```
+    ```python
+    query.remote(context=ctx).sink_parquet(...)
+    ```
 
 2. By globally setting the compute context. This way you set it once and don't need to provide it to
    every `remote` call:
 
-   ```python
-   pc.set_compute_context(ctx)
+    ```python
+    pc.set_compute_context(ctx)
 
-   query.remote().sink_parquet(...)
-   ```
+    query.remote().sink_parquet(...)
+    ```
 
 3. When a default compute context is set via the Polars Cloud dashboard. It is no longer required to
    define a compute context.
 
-   ```python
-   query.remote().sink_parquet(...)
-   ```
+    ```python
+    query.remote().sink_parquet(...)
+    ```
