@@ -60,6 +60,10 @@ def assert_index_of(
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_float(dtype: pl.DataType) -> None:
     values = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
+    if dtype == pl.Float32:
+        # Can't pass Python literals to index_of() for Float32
+        values = [(None if v is None else np.float32(v)) for v in values]
+
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
     sorted_series_desc = series.sort(descending=True)
@@ -142,7 +146,7 @@ def test_integer(dtype: pl.DataType) -> None:
 
         # Can't cast floats:
         for f in [np.float32(3.1), np.float64(3.1), 50.9]:
-            with pytest.raises(InvalidOperationError, match="cannot cast lossless"):
+            with pytest.raises(InvalidOperationError, match="cannot cast.*"):
                 s.index_of(f)  # type: ignore[arg-type]
 
 
@@ -344,7 +348,7 @@ def test_categorical(convert_to_literal: bool) -> None:
 @pytest.mark.parametrize("value", [0, 0.1])
 def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
     series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
-    msg = "cannot cast lossless"
+    msg = "cannot cast.*losslessly.*"
     with pytest.raises(InvalidOperationError, match=msg):
         series.index_of(value)
     df = pl.DataFrame({"s": series})
@@ -365,9 +369,11 @@ def test_index_of_null_parametric(s: pl.Series) -> None:
 
 def test_out_of_range_integers() -> None:
     series = pl.Series([0, 255, None, 1, 2], dtype=pl.UInt8)
-    with pytest.raises(InvalidOperationError, match="256 does not fit in a u8"):
+    with pytest.raises(InvalidOperationError, match="cannot cast 256 losslessly to u8"):
         assert series.index_of(256)
-    with pytest.raises(InvalidOperationError, match="257 does not fit in a u8"):
+    with pytest.raises(InvalidOperationError, match="cannot cast 257 losslessly to u8"):
         assert series.index_of(np.int16(257))
-    with pytest.raises(InvalidOperationError, match="258 does not fit in a u8"):
-        assert series.index_of(pl.lit(258, dtype=pl.UInt16))
+    with pytest.raises(
+        InvalidOperationError, match="cannot cast losslessly from u16 to u8"
+    ):
+        assert series.index_of(pl.lit(17, dtype=pl.UInt16))

@@ -404,9 +404,7 @@ impl OptimizationRule for TypeCoercionRule {
                         CastingRules::FirstArgLossless => {
                             for other in &input[1..] {
                                 let other = other.dtype(schema, expr_arena)?;
-                                if !can_cast_to_lossless(&super_type, other) {
-                                    polars_bail!(InvalidOperation: "cannot cast lossless from {} to {}", other, super_type)
-                                }
+                                can_cast_to_lossless(&super_type, other)?;
                             }
                         },
                     }
@@ -1004,13 +1002,23 @@ fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Opt
 }
 
 /// Can we cast the `from` dtype to the `to` dtype without losing information?
-fn can_cast_to_lossless(to: &DataType, from: &DataType) -> bool {
-    match (to, from) {
+fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
+    let can_cast = match (to, from) {
         (a, b) if a == b => true,
         (_, DataType::Null) => true,
-        (to, DataType::Unknown(UnknownKind::Int(value))) if to.is_integer() => {
-            to.value_within_range(AnyValue::Int128(*value))
+        (to, DataType::Unknown(UnknownKind::Int(value))) => match to {
+            to if to.is_integer() && to.value_within_range(AnyValue::Int128(*value)) => true,
+            // For floats, make sure it's in range where all integers convert
+            // losslessly; this isn't quite every possible value that can be
+            // converted losslessly, but it's good enough:
+            DataType::Float32 if (*value < 2i128.pow(24)) && (*value > -2i128.pow(24)) => true,
+            DataType::Float64 if (*value < 2i128.pow(53)) && (*value > -2i128.pow(53)) => true,
+            // Make sure we have error message that reports the value:
+            _ => polars_bail!(InvalidOperation: "cannot cast {} losslessly to {}", value, to),
         },
+        // For Float32 we just can't tell if the value will fit, so can't do
+        // anything; for Float64 we can assume it'll work since presumably it's
+        // no larger than a float64 in practice.
         (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
         // Handles both String and UnknownKind::Str:
         (DataType::String, from) => from.is_string(),
@@ -1025,33 +1033,46 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> bool {
         (DataType::Enum(_, _), from) => from.is_string(),
         #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(_, _), from) => from.is_string(),
-        #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => true,
+        // TODO validate if this is actually corrrect
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), DataType::Decimal(_, _)) => true,
+        // TODO validate if this is actually corrrect
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, _), dt) => dt.is_primitive_numeric(),
         // Can't check for more granular time_unit in less-granular time_unit
         // data, or we'll cast away valid/necessary precision (eg: nanosecs to
         // millisecs):
         (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => lhs_unit <= rhs_unit,
         (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => lhs_unit <= rhs_unit,
-        (DataType::List(to), DataType::List(from)) => can_cast_to_lossless(to, from),
+        (DataType::List(to), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]
-        (DataType::List(to), DataType::Array(from, _)) => can_cast_to_lossless(to, from),
+        (DataType::List(to), DataType::Array(from, _)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]
-        (DataType::Array(to, _), DataType::List(from)) => can_cast_to_lossless(to, from),
+        (DataType::Array(to, _), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]
         (DataType::Array(to, to_count), DataType::Array(from, from_count)) => {
-            from_count == to_count && can_cast_to_lossless(to, from)
+            if from_count != to_count {
+                false
+            } else {
+                return can_cast_to_lossless(to, from);
+            }
         },
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(to_fields), DataType::Struct(from_fields)) => {
-            to_fields.len() == from_fields.len()
-                && to_fields
+            if to_fields.len() != from_fields.len() {
+                false
+            } else {
+                return to_fields
                     .iter()
                     .zip(from_fields.iter())
                     .map(|(to, from)| can_cast_to_lossless(&to.dtype, &from.dtype))
-                    .all(|v| v)
+                    .collect::<PolarsResult<()>>();
+            }
         },
         _ => false,
+    };
+    if !can_cast {
+        polars_bail!(InvalidOperation: "cannot cast losslessly from {} to {}", from, to)
     }
+    Ok(())
 }
