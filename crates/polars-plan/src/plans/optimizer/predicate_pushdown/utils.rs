@@ -15,7 +15,7 @@ fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     })
 }
 
-/// Inserts a predicate into the map.
+/// Inserts a predicate into the map, with some basic de-duplication.
 ///
 /// The map is keyed in a way that may cause some predicates to fall into the same bucket. In that
 /// case the predicate is AND'ed with the existing node in that bucket.
