@@ -658,6 +658,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .map_err(|e| e.context(failed_here!(pipe_with_schema)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
+            let input_owned = DslPlan::IR {
+                dsl: Arc::new(input_owned),
+                version: ctxt.lp_arena.version(),
+                node: Some(input),
+            };
+
             // Adjust the input and start conversion again
             let input_adjusted =
                 callback.call((input_owned, Arc::unwrap_or_clone(input_schema.into_owned())))?;
@@ -1049,13 +1055,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::IR { node, dsl, version } => {
-            return if node.is_some()
-                && version == ctxt.lp_arena.version()
-                && ctxt.conversion_optimizer.used_arenas.insert(version)
-            {
-                Ok(node.unwrap())
-            } else {
-                to_alp_impl(owned(dsl), ctxt)
+            return match node {
+                Some(node)
+                    if version == ctxt.lp_arena.version()
+                        && ctxt.conversion_optimizer.used_arenas.insert(version) =>
+                {
+                    Ok(node)
+                },
+                _ => to_alp_impl(owned(dsl), ctxt),
             };
         },
     };
