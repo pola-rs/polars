@@ -5,6 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::async_primitives::wait_group::WaitToken;
+use crate::async_primitives::MemoryToken;
 
 static IDEAL_MORSEL_SIZE: OnceLock<usize> = OnceLock::new();
 
@@ -90,6 +91,9 @@ pub struct Morsel {
 
     /// Used to notify someone when this morsel is consumed, to provide backpressure.
     consume_token: Option<WaitToken>,
+    
+    /// Memory token representing this morsel's reserved memory
+    memory_token: Option<MemoryToken>,
 }
 
 impl Morsel {
@@ -99,12 +103,34 @@ impl Morsel {
             seq,
             source_token,
             consume_token: None,
+            memory_token: None,
+        }
+    }
+    
+    pub async fn new_with_memory_limit(
+        df: DataFrame, 
+        seq: MorselSeq, 
+        source_token: SourceToken
+    ) -> Self {
+        let size = df.estimated_size();
+        let memory_token = crate::get_memory_limiter().reserve(size).await;
+        
+        Self {
+            df,
+            seq,
+            source_token,
+            consume_token: None,
+            memory_token: Some(memory_token),
         }
     }
 
     #[allow(unused)]
     pub fn into_inner(self) -> (DataFrame, MorselSeq, SourceToken, Option<WaitToken>) {
         (self.df, self.seq, self.source_token, self.consume_token)
+    }
+    
+    pub fn estimated_size(&self) -> usize {
+        self.df.estimated_size()
     }
 
     pub fn into_df(self) -> DataFrame {
