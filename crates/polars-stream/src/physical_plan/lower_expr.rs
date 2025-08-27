@@ -996,12 +996,12 @@ fn lower_exprs_with_ctx(
                 //      ->
                 //    expr - expr.shift(offset)
 
-                let mut base_expr = inner_exprs[0].clone();
+                let base_expr_ir = &inner_exprs[0];
                 let base_dtype =
-                    base_expr.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
-                let mut offset_expr = inner_exprs[1].clone();
+                    base_expr_ir.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
+                let offset_expr_ir = &inner_exprs[1];
                 let offset_dtype =
-                    offset_expr.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
+                    offset_expr_ir.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
 
                 let cast_dtype = |dt: &DataType| match *dt {
                     DataType::UInt8 => Some(DataType::Int16),
@@ -1009,64 +1009,44 @@ fn lower_exprs_with_ctx(
                     DataType::UInt32 | DataType::UInt64 => Some(DataType::Int64),
                     _ => None,
                 };
+
+                let mut base = AExprBuilder::new_from_node(base_expr_ir.node());
                 if let Some(cast_dtype) = cast_dtype(base_dtype) {
-                    let base_node = AExprBuilder::new_from_node(base_expr.node())
-                        .cast(cast_dtype, ctx.expr_arena)
-                        .node();
-                    base_expr = ExprIR::from_node(base_node, ctx.expr_arena);
+                    base = base.cast(cast_dtype, ctx.expr_arena);
                 }
+                let mut offset = AExprBuilder::new_from_node(offset_expr_ir.node());
                 if let Some(cast_dtype) = cast_dtype(offset_dtype) {
-                    let offset_node = AExprBuilder::new_from_node(offset_expr.node())
-                        .cast(cast_dtype, ctx.expr_arena)
-                        .node();
-                    offset_expr = ExprIR::from_node(offset_node, ctx.expr_arena);
+                    offset = offset.cast(cast_dtype, ctx.expr_arena);
                 }
 
-                let shifted_node = AExprBuilder::new_from_node(base_expr.node())
-                    .shift(offset_expr.node(), ctx.expr_arena)
-                    .node();
-                let shifted_expr = ExprIR::from_node(shifted_node, ctx.expr_arena);
-
-                let mut output_node = AExprBuilder::new_from_node(base_expr.node())
-                    .minus(shifted_expr.node(), ctx.expr_arena)
-                    .node();
+                let shifted = base.shift(offset.node(), ctx.expr_arena);
+                let mut output = base.minus(shifted.node(), ctx.expr_arena);
 
                 if null_behavior == NullBehavior::Drop {
                     // Without the column size, slice can only remove leading nulls.
                     // So if the offset was negative, the nulls appeared and the end of the column.
                     // In that case, shift the column forward to move the nulls back to the front.
                     let zero_literal =
-                        AExprBuilder::lit(LiteralValue::new_idxsize(0), ctx.expr_arena).node();
-                    let zero_literal_expr = ExprIR::from_node(zero_literal, ctx.expr_arena);
-                    let offset_neg = AExprBuilder::new_from_node(offset_expr.node())
-                        .negate(ctx.expr_arena)
-                        .node();
-                    let offset_neg_expr = ExprIR::from_node(offset_neg, ctx.expr_arena);
+                        AExprBuilder::lit(LiteralValue::new_idxsize(0), ctx.expr_arena);
+                    let offset_neg =
+                        AExprBuilder::new_from_node(offset.node()).negate(ctx.expr_arena);
                     let offset_if_negative = AExprBuilder::function(
-                        vec![offset_neg_expr, zero_literal_expr],
+                        vec![offset_neg.expr_ir_unnamed(), zero_literal.expr_ir_unnamed()],
                         IRFunctionExpr::MaxHorizontal,
                         ctx.expr_arena,
-                    )
-                    .node();
-                    output_node = AExprBuilder::new_from_node(output_node)
-                        .shift(offset_if_negative, ctx.expr_arena)
-                        .node();
+                    );
+                    output = output.shift(offset_if_negative, ctx.expr_arena);
 
                     // Remove the nulls that were introduced by the shift
-                    let offset_abs = AExprBuilder::new_from_node(offset_expr.node())
-                        .abs(ctx.expr_arena)
-                        .node();
+                    let offset_abs = offset.abs(ctx.expr_arena);
                     let null_literal = AExprBuilder::lit(
                         LiteralValue::Scalar(Scalar::null(DataType::Int64)),
                         ctx.expr_arena,
-                    )
-                    .node();
-                    output_node = AExprBuilder::new_from_node(output_node)
-                        .slice(offset_abs, null_literal, ctx.expr_arena)
-                        .node();
+                    );
+                    output = output.slice(offset_abs, null_literal, ctx.expr_arena);
                 }
 
-                let (stream, nodes) = lower_exprs_with_ctx(input, &[output_node], ctx)?;
+                let (stream, nodes) = lower_exprs_with_ctx(input, &[output.node()], ctx)?;
                 input_streams.insert(stream);
                 transformed_exprs.extend(nodes);
             },
