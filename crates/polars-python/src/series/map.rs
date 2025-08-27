@@ -19,7 +19,7 @@ impl PySeries {
         return_dtype: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
-        let series = &self.series.read();
+        let series = &self.series.read().clone(); // Clone so we don't deadlock on re-entrance.
 
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(return_dtype) = return_dtype {

@@ -367,7 +367,7 @@ impl PyDataFrame {
         lambda: PyObject,
         maintain_order: bool,
     ) -> PyResult<Self> {
-        let df = self.df.read();
+        let df = self.df.read().clone(); // Clone so we can't deadlock on re-entrance from lambda.
         let gb = if maintain_order {
             df.group_by_stable(by.iter().map(|x| &**x))
         } else {
@@ -443,11 +443,12 @@ impl PyDataFrame {
         aggregate_expr: Option<PyExpr>,
         separator: Option<&str>,
     ) -> PyResult<Self> {
+        let df = self.df.read().clone(); // Clone to avoid dead lock on re-entrance in aggregate_expr.
         let fun = if maintain_order { pivot_stable } else { pivot };
         let agg_expr = aggregate_expr.map(|expr| expr.inner);
         py.enter_polars_df(|| {
             fun(
-                &self.df.read(),
+                &df,
                 on,
                 index,
                 values,
