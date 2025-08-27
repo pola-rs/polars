@@ -980,6 +980,76 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
+            #[cfg(feature = "diff")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Diff(null_behavior),
+                options: _,
+            } => {
+                use polars_core::scalar::Scalar;
+                use polars_core::series::ops::NullBehavior;
+
+                assert_eq!(inner_exprs.len(), 2);
+
+                // Transform:
+                //    expr.diff(offset, "ignore")
+                //      ->
+                //    expr - expr.shift(offset)
+
+                let base_expr_ir = &inner_exprs[0];
+                let base_dtype =
+                    base_expr_ir.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
+                let offset_expr_ir = &inner_exprs[1];
+                let offset_dtype =
+                    offset_expr_ir.dtype(&ctx.phys_sm[input.node].output_schema, ctx.expr_arena)?;
+
+                let mut base = AExprBuilder::new_from_node(base_expr_ir.node());
+                let cast_dtype = match base_dtype {
+                    DataType::UInt8 => Some(DataType::Int16),
+                    DataType::UInt16 => Some(DataType::Int32),
+                    DataType::UInt32 | DataType::UInt64 => Some(DataType::Int64),
+                    _ => None,
+                };
+                if let Some(dtype) = cast_dtype {
+                    base = base.cast(dtype, ctx.expr_arena);
+                }
+
+                let mut offset = AExprBuilder::new_from_node(offset_expr_ir.node());
+                if offset_dtype != &DataType::Int64 {
+                    offset = offset.cast(DataType::Int64, ctx.expr_arena);
+                }
+
+                let shifted = base.shift(offset.node(), ctx.expr_arena);
+                let mut output = base.minus(shifted.node(), ctx.expr_arena);
+
+                if null_behavior == NullBehavior::Drop {
+                    // Without the column size, slice can only remove leading nulls.
+                    // So if the offset was negative, the nulls appeared at the end of the column.
+                    // In that case, shift the column forward to move the nulls back to the front.
+                    let zero_literal =
+                        AExprBuilder::lit(LiteralValue::new_idxsize(0), ctx.expr_arena);
+                    let offset_neg = offset.negate(ctx.expr_arena);
+                    let offset_if_negative = AExprBuilder::function(
+                        vec![offset_neg.expr_ir_unnamed(), zero_literal.expr_ir_unnamed()],
+                        IRFunctionExpr::MaxHorizontal,
+                        ctx.expr_arena,
+                    );
+                    output = output.shift(offset_if_negative, ctx.expr_arena);
+
+                    // Remove the nulls that were introduced by the shift
+                    let offset_abs = offset.abs(ctx.expr_arena);
+                    let null_literal = AExprBuilder::lit(
+                        LiteralValue::Scalar(Scalar::null(DataType::Int64)),
+                        ctx.expr_arena,
+                    );
+                    output = output.slice(offset_abs, null_literal, ctx.expr_arena);
+                }
+
+                let (stream, nodes) = lower_exprs_with_ctx(input, &[output.node()], ctx)?;
+                input_streams.insert(stream);
+                transformed_exprs.extend(nodes);
+            },
+
             AExpr::Function {
                 input: ref inner_exprs,
                 function: IRFunctionExpr::RLE,
