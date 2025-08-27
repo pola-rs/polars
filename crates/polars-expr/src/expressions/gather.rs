@@ -77,7 +77,11 @@ impl PhysicalExpr for GatherExpr {
                     s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
                 }
             },
-            _ => unreachable!(),
+            _ => polars_bail!(
+                op = "gather/get",
+                got = s.dtype(),
+                expected = "integer type"
+            ),
         })?;
 
         let taken = if idx.inner_dtype() == &IDX_DTYPE {
