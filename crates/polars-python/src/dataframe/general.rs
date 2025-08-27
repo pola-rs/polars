@@ -363,45 +363,42 @@ impl PyDataFrame {
 
     pub fn group_by_map_groups(
         &self,
+        py: Python<'_>,
         by: Vec<PyBackedStr>,
         lambda: PyObject,
         maintain_order: bool,
     ) -> PyResult<Self> {
-        let df = self.df.read().clone(); // Clone so we can't deadlock on re-entrance from lambda.
-        let gb = if maintain_order {
-            df.group_by_stable(by.iter().map(|x| &**x))
-        } else {
-            df.group_by(by.iter().map(|x| &**x))
-        }
-        .map_err(PyPolarsErr::from)?;
+        py.enter_polars_df(|| {
+            let df = self.df.read().clone(); // Clone so we can't deadlock on re-entrance from lambda.
+            let gb = if maintain_order {
+                df.group_by_stable(by.iter().map(|x| &**x))
+            } else {
+                df.group_by(by.iter().map(|x| &**x))
+            }?;
 
-        let function = move |df: DataFrame| {
-            Python::with_gil(|py| {
-                let pypolars = polars(py).bind(py);
-                let pydf = PyDataFrame::new(df);
-                let python_df_wrapper =
-                    pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
+            let function = move |df: DataFrame| {
+                Python::with_gil(|py| {
+                    let pypolars = polars(py).bind(py);
+                    let pydf = PyDataFrame::new(df);
+                    let python_df_wrapper =
+                        pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
 
-                // Call the lambda and get a python-side DataFrame wrapper.
-                let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
-                    Ok(pyobj) => pyobj,
-                    Err(e) => panic!("UDF failed: {}", e.value(py)),
-                };
-                let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-                    "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
-                );
+                    // Call the lambda and get a python-side DataFrame wrapper.
+                    let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+                        Ok(pyobj) => pyobj,
+                        Err(e) => panic!("UDF failed: {}", e.value(py)),
+                    };
+                    let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+                        "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+                    );
 
-                let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
-                Ok(pydf.df.into_inner())
-            })
-        };
-        // We don't use `py.allow_threads(|| gb.par_apply(..)` because that segfaulted
-        // due to code related to Pyo3 or rayon, cannot reproduce it in native polars.
-        // So we lose parallelism, but it doesn't really matter because we are GIL bound anyways
-        // and this function should not be used in idiomatic polars anyway.
-        let df = gb.apply(function).map_err(PyPolarsErr::from)?;
+                    let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+                    Ok(pydf.df.into_inner())
+                })
+            };
 
-        Ok(df.into())
+            gb.apply(function)
+        })
     }
 
     #[allow(clippy::should_implement_trait)]
