@@ -6,12 +6,28 @@ use std::sync::Mutex;
 use std::task::{Context, Poll, Waker};
 use std::collections::VecDeque;
 use std::marker::PhantomData;
+use std::thread::Thread;
 
 #[derive(Debug)]
 pub struct MemoryLimiter {
     limit: usize,
     current_usage: AtomicUsize,
-    waiters: Mutex<VecDeque<Waker>>,
+    waiters: Mutex<VecDeque<WaiterType>>,
+}
+
+#[derive(Debug)]
+enum WaiterType {
+    Task(Waker),
+    Thread(Thread),
+}
+
+impl WaiterType {
+    fn wake(self) {
+        match self {
+            WaiterType::Task(waker) => waker.wake(),
+            WaiterType::Thread(thread) => thread.unpark(),
+        }
+    }
 }
 
 impl Clone for MemoryLimiter {
@@ -64,12 +80,37 @@ impl MemoryLimiter {
         }
     }
     
+    pub fn reserve_sync(&self, bytes: usize) -> MemoryToken {
+        use std::thread;
+        
+        if let Some(token) = self.try_reserve(bytes) {
+            return token;
+        }
+        
+        loop {
+            {
+                let mut waiters = self.waiters.lock().unwrap();
+                waiters.push_back(WaiterType::Thread(thread::current()));
+            }
+            
+            if let Some(token) = self.try_reserve(bytes) {
+                return token;
+            }
+            
+            thread::park();
+            
+            if let Some(token) = self.try_reserve(bytes) {
+                return token;
+            }
+        }
+    }
+    
     fn release(&self, bytes: usize) {
         self.current_usage.fetch_sub(bytes, Ordering::Release);
         
         let mut waiters = self.waiters.lock().unwrap();
-        if let Some(waker) = waiters.pop_front() {
-            waker.wake();
+        if let Some(waiter) = waiters.pop_front() {
+            waiter.wake();
         }
     }
 }
@@ -89,7 +130,7 @@ impl Future for MemoryReserveFuture {
         }
         
         let mut waiters = limiter.waiters.lock().unwrap();
-        waiters.push_back(cx.waker().clone());
+        waiters.push_back(WaiterType::Task(cx.waker().clone()));
         
         Poll::Pending
     }

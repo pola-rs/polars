@@ -98,6 +98,24 @@ pub struct Morsel {
 
 impl Morsel {
     pub fn new(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
+        let size = df.estimated_size();
+        
+        let memory_token = if std::env::var("POLARS_DISABLE_MEMORY_LIMIT").is_err() {
+            Some(crate::get_memory_limiter().reserve_sync(size))
+        } else {
+            None
+        };
+        
+        Self {
+            df,
+            seq,
+            source_token,
+            consume_token: None,
+            memory_token,
+        }
+    }
+    
+    pub fn new_unchecked(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
         Self {
             df,
             seq,
@@ -107,21 +125,48 @@ impl Morsel {
         }
     }
     
-    pub async fn new_with_memory_limit(
-        df: DataFrame, 
-        seq: MorselSeq, 
-        source_token: SourceToken
-    ) -> Self {
+    pub fn new_non_blocking(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Option<Self> {
         let size = df.estimated_size();
-        let memory_token = crate::get_memory_limiter().reserve(size).await;
+        
+        let memory_token = if std::env::var("POLARS_DISABLE_MEMORY_LIMIT").is_err() {
+            crate::get_memory_limiter().try_reserve(size)?
+        } else {
+            return Some(Self::new_unchecked(df, seq, source_token));
+        };
+        
+        Some(Self {
+            df,
+            seq,
+            source_token,
+            consume_token: None,
+            memory_token: Some(memory_token),
+        })
+    }
+    
+    pub async fn new_async(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
+        let size = df.estimated_size();
+        
+        let memory_token = if std::env::var("POLARS_DISABLE_MEMORY_LIMIT").is_err() {
+            Some(crate::get_memory_limiter().reserve(size).await)
+        } else {
+            None
+        };
         
         Self {
             df,
             seq,
             source_token,
             consume_token: None,
-            memory_token: Some(memory_token),
+            memory_token,
         }
+    }
+    
+    pub async fn new_with_memory_limit(
+        df: DataFrame, 
+        seq: MorselSeq, 
+        source_token: SourceToken
+    ) -> Self {
+        Self::new_async(df, seq, source_token).await
     }
 
     #[allow(unused)]
