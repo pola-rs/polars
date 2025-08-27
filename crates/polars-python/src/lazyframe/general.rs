@@ -630,7 +630,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (optflags))]
     fn with_optimizations(&self, optflags: PyOptFlags) -> Self {
         let ldf = self.ldf.read().clone();
-        ldf.with_optimizations(optflags.inner).into()
+        ldf.with_optimizations(optflags.inner.into_inner()).into()
     }
 
     #[pyo3(signature = (lambda_post_opt))]

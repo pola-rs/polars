@@ -34,13 +34,6 @@ impl Clone for PyLazyFrame {
     }
 }
 
-#[pyclass(frozen)]
-#[repr(transparent)]
-#[derive(Clone)]
-pub struct PyOptFlags {
-    pub inner: OptFlags,
-}
-
 impl From<LazyFrame> for PyLazyFrame {
     fn from(ldf: LazyFrame) -> Self {
         PyLazyFrame {
@@ -55,9 +48,21 @@ impl From<PyLazyFrame> for LazyFrame {
     }
 }
 
+#[pyclass(frozen)]
+#[repr(transparent)]
+pub struct PyOptFlags {
+    pub inner: RwLock<OptFlags>,
+}
+
+impl Clone for PyOptFlags {
+    fn clone(&self) -> Self {
+        Self { inner: RwLock::new(self.inner.read().clone()) }
+    }
+}
+
 impl From<OptFlags> for PyOptFlags {
     fn from(inner: OptFlags) -> Self {
-        PyOptFlags { inner }
+        PyOptFlags { inner: RwLock::new(inner) }
     }
 }
 

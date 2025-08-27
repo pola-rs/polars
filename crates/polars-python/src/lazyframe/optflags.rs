@@ -1,6 +1,8 @@
 use polars::prelude::OptFlags;
 use pyo3::pymethods;
 
+use parking_lot::RwLock;
+
 use super::PyOptFlags;
 
 macro_rules! flag_getter_setters {
@@ -10,34 +12,34 @@ macro_rules! flag_getter_setters {
             #[staticmethod]
             pub fn empty() -> Self {
                 Self {
-                    inner: OptFlags::empty()
+                    inner: RwLock::new(OptFlags::empty())
                 }
             }
 
             #[staticmethod]
             #[allow(clippy::should_implement_trait)]
             pub fn default() -> Self {
-                Self { inner: OptFlags::default() }
+                Self { inner: RwLock::default() }
             }
 
-            pub fn no_optimizations(&mut self) {
+            pub fn no_optimizations(&self) {
                 $(if $clear {
-                    self.inner.remove(OptFlags::$flag);
+                    self.inner.write().remove(OptFlags::$flag);
                 })+
             }
 
             pub fn copy(&self) -> Self {
-                Self { inner: self.inner }
+                Self { inner: RwLock::new(self.inner.read().clone()) }
             }
 
             $(
             #[getter]
             fn $getter(&self) -> bool {
-                self.inner.contains(OptFlags::$flag)
+                self.inner.read().contains(OptFlags::$flag)
             }
             #[setter]
-            fn $setter(&mut self, value: bool) {
-                self.inner.set(OptFlags::$flag, value)
+            fn $setter(&self, value: bool) {
+                self.inner.write().set(OptFlags::$flag, value)
             }
             )+
         }

@@ -130,14 +130,14 @@ pub fn collect_all(
 ) -> PyResult<Vec<PyDataFrame>> {
     let plans = lfs_to_plans(lfs);
     let dfs =
-        py.enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))?;
+        py.enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner()))?;
     Ok(dfs.into_iter().map(Into::into).collect())
 }
 
 #[pyfunction]
 pub fn explain_all(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags, py: Python) -> PyResult<String> {
     let plans = lfs_to_plans(lfs);
-    let explained = py.enter_polars(|| LazyFrame::explain_all(plans, optflags.inner))?;
+    let explained = py.enter_polars(|| LazyFrame::explain_all(plans, optflags.inner.into_inner()))?;
     Ok(explained)
 }
 
@@ -154,7 +154,7 @@ pub fn collect_all_with_callback(
         .map(|lf| lf.ldf.into_inner().logical_plan)
         .collect();
     let result = py
-        .enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))
+        .enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner()))
         .map(|dfs| {
             dfs.into_iter()
                 .map(Into::into)
