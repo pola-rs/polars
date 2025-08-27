@@ -132,7 +132,7 @@ def business_day_count(
         plr.business_day_count(
             start_pyexpr,
             end_pyexpr,
-            week_mask,
+            list(week_mask),
             [(holiday - unix_epoch).days for holiday in holidays],
         )
     )

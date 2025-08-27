@@ -128,6 +128,37 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
             Expr::RenameAlias { expr, function } => return function.call(&expr_output_name(expr)?),
             Expr::Len => return Ok(get_len_name()),
             Expr::Literal(val) => return Ok(val.output_column_name().clone()),
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                input: _,
+                function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
+            } => return Ok(name.clone()),
+
+            // Selector with single by_name is fine.
+            Expr::Selector(Selector::ByName { names, .. }) if names.len() == 1 => {
+                return Ok(names[0].clone());
+            },
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function:
+                    FunctionExpr::StructExpr(StructFunction::SelectFields(Selector::ByName {
+                        names,
+                        ..
+                    })),
+                ..
+            } if names.len() == 1 => return Ok(names[0].clone()),
+
+            // Other selectors aren't possible right now.
+            Expr::Selector(_) => break,
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
+                ..
+            } => break,
+
             _ => {},
         }
     }

@@ -116,7 +116,9 @@ pub fn col(name: &str) -> PyExpr {
 }
 
 fn lfs_to_plans(lfs: Vec<PyLazyFrame>) -> Vec<DslPlan> {
-    lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect()
+    lfs.into_iter()
+        .map(|lf| lf.ldf.into_inner().logical_plan)
+        .collect()
 }
 
 #[pyfunction]
@@ -127,15 +129,17 @@ pub fn collect_all(
     py: Python<'_>,
 ) -> PyResult<Vec<PyDataFrame>> {
     let plans = lfs_to_plans(lfs);
-    let dfs =
-        py.enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))?;
+    let dfs = py.enter_polars(|| {
+        LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner())
+    })?;
     Ok(dfs.into_iter().map(Into::into).collect())
 }
 
 #[pyfunction]
 pub fn explain_all(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags, py: Python) -> PyResult<String> {
     let plans = lfs_to_plans(lfs);
-    let explained = py.enter_polars(|| LazyFrame::explain_all(plans, optflags.inner))?;
+    let explained =
+        py.enter_polars(|| LazyFrame::explain_all(plans, optflags.inner.into_inner()))?;
     Ok(explained)
 }
 
@@ -147,9 +151,14 @@ pub fn collect_all_with_callback(
     lambda: PyObject,
     py: Python<'_>,
 ) {
-    let plans = lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect();
+    let plans = lfs
+        .into_iter()
+        .map(|lf| lf.ldf.into_inner().logical_plan)
+        .collect();
     let result = py
-        .enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))
+        .enter_polars(|| {
+            LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner())
+        })
         .map(|dfs| {
             dfs.into_iter()
                 .map(Into::into)
@@ -437,7 +446,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
-        let s = series.series;
+        let s = series.series.into_inner();
         if is_scalar {
             let av = s
                 .get(0)
@@ -464,7 +473,9 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
-                let s = PySeries::new_object(py, "", vec![value.extract()?], false).series;
+                let s = PySeries::new_object(py, "", vec![value.extract()?], false)
+                    .series
+                    .into_inner();
                 Ok(dsl::lit(s).into())
             },
             _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
@@ -473,23 +484,15 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
 }
 
 #[pyfunction]
-#[pyo3(signature = (pyexpr, lambda, output_type, is_elementwise, returns_scalar, is_ufunc))]
+#[pyo3(signature = (pyexpr, lambda, output_type, is_elementwise, returns_scalar))]
 pub fn map_expr(
     pyexpr: Vec<PyExpr>,
     lambda: PyObject,
     output_type: Option<PyDataTypeExpr>,
     is_elementwise: bool,
     returns_scalar: bool,
-    is_ufunc: bool,
 ) -> PyExpr {
-    map::lazy::map_expr(
-        &pyexpr,
-        lambda,
-        output_type,
-        is_elementwise,
-        returns_scalar,
-        is_ufunc,
-    )
+    map::lazy::map_expr(&pyexpr, lambda, output_type, is_elementwise, returns_scalar)
 }
 
 #[pyfunction]

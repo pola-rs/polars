@@ -107,17 +107,17 @@ impl<T> From<T> for Wrap<T> {
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
 pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_df"))?;
-    Ok(pydf.extract::<PyDataFrame>()?.df)
+    Ok(pydf.extract::<PyDataFrame>()?.df.into_inner())
 }
 
 pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
-    Ok(pydf.extract::<PyLazyFrame>()?.ldf)
+    Ok(pydf.extract::<PyLazyFrame>()?.ldf.into_inner())
 }
 
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     let s = obj.getattr(intern!(obj.py(), "_s"))?;
-    Ok(s.extract::<PySeries>()?.series)
+    Ok(s.extract::<PySeries>()?.series.into_inner())
 }
 
 pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny>> {
@@ -1419,6 +1419,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             datetime_nanoseconds_downcast,
             datetime_microseconds_downcast: false,
             datetime_convert_timezone,
+            null_upcast: true,
             missing_struct_fields,
             extra_struct_fields,
         }));

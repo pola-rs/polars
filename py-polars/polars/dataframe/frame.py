@@ -1733,12 +1733,13 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = False  # type: ignore[assignment]
+            compat_level_py = False
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
+            compat_level_py = compat_level._version
 
-        record_batches = self._df.to_arrow(compat_level)
+        record_batches = self._df.to_arrow(compat_level_py)
         return pa.Table.from_batches(record_batches)
 
     @overload
@@ -3922,15 +3923,16 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = True  # type: ignore[assignment]
+            compat_level_py = True
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
+            compat_level_py = compat_level._version
 
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc_stream(file, compression, compat_level)
+        self._df.write_ipc_stream(file, compression, compat_level_py)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
@@ -4244,14 +4246,12 @@ class DataFrame:
             msg = f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
             raise ValueError(msg)
 
+        connection_module_root = type(connection).__module__.split(".", 1)[0]
+
         if engine is None:
-            if (
-                isinstance(connection, str)
-                or (module_root := type(connection).__module__.split(".", 1)[0])
-                == "sqlalchemy"
-            ):
+            if isinstance(connection, str) or connection_module_root == "sqlalchemy":
                 engine = "sqlalchemy"
-            elif module_root.startswith("adbc"):
+            elif connection_module_root.startswith("adbc"):
                 engine = "adbc"
 
         def unpack_table_name(name: str) -> tuple[str | None, str | None, str]:
@@ -4266,20 +4266,38 @@ class DataFrame:
             return catalog, schema, tbl  # type: ignore[return-value]
 
         if engine == "adbc":
-            adbc_driver_manager = import_optional("adbc_driver_manager")
-            adbc_version = parse_version(
-                getattr(adbc_driver_manager, "__version__", "0.0")
+            from polars.io.database._utils import (
+                _get_adbc_module_name_from_uri,
+                _import_optional_adbc_driver,
+                _open_adbc_connection,
             )
-            from polars.io.database._utils import _open_adbc_connection
+
+            conn, can_close_conn = (
+                (_open_adbc_connection(connection), True)
+                if isinstance(connection, str)
+                else (connection, False)
+            )
+
+            driver_manager = import_optional("adbc_driver_manager")
+
+            # base class for ADBC connections
+            if not isinstance(conn, driver_manager.dbapi.Connection):
+                msg = f"unrecognised connection type {connection!r}"
+                raise TypeError(msg)
+
+            driver_manager_str_version = getattr(driver_manager, "__version__", "0.0")
+            driver_manager_version = parse_version(driver_manager_str_version)
 
             if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
                 # resulting in behaviour equivalent to 'fail'
                 mode = "create"
             elif if_table_exists == "replace":
-                if adbc_version < (0, 7):
-                    adbc_str_version = ".".join(str(v) for v in adbc_version)
-                    msg = f"`if_table_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
+                if driver_manager_version < (0, 7):
+                    msg = (
+                        "`if_table_exists = 'replace'` requires ADBC version >= 0.7, "
+                        f"found {driver_manager_str_version}"
+                    )
                     raise ModuleUpgradeRequiredError(msg)
                 mode = "replace"
             elif if_table_exists == "append":
@@ -4291,36 +4309,61 @@ class DataFrame:
                 )
                 raise ValueError(msg)
 
-            conn, can_close_conn = (
-                (_open_adbc_connection(connection), True)
-                if isinstance(connection, str)
-                else (connection, False)
-            )
             with (
-                conn if can_close_conn else contextlib.nullcontext(),  # type: ignore[union-attr]
-                conn.cursor() as cursor,  # type: ignore[union-attr]
+                conn if can_close_conn else contextlib.nullcontext(),
+                conn.cursor() as cursor,
             ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
-                if adbc_version >= (0, 7):
-                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():  # type: ignore[union-attr]
-                        if if_table_exists == "replace":
-                            # note: adbc doesn't (yet) support 'replace' for sqlite
-                            cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-                            mode = "create"
-                        catalog, db_schema = db_schema, None
 
+                adbc_module_name = (
+                    _get_adbc_module_name_from_uri(connection)
+                    if isinstance(connection, str)
+                    else connection_module_root
+                )
+                adbc_driver = _import_optional_adbc_driver(
+                    adbc_module_name, dbapi_submodule=False
+                )
+                adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                adbc_driver_version = parse_version(adbc_driver_str_version)
+
+                if adbc_module_name.split("_")[-1] == "sqlite":
+                    catalog, db_schema = db_schema, None
+
+                    # note: ADBC didnt't support 'replace' until adbc-driver-sqlite
+                    # version 0.11 (it was released for other drivers in version 0.7)
+                    if (
+                        driver_manager_version >= (0, 7)
+                        and adbc_driver_version < (0, 11)
+                        and if_table_exists == "replace"
+                    ):
+                        cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+                        mode = "create"
+
+                # As of adbc_driver_manager 1.6.0, adbc_ingest can take a Polars
+                # DataFrame via the PyCapsule interface
+                data = self if driver_manager_version >= (1, 6) else self.to_arrow()
+
+                # use of schema-qualified table names was released in
+                # adbc-driver-manager 0.7.0 and is working without bugs from driver
+                # version (e.g., adbc-driver-postgresql) version 0.8.0
+                if driver_manager_version >= (0, 7) and adbc_driver_version >= (0, 8):
                     n_rows = cursor.adbc_ingest(
                         unpacked_table_name,
-                        data=self.to_arrow(),
+                        data=data,
                         mode=mode,
                         catalog_name=catalog,
                         db_schema_name=db_schema,
                         **(engine_options or {}),
                     )
                 elif db_schema is not None:
-                    adbc_str_version = ".".join(str(v) for v in adbc_version)
-                    msg = f"use of schema-qualified table names requires ADBC version >= 0.8, found {adbc_str_version}"
+                    adbc_driver_pypi_name = adbc_module_name.replace("_", "-")
+                    msg = (
+                        "use of schema-qualified table names requires "
+                        "adbc-driver-manager version >= 0.7.0, found "
+                        f"{driver_manager_str_version} and {adbc_driver_pypi_name} "
+                        f"version >= 0.8.0, found {adbc_driver_str_version}"
+                    )
                     raise ModuleUpgradeRequiredError(
                         # https://github.com/apache/arrow-adbc/issues/1000
                         # https://github.com/apache/arrow-adbc/issues/1109
@@ -4329,11 +4372,11 @@ class DataFrame:
                 else:
                     n_rows = cursor.adbc_ingest(
                         table_name=unpacked_table_name,
-                        data=self.to_arrow(),
+                        data=data,
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()  # type: ignore[union-attr]
+                conn.commit()
             return n_rows
 
         elif engine == "sqlalchemy":
@@ -4361,8 +4404,8 @@ class DataFrame:
             elif isinstance(connection, Connectable):
                 sa_object = connection
             else:
-                error_msg = f"unexpected connection type {type(connection)}"
-                raise TypeError(error_msg)
+                msg = f"unrecognised connection type {connection!r}"
+                raise TypeError(msg)
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:
@@ -4872,9 +4915,12 @@ class DataFrame:
         └────────┴─────┴─────┴─────┘
         """
         keep_names_as = header_name if include_header else None
+        column_names_: Sequence[str] | None
         if isinstance(column_names, Generator):
-            column_names = [next(column_names) for _ in range(self.height)]
-        return self._from_pydf(self._df.transpose(keep_names_as, column_names))
+            column_names_ = [next(column_names) for _ in range(self.height)]
+        else:
+            column_names_ = column_names  # type: ignore[assignment]
+        return self._from_pydf(self._df.transpose(keep_names_as, column_names_))
 
     def reverse(self) -> DataFrame:
         """
@@ -6498,6 +6544,99 @@ class DataFrame:
         └─────┴─────┘
         """
         return function(self, *args, **kwargs)
+
+    def map_columns(
+        self,
+        column_names: str | Sequence[str] | pl.Selector,
+        function: Callable[[Series], Series],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> DataFrame:
+        """
+        Apply eager functions to columns of a DataFrame.
+
+        Users should always prefer :meth:`with_columns` unless they are using
+        expressions that are only possible on `Series` and not on `Expr`. This is almost
+        never the case, except for a very select few functions that cannot know the
+        output datatype without looking at the data.
+
+        Parameters
+        ----------
+        column_names
+            The columns to apply the UDF to.
+        function
+            Callable; will receive a column series as the first parameter,
+            followed by any given args/kwargs.
+        *args
+            Arguments to pass to the UDF.
+        **kwargs
+            Keyword arguments to pass to the UDF.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
+        >>> df.map_columns("a", lambda s: s.shrink_dtype())
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i8  ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ 10  │
+        │ 2   ┆ 20  │
+        │ 3   ┆ 30  │
+        │ 4   ┆ 40  │
+        └─────┴─────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ['{"x":"a"}', None, '{"x":"b"}', None],
+        ...         "b": ['{"a":1, "b": true}', None, '{"a":2, "b": false}', None],
+        ...     }
+        ... )
+        >>> df.map_columns(["a", "b"], lambda s: s.str.json_decode())
+        shape: (4, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ struct[1] ┆ struct[2] │
+        ╞═══════════╪═══════════╡
+        │ {"a"}     ┆ {1,true}  │
+        │ null      ┆ null      │
+        │ {"b"}     ┆ {2,false} │
+        │ null      ┆ null      │
+        └───────────┴───────────┘
+        >>> import polars.selectors as cs
+        >>> df.map_columns(cs.all(), lambda s: s.str.json_decode())
+        shape: (4, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ struct[1] ┆ struct[2] │
+        ╞═══════════╪═══════════╡
+        │ {"a"}     ┆ {1,true}  │
+        │ null      ┆ null      │
+        │ {"b"}     ┆ {2,false} │
+        │ null      ┆ null      │
+        └───────────┴───────────┘
+
+        See Also
+        --------
+        with_columns
+        """
+        c_names: list[str]
+        if isinstance(column_names, (pl.Selector, pl.Expr)):
+            from polars.selectors import expand_selector
+
+            c_names = list(expand_selector(self, column_names))
+        elif isinstance(column_names, str):
+            c_names = [column_names]
+        else:
+            c_names = list(column_names)
+
+        return self.with_columns(
+            **{c: function(self[c], *args, **kwargs) for c in c_names}
+        )
 
     def with_row_index(self, name: str = "index", offset: int = 0) -> DataFrame:
         """
@@ -8235,16 +8374,8 @@ class DataFrame:
         """
         require_same_type(self, other)
         if in_place:
-            try:
-                self._df.vstack_mut(other._df)
-            except RuntimeError as exc:
-                if str(exc) == "Already mutably borrowed":
-                    self._df.vstack_mut(other._df.clone())
-                    return self
-                else:
-                    raise
-            else:
-                return self
+            self._df.vstack_mut(other._df)
+            return self
 
         return self._from_pydf(self._df.vstack(other._df))
 
@@ -8302,13 +8433,7 @@ class DataFrame:
         └─────┴─────┘
         """
         require_same_type(self, other)
-        try:
-            self._df.extend(other._df)
-        except RuntimeError as exc:
-            if str(exc) == "Already mutably borrowed":
-                self._df.extend(other._df.clone())
-            else:
-                raise
+        self._df.extend(other._df)
         return self
 
     def drop(
@@ -9410,7 +9535,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
-    ) -> dict[tuple[object, ...], DataFrame]: ...
+    ) -> dict[tuple[Any, ...], DataFrame]: ...
 
     @overload
     def partition_by(
@@ -9420,7 +9545,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: bool,
-    ) -> list[DataFrame] | dict[tuple[object, ...], DataFrame]: ...
+    ) -> list[DataFrame] | dict[tuple[Any, ...], DataFrame]: ...
 
     def partition_by(
         self,
@@ -9429,7 +9554,7 @@ class DataFrame:
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
-    ) -> list[DataFrame] | dict[tuple[object, ...], DataFrame]:
+    ) -> list[DataFrame] | dict[tuple[Any, ...], DataFrame]:
         """
         Group by the given columns and return the groups as separate dataframes.
 

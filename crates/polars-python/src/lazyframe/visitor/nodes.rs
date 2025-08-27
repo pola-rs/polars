@@ -54,14 +54,14 @@ fn scan_type_to_pyobject(
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Scan a table with an optional predicate from a python function
 pub struct PythonScan {
     #[pyo3(get)]
     options: PyObject,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Slice the table
 pub struct Slice {
     #[pyo3(get)]
@@ -72,7 +72,7 @@ pub struct Slice {
     len: IdxSize,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Filter the table with a boolean expression
 pub struct Filter {
     #[pyo3(get)]
@@ -81,7 +81,7 @@ pub struct Filter {
     predicate: PyExprIR,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: UnifiedScanArgs,
@@ -166,7 +166,7 @@ impl PyFileOptions {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Scan a table from file
 pub struct Scan {
     #[pyo3(get)]
@@ -181,7 +181,7 @@ pub struct Scan {
     scan_type: PyObject,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Scan a table from an existing dataframe
 pub struct DataFrameScan {
     #[pyo3(get)]
@@ -192,14 +192,14 @@ pub struct DataFrameScan {
     selection: Option<PyExprIR>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Project out columns from a table
 pub struct SimpleProjection {
     #[pyo3(get)]
     input: usize,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Column selection
 pub struct Select {
     #[pyo3(get)]
@@ -210,7 +210,7 @@ pub struct Select {
     should_broadcast: bool,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Sort the table
 pub struct Sort {
     #[pyo3(get)]
@@ -223,18 +223,16 @@ pub struct Sort {
     slice: Option<(i64, usize)>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Cache the input at this point in the LP
 pub struct Cache {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
     id_: u128,
-    #[pyo3(get)]
-    cache_hits: u32,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Groupby aggregation
 pub struct GroupBy {
     #[pyo3(get)]
@@ -251,7 +249,7 @@ pub struct GroupBy {
     options: PyObject,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Join operation
 pub struct Join {
     #[pyo3(get)]
@@ -266,7 +264,7 @@ pub struct Join {
     options: PyObject,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Merge sorted operation
 pub struct MergeSorted {
     #[pyo3(get)]
@@ -277,7 +275,7 @@ pub struct MergeSorted {
     key: String,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Adding columns to the table without a Join
 pub struct HStack {
     #[pyo3(get)]
@@ -288,7 +286,7 @@ pub struct HStack {
     should_broadcast: bool,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Like Select, but all operations produce a single row.
 pub struct Reduce {
     #[pyo3(get)]
@@ -297,7 +295,7 @@ pub struct Reduce {
     exprs: Vec<PyExprIR>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Remove duplicates from the table
 pub struct Distinct {
     #[pyo3(get)]
@@ -305,7 +303,7 @@ pub struct Distinct {
     #[pyo3(get)]
     options: PyObject,
 }
-#[pyclass]
+#[pyclass(frozen)]
 /// A (User Defined) Function
 pub struct MapFunction {
     #[pyo3(get)]
@@ -313,14 +311,14 @@ pub struct MapFunction {
     #[pyo3(get)]
     function: PyObject,
 }
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Union {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
     options: Option<(i64, usize)>,
 }
-#[pyclass]
+#[pyclass(frozen)]
 /// Horizontal concatenation of multiple plans
 pub struct HConcat {
     #[pyo3(get)]
@@ -328,7 +326,7 @@ pub struct HConcat {
     #[pyo3(get)]
     options: (),
 }
-#[pyclass]
+#[pyclass(frozen)]
 /// This allows expressions to access other tables
 pub struct ExtContext {
     #[pyo3(get)]
@@ -337,7 +335,7 @@ pub struct ExtContext {
     contexts: Vec<usize>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Sink {
     #[pyo3(get)]
     input: usize,
@@ -483,14 +481,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             slice: *slice,
         }
         .into_py_any(py),
-        IR::Cache {
-            input,
-            id,
-            cache_hits,
-        } => Cache {
+        IR::Cache { input, id } => Cache {
             input: input.0,
             id_: id.as_u128(),
-            cache_hits: *cache_hits,
         }
         .into_py_any(py),
         IR::GroupBy {

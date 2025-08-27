@@ -327,12 +327,12 @@ def _post_apply_columns(
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
 
     if column_casts or column_subset:
-        pydf = pydf.lazy()
+        pyldf = pydf.lazy()
         if column_casts:
-            pydf = pydf.with_columns(column_casts)
+            pyldf = pyldf.with_columns(column_casts)
         if column_subset:
-            pydf = pydf.select([F.col(col)._pyexpr for col in column_subset])
-        pydf = pydf.collect(engine="in-memory")
+            pyldf = pyldf.select([F.col(col)._pyexpr for col in column_subset])
+        pydf = pyldf.collect(engine="in-memory", lambda_post_opt=None)
 
     return pydf
 
@@ -588,7 +588,11 @@ def _sequence_of_sequence_to_pydf(
         if unpack_nested:
             dicts = [nt_unpack(d) for d in data]
             pydf = PyDataFrame.from_dicts(
-                dicts, strict=strict, infer_schema_length=infer_schema_length
+                dicts,
+                schema=None,
+                schema_overrides=None,
+                strict=strict,
+                infer_schema_length=infer_schema_length,
             )
         else:
             pydf = PyDataFrame.from_rows(
@@ -815,12 +819,18 @@ def _sequence_of_dataclasses_to_pydf(
     if unpack_nested:
         dicts = [asdict(md) for md in data]
         pydf = PyDataFrame.from_dicts(
-            dicts, strict=strict, infer_schema_length=infer_schema_length
+            dicts,
+            schema=None,
+            schema_overrides=None,
+            strict=strict,
+            infer_schema_length=infer_schema_length,
         )
     else:
         rows = [astuple(dc) for dc in data]
         pydf = PyDataFrame.from_rows(
-            rows, schema=overrides or None, infer_schema_length=infer_schema_length
+            rows,  # type: ignore[arg-type]
+            schema=overrides or None,
+            infer_schema_length=infer_schema_length,
         )
 
     if overrides:
@@ -868,7 +878,11 @@ def _sequence_of_pydantic_models_to_pydf(
             else [md.model_dump(mode="python") for md in data]
         )
         pydf = PyDataFrame.from_dicts(
-            dicts, strict=strict, infer_schema_length=infer_schema_length
+            dicts,
+            schema=None,
+            schema_overrides=None,
+            strict=strict,
+            infer_schema_length=infer_schema_length,
         )
 
     elif len(model_fields) > 50:
@@ -884,6 +898,7 @@ def _sequence_of_pydantic_models_to_pydf(
         pydf = PyDataFrame.from_dicts(
             dicts,
             schema=overrides,
+            schema_overrides=None,
             strict=strict,
             infer_schema_length=infer_schema_length,
         )

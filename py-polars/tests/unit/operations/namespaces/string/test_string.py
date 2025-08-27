@@ -812,10 +812,8 @@ def test_json_decode_nested_struct() -> None:
         '[{"key_1": "a2", "key_2": 2}]',
         '[{"key_1": "a3", "key_2": 3, "key_3": "c"}]',
     ]
-    df = pl.DataFrame({"json_str": json})
-    df_parsed = df.with_columns(
-        pl.col("json_str").str.json_decode().alias("parsed_list_json")
-    )
+    s = pl.Series("json_str", json)
+    s_parsed = s.str.json_decode().rename("parsed_list_json")
 
     expected_dtype = pl.List(
         pl.Struct(
@@ -826,9 +824,9 @@ def test_json_decode_nested_struct() -> None:
             ]
         )
     )
-    assert df_parsed.get_column("parsed_list_json").dtype == expected_dtype
+    assert s_parsed.dtype == expected_dtype
 
-    key_1_values = df_parsed.select(
+    key_1_values = s_parsed.to_frame().select(
         pl.col("parsed_list_json")
         .list.get(0)
         .struct.field("key_1")

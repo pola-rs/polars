@@ -170,7 +170,10 @@ def test_series_sort_parametric(s: pl.Series) -> None:
             re = s._row_encode(descending=descending, nulls_last=nulls_last)
             re_sorted = re.sort()
             re_decoded = re_sorted._row_decode(
-                ["s"], [s.dtype], descending=[descending], nulls_last=[nulls_last]
+                ["s"],
+                [s.dtype],
+                descending=[descending],
+                nulls_last=[nulls_last],
             )
 
             assert_series_equal(

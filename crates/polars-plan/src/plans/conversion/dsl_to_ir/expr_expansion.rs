@@ -464,13 +464,21 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Implode(Arc::new(e))),
                 )?,
-                AggExpr::Count(expr, include_nulls) => expand_single(
-                    expr.as_ref(),
+                AggExpr::Count {
+                    input,
+                    include_nulls,
+                } => expand_single(
+                    input.as_ref(),
                     ignored_selector_columns,
                     schema,
                     out,
                     opt_flags,
-                    |e| Expr::Agg(AggExpr::Count(Arc::new(e), *include_nulls)),
+                    |e| {
+                        Expr::Agg(AggExpr::Count {
+                            input: Arc::new(e),
+                            include_nulls: *include_nulls,
+                        })
+                    },
                 )?,
                 AggExpr::Sum(expr) => expand_single(
                     expr.as_ref(),
@@ -732,6 +740,7 @@ fn expand_expression_rec(
             options,
             fmt_str,
         } => {
+            let function = function.clone().materialize()?;
             if options
                 .flags
                 .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION)
@@ -748,7 +757,7 @@ fn expand_expression_rec(
                 }
                 out.push(Expr::AnonymousFunction {
                     input: expanded_input,
-                    function: function.clone(),
+                    function: LazySerde::Deserialized(function.deep_clone()),
                     options: *options,
                     fmt_str: fmt_str.clone(),
                 });
@@ -761,7 +770,7 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::AnonymousFunction {
                         input: e.to_vec(),
-                        function: function.clone(),
+                        function: LazySerde::Deserialized(function.clone().deep_clone()),
                         options: *options,
                         fmt_str: fmt_str.clone(),
                     },

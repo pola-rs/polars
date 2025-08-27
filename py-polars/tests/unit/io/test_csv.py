@@ -620,6 +620,16 @@ def test_compressed_csv(io_files_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     )
     assert_frame_equal(out, expected)
 
+    # different levels of zlib create different magic strings,
+    # try to cover them all.
+    for level in range(10):
+        csv_bytes = zlib.compress(csv.encode(), level=level)
+        out = pl.read_csv(csv_bytes)
+        expected = pl.DataFrame(
+            {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
+        )
+        assert_frame_equal(out, expected)
+
     # zstd compression
     csv_bytes = zstandard.compress(csv.encode())
     out = pl.read_csv(csv_bytes)
@@ -2096,7 +2106,7 @@ def test_read_csv_invalid_schema_overrides_length() -> None:
         err = TypeError
         match = "expected 'schema_overrides' dict, found 'list'"
     else:
-        err = InvalidOperationError
+        err = InvalidOperationError  # type: ignore[assignment]
         match = "The number of schema overrides must be less than or equal to the number of fields"
 
     with pytest.raises(err, match=match):
@@ -2791,3 +2801,21 @@ def test_read_csv_decimal_header_only_200008() -> None:
 
     df = pl.read_csv(csv.encode(), schema={"a": pl.Decimal(scale=2), "b": pl.String})
     assert df.dtypes == [pl.Decimal(scale=2), pl.String]
+
+
+@pytest.mark.parametrize(
+    "dt",
+    [
+        pl.Enum(["a"]),
+        pl.Categorical(),
+    ],
+)
+def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
+    n_rows = pl.thread_pool_size() * 1024 + 1
+    df = pl.DataFrame(
+        {
+            "b": pl.Series(["a"] * n_rows, dtype=dt),
+        }
+    )
+    expected = "b\n" + "a\n" * n_rows
+    assert df.write_csv() == expected

@@ -68,7 +68,7 @@ def test_numpy_to_lit() -> None:
 def test_numpy_disambiguation() -> None:
     a = np.array([1, 2])
     df = pl.DataFrame({"a": a})
-    result = df.with_columns(b=a).to_dict(as_series=False)  # type: ignore[arg-type]
+    result = df.with_columns(b=a).to_dict(as_series=False)
     expected = {
         "a": [1, 2],
         "b": [1, 2],

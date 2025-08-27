@@ -209,8 +209,15 @@ _PYTHON_METHODS_MAP = {
     "zfill": "str.zfill",
     # temporal
     "date": "dt.date",
+    "day": "dt.day",
+    "hour": "dt.hour",
     "isoweekday": "dt.weekday",
+    "microsecond": "dt.microsecond",
+    "month": "dt.month",
+    "second": "dt.second",
+    "strftime": "dt.strftime",
     "time": "dt.time",
+    "year": "dt.year",
 }
 
 _MODULE_FUNCTIONS: list[dict[str, list[AbstractSet[str]]]] = [

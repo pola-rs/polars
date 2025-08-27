@@ -25,7 +25,7 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } => Self::InMemoryFallback,
+            K::InMemoryMap { .. } | K::InMemoryJoin { .. } => Self::InMemoryFallback,
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -34,7 +34,6 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::InMemoryJoin { .. }
             | K::Multiplexer { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
@@ -238,6 +237,16 @@ fn visualize_plan_rec(
             offset,
             length,
         } => ("slice".to_owned(), &[*input, *offset, *length][..]),
+        PhysNodeKind::Shift {
+            input,
+            offset,
+            fill: Some(fill),
+        } => ("shift".to_owned(), &[*input, *offset, *fill][..]),
+        PhysNodeKind::Shift {
+            input,
+            offset,
+            fill: None,
+        } => ("shift".to_owned(), &[*input, *offset][..]),
         PhysNodeKind::Filter { input, predicate } => (
             format!(
                 "filter\\n{}",
@@ -338,8 +347,30 @@ fn visualize_plan_rec(
             )
         },
         PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        #[cfg(feature = "cum_agg")]
+        PhysNodeKind::CumAgg { input, kind } => {
+            use crate::nodes::cum_agg::CumAggKind;
+
+            (
+                format!(
+                    "cum_{}",
+                    match kind {
+                        CumAggKind::Min => "min",
+                        CumAggKind::Max => "max",
+                        CumAggKind::Sum => "sum",
+                        CumAggKind::Count => "count",
+                        CumAggKind::Prod => "prod",
+                    }
+                ),
+                &[*input][..],
+            )
+        },
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
+        PhysNodeKind::PeakMinMax { input, is_peak_max } => (
+            if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
+            &[*input][..],
+        ),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,
@@ -512,15 +543,7 @@ fn visualize_plan_rec(
         PhysNodeKind::MergeSorted {
             input_left,
             input_right,
-            key,
-        } => {
-            let mut out = "merge-sorted".to_string();
-            let mut f = EscapeLabel(&mut out);
-
-            write!(f, "\nkey: {key}").unwrap();
-
-            (out, &[*input_left, *input_right][..])
-        },
+        } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
     };
 
     let node_id = node_key.data().as_ffi();

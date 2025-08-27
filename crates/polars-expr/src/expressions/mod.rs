@@ -250,8 +250,6 @@ impl<'a> AggregationContext<'a> {
                     .iter()
                     .map(|&o| {
                         let len = (o - previous) as IdxSize;
-                        // explode will fill empty rows with null, so we must increment the group
-                        // offset accordingly
                         let new_offset = offset + len;
 
                         previous = o;
@@ -437,15 +435,11 @@ impl<'a> AggregationContext<'a> {
             AggState::LiteralScalar(s) => {
                 self.groups();
                 let rows = self.groups.len();
+                let s = s.implode().unwrap();
                 let s = s.new_from_index(0, rows);
-                let out = s
-                    .reshape_list(&[
-                        ReshapeDimension::new_dimension(rows as u64),
-                        ReshapeDimension::Infer,
-                    ])
-                    .unwrap();
-                self.state = AggState::AggregatedList(out.clone());
-                out.into_column()
+                let s = s.into_column();
+                self.state = AggState::AggregatedList(s.clone());
+                s.clone()
             },
         }
     }

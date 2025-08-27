@@ -70,8 +70,8 @@ class ExprBinaryNameSpace:
         │ blue   ┆ true              ┆ false              │
         └────────┴───────────────────┴────────────────────┘
         """
-        literal = parse_into_expression(literal, str_as_lit=True)
-        return wrap_expr(self._pyexpr.bin_contains(literal))
+        literal_pyexpr = parse_into_expression(literal, str_as_lit=True)
+        return wrap_expr(self._pyexpr.bin_contains(literal_pyexpr))
 
     def ends_with(self, suffix: IntoExpr) -> Expr:
         r"""
@@ -117,8 +117,8 @@ class ExprBinaryNameSpace:
         │ blue   ┆ true          ┆ false          │
         └────────┴───────────────┴────────────────┘
         """
-        suffix = parse_into_expression(suffix, str_as_lit=True)
-        return wrap_expr(self._pyexpr.bin_ends_with(suffix))
+        suffix_pyexpr = parse_into_expression(suffix, str_as_lit=True)
+        return wrap_expr(self._pyexpr.bin_ends_with(suffix_pyexpr))
 
     def starts_with(self, prefix: IntoExpr) -> Expr:
         r"""
@@ -166,8 +166,8 @@ class ExprBinaryNameSpace:
         │ blue   ┆ false           ┆ true             │
         └────────┴─────────────────┴──────────────────┘
         """
-        prefix = parse_into_expression(prefix, str_as_lit=True)
-        return wrap_expr(self._pyexpr.bin_starts_with(prefix))
+        prefix_pyexpr = parse_into_expression(prefix, str_as_lit=True)
+        return wrap_expr(self._pyexpr.bin_starts_with(prefix_pyexpr))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         r"""

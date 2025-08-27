@@ -240,7 +240,7 @@ class _DataTypeMappings:
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
         def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
             try:
-                return _dtype_str_repr(o.base_type()).split("[")[0]
+                return _dtype_str_repr(o.base_type()).split("[")[0]  # type: ignore[return-value]
             except TypeError:
                 return None
 

@@ -15,7 +15,7 @@ use crate::error::PyPolarsErr;
 use crate::{PyExpr, Wrap, raise_err};
 
 #[derive(Clone)]
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyExprIR {
     #[pyo3(get)]
     node: usize,
@@ -58,7 +58,7 @@ impl NodeTraverser {
     // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
-    const VERSION: Version = (9, 0);
+    const VERSION: Version = (10, 0);
 
     pub fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {
@@ -235,6 +235,7 @@ impl PyLazyFrame {
         let mut expr_arena = Arena::with_capacity(16);
         let root = self
             .ldf
+            .read()
             .clone()
             .optimize(&mut lp_arena, &mut expr_arena)
             .map_err(PyPolarsErr::from)?;

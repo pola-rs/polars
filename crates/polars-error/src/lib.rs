@@ -496,6 +496,11 @@ on startup."#.trim_start())
             $objects, $detail, $lhs, $rhs
         )
     };
+    (to_datetime_tz_mismatch) => {
+        $crate::polars_err!(
+            ComputeError: "`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data.\n\nThis was previously allowed but led to unpredictable and erroneous results. Give a format string, set a time zone or perform the operation eagerly on a Series instead of on an Expr."
+        )
+    };
 }
 
 #[macro_export]

@@ -868,11 +868,19 @@ impl Expr {
     /// or
     /// Get counts of the group by operation.
     pub fn count(self) -> Self {
-        AggExpr::Count(Arc::new(self), false).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: false,
+        }
+        .into()
     }
 
     pub fn len(self) -> Self {
-        AggExpr::Count(Arc::new(self), true).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: true,
+        }
+        .into()
     }
 
     /// Get a mask of duplicated values.
@@ -1465,13 +1473,6 @@ impl Expr {
     /// [Kleene logic]: https://en.wikipedia.org/wiki/Three-valued_logic
     pub fn all(self, ignore_nulls: bool) -> Self {
         self.map_unary(BooleanFunction::All { ignore_nulls })
-    }
-
-    /// Shrink numeric columns to the minimal required datatype
-    /// needed to fit the extrema of this [`Series`].
-    /// This can be used to reduce memory pressure.
-    pub fn shrink_dtype(self) -> Self {
-        self.map_unary(FunctionExpr::ShrinkType)
     }
 
     #[cfg(feature = "dtype-struct")]

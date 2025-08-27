@@ -164,11 +164,25 @@ pub fn python_scan_predicate(
     let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
         // Convert to a pyarrow eval string.
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
-            if let Some(eval_str) = polars_plan::plans::python::pyarrow::predicate_to_pa(
+            use polars_core::config::verbose_print_sensitive;
+
+            let predicate_pa = polars_plan::plans::python::pyarrow::predicate_to_pa(
                 e.node(),
                 expr_arena,
                 Default::default(),
-            ) {
+            );
+
+            verbose_print_sensitive(|| {
+                format!(
+                    "python_scan_predicate: \
+                    predicate node: {}, \
+                    converted pyarrow predicate: {}",
+                    ExprIRDisplay::display_node(e.node(), expr_arena),
+                    &predicate_pa.as_deref().unwrap_or("<conversion failed>")
+                )
+            });
+
+            if let Some(eval_str) = predicate_pa {
                 options.predicate = PythonPredicate::PyArrow(eval_str);
                 // We don't have to use a physical expression as pyarrow deals with the filter.
                 None
@@ -209,7 +223,7 @@ fn create_physical_plan_impl(
     expr_arena: &mut Arena<AExpr>,
     state: &mut ConversionState,
     // Cache nodes in order of discovery
-    cache_nodes: &mut PlIndexMap<UniqueId, Box<executors::CacheExec>>,
+    cache_nodes: &mut PlIndexMap<UniqueId, executors::CachePrefill>,
     build_streaming_executor: Option<StreamingExecutorBuilder>,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
@@ -360,31 +374,16 @@ fn create_physical_plan_impl(
                         input, builder, root, lp_arena, expr_arena,
                     ));
 
-                    let id = UniqueId::new();
-
                     // Use cache so that this runs during the cache pre-filling stage and not on the
                     // thread pool, it could deadlock since the streaming engine uses the thread
                     // pool internally.
-                    let existing = cache_nodes.insert(
-                        id,
-                        Box::new(executors::CacheExec {
-                            input: Some(executor),
-                            id,
-                            count: 0,
-                            is_new_streaming_scan: false,
-                        }),
-                    );
+                    let mut prefill = executors::CachePrefill::new_sink(executor);
+                    let exec = prefill.make_exec();
+                    let existing = cache_nodes.insert(prefill.id(), prefill);
 
                     assert!(existing.is_none());
 
-                    Ok(Box::new(executors::CacheExec {
-                        id,
-                        // Rest of the fields don't matter - the actual node was inserted into
-                        // `cache_nodes`.
-                        input: None,
-                        count: Default::default(),
-                        is_new_streaming_scan: false,
-                    }))
+                    Ok(Box::new(exec))
                 },
             }
         },
@@ -507,36 +506,14 @@ fn create_physical_plan_impl(
 
                     let executor = build_func(root, lp_arena, expr_arena)?;
 
-                    // Generate a unique ID for this scan. Currently this scan can be visited only
-                    // once, since common subplans are always behind a cache, which prevents
-                    // multiple traversals of the common subplan.
-                    //
-                    // If this property changes in the future, the same scan could be visited
-                    // and executed multiple times. It is a responsibility of the caller to
-                    // insert a cache if multiple executions are not desirable.
-                    let id = UniqueId::new();
+                    let mut prefill = executors::CachePrefill::new_scan(executor);
+                    let exec = prefill.make_exec();
 
-                    let existing = cache_nodes.insert(
-                        id,
-                        Box::new(executors::CacheExec {
-                            input: Some(executor),
-                            id,
-                            // This is (n_hits - 1), because the drop logic is `fetch_sub(1) == 0`.
-                            count: 0,
-                            is_new_streaming_scan: true,
-                        }),
-                    );
+                    let existing = cache_nodes.insert(prefill.id(), prefill);
 
                     assert!(existing.is_none());
 
-                    Ok(Box::new(executors::CacheExec {
-                        id,
-                        // Rest of the fields don't matter - the actual node was inserted into
-                        // `cache_nodes`.
-                        input: None,
-                        count: Default::default(),
-                        is_new_streaming_scan: true,
-                    }))
+                    Ok(Box::new(exec))
                 },
                 #[allow(unreachable_patterns)]
                 _ => unreachable!(),
@@ -607,33 +584,22 @@ fn create_physical_plan_impl(
                 sort_options,
             }))
         },
-        Cache {
-            input,
-            id,
-            cache_hits,
-        } => {
+        Cache { input, id } => {
             state.has_cache_parent = true;
             state.has_cache_child = true;
 
-            if !cache_nodes.contains_key(&id) {
+            if let Some(cache) = cache_nodes.get_mut(&id) {
+                Ok(Box::new(cache.make_exec()))
+            } else {
                 let input = recurse!(input, state)?;
 
-                let cache = Box::new(executors::CacheExec {
-                    id,
-                    input: Some(input),
-                    count: cache_hits,
-                    is_new_streaming_scan: false,
-                });
+                let mut prefill = executors::CachePrefill::new_cache(input, id);
+                let exec = prefill.make_exec();
 
-                cache_nodes.insert(id, cache);
+                cache_nodes.insert(id, prefill);
+
+                Ok(Box::new(exec))
             }
-
-            Ok(Box::new(executors::CacheExec {
-                id,
-                input: None,
-                count: cache_hits,
-                is_new_streaming_scan: false,
-            }))
         },
         Distinct { input, options } => {
             let input = recurse!(input, state)?;
@@ -1104,7 +1070,6 @@ mod tests {
         let cache = ir.add(IR::Cache {
             input: scan,
             id: UniqueId::new(),
-            cache_hits: 1,
         });
 
         let left_sink = ir.add(IR::Sink {

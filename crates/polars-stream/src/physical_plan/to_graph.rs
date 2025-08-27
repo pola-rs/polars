@@ -163,6 +163,33 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Shift {
+            input,
+            offset,
+            fill,
+        } => {
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let offset_schema = ctx.phys_sm[offset.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let offset_key = to_graph_rec(offset.node, ctx)?;
+            if let Some(fill) = fill {
+                let fill_key = to_graph_rec(fill.node, ctx)?;
+                ctx.graph.add_node(
+                    nodes::shift::ShiftNode::new(input_schema, offset_schema, true),
+                    [
+                        (input_key, input.port),
+                        (offset_key, offset.port),
+                        (fill_key, fill.port),
+                    ],
+                )
+            } else {
+                ctx.graph.add_node(
+                    nodes::shift::ShiftNode::new(input_schema, offset_schema, false),
+                    [(input_key, input.port), (offset_key, offset.port)],
+                )
+            }
+        },
+
         Filter { predicate, input } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
@@ -529,6 +556,15 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "cum_agg")]
+        CumAgg { input, kind } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::cum_agg::CumAggNode::new(*kind),
+                [(input_key, input.port)],
+            )
+        },
+
         Rle(input) => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
@@ -547,6 +583,14 @@ fn to_graph_rec<'a>(
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
                 nodes::rle_id::RleIdNode::new(dtype.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
+        PeakMinMax { input, is_peak_max } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::peak_minmax::PeakMinMaxNode::new(*is_peak_max),
                 [(input_key, input.port)],
             )
         },
@@ -894,15 +938,11 @@ fn to_graph_rec<'a>(
         MergeSorted {
             input_left,
             input_right,
-            key,
         } => {
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
-
-            let input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
-
             ctx.graph.add_node(
-                nodes::merge_sorted::MergeSortedNode::new(input_schema, key.clone()),
+                nodes::merge_sorted::MergeSortedNode::new(),
                 [
                     (left_input_key, input_left.port),
                     (right_input_key, input_right.port),

@@ -1031,13 +1031,27 @@ def test_mode() -> None:
 
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    expected = pl.Series("a", [1, 1, -1, 0, 1, -3])
 
-    assert_series_equal(s.diff(null_behavior="drop"), expected)
-
-    df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").diff())["a"], pl.Series("a", [None, 1, 1, -1, 0, 1, -3])
+        s.diff(),
+        pl.Series("a", [None, 1, 1, -1, 0, 1, -3]),
+    )
+    assert_series_equal(
+        s.diff(null_behavior="drop"),
+        pl.Series("a", [1, 1, -1, 0, 1, -3]),
+    )
+
+
+def test_diff_negative() -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+
+    assert_series_equal(
+        s.diff(-1),
+        pl.Series("a", [-1, -1, 1, 0, -1, 3, None]),
+    )
+    assert_series_equal(
+        s.diff(-1, null_behavior="drop"),
+        pl.Series("a", [-1, -1, 1, 0, -1, 3]),
     )
 
 
@@ -1562,14 +1576,30 @@ def test_dot() -> None:
         s1 @ [4, 5, 6, 7, 8]
 
 
-def test_peak_max_peak_min() -> None:
-    s = pl.Series("a", [4, 1, 3, 2, 5])
+@pytest.mark.parametrize(
+    ("dtype"),
+    [pl.Int8, pl.Int16, pl.Int32, pl.Float32, pl.Float64],
+)
+def test_peak_max_peak_min(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [4, 1, 3, 2, 5], dtype=dtype)
+
     result = s.peak_min()
     expected = pl.Series("a", [False, True, False, True, False])
     assert_series_equal(result, expected)
 
     result = s.peak_max()
     expected = pl.Series("a", [True, False, True, False, True])
+    assert_series_equal(result, expected)
+
+
+def test_peak_max_peak_min_bool() -> None:
+    s = pl.Series("a", [False, True, False, True, True, False], dtype=pl.Boolean)
+    result = s.peak_min()
+    expected = pl.Series("a", [False, False, True, False, False, False])
+    assert_series_equal(result, expected)
+
+    result = s.peak_max()
+    expected = pl.Series("a", [False, True, False, False, False, False])
     assert_series_equal(result, expected)
 
 
@@ -2086,16 +2116,16 @@ def test_from_epoch_seq_input() -> None:
 def test_symmetry_for_max_in_names() -> None:
     # int
     a = pl.Series("a", [1])
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # float
     a = pl.Series("a", [1.0])
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # duration
     a = pl.Series("a", [1], dtype=pl.Duration("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # datetime
     a = pl.Series("a", [1], dtype=pl.Datetime("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
 
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)

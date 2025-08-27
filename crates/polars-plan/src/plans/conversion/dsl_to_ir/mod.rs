@@ -436,11 +436,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .to_owned();
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(cache)))?;
-            IR::Cache {
-                input,
-                id,
-                cache_hits: crate::constants::UNLIMITED_CACHE,
-            }
+            IR::Cache { input, id }
         },
         DslPlan::GroupBy {
             input,
@@ -579,12 +575,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         let policy = CastColumnsPolicy {
                             integer_upcast: per_column.integer_cast == UpcastOrForbid::Upcast,
                             float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
-                            float_downcast: false,
-                            datetime_nanoseconds_downcast: false,
-                            datetime_microseconds_downcast: false,
-                            datetime_convert_timezone: false,
                             missing_struct_fields: per_column.missing_struct_fields,
                             extra_struct_fields: per_column.extra_struct_fields,
+
+                            ..Default::default()
                         };
 
                         let should_cast =
@@ -655,6 +649,25 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
             };
             return run_conversion(lp, ctxt, "match_to_schema");
+        },
+        DslPlan::PipeWithSchema { input, callback } => {
+            let input_owned = owned(input);
+
+            // Derive the schema from the input
+            let input = to_alp_impl(input_owned.clone(), ctxt)
+                .map_err(|e| e.context(failed_here!(pipe_with_schema)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            let input_owned = DslPlan::IR {
+                dsl: Arc::new(input_owned),
+                version: ctxt.lp_arena.version(),
+                node: Some(input),
+            };
+
+            // Adjust the input and start conversion again
+            let input_adjusted =
+                callback.call((input_owned, Arc::unwrap_or_clone(input_schema.into_owned())))?;
+            return to_alp_impl(input_adjusted, ctxt);
         },
         DslPlan::Distinct { input, options } => {
             let input =
@@ -1024,6 +1037,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input_right = to_alp_impl(owned(input_right), ctxt)
                 .map_err(|e| e.context(failed_here!(merge_sorted)))?;
 
+            let left_schema = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
+            let right_schema = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
+
+            left_schema
+                .ensure_is_exact_match(&right_schema)
+                .map_err(|err| err.context("merge_sorted".into()))?;
+
+            left_schema
+                .try_get(key.as_str())
+                .map_err(|err| err.context("merge_sorted".into()))?;
+
             IR::MergeSorted {
                 input_left,
                 input_right,
@@ -1031,13 +1055,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::IR { node, dsl, version } => {
-            return if node.is_some()
-                && version == ctxt.lp_arena.version()
-                && ctxt.conversion_optimizer.used_arenas.insert(version)
-            {
-                Ok(node.unwrap())
-            } else {
-                to_alp_impl(owned(dsl), ctxt)
+            return match node {
+                Some(node)
+                    if version == ctxt.lp_arena.version()
+                        && ctxt.conversion_optimizer.used_arenas.insert(version) =>
+                {
+                    Ok(node)
+                },
+                _ => to_alp_impl(owned(dsl), ctxt),
             };
         },
     };

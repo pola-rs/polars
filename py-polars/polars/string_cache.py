@@ -137,7 +137,7 @@ def enable_string_cache() -> None:
     plr.enable_string_cache()
 
 
-def disable_string_cache() -> bool:
+def disable_string_cache() -> None:
     """
     Disable and clear the global string cache.
 
@@ -178,7 +178,6 @@ def disable_string_cache() -> bool:
             "green"
     ]
     """
-    return plr.disable_string_cache()
 
 
 def using_string_cache() -> bool:

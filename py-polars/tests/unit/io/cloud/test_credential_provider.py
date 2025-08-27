@@ -10,9 +10,11 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
+from polars._typing import PartitioningScheme
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     AutoInit,
+    CredentialProviderBuilder,
     _init_credential_provider_builder,
 )
 from polars.io.cloud.credential_provider._providers import (
@@ -749,3 +751,25 @@ def test_cached_credential_provider_returns_copied_creds() -> None:
     assert provider() == ({"A": "A"}, None)
 
     assert provider_func.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "partition_target",
+    [
+        pl.PartitionByKey("s3://.../...", by=""),
+        pl.PartitionMaxSize("s3://.../...", max_size=1),
+        pl.PartitionParted("s3://.../...", by=""),
+    ],
+)
+def test_credential_provider_init_from_partition_target(
+    partition_target: PartitioningScheme,
+) -> None:
+    assert isinstance(
+        _init_credential_provider_builder(
+            "auto",
+            partition_target,
+            None,
+            "test",
+        ),
+        CredentialProviderBuilder,
+    )

@@ -353,7 +353,10 @@ impl OptimizationRule for SimplifyExprRule {
             AExpr::SortBy { expr, by, .. } if by.is_empty() => Some(expr_arena.get(*expr).clone()),
             // drop_nulls().len() -> len() - null_count()
             // drop_nulls().count() -> len() - null_count()
-            AExpr::Agg(IRAggExpr::Count(input, _)) => {
+            AExpr::Agg(IRAggExpr::Count {
+                input,
+                include_nulls: _,
+            }) => {
                 let input_expr = expr_arena.get(*input);
                 match input_expr {
                     AExpr::Function {
@@ -369,10 +372,10 @@ impl OptimizationRule for SimplifyExprRule {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
                                     right: expr_arena.add(new_null_count(input)),
-                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
-                                        drop_nulls_input_node,
-                                        true,
-                                    ))),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                        input: drop_nulls_input_node,
+                                        include_nulls: true,
+                                    })),
                                 }),
                                 _ => None,
                             }
@@ -406,10 +409,10 @@ impl OptimizationRule for SimplifyExprRule {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
                                     right: expr_arena.add(new_null_count(input)),
-                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
-                                        is_not_null_input_node,
-                                        true,
-                                    ))),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                        input: is_not_null_input_node,
+                                        include_nulls: true,
+                                    })),
                                 }),
                                 _ => None,
                             }

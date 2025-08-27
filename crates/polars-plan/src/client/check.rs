@@ -84,6 +84,7 @@ impl DslPlan {
             | Slice { input, .. }
             | HStack { input, .. }
             | MatchToSchema { input, .. }
+            | PipeWithSchema { input, .. }
             | MapFunction { input, .. }
             | Sink { input, .. }
             | Cache { input, .. } => scratch.push(input),
