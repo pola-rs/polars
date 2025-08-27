@@ -1156,3 +1156,17 @@ def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     assert plan.index("SELECTION") > plan.index("PYTHON SCAN")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}))
+
+
+def test_duplicate_filter_removal_23243() -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
+
+    q = lf.filter(pl.col("x") == 2, pl.col("x") == 2)
+
+    expect = pl.DataFrame({"x": [2]})
+
+    plan = q.explain()
+
+    assert plan.split("\n", 1)[0] == 'FILTER [(col("x")) == (2)]'
+
+    assert_frame_equal(q.collect(), expect)

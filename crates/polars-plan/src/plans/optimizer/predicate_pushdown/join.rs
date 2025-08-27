@@ -321,7 +321,7 @@ pub(super) fn process_join(
         if push_left {
             let mut predicate = predicate.clone();
             map_column_references(&mut predicate, expr_arena, &output_key_to_left_input_map);
-            pushdown_left.insert(predicate_key.clone(), predicate);
+            insert_predicate_dedup(&mut pushdown_left, &predicate, expr_arena);
         }
 
         if push_right {
@@ -333,7 +333,7 @@ pub(super) fn process_join(
                 &schema_right,
                 options.args.suffix(),
             );
-            pushdown_right.insert(predicate_key, predicate);
+            insert_predicate_dedup(&mut pushdown_right, &predicate, expr_arena);
         }
     }
 
