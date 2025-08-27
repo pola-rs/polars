@@ -23,7 +23,7 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
     let base = base.strict_cast(&DataType::Float64)?;
     match base.f64()?.get(0) {
         Some(base) => Ok(s.log(base).into()),
-        None => polars_bail!(ComputeError: "'n' can not be None for diff"),
+        None => polars_bail!(ComputeError: "'n' cannot be None for log"),
     }
 }
 

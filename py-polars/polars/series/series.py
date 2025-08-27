@@ -1813,7 +1813,7 @@ class Series:
         """
         return self._s.all(ignore_nulls=ignore_nulls)
 
-    def log(self, base: float = math.e) -> Series:
+    def log(self, base: float | Series = math.e) -> Series:
         """
         Compute the logarithm to a given base.
 

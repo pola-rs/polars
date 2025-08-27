@@ -837,7 +837,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]
@@ -1527,7 +1527,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log { .. } | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
             F::Entropy { .. } => FunctionOptions::aggregation(),
             F::Unique(_) => FunctionOptions::groupwise(),
