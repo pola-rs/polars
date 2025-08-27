@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use either::Either;
 use polars_core::schema::SchemaRef;
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::PyObject;
 
 use self::python_dsl::{PythonOptionsDsl, PythonScanSource};
@@ -14,6 +15,9 @@ impl LazyFrame {
         pyarrow: bool,
         // Validate that the source gives the proper schema
         validate_schema: bool,
+        explain_name: Option<PlSmallStr>,
+        explain_detail: Option<PlSmallStr>,
+        explain_subplan: Option<PlSmallStr>,
     ) -> Self {
         DslPlan::PythonScan {
             options: PythonOptionsDsl {
@@ -26,6 +30,9 @@ impl LazyFrame {
                     PythonScanSource::IOPlugin
                 },
                 validate_schema,
+                explain_name,
+                explain_detail,
+                explain_subplan,
             },
         }
         .into()

@@ -124,6 +124,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     with_columns: Default::default(),
                     n_rows: Default::default(),
                     predicate: Default::default(),
+                    explain_name: options.explain_name.clone(),
+                    explain_detail: options.explain_detail.clone(),
+                    explain_subplan: options.explain_subplan.clone(),
                 },
             }
         },

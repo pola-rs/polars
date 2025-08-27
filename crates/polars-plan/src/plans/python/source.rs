@@ -28,6 +28,12 @@ pub struct PythonOptions {
     pub predicate: PythonPredicate,
     /// Validate if the source gives the proper schema.
     pub validate_schema: bool,
+    /// Optional custom name for explain header.
+    pub explain_name: Option<PlSmallStr>,
+    /// Optional single-line detail to include in explain.
+    pub explain_detail: Option<PlSmallStr>,
+    /// Optional nested/internal plan text to include in explain output.
+    pub explain_subplan: Option<PlSmallStr>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

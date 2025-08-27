@@ -3,6 +3,7 @@ use std::sync::Arc;
 use either::Either;
 use polars_core::error::{PolarsResult, polars_err};
 use polars_core::schema::SchemaRef;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonFunction;
 use pyo3::prelude::*;
 #[cfg(feature = "serde")]
@@ -21,6 +22,12 @@ pub struct PythonOptionsDsl {
     pub schema_fn: Option<SpecialEq<Arc<Either<PythonFunction, SchemaRef>>>>,
     pub python_source: PythonScanSource,
     pub validate_schema: bool,
+    /// Optional custom name to display in explain output, eg: PYTHON[<name>].
+    pub explain_name: Option<PlSmallStr>,
+    /// Optional single-line detail to include under the scan header.
+    pub explain_detail: Option<PlSmallStr>,
+    /// Optional multi-line subplan/details to include (eg, nested LazyFrame plan).
+    pub explain_subplan: Option<PlSmallStr>,
 }
 
 impl PythonOptionsDsl {
