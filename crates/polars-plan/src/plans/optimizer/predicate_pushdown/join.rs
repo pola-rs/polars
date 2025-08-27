@@ -229,7 +229,7 @@ pub(super) fn process_join(
         init_hashmap(Some(acc_predicates.len()));
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
-    for (predicate_key, predicate) in acc_predicates {
+    for (_, predicate) in acc_predicates {
         let mut push_left = true;
         let mut push_right = true;
 
