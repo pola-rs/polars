@@ -7,7 +7,7 @@ from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
-from polars._utils.various import parse_version
+from polars._utils.various import parse_version, qualified_type_name
 from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT
 from polars.exceptions import (
@@ -46,8 +46,10 @@ _INVALID_QUERY_TYPES = {
     "CREATE",
     "DELETE",
     "DROP",
+    "GRANT",
     "INSERT",
     "REPLACE",
+    "REVOKE",
     "UPDATE",
     "UPSERT",
     "USE",
@@ -445,7 +447,10 @@ class ConnectionExecutor:
             # can execute directly (given cursor, sqlalchemy connection, etc)
             return conn
 
-        msg = f"""Unrecognised connection type "{conn!r}"; no 'execute' or 'cursor' method"""
+        msg = (
+            f"Unrecognised connection type {qualified_type_name(conn)!r}; no "
+            "'execute' or 'cursor' method"
+        )
         raise TypeError(msg)
 
     async def _sqlalchemy_async_execute(self, query: TextClause, **options: Any) -> Any:
