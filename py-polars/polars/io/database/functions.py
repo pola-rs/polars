@@ -463,7 +463,7 @@ def read_database_uri(
         )
     elif engine == "adbc":
         if not isinstance(query, str):
-            msg = f"only a single SQL query string is accepted for adbc, got a {type(query).__name__!r} type"
+            msg = f"only a single SQL query string is accepted for adbc, got a {qualified_type_name(query)!r} type"
             raise ValueError(msg)
         return _read_sql_adbc(
             query,
