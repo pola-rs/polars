@@ -1,6 +1,7 @@
 use arrow::array::{PrimitiveArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::{AlignedBytes, NativeType, PrimitiveType};
+use polars_utils::vec::with_cast_mut_vec;
 
 use super::DecoderFunction;
 use crate::parquet::error::ParquetResult;
@@ -128,15 +129,17 @@ pub fn decode_no_incompact_predicates<
         })?;
 
         let start_length = target.len();
-        decode_aligned_bytes_dispatch(
-            values,
-            is_optional,
-            page_validity,
-            filter,
-            validity,
-            <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
-            pred_true_mask,
-        )?;
+        with_cast_mut_vec::<T, T::AlignedBytes, _, _>(target, |aligned_bytes_vec| {
+            decode_aligned_bytes_dispatch(
+                values,
+                is_optional,
+                page_validity,
+                filter,
+                validity,
+                aligned_bytes_vec,
+                pred_true_mask,
+            )
+        })?;
 
         if D::NEED_TO_DECODE {
             let to_decode: &mut [P] = bytemuck::cast_slice_mut(&mut target[start_length..]);
@@ -151,15 +154,17 @@ pub fn decode_no_incompact_predicates<
         })?;
 
         intermediate.clear();
-        decode_aligned_bytes_dispatch(
-            values,
-            is_optional,
-            page_validity,
-            filter,
-            validity,
-            <P::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(intermediate),
-            pred_true_mask,
-        )?;
+        with_cast_mut_vec::<P, P::AlignedBytes, _, _>(intermediate, |aligned_bytes_vec| {
+            decode_aligned_bytes_dispatch(
+                values,
+                is_optional,
+                page_validity,
+                filter,
+                validity,
+                aligned_bytes_vec,
+                pred_true_mask,
+            )
+        })?;
 
         target.extend(intermediate.iter().copied().map(|v| dfn.decode(v)));
     }
