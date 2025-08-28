@@ -35,6 +35,22 @@ def test_mkdir(tmp_path: Path, scan: Any, sink: Any, engine: EngineType) -> None
     assert_frame_equal(scan(f).collect(), df)
 
 
+def test_write_mkdir(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    )
+
+    with pytest.raises(FileNotFoundError):
+        df.write_parquet(tmp_path / "a" / "b" / "c" / "file")
+
+    f = tmp_path / "a" / "b" / "c" / "file2"
+    df.write_parquet(f, mkdir=True)
+
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.write_disk
