@@ -132,7 +132,7 @@ where
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
 impl<T: PolarsCategoricalType> IntoGroupsType for CategoricalChunked<T>
 where
-    ChunkedArray<T::PolarsPhysical>: IntoGroupsType
+    ChunkedArray<T::PolarsPhysical>: IntoGroupsType,
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.phys.group_tuples(multithreaded, sorted)
@@ -154,9 +154,9 @@ where
                 rolling: false,
             });
         }
-        
+
         let out = match self.dtype() {
-            #[cfg(all(feature = "dtype-i8", feature = "dtype-i8"))]
+            #[cfg(all(feature = "dtype-i8", all(feature = "dtype-i8", feature="dtype-u8")))]
             DataType::Int8 => {
                 // convince the compiler that we are this type.
                 let ca: &Int8Chunked =
@@ -164,14 +164,14 @@ where
                 let s = ca.reinterpret_unsigned();
                 return s.group_tuples(multithreaded, sorted);
             },
-            #[cfg(all(feature = "dtype-i8", feature = "dtype-u8"))]
+            #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt8Chunked =
                     unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt8Type>) };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            #[cfg(all(feature = "dtype-i16", feature = "dtype-i16"))]
+            #[cfg(all(feature = "dtype-i16", all(feature = "dtype-i16", feature="dtype-u16")))]
             DataType::Int16 => {
                 // convince the compiler that we are this type.
                 let ca: &Int16Chunked =
@@ -179,7 +179,7 @@ where
                 let s = ca.reinterpret_unsigned();
                 return s.group_tuples(multithreaded, sorted);
             },
-            #[cfg(all(feature = "dtype-i16", feature = "dtype-u16"))]
+            #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt16Chunked = unsafe {
