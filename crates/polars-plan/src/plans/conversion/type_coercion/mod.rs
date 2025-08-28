@@ -1033,12 +1033,27 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
         (DataType::Enum(_, _), from) => from.is_string(),
         #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(_, _), from) => from.is_string(),
-        // TODO validate if this is actually corrrect
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), DataType::Decimal(_, _)) => true,
-        // TODO validate if this is actually corrrect
+        (DataType::Decimal(p_to, s_to), DataType::Decimal(p_from, s_from)) => {
+            // Match numbers in DataType::try_to_arrow():
+            let (p_to, s_to, p_from, s_from) = (
+                p_to.unwrap_or(38),
+                s_to.unwrap_or(0),
+                p_from.unwrap_or(38),
+                s_from.unwrap_or(0),
+            );
+            // 1. The numbers in `from` should fit in `to`'s range.
+            // 2. The scale in `from` should fit in `to`'s scale.
+            ((p_to - s_to) >= (p_from - s_from)) && (s_to >= s_from)
+        },
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), dt) => dt.is_primitive_numeric(),
+        (DataType::Decimal(p_to, _), dt) if dt.is_primitive_numeric() => {
+            // Match numbers in DataType::try_to_arrow():
+            let max_value = 10i128.pow(p_to.unwrap_or(38) as u32) - 1;
+            let min_value = max_value - 1;
+            max_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
+                && min_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
+        },
         // Can't check for more granular time_unit in less-granular time_unit
         // data, or we'll cast away valid/necessary precision (eg: nanosecs to
         // millisecs):
@@ -1047,6 +1062,8 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
         (DataType::List(to), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]
         (DataType::List(to), DataType::Array(from, _)) => return can_cast_to_lossless(to, from),
+        // If list doesn't fit array size it'll get handled when casting
+        // actually happens.
         #[cfg(feature = "dtype-array")]
         (DataType::Array(to, _), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]
@@ -1065,7 +1082,16 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
                 return to_fields
                     .iter()
                     .zip(from_fields.iter())
-                    .map(|(to, from)| can_cast_to_lossless(&to.dtype, &from.dtype))
+                    .map(|(to, from)| {
+                        polars_ensure!(
+                            to.name == from.name,
+                            InvalidOperation:
+                            "field name {:?} doesn't match field name {:?}",
+                            to.name,
+                            from.name
+                        );
+                        can_cast_to_lossless(&to.dtype, &from.dtype)
+                    })
                     .collect::<PolarsResult<()>>();
             }
         },
