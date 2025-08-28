@@ -4,6 +4,7 @@ use arrow::types::{
     AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, NativeType,
 };
 use polars_compute::filter::filter_boolean_kernel;
+use polars_utils::vec::with_cast_mut_vec;
 
 use super::ParquetError;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
@@ -100,17 +101,19 @@ pub fn decode_dict<T: NativeType>(
     target: &mut Vec<T>,
     pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
-    decode_dict_dispatch(
-        values,
-        bytemuck::cast_slice(dict),
-        dict_mask,
-        is_optional,
-        page_validity,
-        filter,
-        validity,
-        <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
-        pred_true_mask,
-    )
+    with_cast_mut_vec::<T, T::AlignedBytes, _, _>(target, |aligned_bytes_vec| {
+        decode_dict_dispatch(
+            values,
+            bytemuck::cast_slice(dict),
+            dict_mask,
+            is_optional,
+            page_validity,
+            filter,
+            validity,
+            aligned_bytes_vec,
+            pred_true_mask,
+        )
+    })
 }
 
 #[inline(never)]

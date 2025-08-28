@@ -458,13 +458,11 @@ impl<T: NativeType> PrimitiveArray<T> {
         let PrimitiveArray {
             values, validity, ..
         } = self;
-
-        // SAFETY: this is fine, we checked size and alignment, and NativeType
-        // is always Pod.
-        assert_eq!(size_of::<T>(), size_of::<U>());
-        assert_eq!(align_of::<T>(), align_of::<U>());
-        let new_values = unsafe { std::mem::transmute::<Buffer<T>, Buffer<U>>(values) };
-        PrimitiveArray::new(U::PRIMITIVE.into(), new_values, validity)
+        PrimitiveArray::new(
+            U::PRIMITIVE.into(),
+            Buffer::try_transmute::<U>(values).unwrap(),
+            validity,
+        )
     }
 
     /// Fills this entire array with the given value, leaving the validity mask intact.

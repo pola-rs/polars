@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
-use arrow::types::{AlignedBytes, NativeType};
+use polars_utils::vec::with_cast_mut_vec;
 
 use super::PredicateFilter;
 use super::binview::BinViewDecoder;
@@ -143,16 +143,18 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         pred_true_mask: &mut BitmapBuilder,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
-        super::dictionary_encoded::decode_dict_dispatch(
-            state.translation,
-            T::try_from(self.dict_size).ok().unwrap(),
-            state.dict_mask,
-            state.is_optional,
-            state.page_validity.as_ref(),
-            filter,
-            &mut decoded.1,
-            <<T as NativeType>::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(&mut decoded.0),
-            pred_true_mask,
-        )
+        with_cast_mut_vec::<T, T::AlignedBytes, _, _>(&mut decoded.0, |aligned_bytes_vec| {
+            super::dictionary_encoded::decode_dict_dispatch(
+                state.translation,
+                T::try_from(self.dict_size).ok().unwrap(),
+                state.dict_mask,
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+                &mut decoded.1,
+                aligned_bytes_vec,
+                pred_true_mask,
+            )
+        })
     }
 }

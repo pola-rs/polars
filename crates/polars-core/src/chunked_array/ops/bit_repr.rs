@@ -14,10 +14,7 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
 
     let chunks = ca.downcast_iter().map(|array| {
         let buf = array.values().clone();
-        // SAFETY: we checked that the size and alignment matches.
-        #[allow(clippy::transmute_undefined_repr)]
-        let reinterpreted_buf =
-            unsafe { std::mem::transmute::<Buffer<T::Native>, Buffer<U::Native>>(buf) };
+        let reinterpreted_buf = Buffer::try_transmute::<U::Native>(buf).unwrap();
         PrimitiveArray::from_data_default(reinterpreted_buf, array.validity().cloned())
     });
 
@@ -38,11 +35,8 @@ fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
             .as_any()
             .downcast_ref::<PrimitiveArray<T::Native>>()
             .unwrap();
-        // SAFETY: we checked that the size and alignment matches.
-        #[allow(clippy::transmute_undefined_repr)]
-        let reinterpreted_buf = unsafe {
-            std::mem::transmute::<Buffer<T::Native>, Buffer<U::Native>>(inner_arr.values().clone())
-        };
+        let reinterpreted_buf =
+            Buffer::try_transmute::<U::Native>(inner_arr.values().clone()).unwrap();
         let pa =
             PrimitiveArray::from_data_default(reinterpreted_buf, inner_arr.validity().cloned());
         LargeListArray::new(
@@ -109,11 +103,8 @@ where
             16 => {
                 feature_gated!("dtype-i128", {
                     if matches!(self.dtype(), DataType::Int128) {
-                        let ca = self.clone();
-                        // Convince the compiler we are this type. This keeps flags.
-                        return BitRepr::I128(unsafe {
-                            std::mem::transmute::<ChunkedArray<T>, Int128Chunked>(ca)
-                        });
+                        let ca: &Int128Chunked = self.as_any().downcast_ref().unwrap();
+                        return BitRepr::I128(ca.clone());
                     }
 
                     BitRepr::I128(reinterpret_chunked_array(self))
@@ -122,11 +113,8 @@ where
 
             8 => {
                 if matches!(self.dtype(), DataType::UInt64) {
-                    let ca = self.clone();
-                    // Convince the compiler we are this type. This keeps flags.
-                    return BitRepr::U64(unsafe {
-                        std::mem::transmute::<ChunkedArray<T>, UInt64Chunked>(ca)
-                    });
+                    let ca: &UInt64Chunked = self.as_any().downcast_ref().unwrap();
+                    return BitRepr::U64(ca.clone());
                 }
 
                 BitRepr::U64(reinterpret_chunked_array(self))
@@ -137,11 +125,8 @@ where
 
                 BitRepr::U32(if byte_size == 4 {
                     if matches!(self.dtype(), DataType::UInt32) {
-                        let ca = self.clone();
-                        // Convince the compiler we are this type. This preserves flags.
-                        return BitRepr::U32(unsafe {
-                            std::mem::transmute::<ChunkedArray<T>, UInt32Chunked>(ca)
-                        });
+                        let ca: &UInt32Chunked = self.as_any().downcast_ref().unwrap();
+                        return BitRepr::U32(ca.clone());
                     }
 
                     reinterpret_chunked_array(self)
