@@ -13,6 +13,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -758,3 +759,18 @@ def test_decimal32_decimal64_22946() -> None:
             ]
         ),
     )
+
+
+def test_decimal_cast_limit() -> None:
+    fits = pl.Series([10**38 - 1, -(10**38 - 1)])
+    assert_series_equal(fits.cast(pl.Decimal(38, 0)).cast(pl.Int128), fits)
+
+    with pytest.raises(InvalidOperationError):
+        fits.cast(pl.Decimal(39, 0))
+
+    too_large1 = pl.Series([10**38])
+    too_large2 = pl.Series([-(10**38)])
+    with pytest.raises(InvalidOperationError):
+        too_large1.cast(pl.Decimal(38, 0))
+    with pytest.raises(InvalidOperationError):
+        too_large2.cast(pl.Decimal(38, 0))
