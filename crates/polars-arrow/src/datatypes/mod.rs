@@ -298,9 +298,11 @@ impl ArrowDataType {
             Float64 => PhysicalType::Primitive(PrimitiveType::Float64),
             Int128 => PhysicalType::Primitive(PrimitiveType::Int128),
             Interval(IntervalUnit::DayTime) => PhysicalType::Primitive(PrimitiveType::DaysMs),
-            Interval(IntervalUnit::MonthDayNano) => {
-                PhysicalType::Primitive(PrimitiveType::MonthDayNano)
-            },
+            // We import MonthDayNano as Int128 from FFI - i.e. PrimitiveArray::<i128>.
+            // For this we set physical type conversion to Int128 here rather than PrimitiveType::MonthDayNano
+            // in order to pass the assertion in PrimitiveArray::<i128>::try_new:
+            // * dtype.to_physical_type() == PhysicalType::Primitive(i128)
+            Interval(IntervalUnit::MonthDayNano) => PhysicalType::Primitive(PrimitiveType::Int128),
             Binary => PhysicalType::Binary,
             FixedSizeBinary(_) => PhysicalType::FixedSizeBinary,
             LargeBinary => PhysicalType::LargeBinary,

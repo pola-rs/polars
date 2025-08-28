@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, cast
 
-import duckdb
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -14,6 +13,7 @@ from polars.exceptions import ComputeError, DuplicateError, UnstableWarning
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
+from functools import partial
 
 
 def test_arrow_list_roundtrip() -> None:
@@ -1088,37 +1088,29 @@ def test_to_arrow_24142() -> None:
 def test_month_day_nano_from_ffi_15969() -> None:
     import datetime
 
-    relation = duckdb.sql("""\
-SELECT #1 AS index, #2 AS interval
-FROM (
-    SELECT 1, INTERVAL 1 MONTH
-    UNION ALL
-    SELECT 2, INTERVAL 1 DAY
-    UNION ALL
-    SELECT 3, INTERVAL 1 MICROSECONDS
-    UNION ALL
-    SELECT 4, INTERVAL 1 MONTH + INTERVAL 1 DAY + INTERVAL 1 SECONDS + INTERVAL 1 MICROSECONDS
-    UNION ALL
-    SELECT 5, -INTERVAL 1 MONTH
-    UNION ALL
-    SELECT 6, -INTERVAL 1 DAY
-    UNION ALL
-    SELECT 7, -INTERVAL 1 MICROSECONDS
-    UNION ALL
-    SELECT 8, -INTERVAL 1 MONTH - INTERVAL 1 DAY - INTERVAL 1 SECONDS - INTERVAL 1 MICROSECONDS
-    UNION ALL
-    SELECT 9, INTERVAL 3558 MONTH
-    UNION ALL
-    SELECT 10, -INTERVAL 3558 MONTH
-    UNION ALL
-    SELECT 11, INTERVAL 1 MONTH - INTERVAL 1 DAY + INTERVAL 2 SECONDS - INTERVAL 1 MICROSECONDS
-)
-ORDER BY index
-""")
+    interval_scalar = partial(pa.scalar, type=pa.month_day_nano_interval())
+
+    arrow_tbl = pa.Table.from_pydict(
+        {
+            "interval": [
+                interval_scalar((1, 0, 0)),
+                interval_scalar((0, 1, 0)),
+                interval_scalar((0, 0, 1_000)),
+                interval_scalar((1, 1, 1_000_001_000)),
+                interval_scalar((-1, 0, 0)),
+                interval_scalar((0, -1, 0)),
+                interval_scalar((0, 0, -1_000)),
+                interval_scalar((-1, -1, -1_000_001_000)),
+                interval_scalar((3558, 0, 0)),
+                interval_scalar((-3558, 0, 0)),
+                interval_scalar((1, -1, 1_999_999_000)),
+            ]
+        },
+        schema=pa.schema([pa.field("interval", pa.month_day_nano_interval())]),
+    )
 
     expect = pl.DataFrame(
         [
-            pl.Series("index", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=pl.Int32),
             pl.Series(
                 "interval",
                 [
@@ -1139,24 +1131,41 @@ ORDER BY index
         ]
     )
 
-    assert relation.arrow().column("interval").type == "month_day_nano_interval"
+    assert_frame_equal(pl.DataFrame(arrow_tbl), expect)
+    assert_series_equal(
+        pl.Series(arrow_tbl.column(0)).alias("interval"), expect.to_series()
+    )
 
-    assert_frame_equal(relation.pl(), expect)
-    assert_frame_equal(pl.DataFrame(relation.arrow()), expect)
-    # Test values from duckdb->pandas->polars
-    assert_frame_equal(pl.DataFrame(relation.df()), expect)
+    assert_frame_equal(
+        pl.DataFrame(
+            pa.Table.from_pydict(
+                {"interval": pa.array([], type=pa.month_day_nano_interval())}
+            )
+        ),
+        pl.DataFrame(schema={"interval": pl.Duration("ns")}),
+    )
+
+    assert_series_equal(
+        pl.Series(pa.array([], type=pa.month_day_nano_interval())),
+        pl.Series(dtype=pl.Duration("ns")),
+    )
 
     # Out of range - exceeds i64::MIN/MAX nanoseconds.
     with pytest.raises(
         ComputeError,
-        match="failed to convert month_day_nano_interval value to nanosecond duration: 3559m0d0ns",
+        match="failed to convert month_day_nano_interval value to nanosecond duration: 3559M0d0ns",
     ):
-        duckdb.sql("SELECT INTERVAL 3559 MONTH").pl()
+        pl.Series(
+            pa.array([interval_scalar((3559, 0, 0))], type=pa.month_day_nano_interval())
+        )
 
     with pytest.raises(
         ComputeError,
-        match="failed to convert month_day_nano_interval value to nanosecond duration: 3558m30d1000ns",
+        match="failed to convert month_day_nano_interval value to nanosecond duration: -3558M-30d-1000ns",
     ):
-        duckdb.sql(
-            "SELECT INTERVAL 3558 MONTH + INTERVAL 30 DAYS + INTERVAL 1 MICROSECOND"
-        ).pl()
+        pl.Series(
+            pa.array(
+                [interval_scalar((-3558, -30, -1_000))],
+                type=pa.month_day_nano_interval(),
+            )
+        )

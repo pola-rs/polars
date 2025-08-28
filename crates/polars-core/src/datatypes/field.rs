@@ -1,4 +1,4 @@
-use arrow::datatypes::Metadata;
+use arrow::datatypes::{IntervalUnit, Metadata};
 use polars_dtype::categorical::CategoricalPhysical;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -276,6 +276,9 @@ impl DataType {
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             ArrowDataType::Map(inner, _is_sorted) => {
                 DataType::List(Self::from_arrow_field(inner).boxed())
+            },
+            ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
+                DataType::Duration(TimeUnit::Nanoseconds)
             },
             dt => panic!(
                 "Arrow datatype {dt:?} not supported by Polars. \

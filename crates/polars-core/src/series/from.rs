@@ -785,7 +785,7 @@ fn convert_month_day_nano_to_nanosecond_duration(
                 polars_err!(
                     ComputeError:
                     "failed to convert month_day_nano_interval value to \
-                    nanosecond duration: {months}m{days}d{nanoseconds}ns"
+                    nanosecond duration: {months}M{days}d{nanoseconds}ns"
                 )
             })
             .map(Some)
