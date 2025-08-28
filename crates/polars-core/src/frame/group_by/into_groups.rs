@@ -175,6 +175,7 @@ where
                 BitRepr::U16(ca) => num_groups_proxy(&ca, multithreaded, sorted),
                 BitRepr::U32(ca) => num_groups_proxy(&ca, multithreaded, sorted),
                 BitRepr::U64(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                #[cfg(feature = "dtype-i128")]
                 BitRepr::I128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
             },
         };
