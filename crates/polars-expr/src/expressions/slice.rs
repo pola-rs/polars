@@ -120,7 +120,7 @@ impl PhysicalExpr for SliceExpr {
 
         // Fast path:
         // When `input` (ac) is a LiteralValue, and both `offset` and `length` are LiteralScalar,
-        // we slice the LiteralValue and avoid calling groups() or aggregated().
+        // we slice the LiteralValue and avoid calling groups().
         // TODO: When `input` (ac) is a LiteralValue, and `offset` or `length` is not a LiteralScalar,
         // we can simplify the groups calculation since we have a List containing one scalar for
         // each group.
