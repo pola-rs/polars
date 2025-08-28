@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use polars_core::frame::DataFrame;
 use polars_core::prelude::PolarsResult;
 use polars_core::schema::Schema;
 
@@ -16,6 +19,7 @@ impl StackOptimizer {
         expr_arena: &mut Arena<AExpr>,
         lp_arena: &mut Arena<IR>,
         lp_top: Node,
+        pushdown_maintain_errors: bool,
     ) -> PolarsResult<Node> {
         let mut changed = true;
 
@@ -44,6 +48,7 @@ impl StackOptimizer {
 
                 // traverse subplans and expressions and add to the stack
                 plan.copy_exprs(&mut scratch);
+                let len_before_plan_inputs = plans.len();
                 plan.copy_inputs(&mut plans);
 
                 if scratch.is_empty() {
@@ -86,6 +91,31 @@ impl StackOptimizer {
                     let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                     // traverse subexpressions and add to the stack
                     expr.inputs_rev(&mut exprs)
+                }
+
+                if !pushdown_maintain_errors {
+                    if let IR::Filter {
+                        input: _,
+                        predicate,
+                    } = plan
+                    {
+                        if let AExpr::Literal(lv) = expr_arena.get(predicate.node()) {
+                            if lv.bool() == Some(false) {
+                                let schema = plan.schema(lp_arena);
+
+                                lp_arena.replace(
+                                    current_node,
+                                    IR::DataFrameScan {
+                                        df: Arc::new(DataFrame::empty_with_schema(&schema)),
+                                        schema: schema.into_owned(),
+                                        output_schema: None,
+                                    },
+                                );
+
+                                plans.truncate(len_before_plan_inputs);
+                            }
+                        }
+                    }
                 }
             }
         }

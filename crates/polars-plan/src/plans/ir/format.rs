@@ -738,7 +738,7 @@ pub fn write_ir_non_recursive(
             )
         },
         IR::DataFrameScan {
-            df: _,
+            df,
             schema,
             output_schema,
         } => {
@@ -751,10 +751,14 @@ pub fn write_ir_non_recursive(
             } else {
                 ("*".to_string(), "".to_string())
             };
+
+            let zero_rows = if df.height() == 0 { "[0 rows]" } else { "" };
+
             write!(
                 f,
-                "{:indent$}DF {}; PROJECT{} {}/{} COLUMNS",
+                "{:indent$}DF{} {}; PROJECT{} {}/{} COLUMNS",
                 "",
+                zero_rows,
                 format_list_truncated!(schema.iter_names(), 4, '"'),
                 projected,
                 n_columns,

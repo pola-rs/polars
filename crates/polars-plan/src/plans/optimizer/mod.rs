@@ -262,7 +262,13 @@ pub fn optimize(
     // Note: ExpandDatasets must run after slice and predicate pushdown.
     rules.push(Box::new(expand_datasets::ExpandDatasets {}) as Box<dyn OptimizationRule>);
 
-    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
+    lp_top = opt.optimize_loop(
+        &mut rules,
+        expr_arena,
+        lp_arena,
+        lp_top,
+        pushdown_maintain_errors,
+    )?;
 
     if opt_flags.cluster_with_columns() {
         cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
