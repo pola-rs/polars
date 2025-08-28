@@ -1,9 +1,6 @@
-# Run your first query
+# Run a query in the cloud
 
-Polars Cloud makes it simple to run your query at scale. You can take any existing Polars query and
-run it on powerful cloud infrastructure with just a few additional lines of code. This allows you to
-process datasets that are too large for your local machine or leverage more compute power when you
-need it.
+Polars Cloud enables you to execute existing Polars queries on cloud infrastructure with minimal code changes. This approach allows you to process datasets that exceed local resources or use additional compute resources for faster execution.
 
 !!! note "Polars Cloud is set up and connected"
 
@@ -11,33 +8,43 @@ need it.
 
 ## Define your query locally
 
-If you're already familiar with Polars, you will immediately be productive with Polars Cloud. The
-same lazy evaluation and API you know works exactly the same way, with the addition of defining a
-ComputeContext and calling `.remote(context=ctx)` to execute your query in your cloud environment,
-instead of locally.
+If you're already familiar with Polars, you can immediately use Polars Cloud. The lazy evaluation and API remain identical, with two key additions:
 
-Below we define a query that you would typically write on your local machine.
+- Define a `ComputeContext` for your cloud environment
+- Call `.remote(context=ctx)` instead of `.collect()` to execute remotely
+
+The following example uses a query from the PDS-H benchmark suite, a derived version of the popular TPC-H benchmark. Data generation tools and additional queries are available in the [Polars benchmark repository](https://github.com/pola-rs/polars-benchmark).
 
 {{code_block('polars-cloud/first-query','local',[])}}
 
 ## Scale to the cloud
 
-To execute your query in the cloud, we must define a compute context. The compute context defines
+To execute your query in the cloud, you need to define a compute context. The compute context defines
 the hardware to use when executing the query in the cloud. It allows to define the workspace to
 execute your query, set compute resources and define if you want to execute in proxy mode. More
 elaborate options can be found on the
 [Compute context introduction page](../context/compute-context.md)
 
-{{code_block('polars-cloud/first-query','context',[])}}
+{{code_block('polars-cloud/first-query','context',['ComputeContext'])}}
+
+!!! info "Run the examples yourself"
+
+    All examples on this page can be executed using the sample datasets hosted on our S3 bucket. By including the `storage_option` parameter in your queries, you'll only incur S3 data transfer costs. No additional storage fees apply
+
+!!! note "S3 bucket region"
+
+    The example datasets are hosted in the `US-East-2 S3 region`. Query performance may be affected if you're running operations from a distant geographic location due to network latency.
 
 ### Proxy mode
 
-In proxy mode the query is sent to your cluster via the Polars Cloud control plane. This adds an
-additional layer of security as no ports to the compute cluster are required to stay open.
+Proxy mode routes queries through the Polars Cloud control plane rather than direct cluster connections. This approach provides enhanced security by eliminating the need to expose network ports on your compute cluster.
 
 Read more about the differences on the [compute context page](../context/compute-context.md).
 
-### Distributed execution
+Using this mode, also allows your team to reconnect to the instance while it is active. There is
+more information available on the page about [reconnecting to clusters](../context/reconnect.md).
+
+<!--### Distributed execution
 
 To run your queries over multiple nodes, you must define your `cluster_size` in the `ComputeContext`
 and call the `.distributed()` method.
@@ -46,7 +53,7 @@ and call the `.distributed()` method.
 
 This distributes your query execution across 10 machines in this example, providing a total of 100
 cores and 100GB of RAM for processing. Find more information about executing your queries on
-multiple nodes on the [distributed queries](distributed-engine.md) page.
+multiple nodes on the [distributed queries](distributed-engine.md) page.-->
 
 ## Working with remote query results
 
@@ -59,26 +66,61 @@ The most straightforward approach for batch processing is to write results direc
 using `.sink_parquet()`. This method is ideal when you want to store processed data for later use or
 as part of a data pipeline:
 
-{{code_block('polars-cloud/first-query','distributed',[])}}
+{{code_block('polars-cloud/first-query','sink_parquet',[])}}
 
 Running `.sink_parquet()` will write the results to the defined bucket on S3. The query you execute
-runs in your cloud environment, and the data and results remain secure in your own infrastructure.
-This approach is perfect for ETL workflows, scheduled jobs, or any time you need to persist large
-datasets without transferring them to your local machine.
+runs in your cloud environment, and both the data and results remain secure in your own
+infrastructure. This approach is perfect for ETL workflows, scheduled jobs, or any time you need to
+persist large datasets without transferring them to your local machine.
 
 ### Inspect results in your local environment
 
-For exploratory analysis and interactive workflows, use `.collect()` or `.show()` to return query
-results:
+Use `.show()` for interactive data exploration when you need to understand result structure without transferring large datasets. This method displays the first 10 rows in your console or notebook.
 
-{{code_block('polars-cloud/first-query','interactive',[])}}
+{{code_block('polars-cloud/first-query','show',[])}}
 
-The `.show()` method is perfect for data exploration where you want to understand the structure and
-content of your results without the overhead of transferring large datasets. It displays a sample of
-rows in your console or notebook.
+```text
+shape: (10, 4)
+┌────────────┬─────────────┬─────────────┬────────────────┐
+│ l_orderkey ┆ revenue     ┆ o_orderdate ┆ o_shippriority │
+│ ---        ┆ ---         ┆ ---         ┆ ---            │
+│ i64        ┆ f64         ┆ date        ┆ i64            │
+╞════════════╪═════════════╪═════════════╪════════════════╡
+│ 4791171    ┆ 440715.2185 ┆ 1995-02-23  ┆ 0              │
+│ 46678469   ┆ 439855.325  ┆ 1995-01-27  ┆ 0              │
+│ 23906758   ┆ 432728.5737 ┆ 1995-03-14  ┆ 0              │
+│ 23861382   ┆ 428739.1368 ┆ 1995-03-09  ┆ 0              │
+│ 59393639   ┆ 426036.0662 ┆ 1995-02-12  ┆ 0              │
+│ 3355202    ┆ 425100.6657 ┆ 1995-03-04  ┆ 0              │
+│ 9806272    ┆ 425088.0568 ┆ 1995-03-13  ┆ 0              │
+│ 22810436   ┆ 423231.969  ┆ 1995-01-02  ┆ 0              │
+│ 16384100   ┆ 421478.7294 ┆ 1995-03-02  ┆ 0              │
+│ 52974151   ┆ 415367.1195 ┆ 1995-02-05  ┆ 0              │
+└────────────┴─────────────┴─────────────┴────────────────┘
+```
 
-When calling `.collect()` on your remote query execution, the intermediate results are written to a
-temporary location on S3. These intermediate result files are automatically deleted after several
-hours. The output of the remote query is a LazyFrame, which means you can continue chaining
-operations on the returned results for further analysis. Find a more elaborate example on the
-[Example workflow page](example-workflow.md)
+The `.await_and_scan()` method returns a LazyFrame pointing to intermediate results stored temporarily in your S3 environment. These intermediate result files are
+automatically deleted after several hours. For persistent storage use `sink_parquet`. The output is a LazyFrame, allwowing continued query chaining for further analysis.
+
+{{code_block('polars-cloud/first-query','await_scan',[])}}
+
+```text
+shape: (114_003, 4)
+┌────────────┬─────────────┬─────────────┬────────────────┐
+│ l_orderkey ┆ revenue     ┆ o_orderdate ┆ o_shippriority │
+│ ---        ┆ ---         ┆ ---         ┆ ---            │
+│ i64        ┆ f64         ┆ date        ┆ i64            │
+╞════════════╪═════════════╪═════════════╪════════════════╡
+│ 4791171    ┆ 440715.2185 ┆ 1995-02-23  ┆ 0              │
+│ 46678469   ┆ 439855.325  ┆ 1995-01-27  ┆ 0              │
+│ 23906758   ┆ 432728.5737 ┆ 1995-03-14  ┆ 0              │
+│ 23861382   ┆ 428739.1368 ┆ 1995-03-09  ┆ 0              │
+│ 59393639   ┆ 426036.0662 ┆ 1995-02-12  ┆ 0              │
+│ …          ┆ …           ┆ …           ┆ …              │
+│ 44149381   ┆ 904.3968    ┆ 1995-01-16  ┆ 0              │
+│ 34297697   ┆ 897.8464    ┆ 1995-03-06  ┆ 0              │
+│ 25478115   ┆ 887.2318    ┆ 1994-11-28  ┆ 0              │
+│ 52204674   ┆ 860.25      ┆ 1994-12-18  ┆ 0              │
+│ 47255457   ┆ 838.9381    ┆ 1994-11-18  ┆ 0              │
+└────────────┴─────────────┴─────────────┴────────────────┘
+```
