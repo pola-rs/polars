@@ -1,5 +1,6 @@
 use polars_utils::IdxSize;
 
+use crate::array::binary::BinaryArrayBuilder;
 use crate::array::binview::BinaryViewArrayGenericBuilder;
 use crate::array::boolean::BooleanArrayBuilder;
 use crate::array::fixed_size_binary::FixedSizeBinaryArrayBuilder;
@@ -62,10 +63,21 @@ pub trait StaticArrayBuilder: Send {
         repeats: usize,
         share: ShareStrategy,
     ) {
+        self.reserve(length * repeats);
         for _ in 0..repeats {
             self.subslice_extend(other, start, length, share)
         }
     }
+
+    /// The same as subslice_extend, but repeats each element `repeats` times.
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &Self::Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    );
 
     /// Extends this builder with the contents of the given array at the given
     /// indices. That is, `other[idxs[i]]` is appended to this array in order,
@@ -140,6 +152,21 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
     }
 
     #[inline(always)]
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        let other: &T::Array = other.as_any().downcast_ref().unwrap();
+        StaticArrayBuilder::subslice_extend_each_repeated(
+            self, other, start, length, repeats, share,
+        );
+    }
+
+    #[inline(always)]
     unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
         let other: &T::Array = other.as_any().downcast_ref().unwrap();
         StaticArrayBuilder::gather_extend(self, other, idxs, share);
@@ -187,6 +214,16 @@ pub trait ArrayBuilder: ArrayBuilderBoxedHelper + Send {
 
     /// The same as subslice_extend, but repeats the extension `repeats` times.
     fn subslice_extend_repeated(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    );
+
+    /// The same as subslice_extend, but repeats each element `repeats` times.
+    fn subslice_extend_each_repeated(
         &mut self,
         other: &dyn Array,
         start: usize,
@@ -277,6 +314,18 @@ impl ArrayBuilder for Box<dyn ArrayBuilder> {
     }
 
     #[inline(always)]
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        (**self).subslice_extend_each_repeated(other, start, length, repeats, share);
+    }
+
+    #[inline(always)]
     unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
         (**self).gather_extend(other, idxs, share);
     }
@@ -296,6 +345,7 @@ pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
         Primitive(prim_t) => with_match_primitive_type_full!(prim_t, |$T| {
             Box::new(PrimitiveArrayBuilder::<$T>::new(dtype.clone()))
         }),
+        LargeBinary => Box::new(BinaryArrayBuilder::<i64>::new(dtype.clone())),
         FixedSizeBinary => Box::new(FixedSizeBinaryArrayBuilder::new(dtype.clone())),
         LargeList => {
             let ArrowDataType::LargeList(inner_dt) = dtype else {
@@ -325,7 +375,7 @@ pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
         BinaryView => Box::new(BinaryViewArrayGenericBuilder::<[u8]>::new(dtype.clone())),
         Utf8View => Box::new(BinaryViewArrayGenericBuilder::<str>::new(dtype.clone())),
 
-        List | Binary | LargeBinary | Utf8 | LargeUtf8 | Map | Union | Dictionary(_) => {
+        List | Binary | Utf8 | LargeUtf8 | Map | Union | Dictionary(_) => {
             unimplemented!()
         },
     }

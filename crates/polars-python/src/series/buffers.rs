@@ -43,8 +43,8 @@ impl<'py> IntoPyObject<'py> for BufferInfo {
         (self.pointer, self.offset, self.length).into_pyobject(py)
     }
 }
-impl<'a> FromPyObject<'a> for BufferInfo {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for BufferInfo {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let (pointer, offset, length) = ob.extract()?;
         Ok(Self {
             pointer,
@@ -58,7 +58,8 @@ impl<'a> FromPyObject<'a> for BufferInfo {
 impl PySeries {
     /// Return pointer, offset, and length information about the underlying buffer.
     fn _get_buffer_info(&self) -> PyResult<BufferInfo> {
-        let s = self.series.to_physical_repr();
+        let lock = self.series.read();
+        let s = lock.to_physical_repr();
         let arrays = s.chunks();
         if arrays.len() != 1 {
             let msg = "cannot get buffer info for Series consisting of multiple chunks";
@@ -92,7 +93,7 @@ impl PySeries {
 
     /// Return the underlying values, validity, and offsets buffers as Series.
     fn _get_buffers(&self, py: Python) -> PyResult<(Self, Option<Self>, Option<Self>)> {
-        let s = &self.series;
+        let s = &self.series.read();
         py.enter_polars(|| match s.dtype().to_physical() {
             dt if dt.is_primitive_numeric() => get_buffers_from_primitive(s),
             DataType::Boolean => get_buffers_from_primitive(s),
@@ -255,9 +256,9 @@ fn get_boolean_buffer_length_in_bytes(length: usize, offset: usize) -> usize {
 impl PySeries {
     /// Construct a PySeries from information about its underlying buffers.
     #[staticmethod]
-    #[pyo3(signature = (dtype, data, validity=None))]
+    #[pyo3(signature = (dtype, data, validity))]
     unsafe fn _from_buffers(
-        py: Python,
+        py: Python<'_>,
         dtype: Wrap<DataType>,
         data: Vec<PySeries>,
         validity: Option<PySeries>,
@@ -279,16 +280,14 @@ impl PySeries {
         }
 
         let validity = match validity {
-            Some(s) => {
-                let dtype = s.series.dtype();
+            Some(ps) => {
+                let s = ps.series.into_inner();
+                let dtype = s.dtype();
                 if !dtype.is_bool() {
-                    let msg = format!(
-                        "validity buffer must have data type Boolean, got {:?}",
-                        dtype
-                    );
+                    let msg = format!("validity buffer must have data type Boolean, got {dtype:?}");
                     return Err(PyTypeError::new_err(msg));
                 }
-                Some(series_to_bitmap(s.series).unwrap())
+                Some(series_to_bitmap(s).unwrap())
             },
             None => None,
         };
@@ -314,8 +313,7 @@ impl PySeries {
                         let dtype = s.dtype();
                         if !matches!(dtype, DataType::Int64) {
                             return Err(PyTypeError::new_err(format!(
-                                "offsets buffer must have data type Int64, got {:?}",
-                                dtype
+                                "offsets buffer must have data type Int64, got {dtype:?}"
                             )));
                         }
                         series_to_offsets(s)

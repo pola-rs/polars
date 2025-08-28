@@ -99,7 +99,8 @@ def _get_dependency_list() -> list[str]:
 
 
 def _get_dependency_version(dep_name: str) -> str:
-    # note: we import 'importlib' here as a significant optimisation for initial import
+    # note: we import 'importlib' inside the function as an
+    # optimisation for initial polars module import
     import importlib
     import importlib.metadata
 
@@ -111,6 +112,9 @@ def _get_dependency_version(dep_name: str) -> str:
     if hasattr(module, "__version__"):
         module_version = module.__version__
     else:
-        module_version = importlib.metadata.version(dep_name)  # pragma: no cover
+        try:
+            module_version = importlib.metadata.version(dep_name)  # pragma: no cover
+        except Exception:
+            return "<invalid install>"
 
     return module_version

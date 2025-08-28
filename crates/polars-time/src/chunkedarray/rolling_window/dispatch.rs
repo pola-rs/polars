@@ -89,7 +89,7 @@ where
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
         DataType::Date => (
-            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+            by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
             &None,
         ),
         DataType::Int64 => (
@@ -118,7 +118,7 @@ where
     let func = rolling_agg_fn_dynamic;
     let out: ArrayRef = if by_is_sorted {
         let arr = ca.downcast_iter().next().unwrap();
-        let by_values = by.cont_slice().unwrap();
+        let by_values = by.physical().cont_slice().unwrap();
         let values = arr.values().as_slice();
         func(
             values,
@@ -132,9 +132,9 @@ where
             None,
         )?
     } else {
-        let sorting_indices = by.arg_sort(Default::default());
+        let sorting_indices = by.physical().arg_sort(Default::default());
         let ca = unsafe { ca.take_unchecked(&sorting_indices) };
-        let by = unsafe { by.take_unchecked(&sorting_indices) };
+        let by = unsafe { by.physical().take_unchecked(&sorting_indices) };
         let arr = ca.downcast_iter().next().unwrap();
         let by_values = by.cont_slice().unwrap();
         let values = arr.values().as_slice();
@@ -197,7 +197,7 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         let mut s = self.as_series().clone();
         if s.dtype() == &DataType::Boolean {
-            s = s.cast(&DataType::new_idxsize()).unwrap();
+            s = s.cast(&DataType::IDX_DTYPE).unwrap();
         }
         if matches!(
             s.dtype(),
@@ -205,6 +205,13 @@ pub trait SeriesOpsTime: AsSeries {
         ) {
             s = s.cast(&DataType::Int64).unwrap();
         }
+
+        polars_ensure!(
+            s.dtype().is_primitive_numeric() && !s.dtype().is_unknown(),
+            op = "rolling_sum_by",
+            s.dtype()
+        );
+
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg_by(
@@ -223,13 +230,19 @@ pub trait SeriesOpsTime: AsSeries {
         if options.weights.is_some() {
             s = s.to_float()?;
         } else if s.dtype() == &DataType::Boolean {
-            s = s.cast(&DataType::new_idxsize()).unwrap();
+            s = s.cast(&DataType::IDX_DTYPE).unwrap();
         } else if matches!(
             s.dtype(),
             DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
         ) {
             s = s.cast(&DataType::Int64).unwrap();
         }
+
+        polars_ensure!(
+            s.dtype().is_primitive_numeric() && !s.dtype().is_unknown(),
+            op = "rolling_sum",
+            s.dtype()
+        );
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -285,12 +298,25 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         let s = self.as_series().clone();
 
-        // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
-        if s.dtype() == &DataType::Boolean {
-            return s
-                .cast(&DataType::UInt8)?
-                .rolling_min_by(by, options)?
-                .cast(&DataType::Boolean);
+        let dt = s.dtype();
+        match dt {
+            // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
+            &DataType::Boolean => {
+                return s
+                    .cast(&DataType::UInt8)?
+                    .rolling_min_by(by, options)?
+                    .cast(&DataType::Boolean);
+            },
+            dt if dt.is_temporal() => {
+                return s.to_physical_repr().rolling_min_by(by, options)?.cast(dt);
+            },
+            dt => {
+                polars_ensure!(
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
+                    op = "rolling_min_by",
+                    dt
+                );
+            },
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -312,15 +338,28 @@ pub trait SeriesOpsTime: AsSeries {
             s = s.to_float()?;
         }
 
-        // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
-        if s.dtype() == &DataType::Boolean {
-            return s
-                .cast(&DataType::UInt8)?
-                .rolling_min(options)?
-                .cast(&DataType::Boolean);
+        let dt = s.dtype();
+        match dt {
+            // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
+            &DataType::Boolean => {
+                return s
+                    .cast(&DataType::UInt8)?
+                    .rolling_min(options)?
+                    .cast(&DataType::Boolean);
+            },
+            dt if dt.is_temporal() => {
+                return s.to_physical_repr().rolling_min(options)?.cast(dt);
+            },
+            dt => {
+                polars_ensure!(
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
+                    op = "rolling_min",
+                    dt
+                );
+            },
         }
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        with_match_physical_numeric_polars_type!(dt, |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg(
                 ca,
@@ -340,12 +379,25 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         let s = self.as_series().clone();
 
-        // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
-        if s.dtype() == &DataType::Boolean {
-            return s
-                .cast(&DataType::UInt8)?
-                .rolling_max_by(by, options)?
-                .cast(&DataType::Boolean);
+        let dt = s.dtype();
+        match dt {
+            // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
+            &DataType::Boolean => {
+                return s
+                    .cast(&DataType::UInt8)?
+                    .rolling_max_by(by, options)?
+                    .cast(&DataType::Boolean);
+            },
+            dt if dt.is_temporal() => {
+                return s.to_physical_repr().rolling_max_by(by, options)?.cast(dt);
+            },
+            dt => {
+                polars_ensure!(
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
+                    op = "rolling_max_by",
+                    dt
+                );
+            },
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -367,12 +419,25 @@ pub trait SeriesOpsTime: AsSeries {
             s = s.to_float()?;
         }
 
-        // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
-        if s.dtype() == &DataType::Boolean {
-            return s
-                .cast(&DataType::UInt8)?
-                .rolling_max(options)?
-                .cast(&DataType::Boolean);
+        let dt = s.dtype();
+        match dt {
+            // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
+            &DataType::Boolean => {
+                return s
+                    .cast(&DataType::UInt8)?
+                    .rolling_max(options)?
+                    .cast(&DataType::Boolean);
+            },
+            dt if dt.is_temporal() => {
+                return s.to_physical_repr().rolling_max(options)?.cast(dt);
+            },
+            dt => {
+                polars_ensure!(
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
+                    op = "rolling_max",
+                    dt
+                );
+            },
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {

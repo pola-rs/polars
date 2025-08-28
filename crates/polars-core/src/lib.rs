@@ -1,6 +1,11 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(ambiguous_glob_reexports)]
+#![cfg_attr(
+    feature = "allow_unused",
+    allow(unused, dead_code, irrefutable_let_patterns)
+)] // Maybe be caused by some feature
+// combinations
 #![cfg_attr(feature = "nightly", allow(clippy::non_canonical_partial_ord_impl))] // remove once stable
 extern crate core;
 
@@ -34,9 +39,6 @@ pub use datatypes::SchemaExtPl;
 pub use hashing::IdBuildHasher;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
-#[cfg(feature = "dtype-categorical")]
-pub use crate::chunked_array::logical::categorical::string_cache::*;
-
 pub static PROCESS_ID: LazyLock<u128> = LazyLock::new(|| {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -58,7 +60,7 @@ pub static POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
                         .get()
                 }),
         )
-        .thread_name(move |i| format!("{}-{}", thread_name, i))
+        .thread_name(move |i| format!("{thread_name}-{i}"))
         .build()
         .expect("could not spawn threads")
 });
@@ -82,3 +84,4 @@ pub static SINGLE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 pub(crate) const HEAD_DEFAULT_LENGTH: usize = 10;
 /// Default length for a `.tail()` call
 pub(crate) const TAIL_DEFAULT_LENGTH: usize = 10;
+pub const CHEAP_SERIES_HASH_LIMIT: usize = 1000;

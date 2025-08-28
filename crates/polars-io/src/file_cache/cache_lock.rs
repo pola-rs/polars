@@ -16,7 +16,7 @@ pub(super) static GLOBAL_FILE_CACHE_LOCK: LazyLock<GlobalLock> = LazyLock::new(|
         .truncate(false)
         .open(path)
         .map_err(|err| {
-            panic!("failed to open/create global file cache lockfile: {}", err);
+            panic!("failed to open/create global file cache lockfile: {err}");
         })
         .unwrap();
 
@@ -137,7 +137,7 @@ impl GlobalLock {
     }
 
     /// Acquire a shared lock.
-    pub(super) fn lock_shared(&self) -> GlobalFileCacheGuardAny {
+    pub(super) fn lock_shared(&self) -> GlobalFileCacheGuardAny<'_> {
         let access_tracker = self.get_access_tracker();
         let _notify_on_drop = NotifyOnDrop(self.notify_lock_acquired.clone());
 
@@ -187,7 +187,7 @@ impl GlobalLock {
     /// Acquire an exclusive lock on the cache directory. Holding this lock freezes
     /// all cache operations except for reading from already-opened data files.
     #[allow(dead_code)]
-    pub(super) fn try_lock_eviction(&self) -> Option<GlobalFileCacheGuardExclusive> {
+    pub(super) fn try_lock_eviction(&self) -> Option<GlobalFileCacheGuardExclusive<'_>> {
         let access_tracker = self.get_access_tracker();
 
         if let Ok(mut this) = self.inner.try_write() {

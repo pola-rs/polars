@@ -59,10 +59,9 @@ def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
     df_scanned = pl.scan_parquet(file)
     df_scanned.sink_parquet(file_path)
 
-    with pl.StringCache():
-        result = pl.read_parquet(file_path)
-        df_read = pl.read_parquet(file)
-        assert_frame_equal(result, df_read)
+    result = pl.read_parquet(file_path)
+    df_read = pl.read_parquet(file)
+    assert_frame_equal(result, df_read)
 
 
 @pytest.mark.write_disk
@@ -101,10 +100,9 @@ def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
     df_scanned = pl.scan_parquet(file)
     df_scanned.sink_ipc(file_path)
 
-    with pl.StringCache():
-        result = pl.read_ipc(file_path)
-        df_read = pl.read_parquet(file)
-        assert_frame_equal(result, df_read)
+    result = pl.read_ipc(file_path)
+    df_read = pl.read_parquet(file)
+    assert_frame_equal(result, df_read)
 
 
 @pytest.mark.write_disk
@@ -114,10 +112,9 @@ def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
 
     pl.scan_parquet(source_file).sink_csv(target_file)
 
-    with pl.StringCache():
-        source_data = pl.read_parquet(source_file)
-        target_data = pl.read_csv(target_file)
-        assert_frame_equal(target_data, source_data)
+    source_data = pl.read_parquet(source_file)
+    target_data = pl.read_csv(target_file)
+    assert_frame_equal(target_data, source_data)
 
 
 @pytest.mark.write_disk
@@ -231,22 +228,12 @@ def test_parquet_eq_statistics(
         assert_frame_equal(result, df.filter(pred))
 
     captured = capfd.readouterr().err
-    if streaming:
-        assert (
-            "[ParquetSource]: Predicate pushdown: reading 1 / 1 row groups" in captured
-        )
-        assert (
-            "[ParquetSource]: Predicate pushdown: reading 0 / 1 row groups" in captured
-        )
-    else:
-        assert (
-            "parquet row group must be read, statistics not sufficient for predicate."
-            in captured
-        )
-        assert (
-            "parquet row group can be skipped, the statistics were sufficient"
-            " to apply the predicate." in captured
-        )
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in captured
+    )
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 0 / 1 row groups" in captured
+    )
 
 
 @pytest.mark.write_disk

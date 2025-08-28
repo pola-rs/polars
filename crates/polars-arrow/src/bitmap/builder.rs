@@ -75,6 +75,13 @@ impl BitmapBuilder {
         self.bit_cap = words_available * 64;
     }
 
+    pub fn clear(&mut self) {
+        self.buf = 0;
+        self.bit_len = 0;
+        self.set_bits_in_bytes = 0;
+        self.bytes.clear();
+    }
+
     #[inline(always)]
     pub fn push(&mut self, x: bool) {
         self.reserve(1);
@@ -99,7 +106,7 @@ impl BitmapBuilder {
         debug_assert!(self.bit_len < self.bit_cap);
         self.buf |= (x as u64) << (self.bit_len % 64);
         self.bit_len += 1;
-        if self.bit_len % 64 == 0 {
+        if self.bit_len.is_multiple_of(64) {
             self.flush_word_unchecked(self.buf);
             self.set_bits_in_bytes += self.buf.count_ones() as usize;
             self.buf = 0;
@@ -225,11 +232,47 @@ impl BitmapBuilder {
         }
     }
 
+    /// # Safety
+    /// self.len() + length*repeats <= self.capacity() must hold, as well as
+    /// offset + length <= 8 * slice.len().
+    unsafe fn extend_each_repeated_from_slice_unchecked(
+        &mut self,
+        slice: &[u8],
+        offset: usize,
+        length: usize,
+        repeats: usize,
+    ) {
+        if repeats == 0 {
+            return;
+        }
+        if repeats == 1 {
+            return self.extend_from_slice_unchecked(slice, offset, length);
+        }
+        for bit_idx in offset..length {
+            let bit = (*slice.get_unchecked(bit_idx / 8) >> (bit_idx % 8)) & 1 != 0;
+            self.extend_constant(repeats, bit);
+        }
+    }
+
     pub fn extend_from_slice(&mut self, slice: &[u8], offset: usize, length: usize) {
         assert!(8 * slice.len() >= offset + length);
         self.reserve(length);
         unsafe {
             self.extend_from_slice_unchecked(slice, offset, length);
+        }
+    }
+
+    pub fn extend_each_repeated_from_slice(
+        &mut self,
+        slice: &[u8],
+        offset: usize,
+        length: usize,
+        repeats: usize,
+    ) {
+        assert!(8 * slice.len() >= offset + length);
+        self.reserve(length * repeats);
+        unsafe {
+            self.extend_each_repeated_from_slice_unchecked(slice, offset, length, repeats);
         }
     }
 
@@ -252,6 +295,19 @@ impl BitmapBuilder {
         self.extend_from_slice(slice, bm_offset + start, length);
     }
 
+    /// Extends this BitmapBuilder with a subslice of a bitmap, repeating each bit `repeats` times.
+    pub fn subslice_extend_each_repeated_from_bitmap(
+        &mut self,
+        bitmap: &Bitmap,
+        start: usize,
+        length: usize,
+        repeats: usize,
+    ) {
+        let (slice, bm_offset, bm_length) = bitmap.as_slice();
+        assert!(start + length <= bm_length);
+        self.extend_each_repeated_from_slice(slice, bm_offset + start, length, repeats);
+    }
+
     pub fn subslice_extend_from_opt_validity(
         &mut self,
         bitmap: Option<&Bitmap>,
@@ -261,6 +317,19 @@ impl BitmapBuilder {
         match bitmap {
             Some(bm) => self.subslice_extend_from_bitmap(bm, start, length),
             None => self.extend_constant(length, true),
+        }
+    }
+
+    pub fn subslice_extend_each_repeated_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+    ) {
+        match bitmap {
+            Some(bm) => self.subslice_extend_each_repeated_from_bitmap(bm, start, length, repeats),
+            None => self.extend_constant(length * repeats, true),
         }
     }
 
@@ -361,7 +430,7 @@ impl BitmapBuilder {
     /// # Safety
     /// May only be called once at the end.
     unsafe fn finish(&mut self) {
-        if self.bit_len % 64 != 0 {
+        if !self.bit_len.is_multiple_of(64) {
             self.bytes.extend_from_slice(&self.buf.to_le_bytes());
             self.set_bits_in_bytes += self.buf.count_ones() as usize;
             self.buf = 0;
@@ -504,6 +573,24 @@ impl OptBitmapBuilder {
             },
             None => {
                 self.extend_constant(length, true);
+            },
+        }
+    }
+
+    pub fn subslice_extend_each_repeated_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+    ) {
+        match bitmap {
+            Some(bm) => {
+                self.get_builder()
+                    .subslice_extend_each_repeated_from_bitmap(bm, start, length, repeats);
+            },
+            None => {
+                self.extend_constant(length * repeats, true);
             },
         }
     }

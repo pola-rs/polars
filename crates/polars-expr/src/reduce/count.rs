@@ -2,17 +2,18 @@
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
-use crate::reduce::partition::partition_vec;
 
 pub struct CountReduce {
-    groups: Vec<u64>,
+    counts: Vec<u64>,
+    evicted_counts: Vec<u64>,
     include_nulls: bool,
 }
 
 impl CountReduce {
     pub fn new(include_nulls: bool) -> Self {
         Self {
-            groups: Vec::new(),
+            counts: Vec::new(),
+            evicted_counts: Vec::new(),
             include_nulls,
         }
     }
@@ -20,23 +21,20 @@ impl CountReduce {
 
 impl GroupedReduction for CountReduce {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            groups: Vec::new(),
-            include_nulls: self.include_nulls,
-        })
+        Box::new(Self::new(self.include_nulls))
     }
 
     fn reserve(&mut self, additional: usize) {
-        self.groups.reserve(additional);
+        self.counts.reserve(additional);
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
-        self.groups.resize(num_groups as usize, 0);
+        self.counts.resize(num_groups as usize, 0);
     }
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
@@ -44,56 +42,46 @@ impl GroupedReduction for CountReduce {
         if !self.include_nulls {
             count -= values.null_count();
         }
-        self.groups[group_idx as usize] += count as u64;
+        self.counts[group_idx as usize] += count as u64;
         Ok(())
     }
 
-    unsafe fn update_groups(
+    unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Series,
-        group_idxs: &[IdxSize],
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        assert!(values.len() == group_idxs.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            let mut offset = 0;
-            for chunk in values.chunks() {
-                let gs = &group_idxs[offset..offset + chunk.len()];
-                offset += chunk.len();
-
-                if chunk.has_nulls() && !self.include_nulls {
-                    let validity = chunk.validity().unwrap();
-                    for (g, v) in gs.iter().zip(validity.iter()) {
-                        *self.groups.get_unchecked_mut(*g as usize) += v as u64;
-                    }
-                } else {
-                    for g in gs {
-                        *self.groups.get_unchecked_mut(*g as usize) += 1;
-                    }
+        assert!(subset.len() == group_idxs.len());
+        let values = values.as_materialized_series(); // @scalar-opt
+        let chunks = values.chunks();
+        assert!(chunks.len() == 1);
+        let arr = &*chunks[0];
+        if arr.has_nulls() && !self.include_nulls {
+            let valid = arr.validity().unwrap();
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let grp = self.counts.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    self.evicted_counts.push(*grp);
+                    *grp = 0;
                 }
+                *grp += valid.get_bit_unchecked(*i as usize) as u64;
+            }
+        } else {
+            for (_, g) in subset.iter().zip(group_idxs) {
+                let grp = self.counts.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    self.evicted_counts.push(*grp);
+                    *grp = 0;
+                }
+                *grp += 1;
             }
         }
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(other.groups.len() == group_idxs.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(other.groups.iter()) {
-                *self.groups.get_unchecked_mut(*g as usize) += v;
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -104,36 +92,28 @@ impl GroupedReduction for CountReduce {
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
-                *self.groups.get_unchecked_mut(*g as usize) +=
-                    *other.groups.get_unchecked(*i as usize);
+                *self.counts.get_unchecked_mut(*g as usize) +=
+                    *other.counts.get_unchecked(*i as usize);
             }
         }
         Ok(())
     }
 
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            counts: core::mem::take(&mut self.evicted_counts),
+            evicted_counts: Vec::new(),
+            include_nulls: self.include_nulls,
+        })
+    }
+
     fn finalize(&mut self) -> PolarsResult<Series> {
         let ca: IdxCa = self
-            .groups
+            .counts
             .drain(..)
             .map(|l| IdxSize::try_from(l).expect(LENGTH_LIMIT_MSG))
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
-    }
-
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        partition_vec(self.groups, partition_sizes, partition_idxs)
-            .into_iter()
-            .map(|groups| {
-                Box::new(Self {
-                    groups,
-                    include_nulls: self.include_nulls,
-                }) as _
-            })
-            .collect()
     }
 
     fn as_any(&self) -> &dyn Any {

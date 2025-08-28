@@ -24,7 +24,11 @@ impl SelectNode {
 
 impl ComputeNode for SelectNode {
     fn name(&self) -> &str {
-        "select"
+        if self.extend_original {
+            "with-columns"
+        } else {
+            "select"
+        }
     }
 
     fn update_state(

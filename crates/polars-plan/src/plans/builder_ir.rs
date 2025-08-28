@@ -31,14 +31,40 @@ impl<'a> IRBuilder<'a> {
         IRBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
+    /// Adds IR and runs optimizations on its expressions (simplify, coerce, type-check).
+    pub fn add_alp_optimize_exprs<F>(self, f: F) -> PolarsResult<Self>
+    where
+        F: FnOnce(Node) -> IR,
+    {
+        let lp = f(self.root);
+        let ir_name = lp.name();
+
+        let b = self.add_alp(lp);
+
+        // Run the optimizer
+        let mut conversion_optimizer = ConversionOptimizer::new(true, true, true);
+        conversion_optimizer.fill_scratch(b.lp_arena.get(b.root).exprs(), b.expr_arena);
+        conversion_optimizer
+            .optimize_exprs(b.expr_arena, b.lp_arena, b.root, false)
+            .map_err(|e| e.context(format!("optimizing '{ir_name}' failed").into()))?;
+
+        Ok(b)
+    }
+
+    /// An escape hatch to add an `Expr`. Working with IR is preferred.
+    pub fn add_expr(&mut self, expr: Expr) -> PolarsResult<ExprIR> {
+        let schema = self.lp_arena.get(self.root).schema(self.lp_arena);
+        let mut ctx = ExprToIRContext::new(self.expr_arena, &schema);
+        to_expr_ir(expr, &mut ctx)
+    }
+
     pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
         // if len == 0, no projection has to be done. This is a select all operation.
         if exprs.is_empty() {
             self
         } else {
             let input_schema = self.schema();
-            let schema =
-                expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
+            let schema = expr_irs_to_schema(&exprs, &input_schema, self.expr_arena);
 
             let lp = IR::Select {
                 expr: exprs,
@@ -121,6 +147,49 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
+    pub fn drop<I, S>(self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        I::IntoIter: ExactSizeIterator,
+        S: Into<PlSmallStr>,
+    {
+        let names = names.into_iter();
+        // if len == 0, no projection has to be done. This is a select all operation.
+        if names.size_hint().0 == 0 {
+            self
+        } else {
+            let mut schema = self.schema().as_ref().as_ref().clone();
+
+            for name in names {
+                let name: PlSmallStr = name.into();
+                schema.remove(&name);
+            }
+
+            let lp = IR::SimpleProjection {
+                input: self.root,
+                columns: Arc::new(schema),
+            };
+            let node = self.lp_arena.add(lp);
+            IRBuilder::new(node, self.expr_arena, self.lp_arena)
+        }
+    }
+
+    pub fn sort(
+        self,
+        by_column: Vec<ExprIR>,
+        slice: Option<(i64, usize)>,
+        sort_options: SortMultipleOptions,
+    ) -> Self {
+        let ir = IR::Sort {
+            input: self.root,
+            by_column,
+            slice,
+            sort_options,
+        };
+        let node = self.lp_arena.add(ir);
+        IRBuilder::new(node, self.expr_arena, self.lp_arena)
+    }
+
     pub fn node(self) -> Node {
         self.root
     }
@@ -141,7 +210,7 @@ impl<'a> IRBuilder<'a> {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        let hstack_schema = expr_irs_to_schema(&exprs, &schema, Context::Default, self.expr_arena);
+        let hstack_schema = expr_irs_to_schema(&exprs, &schema, self.expr_arena);
         new_schema.merge(hstack_schema);
 
         let lp = IR::HStack {
@@ -167,7 +236,7 @@ impl<'a> IRBuilder<'a> {
             let field = self
                 .expr_arena
                 .get(node)
-                .to_field(&schema, Context::Default, self.expr_arena)
+                .to_field(&schema, self.expr_arena)
                 .unwrap();
 
             expr_irs.push(
@@ -202,13 +271,12 @@ impl<'a> IRBuilder<'a> {
         self,
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
     ) -> Self {
         let current_schema = self.schema();
-        let mut schema =
-            expr_irs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
+        let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena);
 
         #[cfg(feature = "dynamic_group_by")]
         {
@@ -227,13 +295,17 @@ impl<'a> IRBuilder<'a> {
             }
         }
 
-        let agg_schema = expr_irs_to_schema(
-            &aggs,
-            &current_schema,
-            Context::Aggregation,
-            self.expr_arena,
-        );
-        schema.merge(agg_schema);
+        let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena);
+
+        // Coerce aggregation column(s) into List unless not needed (auto-implode)
+        debug_assert!(aggs_schema.len() == aggs.len());
+        for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(&aggs) {
+            if !expr.is_scalar(self.expr_arena) {
+                *dtype = dtype.clone().implode();
+            }
+        }
+
+        schema.merge(aggs_schema);
 
         let lp = IR::GroupBy {
             input: self.root,
@@ -252,7 +324,7 @@ impl<'a> IRBuilder<'a> {
         other: Node,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
-        options: Arc<JoinOptions>,
+        options: Arc<JoinOptionsIR>,
     ) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);

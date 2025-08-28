@@ -10,8 +10,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
-use polars_error::{PolarsResult, polars_err};
-use polars_io::cloud::CloudOptions;
+use polars::prelude::PlPath;
+use polars::prelude::file::DynWriteable;
+use polars::prelude::sync_on_close::SyncOnCloseType;
+use polars_error::polars_err;
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::MemSlice;
@@ -25,14 +27,34 @@ use crate::prelude::resolve_homedir;
 
 pub(crate) struct PyFileLikeObject {
     inner: PyObject,
+    /// The object expects a string instead of a bytes for `write`.
+    expects_str: bool,
+    /// The object has a flush method.
+    has_flush: bool,
 }
 
 impl WriteClose for PyFileLikeObject {}
+impl DynWriteable for PyFileLikeObject {
+    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static) {
+        self as _
+    }
+    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static) {
+        self as _
+    }
+    fn close(self: Box<Self>) -> io::Result<()> {
+        Ok(())
+    }
+    fn sync_on_close(&mut self, _sync_on_close: SyncOnCloseType) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 impl Clone for PyFileLikeObject {
     fn clone(&self) -> Self {
         Python::with_gil(|py| Self {
             inner: self.inner.clone_ref(py),
+            expects_str: self.expects_str,
+            has_flush: self.has_flush,
         })
     }
 }
@@ -42,8 +64,12 @@ impl PyFileLikeObject {
     /// Creates an instance of a `PyFileLikeObject` from a `PyObject`.
     /// To assert the object has the required methods,
     /// instantiate it with `PyFileLikeObject::require`
-    pub(crate) fn new(object: PyObject) -> Self {
-        PyFileLikeObject { inner: object }
+    pub(crate) fn new(object: PyObject, expects_str: bool, has_flush: bool) -> Self {
+        PyFileLikeObject {
+            inner: object,
+            expects_str,
+            has_flush,
+        }
     }
 
     pub(crate) fn to_memslice(&self) -> MemSlice {
@@ -146,26 +172,73 @@ impl Read for PyFileLikeObject {
 
 impl Write for PyFileLikeObject {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        // Note on the .extract() method:
+        // In case of a PyString object, it returns the number of chars,
+        // so we need to take extra steps if the underlying string is not all ASCII.
+        // In case of a ByBytes object, it returns the number of bytes.
+        let expects_str = self.expects_str;
+        let expects_str_and_is_ascii = expects_str && buf.is_ascii();
+
         Python::with_gil(|py| {
-            let pybytes = PyBytes::new(py, buf);
-
-            let number_bytes_written = self
-                .inner
-                .call_method(py, "write", (pybytes,), None)
+            let n_bytes = if expects_str_and_is_ascii {
+                let number_chars_written = unsafe {
+                    self.inner.call_method(
+                        py,
+                        "write",
+                        (PyString::new(py, std::str::from_utf8_unchecked(buf)),),
+                        None,
+                    )
+                }
                 .map_err(pyerr_to_io_err)?;
-
-            number_bytes_written.extract(py).map_err(pyerr_to_io_err)
+                number_chars_written.extract(py).map_err(pyerr_to_io_err)?
+            } else if expects_str {
+                let number_chars_written = self
+                    .inner
+                    .call_method(
+                        py,
+                        "write",
+                        (PyString::new(
+                            py,
+                            std::str::from_utf8(buf).map_err(io::Error::other)?,
+                        ),),
+                        None,
+                    )
+                    .map_err(pyerr_to_io_err)?;
+                let n_chars: usize = number_chars_written.extract(py).map_err(pyerr_to_io_err)?;
+                // calculate n_bytes
+                if n_chars > 0 {
+                    std::str::from_utf8(buf)
+                        .map(|str| {
+                            str.char_indices()
+                                .nth(n_chars - 1)
+                                .map(|(i, ch)| i + ch.len_utf8())
+                                .unwrap()
+                        })
+                        .expect("unable to parse buffer as utf-8")
+                } else {
+                    0
+                }
+            } else {
+                let number_bytes_written = self
+                    .inner
+                    .call_method(py, "write", (PyBytes::new(py, buf),), None)
+                    .map_err(pyerr_to_io_err)?;
+                number_bytes_written.extract(py).map_err(pyerr_to_io_err)?
+            };
+            Ok(n_bytes)
         })
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
-        Python::with_gil(|py| {
-            self.inner
-                .call_method(py, "flush", (), None)
-                .map_err(pyerr_to_io_err)?;
+        if self.has_flush {
+            Python::with_gil(|py| {
+                self.inner
+                    .call_method(py, "flush", (), None)
+                    .map_err(pyerr_to_io_err)
+            })?;
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 
@@ -215,22 +288,22 @@ impl EitherRustPythonFile {
         }
     }
 
-    pub(crate) fn into_dyn_writeable(self) -> Box<dyn WriteClose + Send> {
+    pub(crate) fn into_writeable(self) -> Box<dyn DynWriteable> {
         match self {
-            EitherRustPythonFile::Py(f) => Box::new(f),
-            EitherRustPythonFile::Rust(f) => Box::new(f),
+            Self::Py(f) => Box::new(f),
+            Self::Rust(f) => Box::new(f),
         }
     }
 }
 
 pub(crate) enum PythonScanSourceInput {
     Buffer(MemSlice),
-    Path(PathBuf),
+    Path(PlPath),
     File(ClosableFile),
 }
 
-fn try_get_pyfile(
-    py: Python,
+pub(crate) fn try_get_pyfile(
+    py: Python<'_>,
     py_f: Bound<'_, PyAny>,
     write: bool,
 ) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {
@@ -317,7 +390,11 @@ fn try_get_pyfile(
         py_f
     };
     PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
-    let f = PyFileLikeObject::new(py_f.unbind());
+    let expects_str = py_f.is_instance(&io.getattr("TextIOBase").unwrap())?;
+    let has_flush = py_f
+        .getattr_opt("flush")?
+        .is_some_and(|flush| flush.is_callable());
+    let f = PyFileLikeObject::new(py_f.unbind(), expects_str, has_flush);
     Ok((EitherRustPythonFile::Py(f), None))
 }
 
@@ -344,7 +421,12 @@ pub(crate) fn get_python_scan_source_input(
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let file_path = resolve_homedir(&&*s);
+            let mut file_path = PlPath::new(&s);
+            if let Some(p) = file_path.as_ref().as_local_path() {
+                if p.starts_with("~/") {
+                    file_path = PlPath::Local(resolve_homedir(&p).into());
+                }
+            }
             Ok(PythonScanSourceInput::Path(file_path))
         } else {
             Ok(try_get_pyfile(py, py_f, write)?.0.into_scan_source_input())
@@ -427,28 +509,4 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
             },
         }
     }
-}
-
-pub(crate) fn try_get_writeable(
-    py_f: PyObject,
-    cloud_options: Option<&CloudOptions>,
-) -> PyResult<Box<dyn WriteClose + Send>> {
-    Python::with_gil(|py| {
-        let py_f = py_f.into_bound(py);
-
-        if let Ok(s) = py_f.extract::<Cow<str>>() {
-            polars::prelude::file::try_get_writeable(&s, cloud_options)
-                .map_err(PyPolarsErr::from)
-                .map_err(|e| e.into())
-        } else {
-            Ok(try_get_pyfile(py, py_f, true)?.0.into_dyn_writeable())
-        }
-    })
-}
-
-pub(crate) fn close_file(f: Box<dyn WriteClose>) -> PolarsResult<()> {
-    f.close().map_err(|e| {
-        let err: polars_error::PolarsError = e.into();
-        err
-    })
 }

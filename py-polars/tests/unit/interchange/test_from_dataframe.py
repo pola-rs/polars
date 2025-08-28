@@ -158,6 +158,7 @@ def test_from_dataframe_chunked() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: chunking
 def test_from_dataframe_chunked_string() -> None:
     df = pl.Series("a", ["a", None, "bc", "d", None, "efg"]).to_frame()
     df_chunked = pl.concat([df[:1], df[1:3], df[3:]], rechunk=False)
@@ -343,7 +344,6 @@ def test_string_column_to_series_no_offsets() -> None:
         _string_column_to_series(col, allow_copy=True)
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_column_to_series_non_dictionary() -> None:
     s = pl.Series(["a", "b", None, "a"], dtype=pl.Categorical)
 

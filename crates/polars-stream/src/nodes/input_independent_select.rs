@@ -23,7 +23,7 @@ impl InputIndependentSelectNode {
 
 impl ComputeNode for InputIndependentSelectNode {
     fn name(&self) -> &str {
-        "input_independent_select"
+        "input-independent-select"
     }
 
     fn update_state(

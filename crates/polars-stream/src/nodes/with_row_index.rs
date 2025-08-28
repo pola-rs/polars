@@ -23,7 +23,7 @@ impl WithRowIndexNode {
 
 impl ComputeNode for WithRowIndexNode {
     fn name(&self) -> &str {
-        "with_row_index"
+        "with-row-index"
     }
 
     fn update_state(

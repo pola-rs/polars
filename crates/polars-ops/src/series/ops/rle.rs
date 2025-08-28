@@ -1,6 +1,9 @@
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
+pub static RLE_VALUE_COLUMN_NAME: &str = "value";
+pub static RLE_LENGTH_COLUMN_NAME: &str = "len";
+
 /// Get the run-Lengths of values.
 pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
     lengths.clear();
@@ -55,9 +58,9 @@ pub fn rle(s: &Column) -> PolarsResult<Column> {
     let vals = s
         .take_slice(&idxs)
         .unwrap()
-        .with_name(PlSmallStr::from_static("value"));
+        .with_name(PlSmallStr::from_static(RLE_VALUE_COLUMN_NAME));
     let outvals = vec![
-        Series::from_vec(PlSmallStr::from_static("len"), lengths).into(),
+        Series::from_vec(PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME), lengths).into(),
         vals,
     ];
     Ok(StructChunked::from_columns(s.name().clone(), idxs.len(), &outvals)?.into_column())

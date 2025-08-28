@@ -5,6 +5,7 @@ use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
+#[cfg(feature = "hash")]
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::total_ord::TotalOrd;
 
@@ -28,7 +29,9 @@ pub trait SeriesMethods: SeriesSealed {
         );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
-        let values = unsafe { s.agg_first(&groups) }.into();
+        let values = unsafe { s.agg_first(&groups) }
+            .with_name(s.name().clone())
+            .into();
         let counts = groups.group_count().with_name(name.clone());
 
         let counts = if normalize {

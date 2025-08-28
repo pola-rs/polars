@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_ffi::version_0::SeriesExport;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList};
@@ -14,7 +15,7 @@ impl PySeries {
     /// Convert this Series to a Python list.
     /// This operation copies data.
     pub fn to_list<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let series = &self.series;
+        let series = &self.series.read();
 
         fn to_list_recursive<'py>(py: Python<'py>, series: &Series) -> PyResult<Bound<'py, PyAny>> {
             let pylist = match series.dtype() {
@@ -30,10 +31,11 @@ impl PySeries {
                 DataType::Int128 => PyList::new(py, series.i128().map_err(PyPolarsErr::from)?)?,
                 DataType::Float32 => PyList::new(py, series.f32().map_err(PyPolarsErr::from)?)?,
                 DataType::Float64 => PyList::new(py, series.f64().map_err(PyPolarsErr::from)?)?,
-                DataType::Categorical(_, _) | DataType::Enum(_, _) => PyList::new(
-                    py,
-                    series.categorical().map_err(PyPolarsErr::from)?.iter_str(),
-                )?,
+                DataType::Categorical(_, _) | DataType::Enum(_, _) => {
+                    with_match_categorical_physical_type!(series.dtype().cat_physical().unwrap(), |$C| {
+                        PyList::new(py, series.cat::<$C>().unwrap().iter_str())?
+                    })
+                },
                 #[cfg(feature = "object")]
                 DataType::Object(_) => {
                     let v = PyList::empty(py);
@@ -145,13 +147,14 @@ impl PySeries {
 
     /// Return the underlying Arrow array.
     #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<PyObject> {
+    fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<PyObject> {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
+        let s = self.series.read();
         interop::arrow::to_py::to_py_array(
-            self.series.to_arrow(0, compat_level.0),
-            &self.series.field().to_arrow(compat_level.0),
+            s.to_arrow(0, compat_level.0),
+            &s.field().to_arrow(compat_level.0),
             &pyarrow,
         )
     }
@@ -159,10 +162,17 @@ impl PySeries {
     #[allow(unused_variables)]
     #[pyo3(signature = (requested_schema=None))]
     fn __arrow_c_stream__<'py>(
-        &'py self,
+        &self,
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        series_to_stream(&self.series, py)
+        series_to_stream(&self.series.read(), py)
+    }
+
+    pub fn _export(&self, _py: Python<'_>, location: usize) {
+        let export = polars_ffi::version_0::export_series(&self.series.read());
+        unsafe {
+            (location as *mut SeriesExport).write(export);
+        }
     }
 }

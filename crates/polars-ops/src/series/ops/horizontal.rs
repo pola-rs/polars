@@ -85,6 +85,7 @@ where
 
 fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsResult<Column> {
     if left.dtype().to_physical().is_primitive_numeric()
+        && right.dtype().to_physical().is_primitive_numeric()
         && left.null_count() == 0
         && right.null_count() == 0
         && left.len() == right.len()

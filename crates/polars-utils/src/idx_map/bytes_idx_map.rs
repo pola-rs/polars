@@ -56,11 +56,11 @@ impl<V> BytesIndexMap<V> {
     }
 
     pub fn len(&self) -> IdxSize {
-        self.table.len() as IdxSize
+        self.tuples.len() as IdxSize
     }
 
     pub fn is_empty(&self) -> bool {
-        self.table.is_empty()
+        self.tuples.is_empty()
     }
 
     pub fn get(&self, hash: u64, key: &[u8]) -> Option<&V> {
@@ -69,6 +69,15 @@ impl<V> BytesIndexMap<V> {
             hash == t.0.key_hash && key == t.0.get(&self.key_data)
         })?;
         unsafe { Some(&self.tuples.get_unchecked(*idx as usize).1) }
+    }
+
+    pub fn contains_key(&self, hash: u64, key: &[u8]) -> bool {
+        self.table
+            .find(hash.wrapping_mul(self.seed), |i| unsafe {
+                let t = self.tuples.get_unchecked(*i as usize);
+                hash == t.0.key_hash && key == t.0.get(&self.key_data)
+            })
+            .is_some()
     }
 
     pub fn entry<'k>(&mut self, hash: u64, key: &'k [u8]) -> Entry<'_, 'k, V> {

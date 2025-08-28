@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.io._utils import looks_like_url, parse_columns_arg, parse_row_index_args
+from polars.io.cloud._utils import _get_path_scheme
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -69,3 +70,11 @@ def test_looks_like_url(url: str, result: bool) -> None:
 def test_filename_in_err(scan: Any) -> None:
     with pytest.raises(FileNotFoundError, match=r".*does not exist"):
         scan("does not exist").collect()
+
+
+def test_get_path_scheme() -> None:
+    assert _get_path_scheme("") is None
+    assert _get_path_scheme("A") is None
+    assert _get_path_scheme("scheme://") == "scheme"
+    assert _get_path_scheme("://") == ""
+    assert _get_path_scheme("://...") == ""

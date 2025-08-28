@@ -67,6 +67,29 @@ impl StaticArrayBuilder for BooleanArrayBuilder {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &BooleanArray,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.values.subslice_extend_each_repeated_from_bitmap(
+            other.values(),
+            start,
+            length,
+            repeats,
+        );
+        self.validity
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
+    }
+
     unsafe fn gather_extend(
         &mut self,
         other: &BooleanArray,

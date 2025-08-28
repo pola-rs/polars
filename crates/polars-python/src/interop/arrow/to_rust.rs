@@ -20,7 +20,7 @@ pub fn field_to_rust_arrow(obj: Bound<'_, PyAny>) -> PyResult<ArrowField> {
     Ok(normalize_arrow_fields(&field))
 }
 
-fn normalize_arrow_fields(field: &ArrowField) -> ArrowField {
+pub(crate) fn normalize_arrow_fields(field: &ArrowField) -> ArrowField {
     // normalize fields with extension dtypes that are otherwise standard dtypes associated
     // with (for us) irrelevant metadata; recreate the field using the inner (standard) dtype
     match field {
@@ -93,11 +93,40 @@ pub fn array_to_rust(obj: &Bound<PyAny>) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn to_rust_df(py: Python, rb: &[Bound<PyAny>], schema: Bound<PyAny>) -> PyResult<DataFrame> {
+pub fn to_rust_df(
+    py: Python<'_>,
+    rb: &[Bound<PyAny>],
+    schema: Bound<PyAny>,
+) -> PyResult<DataFrame> {
     let ArrowDataType::Struct(fields) = field_to_rust_arrow(schema)?.dtype else {
         return Err(PyPolarsErr::Other("invalid top-level schema".into()).into());
     };
-    let schema = ArrowSchema::from_iter(fields);
+
+    let schema = ArrowSchema::from_iter(fields.iter().cloned());
+
+    // Verify that field names are not duplicated. Arrow permits duplicate field names, we do not.
+    // Required to uphold safety invariants for unsafe block below.
+    if schema.len() != fields.len() {
+        let mut field_map: PlHashMap<PlSmallStr, u64> = PlHashMap::with_capacity(fields.len());
+        fields.iter().for_each(|field| {
+            field_map
+                .entry(field.name.clone())
+                .and_modify(|c| {
+                    *c += 1;
+                })
+                .or_insert(1);
+        });
+        let duplicate_fields: Vec<_> = field_map
+            .into_iter()
+            .filter_map(|(k, v)| (v > 1).then_some(k))
+            .collect();
+
+        return Err(PyPolarsErr::Polars(PolarsError::Duplicate(
+            format!("column appears more than once; names must be unique: {duplicate_fields:?}")
+                .into(),
+        ))
+        .into());
+    }
 
     if rb.is_empty() {
         let columns = schema

@@ -1,12 +1,15 @@
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
-use polars_plan::dsl::{DslPlan, FileScan, ScanSources};
-use polars_plan::prelude::{FileScanOptions, NDJsonReadOptions};
+use polars_plan::dsl::{
+    CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScanDsl, MissingColumnsPolicy, ScanSources,
+};
+use polars_plan::prelude::{NDJsonReadOptions, UnifiedScanArgs};
+use polars_utils::plpath::PlPath;
+use polars_utils::slice_enum::Slice;
 
 use crate::prelude::LazyFrame;
 use crate::scan::file_list_reader::LazyFileListReader;
@@ -28,7 +31,7 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
+    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -49,8 +52,8 @@ impl LazyJsonLineReader {
         }
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path.as_ref().to_path_buf()].into()))
+    pub fn new(path: PlPath) -> Self {
+        Self::new_with_sources(ScanSources::Paths([path].into()))
     }
 
     /// Add a row index column.
@@ -122,23 +125,24 @@ impl LazyJsonLineReader {
 
 impl LazyFileListReader for LazyJsonLineReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let file_options = Box::new(FileScanOptions {
-            pre_slice: self.n_rows.map(|x| (0, x)),
-            with_columns: None,
-            cache: false,
-            row_index: self.row_index,
+        let unified_scan_args = UnifiedScanArgs {
+            schema: None,
+            cloud_options: self.cloud_options,
+            hive_options: HiveOptions::new_disabled(),
             rechunk: self.rechunk,
-            file_counter: 0,
-            hive_options: HiveOptions {
-                enabled: Some(false),
-                hive_start_idx: 0,
-                schema: None,
-                try_parse_dates: true,
-            },
+            cache: false,
             glob: true,
+            projection: None,
+            column_mapping: None,
+            default_values: None,
+            row_index: self.row_index,
+            pre_slice: self.n_rows.map(|len| Slice::Positive { offset: 0, len }),
+            cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+            missing_columns_policy: MissingColumnsPolicy::Raise,
+            extra_columns_policy: ExtraColumnsPolicy::Raise,
             include_file_paths: self.include_file_paths,
-            allow_missing_columns: false,
-        });
+            deletion_files: None,
+        };
 
         let options = NDJsonReadOptions {
             n_threads: None,
@@ -150,15 +154,11 @@ impl LazyFileListReader for LazyJsonLineReader {
             schema_overwrite: self.schema_overwrite,
         };
 
-        let scan_type = Box::new(FileScan::NDJson {
-            options,
-            cloud_options: self.cloud_options,
-        });
+        let scan_type = Box::new(FileScanDsl::NDJson { options });
 
         Ok(LazyFrame::from(DslPlan::Scan {
             sources: self.sources,
-            file_info: None,
-            file_options,
+            unified_scan_args: Box::new(unified_scan_args),
             scan_type,
             cached_ir: Default::default(),
         }))

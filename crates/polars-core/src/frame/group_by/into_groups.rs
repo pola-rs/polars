@@ -130,9 +130,9 @@ where
 }
 
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-impl IntoGroupsType for CategoricalChunked {
+impl<T: PolarsCategoricalType> IntoGroupsType for CategoricalChunked<T> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        Ok(self.group_tuples_perfect(multithreaded, sorted))
+        self.phys.group_tuples(multithreaded, sorted)
     }
 }
 
@@ -167,13 +167,13 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             },
             DataType::Int64 => {
-                let BitRepr::Large(ca) = self.to_bit_repr() else {
+                let BitRepr::U64(ca) = self.to_bit_repr() else {
                     unreachable!()
                 };
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
             DataType::Int32 => {
-                let BitRepr::Small(ca) = self.to_bit_repr() else {
+                let BitRepr::U32(ca) = self.to_bit_repr() else {
                     unreachable!()
                 };
                 num_groups_proxy(&ca, multithreaded, sorted)
@@ -361,8 +361,19 @@ impl IntoGroupsType for ListChunked {
 impl IntoGroupsType for ArrayChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]
-    fn group_tuples<'a>(&'a self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
-        todo!("grouping FixedSizeList not yet supported")
+    fn group_tuples<'a>(
+        &'a self,
+        mut multithreaded: bool,
+        sorted: bool,
+    ) -> PolarsResult<GroupsType> {
+        multithreaded &= POOL.current_num_threads() > 1;
+        let by = &[self.clone().into_column()];
+        let ca = if multithreaded {
+            encode_rows_vertical_par_unordered(by).unwrap()
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, by).unwrap()
+        };
+        ca.group_tuples(multithreaded, sorted)
     }
 }
 

@@ -10,7 +10,7 @@ from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -33,7 +33,7 @@ def register_plugin_function(
     cast_to_supertype: bool = False,
     input_wildcard_expansion: bool = False,
     pass_name_to_apply: bool = False,
-    use_abs_path: bool = True,
+    use_abs_path: bool = False,
 ) -> Expr:
     """
     Register a plugin function.
@@ -148,10 +148,8 @@ def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
         return path.resolve()
     else:
         try:
-            relpath = path.relative_to(venv_path)
-        except (
-            ValueError
-        ):  # If the path is not inside the venv use absolute path instead
-            return path.resolve()
-        else:
-            return relpath
+            file_path = path.relative_to(venv_path)
+        except ValueError:  # Fallback
+            file_path = path.resolve()
+
+    return file_path

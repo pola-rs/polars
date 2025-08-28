@@ -8,7 +8,7 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Series
-    from polars.polars import PySeries
+    from polars._plr import PySeries
 
 
 @expr_dispatch
@@ -27,7 +27,7 @@ class CatNameSpace:
         Examples
         --------
         >>> s = pl.Series(["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
-        >>> s.cat.get_categories()
+        >>> s.cat.get_categories()  # doctest: +SKIP
         shape: (3,)
         Series: '' [str]
         [
@@ -41,56 +41,12 @@ class CatNameSpace:
         """
         Return whether or not the column is a local categorical.
 
-        Examples
-        --------
-        Categoricals constructed without a string cache are considered local.
-
-        >>> s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-        >>> s.cat.is_local()
-        True
-
-        Categoricals constructed with a string cache are considered global.
-
-        >>> with pl.StringCache():
-        ...     s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-        >>> s.cat.is_local()
-        False
+        Always returns false.
         """
         return self._s.cat_is_local()
 
     def to_local(self) -> Series:
-        """
-        Convert a categorical column to its local representation.
-
-        This may change the underlying physical representation of the column.
-
-        See the documentation of :func:`StringCache` for more information on the
-        difference between local and global categoricals.
-
-        Examples
-        --------
-        Compare the global and local representations of a categorical.
-
-        >>> with pl.StringCache():
-        ...     _ = pl.Series("x", ["a", "b", "a"], dtype=pl.Categorical)
-        ...     s = pl.Series("y", ["c", "b", "d"], dtype=pl.Categorical)
-        >>> s.to_physical()
-        shape: (3,)
-        Series: 'y' [u32]
-        [
-                2
-                1
-                3
-        ]
-        >>> s.cat.to_local().to_physical()
-        shape: (3,)
-        Series: 'y' [u32]
-        [
-                0
-                1
-                2
-        ]
-        """
+        """Simply returns the column as-is, local representations are deprecated."""
         return wrap_s(self._s.cat_to_local())
 
     @unstable()
@@ -105,9 +61,6 @@ class CatNameSpace:
         Examples
         --------
         >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
-        >>> s.cat.uses_lexical_ordering()
-        False
-        >>> s = s.cast(pl.Categorical("lexical"))
         >>> s.cat.uses_lexical_ordering()
         True
         """
@@ -237,5 +190,57 @@ class CatNameSpace:
             false
             true
             null
+        ]
+        """
+
+    def slice(self, offset: int, length: int | None = None) -> Series:
+        """
+        Extract a substring from the string representation of each string value.
+
+        Parameters
+        ----------
+        offset
+            Start index. Negative indexing is supported.
+        length
+            Length of the slice. If set to `None` (default), the slice is taken to the
+            end of the string.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Notes
+        -----
+        Both the `offset` and `length` inputs are defined in terms of the number
+        of characters in the (UTF8) string. A character is defined as a
+        `Unicode scalar value`_. A single character is represented by a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        Examples
+        --------
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"], dtype=pl.Categorical)
+        >>> s.cat.slice(-3)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "ear"
+            null
+            "aya"
+            "uit"
+        ]
+
+        Using the optional `length` parameter
+
+        >>> s.cat.slice(4, length=3)
+        shape: (4,)
+        Series: '' [str]
+        [
+            ""
+            null
+            "ya"
+            "onf"
         ]
         """

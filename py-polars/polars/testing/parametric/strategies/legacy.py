@@ -6,20 +6,28 @@ from typing import TYPE_CHECKING, Any
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
 
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecated
 from polars.datatypes import is_polars_dtype
 from polars.testing.parametric.strategies.core import _COL_LIMIT, column
 from polars.testing.parametric.strategies.data import lists
 from polars.testing.parametric.strategies.dtype import _instantiate_dtype, dtypes
 
 if TYPE_CHECKING:
+    import sys
+
     from hypothesis.strategies import SearchStrategy
 
     from polars._typing import OneOrMoreDataTypes, PolarsDataType
 
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
-@deprecate_function(
-    "Use `column` instead in conjunction with a list comprehension.", version="0.20.26"
+
+@deprecated(
+    "`columns` is deprecated; use `column` instead, "
+    "in conjunction with a list comprehension."
 )
 def columns(
     cols: int | Sequence[str] | None = None,
@@ -33,7 +41,7 @@ def columns(
     Define multiple columns for use with the @dataframes strategy.
 
     .. deprecated:: 0.20.26
-        Use :class:`column` instead in conjunction with a list comprehension.
+        Use :class:`column` instead, in conjunction with a list comprehension.
 
     .. warning::
         This functionality is currently considered **unstable**. It may be
@@ -101,7 +109,7 @@ def columns(
     return [column(name=nm, dtype=tp, unique=unique) for nm, tp in zip(names, dtypes)]
 
 
-@deprecate_function("Use `lists` instead.", version="0.20.26")
+@deprecated("`create_list_strategy` is deprecated; use `lists` instead.")
 def create_list_strategy(
     inner_dtype: PolarsDataType | None = None,
     *,

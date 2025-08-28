@@ -21,8 +21,6 @@ mod reverse;
 #[cfg(feature = "strings")]
 mod split;
 #[cfg(feature = "strings")]
-mod starts_with;
-#[cfg(feature = "strings")]
 mod strip;
 #[cfg(feature = "strings")]
 mod substring;
@@ -46,6 +44,8 @@ use polars_core::prelude::*;
 pub use split::*;
 #[cfg(feature = "strings")]
 pub use strip::*;
+#[cfg(feature = "strings")]
+pub use substring::{substring_ternary_offsets_value, update_view};
 
 pub trait AsString {
     fn as_string(&self) -> &StringChunked;

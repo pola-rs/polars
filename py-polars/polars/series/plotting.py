@@ -63,7 +63,7 @@ class SeriesPlot:
         >>> s.plot.hist()  # doctest: +SKIP
         """  # noqa: W505
         if self._series_name == "count()":
-            msg = "Cannot use `plot.hist` when Series name is `'count()'`"
+            msg = "cannot use `plot.hist` when Series name is `'count()'`"
             raise ValueError(msg)
         encodings: Encodings = {
             "x": alt.X(f"{self._series_name}:Q", bin=True),
@@ -109,7 +109,7 @@ class SeriesPlot:
         >>> s.plot.kde()  # doctest: +SKIP
         """  # noqa: W505
         if self._series_name == "density":
-            msg = "Cannot use `plot.kde` when Series name is `'density'`"
+            msg = "cannot use `plot.kde` when Series name is `'density'`"
             raise ValueError(msg)
         encodings: Encodings = {"x": self._series_name, "y": "density:Q"}
         return (
@@ -153,7 +153,7 @@ class SeriesPlot:
         >>> s.plot.line()  # doctest: +SKIP
         """  # noqa: W505
         if self._series_name == "index":
-            msg = "Cannot call `plot.line` when Series name is 'index'"
+            msg = "cannot call `plot.line` when Series name is 'index'"
             raise ValueError(msg)
         encodings: Encodings = {"x": "index", "y": self._series_name}
         return (

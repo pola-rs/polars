@@ -6,6 +6,7 @@ use polars_io::mmap::ReaderBytes;
 use pyo3::prelude::*;
 
 use super::PyDataFrame;
+use crate::error::PyPolarsErr;
 use crate::exceptions::ComputeError;
 use crate::file::{get_file_like, get_mmap_bytes_reader};
 use crate::utils::EnterPolarsExt;
@@ -13,16 +14,21 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PyDataFrame {
     /// Serialize into binary data.
-    fn serialize_binary(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
+    fn serialize_binary(slf: Bound<'_, Self>, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let mut writer = BufWriter::new(file);
 
-        py.enter_polars(|| self.df.serialize_into_writer(&mut writer))
+        Ok(slf
+            .borrow()
+            .df
+            .write()
+            .serialize_into_writer(&mut writer)
+            .map_err(PyPolarsErr::from)?)
     }
 
     /// Deserialize a file-like object containing binary data into a DataFrame.
     #[staticmethod]
-    fn deserialize_binary(py: Python, py_f: PyObject) -> PyResult<Self> {
+    fn deserialize_binary(py: Python<'_>, py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let mut file = BufReader::new(file);
 
@@ -31,11 +37,11 @@ impl PyDataFrame {
 
     /// Serialize into a JSON string.
     #[cfg(feature = "json")]
-    pub fn serialize_json(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
+    pub fn serialize_json(&self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
-            serde_json::to_writer(writer, &self.df)
+            serde_json::to_writer(writer, &*self.df.read())
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
     }
@@ -43,7 +49,7 @@ impl PyDataFrame {
     /// Deserialize a file-like object containing JSON string data into a DataFrame.
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn deserialize_json(py: Python, py_f: Bound<PyAny>) -> PyResult<Self> {
+    pub fn deserialize_json(py: Python<'_>, py_f: Bound<PyAny>) -> PyResult<Self> {
         let mut mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.enter_polars(move || {

@@ -20,7 +20,7 @@ impl OrderedUnionNode {
 
 impl ComputeNode for OrderedUnionNode {
     fn name(&self) -> &str {
-        "ordered_union"
+        "ordered-union"
     }
 
     fn update_state(

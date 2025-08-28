@@ -88,7 +88,7 @@ pack!(pack64, u64, 8, 64, 63);
 
 #[cfg(test)]
 mod tests {
-    use rand::distributions::{Distribution, Uniform};
+    use rand::distr::{Distribution, Uniform};
 
     use super::super::unpack::*;
     use super::*;
@@ -110,9 +110,9 @@ mod tests {
 
     #[test]
     fn test_u32_random() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut random_array = [0u32; 32];
-        let between = Uniform::from(0..131_072);
+        let between = Uniform::new(0, 131_072).unwrap();
         for num_bits in 17..=32 {
             for i in &mut random_array {
                 *i = between.sample(&mut rng);
@@ -127,9 +127,9 @@ mod tests {
 
     #[test]
     fn test_u64_random() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut random_array = [0u64; 64];
-        let between = Uniform::from(0..131_072);
+        let between = Uniform::new(0, 131_072).unwrap();
         for num_bits in 17..=64 {
             for i in &mut random_array {
                 *i = between.sample(&mut rng);

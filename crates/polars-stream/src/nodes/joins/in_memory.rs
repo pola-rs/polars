@@ -38,7 +38,7 @@ impl InMemoryJoinNode {
 
 impl ComputeNode for InMemoryJoinNode {
     fn name(&self) -> &str {
-        "in_memory_join"
+        "in-memory-join"
     }
 
     fn update_state(

@@ -7,7 +7,7 @@ from polars._utils.construction.dataframe import dataframe_to_pydf
 from polars._utils.wrap import wrap_df, wrap_s
 
 with contextlib.suppress(ImportError):
-    from polars.polars import PySeries
+    from polars._plr import PySeries
 
 if TYPE_CHECKING:
     from polars import DataFrame

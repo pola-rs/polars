@@ -25,14 +25,3 @@ pub(super) fn predicate_to_key(predicate: Node, expr_arena: &Arena<AExpr>) -> Pl
         PlSmallStr::from_str(HIDDEN_DELIMITER)
     }
 }
-
-pub(super) fn key_has_name(key: &str, name: &str) -> bool {
-    if key.contains(HIDDEN_DELIMITER) {
-        for root_name in key.split(HIDDEN_DELIMITER) {
-            if root_name == name {
-                return true;
-            }
-        }
-    }
-    key == name
-}

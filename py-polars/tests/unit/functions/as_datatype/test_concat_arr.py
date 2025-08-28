@@ -114,8 +114,9 @@ def test_concat_arr_broadcast() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: zero-width arrays
 @pytest.mark.parametrize("inner_dtype", [pl.Int64(), pl.Null()])
-def test_concat_arr_validity_combination(inner_dtype: pl.DataType) -> None:
+def test_concat_arr_validity_combination_zwa(inner_dtype: pl.DataType) -> None:
     assert_series_equal(
         pl.select(
             pl.concat_arr(
@@ -127,6 +128,9 @@ def test_concat_arr_validity_combination(inner_dtype: pl.DataType) -> None:
         pl.Series([[None], None, None, None], dtype=pl.Array(inner_dtype, 1)),
     )
 
+
+@pytest.mark.parametrize("inner_dtype", [pl.Int64(), pl.Null()])
+def test_concat_arr_validity_combination(inner_dtype: pl.DataType) -> None:
     assert_series_equal(
         pl.select(
             pl.concat_arr(
@@ -138,6 +142,7 @@ def test_concat_arr_validity_combination(inner_dtype: pl.DataType) -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: zero-width arrays
 def test_concat_arr_zero_fields() -> None:
     assert_series_equal(
         (
@@ -177,6 +182,7 @@ def test_concat_arr_zero_fields() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_concat_arr_scalar() -> None:
     lit = pl.lit([b"A"], dtype=pl.Array(pl.Binary, 1))
     df = pl.select(pl.repeat(lit, 10))
@@ -185,3 +191,10 @@ def test_concat_arr_scalar() -> None:
 
     out = df.with_columns(out=pl.concat_arr(pl.first(), pl.first()))
     assert out._to_metadata()["repr"].to_list() == ["scalar", "scalar"]
+
+
+def test_concat_arr_expansion_23267() -> None:
+    df = pl.select(x=1, y=2).cast(pl.Int64)
+    out = df.select(z=pl.concat_arr(pl.all())).to_series()
+
+    assert_series_equal(out, pl.Series("z", [[1, 2]], dtype=pl.Array(pl.Int64, 2)))

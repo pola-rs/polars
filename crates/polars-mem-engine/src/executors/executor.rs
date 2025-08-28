@@ -9,6 +9,10 @@ use super::*;
 /// physical plan until the last executor is evaluated.
 pub trait Executor: Send + Sync {
     fn execute(&mut self, cache: &mut ExecutionState) -> PolarsResult<DataFrame>;
+
+    fn is_cache_prefiller(&self) -> bool {
+        false
+    }
 }
 
 type SinkFn =

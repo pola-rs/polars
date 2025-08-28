@@ -18,7 +18,7 @@ String
    * - :ref:`ENDS_WITH <ends_with>`
      - Returns True if the value ends with the second argument.
    * - :ref:`INITCAP <initcap>`
-     - Returns the value with the first letter capitalized.
+     - Converts the first letter of each word to uppercase, and the rest to lowercase.
    * - :ref:`LEFT <left>`
      - Returns the first (leftmost) `n` characters.
    * - :ref:`LENGTH <length>`
@@ -41,14 +41,19 @@ String
      - Returns the last (rightmost) `n` characters.
    * - :ref:`RTRIM <rtrim>`
      - Strips whitespaces from the right.
+   * - :ref:`SPLIT_PART <split_part>`
+     - Splits a string by another substring/delimiter, returning the `n`-th part; note that `n` is 1-indexed.
    * - :ref:`STARTS_WITH <starts_with>`
      - Returns True if the value starts with the second argument.
-   * - :ref:`STRPOST <strpos>`
-     - Returns the index of the given substring in the target string.
+   * - :ref:`STRING_TO_ARRAY <string_to_array>`
+     - Splits a string by another substring/delimiter, returning an array of strings.
+   * - :ref:`STRPOS <strpos>`
+     - Returns the index of the given substring in the target string; note that the result is 1-indexed
+       (returning 0 indicates that the given string was not found).
    * - :ref:`STRPTIME <strptime>`
      - Converts a string to a Datetime using a strftime-compatible formatting string.
    * - :ref:`SUBSTR <substr>`
-     - Returns a portion of the data (first character = 1) in the range [start, start + length].
+     - Returns a slice of the string data in the range [start, start + length]; note that `start` is 1-indexed.
    * - :ref:`TIMESTAMP <timestamp>`
      - Converts a formatted timestamp/datetime string to an actual Datetime value.
    * - :ref:`UPPER <upper>`
@@ -219,27 +224,26 @@ Returns True if the value ends with the second argument.
 
 INITCAP
 -------
-Returns the value with the first letter capitalized.
+Converts the first letter of each word to uppercase, and the rest to lowercase.
 
 **Example:**
 
 .. code-block:: python
 
-    df = pl.DataFrame({"bar": ["zz", "yy", "xx", "ww"]})
+    df = pl.DataFrame({"bar": ["hello world", "HELLO", "wOrLd"]})
     df.sql("""
       SELECT bar, INITCAP(bar) AS baz FROM self
     """)
-    # shape: (4, 2)
-    # ┌─────┬─────┐
-    # │ bar ┆ baz │
-    # │ --- ┆ --- │
-    # │ str ┆ str │
-    # ╞═════╪═════╡
-    # │ zz  ┆ Zz  │
-    # │ yy  ┆ Yy  │
-    # │ xx  ┆ Xx  │
-    # │ ww  ┆ Ww  │
-    # └─────┴─────┘
+    # shape: (3, 2)
+    # ┌─────────────┬─────────────┐
+    # │ bar         ┆ baz         │
+    # │ ---         ┆ ---         │
+    # │ str         ┆ str         │
+    # ╞═════════════╪═════════════╡
+    # │ hello world ┆ Hello World │
+    # │ HELLO       ┆ Hello       │
+    # │ wOrLd       ┆ World       │
+    # └─────────────┴─────────────┘
 
 .. _left:
 
@@ -565,6 +569,37 @@ Strips whitespaces from the right.
     # │ ww     ┆ ww  │
     # └────────┴─────┘
 
+.. _split_part:
+
+SPLIT_PART
+----------
+Splits a string by another substring/delimiter, returning the `n`-th part; note that `n` is 1-indexed.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz,???,hmm", None, ""]})
+    df.sql("""
+      SELECT
+        s,
+        SPLIT_PART(s,',',1) AS "s+1",
+        SPLIT_PART(s,',',3) AS "s+3",
+        SPLIT_PART(s,',',-2) AS "s-2",
+      FROM self
+    """)
+    # shape: (4, 4)
+    # ┌──────────────────┬──────┬──────┬──────┐
+    # │ s                ┆ s+1  ┆ s+3  ┆ s-2  │
+    # │ ---              ┆ ---  ┆ ---  ┆ ---  │
+    # │ str              ┆ str  ┆ str  ┆ str  │
+    # ╞══════════════════╪══════╪══════╪══════╡
+    # │ xx,yy,zz         ┆ xx   ┆ zz   ┆ yy   │
+    # │ abc,,xyz,???,hmm ┆ abc  ┆ xyz  ┆ ???  │
+    # │ null             ┆ null ┆ null ┆ null │
+    # │                  ┆      ┆      ┆      │
+    # └──────────────────┴──────┴──────┴──────┘
+
 .. _starts_with:
 
 STARTS_WITH
@@ -590,6 +625,30 @@ Returns True if the value starts with the second argument.
     # │ avocado ┆ true     │
     # │ grape   ┆ false    │
     # └─────────┴──────────┘
+
+.. _string_to_array:
+
+STRING_TO_ARRAY
+---------------
+Splits a string by another substring/delimiter, returning an array of strings.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["aa,bb,cc", "x,y"]})
+    df.sql("""
+      SELECT foo, STRING_TO_ARRAY(foo, ',') AS arr FROM self
+    """)
+    # shape: (2, 2)
+    # ┌──────────┬────────────────────┐
+    # │ foo      ┆ arr                │
+    # │ ---      ┆ ---                │
+    # │ str      ┆ list[str]          │
+    # ╞══════════╪════════════════════╡
+    # │ aa,bb,cc ┆ ["aa", "bb", "cc"] │
+    # │ x,y      ┆ ["x", "y"]         │
+    # └──────────┴────────────────────┘
 
 .. _strpos:
 
@@ -656,7 +715,7 @@ Converts a string to a Datetime using a `chrono strftime <https://docs.rs/chrono
 
 SUBSTR
 ---------
-Returns a slice of the string data (1-indexed) in the range [start, start + length].
+Returns a slice of the string data in the range [start, start + length]; note that `start` is 1-indexed.
 
 **Example:**
 

@@ -23,7 +23,7 @@ async fn main() {
     let cursor = std::io::Cursor::new(bytes);
     let df = CsvReader::new(cursor).finish().unwrap();
 
-    println!("{:?}", df);
+    println!("{df:?}");
 }
 // --8<-- [end:read_parquet]
 
@@ -47,3 +47,6 @@ async fn main() {
 
 // --8<-- [start:write_parquet]
 // --8<-- [end:write_parquet]
+
+// --8<-- [start:write_file_object]
+// --8<-- [end:write_file_object]

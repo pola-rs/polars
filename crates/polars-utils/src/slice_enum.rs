@@ -1,4 +1,9 @@
-#[derive(Debug, Clone, PartialEq)]
+use std::num::TryFromIntError;
+use std::ops::Range;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Slice {
     /// Or zero
     Positive {
@@ -20,13 +25,32 @@ impl Slice {
         }
     }
 
+    pub fn len_mut(&mut self) -> &mut usize {
+        match self {
+            Slice::Positive { len, .. } => len,
+            Slice::Negative { len, .. } => len,
+        }
+    }
+
+    /// Returns the offset of a positive slice.
+    ///
+    /// # Panics
+    /// Panics if `self` is [`Slice::Negative`]
+    pub fn positive_offset(&self) -> usize {
+        let Slice::Positive { offset, len: _ } = self.clone() else {
+            panic!("cannot use positive_offset() on a negative slice");
+        };
+
+        offset
+    }
+
     /// Returns the end position of the slice (offset + len).
     ///
     /// # Panics
     /// Panics if self is negative.
     pub fn end_position(&self) -> usize {
         let Slice::Positive { offset, len } = self.clone() else {
-            panic!("cannot use end() on a negative slice");
+            panic!("cannot use end_position() on a negative slice");
         };
 
         offset.saturating_add(len)
@@ -99,6 +123,29 @@ impl From<(i64, usize)> for Slice {
                 offset_from_end: usize::try_from(-offset).unwrap(),
                 len,
             }
+        }
+    }
+}
+
+impl TryFrom<Slice> for (i64, usize) {
+    type Error = TryFromIntError;
+
+    fn try_from(value: Slice) -> Result<Self, Self::Error> {
+        match value {
+            Slice::Positive { offset, len } => Ok((i64::try_from(offset)?, len)),
+            Slice::Negative {
+                offset_from_end,
+                len,
+            } => Ok((-i64::try_from(offset_from_end)?, len)),
+        }
+    }
+}
+
+impl From<Slice> for Range<usize> {
+    fn from(value: Slice) -> Self {
+        match value {
+            Slice::Positive { offset, len } => offset..offset.checked_add(len).unwrap(),
+            Slice::Negative { .. } => panic!("cannot convert negative slice into range"),
         }
     }
 }

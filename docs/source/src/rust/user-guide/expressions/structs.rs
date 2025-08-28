@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([col("Theatre").value_counts(true, true, "count", false)])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:state_value_counts]
 
     // --8<-- [start:struct_unnest]
@@ -25,9 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([col("Theatre").value_counts(true, true, "count", false)])
-        .unnest(["Theatre"])
+        .unnest(by_name(["Theatre"], true))
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:struct_unnest]
 
     // --8<-- [start:series_struct]
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:series_struct_extract]
     let result = rating_series.struct_()?.field_by_name("Movie")?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:series_struct_extract]
 
     // --8<-- [start:series_struct_rename]
@@ -65,7 +65,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:struct_ranking]
     let result = ratings
-        .clone()
         .lazy()
         .with_columns([as_struct(vec![col("Count"), col("Avg_Rating")])
             .rank(
@@ -82,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // https://github.com/pola-rs/polars/issues/3803
         .filter(len().over([col("Movie"), col("Theatre")]).gt(lit(1)))
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:struct_ranking]
 
     // --8<-- [start:multi_column_apply]
@@ -120,9 +119,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                             .collect();
 
-                        Ok(Some(result.into_column()))
+                        Ok(result.into_column())
                     },
-                    GetOutput::from_type(DataType::Int32),
+                    |_, f| Ok(Field::new(f.name().clone(), DataType::Int32)),
                 )
                 // note: the `'solution_map_elements'` alias is just there to show how you
                 // get the same output as in the Python API example.
@@ -131,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("solution_expr"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:multi_column_apply]
 
     // --8<-- [start:ack]

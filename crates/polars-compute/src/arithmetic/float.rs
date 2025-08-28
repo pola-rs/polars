@@ -100,6 +100,10 @@ macro_rules! impl_float_arith_kernel {
                 prim_unary_values(rhs, |x| lhs - x * (lhs / x).floor())
             }
 
+            fn prim_checked_mul_scalar(_lhs: PArr<$T>, _rhs: $T) -> PArr<$T> {
+                unimplemented!()
+            }
+
             fn prim_true_div(lhs: PArr<$T>, rhs: PArr<$T>) -> PArr<Self::TrueDivT> {
                 prim_binary_values(lhs, rhs, |l, r| l / r)
             }

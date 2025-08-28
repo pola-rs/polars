@@ -13,11 +13,10 @@ from polars._utils.deprecation import issue_deprecation_warning
 def __getattr__(name: str) -> Any:
     if name in dir(plt):
         issue_deprecation_warning(
-            "The `polars.type_aliases` module is deprecated."
+            "the `polars.type_aliases` module was deprecated in version 1.0.0."
             " The type aliases have moved to the `polars._typing` module to explicitly mark them as private."
             " Please define your own type aliases, or temporarily import from the `polars._typing` module."
             " A public `polars.typing` module will be added in the future.",
-            version="1.0.0",
         )
         return getattr(plt, name)
 

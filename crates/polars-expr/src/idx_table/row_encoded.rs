@@ -1,12 +1,11 @@
 #![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use arrow::array::Array;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unitvec;
 
 use super::*;
@@ -16,7 +15,7 @@ use crate::hash_keys::HashKeys;
 pub struct RowEncodedIdxTable {
     // These AtomicU64s actually are IdxSizes, but we use the top bit of the
     // first index in each to mark keys during probing.
-    idx_map: BinaryViewIndexMap<UnitVec<AtomicU64>>,
+    idx_map: BinaryViewIndexMap<UnitVec<RelaxedCell<u64>>>,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
 }
@@ -44,18 +43,17 @@ impl RowEncodedIdxTable {
         if let Some(idxs) = self.idx_map.get(hash, key) {
             for idx in &idxs[..] {
                 // Create matches, making sure to clear top bit.
-                table_match.push((idx.load(Ordering::Relaxed) & !(1 << 63)) as IdxSize);
+                table_match.push((idx.load() & !(1 << 63)) as IdxSize);
                 probe_match.push(key_idx);
             }
 
             // Mark if necessary. This action is idempotent so doesn't
-            // need any synchronization on the load, nor does it need a
             // fetch_or to do it atomically.
             if MARK_MATCHES {
                 let first_idx = unsafe { idxs.get_unchecked(0) };
-                let first_idx_val = first_idx.load(Ordering::Relaxed);
+                let first_idx_val = first_idx.load();
                 if first_idx_val >> 63 == 0 {
-                    first_idx.store(first_idx_val | (1 << 63), Ordering::Release);
+                    first_idx.store(first_idx_val | (1 << 63));
                 }
             }
             true
@@ -153,10 +151,10 @@ impl IdxTable for RowEncodedIdxTable {
             if let Some(key) = key {
                 match self.idx_map.entry(*hash, key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(AtomicU64::new(idx as u64));
+                        o.into_mut().push(RelaxedCell::from(idx as u64));
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![AtomicU64::new(idx as u64)]);
+                        v.insert(unitvec![RelaxedCell::from(idx as u64)]);
                     },
                 }
             } else if track_unmatchable {
@@ -191,10 +189,10 @@ impl IdxTable for RowEncodedIdxTable {
             if let Some(key) = key {
                 match self.idx_map.entry(hash, key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(AtomicU64::new(idx as u64));
+                        o.into_mut().push(RelaxedCell::from(idx as u64));
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![AtomicU64::new(idx as u64)]);
+                        v.insert(unitvec![RelaxedCell::from(idx as u64)]);
                     },
                 }
             } else if track_unmatchable {
@@ -329,10 +327,10 @@ impl IdxTable for RowEncodedIdxTable {
 
         while let Some((_, _, idxs)) = self.idx_map.get_index(offset) {
             let first_idx = unsafe { idxs.get_unchecked(0) };
-            let first_idx_val = first_idx.load(Ordering::Acquire);
+            let first_idx_val = first_idx.load();
             if first_idx_val >> 63 == 0 {
                 for idx in &idxs[..] {
-                    out.push((idx.load(Ordering::Relaxed) & !(1 << 63)) as IdxSize);
+                    out.push((idx.load() & !(1 << 63)) as IdxSize);
                 }
             }
 

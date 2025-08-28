@@ -303,13 +303,13 @@ impl ChunkZip<StructType> for StructChunked {
             for (chunk_length, validity) in iter {
                 if let Some(validity) = validity {
                     if validity.unset_bits() > 0 {
-                        rechunked_validity
-                            .get_or_insert_with(|| {
-                                let mut bm = BitmapBuilder::with_capacity(total_length);
-                                bm.extend_constant(rechunked_length, true);
-                                bm
-                            })
-                            .extend_from_bitmap(&validity);
+                        let v = rechunked_validity.get_or_insert_with(|| {
+                            let mut bm = BitmapBuilder::with_capacity(total_length);
+                            bm.extend_constant(rechunked_length, true);
+                            bm
+                        });
+                        v.extend_constant(rechunked_length - v.len(), true);
+                        v.extend_from_bitmap(&validity);
                     }
                 }
 

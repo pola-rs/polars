@@ -329,33 +329,32 @@ def test_streaming_group_by_all_numeric_types_stability_8570() -> None:
                 .with_columns(pl.col("z").cast(dtype))
                 .group_by(keys)
                 .agg(pl.col("z").sum().alias("z_sum"))
-                .collect(engine="old-streaming")  # type: ignore[call-overload]
+                .collect(engine="streaming")
             )
             assert dfd["z_sum"].sum() == dfc["z"].sum()
 
 
 def test_streaming_group_by_categorical_aggregate() -> None:
-    with pl.StringCache():
-        out = (
-            pl.LazyFrame(
-                {
-                    "a": pl.Series(
-                        ["a", "a", "b", "b", "c", "c", None, None], dtype=pl.Categorical
-                    ),
-                    "b": pl.Series(
-                        pl.date_range(
-                            date(2023, 4, 28),
-                            date(2023, 5, 5),
-                            eager=True,
-                        ).to_list(),
-                        dtype=pl.Date,
-                    ),
-                }
-            )
-            .group_by(["a", "b"])
-            .agg([pl.col("a").first().alias("sum")])
-            .collect(engine="streaming")
+    out = (
+        pl.LazyFrame(
+            {
+                "a": pl.Series(
+                    ["a", "a", "b", "b", "c", "c", None, None], dtype=pl.Categorical
+                ),
+                "b": pl.Series(
+                    pl.date_range(
+                        date(2023, 4, 28),
+                        date(2023, 5, 5),
+                        eager=True,
+                    ).to_list(),
+                    dtype=pl.Date,
+                ),
+            }
         )
+        .group_by(["a", "b"])
+        .agg([pl.col("a").first().alias("sum")])
+        .collect(engine="streaming")
+    )
 
     assert out.sort("b").to_dict(as_series=False) == {
         "a": ["a", "a", "b", "b", "c", "c", None, None],
@@ -383,24 +382,6 @@ def test_streaming_group_by_list_9758() -> None:
         .to_dict(as_series=False)
         == payload
     )
-
-
-def test_streaming_restart_non_streamable_group_by() -> None:
-    df = pl.DataFrame({"id": [1], "id2": [1], "id3": [1], "value": [1]})
-    res = (
-        df.lazy()
-        .join(df.lazy(), on=["id", "id2"], how="left")
-        .filter(
-            (pl.col("id3") > pl.col("id3_right"))
-            & (pl.col("id3") - pl.col("id3_right") < 30)
-        )
-        .group_by(["id2", "id3", "id3_right"])
-        .agg(
-            pl.col("value").map_elements(lambda x: x).sum() * pl.col("value").sum()
-        )  # non-streamable UDF + nested_agg
-    )
-
-    assert "STREAMING" in res.explain(engine="old-streaming")  # type: ignore[arg-type]
 
 
 def test_group_by_min_max_string_type() -> None:

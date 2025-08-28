@@ -4,7 +4,7 @@ use polars_utils::mmap::MemSlice;
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.
-pub(super) async fn read_parquet_metadata_bytes(
+pub async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
     verbose: bool,
 ) -> PolarsResult<(MemSlice, Option<MemSlice>)> {
@@ -17,8 +17,7 @@ pub(super) async fn read_parquet_metadata_bytes(
 
     if file_size < FOOTER_HEADER_SIZE {
         return Err(ParquetError::OutOfSpec(format!(
-            "file size ({}) is less than minimum size required to store parquet footer ({})",
-            file_size, FOOTER_HEADER_SIZE
+            "file size ({file_size}) is less than minimum size required to store parquet footer ({FOOTER_HEADER_SIZE})"
         ))
         .into());
     }
@@ -37,7 +36,7 @@ pub(super) async fn read_parquet_metadata_bytes(
     let footer_header_bytes = bytes.slice((bytes.len() - FOOTER_HEADER_SIZE)..bytes.len());
 
     let (v, remaining) = footer_header_bytes.split_at(4);
-    let footer_size = i32::from_le_bytes(v.try_into().unwrap());
+    let footer_size = u32::from_le_bytes(v.try_into().unwrap());
 
     if remaining != PARQUET_MAGIC {
         return Err(ParquetError::OutOfSpec(format!(
@@ -48,20 +47,11 @@ pub(super) async fn read_parquet_metadata_bytes(
         .into());
     }
 
-    if footer_size < 0 {
-        return Err(ParquetError::OutOfSpec(format!(
-            "expected positive footer size, got {} instead",
-            footer_size
-        ))
-        .into());
-    }
-
     let footer_size = footer_size as usize + FOOTER_HEADER_SIZE;
 
     if file_size < footer_size {
         return Err(ParquetError::OutOfSpec(format!(
-            "file size ({}) is less than the indicated footer size ({})",
-            file_size, footer_size
+            "file size ({file_size}) is less than the indicated footer size ({footer_size})"
         ))
         .into());
     }
@@ -70,8 +60,8 @@ pub(super) async fn read_parquet_metadata_bytes(
         debug_assert!(!matches!(byte_source, DynByteSource::MemSlice(_)));
         if verbose {
             eprintln!(
-                "[ParquetSource]: Extra {} bytes need to be fetched for metadata \
-            (initial estimate = {}, actual size = {})",
+                "[ParquetFileReader]: Extra {} bytes need to be fetched for metadata \
+                (initial estimate = {}, actual size = {})",
                 footer_size - estimated_metadata_size,
                 bytes.len(),
                 footer_size,
@@ -92,11 +82,12 @@ pub(super) async fn read_parquet_metadata_bytes(
     } else {
         if verbose && !matches!(byte_source, DynByteSource::MemSlice(_)) {
             eprintln!(
-                "[ParquetSource]: Fetched all bytes for metadata on first try \
-                (initial estimate = {}, actual size = {}, excess = {})",
+                "[ParquetFileReader]: Fetched all bytes for metadata on first try \
+                (initial estimate = {}, actual size = {}, excess = {}, total file size = {})",
                 bytes.len(),
                 footer_size,
                 estimated_metadata_size - footer_size,
+                file_size,
             );
         }
 

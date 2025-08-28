@@ -3,18 +3,15 @@ mod simplify_functions;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
+mod arity;
 
 use crate::plans::*;
 
 fn new_null_count(input: &[ExprIR]) -> AExpr {
     AExpr::Function {
         input: input.to_vec(),
-        function: FunctionExpr::NullCount,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
+        function: IRFunctionExpr::NullCount,
+        options: FunctionOptions::aggregation(),
     }
 }
 
@@ -139,132 +136,28 @@ impl OptimizationRule for SimplifyBooleanRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        _schema: &Schema,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-        let in_filter = matches!(lp_arena.get(lp_node), IR::Filter { .. });
 
         let out = match expr {
             // true AND x => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && in_filter =>
-            {
-                // Only in filter as we might change the name from "literal"
-                // to whatever lhs columns is.
-                return Ok(Some(expr_arena.get(*right).clone()));
+            AExpr::BinaryExpr { left, op, right } => {
+                return Ok(arity::simplify_binary(*left, *op, *right, ctx, expr_arena));
             },
-            // x AND true => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) =>
-            {
-                Some(expr_arena.get(*left).clone())
-            },
-
-            // x AND false -> false
-            // FIXME: we need an optimizer redesign to allow x & false to be optimized
-            // in general as we can forget the length of a series otherwise.
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(expr_arena.get(*left), AExpr::Literal(_))
-                && matches!(
-                    expr_arena.get(*right),
-                    AExpr::Literal(lv) if lv.bool() == Some(false)
-                ) =>
-            {
-                Some(AExpr::Literal(Scalar::from(false).into()))
-            },
-
-            // false AND x -> false
-            // FIXME: we need an optimizer redesign to allow false & x to be optimized
-            // in general as we can forget the length of a series otherwise.
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
-            {
-                Some(AExpr::Literal(Scalar::from(false).into()))
-            },
-
-            // false or x => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) && in_filter =>
-            {
-                // Only in filter as we might change the name from "literal"
-                // to whatever lhs columns is.
-                return Ok(Some(expr_arena.get(*right).clone()));
-            },
-            // x or false => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-                ..
-            } if matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) =>
-            {
-                Some(expr_arena.get(*left).clone())
-            },
-
-            // true OR x => true
-            // FIXME: we need an optimizer redesign to allow true | x to be optimized
-            // in general as we can forget the length of a series otherwise.
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(expr_arena.get(*left), AExpr::Literal(_))
-                && matches!(
-                    expr_arena.get(*right),
-                    AExpr::Literal(lv) if lv.bool() == Some(true)
-                ) =>
-            {
-                Some(AExpr::Literal(Scalar::from(true).into()))
-            },
-
-            // x OR true => true
-            // FIXME: we need an optimizer redesign to allow true | x to be optimized
-            // in general as we can forget the length of a series otherwise.
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                    AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
-            {
-                Some(AExpr::Literal(Scalar::from(true).into()))
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                return Ok(arity::simplify_ternary(
+                    *predicate, *truthy, *falsy, expr_arena,
+                ));
             },
             AExpr::Function {
                 input,
-                function: FunctionExpr::Negate,
+                function: IRFunctionExpr::Negate,
                 ..
             } if input.len() == 1 => {
                 let input = &input[0];
@@ -318,22 +211,18 @@ where
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 fn string_addition_to_linear_concat(
-    lp_arena: &Arena<IR>,
-    lp_node: Node,
     expr_arena: &Arena<AExpr>,
     left_node: Node,
     right_node: Node,
     left_aexpr: &AExpr,
     right_aexpr: &AExpr,
+    input_schema: &Schema,
 ) -> Option<AExpr> {
     {
-        let lp = lp_arena.get(lp_node);
-        let input = lp.get_input()?;
-        let schema = lp_arena.get(input).schema(lp_arena);
         let left_e = ExprIR::from_node(left_node, expr_arena);
         let right_e = ExprIR::from_node(right_node, expr_arena);
 
-        let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();
+        let get_type = |ae: &AExpr| ae.get_dtype(input_schema, expr_arena).ok();
         let type_a = get_type(left_aexpr).or_else(|| get_type(right_aexpr))?;
         let type_b = get_type(right_aexpr).or_else(|| get_type(right_aexpr))?;
 
@@ -348,7 +237,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_left,
                         function:
-                            fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun_l @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep_l,
                                 ignore_nulls: ignore_nulls_l,
                             }),
@@ -357,7 +246,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep_r,
                                 ignore_nulls: ignore_nulls_r,
                             }),
@@ -382,7 +271,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input,
                         function:
-                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -408,7 +297,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -428,21 +317,18 @@ fn string_addition_to_linear_concat(
                         None
                     }
                 },
-                _ => Some(AExpr::Function {
-                    input: vec![left_e, right_e],
-                    function: StringFunction::ConcatHorizontal {
+                _ => {
+                    let function = IRStringFunction::ConcatHorizontal {
                         delimiter: "".into(),
                         ignore_nulls: false,
-                    }
-                    .into(),
-                    options: FunctionOptions {
-                        collect_groups: ApplyOptions::ElementWise,
-                        flags: FunctionFlags::default()
-                            | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                                & !FunctionFlags::RETURNS_SCALAR,
-                        ..Default::default()
-                    },
-                }),
+                    };
+                    let options = function.function_options();
+                    Some(AExpr::Function {
+                        input: vec![left_e, right_e],
+                        function: function.into(),
+                        options,
+                    })
+                },
             }
         } else {
             None
@@ -458,20 +344,24 @@ impl OptimizationRule for SimplifyExprRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        schema: &Schema,
+        _ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
-        let expr = expr_arena.get(expr_node).clone();
+        let expr = expr_arena.get(expr_node);
 
         let out = match &expr {
+            AExpr::SortBy { expr, by, .. } if by.is_empty() => Some(expr_arena.get(*expr).clone()),
             // drop_nulls().len() -> len() - null_count()
             // drop_nulls().count() -> len() - null_count()
-            AExpr::Agg(IRAggExpr::Count(input, _)) => {
+            AExpr::Agg(IRAggExpr::Count {
+                input,
+                include_nulls: _,
+            }) => {
                 let input_expr = expr_arena.get(*input);
                 match input_expr {
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::DropNulls,
+                        function: IRFunctionExpr::DropNulls,
                         options: _,
                     } => {
                         // we should perform optimization only if the original expression is a column
@@ -482,10 +372,10 @@ impl OptimizationRule for SimplifyExprRule {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
                                     right: expr_arena.add(new_null_count(input)),
-                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
-                                        drop_nulls_input_node,
-                                        true,
-                                    ))),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                        input: drop_nulls_input_node,
+                                        include_nulls: true,
+                                    })),
                                 }),
                                 _ => None,
                             }
@@ -503,12 +393,12 @@ impl OptimizationRule for SimplifyExprRule {
                 match input_expr {
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                         options: _,
                     } => Some(new_null_count(input)),
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                         options: _,
                     } => {
                         // we should perform optimization only if the original expression is a column
@@ -519,10 +409,10 @@ impl OptimizationRule for SimplifyExprRule {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
                                     right: expr_arena.add(new_null_count(input)),
-                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
-                                        is_not_null_input_node,
-                                        true,
-                                    ))),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                        input: is_not_null_input_node,
+                                        include_nulls: true,
+                                    })),
                                 }),
                                 _ => None,
                             }
@@ -551,13 +441,12 @@ impl OptimizationRule for SimplifyExprRule {
                                 #[cfg(all(feature = "strings", feature = "concat_str"))]
                                 {
                                     string_addition_to_linear_concat(
-                                        lp_arena,
-                                        lp_node,
                                         expr_arena,
                                         *left,
                                         *right,
                                         left_aexpr,
                                         right_aexpr,
+                                        schema,
                                     )
                                 }
                                 #[cfg(not(all(feature = "strings", feature = "concat_str")))]
@@ -781,7 +670,9 @@ impl OptimizationRule for SimplifyExprRule {
                 function,
                 options,
                 ..
-            } => return optimize_functions(input, function, options, expr_arena),
+            } => {
+                return optimize_functions(input.clone(), function.clone(), *options, expr_arena);
+            },
             _ => None,
         };
         Ok(out)

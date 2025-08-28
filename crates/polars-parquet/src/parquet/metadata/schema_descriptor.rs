@@ -1,6 +1,6 @@
 use polars_parquet_format::SchemaElement;
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::column_descriptor::{BaseType, ColumnDescriptor, Descriptor};
@@ -12,7 +12,7 @@ use crate::parquet::schema::types::{FieldInfo, ParquetType};
 /// A schema descriptor. This encapsulates the top-level schemas for all the columns,
 /// as well as all descriptors for all the primitive columns.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct SchemaDescriptor {
     name: PlSmallStr,
     // The top-level schema (the "message" type).

@@ -102,7 +102,7 @@ impl<'a> AnyValueBuffer<'a> {
             ) => {
                 // we convert right tu to left tu
                 // so we swap.
-                let v = convert_time_units(v, tu_r, *tu_l);
+                let v = crate::datatypes::time_unit::convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-datetime")]
@@ -113,7 +113,7 @@ impl<'a> AnyValueBuffer<'a> {
             (Duration(builder, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-duration")]
             (Duration(builder, tu_l), AnyValue::Duration(v, tu_r)) => {
-                let v = convert_time_units(v, tu_r, *tu_l);
+                let v = crate::datatypes::time_unit::convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-duration")]
@@ -130,7 +130,7 @@ impl<'a> AnyValueBuffer<'a> {
             },
             (Null(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use AnyValues for that
-            (All(_, vals), v) => vals.push(v),
+            (All(_, vals), v) => vals.push(v.into_static()),
 
             // dynamic types
             (String(builder), av) => match av {
@@ -156,9 +156,9 @@ impl<'a> AnyValueBuffer<'a> {
         })
     }
 
-    pub fn reset(&mut self, capacity: usize) -> Series {
+    pub fn reset(&mut self, capacity: usize, strict: bool) -> PolarsResult<Series> {
         use AnyValueBuffer::*;
-        match self {
+        let out = match self {
             Boolean(b) => {
                 let mut new = BooleanChunkedBuilder::new(b.field.name().clone(), capacity);
                 std::mem::swap(&mut new, b);
@@ -258,17 +258,18 @@ impl<'a> AnyValueBuffer<'a> {
                 new.finish().into_series()
             },
             All(dtype, vals) => {
-                let out = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, vals, dtype, false)
-                    .unwrap();
+                let out =
+                    Series::from_any_values_and_dtype(PlSmallStr::EMPTY, vals, dtype, strict)?;
                 let mut new = Vec::with_capacity(capacity);
                 std::mem::swap(&mut new, vals);
                 out
             },
-        }
+        };
+        Ok(out)
     }
 
     pub fn into_series(mut self) -> Series {
-        self.reset(0)
+        self.reset(0, false).unwrap()
     }
 
     pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'a> {
@@ -558,9 +559,9 @@ impl<'a> AnyValueBufferTrusted<'a> {
     }
 
     /// Clear `self` and give `capacity`, returning the old contents as a [`Series`].
-    pub fn reset(&mut self, capacity: usize) -> Series {
+    pub fn reset(&mut self, capacity: usize, strict: bool) -> PolarsResult<Series> {
         use AnyValueBufferTrusted::*;
-        match self {
+        let out = match self {
             Boolean(b) => {
                 let mut new = BooleanChunkedBuilder::new(b.field.name().clone(), capacity);
                 std::mem::swap(&mut new, b);
@@ -630,9 +631,9 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 // @Q? Maybe we need to add a length parameter here for ZFS's. I am not very happy
                 // with just setting the length to zero for that case.
                 if b.is_empty() {
-                    return StructChunked::from_series(PlSmallStr::EMPTY, 0, [].iter())
-                        .unwrap()
-                        .into_series();
+                    return Ok(
+                        StructChunked::from_series(PlSmallStr::EMPTY, 0, [].iter())?.into_series()
+                    );
                 }
 
                 let mut min_len = usize::MAX;
@@ -641,15 +642,15 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 let v = b
                     .iter_mut()
                     .map(|(b, name)| {
-                        let mut s = b.reset(capacity);
+                        let mut s = b.reset(capacity, strict)?;
 
                         min_len = min_len.min(s.len());
                         max_len = max_len.max(s.len());
 
                         s.rename(name.clone());
-                        s
+                        Ok(s)
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 let length = if min_len == 0 { 0 } else { max_len };
 
@@ -672,11 +673,14 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &swap_vals, dtype, false)
                     .unwrap()
             },
-        }
+        };
+
+        Ok(out)
     }
 
     pub fn into_series(mut self) -> Series {
-        self.reset(0)
+        // unwrap: non-strict does not error.
+        self.reset(0, false).unwrap()
     }
 }
 

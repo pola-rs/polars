@@ -25,7 +25,7 @@ impl InMemorySourceNode {
 
 impl ComputeNode for InMemorySourceNode {
     fn name(&self) -> &str {
-        "in_memory_source"
+        "in-memory-source"
     }
 
     fn update_state(
@@ -90,7 +90,7 @@ impl ComputeNode for InMemorySourceNode {
 
                     // TODO: remove this 'always sent at least one morsel'
                     // condition, see update_state.
-                    if df.is_empty() && seq > 0 {
+                    if df.height() == 0 && seq > 0 {
                         break;
                     }
 

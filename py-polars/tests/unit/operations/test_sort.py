@@ -230,6 +230,15 @@ def test_arg_sort_nulls(
     assert res == [1.0, 2.0, 3.0, None, None]
 
 
+def test_arg_sort_by_nulls() -> None:
+    order = [0, 2, 1, 3, 4]
+    df = pl.DataFrame({"x": [None] * 5, "y": [None] * 5, "z": order})
+    assert_frame_equal(
+        df.select(pl.arg_sort_by("x", "y", "z")),
+        pl.DataFrame({"x": order}, schema={"x": pl.get_index_type()}),
+    )
+
+
 @pytest.mark.parametrize(
     ("nulls_last", "expected"),
     [
@@ -1137,3 +1146,112 @@ def test_sort_nested_multi_column() -> None:
     assert pl.DataFrame({"a": [0, 0], "b": [[2], [1]]}).sort(["a", "b"]).to_dict(
         as_series=False
     ) == {"a": [0, 0], "b": [[1], [2]]}
+
+
+def test_sort_bool_nulls_last() -> None:
+    assert_series_equal(pl.Series([False]).sort(nulls_last=True), pl.Series([False]))
+    assert_series_equal(
+        pl.Series([None, True, False]).sort(nulls_last=True),
+        pl.Series([False, True, None]),
+    )
+    assert_series_equal(
+        pl.Series([None, True, False]).sort(nulls_last=False),
+        pl.Series([None, False, True]),
+    )
+    assert_series_equal(
+        pl.Series([None, True, False]).sort(nulls_last=True, descending=True),
+        pl.Series([True, False, None]),
+    )
+    assert_series_equal(
+        pl.Series([None, True, False]).sort(nulls_last=False, descending=True),
+        pl.Series([None, True, False]),
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Enum(["a", "b"]),
+        pl.Categorical(ordering="lexical"),
+    ],
+)
+def test_sort_cat_nulls_last(dtype: PolarsDataType) -> None:
+    assert_series_equal(
+        pl.Series(["a"], dtype=dtype).sort(nulls_last=True),
+        pl.Series(["a"], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series([None, "b", "a"], dtype=dtype).sort(nulls_last=True),
+        pl.Series(["a", "b", None], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series([None, "b", "a"], dtype=dtype).sort(nulls_last=False),
+        pl.Series([None, "a", "b"], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series([None, "b", "a"], dtype=dtype).sort(nulls_last=True, descending=True),
+        pl.Series(["b", "a", None], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series([None, "b", "a"], dtype=dtype).sort(
+            nulls_last=False, descending=True
+        ),
+        pl.Series([None, "b", "a"], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "result"),
+    [
+        # NotAggregated, NotAggregated
+        (
+            pl.col("val").sort_by(pl.col("by")).alias("sorted"),
+            [[2, 1], [2, 3], [3]],
+        ),
+        # AggregatedList, NotAggregated
+        (
+            pl.arange(pl.len()).sort_by(pl.col("by")).alias("sorted"),
+            [[1, 0], [0, 1], [0]],
+        ),
+        # NotAggregated, AggregatedList
+        (
+            pl.col("val").sort_by(pl.arange(pl.len())).alias("sorted"),
+            [[1, 2], [2, 3], [3]],
+        ),
+        # AggregatedList, AggregatedList
+        (
+            pl.arange(pl.len()).sort_by(pl.arange(pl.len())).alias("sorted"),
+            [[0, 1], [0, 1], [0]],
+        ),
+        # AggregatedScalar, AggregatedScalar
+        (
+            pl.col("val").first().sort_by(pl.col("by").first()).alias("sorted"),
+            [1, 2, 3],
+        ),
+        # LiteralScalar, LiteralScalar
+        (
+            pl.lit(7).cast(pl.Int64).sort_by(pl.lit(3)).alias("sorted"),
+            [7, 7, 7],
+        ),
+    ],
+)
+def test_sort_by_dynamic_24057(expr: pl.Expr, result: list[list[int]]) -> None:
+    df = pl.DataFrame(
+        {
+            "time": [0, 6, 12],
+            "val": [1, 2, 3],
+            "by": [8, 6, 7],
+        }
+    )
+    q = (
+        df.lazy()
+        .group_by_dynamic(
+            index_column="time",
+            every="5i",
+            period="10i",
+        )
+        .agg(expr)
+    )
+    out = q.collect()
+    expected = pl.DataFrame({"time": [0, 5, 10], "sorted": result})
+    assert_frame_equal(out, expected)

@@ -42,3 +42,7 @@ target/
 # Project
 /docs/assets/data/
 /docs/assets/people.md
+
+# User specific source setups
+# You can put anything here that needs to be done to prepare your env.
+.user_env.*

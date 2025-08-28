@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLSyntaxError, StructFieldNotFoundError
+from polars.exceptions import (
+    SQLInterfaceError,
+    SQLSyntaxError,
+    StructFieldNotFoundError,
+)
 from polars.testing import assert_frame_equal
 
 
@@ -17,6 +21,47 @@ def df_struct() -> pl.DataFrame:
             "other": [{"n": 1.5}, {"n": None}, {"n": -0.5}],
         }
     ).select(pl.struct(pl.all()).alias("json_msg"))
+
+
+def test_struct_field_nested_dot_notation_22107() -> None:
+    # ensure dot-notation references the given name at the right level of nesting
+    df = pl.DataFrame(
+        {
+            "id": ["012345", "987654"],
+            "name": ["A Book", "Another Book"],
+            "author": [
+                {"id": "888888", "name": "Iain M. Banks"},
+                {"id": "444444", "name": "Dan Abnett"},
+            ],
+        }
+    )
+
+    res = df.sql("SELECT id, author.id AS author_id FROM self ORDER BY id")
+    assert res.to_dict(as_series=False) == {
+        "id": ["012345", "987654"],
+        "author_id": ["888888", "444444"],
+    }
+
+    for name in ("author.name", "self.author.name"):
+        res = df.sql(f"SELECT {name} FROM self ORDER BY id")
+        assert res.to_dict(as_series=False) == {"name": ["Iain M. Banks", "Dan Abnett"]}
+
+    for name in ("name", "self.name"):
+        res = df.sql(f"SELECT {name} FROM self ORDER BY self.id DESC")
+        assert res.to_dict(as_series=False) == {"name": ["Another Book", "A Book"]}
+
+    # expected errors
+    with pytest.raises(
+        SQLInterfaceError,
+        match="no table or struct column named 'foo' found",
+    ):
+        df.sql("SELECT foo.id FROM self ORDER BY id")
+
+    with pytest.raises(
+        SQLInterfaceError,
+        match="no column named 'foo' found",
+    ):
+        df.sql("SELECT self.foo FROM self ORDER BY id")
 
 
 @pytest.mark.parametrize(

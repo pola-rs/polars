@@ -33,11 +33,11 @@ impl<K: TotalHash + TotalEq, V> TotalIndexMap<K, V> {
     }
 
     pub fn len(&self) -> IdxSize {
-        self.table.len() as IdxSize
+        self.tuples.len() as IdxSize
     }
 
     pub fn is_empty(&self) -> bool {
-        self.table.is_empty()
+        self.tuples.is_empty()
     }
 
     pub fn get(&self, key: &K) -> Option<&V> {
@@ -74,6 +74,15 @@ impl<K: TotalHash + TotalEq, V> TotalIndexMap<K, V> {
                 tuples: &mut self.tuples,
             }),
         }
+    }
+
+    /// Insert a key which will never be mapped to. Returns the index of the entry.
+    ///
+    /// This is useful for entries which are handled externally.
+    pub fn push_unmapped_entry(&mut self, key: K, value: V) -> IdxSize {
+        let ret = self.tuples.len() as IdxSize;
+        self.tuples.push((key, value));
+        ret
     }
 
     /// Gets the key and value at the given index by insertion order.

@@ -1,10 +1,9 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use arrow::array::builder::ShareStrategy;
-use crossbeam_queue::ArrayQueue;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
@@ -19,26 +18,56 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
-use crate::async_primitives::connector::{Receiver, Sender, connector};
+use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
+use crate::async_executor;
+use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
-static SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
-        .map(|limit| limit.parse().unwrap())
-        .unwrap_or(10_000_000)
-});
+struct EquiJoinParams {
+    left_is_build: Option<bool>,
+    preserve_order_build: bool,
+    preserve_order_probe: bool,
+    left_key_schema: Arc<Schema>,
+    left_key_selectors: Vec<StreamExpr>,
+    #[allow(dead_code)]
+    right_key_schema: Arc<Schema>,
+    right_key_selectors: Vec<StreamExpr>,
+    left_payload_select: Vec<Option<PlSmallStr>>,
+    right_payload_select: Vec<Option<PlSmallStr>>,
+    left_payload_schema: Arc<Schema>,
+    right_payload_schema: Arc<Schema>,
+    args: JoinArgs,
+    random_state: PlRandomState,
+}
 
-// If one side is this much bigger than the other side we'll always use the
-// smaller side as the build side without checking cardinalities.
-const LOPSIDED_SAMPLE_FACTOR: usize = 10;
+impl EquiJoinParams {
+    /// Should we emit unmatched rows from the build side?
+    fn emit_unmatched_build(&self) -> bool {
+        if self.left_is_build.unwrap() {
+            self.args.how == JoinType::Left || self.args.how == JoinType::Full
+        } else {
+            self.args.how == JoinType::Right || self.args.how == JoinType::Full
+        }
+    }
+
+    /// Should we emit unmatched rows from the probe side?
+    fn emit_unmatched_probe(&self) -> bool {
+        if self.left_is_build.unwrap() {
+            self.args.how == JoinType::Right || self.args.how == JoinType::Full
+        } else {
+            self.args.how == JoinType::Left || self.args.how == JoinType::Full
+        }
+    }
+}
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
@@ -46,37 +75,60 @@ fn compute_payload_selector(
     this: &Schema,
     other: &Schema,
     this_key_schema: &Schema,
+    other_key_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let should_coalesce = args.should_coalesce();
 
+    let mut coalesce_idx = 0;
     this.iter_names()
-        .enumerate()
-        .map(|(i, c)| {
-            let selector = if should_coalesce && this_key_schema.contains(c) {
-                if is_left != (args.how == JoinType::Right) {
+        .map(|c| {
+            #[expect(clippy::never_loop)]
+            loop {
+                let selector = if args.how == JoinType::Right {
+                    if is_left {
+                        if should_coalesce && this_key_schema.contains(c) {
+                            // Coalesced to RHS output key.
+                            None
+                        } else {
+                            Some(c.clone())
+                        }
+                    } else if !other.contains(c) || (should_coalesce && other_key_schema.contains(c)) {
+                        Some(c.clone())
+                    } else {
+                        break;
+                    }
+                } else if should_coalesce && this_key_schema.contains(c) {
+                    if is_left {
+                        Some(c.clone())
+                    } else if args.how == JoinType::Full {
+                        // We must keep the right-hand side keycols around for
+                        // coalescing.
+                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{coalesce_idx}");
+                        coalesce_idx += 1;
+                        Some(name)
+                    } else {
+                        None
+                    }
+                } else if !other.contains(c) || is_left {
                     Some(c.clone())
-                } else if args.how == JoinType::Full {
-                    // We must keep the right-hand side keycols around for
-                    // coalescing.
-                    Some(format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{i}"))
                 } else {
-                    None
-                }
-            } else if !other.contains(c) || is_left {
-                Some(c.clone())
-            } else {
-                let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
-                if other.contains(&suffixed) {
-                    polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
-                    You may want to try:\n\
-                    - renaming the column prior to joining\n\
-                    - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
-                }
-                Some(suffixed)
-            };
-            Ok(selector)
+                    break;
+                };
+
+                return Ok(selector);
+            }
+
+            let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
+            if other.contains(&suffixed) {
+                polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
+                You may want to try:\n\
+                - renaming the column prior to joining\n\
+                - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
+            }
+
+            Ok(Some(suffixed))
         })
         .collect()
 }
@@ -85,18 +137,18 @@ fn compute_payload_selector(
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
         // TODO: don't do string-based column lookups for each dataframe, pre-compute coalesce indices.
-        let mut key_idx = 0;
+        let mut coalesce_idx = 0;
         df.get_columns()
             .iter()
             .filter_map(|c| {
-                if let Some((key_name, _)) = params.left_key_schema.get_at_index(key_idx) {
-                    if c.name() == key_name {
-                        let other = df
-                            .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{key_idx}"))
-                            .unwrap();
-                        key_idx += 1;
-                        return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
-                    }
+                if params.left_key_schema.contains(c.name()) {
+                    let other = df
+                        .column(&format_pl_smallstr!(
+                            "__POLARS_COALESCE_KEYCOL{coalesce_idx}"
+                        ))
+                        .unwrap();
+                    coalesce_idx += 1;
+                    return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
                 }
 
                 if c.name().starts_with("__POLARS_COALESCE_KEYCOL") {
@@ -157,7 +209,7 @@ fn estimate_cardinality(
     params: &EquiJoinParams,
     state: &ExecutionState,
 ) -> PolarsResult<f64> {
-    let sample_limit = *SAMPLE_LIMIT;
+    let sample_limit = *JOIN_SAMPLE_LIMIT;
     if morsels.is_empty() || sample_limit == 0 {
         return Ok(0.0);
     }
@@ -200,110 +252,6 @@ fn estimate_cardinality(
     })
 }
 
-struct BufferedStream {
-    morsels: ArrayQueue<Morsel>,
-    post_buffer_offset: MorselSeq,
-}
-
-impl BufferedStream {
-    pub fn new(morsels: Vec<Morsel>, start_offset: MorselSeq) -> Self {
-        // Relabel so we can insert into parallel streams later.
-        let mut seq = start_offset;
-        let queue = ArrayQueue::new(morsels.len().max(1));
-        for mut morsel in morsels {
-            morsel.set_seq(seq);
-            queue.push(morsel).unwrap();
-            seq = seq.successor();
-        }
-
-        Self {
-            morsels: queue,
-            post_buffer_offset: seq,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.morsels.is_empty()
-    }
-
-    #[allow(clippy::needless_lifetimes)]
-    pub fn reinsert<'s, 'env>(
-        &'s self,
-        num_pipelines: usize,
-        recv_port: Option<RecvPort<'_>>,
-        scope: &'s TaskScope<'s, 'env>,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) -> Option<Vec<Receiver<Morsel>>> {
-        let receivers = if let Some(p) = recv_port {
-            p.parallel().into_iter().map(Some).collect_vec()
-        } else {
-            (0..num_pipelines).map(|_| None).collect_vec()
-        };
-
-        let source_token = SourceToken::new();
-        let mut out = Vec::new();
-        for orig_recv in receivers {
-            let (mut new_send, new_recv) = connector();
-            out.push(new_recv);
-            let source_token = source_token.clone();
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                // Act like an InMemorySource node until cached morsels are consumed.
-                let wait_group = WaitGroup::default();
-                loop {
-                    let Some(mut morsel) = self.morsels.pop() else {
-                        break;
-                    };
-                    morsel.replace_source_token(source_token.clone());
-                    morsel.set_consume_token(wait_group.token());
-                    if new_send.send(morsel).await.is_err() {
-                        return Ok(());
-                    }
-                    wait_group.wait().await;
-                    // TODO: Unfortunately we can't actually stop here without
-                    // re-buffering morsels from the stream that comes after.
-                    // if source_token.stop_requested() {
-                    //     break;
-                    // }
-                }
-
-                if let Some(mut recv) = orig_recv {
-                    while let Ok(mut morsel) = recv.recv().await {
-                        if source_token.stop_requested() {
-                            morsel.source_token().stop();
-                        }
-                        morsel.set_seq(morsel.seq().offset_by(self.post_buffer_offset));
-                        if new_send.send(morsel).await.is_err() {
-                            break;
-                        }
-                    }
-                }
-                Ok(())
-            }));
-        }
-        Some(out)
-    }
-}
-
-impl Default for BufferedStream {
-    fn default() -> Self {
-        Self {
-            morsels: ArrayQueue::new(1),
-            post_buffer_offset: MorselSeq::default(),
-        }
-    }
-}
-
-impl Drop for BufferedStream {
-    fn drop(&mut self) {
-        POOL.install(|| {
-            // Parallel drop as the state might be quite big.
-            (0..self.morsels.len())
-                .into_par_iter()
-                .for_each(|_| drop(self.morsels.pop()));
-        })
-    }
-}
-
 #[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
@@ -317,15 +265,15 @@ impl SampleState {
         mut recv: Receiver<Morsel>,
         morsels: &mut Vec<Morsel>,
         len: &mut usize,
-        this_final_len: Arc<AtomicUsize>,
-        other_final_len: Arc<AtomicUsize>,
+        this_final_len: Arc<RelaxedCell<usize>>,
+        other_final_len: Arc<RelaxedCell<usize>>,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
-            if *len >= *SAMPLE_LIMIT
+            if *len >= *JOIN_SAMPLE_LIMIT
                 || *len
                     >= other_final_len
-                        .load(Ordering::Relaxed)
+                        .load()
                         .saturating_mul(LOPSIDED_SAMPLE_FACTOR)
             {
                 morsel.source_token().stop();
@@ -334,7 +282,7 @@ impl SampleState {
             drop(morsel.take_consume_token());
             morsels.push(morsel);
         }
-        this_final_len.store(*len, Ordering::Relaxed);
+        this_final_len.store(*len);
         Ok(())
     }
 
@@ -344,8 +292,8 @@ impl SampleState {
         params: &mut EquiJoinParams,
         state: &StreamingExecutionState,
     ) -> PolarsResult<Option<BuildState>> {
-        let left_saturated = self.left_len >= *SAMPLE_LIMIT;
-        let right_saturated = self.right_len >= *SAMPLE_LIMIT;
+        let left_saturated = self.left_len >= *JOIN_SAMPLE_LIMIT;
+        let right_saturated = self.right_len >= *JOIN_SAMPLE_LIMIT;
         let left_done = recv[0] == PortState::Done || left_saturated;
         let right_done = recv[1] == PortState::Done || right_saturated;
         #[expect(clippy::nonminimal_bool)]
@@ -358,7 +306,7 @@ impl SampleState {
 
         if config::verbose() {
             eprintln!(
-                "choosing equi-join build side, sample lengths are: {} vs. {}",
+                "choosing build side, sample lengths are: {} vs. {}",
                 self.left_len, self.right_len
             );
         }
@@ -661,21 +609,22 @@ impl BuildState {
             .map(|b| Arc::new(core::mem::take(&mut b.morsels)))
             .collect_vec();
         let (morsel_drop_q_send, morsel_drop_q_recv) =
-            crossbeam_channel::bounded(morsels_per_local_builder.len());
+            async_channel::bounded(morsels_per_local_builder.len());
         let num_partitions = self.local_builders[0].sketch_per_p.len();
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        POOL.scope(|s| {
+        async_executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);
+            let mut join_handles = Vec::new();
             for p in 0..num_partitions {
                 let arc_morsels_per_local_builder = Arc::clone(&arc_morsels_per_local_builder);
                 let morsel_drop_q_send = morsel_drop_q_send.clone();
                 let morsel_drop_q_recv = morsel_drop_q_recv.clone();
                 let probe_tables = &probe_tables;
-                s.spawn(move |_| {
+                join_handles.push(s.spawn_task(TaskPriority::High, async move {
                     // Extract from outer arc and drop outer arc.
                     let morsels_per_local_builder =
                         Arc::unwrap_or_clone(arc_morsels_per_local_builder);
@@ -727,7 +676,7 @@ impl BuildState {
                             // If we're the last thread to process this set of morsels we're probably
                             // falling behind the rest, since the drop can be quite expensive we skip
                             // a drop attempt hoping someone else will pick up the slack.
-                            morsel_drop_q_send.send(l).unwrap();
+                            drop(morsel_drop_q_send.try_send(l));
                             skip_drop_attempt = true;
                         } else {
                             skip_drop_attempt = false;
@@ -736,7 +685,7 @@ impl BuildState {
 
                     // We're done, help others out by doing drops.
                     drop(morsel_drop_q_send); // So we don't deadlock trying to receive from ourselves.
-                    while let Ok(l_morsels) = morsel_drop_q_recv.recv() {
+                    while let Ok(l_morsels) = morsel_drop_q_recv.recv().await {
                         drop(l_morsels);
                     }
 
@@ -751,7 +700,7 @@ impl BuildState {
                         )
                         .ok()
                         .unwrap();
-                });
+                }));
             }
 
             // Drop outer arc after spawning each thread so the inner arcs
@@ -760,6 +709,12 @@ impl BuildState {
             // to end.
             drop(arc_morsels_per_local_builder);
             drop(morsel_drop_q_send);
+
+            polars_io::pl_async::get_runtime().block_on(async move {
+                for handle in join_handles {
+                    handle.await;
+                }
+            });
         });
 
         ProbeState {
@@ -878,6 +833,7 @@ impl ProbeState {
                     // consecutively on the same partition.
                     probe_partitions.clear();
                     hash_keys.gen_partitions(&partitioner, &mut probe_partitions, emit_unmatched);
+
                     let mut probe_group_start = 0;
                     while probe_group_start < probe_partitions.len() {
                         let p_idx = probe_partitions[probe_group_start];
@@ -1017,17 +973,17 @@ impl ProbeState {
                             }
                         }
                     }
+                }
 
-                    if !probe_match.is_empty() {
-                        if !payload_rechunked {
-                            payload.rechunk_mut();
-                        }
-                        probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
-                        probe_match.clear();
-                        let out_morsel = new_morsel(&mut build_out, &mut probe_out);
-                        if send.send(out_morsel).await.is_err() {
-                            return Ok(max_seq);
-                        }
+                if !probe_match.is_empty() {
+                    if !payload_rechunked {
+                        payload.rechunk_mut();
+                    }
+                    probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                    probe_match.clear();
+                    let out_morsel = new_morsel(&mut build_out, &mut probe_out);
+                    if send.send(out_morsel).await.is_err() {
+                        return Ok(max_seq);
                     }
                 }
             }
@@ -1207,43 +1163,6 @@ enum EquiJoinState {
     Done,
 }
 
-struct EquiJoinParams {
-    left_is_build: Option<bool>,
-    preserve_order_build: bool,
-    preserve_order_probe: bool,
-    left_key_schema: Arc<Schema>,
-    left_key_selectors: Vec<StreamExpr>,
-    #[allow(dead_code)]
-    right_key_schema: Arc<Schema>,
-    right_key_selectors: Vec<StreamExpr>,
-    left_payload_select: Vec<Option<PlSmallStr>>,
-    right_payload_select: Vec<Option<PlSmallStr>>,
-    left_payload_schema: Arc<Schema>,
-    right_payload_schema: Arc<Schema>,
-    args: JoinArgs,
-    random_state: PlRandomState,
-}
-
-impl EquiJoinParams {
-    /// Should we emit unmatched rows from the build side?
-    fn emit_unmatched_build(&self) -> bool {
-        if self.left_is_build.unwrap() {
-            self.args.how == JoinType::Left || self.args.how == JoinType::Full
-        } else {
-            self.args.how == JoinType::Right || self.args.how == JoinType::Full
-        }
-    }
-
-    /// Should we emit unmatched rows from the probe side?
-    fn emit_unmatched_probe(&self) -> bool {
-        if self.left_is_build.unwrap() {
-            self.args.how == JoinType::Right || self.args.how == JoinType::Full
-        } else {
-            self.args.how == JoinType::Left || self.args.how == JoinType::Full
-        }
-    }
-}
-
 pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
@@ -1265,7 +1184,7 @@ impl EquiJoinNode {
     ) -> PolarsResult<Self> {
         let left_is_build = match args.maintain_order {
             MaintainOrderJoin::None => {
-                if *SAMPLE_LIMIT == 0 {
+                if *JOIN_SAMPLE_LIMIT == 0 {
                     Some(true)
                 } else {
                     None
@@ -1285,6 +1204,7 @@ impl EquiJoinNode {
             &left_input_schema,
             &right_input_schema,
             &left_key_schema,
+            &right_key_schema,
             true,
             &args,
         )?;
@@ -1292,6 +1212,7 @@ impl EquiJoinNode {
             &right_input_schema,
             &left_input_schema,
             &right_key_schema,
+            &left_key_schema,
             false,
             &args,
         )?;
@@ -1333,7 +1254,7 @@ impl EquiJoinNode {
 
 impl ComputeNode for EquiJoinNode {
     fn name(&self) -> &str {
-        "equi_join"
+        "equi-join"
     }
 
     fn update_state(
@@ -1415,14 +1336,14 @@ impl ComputeNode for EquiJoinNode {
             EquiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
                 if recv[0] != PortState::Done {
-                    recv[0] = if sample_state.left_len < *SAMPLE_LIMIT {
+                    recv[0] = if sample_state.left_len < *JOIN_SAMPLE_LIMIT {
                         PortState::Ready
                     } else {
                         PortState::Blocked
                     };
                 }
                 if recv[1] != PortState::Done {
-                    recv[1] = if sample_state.right_len < *SAMPLE_LIMIT {
+                    recv[1] = if sample_state.right_len < *JOIN_SAMPLE_LIMIT {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1501,12 +1422,12 @@ impl ComputeNode for EquiJoinNode {
         match &mut self.state {
             EquiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                let left_final_len = Arc::new(AtomicUsize::new(if recv_ports[0].is_none() {
+                let left_final_len = Arc::new(RelaxedCell::from(if recv_ports[0].is_none() {
                     sample_state.left_len
                 } else {
                     usize::MAX
                 }));
-                let right_final_len = Arc::new(AtomicUsize::new(if recv_ports[1].is_none() {
+                let right_final_len = Arc::new(RelaxedCell::from(if recv_ports[1].is_none() {
                     sample_state.right_len
                 } else {
                     usize::MAX

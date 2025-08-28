@@ -6,7 +6,7 @@ use arrow::datatypes::PhysicalType;
 use arrow::offset::{Offset, OffsetsBuffer};
 use polars_error::{PolarsResult, polars_bail};
 
-use super::{Encoding, WriteOptions, array_to_pages};
+use super::{ColumnWriteOptions, WriteOptions, array_to_pages};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::page::Page;
 use crate::parquet::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
@@ -140,6 +140,10 @@ fn to_nested_recursive(
     mut parents: Vec<Nested>,
 ) -> PolarsResult<()> {
     let is_optional = is_nullable(type_.get_field_info());
+
+    if !is_optional && array.null_count() > 0 {
+        polars_bail!(InvalidOperation: "writing a missing value to required field '{}'", type_.name());
+    }
 
     use PhysicalType::*;
     match array.dtype().to_physical_type() {
@@ -498,27 +502,29 @@ fn to_parquet_leaves_recursive(type_: ParquetType, leaves: &mut Vec<ParquetPrimi
 pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     array: A,
     type_: ParquetType,
+    column_options: &ColumnWriteOptions,
     options: WriteOptions,
-    encoding: &[Encoding],
 ) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
     let array = array.as_ref();
 
     let nested = to_nested(array, &type_)?;
-
     let types = to_parquet_leaves(type_);
 
     let mut values = Vec::new();
     to_leaves(array, &mut values);
 
-    assert_eq!(encoding.len(), types.len());
+    let mut field_options = Vec::with_capacity(types.len());
+    column_options.to_leaves(&mut field_options);
+
+    assert_eq!(field_options.len(), types.len());
 
     values
         .iter()
         .zip(nested)
         .zip(types)
-        .zip(encoding.iter())
-        .map(|(((values, nested), type_), encoding)| {
-            array_to_pages(values.as_ref(), type_, &nested, options, *encoding)
+        .zip(field_options)
+        .map(|(((values, nested), type_), field_options)| {
+            array_to_pages(values.as_ref(), type_, &nested, options, field_options)
         })
         .collect()
 }
@@ -527,12 +533,15 @@ pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     arrays: &[A],
     type_: ParquetType,
     options: WriteOptions,
-    encoding: &[Encoding],
+    column_options: &ColumnWriteOptions,
 ) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
     let array = arrays[0].as_ref();
     let nested = to_nested(array, &type_)?;
 
     let types = to_parquet_leaves(type_);
+
+    let mut field_options = Vec::with_capacity(types.len());
+    column_options.to_leaves(&mut field_options);
 
     // leaves; index level is nesting depth.
     // index i: has a vec because we have multiple chunks.
@@ -554,15 +563,15 @@ pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
         .into_iter()
         .zip(nested)
         .zip(types)
-        .zip(encoding.iter())
-        .map(move |(((values, nested), type_), encoding)| {
+        .zip(field_options)
+        .map(move |(((values, nested), type_), column_options)| {
             let iter = values.into_iter().map(|leave_values| {
                 array_to_pages(
                     leave_values.as_ref(),
                     type_.clone(),
                     &nested,
                     options,
-                    *encoding,
+                    column_options,
                 )
             });
 

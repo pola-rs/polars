@@ -1,4 +1,3 @@
-use polars_core::error::to_compute_err;
 use polars_core::utils::accumulate_dataframes_vertical;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
@@ -100,14 +99,10 @@ impl Executor for PythonScanExec {
                         // name)]
                         state.has_node_timer(),
                     );
-                    let result = callable.call1(args).map_err(to_compute_err)?;
+                    let result = callable.call1(args)?;
                     let df = if state.has_node_timer() {
-                        let df = result.get_item(0).map_err(to_compute_err);
-                        let timing_info: Vec<(u64, u64, String)> = result
-                            .get_item(1)
-                            .map_err(to_compute_err)?
-                            .extract()
-                            .map_err(to_compute_err)?;
+                        let df = result.get_item(0);
+                        let timing_info: Vec<(u64, u64, String)> = result.get_item(1)?.extract()?;
                         state.record_raw_timings(&timing_info);
                         df?
                     } else {
@@ -123,7 +118,7 @@ impl Executor for PythonScanExec {
                         predicate,
                         n_rows,
                     );
-                    let df = callable.call1(args).map_err(to_compute_err)?;
+                    let df = callable.call1(args)?;
                     self.finish_df(py, df, state)
                 },
                 PythonScanSource::IOPlugin => {
@@ -143,7 +138,7 @@ impl Executor for PythonScanExec {
                         batch_size,
                     );
 
-                    let generator_init = callable.call1(args).map_err(to_compute_err)?;
+                    let generator_init = callable.call1(args)?;
                     let generator = generator_init.get_item(0).map_err(
                         |_| polars_err!(ComputeError: "expected tuple got {}", generator_init),
                     )?;

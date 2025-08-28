@@ -12,7 +12,6 @@ from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
 from polars.datatypes import Array, Boolean, DataType, DataTypeClass, List, Null, Struct
 from polars.series import Series
-from polars.string_cache import StringCache
 from polars.testing.parametric.strategies._utils import flexhash
 from polars.testing.parametric.strategies.data import data
 from polars.testing.parametric.strategies.dtype import _instantiate_dtype, dtypes
@@ -494,27 +493,26 @@ def dataframes(
 
     allow_series_chunks = draw(st.booleans()) if allow_chunks else False
 
-    with StringCache():
-        data = {
-            c.name: draw(
-                series(
-                    name=c.name,
-                    dtype=c.dtype,
-                    min_size=size,
-                    max_size=size,
-                    strategy=c.strategy,
-                    allow_null=c.allow_null,  # type: ignore[arg-type]
-                    allow_chunks=allow_series_chunks,
-                    allow_masked_out=allow_masked_out,
-                    unique=c.unique,
-                    allowed_dtypes=allowed_dtypes,
-                    excluded_dtypes=excluded_dtypes,
-                    allow_time_zones=allow_time_zones,
-                    **kwargs,
-                )
+    data = {
+        c.name: draw(
+            series(
+                name=c.name,
+                dtype=c.dtype,
+                min_size=size,
+                max_size=size,
+                strategy=c.strategy,
+                allow_null=c.allow_null,  # type: ignore[arg-type]
+                allow_chunks=allow_series_chunks,
+                allow_masked_out=allow_masked_out,
+                unique=c.unique,
+                allowed_dtypes=allowed_dtypes,
+                excluded_dtypes=excluded_dtypes,
+                allow_time_zones=allow_time_zones,
+                **kwargs,
             )
-            for c in cols
-        }
+        )
+        for c in cols
+    }
 
     df = DataFrame(data)
 

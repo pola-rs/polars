@@ -523,11 +523,11 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// * `array.children` is not mutably shared for the lifetime of `parent`
     /// * the pointer of `array.children` at `index` is valid
     /// * the pointer of `array.children` at `index` is not mutably shared for the lifetime of `parent`
-    unsafe fn child(&self, index: usize) -> PolarsResult<ArrowArrayChild> {
+    unsafe fn child(&self, index: usize) -> PolarsResult<ArrowArrayChild<'_>> {
         create_child(self.array(), self.dtype(), self.parent().clone(), index)
     }
 
-    unsafe fn dictionary(&self) -> PolarsResult<Option<ArrowArrayChild>> {
+    unsafe fn dictionary(&self) -> PolarsResult<Option<ArrowArrayChild<'_>>> {
         create_dictionary(self.array(), self.dtype(), self.parent().clone())
     }
 

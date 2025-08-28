@@ -76,7 +76,7 @@ pub trait StaticArray:
         None
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         no_call_const!()
     }
     fn values_iter(&self) -> Self::ValueIterT<'_> {
@@ -122,7 +122,7 @@ impl<T: NativeType> StaticArray for PrimitiveArray<T> {
         Some(self.values().as_slice())
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values().iter().copied(), self.validity())
     }
 
@@ -167,7 +167,7 @@ impl StaticArray for BooleanArray {
         self.values_iter()
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         self.iter()
     }
 
@@ -212,7 +212,7 @@ impl StaticArray for Utf8Array<i64> {
         self.values_iter()
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         self.iter()
     }
 
@@ -245,7 +245,7 @@ impl StaticArray for BinaryArray<i64> {
         self.values_iter()
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         self.iter()
     }
 
@@ -273,7 +273,7 @@ impl StaticArray for BinaryViewArray {
         self.value_unchecked(idx)
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         self.iter()
     }
 
@@ -311,7 +311,7 @@ impl StaticArray for Utf8ViewArray {
         self.value_unchecked(idx)
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         self.iter()
     }
 
@@ -355,7 +355,7 @@ impl StaticArray for ListArray<i64> {
         self.values_iter()
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         self.iter()
     }
 
@@ -382,7 +382,7 @@ impl StaticArray for FixedSizeListArray {
         self.values_iter()
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter<'_>> {
         self.iter()
     }
 

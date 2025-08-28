@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Formatter};
 use std::fs::File;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use polars_core::error::{PolarsResult, feature_gated};
@@ -12,21 +11,23 @@ use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory};
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::{PlPath, PlPathRef};
 
-use super::FileScanOptions;
+use super::UnifiedScanArgs;
 
 /// Set of sources to scan from
 ///
 /// This can either be a list of paths to files, opened files or in-memory buffers. Mixing of
 /// buffers is not currently possible.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone)]
 pub enum ScanSources {
-    Paths(Arc<[PathBuf]>),
+    Paths(Arc<[PlPath]>),
 
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Buffers(Arc<[MemSlice]>),
 }
 
@@ -43,7 +44,7 @@ impl Debug for ScanSources {
 /// A reference to a single item in [`ScanSources`]
 #[derive(Debug, Clone, Copy)]
 pub enum ScanSourceRef<'a> {
-    Path(&'a Path),
+    Path(PlPathRef<'a>),
     File(&'a File),
     Buffer(&'a MemSlice),
 }
@@ -51,7 +52,7 @@ pub enum ScanSourceRef<'a> {
 /// A single source to scan from
 #[derive(Debug, Clone)]
 pub enum ScanSource {
-    Path(Arc<Path>),
+    Path(PlPath),
     File(Arc<File>),
     Buffer(MemSlice),
 }
@@ -60,7 +61,7 @@ impl ScanSource {
     pub fn from_sources(sources: ScanSources) -> Result<Self, ScanSources> {
         if sources.len() == 1 {
             match sources {
-                ScanSources::Paths(ps) => Ok(Self::Path(ps.as_ref()[0].clone().into())),
+                ScanSources::Paths(ps) => Ok(Self::Path(ps.as_ref()[0].clone())),
                 ScanSources::Files(fs) => {
                     assert_eq!(fs.len(), 1);
                     let ptr: *const File = Arc::into_raw(fs) as *const File;
@@ -78,7 +79,7 @@ impl ScanSource {
 
     pub fn into_sources(self) -> ScanSources {
         match self {
-            ScanSource::Path(p) => ScanSources::Paths([p.to_path_buf()].into()),
+            ScanSource::Path(p) => ScanSources::Paths([p].into()),
             ScanSource::File(f) => {
                 let ptr: *const [File] = std::ptr::slice_from_raw_parts(Arc::into_raw(f), 1);
                 // SAFETY: A T can be interpreted as [T] with length 1.
@@ -89,7 +90,7 @@ impl ScanSource {
         }
     }
 
-    pub fn as_scan_source_ref(&self) -> ScanSourceRef {
+    pub fn as_scan_source_ref(&self) -> ScanSourceRef<'_> {
         match self {
             ScanSource::Path(path) => ScanSourceRef::Path(path.as_ref()),
             ScanSource::File(file) => ScanSourceRef::File(file.as_ref()),
@@ -99,6 +100,14 @@ impl ScanSource {
 
     pub fn run_async(&self) -> bool {
         self.as_scan_source_ref().run_async()
+    }
+
+    pub fn is_cloud_url(&self) -> bool {
+        if let ScanSource::Path(path) = self {
+            path.is_cloud_url()
+        } else {
+            false
+        }
     }
 }
 
@@ -151,42 +160,42 @@ impl Eq for ScanSources {}
 impl ScanSources {
     pub fn expand_paths(
         &self,
-        file_options: &FileScanOptions,
+        scan_args: &UnifiedScanArgs,
         #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         match self {
             Self::Paths(paths) => Ok(Self::Paths(expand_paths(
                 paths,
-                file_options.glob,
+                scan_args.glob,
                 cloud_options,
             )?)),
             v => Ok(v.clone()),
         }
     }
 
-    /// This will update `file_options.hive_options.enabled` to `true` if the existing value is `None`
+    /// This will update `scan_args.hive_options.enabled` to `true` if the existing value is `None`
     /// and the paths are expanded from a single directory. Otherwise the existing value is maintained.
     #[cfg(any(feature = "ipc", feature = "parquet"))]
     pub fn expand_paths_with_hive_update(
         &self,
-        file_options: &mut FileScanOptions,
+        scan_args: &mut UnifiedScanArgs,
         #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         match self {
             Self::Paths(paths) => {
                 let (expanded_paths, hive_start_idx) = expand_paths_hive(
                     paths,
-                    file_options.glob,
+                    scan_args.glob,
                     cloud_options,
-                    file_options.hive_options.enabled.unwrap_or(false),
+                    scan_args.hive_options.enabled.unwrap_or(false),
                 )?;
 
-                if file_options.hive_options.enabled.is_none()
+                if scan_args.hive_options.enabled.is_none()
                     && expanded_from_single_directory(paths, expanded_paths.as_ref())
                 {
-                    file_options.hive_options.enabled = Some(true);
+                    scan_args.hive_options.enabled = Some(true);
                 }
-                file_options.hive_options.hive_start_idx = hive_start_idx;
+                scan_args.hive_options.hive_start_idx = hive_start_idx;
 
                 Ok(Self::Paths(expanded_paths))
             },
@@ -194,7 +203,7 @@ impl ScanSources {
         }
     }
 
-    pub fn iter(&self) -> ScanSourceIter {
+    pub fn iter(&self) -> ScanSourceIter<'_> {
         ScanSourceIter {
             sources: self,
             offset: 0,
@@ -207,7 +216,7 @@ impl ScanSources {
     }
 
     /// Try cast the scan sources to [`ScanSources::Paths`]
-    pub fn as_paths(&self) -> Option<&[PathBuf]> {
+    pub fn as_paths(&self) -> Option<&[PlPath]> {
         match self {
             Self::Paths(paths) => Some(paths.as_ref()),
             Self::Files(_) | Self::Buffers(_) => None,
@@ -215,7 +224,7 @@ impl ScanSources {
     }
 
     /// Try cast the scan sources to [`ScanSources::Paths`] with a clone
-    pub fn into_paths(&self) -> Option<Arc<[PathBuf]>> {
+    pub fn into_paths(&self) -> Option<Arc<[PlPath]>> {
         match self {
             Self::Paths(paths) => Some(paths.clone()),
             Self::Files(_) | Self::Buffers(_) => None,
@@ -223,16 +232,16 @@ impl ScanSources {
     }
 
     /// Try get the first path in the scan sources
-    pub fn first_path(&self) -> Option<&Path> {
+    pub fn first_path(&self) -> Option<PlPathRef<'_>> {
         match self {
-            Self::Paths(paths) => paths.first().map(|p| p.as_path()),
+            Self::Paths(paths) => paths.first().map(|p| p.as_ref()),
             Self::Files(_) | Self::Buffers(_) => None,
         }
     }
 
     /// Is the first path a cloud URL?
     pub fn is_cloud_url(&self) -> bool {
-        self.first_path().is_some_and(polars_io::is_cloud_url)
+        self.first_path().is_some_and(|path| path.is_cloud_url())
     }
 
     pub fn len(&self) -> usize {
@@ -247,7 +256,7 @@ impl ScanSources {
         self.len() == 0
     }
 
-    pub fn first(&self) -> Option<ScanSourceRef> {
+    pub fn first(&self) -> Option<ScanSourceRef<'_>> {
         self.get(0)
     }
 
@@ -258,18 +267,16 @@ impl ScanSources {
         }
 
         match self {
-            Self::Paths(paths) => {
-                PlSmallStr::from_str(paths.first().unwrap().to_string_lossy().as_ref())
-            },
+            Self::Paths(paths) => PlSmallStr::from_str(paths.first().unwrap().to_str()),
             Self::Files(_) => PlSmallStr::from_static("OPEN_FILES"),
             Self::Buffers(_) => PlSmallStr::from_static("IN_MEMORY"),
         }
     }
 
     /// Get the scan source at specific address
-    pub fn get(&self, idx: usize) -> Option<ScanSourceRef> {
+    pub fn get(&self, idx: usize) -> Option<ScanSourceRef<'_>> {
         match self {
-            Self::Paths(paths) => paths.get(idx).map(|p| ScanSourceRef::Path(p)),
+            Self::Paths(paths) => paths.get(idx).map(|p| ScanSourceRef::Path(p.as_ref())),
             Self::Files(files) => files.get(idx).map(ScanSourceRef::File),
             Self::Buffers(buffers) => buffers.get(idx).map(ScanSourceRef::Buffer),
         }
@@ -281,7 +288,7 @@ impl ScanSources {
     ///
     /// If the `idx` is out of range.
     #[track_caller]
-    pub fn at(&self, idx: usize) -> ScanSourceRef {
+    pub fn at(&self, idx: usize) -> ScanSourceRef<'_> {
         self.get(idx).unwrap()
     }
 }
@@ -290,7 +297,7 @@ impl ScanSourceRef<'_> {
     /// Get the name for `include_paths`
     pub fn to_include_path_name(&self) -> &str {
         match self {
-            Self::Path(path) => path.to_str().unwrap(),
+            Self::Path(path) => path.to_str(),
             Self::File(_) => "open-file",
             Self::Buffer(_) => "in-mem",
         }
@@ -299,7 +306,7 @@ impl ScanSourceRef<'_> {
     // @TODO: I would like to remove this function eventually.
     pub fn into_owned(&self) -> PolarsResult<ScanSource> {
         Ok(match self {
-            ScanSourceRef::Path(path) => ScanSource::Path((*path).into()),
+            ScanSourceRef::Path(path) => ScanSource::Path((*path).into_owned()),
             ScanSourceRef::File(file) => {
                 if let Ok(file) = file.try_clone() {
                     ScanSource::File(Arc::new(file))
@@ -320,25 +327,15 @@ impl ScanSourceRef<'_> {
     #[cfg(feature = "cloud")]
     fn to_memslice_async<F: Fn(Arc<FileCacheEntry>) -> PolarsResult<std::fs::File>>(
         &self,
-        assume: F,
+        open_cache_entry: F,
         run_async: bool,
     ) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
-                let path_str = path.to_str();
-                let file = if run_async && path_str.is_some() {
-                    feature_gated!("cloud", {
-                        // This isn't filled if we modified the DSL (e.g. in cloud)
-                        let entry = polars_io::file_cache::FILE_CACHE.get_entry(path_str.unwrap());
-
-                        if let Some(entry) = entry {
-                            assume(entry)?
-                        } else {
-                            polars_utils::open_file(path)?
-                        }
-                    })
+                let file = if run_async {
+                    open_cache_entry(polars_io::file_cache::FILE_CACHE.get_entry(*path).unwrap())?
                 } else {
-                    polars_utils::open_file(path)?
+                    polars_utils::open_file(path.as_local_path().unwrap())?
                 };
 
                 MemSlice::from_file(&file)
@@ -359,10 +356,11 @@ impl ScanSourceRef<'_> {
     }
 
     #[cfg(not(feature = "cloud"))]
+    #[allow(clippy::wrong_self_convention)]
     fn to_memslice_async(&self, run_async: bool) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
-                let file = polars_utils::open_file(path)?;
+                let file = polars_utils::open_file(path.as_local_path().unwrap())?;
                 MemSlice::from_file(&file)
             },
             ScanSourceRef::File(file) => MemSlice::from_file(file),
@@ -396,7 +394,7 @@ impl ScanSourceRef<'_> {
                         cache_entries.unwrap()[index].try_open_check_latest()?
                     })
                 } else {
-                    polars_utils::open_file(path)?
+                    polars_utils::open_file(path.as_local_path().unwrap())?
                 };
 
                 MemSlice::from_file(&file)
@@ -415,7 +413,7 @@ impl ScanSourceRef<'_> {
         match self {
             Self::Path(path) => {
                 builder
-                    .try_build_from_path(path.to_str().unwrap(), cloud_options)
+                    .try_build_from_path(path.to_str(), cloud_options)
                     .await
             },
             Self::File(file) => Ok(DynByteSource::from(MemSlice::from_file(file)?)),
@@ -423,8 +421,8 @@ impl ScanSourceRef<'_> {
         }
     }
 
-    pub(crate) fn run_async(&self) -> bool {
-        matches!(self, Self::Path(p) if polars_io::is_cloud_url(p) || polars_core::config::force_async())
+    pub fn run_async(&self) -> bool {
+        matches!(self, Self::Path(p) if p.is_cloud_url() || polars_core::config::force_async())
     }
 }
 
@@ -433,7 +431,7 @@ impl<'a> Iterator for ScanSourceIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let item = match self.sources {
-            ScanSources::Paths(paths) => ScanSourceRef::Path(paths.get(self.offset)?),
+            ScanSources::Paths(paths) => ScanSourceRef::Path(paths.get(self.offset)?.as_ref()),
             ScanSources::Files(files) => ScanSourceRef::File(files.get(self.offset)?),
             ScanSources::Buffers(buffers) => ScanSourceRef::Buffer(buffers.get(self.offset)?),
         };

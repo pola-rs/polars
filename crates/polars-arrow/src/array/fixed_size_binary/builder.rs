@@ -83,6 +83,33 @@ impl StaticArrayBuilder for FixedSizeBinaryArrayBuilder {
         self.length += length.min(other.len().saturating_sub(start));
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &FixedSizeBinaryArray,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        let other_slice = other.values().as_slice();
+        for outer_idx in start..start + length {
+            for _ in 0..repeats {
+                self.values.extend_from_slice(
+                    &other_slice[outer_idx * self.size..(outer_idx + 1) * self.size],
+                );
+            }
+        }
+
+        self.validity
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
+        self.length += repeats * length.min(other.len().saturating_sub(start));
+    }
+
     unsafe fn gather_extend(
         &mut self,
         other: &FixedSizeBinaryArray,

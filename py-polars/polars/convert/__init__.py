@@ -7,6 +7,7 @@ from polars.convert.general import (
     from_pandas,
     from_records,
     from_repr,
+    from_torch,
 )
 from polars.convert.normalize import json_normalize
 
@@ -19,5 +20,6 @@ __all__ = [
     "from_pandas",
     "from_records",
     "from_repr",
+    "from_torch",
     "json_normalize",
 ]

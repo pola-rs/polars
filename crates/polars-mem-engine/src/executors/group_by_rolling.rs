@@ -11,7 +11,7 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) options: RollingGroupOptions,
     pub(crate) input_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
-    pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
+    pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
 
 pub(super) fn sort_and_groups(
@@ -46,7 +46,7 @@ pub(super) fn sort_and_groups(
 
         df.get_columns_mut().pop().unwrap()
     };
-    let encoded = encoded.as_series().unwrap();
+    let encoded = encoded.as_materialized_series();
     let encoded = encoded.binary_offset().unwrap();
     let encoded = encoded.with_sorted_flag(polars_core::series::IsSorted::Ascending);
     let groups = encoded.group_tuples(true, false).unwrap();
@@ -83,7 +83,7 @@ impl GroupByRollingExec {
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            let out = gb.apply(move |df| f.call_udf(df))?;
+            let out = gb.apply(move |df| f.call(df))?;
             return Ok(if let Some((offset, len)) = self.slice {
                 out.slice(offset, len)
             } else {

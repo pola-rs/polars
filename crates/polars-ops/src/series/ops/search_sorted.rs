@@ -67,6 +67,12 @@ pub fn search_sorted(
 
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
+        DataType::BinaryOffset => {
+            let ca = s.binary_offset().unwrap();
+            let search_values = search_values.binary_offset().unwrap();
+            let idx = binary_search_ca(ca, search_values.iter(), side, descending);
+            Ok(IdxCa::new_vec(s.name().clone(), idx))
+        },
         dt if dt.is_primitive_numeric() => {
             let search_values = search_values.to_physical_repr();
 

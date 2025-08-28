@@ -18,6 +18,7 @@ struct Wrap<T>(pub T);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct DynamicGroupOptions {
     /// Time or index column.
     pub index_column: PlSmallStr,
@@ -52,6 +53,7 @@ impl Default for DynamicGroupOptions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RollingGroupOptions {
     /// Time or index column.
     pub index_column: PlSmallStr,
@@ -139,8 +141,8 @@ impl Wrap<&DataFrame> {
         let (dt, tu, tz): (Column, TimeUnit, Option<TimeZone>) = match time_type {
             Datetime(tu, tz) => (time.clone(), *tu, tz.clone()),
             Date => (
-                time.cast(&Datetime(TimeUnit::Milliseconds, None))?,
-                TimeUnit::Milliseconds,
+                time.cast(&Datetime(TimeUnit::Microseconds, None))?,
+                TimeUnit::Microseconds,
                 None,
             ),
             UInt32 | UInt64 | Int32 => {
@@ -210,8 +212,8 @@ impl Wrap<&DataFrame> {
         let (dt, tu) = match time_type {
             Datetime(tu, _) => (time.clone(), *tu),
             Date => (
-                time.cast(&Datetime(TimeUnit::Milliseconds, None))?,
-                TimeUnit::Milliseconds,
+                time.cast(&Datetime(TimeUnit::Microseconds, None))?,
+                TimeUnit::Microseconds,
             ),
             Int32 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
@@ -308,7 +310,7 @@ impl Wrap<&DataFrame> {
             };
 
         let groups = if group_by.is_none() {
-            let vals = dt.downcast_iter().next().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
             let (groups, lower, upper) = group_by_windows(
                 w,
@@ -319,14 +321,14 @@ impl Wrap<&DataFrame> {
                 include_lower_bound,
                 include_upper_bound,
                 options.start_by,
-            );
+            )?;
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
                 rolling: false,
             })
         } else {
-            let vals = dt.downcast_iter().next().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
 
             let groups = group_by.as_ref().unwrap();
@@ -347,7 +349,7 @@ impl Wrap<&DataFrame> {
                     include_lower_bound,
                     include_upper_bound,
                     options.start_by,
-                );
+                )?;
 
                 PolarsResult::Ok((
                     groups
@@ -381,7 +383,7 @@ impl Wrap<&DataFrame> {
         // upper column remain/are sorted
 
         let dt = unsafe { dt.clone().into_series().agg_first(&groups) };
-        let mut dt = dt.datetime().unwrap().as_ref().clone();
+        let mut dt = dt.datetime().unwrap().physical().clone();
 
         let lower =
             lower_bound.map(|lower| Int64Chunked::new_vec(PlSmallStr::from_static(LB_NAME), lower));
@@ -436,7 +438,7 @@ impl Wrap<&DataFrame> {
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
             let dt = dt.datetime().unwrap();
-            let vals = dt.downcast_iter().next().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
             PolarsResult::Ok(GroupsType::Slice {
                 groups: group_by_values(
@@ -451,7 +453,7 @@ impl Wrap<&DataFrame> {
             })
         } else {
             let dt = dt.datetime().unwrap();
-            let vals = dt.downcast_iter().next().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
 
             let groups = group_by.unwrap();

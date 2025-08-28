@@ -438,13 +438,13 @@ impl Decoder for BooleanDecoder {
                         decode_masked_optional_rle(values, target, &page_validity, &filter)
                     },
                     (Some(Filter::Range(rng)), None) => {
-                        decode_masked_required_rle(values, target, &filter_from_range(rng.clone()))
+                        decode_masked_required_rle(values, target, &filter_from_range(rng))
                     },
                     (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional_rle(
                         values,
                         target,
                         &page_validity,
-                        &filter_from_range(rng.clone()),
+                        &filter_from_range(rng),
                     ),
                     (Some(Filter::Predicate(_)), _) => todo!(),
                 }?;

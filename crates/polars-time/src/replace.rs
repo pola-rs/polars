@@ -16,7 +16,44 @@ pub fn replace_datetime(
     nanosecond: &Int32Chunked,
     ambiguous: &StringChunked,
 ) -> PolarsResult<DatetimeChunked> {
-    let n = ca.len();
+    let n = [
+        ca.len(),
+        year.len(),
+        month.len(),
+        day.len(),
+        hour.len(),
+        minute.len(),
+        second.len(),
+        nanosecond.len(),
+        ambiguous.len(),
+    ]
+    .into_iter()
+    .find(|l| *l != 1)
+    .unwrap_or(1);
+
+    for (i, (name, length)) in [
+        ("self", ca.len()),
+        ("year", year.len()),
+        ("month", month.len()),
+        ("day", day.len()),
+        ("hour", hour.len()),
+        ("minute", minute.len()),
+        ("second", second.len()),
+        ("nanosecond", nanosecond.len()),
+        ("ambiguous", ambiguous.len()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        polars_ensure!(
+            length == n || length == 1,
+            length_mismatch = "dt.replace",
+            length,
+            n,
+            argument = name,
+            argument_idx = i
+        );
+    }
 
     // For each argument, we must check if:
     // 1. No value was supplied (None)       --> Use existing year from Series
@@ -96,13 +133,13 @@ pub fn replace_datetime(
         nanosecond,
         ambiguous,
         &ca.time_unit(),
-        ca.time_zone().as_deref(),
+        ca.time_zone().clone(),
         ca.name().clone(),
     )?;
 
     // Ensure nulls are propagated.
     if ca.has_nulls() {
-        out.merge_validities(ca.chunks());
+        out.physical_mut().merge_validities(ca.physical().chunks());
     }
 
     Ok(out)
@@ -149,7 +186,7 @@ pub fn replace_date(
 
     // Ensure nulls are propagated.
     if ca.has_nulls() {
-        out.merge_validities(ca.chunks());
+        out.physical_mut().merge_validities(ca.physical().chunks());
     }
 
     Ok(out)

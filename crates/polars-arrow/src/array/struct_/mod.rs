@@ -8,8 +8,8 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
-
-use crate::compute::utils::combine_validities_and;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`StructArray`] is a nested [`Array`] with an optional validity representing
 /// multiple [`Array`] with the same number of rows.
@@ -199,21 +199,6 @@ impl StructArray {
         self.length = length;
     }
 
-    /// Set the outer nulls into the inner arrays.
-    pub fn propagate_nulls(&self) -> StructArray {
-        let has_nulls = self.null_count() > 0;
-        let mut out = self.clone();
-        if !has_nulls {
-            return out;
-        };
-
-        for value_arr in &mut out.values {
-            let new_validity = combine_validities_and(self.validity(), value_arr.validity());
-            *value_arr = value_arr.with_validity(new_validity);
-        }
-        out
-    }
-
     impl_sliced!();
 
     impl_mut_validity!();
@@ -224,7 +209,7 @@ impl StructArray {
 // Accessors
 impl StructArray {
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         if cfg!(debug_assertions) {
             for arr in self.values.iter() {
                 assert_eq!(

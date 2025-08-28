@@ -116,7 +116,7 @@ impl MutableBitmap {
     /// Pushes a new bit to the [`MutableBitmap`], re-sizing it if necessary.
     #[inline]
     pub fn push(&mut self, value: bool) {
-        if self.length % 8 == 0 {
+        if self.length.is_multiple_of(8) {
             self.buffer.push(0);
         }
         let byte = unsafe { self.buffer.last_mut().unwrap_unchecked() };
@@ -134,7 +134,7 @@ impl MutableBitmap {
 
         self.length -= 1;
         let value = unsafe { self.get_unchecked(self.length) };
-        if self.length % 8 == 0 {
+        if self.length.is_multiple_of(8) {
             self.buffer.pop();
         }
         Some(value)
@@ -184,11 +184,21 @@ impl MutableBitmap {
     /// It's undefined behavior if index >= self.len().
     #[inline]
     pub unsafe fn and_pos_unchecked(&mut self, index: usize, value: bool) {
-        *self.buffer.get_unchecked_mut(index / 8) &= (value as u8) << (index % 8);
+        *self.buffer.get_unchecked_mut(index / 8) &=
+            (0xFE | u8::from(value)).rotate_left(index as u32);
+    }
+
+    /// Sets the position `index` to the XOR of its original value and `value`.
+    ///
+    /// # Safety
+    /// It's undefined behavior if index >= self.len().
+    #[inline]
+    pub unsafe fn xor_pos_unchecked(&mut self, index: usize, value: bool) {
+        *self.buffer.get_unchecked_mut(index / 8) ^= (value as u8) << (index % 8);
     }
 
     /// constructs a new iterator over the bits of [`MutableBitmap`].
-    pub fn iter(&self) -> BitmapIter {
+    pub fn iter(&self) -> BitmapIter<'_> {
         BitmapIter::new(&self.buffer, 0, self.length)
     }
 
@@ -263,7 +273,7 @@ impl MutableBitmap {
     /// The caller must ensure that the [`MutableBitmap`] has sufficient capacity.
     #[inline]
     pub unsafe fn push_unchecked(&mut self, value: bool) {
-        if self.length % 8 == 0 {
+        if self.length.is_multiple_of(8) {
             self.buffer.push_unchecked(0);
         }
         let byte = self.buffer.last_mut().unwrap_unchecked();
@@ -377,12 +387,12 @@ impl MutableBitmap {
     /// Returns an iterator over bits in bit chunks [`BitChunk`].
     ///
     /// This iterator is useful to operate over multiple bits via e.g. bitwise.
-    pub fn chunks<T: BitChunk>(&self) -> BitChunks<T> {
+    pub fn chunks<T: BitChunk>(&self) -> BitChunks<'_, T> {
         BitChunks::new(&self.buffer, 0, self.length)
     }
 
     /// Returns an iterator over mutable slices, [`BitChunksExactMut`]
-    pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<T> {
+    pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<'_, T> {
         BitChunksExactMut::new(&mut self.buffer, self.length)
     }
 
@@ -560,7 +570,7 @@ unsafe fn extend_aligned_trusted_iter_unchecked(
     assert_eq!(
         additional,
         // a hint of how the following calculation will be done
-        chunks * 8 + remainder / 8 + (remainder % 8 > 0) as usize
+        chunks * 8 + remainder / 8 + !remainder.is_multiple_of(8) as usize
     );
     buffer.reserve(additional);
 
@@ -778,8 +788,8 @@ impl MutableBitmap {
         if length == 0 {
             return;
         };
-        let is_aligned = self.length % 8 == 0;
-        let other_is_aligned = offset % 8 == 0;
+        let is_aligned = self.length.is_multiple_of(8);
+        let other_is_aligned = offset.is_multiple_of(8);
         match (is_aligned, other_is_aligned) {
             (true, true) => self.extend_aligned(slice, offset, length),
             (false, true) => self.extend_unaligned(slice, offset, length),

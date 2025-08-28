@@ -333,7 +333,7 @@ impl CatalogClientBuilder {
                     let mut headers = HeaderMap::new();
 
                     let mut auth_value =
-                        HeaderValue::from_str(format!("Bearer {}", bearer_token).as_str()).unwrap();
+                        HeaderValue::from_str(format!("Bearer {bearer_token}").as_str()).unwrap();
                     auth_value.set_sensitive(true);
 
                     headers.insert(AUTHORIZATION, auth_value);

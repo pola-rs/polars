@@ -21,45 +21,68 @@ pub(crate) enum ExprOrigin {
     /// Utilizes columns from the right side of the join
     Right = 0b01,
     /// Utilizes columns from both sides of the join
+    #[expect(unused)]
     Both = 0b11,
 }
 
 impl ExprOrigin {
     /// Errors with ColumnNotFound if a column cannot be found on either side.
+    ///
+    /// The origin of coalesced join columns will be `Left`, except for right-joins.
+    /// For coalescing right-joins, `is_coalesced_to_right` must be passed to
+    /// properly identify the origin.
     pub(crate) fn get_expr_origin(
         root: Node,
         expr_arena: &Arena<AExpr>,
         left_schema: &Schema,
         right_schema: &Schema,
         suffix: &str,
+        // On a coalescing right-join this needs to be passed to properly identify
+        // the origin of right table columns.
+        is_coalesced_to_right: Option<&dyn Fn(&str) -> bool>,
     ) -> PolarsResult<ExprOrigin> {
         aexpr_to_leaf_names_iter(root, expr_arena).try_fold(
             ExprOrigin::None,
             |acc_origin, column_name| {
                 Ok(acc_origin
-                    | Self::get_column_origin(&column_name, left_schema, right_schema, suffix)?)
+                    | Self::get_column_origin(
+                        &column_name,
+                        left_schema,
+                        right_schema,
+                        suffix,
+                        is_coalesced_to_right,
+                    )?)
             },
         )
     }
 
     /// Errors with ColumnNotFound if a column cannot be found on either side.
+    ///
+    /// The origin of coalesced join columns will be `Left`, except for right-joins.
+    /// For coalescing right-joins, `is_coalesced_to_right` must be passed to
+    /// properly identify the origin.
     pub(crate) fn get_column_origin(
         column_name: &str,
         left_schema: &Schema,
         right_schema: &Schema,
         suffix: &str,
+        is_coalesced_to_right: Option<&dyn Fn(&str) -> bool>,
     ) -> PolarsResult<ExprOrigin> {
-        Ok(if left_schema.contains(column_name) {
-            ExprOrigin::Left
-        } else if right_schema.contains(column_name)
-            || column_name
-                .strip_suffix(suffix)
-                .is_some_and(|x| right_schema.contains(x))
-        {
-            ExprOrigin::Right
-        } else {
-            polars_bail!(ColumnNotFound: "{}", column_name)
-        })
+        Ok(
+            if left_schema.contains(column_name)
+                && !is_coalesced_to_right.is_some_and(|f| f(column_name))
+            {
+                ExprOrigin::Left
+            } else if right_schema.contains(column_name)
+                || column_name
+                    .strip_suffix(suffix)
+                    .is_some_and(|x| right_schema.contains(x))
+            {
+                ExprOrigin::Right
+            } else {
+                polars_bail!(ColumnNotFound: "{}", column_name)
+            },
+        )
     }
 }
 

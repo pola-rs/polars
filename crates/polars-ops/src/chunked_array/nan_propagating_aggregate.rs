@@ -59,11 +59,7 @@ pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
     }
 }
 
-unsafe fn group_nan_max<T>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
-where
-    T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries,
-{
+unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series {
     match groups {
         GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
             debug_assert!(idx.len() <= ca.len());
@@ -110,7 +106,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from(arr).into_series()
+                ChunkedArray::<T>::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -128,11 +124,7 @@ where
     }
 }
 
-unsafe fn group_nan_min<T>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
-where
-    T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries,
-{
+unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series {
     match groups {
         GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
             debug_assert!(idx.len() <= ca.len());
@@ -179,7 +171,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from(arr).into_series()
+                ChunkedArray::<T>::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);

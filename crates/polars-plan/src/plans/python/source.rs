@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
 use polars_utils::python_function::PythonFunction;
-#[cfg(feature = "serde")]
+#[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::dsl::python_dsl::PythonScanSource;

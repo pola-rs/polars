@@ -20,11 +20,12 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     *names
         Name(s) of the columns to use in the aggregation.
     ignore_nulls
-        Ignore null values (default).
 
-        If set to `False`, `Kleene logic`_ is used to deal with nulls:
-        if the column contains any null values and no `False` values,
-        the output is null.
+        * If set to `True` (default), null values are ignored. If there
+          are no non-null values, the output is `True`.
+        * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+          if the column contains any null values and no `False` values,
+          the output is null.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -85,11 +86,12 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     *names
         Name(s) of the columns to use in the aggregation.
     ignore_nulls
-        Ignore null values (default).
 
-        If set to `False`, `Kleene logic`_ is used to deal with nulls:
-        if the column contains any null values and no `True` values,
-        the output is null.
+        * If set to `True` (default), null values are ignored. If there
+          are no non-null values, the output is `False`.
+        * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+          if the column contains any null values and no `True` values,
+          the output is null.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -244,6 +246,13 @@ def sum(*names: str) -> Expr:
     ----------
     *names
         Name(s) of the columns to use in the aggregation.
+
+    Notes
+    -----
+    If there are no non-null values, then the output is `0`.
+    If you would prefer empty sums to return `None`, you can
+    use `pl.when(pl.col(name).count()>0).then(pl.sum(name))` instead
+    of `pl.sum(name)`.
 
     See Also
     --------

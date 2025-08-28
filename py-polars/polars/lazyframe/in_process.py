@@ -6,7 +6,7 @@ from polars._utils.wrap import wrap_df
 
 if TYPE_CHECKING:
     from polars import DataFrame
-    from polars.polars import PyInProcessQuery
+    from polars._plr import PyInProcessQuery
 
 
 class InProcessQuery:

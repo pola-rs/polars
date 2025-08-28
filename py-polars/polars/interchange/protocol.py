@@ -260,6 +260,8 @@ class CopyNotAllowedError(RuntimeError):
 class CompatLevel:
     """Data structure compatibility level."""
 
+    _version: int
+
     def __init__(self) -> None:
         msg = "it is not allowed to create a CompatLevel object"
         raise TypeError(msg)
@@ -267,7 +269,7 @@ class CompatLevel:
     @staticmethod
     def _with_version(version: int) -> CompatLevel:
         compat_level = CompatLevel.__new__(CompatLevel)
-        compat_level._version = version  # type: ignore[attr-defined]
+        compat_level._version = version
         return compat_level
 
     @staticmethod
@@ -284,7 +286,7 @@ class CompatLevel:
             at any point without it being considered a breaking change.
         """
         issue_unstable_warning(
-            "Using the highest compatibility level is considered unstable."
+            "using the highest compatibility level is considered unstable."
         )
         return CompatLevel._newest()
 
@@ -294,7 +296,7 @@ class CompatLevel:
         return CompatLevel._compatible  # type: ignore[attr-defined]
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__module__}.{self.__class__.__qualname__}: {self._version}>"  # type: ignore[attr-defined]
+        return f"<{self.__class__.__module__}.{self.__class__.__qualname__}: {self._version}>"
 
 
 CompatLevel._compatible = CompatLevel._with_version(0)  # type: ignore[attr-defined]

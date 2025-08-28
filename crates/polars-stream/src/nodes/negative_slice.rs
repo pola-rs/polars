@@ -40,7 +40,7 @@ impl NegativeSliceNode {
 
 impl ComputeNode for NegativeSliceNode {
     fn name(&self) -> &str {
-        "negative_slice"
+        "negative-slice"
     }
 
     fn update_state(

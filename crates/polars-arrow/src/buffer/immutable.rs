@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
 
-use bytemuck::Zeroable;
+use bytemuck::{Pod, Zeroable};
 use either::Either;
 
 use super::IntoIter;
@@ -267,6 +267,25 @@ impl<T> Buffer<T> {
     /// increment this after you've checked it's equal to 1.
     pub fn storage_refcount(&self) -> u64 {
         self.storage.refcount()
+    }
+}
+
+impl<T: Pod> Buffer<T> {
+    pub fn try_transmute<U: Pod>(mut self) -> Result<Buffer<U>, Self> {
+        assert_ne!(size_of::<U>(), 0);
+        let ptr = self.ptr as *const U;
+        let length = self.length;
+        match self.storage.try_transmute() {
+            Err(v) => {
+                self.storage = v;
+                Err(self)
+            },
+            Ok(storage) => Ok(Buffer {
+                storage,
+                ptr,
+                length: length.checked_mul(size_of::<T>()).expect("overflow") / size_of::<U>(),
+            }),
+        }
     }
 }
 

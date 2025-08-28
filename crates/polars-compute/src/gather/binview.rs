@@ -5,7 +5,7 @@ use super::*;
 
 /// # Safety
 /// No bound checks
-pub(super) unsafe fn take_binview_unchecked<V: ViewType + ?Sized>(
+pub unsafe fn take_binview_unchecked<V: ViewType + ?Sized>(
     arr: &BinaryViewArrayGeneric<V>,
     indices: &IdxArr,
 ) -> BinaryViewArrayGeneric<V> {

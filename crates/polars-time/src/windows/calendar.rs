@@ -7,6 +7,12 @@ pub(crate) const DAYS_PER_MONTH: [[i64; 12]; 2] = [
 pub(crate) const fn is_leap_year(year: i32) -> bool {
     year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
+
+/// Get the number of days in the given month of the given year
+pub(crate) const fn days_in_month(year: i32, month: u8) -> u8 {
+    DAYS_PER_MONTH[is_leap_year(year) as usize][(month - 1) as usize] as u8
+}
+
 /// nanoseconds per unit
 pub const NS_MICROSECOND: i64 = 1_000;
 pub const NS_MILLISECOND: i64 = 1_000_000;

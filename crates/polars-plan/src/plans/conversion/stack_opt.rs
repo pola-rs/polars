@@ -4,8 +4,9 @@ use self::type_check::TypeCheckRule;
 use super::*;
 
 /// Applies expression simplification and type coercion during conversion to IR.
-pub(super) struct ConversionOptimizer {
-    scratch: Vec<Node>,
+pub struct ConversionOptimizer {
+    scratch: Vec<(Node, usize)>,
+    schemas: Vec<Schema>,
 
     simplify: Option<SimplifyExprRule>,
     coerce: Option<TypeCoercionRule>,
@@ -18,8 +19,19 @@ pub(super) struct ConversionOptimizer {
     pub(super) used_arenas: PlHashSet<u32>,
 }
 
+struct ExtendVec<'a> {
+    out: &'a mut Vec<(Node, usize)>,
+    schema_idx: usize,
+}
+impl Extend<Node> for ExtendVec<'_> {
+    fn extend<T: IntoIterator<Item = Node>>(&mut self, iter: T) {
+        self.out
+            .extend(iter.into_iter().map(|n| (n, self.schema_idx)))
+    }
+}
+
 impl ConversionOptimizer {
-    pub(super) fn new(simplify: bool, type_coercion: bool, type_check: bool) -> Self {
+    pub fn new(simplify: bool, type_coercion: bool, type_check: bool) -> Self {
         let simplify = if simplify {
             Some(SimplifyExprRule {})
         } else {
@@ -40,6 +52,7 @@ impl ConversionOptimizer {
 
         ConversionOptimizer {
             scratch: Vec::with_capacity(8),
+            schemas: Vec::new(),
             simplify,
             coerce,
             check,
@@ -47,14 +60,21 @@ impl ConversionOptimizer {
         }
     }
 
-    pub(super) fn push_scratch(&mut self, expr: Node, expr_arena: &Arena<AExpr>) {
-        self.scratch.push(expr);
+    pub fn push_scratch(&mut self, expr: Node, expr_arena: &Arena<AExpr>) {
+        self.scratch.push((expr, 0));
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
-        expr.inputs_rev(&mut self.scratch);
+        expr.inputs_rev(&mut ExtendVec {
+            out: &mut self.scratch,
+            schema_idx: 0,
+        });
     }
 
-    pub(super) fn fill_scratch<N: Borrow<Node>>(&mut self, exprs: &[N], expr_arena: &Arena<AExpr>) {
+    pub fn fill_scratch<I, N>(&mut self, exprs: I, expr_arena: &Arena<AExpr>)
+    where
+        I: IntoIterator<Item = N>,
+        N: Borrow<Node>,
+    {
         for e in exprs {
             let node = *e.borrow();
             self.push_scratch(node, expr_arena);
@@ -63,11 +83,13 @@ impl ConversionOptimizer {
 
     /// Optimizes the expressions in the scratch space. This should be called after filling the
     /// scratch space with the expressions that you want to optimize.
-    pub(super) fn optimize_exprs(
+    pub fn optimize_exprs(
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         ir_arena: &mut Arena<IR>,
         current_ir_node: Node,
+        // Use the schema of `current_ir_node` instead of its input when resolving expr fields.
+        use_current_node_schema: bool,
     ) -> PolarsResult<()> {
         // Different from the stack-opt in the optimizer phase, this does a single pass until fixed point per expression.
 
@@ -78,23 +100,69 @@ impl ConversionOptimizer {
         }
 
         // process the expressions on the stack and apply optimizations.
-        while let Some(current_expr_node) = self.scratch.pop() {
+        let schema = if use_current_node_schema {
+            ir_arena.get(current_ir_node).schema(ir_arena)
+        } else {
+            get_input_schema(ir_arena, current_ir_node)
+        };
+        let plan = ir_arena.get(current_ir_node);
+        let mut ctx = OptimizeExprContext {
+            in_filter: matches!(plan, IR::Filter { .. }),
+            has_inputs: !get_input(ir_arena, current_ir_node).is_empty(),
+            ..Default::default()
+        };
+        #[cfg(feature = "python")]
+        {
+            use crate::dsl::python_dsl::PythonScanSource;
+            ctx.in_pyarrow_scan = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow);
+            ctx.in_io_plugin = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin);
+        };
+
+        self.schemas.clear();
+        while let Some((current_expr_node, schema_idx)) = self.scratch.pop() {
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
 
             if expr.is_leaf() {
                 continue;
             }
 
+            // Evaluation expressions still need to do rules on the evaluation expression but the
+            // schema is not the same and it is not concluded in the inputs. Therefore, we handl
+            if let AExpr::Eval {
+                expr,
+                evaluation,
+                variant,
+            } = expr
+            {
+                let schema = if schema_idx == 0 {
+                    &schema
+                } else {
+                    &self.schemas[schema_idx - 1]
+                };
+                let expr = expr_arena.get(*expr).get_dtype(schema, expr_arena)?;
+
+                let element_dtype = variant.element_dtype(&expr)?;
+                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+                self.schemas.push(schema);
+                self.scratch.push((*evaluation, self.schemas.len()));
+            }
+
+            let schema = if schema_idx == 0 {
+                &schema
+            } else {
+                &self.schemas[schema_idx - 1]
+            };
+
             if let Some(rule) = &mut self.simplify {
                 while let Some(x) =
-                    rule.optimize_expr(expr_arena, current_expr_node, ir_arena, current_ir_node)?
+                    rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
                 {
                     expr_arena.replace(current_expr_node, x);
                 }
             }
             if let Some(rule) = &mut self.coerce {
                 while let Some(x) =
-                    rule.optimize_expr(expr_arena, current_expr_node, ir_arena, current_ir_node)?
+                    rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
                 {
                     expr_arena.replace(current_expr_node, x);
                 }
@@ -102,7 +170,10 @@ impl ConversionOptimizer {
 
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
             // traverse subexpressions and add to the stack
-            expr.inputs_rev(&mut self.scratch)
+            expr.inputs_rev(&mut ExtendVec {
+                out: &mut self.scratch,
+                schema_idx,
+            });
         }
 
         Ok(())

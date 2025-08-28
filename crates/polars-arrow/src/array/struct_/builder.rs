@@ -86,6 +86,22 @@ impl StaticArrayBuilder for StructArrayBuilder {
         self.length += length.min(other.len().saturating_sub(start));
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &StructArray,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        for (builder, other_values) in self.inner_builders.iter_mut().zip(other.values()) {
+            builder.subslice_extend_each_repeated(&**other_values, start, length, repeats, share);
+        }
+        self.validity
+            .subslice_extend_from_opt_validity(other.validity(), start, length);
+        self.length += length.min(other.len().saturating_sub(start)) * repeats;
+    }
+
     unsafe fn gather_extend(
         &mut self,
         other: &StructArray,

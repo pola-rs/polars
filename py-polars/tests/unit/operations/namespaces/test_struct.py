@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
-    OutOfBoundsError,
+    ColumnNotFoundError,
 )
 from polars.testing import assert_frame_equal
 
@@ -106,7 +106,7 @@ def test_field_by_index_18732() -> None:
     df = pl.DataFrame({"foo": [{"a": 1, "b": 2}, {"a": 2, "b": 1}]})
 
     # illegal upper bound
-    with pytest.raises(OutOfBoundsError, match=r"index 2 for length: 2"):
+    with pytest.raises(ColumnNotFoundError):
         df.filter(pl.col.foo.struct[2] == 1)
 
     # legal

@@ -256,7 +256,7 @@ mod tests {
     #[ignore = "Fuzz test. Too slow"]
     #[test]
     fn leading_trailing_fuzz() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         const SIZE: usize = 1000;
         const REPEATS: usize = 10_000;
@@ -265,16 +265,16 @@ mod tests {
 
         for _ in 0..REPEATS {
             v.clear();
-            let offset = rng.gen_range(0..SIZE);
-            let length = rng.gen_range(0..SIZE - offset);
-            let extra_padding = rng.gen_range(0..64);
+            let offset = rng.random_range(0..SIZE);
+            let length = rng.random_range(0..SIZE - offset);
+            let extra_padding = rng.random_range(0..64);
 
             let mut num_remaining = usize::min(SIZE, offset + length + extra_padding);
             while num_remaining > 0 {
-                let chunk_size = rng.gen_range(1..=num_remaining);
+                let chunk_size = rng.random_range(1..=num_remaining);
                 v.extend(
                     rng.clone()
-                        .sample_iter(rand::distributions::Slice::new(&[false, true]).unwrap())
+                        .sample_iter(rand::distr::slice::Choose::new(&[false, true]).unwrap())
                         .take(chunk_size),
                 );
                 num_remaining -= chunk_size;

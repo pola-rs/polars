@@ -22,7 +22,7 @@ use crate::record_batch::RecordBatchT;
 fn read_message(
     mut bytes: &[u8],
     block: arrow_format::ipc::Block,
-) -> PolarsResult<(MessageRef, usize)> {
+) -> PolarsResult<(MessageRef<'_>, usize)> {
     let offset: usize = block.offset.try_into().map_err(
         |_err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
     )?;
@@ -195,7 +195,7 @@ pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]>>(
 
     let chunk = mmap_record(
         &std::iter::once((field.name.clone(), field)).collect(),
-        &[first_ipc_field.clone()],
+        std::slice::from_ref(first_ipc_field),
         data.clone(),
         batch,
         offset,

@@ -15,7 +15,7 @@ impl FunctionIR {
                 let mut guard = schema.lock().unwrap();
                 *guard = None;
             },
-            RowIndex { schema, .. } | Explode { schema, .. } | Rename { schema, .. } => {
+            RowIndex { schema, .. } | Explode { schema, .. } => {
                 let mut guard = schema.lock().unwrap();
                 *guard = None;
             },
@@ -41,7 +41,6 @@ impl FunctionIR {
                 .as_ref()
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
-            Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
             FastCount { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
                 let name = alias.clone().unwrap_or_else(get_len_name);
@@ -83,12 +82,6 @@ impl FunctionIR {
                     panic!("activate feature 'dtype-struct'")
                 }
             },
-            Rename {
-                existing,
-                new,
-                schema,
-                ..
-            } => rename_schema(input_schema, existing, new, schema),
             RowIndex { schema, name, .. } => Ok(Cow::Owned(row_index_schema(
                 schema,
                 input_schema,
@@ -196,30 +189,6 @@ fn unpivot_schema<'a>(
     }
     new_schema.with_column(value_name, supertype);
     let schema = Arc::new(new_schema);
-    *guard = Some(schema.clone());
-    Ok(Cow::Owned(schema))
-}
-
-fn rename_schema<'a>(
-    input_schema: &'a SchemaRef,
-    existing: &[PlSmallStr],
-    new: &[PlSmallStr],
-    cached_schema: &CachedSchema,
-) -> PolarsResult<Cow<'a, SchemaRef>> {
-    let mut guard = cached_schema.lock().unwrap();
-    if let Some(schema) = &*guard {
-        return Ok(Cow::Owned(schema.clone()));
-    }
-    let mut new_schema = input_schema.iter_fields().collect::<Vec<_>>();
-
-    for (old, new) in existing.iter().zip(new.iter()) {
-        // The column might be removed due to projection pushdown
-        // so we only update if we can find it.
-        if let Some((idx, _, _)) = input_schema.get_full(old) {
-            new_schema[idx].name = new.as_str().into();
-        }
-    }
-    let schema: SchemaRef = Arc::new(new_schema.into_iter().collect());
     *guard = Some(schema.clone());
     Ok(Cow::Owned(schema))
 }

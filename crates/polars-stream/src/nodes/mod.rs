@@ -1,3 +1,6 @@
+#[cfg(feature = "cum_agg")]
+pub mod cum_agg;
+pub mod dynamic_slice;
 pub mod filter;
 pub mod group_by;
 pub mod in_memory_map;
@@ -13,10 +16,16 @@ pub mod merge_sorted;
 pub mod multiplexer;
 pub mod negative_slice;
 pub mod ordered_union;
+pub mod peak_minmax;
 pub mod reduce;
+pub mod repeat;
+pub mod rle;
+pub mod rle_id;
 pub mod select;
+pub mod shift;
 pub mod simple_projection;
 pub mod streaming_slice;
+pub mod top_k;
 pub mod with_row_index;
 pub mod zip;
 
@@ -36,8 +45,6 @@ mod compute_node_prelude {
 
 use compute_node_prelude::*;
 
-use self::io_sources::PhaseOutcomeToken;
-use crate::async_primitives::wait_group::WaitToken;
 use crate::execute::StreamingExecutionState;
 
 pub trait ComputeNode: Send {
@@ -83,36 +90,5 @@ pub trait ComputeNode: Send {
     /// in-memory nodes.
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
         Ok(None)
-    }
-}
-
-/// The outcome of a phase in a task.
-///
-/// This indicates whether a task finished (and does not need to be started again) or has stopped
-/// prematurely. When this is dropped without calling `stop`, it is assumed that the task is
-/// finished (most likely because it errored).
-pub struct PhaseOutcome {
-    // This is used to see when phase is finished.
-    #[expect(unused)]
-    consume_token: WaitToken,
-
-    outcome_token: PhaseOutcomeToken,
-}
-
-impl PhaseOutcome {
-    pub fn new_shared_wait(consume_token: WaitToken) -> (PhaseOutcomeToken, Self) {
-        let outcome_token = PhaseOutcomeToken::new();
-        (
-            outcome_token.clone(),
-            Self {
-                consume_token,
-                outcome_token,
-            },
-        )
-    }
-
-    /// Phase ended before the task finished and needs to be called again.
-    pub fn stopped(self) {
-        self.outcome_token.stop();
     }
 }

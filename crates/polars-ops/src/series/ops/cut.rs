@@ -1,4 +1,5 @@
 use polars_compute::rolling::QuantileMethod;
+use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
 use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 
@@ -11,12 +12,6 @@ fn map_cats(
 ) -> PolarsResult<Series> {
     let out_name = PlSmallStr::from_static("category");
 
-    // Create new categorical and pre-register labels for consistent categorical indexes.
-    let mut bld = CategoricalChunkedBuilder::new(out_name.clone(), s.len(), Default::default());
-    for label in labels {
-        bld.register_value(label);
-    }
-
     let s2 = s.cast(&DataType::Float64)?;
     // It would be nice to parallelize this
     let s_iter = s2.f64()?.into_iter();
@@ -27,25 +22,23 @@ fn map_cats(
         PartialOrd::gt
     };
 
-    // Ensure fast unique is only set if all labels were seen.
-    let mut label_has_value = vec![false; 1 + sorted_breaks.len()];
-
     if include_breaks {
         // This is to replicate the behavior of the old buggy version that only worked on series and
         // returned a dataframe. That included a column of the right endpoint of the interval. So we
         // return a struct series instead which can be turned into a dataframe later.
         let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
+        let mut bld = CategoricalChunkedBuilder::<Categorical32Type>::new(
+            out_name.clone(),
+            DataType::from_categories(Categories::global()),
+        );
         let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new(
             PlSmallStr::from_static("breakpoint"),
             s.len(),
         );
         s_iter
             .map(|opt| {
-                opt.filter(|x| !x.is_nan()).map(|x| {
-                    let pt = sorted_breaks.partition_point(|v| op(&x, v));
-                    unsafe { *label_has_value.get_unchecked_mut(pt) = true };
-                    pt
-                })
+                opt.filter(|x| !x.is_nan())
+                    .map(|x| sorted_breaks.partition_point(|v| op(&x, v)))
             })
             .for_each(|idx| match idx {
                 None => {
@@ -53,28 +46,24 @@ fn map_cats(
                     brk_vals.append_null();
                 },
                 Some(idx) => unsafe {
-                    bld.append_value(labels.get_unchecked(idx));
+                    bld.append_str(labels.get_unchecked(idx)).unwrap();
                     brk_vals.append_value(*right_ends.get_unchecked(idx));
                 },
             });
 
-        let outvals = [brk_vals.finish().into_series(), unsafe {
-            bld.finish()
-                ._with_fast_unique(label_has_value.iter().all(bool::clone))
-                .into_series()
-        }];
+        let outvals = [brk_vals.finish().into_series(), bld.finish().into_series()];
         Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
     } else {
-        Ok(unsafe {
-            bld.drain_iter_and_finish(s_iter.map(|opt| {
+        Ok(CategoricalChunked::<Categorical32Type>::from_str_iter(
+            out_name,
+            DataType::from_categories(Categories::global()),
+            s_iter.map(|opt| {
                 opt.filter(|x| !x.is_nan()).map(|x| {
                     let pt = sorted_breaks.partition_point(|v| op(&x, v));
-                    *label_has_value.get_unchecked_mut(pt) = true;
-                    labels.get_unchecked(pt).as_str()
+                    unsafe { labels.get_unchecked(pt).as_str() }
                 })
-            }))
-            ._with_fast_unique(label_has_value.iter().all(bool::clone))
-        }
+            }),
+        )?
         .into_series())
     }
 }
@@ -137,7 +126,7 @@ pub fn qcut(
         return Ok(Series::full_null(
             s.name().clone(),
             s.len(),
-            &DataType::Categorical(None, Default::default()),
+            &DataType::from_categories(Categories::global()),
         ));
     }
 
@@ -182,13 +171,11 @@ mod test {
 
         let include_breaks = false;
         let out = map_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
-        let out = out.categorical().unwrap();
-        assert!(out._can_fast_unique());
+        out.cat32().unwrap();
 
         let include_breaks = true;
         let out = map_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
         let out = out.struct_().unwrap().fields_as_series()[1].clone();
-        let out = out.categorical().unwrap();
-        assert!(out._can_fast_unique());
+        out.cat32().unwrap();
     }
 }

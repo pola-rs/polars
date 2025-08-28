@@ -1,11 +1,10 @@
 #![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-
 use polars_utils::idx_map::total_idx_map::{Entry, TotalIndexMap};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use polars_utils::unitvec;
 
@@ -15,10 +14,10 @@ use crate::hash_keys::HashKeys;
 pub struct SingleKeyIdxTable<T: PolarsDataType> {
     // These AtomicU64s actually are IdxSizes, but we use the top bit of the
     // first index in each to mark keys during probing.
-    idx_map: TotalIndexMap<T::Physical<'static>, UnitVec<AtomicU64>>,
+    idx_map: TotalIndexMap<T::Physical<'static>, UnitVec<RelaxedCell<u64>>>,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
-    nulls_emitted: AtomicBool,
+    nulls_emitted: RelaxedCell<bool>,
 }
 
 impl<T: PolarsDataType> SingleKeyIdxTable<T> {
@@ -27,7 +26,7 @@ impl<T: PolarsDataType> SingleKeyIdxTable<T> {
             idx_map: TotalIndexMap::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
-            nulls_emitted: AtomicBool::new(false),
+            nulls_emitted: RelaxedCell::from(false),
         }
     }
 }
@@ -48,7 +47,7 @@ where
         if let Some(idxs) = self.idx_map.get(key) {
             for idx in &idxs[..] {
                 // Create matches, making sure to clear top bit.
-                table_match.push((idx.load(Ordering::Relaxed) & !(1 << 63)) as IdxSize);
+                table_match.push((idx.load() & !(1 << 63)) as IdxSize);
                 probe_match.push(key_idx);
             }
 
@@ -56,9 +55,9 @@ where
             // atomic fetch_or to do it atomically.
             if MARK_MATCHES {
                 let first_idx = unsafe { idxs.get_unchecked(0) };
-                let first_idx_val = first_idx.load(Ordering::Relaxed);
+                let first_idx_val = first_idx.load();
                 if first_idx_val >> 63 == 0 {
-                    first_idx.store(first_idx_val | (1 << 63), Ordering::Relaxed);
+                    first_idx.store(first_idx_val | (1 << 63));
                 }
             }
             true
@@ -87,8 +86,8 @@ where
                     table_match.push(*idx);
                     probe_match.push(key_idx);
                 }
-                if MARK_MATCHES && !self.nulls_emitted.load(Ordering::Relaxed) {
-                    self.nulls_emitted.store(true, Ordering::Relaxed);
+                if MARK_MATCHES && !self.nulls_emitted.load() {
+                    self.nulls_emitted.store(true);
                 }
                 !self.null_keys.is_empty()
             } else {
@@ -194,10 +193,10 @@ where
             if let Some(key) = key {
                 match self.idx_map.entry(key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(AtomicU64::new(idx as u64));
+                        o.into_mut().push(RelaxedCell::from(idx as u64));
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![AtomicU64::new(idx as u64)]);
+                        v.insert(unitvec![RelaxedCell::from(idx as u64)]);
                     },
                 }
             } else if track_unmatchable | hash_keys.null_is_valid {
@@ -272,7 +271,7 @@ where
         out.clear();
 
         let mut keys_processed = 0;
-        if !self.nulls_emitted.load(Ordering::Relaxed) {
+        if !self.nulls_emitted.load() {
             if (offset as usize) < self.null_keys.len() {
                 out.extend(
                     self.null_keys[offset as usize..]
@@ -291,10 +290,10 @@ where
 
         while let Some((_, idxs)) = self.idx_map.get_index(offset) {
             let first_idx = unsafe { idxs.get_unchecked(0) };
-            let first_idx_val = first_idx.load(Ordering::Relaxed);
+            let first_idx_val = first_idx.load();
             if first_idx_val >> 63 == 0 {
                 for idx in &idxs[..] {
-                    out.push((idx.load(Ordering::Relaxed) & !(1 << 63)) as IdxSize);
+                    out.push((idx.load() & !(1 << 63)) as IdxSize);
                 }
             }
 

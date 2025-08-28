@@ -12,6 +12,7 @@ struct Key {
 }
 
 /// An IndexMap where the keys are [u8] slices or `View`s which are pre-hashed.
+/// Does not support deletion.
 pub struct BinaryViewIndexMap<V> {
     table: HashTable<IdxSize>,
     tuples: Vec<(Key, V)>,
@@ -47,11 +48,15 @@ impl<V> BinaryViewIndexMap<V> {
     }
 
     pub fn len(&self) -> IdxSize {
-        self.table.len() as IdxSize
+        self.tuples.len() as IdxSize
     }
 
     pub fn is_empty(&self) -> bool {
-        self.table.is_empty()
+        self.tuples.is_empty()
+    }
+
+    pub fn buffers(&self) -> &[Vec<u8>] {
+        &self.buffers
     }
 
     #[inline]
@@ -206,6 +211,19 @@ impl<V> BinaryViewIndexMap<V> {
         }
     }
 
+    /// Insert an empty entry which will never be mapped to. Returns the index of the entry.
+    ///
+    /// This is useful for entries which are handled externally.
+    pub fn push_unmapped_empty_entry(&mut self, value: V) -> IdxSize {
+        let ret = self.tuples.len() as IdxSize;
+        let key = Key {
+            hash: 0,
+            view: View::default(),
+        };
+        self.tuples.push((key, value));
+        ret
+    }
+
     /// Gets the hash, key and value at the given index by insertion order.
     #[inline(always)]
     pub fn get_index(&self, idx: IdxSize) -> Option<(u64, &[u8], &V)> {
@@ -227,11 +245,26 @@ impl<V> BinaryViewIndexMap<V> {
         unsafe { (t.0.hash, t.0.view.get_slice_unchecked(&self.buffers), &t.1) }
     }
 
+    /// Gets the hash, view and value at the given index by insertion order.
+    ///
+    /// # Safety
+    /// The index must be less than len().
+    #[inline(always)]
+    pub unsafe fn get_index_view_unchecked(&self, idx: IdxSize) -> (u64, View, &V) {
+        let t = unsafe { self.tuples.get_unchecked(idx as usize) };
+        (t.0.hash, t.0.view, &t.1)
+    }
+
     /// Iterates over the (hash, key) pairs in insertion order.
     pub fn iter_hash_keys(&self) -> impl Iterator<Item = (u64, &[u8])> {
         self.tuples
             .iter()
             .map(|t| unsafe { (t.0.hash, t.0.view.get_slice_unchecked(&self.buffers)) })
+    }
+
+    /// Iterates over the (hash, key_view) pairs in insertion order.
+    pub fn iter_hash_views(&self) -> impl Iterator<Item = (u64, View)> {
+        self.tuples.iter().map(|t| (t.0.hash, t.0.view))
     }
 
     /// Iterates over the values in insertion order.

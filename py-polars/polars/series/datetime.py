@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     import datetime as dt
+    import sys
     from collections.abc import Iterable
 
-    from polars import Expr, Series
+    from polars import Series
+    from polars._plr import PySeries
     from polars._typing import (
         Ambiguous,
         EpochTimeUnit,
@@ -21,7 +24,11 @@ if TYPE_CHECKING:
         TemporalLiteral,
         TimeUnit,
     )
-    from polars.polars import PySeries
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 @expr_dispatch
@@ -37,6 +44,8 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         return s[item]
 
+    @unstable()
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.27.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
@@ -46,6 +55,13 @@ class DateTimeNameSpace:
     ) -> Series:
         """
         Offset by `n` business days.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.27.0
+            Parameters after `n` should now be passed as keyword arguments.
 
         Parameters
         ----------
@@ -68,7 +84,7 @@ class DateTimeNameSpace:
 
                 my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
 
-            and pass `holidays=my_holidays` when you call `business_day_count`.
+            and pass `holidays=my_holidays` when you call `add_business_days`.
         roll
             What to do when the start date lands on a non-business day. Options are:
 
@@ -154,13 +170,13 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    @deprecate_function("Use `Series.median` instead.", version="1.0.0")
+    @deprecated("`Series.dt.median` is deprecated; use `Series.median` instead.")
     def median(self) -> TemporalLiteral | None:
         """
         Return median as python DateTime.
 
         .. deprecated:: 1.0.0
-            Use `Series.median` instead.
+            Use the `Series.median` method instead.
 
         Examples
         --------
@@ -184,13 +200,13 @@ class DateTimeNameSpace:
         """
         return self._s.median()
 
-    @deprecate_function("Use `Series.mean` instead.", version="1.0.0")
+    @deprecated("`Series.dt.mean` is deprecated; use `Series.mean` instead.")
     def mean(self) -> TemporalLiteral | None:
         """
         Return mean as python DateTime.
 
         .. deprecated:: 1.0.0
-            Use `Series.mean` instead.
+            Use the `Series.mean` method instead.
 
         Examples
         --------
@@ -474,6 +490,81 @@ class DateTimeNameSpace:
         ]
         """
 
+    @unstable()
+    def is_business_day(
+        self,
+        *,
+        week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
+        holidays: Iterable[dt.date] = (),
+    ) -> Series:
+        """
+        Determine whether each day lands on a business day.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        week_mask
+            Which days of the week to count. The default is Monday to Friday.
+            If you wanted to count only Monday to Thursday, you would pass
+            `(True, True, True, True, False, False, False)`.
+        holidays
+            Holidays to exclude from the count. The Python package
+            `python-holidays <https://github.com/vacanza/python-holidays>`_
+            may come in handy here. You can install it with ``pip install holidays``,
+            and then, to get all Dutch holidays for years 2020-2024:
+
+            .. code-block:: python
+
+                import holidays
+
+                my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
+
+            and pass `holidays=my_holidays` when you call `is_business_day`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series([date(2020, 1, 3), date(2020, 1, 5)])
+        >>> s.dt.is_business_day()
+        shape: (2,)
+        Series: '' [bool]
+        [
+            true
+            false
+        ]
+
+        You can pass a custom weekend - for example, if you only take Sunday off:
+
+        >>> week_mask = (True, True, True, True, True, True, False)
+        >>> s.dt.is_business_day(week_mask=week_mask)
+        shape: (2,)
+        Series: '' [bool]
+        [
+            true
+            false
+        ]
+
+        You can also pass a list of holidays:
+
+        >>> from datetime import date
+        >>> holidays = [date(2020, 1, 3), date(2020, 1, 6)]
+        >>> s.dt.is_business_day(holidays=holidays)
+        shape: (2,)
+        Series: '' [bool]
+        [
+            false
+            false
+        ]
+        """
+
     def is_leap_year(self) -> Series:
         """
         Determine whether the year of the underlying date representation is a leap year.
@@ -585,6 +676,41 @@ class DateTimeNameSpace:
                 2
                 3
                 4
+        ]
+        """
+
+    def days_in_month(self) -> Series:
+        """
+        Extract the number of days in the month from the underlying date representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the number of days in the month.
+        The return value ranges from 28 to 31.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Int8`.
+
+        See Also
+        --------
+        month
+        is_leap_year
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "date", [date(2001, 1, 1), date(2001, 2, 1), date(2000, 2, 1)]
+        ... )
+        >>> s.dt.days_in_month()
+        shape: (3,)
+        Series: 'date' [i8]
+        [
+                31
+                28
+                29
         ]
         """
 
@@ -776,7 +902,10 @@ class DateTimeNameSpace:
         ]
         """
 
-    @deprecate_function("Use `dt.replace_time_zone(None)` instead.", version="0.20.4")
+    @deprecated(
+        "`Series.dt.datetime` is deprecated; "
+        "use `Series.dt.replace_time_zone(None)` instead."
+    )
     def datetime(self) -> Series:
         """
         Extract (local) datetime.
@@ -1621,7 +1750,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def offset_by(self, by: str | Expr) -> Series:
+    def offset_by(self, by: str | IntoExprColumn) -> Series:
         """
         Offset this date by a relative time offset.
 
@@ -1702,16 +1831,20 @@ class DateTimeNameSpace:
         Divide the date/ datetime range into buckets.
 
         Each date/datetime is mapped to the start of its bucket using the corresponding
-        local datetime. Note that weekly buckets start on Monday.
-        Ambiguous results are localised using the DST offset of the original timestamp -
-        for example, truncating `'2022-11-06 01:30:00 CST'` by `'1h'` results in
-        `'2022-11-06 01:00:00 CST'`, whereas truncating `'2022-11-06 01:30:00 CDT'` by
-        `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
+        local datetime. Note that:
+
+        - Weekly buckets start on Monday.
+        - All other buckets start on the Unix epoch (1970-01-01).
+        - Ambiguous results are localised using the DST offset of the original
+          timestamp - for example, truncating `'2022-11-06 01:30:00 CST'` by
+          `'1h'` results in `'2022-11-06 01:00:00 CST'`, whereas truncating
+          `'2022-11-06 01:30:00 CDT'` by `'1h'` results in
+          `'2022-11-06 01:00:00 CDT'`.
 
         Parameters
         ----------
         every
-            Every interval start and period length
+            The size of each bucket.
 
         Notes
         -----
@@ -1729,10 +1862,6 @@ class DateTimeNameSpace:
         - 1mo   (1 calendar month)
         - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
-
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -1851,10 +1980,6 @@ class DateTimeNameSpace:
         - 1mo   (1 calendar month)
         - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
-
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",

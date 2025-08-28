@@ -155,3 +155,14 @@ def test_clip_decimal() -> None:
     result = ser.clip(upper_bound=Decimal("2.5"))
     expected = pl.Series("a", ["1.1", "2.2", "2.5"], pl.Decimal(21, 1))
     assert_series_equal(result, expected)
+
+
+def test_clip_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2, 3]).clip(lower_bound=pl.Series([1, 2]))
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2, 3]).clip(upper_bound=pl.Series([1, 2]))
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2, 3]).clip(pl.Series([1, 2]), pl.Series([1, 2, 3]))
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2, 3]).clip(pl.Series([1, 2, 3]), pl.Series([1, 2]))

@@ -3,7 +3,6 @@ use chrono::{Datelike, NaiveDateTime, NaiveTime};
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_utils::format_pl_smallstr;
 
 use crate::prelude::*;
 
@@ -55,11 +54,11 @@ pub fn datetime_range_impl(
     );
     let mut out = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => out.into_datetime(tu, Some(format_pl_smallstr!("{}", tz))),
+        Some(tz) => out.into_datetime(tu, Some(TimeZone::from_chrono(tz))),
         _ => out.into_datetime(tu, None),
     };
 
-    out.set_sorted_flag(IsSorted::Ascending);
+    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 
@@ -90,7 +89,7 @@ pub fn time_range_impl(
     )
     .into_time();
 
-    out.set_sorted_flag(IsSorted::Ascending);
+    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 
@@ -116,12 +115,13 @@ pub(crate) fn datetime_range_i64(
         TimeUnit::Microseconds => interval.duration_us(),
         TimeUnit::Milliseconds => interval.duration_ms(),
     };
-    let time_zone_opt_string: Option<String> = match time_zone {
+    let time_zone_opt: Option<TimeZone> = match time_zone {
         #[cfg(feature = "timezones")]
-        Some(tz) => Some(tz.to_string()),
+        Some(tz) => Some(TimeZone::from_chrono(tz)),
         _ => None,
     };
-    if interval.is_constant_duration(time_zone_opt_string.as_deref()) {
+
+    if interval.is_constant_duration(time_zone_opt.as_ref()) {
         // Fast path!
         let step: usize = duration.try_into().map_err(
             |_err| polars_err!(ComputeError: "Could not convert {:?} to usize", duration),

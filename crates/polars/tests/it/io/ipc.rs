@@ -132,7 +132,7 @@ fn test_write_with_compression() {
 
         let df_read = IpcReader::new(buf)
             .finish()
-            .unwrap_or_else(|_| panic!("IPC reader: {:?}", compression));
+            .unwrap_or_else(|_| panic!("IPC reader: {compression:?}"));
         assert!(df.equals(&df_read));
     }
 }

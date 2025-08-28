@@ -11,6 +11,7 @@ use crate::shared::schema_to_arrow_checked;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct IpcWriterOptions {
     /// Data page compression
     pub compression: Option<IpcCompression>,
@@ -197,6 +198,7 @@ impl<W: Write> BatchedWriter<W> {
 /// Compression codec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IpcCompression {
     /// LZ4 (framed)
     LZ4,

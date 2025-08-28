@@ -2,11 +2,11 @@
 use std::hash::BuildHasher;
 
 use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
+use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
-use polars_core::error::polars_err;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
-use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType};
+use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
 use polars_core::series::Series;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -29,7 +29,7 @@ pub fn hash_keys_variant_for_dtype(dt: &DataType) -> HashKeysVariant {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => HashKeysVariant::Single,
         #[cfg(feature = "dtype-categorical")]
-        DataType::Enum(_, _) => HashKeysVariant::Single,
+        DataType::Enum(_, _) | DataType::Categorical(_, _) => HashKeysVariant::Single,
 
         DataType::String | DataType::Binary => HashKeysVariant::Binview,
 
@@ -65,18 +65,24 @@ macro_rules! downcast_single_key_ca {
             DataType::Float64 => { let $ca = $self.f64().unwrap(); $($body)* },
 
             #[cfg(feature = "dtype-date")]
-            DataType::Date => { let $ca = $self.date().unwrap(); $($body)* },
+            DataType::Date => { let $ca = $self.date().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-time")]
-            DataType::Time => { let $ca = $self.time().unwrap(); $($body)* },
+            DataType::Time => { let $ca = $self.time().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(..) => { let $ca = $self.datetime().unwrap(); $($body)* },
+            DataType::Datetime(..) => { let $ca = $self.datetime().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(..) => { let $ca = $self.duration().unwrap(); $($body)* },
+            DataType::Duration(..) => { let $ca = $self.duration().unwrap().physical(); $($body)* },
 
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(..) => { let $ca = $self.decimal().unwrap(); $($body)* },
+            DataType::Decimal(..) => { let $ca = $self.decimal().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(..) => { let $ca = $self.categorical().unwrap().physical(); $($body)* },
+            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+                match dt.cat_physical().unwrap() {
+                    CategoricalPhysical::U8 => { let $ca = $self.cat8().unwrap().physical(); $($body)* },
+                    CategoricalPhysical::U16 => { let $ca = $self.cat16().unwrap().physical(); $($body)* },
+                    CategoricalPhysical::U32 => { let $ca = $self.cat32().unwrap().physical(); $($body)* },
+                }
+            },
 
             _ => unreachable!(),
         }
@@ -107,16 +113,6 @@ impl HashKeys {
             || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.get_columns();
-            #[cfg(feature = "dtype-categorical")]
-            for key in keys {
-                if let DataType::Categorical(Some(rev_map), _) = key.dtype() {
-                    assert!(
-                        rev_map.is_active_global(),
-                        "{}",
-                        polars_err!(string_cache_mismatch)
-                    );
-                }
-            }
             let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
 
             if !null_is_valid {
@@ -166,7 +162,7 @@ impl HashKeys {
         } else {
             Self::Single(SingleKeys {
                 random_state,
-                keys: df[0].as_materialized_series().clone(),
+                keys: df[0].as_materialized_series().rechunk(),
                 null_is_valid,
             })
         }
@@ -184,6 +180,54 @@ impl HashKeys {
         self.len() == 0
     }
 
+    pub fn validity(&self) -> Option<&Bitmap> {
+        match self {
+            HashKeys::RowEncoded(s) => s.keys.validity(),
+            HashKeys::Single(s) => s.keys.chunks()[0].validity(),
+            HashKeys::Binview(s) => s.keys.validity(),
+        }
+    }
+
+    pub fn null_is_valid(&self) -> bool {
+        match self {
+            HashKeys::RowEncoded(_) => false,
+            HashKeys::Single(s) => s.null_is_valid,
+            HashKeys::Binview(s) => s.null_is_valid,
+        }
+    }
+
+    /// Calls f with the index of and hash of each element in this HashKeys.
+    ///
+    /// If the element is null and null_is_valid is false the respective hash
+    /// will be None.
+    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
+        match self {
+            HashKeys::RowEncoded(s) => s.for_each_hash(f),
+            HashKeys::Single(s) => s.for_each_hash(f),
+            HashKeys::Binview(s) => s.for_each_hash(f),
+        }
+    }
+
+    /// Calls f with the index of and hash of each element in the given
+    /// subset of indices of the HashKeys.
+    ///
+    /// If the element is null and null_is_valid is false the respective hash
+    /// will be None.
+    ///
+    /// # Safety
+    /// The indices in the subset must be in-bounds.
+    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
+        &self,
+        subset: &[IdxSize],
+        f: F,
+    ) {
+        match self {
+            HashKeys::RowEncoded(s) => s.for_each_hash_subset(subset, f),
+            HashKeys::Single(s) => s.for_each_hash_subset(subset, f),
+            HashKeys::Binview(s) => s.for_each_hash_subset(subset, f),
+        }
+    }
+
     /// After this call partitions will be extended with the partition for each
     /// hash. Nulls are assigned IdxSize::MAX or a specific partition depending
     /// on whether partition_nulls is true.
@@ -193,10 +237,20 @@ impl HashKeys {
         partitions: &mut Vec<IdxSize>,
         partition_nulls: bool,
     ) {
-        match self {
-            Self::RowEncoded(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
-            Self::Single(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
-            Self::Binview(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
+        unsafe {
+            let null_p = if partition_nulls | self.null_is_valid() {
+                partitioner.null_partition() as IdxSize
+            } else {
+                IdxSize::MAX
+            };
+            partitions.reserve(self.len());
+            self.for_each_hash(|_idx, opt_h| {
+                partitions.push_unchecked(
+                    opt_h
+                        .map(|h| partitioner.hash_to_partition(h) as IdxSize)
+                        .unwrap_or(null_p),
+                );
+            });
         }
     }
 
@@ -211,55 +265,64 @@ impl HashKeys {
         partition_nulls: bool,
     ) {
         if sketches.is_empty() {
-            match self {
-                Self::RowEncoded(s) => s.gen_idxs_per_partition::<false>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-                Self::Single(s) => s.gen_idxs_per_partition::<false>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-                Self::Binview(s) => s.gen_idxs_per_partition::<false>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-            }
+            self.gen_idxs_per_partition_impl::<false>(
+                partitioner,
+                partition_idxs,
+                sketches,
+                partition_nulls | self.null_is_valid(),
+            );
         } else {
-            match self {
-                Self::RowEncoded(s) => s.gen_idxs_per_partition::<true>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-                Self::Single(s) => s.gen_idxs_per_partition::<true>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-                Self::Binview(s) => s.gen_idxs_per_partition::<true>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-            }
+            self.gen_idxs_per_partition_impl::<true>(
+                partitioner,
+                partition_idxs,
+                sketches,
+                partition_nulls | self.null_is_valid(),
+            );
         }
     }
 
+    fn gen_idxs_per_partition_impl<const BUILD_SKETCHES: bool>(
+        &self,
+        partitioner: &HashPartitioner,
+        partition_idxs: &mut [Vec<IdxSize>],
+        sketches: &mut [CardinalitySketch],
+        partition_nulls: bool,
+    ) {
+        assert!(partition_idxs.len() == partitioner.num_partitions());
+        assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
+
+        let null_p = partitioner.null_partition();
+        self.for_each_hash(|idx, opt_h| {
+            if let Some(h) = opt_h {
+                unsafe {
+                    // SAFETY: we assured the number of partitions matches.
+                    let p = partitioner.hash_to_partition(h);
+                    partition_idxs.get_unchecked_mut(p).push(idx);
+                    if BUILD_SKETCHES {
+                        sketches.get_unchecked_mut(p).insert(h);
+                    }
+                }
+            } else if partition_nulls {
+                unsafe {
+                    partition_idxs.get_unchecked_mut(null_p).push(idx);
+                }
+            }
+        });
+    }
+
     pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
+        self.for_each_hash(|_idx, opt_h| {
+            sketch.insert(opt_h.unwrap_or(0));
+        })
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         match self {
-            HashKeys::RowEncoded(s) => s.sketch_cardinality(sketch),
-            HashKeys::Single(s) => s.sketch_cardinality(sketch),
-            HashKeys::Binview(s) => s.sketch_cardinality(sketch),
+            HashKeys::RowEncoded(s) => Self::RowEncoded(s.gather_unchecked(idxs)),
+            HashKeys::Single(s) => Self::Single(s.gather_unchecked(idxs)),
+            HashKeys::Binview(s) => Self::Binview(s.gather_unchecked(idxs)),
         }
     }
 }
@@ -271,85 +334,35 @@ pub struct RowEncodedKeys {
 }
 
 impl RowEncodedKeys {
-    pub fn gen_partitions(
-        &self,
-        partitioner: &HashPartitioner,
-        partitions: &mut Vec<IdxSize>,
-        partition_nulls: bool,
-    ) {
-        partitions.reserve(self.hashes.len());
-        if let Some(validity) = self.keys.validity() {
-            // Arbitrarily put nulls in partition 0.
-            let null_p = if partition_nulls { 0 } else { IdxSize::MAX };
-            partitions.extend(self.hashes.values_iter().zip(validity).map(|(h, is_v)| {
-                if is_v {
-                    partitioner.hash_to_partition(*h) as IdxSize
-                } else {
-                    null_p
-                }
-            }))
-        } else {
-            partitions.extend(
-                self.hashes
-                    .values_iter()
-                    .map(|h| partitioner.hash_to_partition(*h) as IdxSize),
-            )
-        }
+    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
+        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
     }
 
-    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
         &self,
-        partitioner: &HashPartitioner,
-        partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
-        partition_nulls: bool,
+        subset: &[IdxSize],
+        f: F,
     ) {
-        assert!(partition_idxs.len() == partitioner.num_partitions());
-        assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
-
-        if let Some(validity) = self.keys.validity() {
-            for (i, (h, is_v)) in self.hashes.values_iter().zip(validity).enumerate() {
-                if is_v {
-                    unsafe {
-                        // SAFETY: we assured the number of partitions matches.
-                        let p = partitioner.hash_to_partition(*h);
-                        partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
-                        if BUILD_SKETCHES {
-                            sketches.get_unchecked_mut(p).insert(*h);
-                        }
-                    }
-                } else if partition_nulls {
-                    // Arbitrarily put nulls in partition 0.
-                    unsafe {
-                        partition_idxs.get_unchecked_mut(0).push(i as IdxSize);
-                    }
-                }
-            }
-        } else {
-            for (i, h) in self.hashes.values_iter().enumerate() {
-                unsafe {
-                    // SAFETY: we assured the number of partitions matches.
-                    let p = partitioner.hash_to_partition(*h);
-                    partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
-                    if BUILD_SKETCHES {
-                        sketches.get_unchecked_mut(p).insert(*h);
-                    }
-                }
-            }
-        }
+        for_each_hash_subset_prehashed(
+            self.hashes.values().as_slice(),
+            self.keys.validity(),
+            subset,
+            f,
+        );
     }
 
-    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
-        if let Some(validity) = self.keys.validity() {
-            for (h, is_v) in self.hashes.values_iter().zip(validity) {
-                if is_v {
-                    sketch.insert(*h);
-                }
-            }
-        } else {
-            for h in self.hashes.values_iter() {
-                sketch.insert(*h);
-            }
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        Self {
+            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
+                &self.hashes,
+                &idx_arr,
+            ),
+            keys: polars_compute::gather::binary::take_unchecked(&self.keys, &idx_arr),
         }
     }
 }
@@ -363,159 +376,31 @@ pub struct SingleKeys {
 }
 
 impl SingleKeys {
-    pub fn gen_partitions(
+    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
+        downcast_single_key_ca!(self.keys, |keys| {
+            for_each_hash_single(keys, &self.random_state, f);
+        })
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
         &self,
-        partitioner: &HashPartitioner,
-        partitions: &mut Vec<IdxSize>,
-        partition_nulls: bool,
+        subset: &[IdxSize],
+        f: F,
     ) {
         downcast_single_key_ca!(self.keys, |keys| {
-            gen_partitions(
-                keys,
-                &self.random_state,
-                partitioner,
-                partitions,
-                partition_nulls | self.null_is_valid,
-            );
-        });
+            for_each_hash_subset_single(keys, subset, &self.random_state, f);
+        })
     }
 
-    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
-        &self,
-        partitioner: &HashPartitioner,
-        partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
-        partition_nulls: bool,
-    ) {
-        downcast_single_key_ca!(self.keys, |keys| {
-            gen_idxs_per_partition::<_, BUILD_SKETCHES>(
-                keys,
-                &self.random_state,
-                partitioner,
-                partition_idxs,
-                sketches,
-                partition_nulls | self.null_is_valid,
-            );
-        });
-    }
-
-    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
-        downcast_single_key_ca!(self.keys, |keys| {
-            sketch_cardinality(keys, &self.random_state, sketch);
-        });
-    }
-}
-
-fn gen_partitions<T>(
-    ca: &ChunkedArray<T>,
-    random_state: &PlRandomState,
-    partitioner: &HashPartitioner,
-    partitions: &mut Vec<IdxSize>,
-    partition_nulls: bool,
-) where
-    T: PolarsDataType,
-    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
-{
-    partitions.reserve(ca.len());
-    if ca.has_nulls() {
-        // Arbitrarily put nulls in partition 0.
-        let null_p = if partition_nulls { 0 } else { IdxSize::MAX };
-        for arr in ca.downcast_iter() {
-            partitions.extend(arr.iter().map(|opt_k| {
-                if let Some(k) = opt_k {
-                    let h = random_state.tot_hash_one(k);
-                    partitioner.hash_to_partition(h) as IdxSize
-                } else {
-                    null_p
-                }
-            }))
-        }
-    } else {
-        for arr in ca.downcast_iter() {
-            partitions.extend(arr.values_iter().map(|k| {
-                let h = random_state.tot_hash_one(k);
-                partitioner.hash_to_partition(h) as IdxSize
-            }));
-        }
-    }
-}
-
-fn gen_idxs_per_partition<T, const BUILD_SKETCHES: bool>(
-    ca: &ChunkedArray<T>,
-    random_state: &PlRandomState,
-    partitioner: &HashPartitioner,
-    partition_idxs: &mut [Vec<IdxSize>],
-    sketches: &mut [CardinalitySketch],
-    partition_nulls: bool,
-) where
-    T: PolarsDataType,
-    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
-{
-    assert!(partition_idxs.len() == partitioner.num_partitions());
-    assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
-
-    let mut idx = 0;
-    if ca.has_nulls() {
-        for arr in ca.downcast_iter() {
-            for opt_k in arr.iter() {
-                if let Some(k) = opt_k {
-                    unsafe {
-                        // SAFETY: we assured the number of partitions matches.
-                        let h = random_state.tot_hash_one(k);
-                        let p = partitioner.hash_to_partition(h);
-                        partition_idxs.get_unchecked_mut(p).push(idx as IdxSize);
-                        if BUILD_SKETCHES {
-                            sketches.get_unchecked_mut(p).insert(h);
-                        }
-                    }
-                } else if partition_nulls {
-                    // Arbitrarily put nulls in partition 0.
-                    unsafe {
-                        partition_idxs.get_unchecked_mut(0).push(idx as IdxSize);
-                    }
-                }
-
-                idx += 1;
-            }
-        }
-    } else {
-        for arr in ca.downcast_iter() {
-            for k in arr.values_iter() {
-                unsafe {
-                    // SAFETY: we assured the number of partitions matches.
-                    let h = random_state.tot_hash_one(k);
-                    let p = partitioner.hash_to_partition(h);
-                    partition_idxs.get_unchecked_mut(p).push(idx as IdxSize);
-                    if BUILD_SKETCHES {
-                        sketches.get_unchecked_mut(p).insert(h);
-                    }
-                }
-
-                idx += 1;
-            }
-        }
-    }
-}
-
-fn sketch_cardinality<T>(
-    ca: &ChunkedArray<T>,
-    random_state: &PlRandomState,
-    sketch: &mut CardinalitySketch,
-) where
-    T: PolarsDataType,
-    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
-{
-    if ca.has_nulls() {
-        for arr in ca.downcast_iter() {
-            for k in arr.iter().flatten() {
-                sketch.insert(random_state.tot_hash_one(k));
-            }
-        }
-    } else {
-        for arr in ca.downcast_iter() {
-            for k in arr.values_iter() {
-                sketch.insert(random_state.tot_hash_one(k));
-            }
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        Self {
+            random_state: self.random_state,
+            keys: self.keys.take_slice_unchecked(idxs),
+            null_is_valid: self.null_is_valid,
         }
     }
 }
@@ -529,85 +414,132 @@ pub struct BinviewKeys {
 }
 
 impl BinviewKeys {
-    fn for_each_hash<F: FnMut(Option<u64>)>(&self, mut f: F) {
-        if self.keys.has_nulls() {
-            let hash_slice = self.hashes.values().as_slice();
-            if let Some(validity) = self.keys.validity() {
-                for (i, v) in validity.iter().enumerate() {
-                    if v {
-                        f(Some(unsafe { *hash_slice.get_unchecked(i) }));
-                    } else {
-                        f(None);
-                    }
-                }
+    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
+        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
+        &self,
+        subset: &[IdxSize],
+        f: F,
+    ) {
+        for_each_hash_subset_prehashed(
+            self.hashes.values().as_slice(),
+            self.keys.validity(),
+            subset,
+            f,
+        );
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        Self {
+            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
+                &self.hashes,
+                &idx_arr,
+            ),
+            keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
+            null_is_valid: self.null_is_valid,
+        }
+    }
+}
+
+fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
+    hashes: &[u64],
+    opt_v: Option<&Bitmap>,
+    mut f: F,
+) {
+    if let Some(validity) = opt_v {
+        for (idx, (is_v, hash)) in validity.iter().zip(hashes).enumerate_idx() {
+            if is_v {
+                f(idx, Some(*hash))
             } else {
-                for h in self.hashes.values_iter() {
-                    f(Some(*h))
-                }
+                f(idx, None)
             }
-        } else {
-            for h in self.hashes.values_iter() {
-                f(Some(*h));
+        }
+    } else {
+        for (idx, h) in hashes.iter().enumerate_idx() {
+            f(idx, Some(*h));
+        }
+    }
+}
+
+/// # Safety
+/// The indices must be in-bounds.
+unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
+    hashes: &[u64],
+    opt_v: Option<&Bitmap>,
+    subset: &[IdxSize],
+    mut f: F,
+) {
+    if let Some(validity) = opt_v {
+        for idx in subset {
+            let hash = *hashes.get_unchecked(*idx as usize);
+            let is_v = validity.get_bit_unchecked(*idx as usize);
+            if is_v {
+                f(*idx, Some(hash))
+            } else {
+                f(*idx, None)
+            }
+        }
+    } else {
+        for idx in subset {
+            f(*idx, Some(*hashes.get_unchecked(*idx as usize)));
+        }
+    }
+}
+
+pub fn for_each_hash_single<T, F>(keys: &ChunkedArray<T>, random_state: &PlRandomState, mut f: F)
+where
+    T: PolarsDataType,
+    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
+    F: FnMut(IdxSize, Option<u64>),
+{
+    let mut idx = 0;
+    if keys.has_nulls() {
+        for arr in keys.downcast_iter() {
+            for opt_k in arr.iter() {
+                f(idx, opt_k.map(|k| random_state.tot_hash_one(k)));
+                idx += 1;
+            }
+        }
+    } else {
+        for arr in keys.downcast_iter() {
+            for k in arr.values_iter() {
+                f(idx, Some(random_state.tot_hash_one(k)));
+                idx += 1;
             }
         }
     }
+}
 
-    pub fn gen_partitions(
-        &self,
-        partitioner: &HashPartitioner,
-        partitions: &mut Vec<IdxSize>,
-        partition_nulls: bool,
-    ) {
-        unsafe {
-            // Arbitrarily put nulls in partition 0.
-            let null_p = if partition_nulls { 0 } else { IdxSize::MAX };
-            partitions.reserve(self.hashes.len());
-            self.for_each_hash(|opt_h| {
-                partitions.push_unchecked(
-                    opt_h
-                        .map(|h| partitioner.hash_to_partition(h) as IdxSize)
-                        .unwrap_or(null_p),
-                );
-            });
+/// # Safety
+/// The indices must be in-bounds.
+unsafe fn for_each_hash_subset_single<T, F>(
+    keys: &ChunkedArray<T>,
+    subset: &[IdxSize],
+    random_state: &PlRandomState,
+    mut f: F,
+) where
+    T: PolarsDataType,
+    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
+    F: FnMut(IdxSize, Option<u64>),
+{
+    let keys_arr = keys.downcast_as_array();
+
+    if keys_arr.has_nulls() {
+        for idx in subset {
+            let opt_k = keys_arr.get_unchecked(*idx as usize);
+            f(*idx, opt_k.map(|k| random_state.tot_hash_one(k)));
         }
-    }
-
-    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
-        &self,
-        partitioner: &HashPartitioner,
-        partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
-        partition_nulls: bool,
-    ) {
-        assert!(partition_idxs.len() == partitioner.num_partitions());
-        assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
-
-        let mut idx = 0;
-        self.for_each_hash(|opt_h| {
-            if let Some(h) = opt_h {
-                unsafe {
-                    // SAFETY: we assured the number of partitions matches.
-                    let p = partitioner.hash_to_partition(h);
-                    partition_idxs.get_unchecked_mut(p).push(idx);
-                    if BUILD_SKETCHES {
-                        sketches.get_unchecked_mut(p).insert(h);
-                    }
-                }
-            } else if partition_nulls {
-                // Arbitrarily put nulls in partition 0.
-                unsafe {
-                    partition_idxs.get_unchecked_mut(0).push(idx);
-                }
-            }
-            idx += 1;
-        });
-    }
-
-    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
-        self.for_each_hash(|opt_h| {
-            if let Some(h) = opt_h {
-                sketch.insert(h);
-            }
-        })
+    } else {
+        for idx in subset {
+            let k = keys_arr.value_unchecked(*idx as usize);
+            f(*idx, Some(random_state.tot_hash_one(k)));
+        }
     }
 }

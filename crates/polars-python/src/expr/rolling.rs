@@ -1,11 +1,10 @@
 use polars::prelude::*;
+use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
-use pyo3::types::PyFloat;
 
+use crate::PyExpr;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
-use crate::map::lazy::call_lambda_with_series;
-use crate::{PyExpr, PySeries};
 
 #[pymethods]
 impl PyExpr {
@@ -323,8 +322,45 @@ impl PyExpr {
             .into())
     }
 
-    fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
-        self.inner.clone().rolling_skew(window_size, bias).into()
+    #[pyo3(signature = (window_size, bias, min_periods, center))]
+    fn rolling_skew(
+        &self,
+        window_size: usize,
+        bias: bool,
+        min_periods: Option<usize>,
+        center: bool,
+    ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
+        let options = RollingOptionsFixedWindow {
+            window_size,
+            weights: None,
+            min_periods,
+            center,
+            fn_params: Some(RollingFnParams::Skew { bias }),
+        };
+
+        self.inner.clone().rolling_skew(options).into()
+    }
+
+    #[pyo3(signature = (window_size, fisher, bias, min_periods, center))]
+    fn rolling_kurtosis(
+        &self,
+        window_size: usize,
+        fisher: bool,
+        bias: bool,
+        min_periods: Option<usize>,
+        center: bool,
+    ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
+        let options = RollingOptionsFixedWindow {
+            window_size,
+            weights: None,
+            min_periods,
+            center,
+            fn_params: Some(RollingFnParams::Kurtosis { fisher, bias }),
+        };
+
+        self.inner.clone().rolling_kurtosis(options).into()
     }
 
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
@@ -344,154 +380,8 @@ impl PyExpr {
             center,
             ..Default::default()
         };
-        let function = move |s: &Series| {
-            Python::with_gil(|py| {
-                let out = call_lambda_with_series(py, s.clone(), &lambda)
-                    .expect("python function failed");
-                match out.getattr(py, "_s") {
-                    Ok(pyseries) => {
-                        let pyseries = pyseries.extract::<PySeries>(py).unwrap();
-                        pyseries.series
-                    },
-                    Err(_) => {
-                        let obj = out;
-                        let is_float = obj.bind(py).is_instance_of::<PyFloat>();
+        let function = PlanCallback::new_python(PythonObject(lambda));
 
-                        let dtype = s.dtype();
-
-                        use DataType::*;
-                        let result = match dtype {
-                            UInt8 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt8Chunked::from_slice(PlSmallStr::EMPTY, &[v as u8])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<u8>(py).map(|v| {
-                                        UInt8Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            UInt16 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt16Chunked::from_slice(PlSmallStr::EMPTY, &[v as u16])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<u16>(py).map(|v| {
-                                        UInt16Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            UInt32 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[v as u32])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<u32>(py).map(|v| {
-                                        UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            UInt64 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt64Chunked::from_slice(PlSmallStr::EMPTY, &[v as u64])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<u64>(py).map(|v| {
-                                        UInt64Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            Int8 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int8Chunked::from_slice(PlSmallStr::EMPTY, &[v as i8])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<i8>(py).map(|v| {
-                                        Int8Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            Int16 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int16Chunked::from_slice(PlSmallStr::EMPTY, &[v as i16])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<i16>(py).map(|v| {
-                                        Int16Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            Int32 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int32Chunked::from_slice(PlSmallStr::EMPTY, &[v as i32])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<i32>(py).map(|v| {
-                                        Int32Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            Int64 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int64Chunked::from_slice(PlSmallStr::EMPTY, &[v as i64])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<i64>(py).map(|v| {
-                                        Int64Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            Int128 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int128Chunked::from_slice(PlSmallStr::EMPTY, &[v as i128])
-                                        .into_series())
-                                } else {
-                                    obj.extract::<i128>(py).map(|v| {
-                                        Int128Chunked::from_slice(PlSmallStr::EMPTY, &[v])
-                                            .into_series()
-                                    })
-                                }
-                            },
-                            Float32 => obj.extract::<f32>(py).map(|v| {
-                                Float32Chunked::from_slice(PlSmallStr::EMPTY, &[v]).into_series()
-                            }),
-                            Float64 => obj.extract::<f64>(py).map(|v| {
-                                Float64Chunked::from_slice(PlSmallStr::EMPTY, &[v]).into_series()
-                            }),
-                            dt => panic!("{dt:?} not implemented"),
-                        };
-
-                        match result {
-                            Ok(s) => s,
-                            Err(e) => {
-                                panic!("{e:?}")
-                            },
-                        }
-                    },
-                }
-            })
-        };
-        self.inner
-            .clone()
-            .rolling_map(Arc::new(function), GetOutput::same_type(), options)
-            .with_fmt("rolling_map")
-            .into()
+        self.inner.clone().rolling_map(function, options).into()
     }
 }

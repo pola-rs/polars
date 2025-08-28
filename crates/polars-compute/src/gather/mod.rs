@@ -25,8 +25,6 @@ use arrow::array::{
 use arrow::datatypes::{ArrowDataType, IdxArr};
 use arrow::types::Index;
 
-use crate::gather::binview::take_binview_unchecked;
-
 pub mod binary;
 pub mod binview;
 pub mod bitmap;
@@ -78,11 +76,11 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
         },
         BinaryView => {
             let array: &BinaryViewArray = values.as_any().downcast_ref().unwrap();
-            take_binview_unchecked(array, indices).boxed()
+            binview::take_binview_unchecked(array, indices).boxed()
         },
         Utf8View => {
             let array: &Utf8ViewArray = values.as_any().downcast_ref().unwrap();
-            take_binview_unchecked(array, indices).boxed()
+            binview::take_binview_unchecked(array, indices).boxed()
         },
         t => unimplemented!("Take not supported for data type {:?}", t),
     }

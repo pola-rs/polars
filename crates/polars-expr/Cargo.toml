@@ -24,10 +24,10 @@ polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
+recursive = { workspace = true }
 
 [features]
 nightly = ["polars-core/nightly", "polars-plan/nightly"]
-streaming = ["polars-plan/streaming", "polars-ops/chunked_ids"]
 parquet = ["polars-io/parquet", "polars-plan/parquet"]
 temporal = [
   "dtype-datetime",
@@ -77,3 +77,7 @@ round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_between = ["polars-plan/is_between"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
 propagate_nans = ["polars-plan/propagate_nans", "polars-ops/propagate_nans"]
+allow_unused = []
+
+[lints]
+workspace = true

@@ -13,6 +13,7 @@ use crate::read::deserialize::dictionary_encoded;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, unspecialized_decode,
 };
+use crate::read::expr::SpecializedParquetColumnExpr;
 use crate::read::{Filter, PredicateFilter};
 
 #[allow(clippy::large_enum_variant)]
@@ -166,7 +167,10 @@ where
         has_predicate_specialization |=
             matches!(state.translation, StateTranslation::Dictionary(_));
         has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
-            && predicate.predicate.to_equals_scalar().is_some();
+            && matches!(
+                predicate.predicate.as_specialized(),
+                Some(SpecializedParquetColumnExpr::Equal(_))
+            );
 
         // @TODO: This should be implemented
         has_predicate_specialization &= state.page_validity.is_none();

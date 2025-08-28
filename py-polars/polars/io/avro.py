@@ -9,7 +9,7 @@ from polars._utils.wrap import wrap_df
 from polars.io._utils import parse_columns_arg
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
     from polars import DataFrame

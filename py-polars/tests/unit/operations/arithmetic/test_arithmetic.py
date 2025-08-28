@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 import pytest
@@ -25,6 +25,9 @@ from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
+if TYPE_CHECKING:
+    from polars._typing import PolarsIntegerType
+
 
 def test_sqrt_neg_inf() -> None:
     out = pl.DataFrame(
@@ -39,13 +42,13 @@ def test_sqrt_neg_inf() -> None:
 
 
 def test_arithmetic_with_logical_on_series_4920() -> None:
-    assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("ms")
+    assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("us")
 
 
 @pytest.mark.parametrize(
     ("left", "right", "expected_value", "expected_dtype"),
     [
-        (date(2021, 1, 1), date(2020, 1, 1), timedelta(days=366), pl.Duration("ms")),
+        (date(2021, 1, 1), date(2020, 1, 1), timedelta(days=366), pl.Duration("us")),
         (
             datetime(2021, 1, 1),
             datetime(2020, 1, 1),
@@ -846,3 +849,44 @@ def test_compound_duration_21389() -> None:
     expected = pl.DataFrame({"ts": datetime(2023, 12, 30, 1, 2, 3)})
     assert result.collect_schema() == expected_schema
     assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_arithmetic_i128(dtype: PolarsIntegerType) -> None:
+    s = pl.Series("a", [0, 1, 127], dtype=dtype, strict=False)
+    s128 = pl.Series("a", [0, 0, 0], dtype=pl.Int128)
+    expected = pl.Series("a", [0, 1, 127], dtype=pl.Int128)
+    assert_series_equal(s + s128, expected)
+    assert_series_equal(s128 + s, expected)
+
+
+def test_arithmetic_i128_nonint() -> None:
+    s128 = pl.Series("a", [0], dtype=pl.Int128)
+
+    s = pl.Series("a", [1.0], dtype=pl.Float32)
+    assert_series_equal(s + s128, pl.Series("a", [1.0], dtype=pl.Float64))
+    assert_series_equal(s128 + s, pl.Series("a", [1.0], dtype=pl.Float64))
+
+    s = pl.Series("a", [1.0], dtype=pl.Float64)
+    assert_series_equal(s + s128, s)
+    assert_series_equal(s128 + s, s)
+
+    s = pl.Series("a", [True], dtype=pl.Boolean)
+    assert_series_equal(s + s128, pl.Series("a", [1], dtype=pl.Int128))
+    assert_series_equal(s128 + s, pl.Series("a", [1], dtype=pl.Int128))
+
+
+def test_float_truediv_output_type() -> None:
+    lf = pl.LazyFrame(schema={"f32": pl.Float32, "f64": pl.Float64})
+    assert lf.select(x=pl.col("f32") / pl.col("f32")).collect_schema() == pl.Schema(
+        {"x": pl.Float32}
+    )
+    assert lf.select(x=pl.col("f32") / pl.col("f64")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )
+    assert lf.select(x=pl.col("f64") / pl.col("f32")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )
+    assert lf.select(x=pl.col("f64") / pl.col("f64")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )

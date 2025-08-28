@@ -14,6 +14,11 @@ mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "proptest")]
+pub mod proptest;
+
+/// Name used for the values array within List/FixedSizeList arrays.
+pub const LIST_VALUES_NAME: PlSmallStr = PlSmallStr::from_static("item");
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
@@ -130,49 +135,6 @@ impl<O: Offset> ListArray<O> {
     impl_sliced!();
     impl_mut_validity!();
     impl_into_array!();
-
-    pub fn trim_to_normalized_offsets_recursive(&self) -> Self {
-        let offsets = self.offsets();
-        let values = self.values();
-
-        let first_idx = *offsets.first();
-        let len = offsets.range().to_usize();
-
-        let values = if values.len() == len {
-            values.clone()
-        } else {
-            values.sliced(first_idx.to_usize(), len)
-        };
-
-        let offsets = if first_idx.to_usize() == 0 {
-            offsets.clone()
-        } else {
-            let v = offsets.iter().map(|x| *x - first_idx).collect::<Vec<_>>();
-            unsafe { OffsetsBuffer::<O>::new_unchecked(v.into()) }
-        };
-
-        let values = match values.dtype() {
-            ArrowDataType::List(_) => {
-                let inner: &ListArray<i32> = values.as_ref().as_any().downcast_ref().unwrap();
-                Box::new(inner.trim_to_normalized_offsets_recursive()) as Box<dyn Array>
-            },
-            ArrowDataType::LargeList(_) => {
-                let inner: &ListArray<i64> = values.as_ref().as_any().downcast_ref().unwrap();
-                Box::new(inner.trim_to_normalized_offsets_recursive()) as Box<dyn Array>
-            },
-            _ => values,
-        };
-
-        assert_eq!(offsets.first().to_usize(), 0);
-        assert_eq!(values.len(), offsets.range().to_usize());
-
-        Self::new(
-            self.dtype().clone(),
-            offsets,
-            values,
-            self.validity().cloned(),
-        )
-    }
 }
 
 // Accessors
@@ -229,7 +191,7 @@ impl<O: Offset> ListArray<O> {
 impl<O: Offset> ListArray<O> {
     /// Returns a default [`ArrowDataType`]: inner field is named "item" and is nullable
     pub fn default_datatype(dtype: ArrowDataType) -> ArrowDataType {
-        let field = Box::new(Field::new(PlSmallStr::from_static("item"), dtype, true));
+        let field = Box::new(Field::new(LIST_VALUES_NAME, dtype, true));
         if O::IS_LARGE {
             ArrowDataType::LargeList(field)
         } else {

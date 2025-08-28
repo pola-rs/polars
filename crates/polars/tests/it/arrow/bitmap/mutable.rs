@@ -392,9 +392,7 @@ fn extend_constant1() {
             assert_eq!(
                 b,
                 MutableBitmap::from_iter(
-                    std::iter::repeat(false)
-                        .take(i)
-                        .chain(std::iter::repeat_n(true, j))
+                    std::iter::repeat_n(false, i).chain(std::iter::repeat_n(true, j))
                 )
             );
 
@@ -404,9 +402,7 @@ fn extend_constant1() {
             assert_eq!(
                 b,
                 MutableBitmap::from_iter(
-                    std::iter::repeat(true)
-                        .take(i)
-                        .chain(std::iter::repeat_n(false, j))
+                    std::iter::repeat_n(true, i).chain(std::iter::repeat_n(false, j))
                 )
             );
         }

@@ -13,13 +13,14 @@ use crate::series::IsSorted;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct PartitionedColumn {
     name: PlSmallStr,
 
     values: Series,
     ends: Arc<[IdxSize]>,
 
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "serde", serde(skip, default))]
     materialized: OnceLock<Series>,
 }
 
@@ -112,7 +113,7 @@ impl PartitionedColumn {
     }
 
     #[inline]
-    pub fn field(&self) -> Cow<Field> {
+    pub fn field(&self) -> Cow<'_, Field> {
         match self.lazy_as_materialized_series() {
             None => Cow::Owned(Field::new(self.name().clone(), self.dtype().clone())),
             Some(s) => s.field(),
@@ -202,7 +203,7 @@ impl PartitionedColumn {
         Ok(unsafe { Self::new_unchecked(self.name.clone(), values, new_ends.into()) })
     }
 
-    pub unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    pub unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         debug_assert!(index < self.len());
 
         // Common situation get_unchecked(0)
@@ -281,6 +282,10 @@ impl PartitionedColumn {
         &self.values
     }
     pub fn partition_ends(&self) -> &[IdxSize] {
+        &self.ends
+    }
+
+    pub fn partition_ends_ref(&self) -> &Arc<[IdxSize]> {
         &self.ends
     }
 

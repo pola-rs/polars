@@ -25,7 +25,7 @@ def test_disable_cwc() -> None:
         .with_columns(pl.col("a").alias("d") * 4)
     )
 
-    explain = df.explain(cluster_with_columns=False)
+    explain = df.explain(optimizations=pl.QueryOptFlags(cluster_with_columns=False))
 
     assert """[[(col("a")) * (2)].alias("b")]""" in explain
     assert """[[(col("a")) * (3)].alias("c")]""" in explain

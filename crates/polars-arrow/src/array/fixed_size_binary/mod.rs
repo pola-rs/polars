@@ -37,7 +37,7 @@ impl FixedSizeBinaryArray {
     ) -> PolarsResult<Self> {
         let size = Self::maybe_get_size(&dtype)?;
 
-        if values.len() % size != 0 {
+        if !values.len().is_multiple_of(size) {
             polars_bail!(ComputeError:
                 "values (of len {}) must be a multiple of size ({}) in FixedSizeBinaryArray.",
                 values.len(),
@@ -84,6 +84,10 @@ impl FixedSizeBinaryArray {
             vec![0u8; length * size].into(),
             Some(Bitmap::new_zeroed(length)),
         )
+    }
+
+    pub fn into_inner(self) -> (ArrowDataType, Buffer<u8>, Option<Bitmap>) {
+        (self.dtype, self.values, self.validity)
     }
 }
 

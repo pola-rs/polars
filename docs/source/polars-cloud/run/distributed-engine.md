@@ -1,4 +1,4 @@
-# Distributed query execution
+# Distributed queries
 
 With the introduction of Polars Cloud, we also introduced the distributed engine. This engine
 enables users to horizontally scale workloads across multiple machines.
@@ -6,18 +6,17 @@ enables users to horizontally scale workloads across multiple machines.
 Polars has always been optimized for fast and efficient performance on a single machine. However,
 when querying large datasets from cloud storage, performance is often constrained by the I/O
 limitations of a single node. By scaling horizontally, these download limitations can be
-significantly reduced, allowing users to process at scale.
+significantly reduced, allowing users to process data at scale.
 
-<!-- dprint-ignore-start -->
+!!! info "Distributed engine is early stage"
 
-!!! info "Distributed engine is in early stage"
-    The distributed engine is in its very early development. It currently runs all [PDS-H benchmarks](https://github.com/pola-rs/polars-benchmark). Major performance improvements will be introduced in the near future. When a operation is not available in a distributed manner, Polars Cloud will run that operation on single node.
+    The distributed engine is in alpha and some operations are not supported yet.
 
-<!-- dprint-ignore-end-->
+    Find out which operations are [currently supported in the distributed engine](https://github.com/pola-rs/polars/issues/21487).
 
 ## Using distributed engine
 
-To execute queries using the distributed engine, you can call `distributed()`.
+To execute queries using the distributed engine, you can call the `distributed()` method.
 
 ```python
 lf: LazyFrame
@@ -31,25 +30,10 @@ result = (
 
 ### Example
 
-```python
-import polars as pl
-import polars_cloud as pc
-from datetime import date
+{{code_block('polars-cloud/distributed','example',[])}}
 
-query = (
-    pl.scan_parquet("s3://dataset/")
-    .filter(pl.col("l_shipdate") <= date(1998, 9, 2))
-    .group_by("l_returnflag", "l_linestatus")
-    .agg(
-        avg_price=pl.mean("l_extendedprice"),
-        avg_disc=pl.mean("l_discount"),
-        count_order=pl.len(),
-    )
-)
+## Working with large datasets in the distributed engine
 
-result = (
-    query.remote(pc.ComputeContext(cpus=16, memory=64, cluster_size=32))
-    .distributed()
-    .sink_parquet("s3://output/result.parquet")
-)
-```
+The distributed engine can only read sources partitioned with direct scan\_<file> methods such as
+`scan_parquet` and `scan_csv`. Open table formats like `scan_iceberg` are not yet supported in a
+distributed fashion and will run on a single node when utilized.

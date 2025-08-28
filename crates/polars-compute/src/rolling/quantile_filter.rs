@@ -633,7 +633,7 @@ where
                 }
             },
             Nearest => {
-                let idx = (valid_length_f * self.quantile) as usize;
+                let idx = ((valid_length_f - 1.0) * self.quantile).round() as usize;
                 let idx = std::cmp::min(idx, valid_length - 1);
                 self.inner.get(idx + null_count)
             },

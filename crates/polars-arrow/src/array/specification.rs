@@ -1,4 +1,4 @@
-use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use crate::array::DictionaryKey;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
@@ -61,7 +61,7 @@ pub fn try_check_utf8<O: Offset>(offsets: &[O], values: &[u8]) -> PolarsResult<(
     if values_range.is_ascii() {
         Ok(())
     } else {
-        simdutf8::basic::from_utf8(values_range).map_err(to_compute_err)?;
+        simdutf8::basic::from_utf8(values_range)?;
 
         // offsets can be == values.len()
         // find first offset from the end that is smaller

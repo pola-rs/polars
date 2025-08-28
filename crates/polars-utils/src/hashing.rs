@@ -108,6 +108,12 @@ impl HashPartitioner {
         ((shuffled as u128 * self.num_partitions as u128) >> 64) as usize
     }
 
+    /// The partition nulls are put into.
+    #[inline(always)]
+    pub fn null_partition(&self) -> usize {
+        0
+    }
+
     #[inline(always)]
     pub fn num_partitions(&self) -> usize {
         self.num_partitions

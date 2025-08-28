@@ -25,7 +25,9 @@ impl ArrayChunked {
     /// # Safety
     /// The lifetime of [AmortSeries] is bound to the iterator. Keeping it alive
     /// longer than the iterator is UB.
-    pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    pub fn amortized_iter(
+        &self,
+    ) -> AmortizedListIter<'_, impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name(PlSmallStr::EMPTY)
     }
 
@@ -45,7 +47,7 @@ impl ArrayChunked {
     pub fn amortized_iter_with_name(
         &self,
         name: PlSmallStr,
-    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    ) -> AmortizedListIter<'_, impl Iterator<Item = Option<ArrayBox>> + '_> {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();

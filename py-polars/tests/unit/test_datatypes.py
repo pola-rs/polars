@@ -138,7 +138,6 @@ def test_repr(dtype: PolarsDataType, representation: str) -> None:
     assert repr(dtype) == representation
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_conversion_dtype() -> None:
     df = (
         pl.DataFrame(

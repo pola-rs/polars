@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use std::io::{Error as IoError, ErrorKind};
+use std::io::ErrorKind;
 
 use polars::prelude::PolarsError;
 use polars_error::PolarsWarning;
@@ -57,12 +57,6 @@ impl From<PyErr> for PyPolarsErr {
     }
 }
 
-impl From<IoError> for PyPolarsErr {
-    fn from(err: IoError) -> Self {
-        PyPolarsErr::Other(format!("{err:?}"))
-    }
-}
-
 impl From<PyPolarsErr> for PyErr {
     fn from(err: PyPolarsErr) -> PyErr {
         use PyPolarsErr::*;
@@ -109,6 +103,7 @@ impl From<PyPolarsErr> for PyErr {
                     let tmp = PyPolarsErr::Polars(err.context_trace());
                     PyErr::from(tmp)
                 },
+                PolarsError::Python { error } => error.0,
             },
             Python(err) => err,
             err => PyRuntimeError::new_err(format!("{:?}", &err)),

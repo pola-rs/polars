@@ -85,7 +85,7 @@ impl StackExec {
                             && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
                         {
                             let identifier = match self.exprs[i].as_expression() {
-                                Some(e) => format!("expression: {}", e),
+                                Some(e) => format!("expression: {e}"),
                                 None => "this Series".to_string(),
                             };
                             polars_bail!(InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\

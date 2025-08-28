@@ -99,6 +99,21 @@ impl Statistics {
             stats.clear_max();
         }
 
+        // Parquet Format:
+        // > - If the min is a NaN, it should be ignored.
+        // > - If the max is a NaN, it should be ignored.
+        match &mut stats {
+            Statistics::Float(stats) => {
+                stats.min_value.take_if(|v| v.is_nan());
+                stats.max_value.take_if(|v| v.is_nan());
+            },
+            Statistics::Double(stats) => {
+                stats.min_value.take_if(|v| v.is_nan());
+                stats.max_value.take_if(|v| v.is_nan());
+            },
+            _ => {},
+        }
+
         Ok(stats)
     }
 }

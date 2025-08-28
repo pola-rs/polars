@@ -1,5 +1,5 @@
 #[cfg(feature = "timezones")]
-use polars_core::chunked_array::temporal::parse_time_zone;
+use polars_core::datatypes::time_zone::parse_time_zone;
 use polars_core::prelude::*;
 use polars_ops::prelude::*;
 use polars_ops::series::SeriesMethods;
@@ -125,7 +125,7 @@ fn upsample_impl(
     if matches!(time_type, DataType::Date) {
         let mut df = source.clone();
         df.apply(index_column, |s| {
-            s.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+            s.cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                 .unwrap()
         })
         .unwrap();

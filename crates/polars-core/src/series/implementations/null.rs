@@ -4,7 +4,8 @@ use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use self::compare_inner::TotalOrdInner;
 use super::*;
-use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
+use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, NonNull, TotalEqInner};
+use crate::chunked_array::ops::sort::arg_sort_multiple::arg_sort_multiple_impl;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
@@ -35,10 +36,18 @@ impl NullChunked {
             ))],
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.length as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
 }
 impl PrivateSeriesNumeric for NullChunked {
     fn bit_repr(&self) -> Option<BitRepr> {
-        Some(BitRepr::Small(UInt32Chunked::full_null(
+        Some(BitRepr::U32(UInt32Chunked::full_null(
             self.name.clone(),
             self.len(),
         )))
@@ -56,7 +65,7 @@ impl PrivateSeries for NullChunked {
         }
         self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
     }
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Owned(Field::new(self.name().clone(), DataType::Null))
     }
 
@@ -86,7 +95,7 @@ impl PrivateSeries for NullChunked {
         IntoTotalEqInner::into_total_eq_inner(self)
     }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
-        invalid_operation_panic!(into_total_ord_inner, self)
+        IntoTotalOrdInner::into_total_ord_inner(self)
     }
 
     fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
@@ -144,6 +153,17 @@ impl PrivateSeries for NullChunked {
         VecHash::vec_hash_combine(self, build_hasher, hashes)?;
         Ok(())
     }
+
+    fn arg_sort_multiple(
+        &self,
+        by: &[Column],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
+        let vals = (0..self.len())
+            .map(|i| (i as IdxSize, NonNull(())))
+            .collect();
+        arg_sort_multiple_impl(vals, by, options)
+    }
 }
 
 fn null_arithmetic(lhs: &NullChunked, rhs: &Series, op: &str) -> PolarsResult<Series> {
@@ -172,7 +192,7 @@ impl SeriesTrait for NullChunked {
         &mut self.chunks
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 
@@ -197,7 +217,7 @@ impl SeriesTrait for NullChunked {
     }
 
     fn has_nulls(&self) -> bool {
-        self.len() > 0
+        !self.is_empty()
     }
 
     fn rechunk(&self) -> Series {
@@ -238,7 +258,7 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), length).into_series()
     }
 
-    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue<'_> {
         AnyValue::Null
     }
 
@@ -334,6 +354,10 @@ impl SeriesTrait for NullChunked {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(self.clone())
+    }
+
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        ChunkNestingUtils::find_validity_mismatch(self, other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {

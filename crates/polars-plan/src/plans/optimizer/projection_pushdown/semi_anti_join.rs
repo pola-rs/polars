@@ -7,7 +7,7 @@ pub(super) fn process_semi_anti_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
-    options: Arc<JoinOptions>,
+    options: Arc<JoinOptionsIR>,
     ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,

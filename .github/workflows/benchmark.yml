@@ -65,7 +65,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.4
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Build Polars release build
         working-directory: py-polars

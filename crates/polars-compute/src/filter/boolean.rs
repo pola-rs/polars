@@ -268,8 +268,8 @@ mod test {
         // Verify polyfill against naive implementation.
         let mut rng = StdRng::seed_from_u64(0xdeadbeef);
         for _ in 0..100 {
-            let x = rng.r#gen();
-            let y = rng.r#gen();
+            let x = rng.random();
+            let y = rng.random();
             assert_eq!(naive_pext64(x, y), pext64_polyfill(x, y, y.count_ones()));
 
             // Test all-zeros and all-ones.
@@ -282,9 +282,9 @@ mod test {
             assert_eq!(naive_pext64(x, u64::MAX), pext64_polyfill(x, u64::MAX, 64));
 
             // Test low popcount mask.
-            let popcnt = rng.gen_range(0..=8);
+            let popcnt = rng.random_range(0..=8);
             // Not perfect (can generate same bit twice) but it'll do.
-            let mask = (0..popcnt).map(|_| 1 << rng.gen_range(0..64)).sum();
+            let mask = (0..popcnt).map(|_| 1 << rng.random_range(0..64)).sum();
             assert_eq!(
                 naive_pext64(x, mask),
                 pext64_polyfill(x, mask, mask.count_ones())

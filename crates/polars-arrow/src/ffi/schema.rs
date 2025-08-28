@@ -94,7 +94,7 @@ impl ArrowSchema {
 
         let metadata = if let ArrowDataType::Extension(ext) = field.dtype() {
             // append extension information.
-            let mut metadata = metadata.clone();
+            let mut metadata = metadata;
 
             // metadata
             if let Some(extension_metadata) = &ext.metadata {
@@ -364,15 +364,32 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
                             let bit_width = width_raw.parse::<usize>().map_err(|_| {
                                 polars_err!(ComputeError: "Decimal bit width is not a valid integer")
                             })?;
-                            if bit_width == 256 {
-                                return Ok(ArrowDataType::Decimal256(
+                            match bit_width {
+                                32 => return Ok(ArrowDataType::Decimal32(
                                     precision_raw.parse::<usize>().map_err(|_| {
                                         polars_err!(ComputeError: "Decimal precision is not a valid integer")
                                     })?,
                                     scale_raw.parse::<usize>().map_err(|_| {
                                         polars_err!(ComputeError: "Decimal scale is not a valid integer")
                                     })?,
-                                ));
+                                )),
+                                64 => return Ok(ArrowDataType::Decimal64(
+                                    precision_raw.parse::<usize>().map_err(|_| {
+                                        polars_err!(ComputeError: "Decimal precision is not a valid integer")
+                                    })?,
+                                    scale_raw.parse::<usize>().map_err(|_| {
+                                        polars_err!(ComputeError: "Decimal scale is not a valid integer")
+                                    })?,
+                                )),
+                                256 => return Ok(ArrowDataType::Decimal256(
+                                    precision_raw.parse::<usize>().map_err(|_| {
+                                        polars_err!(ComputeError: "Decimal precision is not a valid integer")
+                                    })?,
+                                    scale_raw.parse::<usize>().map_err(|_| {
+                                        polars_err!(ComputeError: "Decimal scale is not a valid integer")
+                                    })?,
+                                )),
+                                _ => {},
                             }
                             (precision_raw, scale_raw)
                         },
@@ -489,6 +506,8 @@ fn to_format(dtype: &ArrowDataType) -> String {
         ArrowDataType::Utf8View => "vu".to_string(),
         ArrowDataType::BinaryView => "vz".to_string(),
         ArrowDataType::Decimal(precision, scale) => format!("d:{precision},{scale}"),
+        ArrowDataType::Decimal32(precision, scale) => format!("d:{precision},{scale},32"),
+        ArrowDataType::Decimal64(precision, scale) => format!("d:{precision},{scale},64"),
         ArrowDataType::Decimal256(precision, scale) => format!("d:{precision},{scale},256"),
         ArrowDataType::List(_) => "+l".to_string(),
         ArrowDataType::LargeList(_) => "+L".to_string(),
@@ -590,6 +609,7 @@ unsafe fn metadata_from_bytes(data: *const ::std::os::raw::c_char) -> (Metadata,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::array::LIST_VALUES_NAME;
 
     #[test]
     fn test_all() {
@@ -641,7 +661,7 @@ mod tests {
                 Field::new(
                     PlSmallStr::from_static("b"),
                     ArrowDataType::List(Box::new(Field::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         ArrowDataType::Int32,
                         true,
                     ))),
@@ -662,7 +682,7 @@ mod tests {
                     Field::new(
                         PlSmallStr::from_static("b"),
                         ArrowDataType::List(Box::new(Field::new(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             ArrowDataType::Int32,
                             true,
                         ))),
@@ -678,7 +698,7 @@ mod tests {
                     Field::new(
                         PlSmallStr::from_static("b"),
                         ArrowDataType::List(Box::new(Field::new(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             ArrowDataType::Int32,
                             true,
                         ))),

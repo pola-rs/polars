@@ -80,7 +80,7 @@ pub(super) fn par_sorted_merge_left(
         DataType::Float64 => {
             par_sorted_merge_left_impl(s_left.f64().unwrap(), s_right.f64().unwrap())
         },
-        dt => panic!("{:?}", dt),
+        dt => panic!("{dt:?}"),
     }
 }
 #[cfg(feature = "performant")]

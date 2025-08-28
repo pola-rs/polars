@@ -102,3 +102,22 @@ def test_fill_null_with_list_10869() -> None:
     match = "failed to determine supertype"
     with pytest.raises(pl.exceptions.SchemaError, match=match):
         pl.Series([1, None]).fill_null([2])
+
+
+def test_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, None]).fill_null(pl.Series([1] * 3))
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([1, 2]).fill_null(pl.Series([1] * 3))
+
+
+def test_self_broadcast() -> None:
+    assert_series_equal(
+        pl.Series([1]).fill_null(pl.Series(range(3))),
+        pl.Series([1] * 3),
+    )
+
+    assert_series_equal(
+        pl.Series([None]).fill_null(pl.Series(range(3))),
+        pl.Series(range(3)),
+    )

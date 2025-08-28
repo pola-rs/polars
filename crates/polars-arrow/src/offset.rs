@@ -211,12 +211,6 @@ impl<O: Offset> Offsets<O> {
         self.0.len() - 1
     }
 
-    #[inline]
-    /// Returns the number of offsets in this container.
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
     /// Returns the byte slice stored in this buffer
     #[inline]
     pub fn as_slice(&self) -> &[O] {
@@ -241,7 +235,7 @@ impl<O: Offset> Offsets<O> {
         if additional == 1 {
             self.0.push(offset)
         } else {
-            self.0.resize(self.len() + additional, offset)
+            self.0.resize(self.0.len() + additional, offset)
         }
     }
 

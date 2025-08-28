@@ -174,3 +174,60 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::proptest::bitmap;
+    use arrow::types::Bytes4Alignment4;
+    use proptest::collection::size_range;
+    use proptest::prelude::*;
+    use proptest::test_runner::TestCaseResult;
+
+    use super::*;
+    use crate::parquet::encoding::hybrid_rle;
+
+    fn values_and_mask() -> impl Strategy<Value = (Vec<u8>, u32, Vec<u32>, Bitmap)> {
+        (bitmap(1..100), (0..300u32)).prop_flat_map(|(mask, max_idx)| {
+            let len = mask.len();
+            let hybrid_rle = hybrid_rle::proptest::hybrid_rle(max_idx, len);
+
+            (
+                hybrid_rle,
+                Just(max_idx),
+                any_with::<Vec<u32>>(size_range((max_idx + 1) as usize).lift()),
+                Just(mask),
+            )
+        })
+    }
+
+    fn _test_decode(
+        hybrid_rle: HybridRleDecoder<'_>,
+        dict: &[Bytes4Alignment4],
+        mask: &Bitmap,
+    ) -> TestCaseResult {
+        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        decode(hybrid_rle.clone(), dict, mask.clone(), &mut result).unwrap();
+
+        let idxs = hybrid_rle.collect().unwrap();
+        let mut result_i = 0;
+        for (idx, is_selected) in idxs.iter().zip(mask.iter()) {
+            if is_selected {
+                prop_assert_eq!(result[result_i], dict[*idx as usize]);
+                result_i += 1;
+            }
+        }
+
+        TestCaseResult::Ok(())
+    }
+
+    proptest! {
+        #[test]
+        fn test_decode_masked_optional(
+            (ref hybrid_rle, max_idx, ref dict, ref mask) in values_and_mask()
+        ) {
+            let hybrid_rle = HybridRleDecoder::new(hybrid_rle, 32 - max_idx.leading_zeros(), mask.len());
+            let dict = bytemuck::cast_slice(dict.as_slice());
+            _test_decode(hybrid_rle, dict, mask)?
+        }
+    }
+}

@@ -117,22 +117,23 @@ fn err_date_str_compare() -> PolarsResult<()> {
 
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
-    lp_arena: &Arena<IR>,
-    lp_node: Node,
+    input_schema: &Schema,
     node_left: Node,
     op: Operator,
     node_right: Node,
 ) -> PolarsResult<Option<AExpr>> {
-    let input_schema = get_schema(lp_arena, lp_node);
     let (left, type_left): (&AExpr, DataType) =
-        unpack!(get_aexpr_and_type(expr_arena, node_left, &input_schema));
+        unpack!(get_aexpr_and_type(expr_arena, node_left, input_schema));
     let (right, type_right): (&AExpr, DataType) =
-        unpack!(get_aexpr_and_type(expr_arena, node_right, &input_schema));
+        unpack!(get_aexpr_and_type(expr_arena, node_right, input_schema));
 
     match (&type_left, &type_right) {
-        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
         (
-            Unknown(UnknownKind::Any),
+            Unknown(UnknownKind::Any | UnknownKind::Ufunc),
+            Unknown(UnknownKind::Any | UnknownKind::Ufunc),
+        ) => return Ok(None),
+        (
+            Unknown(UnknownKind::Any | UnknownKind::Ufunc),
             Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
         ) => {
             let right = unpack!(materialize(right));
@@ -146,7 +147,7 @@ pub(super) fn process_binary(
         },
         (
             Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
-            Unknown(UnknownKind::Any),
+            Unknown(UnknownKind::Any | UnknownKind::Ufunc),
         ) => {
             let left = unpack!(materialize(left));
             let left = expr_arena.add(left);
@@ -250,7 +251,7 @@ pub(super) fn process_binary(
 
     // TODO! raise here?
     // We should at least never cast to Unknown.
-    if matches!(st, DataType::Unknown(UnknownKind::Any)) {
+    if matches!(st, DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc)) {
         return Ok(None);
     }
 

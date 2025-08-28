@@ -1,0 +1,38 @@
+[package]
+name = "pyo3-polars"
+version = "0.23.1"
+edition = "2021"
+license = "MIT"
+readme = "../README.md"
+repository = "https://github.com/pola-rs/pyo3-polars"
+description = "Expression plugins and PyO3 types for polars"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arrow = { workspace = true, default-features = false }
+libc = "0.2" # pyo3 depends on libc already, so this does not introduce an extra dependence.
+once_cell = "1"
+polars = { workspace = true, default-features = false }
+polars-core = { workspace = true, default-features = false, features = ["allow_unused"] }
+polars-error = { workspace = true, features = ["python"] }
+polars-ffi = { workspace = true, optional = true }
+polars-lazy = { workspace = true, optional = true, features = ["allow_unused"] }
+polars-plan = { workspace = true, optional = true, features = ["allow_unused"] }
+polars-utils = { workspace = true, features = ["serde"], optional = true }
+pyo3 = { workspace = true }
+pyo3-polars-derive = { workspace = true, optional = true }
+serde = { version = "1", optional = true }
+serde-pickle = { version = "1", optional = true }
+thiserror = "1"
+
+[features]
+# Polars python is needed because all variants need to be activated of the DSL.
+lazy = ["polars/serde-lazy", "polars/lazy", "polars-plan", "polars-lazy/serde", "polars-utils", "polars-lazy/python"]
+derive = ["pyo3-polars-derive", "polars-plan/python", "polars-ffi", "serde-pickle", "serde"]
+dtype-full = ["polars/dtype-full", "dtype-decimal", "dtype-array", "dtype-struct", "dtype-categorical"]
+object = ["polars/object"]
+dtype-decimal = ["polars/dtype-decimal"]
+dtype-struct = ["polars/dtype-struct"]
+dtype-array = ["polars/dtype-array"]
+dtype-categorical = ["polars/dtype-categorical"]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from collections import Counter
 from collections.abc import Generator, Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
@@ -18,10 +17,11 @@ import polars._utils.construction as plc
 from polars import functions as F
 from polars._utils.construction.utils import (
     contains_nested,
+    get_first_non_none,
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
-    is_sqlalchemy,
+    is_sqlalchemy_row,
     nt_unpack,
     try_get_type_hints,
 )
@@ -52,23 +52,23 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import DataOrientationWarning, DuplicateError, ShapeError
+from polars.exceptions import DataOrientationWarning, ShapeError
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, MutableMapping
 
     from polars import DataFrame, Series
+    from polars._plr import PySeries
     from polars._typing import (
         Orientation,
         PolarsDataType,
         SchemaDefinition,
         SchemaDict,
     )
-    from polars.polars import PySeries
 
 _MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 
@@ -327,12 +327,12 @@ def _post_apply_columns(
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
 
     if column_casts or column_subset:
-        pydf = pydf.lazy()
+        pyldf = pydf.lazy()
         if column_casts:
-            pydf = pydf.with_columns(column_casts)
+            pyldf = pyldf.with_columns(column_casts)
         if column_subset:
-            pydf = pydf.select([F.col(col)._pyexpr for col in column_subset])
-        pydf = pydf.collect(engine="in-memory")
+            pyldf = pyldf.select([F.col(col)._pyexpr for col in column_subset])
+        pydf = pyldf.collect(engine="in-memory", lambda_post_opt=None)
 
     return pydf
 
@@ -459,7 +459,7 @@ def sequence_to_pydf(
         return dict_to_pydf({}, schema=schema, schema_overrides=schema_overrides)
 
     return _sequence_to_pydf_dispatcher(
-        data[0],
+        get_first_non_none(data),
         data=data,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -484,7 +484,7 @@ def _sequence_to_pydf_dispatcher(
 ) -> PyDataFrame:
     # note: ONLY python-native data should participate in singledispatch registration
     # via top-level decorators, otherwise we have to import the associated module.
-    # third-party libraries (such as numpy/pandas) should instead be identified inline
+    # third-party libraries (such as numpy/pandas) should be identified inline (below)
     # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
 
     common_params = {
@@ -522,7 +522,7 @@ def _sequence_to_pydf_dispatcher(
     elif is_pydantic_model(first_element):
         to_pydf = _sequence_of_pydantic_models_to_pydf
 
-    elif is_sqlalchemy(first_element):
+    elif is_sqlalchemy_row(first_element):
         to_pydf = _sequence_of_tuple_to_pydf
 
     elif isinstance(first_element, Sequence) and not isinstance(first_element, str):
@@ -588,7 +588,11 @@ def _sequence_of_sequence_to_pydf(
         if unpack_nested:
             dicts = [nt_unpack(d) for d in data]
             pydf = PyDataFrame.from_dicts(
-                dicts, strict=strict, infer_schema_length=infer_schema_length
+                dicts,
+                schema=None,
+                schema_overrides=None,
+                strict=strict,
+                infer_schema_length=infer_schema_length,
             )
         else:
             pydf = PyDataFrame.from_rows(
@@ -664,7 +668,7 @@ def _sequence_of_tuple_to_pydf(
     nan_to_null: bool = False,
 ) -> PyDataFrame:
     # infer additional meta information if namedtuple
-    if is_namedtuple(first_element.__class__) or is_sqlalchemy(first_element):
+    if is_namedtuple(first_element.__class__) or is_sqlalchemy_row(first_element):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
             annotations = getattr(first_element, "__annotations__", None)
@@ -689,6 +693,7 @@ def _sequence_of_tuple_to_pydf(
     )
 
 
+@_sequence_to_pydf_dispatcher.register(Mapping)
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
     first_element: dict[str, Any],
@@ -814,12 +819,18 @@ def _sequence_of_dataclasses_to_pydf(
     if unpack_nested:
         dicts = [asdict(md) for md in data]
         pydf = PyDataFrame.from_dicts(
-            dicts, strict=strict, infer_schema_length=infer_schema_length
+            dicts,
+            schema=None,
+            schema_overrides=None,
+            strict=strict,
+            infer_schema_length=infer_schema_length,
         )
     else:
         rows = [astuple(dc) for dc in data]
         pydf = PyDataFrame.from_rows(
-            rows, schema=overrides or None, infer_schema_length=infer_schema_length
+            rows,  # type: ignore[arg-type]
+            schema=overrides or None,
+            infer_schema_length=infer_schema_length,
         )
 
     if overrides:
@@ -846,7 +857,9 @@ def _sequence_of_pydantic_models_to_pydf(
 
     old_pydantic = parse_version(pydantic.__version__) < (2, 0)
     model_fields = list(
-        first_element.__fields__ if old_pydantic else first_element.model_fields
+        first_element.__fields__
+        if old_pydantic
+        else first_element.__class__.model_fields
     )
     (
         unpack_nested,
@@ -865,7 +878,11 @@ def _sequence_of_pydantic_models_to_pydf(
             else [md.model_dump(mode="python") for md in data]
         )
         pydf = PyDataFrame.from_dicts(
-            dicts, strict=strict, infer_schema_length=infer_schema_length
+            dicts,
+            schema=None,
+            schema_overrides=None,
+            strict=strict,
+            infer_schema_length=infer_schema_length,
         )
 
     elif len(model_fields) > 50:
@@ -881,6 +898,7 @@ def _sequence_of_pydantic_models_to_pydf(
         pydf = PyDataFrame.from_dicts(
             dicts,
             schema=overrides,
+            schema_overrides=None,
             strict=strict,
             infer_schema_length=infer_schema_length,
         )
@@ -1106,7 +1124,9 @@ def pandas_to_pydf(
     if convert_index:
         for idxcol in data.index.names:
             arrow_dict[str(idxcol)] = plc.pandas_series_to_arrow(
-                data.index.get_level_values(idxcol),
+                # get_level_values accepts `int | str`
+                # but `index.names` returns `Hashable`
+                data.index.get_level_values(idxcol),  # type: ignore[arg-type, unused-ignore]
                 nan_to_null=nan_to_null,
                 length=length,
             )
@@ -1162,7 +1182,7 @@ def arrow_to_pydf(
     try:
         if column_names != data.schema.names:
             data = data.rename_columns(column_names)
-    except pa.lib.ArrowInvalid as e:
+    except pa.ArrowInvalid as e:
         msg = "dimensions of columns arg must match data dimensions"
         raise ValueError(msg) from e
 
@@ -1174,12 +1194,6 @@ def arrow_to_pydf(
 
     # supply the arrow schema so the metadata is intact
     pydf = PyDataFrame.from_arrow_record_batches(batches, data.schema)
-
-    # arrow tables allow duplicate names; we don't
-    if len(data.columns) != pydf.width():
-        col_name, _ = Counter(column_names).most_common(1)[0]
-        msg = f"column {col_name!r} appears more than once; names must be unique"
-        raise DuplicateError(msg)
 
     if rechunk:
         pydf = pydf.rechunk()
@@ -1214,9 +1228,6 @@ def numpy_to_pydf(
         n_columns = len(record_names)
         for nm in record_names:
             shape = data[nm].shape
-            if len(data[nm].shape) > 2:
-                msg = f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
-                raise ValueError(msg)
         if not schema:
             schema = record_names
     else:

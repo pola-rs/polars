@@ -8,11 +8,12 @@ use super::Series;
 /// problems can be tracked down.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SeriesColumn {
     inner: Series,
 
     #[cfg(debug_assertions)]
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "serde", serde(skip, default))]
     materialized_at: Option<std::sync::Arc<std::backtrace::Backtrace>>,
 }
 

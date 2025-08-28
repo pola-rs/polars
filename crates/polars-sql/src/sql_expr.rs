@@ -14,8 +14,8 @@ use polars_lazy::prelude::*;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::typed_lit;
 use polars_time::Duration;
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use rand::Rng;
+use rand::distr::Alphanumeric;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -59,24 +59,23 @@ pub(crate) struct SQLExprVisitor<'a> {
 
 impl SQLExprVisitor<'_> {
     fn array_expr_to_series(&mut self, elements: &[SQLExpr]) -> PolarsResult<Series> {
-        let array_elements = elements
-            .iter()
-            .map(|e| match e {
+        let mut array_elements = Vec::with_capacity(elements.len());
+        for e in elements {
+            let val = match e {
                 SQLExpr::Value(v) => self.visit_any_value(v, None),
                 SQLExpr::UnaryOp { op, expr } => match expr.as_ref() {
                     SQLExpr::Value(v) => self.visit_any_value(v, Some(op)),
-                    _ => Err(polars_err!(SQLInterface: "expression {:?} is not currently supported", e)),
+                    _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
                 },
-                SQLExpr::Array(_) => {
-                    // TODO: nested arrays (handle FnMut issues)
-                    // let srs = self.array_expr_to_series(&[e.clone()])?;
-                    // Ok(AnyValue::List(srs))
-                    Err(polars_err!(SQLInterface: "nested array literals are not currently supported:\n{:?}", e))
+                SQLExpr::Array(values) => {
+                    let srs = self.array_expr_to_series(&values.elem)?;
+                    Ok(AnyValue::List(srs))
                 },
-                _ => Err(polars_err!(SQLInterface: "expression {:?} is not currently supported", e)),
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-
+                _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
+            }?
+            .into_static();
+            array_elements.push(val);
+        }
         Series::from_any_values(PlSmallStr::EMPTY, &array_elements, true)
     }
 
@@ -123,7 +122,7 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => {
                 let expr = self.visit_expr(expr)?;
-                let elems = self.visit_array_expr(list, false, Some(&expr))?;
+                let elems = self.visit_array_expr(list, true, Some(&expr))?;
                 let is_in = expr.is_in(elems, false);
                 Ok(if *negated { is_in.not() } else { is_in })
             },
@@ -244,7 +243,7 @@ impl SQLExprVisitor<'_> {
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(value) => self.visit_literal(value),
-            SQLExpr::Wildcard(_) => Ok(Expr::Wildcard),
+            SQLExpr::Wildcard(_) => Ok(all().as_expr()),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
                 polars_bail!(SQLInterface: "expression {:?} is not currently supported", other)
@@ -267,7 +266,7 @@ impl SQLExprVisitor<'_> {
             if schema.len() != 1 {
                 polars_bail!(SQLSyntax: "SQL subquery returns more than one column");
             }
-            let rand_string: String = thread_rng()
+            let rand_string: String = rand::rng()
                 .sample_iter(&Alphanumeric)
                 .take(16)
                 .map(char::from)
@@ -360,7 +359,10 @@ impl SQLExprVisitor<'_> {
 
     /// Handle implicit temporal string comparisons.
     ///
-    /// eg: "dt >= '2024-04-30'", or "dtm::date = '2077-10-10'"
+    /// eg: clauses such as -
+    ///   "dt >= '2024-04-30'"
+    ///   "dt = '2077-10-10'::date"
+    ///   "dtm::date = '2077-10-10'
     fn convert_temporal_strings(&mut self, left: &Expr, right: &Expr) -> Expr {
         if let (Some(name), Some(s), expr_dtype) = match (left, right) {
             // identify "col <op> string" expressions
@@ -380,11 +382,14 @@ impl SQLExprVisitor<'_> {
             if expr_dtype.is_none() && self.active_schema.is_none() {
                 right.clone()
             } else {
-                let left_dtype = expr_dtype.or_else(|| {
-                    self.active_schema
-                        .as_ref()
-                        .and_then(|schema| schema.get(&name))
-                });
+                let left_dtype = expr_dtype.map_or_else(
+                    || {
+                        self.active_schema
+                            .as_ref()
+                            .and_then(|schema| schema.get(&name))
+                    },
+                    |dt| dt.as_literal(),
+                );
                 match left_dtype {
                     Some(DataType::Time) if is_iso_time(s) => {
                         right.clone().str().to_time(StrptimeOptions {
@@ -401,7 +406,7 @@ impl SQLExprVisitor<'_> {
                     Some(DataType::Datetime(tu, tz)) if is_iso_datetime(s) || is_iso_date(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
-                            lit(format!("{}T00:00:00", s))
+                            lit(format!("{s}T00:00:00"))
                         } else {
                             lit(s.replacen(' ', "T", 1))
                         }
@@ -468,14 +473,14 @@ impl SQLExprVisitor<'_> {
                 return Ok(self
                     .visit_expr(left)?
                     .dt()
-                    .offset_by(lit(format!("-{}", duration))));
+                    .offset_by(lit(format!("-{duration}"))));
             },
             (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
                 let duration = interval_to_duration(v, false)?;
                 return Ok(self
                     .visit_expr(left)?
                     .dt()
-                    .offset_by(lit(format!("{}", duration))));
+                    .offset_by(lit(format!("{duration}"))));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)
@@ -543,14 +548,14 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::PGRegexIMatch => match rhs {  // "x ~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
-                    lhs.str().contains(lit(format!("(?i){}", pat)), true)
+                    lhs.str().contains(lit(format!("(?i){pat}")), true)
                 },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", rhs),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match rhs {  // "x !~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
-                    lhs.str().contains(lit(format!("(?i){}", pat)), true).not()
+                    lhs.str().contains(lit(format!("(?i){pat}")), true).not()
                 },
                 _ => {
                     polars_bail!(SQLSyntax: "invalid pattern for '!~*' operator: {:?}", rhs)
@@ -771,7 +776,8 @@ impl SQLExprVisitor<'_> {
 
         #[cfg(feature = "json")]
         if dtype == &SQLDataType::JSON {
-            return Ok(expr.str().json_decode(None, None));
+            // @BROKEN: we cannot handle this.
+            return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
         Ok(match cast_kind {
@@ -825,7 +831,7 @@ impl SQLExprVisitor<'_> {
         &self,
         value: &SQLValue,
         op: Option<&UnaryOperator>,
-    ) -> PolarsResult<AnyValue> {
+    ) -> PolarsResult<AnyValue<'_>> {
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
             SQLValue::DollarQuotedString(s) => AnyValue::StringOwned(s.clone().value.into()),
@@ -1292,14 +1298,21 @@ pub(crate) fn resolve_compound_identifier(
                 .iter_names_and_dtypes()
                 .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).unwrap().0)
                 .collect::<Vec<_>>());
-        } else if let Some((_, name, dtype)) = schema.get_full(name) {
-            resolve_column(ctx, ident_root, name, dtype)
-        } else if lf.is_none() {
+        };
+        let root_is_field = schema.get(&ident_root.value).is_some();
+        if lf.is_none() && root_is_field {
             remaining_idents = idents.iter().skip(1);
             Ok((
                 col(ident_root.value.as_str()),
                 schema.get(&ident_root.value),
             ))
+        } else if lf.is_none() && !root_is_field {
+            polars_bail!(
+                SQLInterface: "no table or struct column named '{}' found",
+                ident_root
+            )
+        } else if let Some((_, name, dtype)) = schema.get_full(name) {
+            resolve_column(ctx, ident_root, name, dtype)
         } else {
             polars_bail!(
                 SQLInterface: "no column named '{}' found in table '{}'",

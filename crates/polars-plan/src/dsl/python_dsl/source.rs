@@ -12,6 +12,7 @@ use crate::dsl::SpecialEq;
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct PythonOptionsDsl {
     /// A function that returns a Python Generator.
     /// The generator should produce Polars DataFrame's.
@@ -23,7 +24,7 @@ pub struct PythonOptionsDsl {
 }
 
 impl PythonOptionsDsl {
-    pub(crate) fn get_schema(&self) -> PolarsResult<SchemaRef> {
+    pub fn get_schema(&self) -> PolarsResult<SchemaRef> {
         match self.schema_fn.as_ref().expect("should be set").as_ref() {
             Either::Left(func) => Python::with_gil(|py| {
                 let schema = func
@@ -39,6 +40,7 @@ impl PythonOptionsDsl {
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum PythonScanSource {
     Pyarrow,
     Cuda,

@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -128,8 +128,8 @@ def test_streaming_join_rechunk_12498() -> None:
     }
 
 
-@pytest.mark.parametrize("streaming", [False, True])
-def test_join_null_matches(streaming: bool) -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_join_null_matches(maintain_order: bool) -> None:
     # null values in joins should never find a match.
     df_a = pl.LazyFrame(
         {
@@ -145,21 +145,40 @@ def test_join_null_matches(streaming: bool) -> None:
         }
     )
     # Semi
-    assert df_a.join(df_b, on="a", how="semi", nulls_equal=True).collect(
-        engine="streaming" if streaming else "in-memory"
-    )["idx_a"].to_list() == [0, 1, 2]
-    assert df_a.join(df_b, on="a", how="semi", nulls_equal=False).collect(
-        engine="streaming" if streaming else "in-memory"
-    )["idx_a"].to_list() == [1, 2]
+    assert_series_equal(
+        df_a.join(
+            df_b,
+            on="a",
+            how="semi",
+            nulls_equal=True,
+            maintain_order="left" if maintain_order else "none",
+        ).collect()["idx_a"],
+        pl.Series("idx_a", [0, 1, 2]),
+        check_order=maintain_order,
+    )
+    assert_series_equal(
+        df_a.join(
+            df_b,
+            on="a",
+            how="semi",
+            nulls_equal=False,
+            maintain_order="left" if maintain_order else "none",
+        ).collect()["idx_a"],
+        pl.Series("idx_a", [1, 2]),
+        check_order=maintain_order,
+    )
 
     # Inner
     expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="inner").collect(
-            engine="streaming" if streaming else "in-memory"
-        ),
+        df_a.join(
+            df_b,
+            on="a",
+            how="inner",
+            maintain_order="right" if maintain_order else "none",
+        ).collect(),
         expected,
-        check_row_order=False,
+        check_row_order=maintain_order,
     )
 
     # Left outer
@@ -167,11 +186,14 @@ def test_join_null_matches(streaming: bool) -> None:
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(
-            engine="streaming" if streaming else "in-memory"
-        ),
+        df_a.join(
+            df_b,
+            on="a",
+            how="left",
+            maintain_order="left" if maintain_order else "none",
+        ).collect(),
         expected,
-        check_row_order=False,
+        check_row_order=maintain_order,
     )
     # Full outer
     expected = pl.DataFrame(
@@ -183,7 +205,14 @@ def test_join_null_matches(streaming: bool) -> None:
         }
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="full").collect(), expected, check_row_order=False
+        df_a.join(
+            df_b,
+            on="a",
+            how="full",
+            maintain_order="right" if maintain_order else "none",
+        ).collect(),
+        expected,
+        check_row_order=maintain_order,
     )
 
 
@@ -260,7 +289,6 @@ def test_non_coalescing_streaming_left_join() -> None:
     df2 = pl.LazyFrame({"a": [1, 2], "c": ["j", "i"]})
 
     q = df1.join(df2, on="a", how="left", coalesce=False)
-    assert q.explain(engine="old-streaming").startswith("STREAMING")  # type: ignore[arg-type]
     assert_frame_equal(
         q.collect(engine="streaming"),
         pl.DataFrame(
@@ -294,17 +322,23 @@ def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
     join_cols = set(lf1.collect_schema()).intersection(set(lf2.collect_schema()))
     final_lf = lf1.join(lf2, on=list(join_cols), how="full", coalesce=True)
 
-    assert final_lf.collect(engine="old-streaming").to_dict(as_series=False) == {  # type: ignore[call-overload]
-        "value_at": [
-            datetime(2024, 1, 1, 0, 0),
-            datetime(2024, 2, 1, 0, 0),
-            datetime(2024, 3, 1, 0, 0),
-            datetime(2024, 4, 1, 0, 0),
-            datetime(2024, 5, 1, 0, 0),
-            datetime(2024, 6, 1, 0, 0),
-        ],
-        "value": [0, 1, 2, 3, 4, 5],
-    }
+    assert_frame_equal(
+        final_lf.collect(engine="streaming"),
+        pl.DataFrame(
+            {
+                "value_at": [
+                    datetime(2024, 1, 1, 0, 0),
+                    datetime(2024, 2, 1, 0, 0),
+                    datetime(2024, 3, 1, 0, 0),
+                    datetime(2024, 4, 1, 0, 0),
+                    datetime(2024, 5, 1, 0, 0),
+                    datetime(2024, 6, 1, 0, 0),
+                ],
+                "value": [0, 1, 2, 3, 4, 5],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_flush_join_and_operation_19040() -> None:
@@ -339,3 +373,16 @@ def test_full_coalesce_join_and_rename_15583() -> None:
         .collect(engine="streaming")
     )
     assert result["A"].to_list() == [1, 2, 3, 4, 5]
+
+
+def test_invert_order_full_join_22295() -> None:
+    lf = pl.LazyFrame(
+        {
+            "value_at": [datetime(2024, i + 1, 1) for i in range(6)],
+            "value": list(range(6)),
+        }
+    )
+
+    lf.join(lf, on=["value", "value_at"], how="full", coalesce=True).collect(
+        engine="streaming"
+    )

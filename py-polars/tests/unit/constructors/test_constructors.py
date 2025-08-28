@@ -34,6 +34,8 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self
 
+    from typing_extensions import assert_type
+
 
 # -----------------------------------------------------------------------------------
 # nested dataclasses, models, namedtuple classes (can't be defined inside test func)
@@ -256,7 +258,7 @@ def test_init_structured_objects() -> None:
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical(ordering="physical"),
+            "tk": pl.Categorical(ordering="lexical"),
             "pc": pl.Decimal(scale=1),
             "sz": pl.UInt16,
         }
@@ -730,12 +732,17 @@ def test_init_arrow_dupes() -> None:
         arrays=[
             pa.array([1, 2, 3], type=pa.int32()),
             pa.array([4, 5, 6], type=pa.int32()),
+            pa.array(
+                [7, 8, 9], type=pa.decimal128(38, 10)
+            ),  # included as this triggers a panic during construction alongside duplicate fields
         ],
-        schema=pa.schema([("col", pa.int32()), ("col", pa.int32())]),
+        schema=pa.schema(
+            [("col", pa.int32()), ("col", pa.int32()), ("col3", pa.decimal128(38, 10))]
+        ),
     )
     with pytest.raises(
         DuplicateError,
-        match="column 'col' appears more than once; names must be unique",
+        match=r"""column appears more than once; names must be unique: \["col"\]""",
     ):
         pl.DataFrame(tbl)
 
@@ -955,7 +962,8 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # subclassed pandas object, with/without data & overrides
-    class XSeries(pd.Series):  # type: ignore[type-arg]
+    # type error fixed in pandas-stubs 2.3.0.250703, which doesn't support Python3.9
+    class XSeries(pd.Series):  # type: ignore[type-arg, unused-ignore]
         @property
         def _constructor(self) -> type:
             return XSeries
@@ -1106,6 +1114,9 @@ def test_init_only_columns() -> None:
         assert_frame_equal(df, expected)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
         assert pl.List(pl.UInt8).is_(df.schema["d"])
+
+        if TYPE_CHECKING:
+            assert_type(pl.List(pl.UInt8).is_(df.schema["d"]), bool)
 
         dfe = df.clear()
         assert len(dfe) == 0
