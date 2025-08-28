@@ -146,7 +146,7 @@ where
 
                 BitRepr::U8(reinterpret_chunked_array(self))
             },
-            
+
             _ => unreachable!(),
         }
     }
@@ -260,7 +260,6 @@ impl Float32Chunked {
         let out = out.u32().unwrap();
         out._reinterpret_float().into()
     }
-
 }
 impl Float64Chunked {
     pub fn apply_as_ints<F>(&self, f: F) -> Series

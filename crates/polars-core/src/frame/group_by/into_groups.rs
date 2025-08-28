@@ -154,7 +154,7 @@ where
                 rolling: false,
             });
         }
-        
+
         let out = match self.dtype() {
             DataType::Float32 => {
                 // Convince the compiler that we are this type.
@@ -170,15 +170,13 @@ where
                 };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            _ => {
-                match self.to_bit_repr() {
-                    BitRepr::U8(ca) => num_groups_proxy(&ca, multithreaded, sorted),
-                    BitRepr::U16(ca) => num_groups_proxy(&ca, multithreaded, sorted),
-                    BitRepr::U32(ca) => num_groups_proxy(&ca, multithreaded, sorted),
-                    BitRepr::U64(ca) => num_groups_proxy(&ca, multithreaded, sorted),
-                    BitRepr::I128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
-                }
-            }
+            _ => match self.to_bit_repr() {
+                BitRepr::U8(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                BitRepr::U16(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                BitRepr::U32(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                BitRepr::U64(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                BitRepr::I128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+            },
         };
         try_raise_keyboard_interrupt();
         Ok(out)
