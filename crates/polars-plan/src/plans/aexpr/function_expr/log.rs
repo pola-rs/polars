@@ -12,10 +12,7 @@ pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Co
 
 pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
     assert_eq!(columns.len(), 2);
-
-    let s = columns[0].as_materialized_series();
-    let base = columns[1].as_materialized_series();
-    Ok(s.log(base).into())
+    Column::apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
 }
 
 pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {

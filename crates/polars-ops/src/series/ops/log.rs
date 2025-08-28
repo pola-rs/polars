@@ -1,8 +1,4 @@
-use arrow::array::Array;
-use arrow::compute::utils::combine_validities_and;
-use arrow::types::NativeType;
-use num_traits::Float;
-use polars_core::prelude::arity::apply_binary_kernel_broadcast;
+use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
 
@@ -29,14 +25,10 @@ pub trait LogSeries: SeriesSealed {
                 with_match_physical_float_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                     let base_ca: &ChunkedArray<$T> = base.as_ref().as_ref().as_ref();
-                    let ca: ChunkedArray<$T> = apply_binary_kernel_broadcast(
-                        ca,
-                        base_ca,
-                        |l, r| log_kernel_binary::<$T>(l, r)                        ,
-                        |l, r| log_kernel_unary_left::<$T>(l, r),
-                        |l, r| log_kernel_unary_right::<$T>(l, r),
+                    let out: ChunkedArray<$T> = broadcast_binary_elementwise_values(ca, base_ca,
+                        |x, base| x.log(base)
                     );
-                    ca.into_series()
+                    out.into_series()
                 })
             },
             (_, Float64) => s.cast(&DataType::Float64).unwrap().log(base),
@@ -133,44 +125,3 @@ pub trait LogSeries: SeriesSealed {
 }
 
 impl LogSeries for Series {}
-
-fn log_kernel_binary<'a, T>(x_arr: &'a T::Array, base_arr: &'a T::Array) -> T::Array
-where
-    T: PolarsDataType,
-    T::Physical<'a>: num_traits::Float + NativeType,
-    T::Array: ArrayFromIter<T::Physical<'a>>,
-{
-    let validity = combine_validities_and(x_arr.validity(), base_arr.validity());
-    let element_iter = x_arr
-        .values_iter()
-        .zip(base_arr.values_iter())
-        .map(|(x, base): (T::Physical<'a>, T::Physical<'a>)| x.log(base));
-    let result: T::Array = element_iter.collect_arr();
-    result.with_validity_typed(validity)
-}
-
-fn log_kernel_unary_right<'a, T>(x_arr: &'a T::Array, base: T::Physical<'a>) -> T::Array
-where
-    T: PolarsDataType,
-    T::Physical<'a>: num_traits::Float + NativeType,
-    T::Array: ArrayFromIter<T::Physical<'a>>,
-{
-    let validity = x_arr.validity().cloned();
-    let element_iter = x_arr.values_iter().map(|x: T::Physical<'a>| x.log(base));
-    let result: T::Array = element_iter.collect_arr();
-    result.with_validity_typed(validity)
-}
-
-fn log_kernel_unary_left<'a, T>(x_arr: T::Physical<'a>, base: &'a T::Array) -> T::Array
-where
-    T: PolarsDataType,
-    T::Physical<'a>: num_traits::Float + NativeType,
-    T::Array: ArrayFromIter<T::Physical<'a>>,
-{
-    let validity = base.validity().cloned();
-    let element_iter = base
-        .values_iter()
-        .map(|base: T::Physical<'a>| x_arr.log(base));
-    let result: T::Array = element_iter.collect_arr();
-    result.with_validity_typed(validity)
-}
