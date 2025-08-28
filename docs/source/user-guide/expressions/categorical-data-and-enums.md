@@ -162,9 +162,13 @@ final section about
 
 ### Comparison between `Categorical` columns is lexical
 
-Since Polars 1.32.0, when comparing two columns with data type `Categorical`, Polars always performs lexical (alphabetical) comparison between the values. The `ordering` parameter has been deprecated and is now ignored.
+Since Polars 1.32.0, when comparing two columns with data type `Categorical`, Polars always performs
+lexical (alphabetical) comparison between the values. The `ordering` parameter has been deprecated
+and is now ignored.
 
-Prior to Polars version 1.32.0, when comparing two columns with data type `Categorical`, Polars does not perform lexical comparison between the values by default. If you want lexical ordering, you need to specify so when creating the column:
+Prior to Polars version 1.32.0, when comparing two columns with data type `Categorical`, Polars does
+not perform lexical comparison between the values by default. If you want lexical ordering, you need
+to specify so when creating the column:
 
 {{code_block('user-guide/expressions/categoricals', 'stringcache-categorical-comparison-lexical',
 ['StringCache', 'Categorical'])}}
