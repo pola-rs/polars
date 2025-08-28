@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from polars._typing import IntoExpr
+    from polars._typing import IntoExpr, PolarsDataType
 
 
 def isnan(value: object) -> bool:
@@ -373,7 +373,60 @@ def test_out_of_range_integers() -> None:
         assert series.index_of(256)
     with pytest.raises(InvalidOperationError, match="cannot cast 257 losslessly to u8"):
         assert series.index_of(np.int16(257))
+
+
+def test_out_of_range_float64() -> None:
+    series = pl.Series([0, 255, None], dtype=pl.Float64)
+    # Small numbers are fine:
+    assert series.index_of(1_000_000) is None
+    assert series.index_of(-1_000_000) is None
     with pytest.raises(
-        InvalidOperationError, match="cannot cast losslessly from u16 to u8"
+        InvalidOperationError, match=f"cannot cast {2 ** 53} losslessly to f64"
     ):
-        assert series.index_of(pl.lit(17, dtype=pl.UInt16))
+        assert series.index_of(2**53)
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {- (2 ** 53)} losslessly to f64"
+    ):
+        assert series.index_of(-(2**53))
+
+
+def test_out_of_range_float32() -> None:
+    series = pl.Series([0, 255, None], dtype=pl.Float32)
+    # Small numbers are fine:
+    assert series.index_of(1_000_000) is None
+    assert series.index_of(-1_000_000) is None
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {2 ** 24} losslessly to f32"
+    ):
+        assert series.index_of(2**24)
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {- (2 ** 24)} losslessly to f32"
+    ):
+        assert series.index_of(-(2**24))
+
+
+@pytest.mark.parametrize(
+    ("series_dtype", "value", "value_dtype"),
+    [
+        # Larger integer doesn't fit in smaller integer:
+        (pl.UInt8, 17, pl.UInt16),
+        # Can't find negative numbers in unsigned integers:
+        (pl.UInt16, -1, pl.Int8),
+        # Values after the decimal point that can't be represented:
+        (pl.Decimal(3, 1), 1, pl.Decimal(4, 2)),
+        # Overly large decimal value:
+        (pl.Decimal(3, 0), 1, pl.Decimal(4, 0)),
+        # Can't fit nanoseconds in milliseconds:
+        (pl.Duration("ms"), 1, pl.Duration("ns")),
+        # Arrays that are the wrong length:
+        (pl.Array(pl.Int64, 2), [1], pl.Array(pl.Int64, 1)),
+    ],
+)
+def test_lossy_casts_are_rejected(
+    series_dtype: PolarsDataType, value: Any, value_dtype: PolarsDataType
+) -> None:
+    # We create a Series with a null because previously lossless casts would
+    # sometimes get turned into nulls and you'd get an answer.
+    series = pl.Series([None], dtype=series_dtype)
+    with pytest.raises(InvalidOperationError, match="cannot cast losslessly"):
+        series.index_of(pl.lit(value, dtype=value_dtype))
