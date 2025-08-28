@@ -228,9 +228,7 @@ pub enum FunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -559,7 +557,7 @@ impl Hash for FunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -778,7 +776,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]

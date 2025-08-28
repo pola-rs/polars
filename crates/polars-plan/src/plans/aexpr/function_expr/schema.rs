@@ -227,7 +227,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
-            Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
+            Entropy { .. } | Log | Log1p | Exp => mapper.map_to_float_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),

@@ -279,9 +279,7 @@ pub enum IRFunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -617,7 +615,7 @@ impl Hash for IRFunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -839,7 +837,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]
@@ -1229,7 +1227,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
-            Log { base } => map!(log::log, base),
+            Log => map_as_slice!(log::log),
             #[cfg(feature = "log")]
             Log1p => map!(log::log1p),
             #[cfg(feature = "log")]
@@ -1529,7 +1527,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log { .. } | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
             F::Entropy { .. } => FunctionOptions::aggregation(),
             F::Unique(_) => FunctionOptions::groupwise(),

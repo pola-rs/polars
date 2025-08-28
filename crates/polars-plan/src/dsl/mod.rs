@@ -1498,8 +1498,8 @@ impl Expr {
 
     #[cfg(feature = "log")]
     /// Compute the logarithm to a given base.
-    pub fn log(self, base: f64) -> Self {
-        self.map_unary(FunctionExpr::Log { base })
+    pub fn log(self, base: Expr) -> Self {
+        self.map_binary(FunctionExpr::Log, base)
     }
 
     #[cfg(feature = "log")]

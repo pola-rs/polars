@@ -847,8 +847,8 @@ impl PyExpr {
         self.inner.clone().all(ignore_nulls).into()
     }
 
-    fn log(&self, base: f64) -> Self {
-        self.inner.clone().log(base).into()
+    fn log(&self, base: PyExpr) -> Self {
+        self.inner.clone().log(base.inner).into()
     }
 
     fn log1p(&self) -> Self {
