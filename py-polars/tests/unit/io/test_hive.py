@@ -1104,3 +1104,29 @@ def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
     out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
 
     assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+@pytest.mark.write_disk
+def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
+    df = pl.DataFrame({"p": [1, 2, 3, 4, 5], "x": [1, 1, 2, 2, 3]})
+    df.lazy().sink_parquet(pl.PartitionByKey(tmp_path, by="p"), mkdir=True)
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(True).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.lit(True)).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(False).collect(),
+        df.clear(),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.lit(False)).collect(),
+        df.clear(),
+    )
