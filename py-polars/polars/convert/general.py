@@ -476,6 +476,9 @@ def from_arrow(
     This operation will be zero copy for the most part. Types that are not
     supported by Polars may be cast to the closest supported type.
 
+    Hint: You can also directly pass arrow tables to `pl.DataFrame()` / arrow
+    arrays to `pl.Series()` to avoid typing issues.
+
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
