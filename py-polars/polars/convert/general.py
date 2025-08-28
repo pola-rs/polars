@@ -616,7 +616,7 @@ def from_pandas(
     schema_overrides: SchemaDict | None = ...,
     rechunk: bool = ...,
     nan_to_null: bool = ...,
-    include_index: Literal[True] = ...,
+    include_index: Literal[True],
 ) -> DataFrame: ...
 
 
