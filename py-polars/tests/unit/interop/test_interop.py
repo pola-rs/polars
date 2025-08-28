@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
+from functools import partial
 from typing import Any, cast
 
 import numpy as np
@@ -13,7 +14,6 @@ from polars.exceptions import ComputeError, DuplicateError, UnstableWarning
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
-from functools import partial
 
 
 def test_arrow_list_roundtrip() -> None:
