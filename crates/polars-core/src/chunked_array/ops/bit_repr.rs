@@ -26,7 +26,6 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
 
 /// Reinterprets the type of a [`ListChunked`]. T and U must have the same size
 /// and alignment.
-#[cfg(feature = "reinterpret")]
 fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ListChunked,
 ) -> ListChunked {
@@ -57,7 +56,7 @@ fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ListChunked::from_chunk_iter(ca.name().clone(), chunks)
 }
 
-#[cfg(all(feature = "reinterpret", feature = "dtype-i16", feature = "dtype-u16"))]
+#[cfg(all(feature = "dtype-i16", feature = "dtype-u16"))]
 impl Reinterpret for Int16Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
@@ -68,7 +67,7 @@ impl Reinterpret for Int16Chunked {
     }
 }
 
-#[cfg(all(feature = "reinterpret", feature = "dtype-u16", feature = "dtype-i16"))]
+#[cfg(all(feature = "dtype-u16", feature = "dtype-i16"))]
 impl Reinterpret for UInt16Chunked {
     fn reinterpret_signed(&self) -> Series {
         reinterpret_chunked_array::<_, Int16Type>(self).into_series()
@@ -79,7 +78,7 @@ impl Reinterpret for UInt16Chunked {
     }
 }
 
-#[cfg(all(feature = "reinterpret", feature = "dtype-i8", feature = "dtype-u8"))]
+#[cfg(all(feature = "dtype-i8", feature = "dtype-u8"))]
 impl Reinterpret for Int8Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
@@ -90,7 +89,7 @@ impl Reinterpret for Int8Chunked {
     }
 }
 
-#[cfg(all(feature = "reinterpret", feature = "dtype-u8", feature = "dtype-i8"))]
+#[cfg(all(feature = "dtype-u8", feature = "dtype-i8"))]
 impl Reinterpret for UInt8Chunked {
     fn reinterpret_signed(&self) -> Series {
         reinterpret_chunked_array::<_, Int8Type>(self).into_series()
@@ -162,7 +161,6 @@ where
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for UInt64Chunked {
     fn reinterpret_signed(&self) -> Series {
         let signed: Int64Chunked = reinterpret_chunked_array(self);
@@ -173,7 +171,6 @@ impl Reinterpret for UInt64Chunked {
         self.clone().into_series()
     }
 }
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for Int64Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
@@ -187,7 +184,6 @@ impl Reinterpret for Int64Chunked {
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for UInt32Chunked {
     fn reinterpret_signed(&self) -> Series {
         let signed: Int32Chunked = reinterpret_chunked_array(self);
@@ -199,7 +195,6 @@ impl Reinterpret for UInt32Chunked {
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for Int32Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
@@ -213,7 +208,6 @@ impl Reinterpret for Int32Chunked {
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for Float32Chunked {
     fn reinterpret_signed(&self) -> Series {
         reinterpret_chunked_array::<_, Int32Type>(self).into_series()
@@ -224,7 +218,6 @@ impl Reinterpret for Float32Chunked {
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for ListChunked {
     fn reinterpret_signed(&self) -> Series {
         match self.inner_dtype() {
@@ -245,7 +238,6 @@ impl Reinterpret for ListChunked {
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for Float64Chunked {
     fn reinterpret_signed(&self) -> Series {
         reinterpret_chunked_array::<_, Int64Type>(self).into_series()
