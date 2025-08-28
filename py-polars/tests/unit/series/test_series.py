@@ -1701,14 +1701,32 @@ def test_log_exp(dtype: pl.DataType) -> None:
     expected = pl.Series("a", np.log(a.cast(pl.Float64).to_numpy()))
     assert_series_equal(a.log(), expected)
 
-    expected = pl.Series("a", np.log10(a.cast(pl.Float64).to_numpy()))
-    assert_series_equal(a.log(base=pl.Series([10], dtype=dtype)), expected)
-
     expected = pl.Series("a", np.exp(b.cast(pl.Float64).to_numpy()))
     assert_series_equal(b.exp(), expected)
 
     expected = pl.Series("a", np.log1p(a.cast(pl.Float64).to_numpy()))
     assert_series_equal(a.log1p(), expected)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Float32,
+    ],
+)
+def test_log_broadcast(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
+    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
+
+    assert_series_equal(a.log(base=b), pl.Series("a", [0, 1, 1, 3, 2], dtype=dtype))
+    assert_series_equal(
+        a.log(base=pl.lit(3, dtype)), pl.Series("a", [0, 1, 2, 3, 4], dtype=dtype)
+    )
+    assert_series_equal(
+        pl.Series("a", [81], dtype=dtype).log(b),
+        pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
+    )
 
 
 def test_to_physical() -> None:
