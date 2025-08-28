@@ -156,7 +156,7 @@ where
         }
 
         let out = match self.dtype() {
-            #[cfg(all(feature = "dtype-i8", all(feature = "dtype-i8", feature="dtype-u8")))]
+            #[cfg(all(feature = "dtype-i8", all(feature = "dtype-i8", feature = "dtype-u8")))]
             DataType::Int8 => {
                 // convince the compiler that we are this type.
                 let ca: &Int8Chunked =
@@ -171,7 +171,10 @@ where
                     unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt8Type>) };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            #[cfg(all(feature = "dtype-i16", all(feature = "dtype-i16", feature="dtype-u16")))]
+            #[cfg(all(
+                feature = "dtype-i16",
+                all(feature = "dtype-i16", feature = "dtype-u16")
+            ))]
             DataType::Int16 => {
                 // convince the compiler that we are this type.
                 let ca: &Int16Chunked =
