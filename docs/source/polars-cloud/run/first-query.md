@@ -61,7 +61,7 @@ multiple nodes on the [distributed queries](distributed-engine.md) page.-->
 Once you've called `.remote(context=ctx)` on your query, you have several options for how to handle
 the results, each suited to different use cases and workflows.
 
-### Direct or intermediate storage of results
+### Write to storage
 
 The most straightforward approach for batch processing is to write results directly to cloud storage
 using `.sink_parquet()`. This method is ideal when you want to store processed data for later use or
@@ -74,7 +74,7 @@ runs in your cloud environment, and both the data and results remain secure in y
 infrastructure. This approach is perfect for ETL workflows, scheduled jobs, or any time you need to
 persist large datasets without transferring them to your local machine.
 
-### Inspect results in your local environment
+### Inspect results
 
 Use `.show()` for interactive data exploration when you need to understand result structure without
 transferring large datasets. This method displays the first 10 rows in your console or notebook.
