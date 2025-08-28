@@ -626,6 +626,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
             state.insert_has_window_function_flag();
         }
         self.expr.evaluate(df, &state).map(|c| {
+            // IO expression result should be boolean-typed.
             debug_assert_eq!(c.dtype(), &DataType::Boolean);
             (if c.len() == 1 && df.height() != 1 {
                 // filter(lit(True)) will hit here.
