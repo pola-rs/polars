@@ -3954,6 +3954,7 @@ class DataFrame:
         ) = "auto",
         retries: int = 2,
         metadata: ParquetMetadata | None = None,
+        mkdir: bool = False,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -4046,6 +4047,12 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+        mkdir: bool
+            Recursively create all the directories in the path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
 
         Examples
         --------
@@ -4091,6 +4098,9 @@ class DataFrame:
             if metadata is not None:
                 msg = "write_parquet with `use_pyarrow=True` cannot be combined with `metadata`"
                 raise ValueError(msg)
+            if mkdir:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `mkdir`"
+                raise ValueError(msg)
 
             tbl = self.to_arrow()
             data = {}
@@ -4133,7 +4143,6 @@ class DataFrame:
             return
 
         target: str | Path | IO[bytes] | PartitioningScheme = file
-        mkdir: bool = False
         engine: EngineType = "in-memory"
         if partition_by is not None:
             if not isinstance(file, str):
