@@ -1,6 +1,8 @@
 # Run a query in the cloud
 
-Polars Cloud enables you to execute existing Polars queries on cloud infrastructure with minimal code changes. This approach allows you to process datasets that exceed local resources or use additional compute resources for faster execution.
+Polars Cloud enables you to execute existing Polars queries on cloud infrastructure with minimal
+code changes. This approach allows you to process datasets that exceed local resources or use
+additional compute resources for faster execution.
 
 !!! note "Polars Cloud is set up and connected"
 
@@ -8,20 +10,23 @@ Polars Cloud enables you to execute existing Polars queries on cloud infrastruct
 
 ## Define your query locally
 
-If you're already familiar with Polars, you can immediately use Polars Cloud. The lazy evaluation and API remain identical, with two key additions:
+If you're already familiar with Polars, you can immediately use Polars Cloud. The lazy evaluation
+and API remain identical, with two key additions:
 
 - Define a `ComputeContext` for your cloud environment
 - Call `.remote(context=ctx)` instead of `.collect()` to execute remotely
 
-The following example uses a query from the PDS-H benchmark suite, a derived version of the popular TPC-H benchmark. Data generation tools and additional queries are available in the [Polars benchmark repository](https://github.com/pola-rs/polars-benchmark).
+The following example uses a query from the PDS-H benchmark suite, a derived version of the popular
+TPC-H benchmark. Data generation tools and additional queries are available in the
+[Polars benchmark repository](https://github.com/pola-rs/polars-benchmark).
 
 {{code_block('polars-cloud/first-query','local',[])}}
 
 ## Scale to the cloud
 
-To execute your query in the cloud, you need to define a compute context. The compute context defines
-the hardware to use when executing the query in the cloud. It allows to define the workspace to
-execute your query, set compute resources and define if you want to execute in proxy mode. More
+To execute your query in the cloud, you need to define a compute context. The compute context
+defines the hardware to use when executing the query in the cloud. It allows to define the workspace
+to execute your query, set compute resources and define if you want to execute in proxy mode. More
 elaborate options can be found on the
 [Compute context introduction page](../context/compute-context.md)
 
@@ -37,7 +42,9 @@ elaborate options can be found on the
 
 ### Proxy mode
 
-Proxy mode routes queries through the Polars Cloud control plane rather than direct cluster connections. This approach provides enhanced security by eliminating the need to expose network ports on your compute cluster.
+Proxy mode routes queries through the Polars Cloud control plane rather than direct cluster
+connections. This approach provides enhanced security by eliminating the need to expose network
+ports on your compute cluster.
 
 Read more about the differences on the [compute context page](../context/compute-context.md).
 
@@ -75,7 +82,8 @@ persist large datasets without transferring them to your local machine.
 
 ### Inspect results in your local environment
 
-Use `.show()` for interactive data exploration when you need to understand result structure without transferring large datasets. This method displays the first 10 rows in your console or notebook.
+Use `.show()` for interactive data exploration when you need to understand result structure without
+transferring large datasets. This method displays the first 10 rows in your console or notebook.
 
 {{code_block('polars-cloud/first-query','show',[])}}
 
@@ -99,8 +107,10 @@ shape: (10, 4)
 └────────────┴─────────────┴─────────────┴────────────────┘
 ```
 
-The `.await_and_scan()` method returns a LazyFrame pointing to intermediate results stored temporarily in your S3 environment. These intermediate result files are
-automatically deleted after several hours. For persistent storage use `sink_parquet`. The output is a LazyFrame, allwowing continued query chaining for further analysis.
+The `.await_and_scan()` method returns a LazyFrame pointing to intermediate results stored
+temporarily in your S3 environment. These intermediate result files are automatically deleted after
+several hours. For persistent storage use `sink_parquet`. The output is a LazyFrame, allwowing
+continued query chaining for further analysis.
 
 {{code_block('polars-cloud/first-query','await_scan',[])}}
 
