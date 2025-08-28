@@ -393,7 +393,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    /// Aggregate into `ListChunked.
+    /// Aggregate into `ListChunked`.
     pub fn aggregated_as_list<'b>(&'b mut self) -> Cow<'b, ListChunked> {
         self.aggregated();
         let out = self.get_values();
@@ -439,6 +439,7 @@ impl<'a> AggregationContext<'a> {
                 let s = s.new_from_index(0, rows);
                 let s = s.into_column();
                 self.state = AggState::AggregatedList(s.clone());
+                self.with_update_groups(UpdateGroups::WithSeriesLen);
                 s.clone()
             },
         }
