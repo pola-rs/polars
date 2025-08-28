@@ -752,14 +752,12 @@ pub fn write_ir_non_recursive(
                 ("*".to_string(), "".to_string())
             };
 
-            let zero_rows = if df.height() == 0 { "[0 rows]" } else { "" };
-
             write!(
                 f,
-                "{:indent$}DF{} {}; PROJECT{} {}/{} COLUMNS",
+                "{:indent$}DF {}, {} rows; PROJECT{} {}/{} COLUMNS",
                 "",
-                zero_rows,
                 format_list_truncated!(schema.iter_names(), 4, '"'),
+                df.height(),
                 projected,
                 n_columns,
                 total_columns,

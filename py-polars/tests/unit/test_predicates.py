@@ -547,9 +547,7 @@ def test_predicate_push_down_with_alias_15442() -> None:
     assert output.to_dict(as_series=False) == {"a": [1]}
 
 
-def test_predicate_slice_pushdown_list_gather_17492(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_predicate_slice_pushdown_list_gather_17492() -> None:
     lf = pl.LazyFrame({"val": [[1], [1, 1]], "len": [1, 2]})
 
     assert_frame_equal(
@@ -1170,3 +1168,30 @@ def test_duplicate_filter_removal_23243() -> None:
     assert plan.split("\n", 1)[0] == 'FILTER [(col("x")) == (2)]'
 
     assert_frame_equal(q.collect(), expect)
+
+
+def test_filter_false_plan_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
+    q = (
+        pl.LazyFrame({"x": [1, 2, 3]})
+        .join(pl.LazyFrame({"x": [1, 2, 3]}), on="x", how="full")
+        .filter(pl.lit(1) != 1)
+    )
+
+    expect = pl.DataFrame(schema={"x": pl.Int64, "x_right": pl.Int64})
+
+    plan = q.explain()
+
+    assert plan == 'DF ["x", "x_right"], 0 rows; PROJECT */2 COLUMNS'
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    monkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+
+    plan = q.explain()
+
+    assert plan.startswith("FILTER false")
+    assert "FULL JOIN" in plan
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
