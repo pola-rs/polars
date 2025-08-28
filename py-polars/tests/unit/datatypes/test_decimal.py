@@ -765,6 +765,9 @@ def test_decimal_cast_limit() -> None:
     fits = pl.Series([10**38 - 1, -(10**38 - 1)])
     assert_series_equal(fits.cast(pl.Decimal(38, 0)).cast(pl.Int128), fits)
 
+    with pytest.raises(InvalidOperationError):
+        fits.cast(pl.Decimal(39, 0))
+
     too_large1 = pl.Series([10**38])
     too_large2 = pl.Series([-10**38])
     with pytest.raises(InvalidOperationError):
