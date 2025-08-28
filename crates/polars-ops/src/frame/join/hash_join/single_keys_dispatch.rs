@@ -328,9 +328,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::U8(lhs), B::U8(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
-                    },
+                    (B::U8(lhs), B::U8(rhs)) => group_join_inner(&lhs, &rhs, validate, nulls_equal),
                     (B::U16(lhs), B::U16(rhs)) => {
                         group_join_inner(&lhs, &rhs, validate, nulls_equal)
                     },
@@ -420,9 +418,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::U8(lhs), B::U8(rhs)) => {
-                        hash_join_outer(&lhs, &rhs, validate, nulls_equal)
-                    },
+                    (B::U8(lhs), B::U8(rhs)) => hash_join_outer(&lhs, &rhs, validate, nulls_equal),
                     (B::U16(lhs), B::U16(rhs)) => {
                         hash_join_outer(&lhs, &rhs, validate, nulls_equal)
                     },
