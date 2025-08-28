@@ -1057,8 +1057,8 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
         // Can't check for more granular time_unit in less-granular time_unit
         // data, or we'll cast away valid/necessary precision (eg: nanosecs to
         // millisecs):
-        (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => lhs_unit <= rhs_unit,
-        (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => lhs_unit <= rhs_unit,
+        (DataType::Datetime(to_unit, _), DataType::Datetime(from_unit, _)) => to_unit <= from_unit,
+        (DataType::Duration(to_unit), DataType::Duration(from_unit)) => to_unit <= from_unit,
         (DataType::List(to), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]
         (DataType::List(to), DataType::Array(from, _)) => return can_cast_to_lossless(to, from),
