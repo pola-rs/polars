@@ -1719,9 +1719,10 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
     a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
     b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
 
-    assert_series_equal(a.log(base=b), pl.Series("a", [0, 1, 1, 3, 2], dtype=dtype))
+    assert_series_equal(a.log(b), pl.Series("a", [0, 1, 1, 3, 2], dtype=dtype))
     assert_series_equal(
-        a.log(base=pl.lit(3, dtype)), pl.Series("a", [0, 1, 2, 3, 4], dtype=dtype)
+        a.log(pl.Series("a", [3], dtype=dtype)),
+        pl.Series("a", [0, 1, 2, 3, 4], dtype=dtype),
     )
     assert_series_equal(
         pl.Series("a", [81], dtype=dtype).log(b),
