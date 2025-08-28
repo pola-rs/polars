@@ -2694,6 +2694,7 @@ class Series:
         └───────┴─────┘
 
         Return the count as a relative frequency, normalized to 1.0:
+
         >>> s.value_counts(sort=True, normalize=True, name="fraction")
         shape: (3, 2)
         ┌───────┬──────────┐
