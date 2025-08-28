@@ -596,7 +596,9 @@ fn pullup_orders(
             IR::Distinct { input: _, options } => {
                 if matches!(node_ordering.inputs[0], I::Unordered) {
                     options.maintain_order = false;
-                    options.keep_strategy = UniqueKeepStrategy::Any;
+                    if options.keep_strategy != UniqueKeepStrategy::None {
+                        options.keep_strategy = UniqueKeepStrategy::Any;
+                    }
                     node_ordering.set_unordered_output();
                 }
             },
