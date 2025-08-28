@@ -78,6 +78,10 @@ async fn finish_initialize_multi_scan_pipeline(
         verbose,
     )?;
 
+    if let Some(skip_files_mask) = &skip_files_mask {
+        assert_eq!(skip_files_mask.len(), config.sources.len());
+    }
+
     if verbose {
         eprintln!(
             "[MultiScanTaskInit]: \
