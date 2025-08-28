@@ -1,4 +1,4 @@
-use arrow::datatypes::Metadata;
+use arrow::datatypes::{IntervalUnit, Metadata};
 use arrow::offset::OffsetsBuffer;
 #[cfg(any(
     feature = "dtype-date",
@@ -477,6 +477,24 @@ impl Series {
                     Ok(out.into_series())
                 }
             },
+            ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
+                feature_gated!("dtype-duration", {
+                    let chunks = chunks
+                        .into_iter()
+                        .map(convert_month_day_nano_to_nanosecond_duration)
+                        .collect::<PolarsResult<Vec<_>>>()?;
+
+                    Ok(
+                        Int64Chunked::from_chunks_and_dtype_unchecked(
+                            name,
+                            chunks,
+                            DataType::Int64,
+                        )
+                        .into_duration(TimeUnit::Nanoseconds)
+                        .into_series(),
+                    )
+                })
+            },
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
@@ -736,6 +754,47 @@ unsafe fn import_arrow_dictionary_array(
             IDX_DTYPE,
         ))
     }
+}
+
+fn convert_month_day_nano_to_nanosecond_duration(
+    chunk: Box<dyn Array>,
+) -> PolarsResult<Box<dyn Array>> {
+    let arr: &PrimitiveArray<i128> = chunk.as_any().downcast_ref().unwrap();
+
+    let out: PrimitiveArray<i64> = arr
+        .iter()
+        .map(|x| {
+            let Some(x) = x else { return Ok(None) };
+
+            let bytes: [u8; 16] = x.to_le_bytes();
+
+            let months: i32 = i32::from_le_bytes(bytes[..4].try_into().unwrap());
+            let days: i32 = i32::from_le_bytes(bytes[4..8].try_into().unwrap());
+            let nanoseconds: i64 = i64::from_le_bytes(bytes[8..16].try_into().unwrap());
+
+            // Convert using 30/360 day count convention.
+            let nanoseconds_per_month: i64 = 2_592_000_000_000_000;
+            let nanoseconds_per_day: i64 = 86_400_000_000_000;
+
+            (|| {
+                nanoseconds
+                    .checked_add((months as i64).checked_mul(nanoseconds_per_month)?)?
+                    .checked_add((days as i64).checked_mul(nanoseconds_per_day)?)
+            })()
+            .ok_or_else(|| {
+                polars_err!(
+                    ComputeError:
+                    "failed to convert month_day_nano_interval value to \
+                    nanosecond duration: {months}m{days}d{nanoseconds}ns"
+                )
+            })
+            .map(Some)
+        })
+        .collect::<PolarsResult<_>>()?;
+
+    let out: Box<dyn Array> = Box::new(out) as _;
+
+    Ok(out)
 }
 
 fn check_types(chunks: &[ArrayRef]) -> PolarsResult<ArrowDataType> {

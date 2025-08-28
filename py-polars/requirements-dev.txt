@@ -17,6 +17,7 @@ pip
 
 polars-cloud
 # Interop
+duckdb
 numpy
 numba >= 0.54; python_version < '3.14'  # Numba can lag Python releases
 pandas

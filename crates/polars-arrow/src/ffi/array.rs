@@ -8,10 +8,10 @@ use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::bitmap::utils::bytes_for;
 use crate::buffer::Buffer;
-use crate::datatypes::{ArrowDataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, IntervalUnit, PhysicalType};
 use crate::ffi::schema::get_child;
 use crate::storage::SharedStorage;
-use crate::types::NativeType;
+use crate::types::{NativeType, PrimitiveType};
 use crate::{ffi, match_integer_type, with_match_primitive_type_full};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
@@ -23,6 +23,7 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
     Ok(match array.dtype().to_physical_type() {
         Null => Box::new(NullArray::try_from_ffi(array)?),
         Boolean => Box::new(BooleanArray::try_from_ffi(array)?),
+        Primitive(PrimitiveType::MonthDayNano) => Box::new(import_month_day_nano(array)?),
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::try_from_ffi(array)?)
         }),
@@ -45,6 +46,20 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
         BinaryView => Box::new(BinaryViewArray::try_from_ffi(array)?),
         Utf8View => Box::new(Utf8ViewArray::try_from_ffi(array)?),
     })
+}
+
+/// Imports as i128.
+fn import_month_day_nano<A>(array: A) -> PolarsResult<PrimitiveArray<i128>>
+where
+    A: ArrowArrayRef,
+{
+    let dtype = array.dtype().clone();
+    assert_eq!(dtype, ArrowDataType::Interval(IntervalUnit::MonthDayNano));
+
+    let values = unsafe { array.buffer::<i128>(1) }?;
+    let validity = unsafe { array.validity() }?;
+
+    PrimitiveArray::<i128>::try_new(ArrowDataType::Int128, values, validity)
 }
 
 // Sound because the arrow specification does not allow multiple implementations

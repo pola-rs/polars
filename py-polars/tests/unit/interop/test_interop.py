@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, cast
 
+import duckdb
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -1082,3 +1083,80 @@ def test_schema_constructor_from_schema_capsule() -> None:
 def test_to_arrow_24142() -> None:
     df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
     df.to_arrow(compat_level=CompatLevel.oldest())
+
+
+def test_month_day_nano_from_ffi_15969() -> None:
+    import datetime
+
+    relation = duckdb.sql("""\
+SELECT #1 AS index, #2 AS interval
+FROM (
+    SELECT 1, INTERVAL 1 MONTH
+    UNION ALL
+    SELECT 2, INTERVAL 1 DAY
+    UNION ALL
+    SELECT 3, INTERVAL 1 MICROSECONDS
+    UNION ALL
+    SELECT 4, INTERVAL 1 MONTH + INTERVAL 1 DAY + INTERVAL 1 SECONDS + INTERVAL 1 MICROSECONDS
+    UNION ALL
+    SELECT 5, -INTERVAL 1 MONTH
+    UNION ALL
+    SELECT 6, -INTERVAL 1 DAY
+    UNION ALL
+    SELECT 7, -INTERVAL 1 MICROSECONDS
+    UNION ALL
+    SELECT 8, -INTERVAL 1 MONTH - INTERVAL 1 DAY - INTERVAL 1 SECONDS - INTERVAL 1 MICROSECONDS
+    UNION ALL
+    SELECT 9, INTERVAL 3558 MONTH
+    UNION ALL
+    SELECT 10, -INTERVAL 3558 MONTH
+    UNION ALL
+    SELECT 11, INTERVAL 1 MONTH - INTERVAL 1 DAY + INTERVAL 2 SECONDS - INTERVAL 1 MICROSECONDS
+)
+ORDER BY index
+""")
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("index", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=pl.Int32),
+            pl.Series(
+                "interval",
+                [
+                    datetime.timedelta(days=30),
+                    datetime.timedelta(days=1),
+                    datetime.timedelta(microseconds=1),
+                    datetime.timedelta(days=31, seconds=1, microseconds=1),
+                    datetime.timedelta(days=-30),
+                    datetime.timedelta(days=-1),
+                    datetime.timedelta(days=-1, seconds=86399, microseconds=999999),
+                    datetime.timedelta(days=-32, seconds=86398, microseconds=999999),
+                    datetime.timedelta(days=106740),
+                    datetime.timedelta(days=-106740),
+                    datetime.timedelta(days=29, seconds=1, microseconds=999999),
+                ],
+                dtype=pl.Duration(time_unit="ns"),
+            ),
+        ]
+    )
+
+    assert relation.arrow().column("interval").type == "month_day_nano_interval"
+
+    assert_frame_equal(relation.pl(), expect)
+    assert_frame_equal(pl.DataFrame(relation.arrow()), expect)
+    # Test values from duckdb->pandas->polars
+    assert_frame_equal(pl.DataFrame(relation.df()), expect)
+
+    # Out of range - exceeds i64::MIN/MAX nanoseconds.
+    with pytest.raises(
+        ComputeError,
+        match="failed to convert month_day_nano_interval value to nanosecond duration: 3559m0d0ns",
+    ):
+        duckdb.sql("SELECT INTERVAL 3559 MONTH").pl()
+
+    with pytest.raises(
+        ComputeError,
+        match="failed to convert month_day_nano_interval value to nanosecond duration: 3558m30d1000ns",
+    ):
+        duckdb.sql(
+            "SELECT INTERVAL 3558 MONTH + INTERVAL 30 DAYS + INTERVAL 1 MICROSECOND"
+        ).pl()
