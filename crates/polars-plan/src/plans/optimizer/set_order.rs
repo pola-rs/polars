@@ -434,14 +434,13 @@ fn pushdown_orders(
                     options.maintain_order = false;
                 }
 
-                // @NOTE: It seems we cannot trust the `maintain_order` for now.
                 let input = match (options.slice.is_some(), options.maintain_order) {
                     (true, true) => I::Observing,
                     (true, false) => I::Consuming,
                     (false, true) => I::Preserving,
                     (false, false) => I::Unordered,
                 };
-                let output = options.maintain_order & !all_outputs_unordered;
+                let output = options.maintain_order && !all_outputs_unordered;
 
                 P::new(std::iter::repeat_n(input, inputs.len()), [output])
             },
@@ -624,8 +623,9 @@ fn pullup_orders(
                     .iter()
                     .all(|i| matches!(i, I::Unordered))
                 {
-                    node_ordering.set_unordered_output();
-                    options.maintain_order &= options.slice.is_some();
+                    if !options.maintain_order {
+                        node_ordering.set_unordered_output();
+                    }
                 }
             },
             IR::MapFunction { input: _, function } => {
