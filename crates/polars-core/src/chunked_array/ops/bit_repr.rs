@@ -120,59 +120,61 @@ where
                 BitRepr::U64(reinterpret_chunked_array(self))
             },
 
-            byte_size => {
-                assert!(byte_size <= 4);
+            4 => {
+                if matches!(self.dtype(), DataType::UInt32) {
+                    let ca: &UInt32Chunked = self.as_any().downcast_ref().unwrap();
+                    return BitRepr::U32(ca.clone());
+                }
 
-                BitRepr::U32(if byte_size == 4 {
-                    if matches!(self.dtype(), DataType::UInt32) {
-                        let ca: &UInt32Chunked = self.as_any().downcast_ref().unwrap();
-                        return BitRepr::U32(ca.clone());
-                    }
-
-                    reinterpret_chunked_array(self)
-                } else {
-                    // SAFETY: an unchecked cast to uint32 (which has no invariants) is
-                    // always sound.
-                    unsafe {
-                        self.cast_unchecked(&DataType::UInt32)
-                            .unwrap()
-                            .u32()
-                            .unwrap()
-                            .clone()
-                    }
-                })
+                BitRepr::U32(reinterpret_chunked_array(self))
             },
+
+            2 => {
+                if matches!(self.dtype(), DataType::UInt16) {
+                    let ca: &UInt16Chunked = self.as_any().downcast_ref().unwrap();
+                    return BitRepr::U16(ca.clone());
+                }
+
+                BitRepr::U16(reinterpret_chunked_array(self))
+            },
+
+            1 => {
+                if matches!(self.dtype(), DataType::UInt8) {
+                    let ca: &UInt8Chunked = self.as_any().downcast_ref().unwrap();
+                    return BitRepr::U8(ca.clone());
+                }
+
+                BitRepr::U8(reinterpret_chunked_array(self))
+            },
+            
+            _ => unreachable!(),
         }
     }
 }
 
 impl Reinterpret for UInt64Chunked {
     fn reinterpret_signed(&self) -> Series {
-        let signed: Int64Chunked = reinterpret_chunked_array(self);
-        signed.into_series()
+        reinterpret_chunked_array::<_, Int64Type>(self).into_series()
     }
 
     fn reinterpret_unsigned(&self) -> Series {
         self.clone().into_series()
     }
 }
+
 impl Reinterpret for Int64Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
     }
 
     fn reinterpret_unsigned(&self) -> Series {
-        let BitRepr::U64(b) = self.to_bit_repr() else {
-            unreachable!()
-        };
-        b.into_series()
+        reinterpret_chunked_array::<_, UInt64Type>(self).into_series()
     }
 }
 
 impl Reinterpret for UInt32Chunked {
     fn reinterpret_signed(&self) -> Series {
-        let signed: Int32Chunked = reinterpret_chunked_array(self);
-        signed.into_series()
+        reinterpret_chunked_array::<_, Int32Type>(self).into_series()
     }
 
     fn reinterpret_unsigned(&self) -> Series {
@@ -186,10 +188,7 @@ impl Reinterpret for Int32Chunked {
     }
 
     fn reinterpret_unsigned(&self) -> Series {
-        let BitRepr::U32(b) = self.to_bit_repr() else {
-            unreachable!()
-        };
-        b.into_series()
+        reinterpret_chunked_array::<_, UInt32Type>(self).into_series()
     }
 }
 
@@ -261,6 +260,7 @@ impl Float32Chunked {
         let out = out.u32().unwrap();
         out._reinterpret_float().into()
     }
+
 }
 impl Float64Chunked {
     pub fn apply_as_ints<F>(&self, f: F) -> Series
