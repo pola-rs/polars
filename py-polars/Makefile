@@ -3,7 +3,7 @@
 PYTHONPATH=
 SHELL=bash
 ifeq ($(VENV),)
-VENV := .venv
+VENV := ../.venv
 endif
 
 ifeq ($(OS),Windows_NT)
