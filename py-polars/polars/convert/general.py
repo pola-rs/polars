@@ -477,7 +477,7 @@ def from_arrow(
     supported by Polars may be cast to the closest supported type.
 
     Hint: You can also directly pass arrow tables to `pl.DataFrame()` / arrow
-    arrays to `pl.Series()` to avoid typing issues.
+    arrays to `pl.Series()` if the output type is known to avoid typing issues.
 
     Parameters
     ----------
