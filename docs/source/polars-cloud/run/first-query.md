@@ -10,12 +10,6 @@ additional compute resources for faster execution.
 
 ## Define your query locally
 
-If you're already familiar with Polars, you can immediately use Polars Cloud. The lazy evaluation
-and API remain identical, with two key additions:
-
-- Define a `ComputeContext` for your cloud environment
-- Call `.remote(context=ctx)` instead of `.collect()` to execute remotely
-
 The following example uses a query from the PDS-H benchmark suite, a derived version of the popular
 TPC-H benchmark. Data generation tools and additional queries are available in the
 [Polars benchmark repository](https://github.com/pola-rs/polars-benchmark).
