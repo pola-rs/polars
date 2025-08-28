@@ -116,10 +116,10 @@ fn pushdown_orders(
 
         // Pushdown simplification rules.
         let ir = ir_arena.get_mut(node);
-        use {InputOrder as I, MaintainOrderJoin as MOJ, PortOrder as NEO};
+        use {InputOrder as I, MaintainOrderJoin as MOJ, PortOrder as P};
         let mut node_ordering = match ir {
-            IR::Cache { .. } if all_outputs_unordered => NEO::new([I::Unordered], [false]),
-            IR::Cache { .. } => NEO::new(
+            IR::Cache { .. } if all_outputs_unordered => P::new([I::Unordered], [false]),
+            IR::Cache { .. } => P::new(
                 [I::Preserving],
                 output_port_orderings
                     .iter()
@@ -171,7 +171,7 @@ fn pushdown_orders(
                     }
                 };
 
-                NEO::new([input], [true])
+                P::new([input], [true])
             },
             IR::GroupBy {
                 keys,
@@ -218,7 +218,7 @@ fn pushdown_orders(
                     )
                 };
 
-                NEO::new([input], [output])
+                P::new([input], [output])
             },
             #[cfg(feature = "merge_sorted")]
             IR::MergeSorted {
@@ -238,14 +238,14 @@ fn pushdown_orders(
                             ..Default::default()
                         },
                     };
-                    NEO::new([I::Unordered, I::Unordered], [false])
+                    P::new([I::Unordered, I::Unordered], [false])
                 } else {
-                    NEO::new([I::Observing, I::Observing], [true])
+                    P::new([I::Observing, I::Observing], [true])
                 }
             },
             #[cfg(feature = "asof_join")]
             IR::Join { options, .. } if matches!(options.args.how, JoinType::AsOf(_)) => {
-                NEO::new([I::Observing, I::Observing], [!all_outputs_unordered])
+                P::new([I::Observing, I::Observing], [!all_outputs_unordered])
             },
             IR::Join {
                 input_left: _,
@@ -280,7 +280,7 @@ fn pushdown_orders(
                     }
                 }
 
-                NEO::new(inputs, [false])
+                P::new(inputs, [false])
             },
             IR::Join {
                 input_left: _,
@@ -329,7 +329,7 @@ fn pushdown_orders(
                 };
                 let output = !matches!(options.args.maintain_order, M::None);
 
-                NEO::new([left_input, right_input], [output])
+                P::new([left_input, right_input], [output])
             },
             IR::Distinct { input: _, options } => {
                 options.maintain_order &= !all_outputs_unordered;
@@ -343,7 +343,7 @@ fn pushdown_orders(
                 } else {
                     I::Unordered
                 };
-                NEO::new([input], [options.maintain_order])
+                P::new([input], [options.maintain_order])
             },
             IR::MapFunction { input: _, function } => {
                 let input = if function.is_streamable() {
@@ -356,7 +356,7 @@ fn pushdown_orders(
                     I::Consuming
                 };
 
-                NEO::new([input], [!all_outputs_unordered])
+                P::new([input], [!all_outputs_unordered])
             },
             IR::SimpleProjection { .. } => {
                 let input = if all_outputs_unordered {
@@ -364,9 +364,9 @@ fn pushdown_orders(
                 } else {
                     I::Preserving
                 };
-                NEO::new([input], [!all_outputs_unordered])
+                P::new([input], [!all_outputs_unordered])
             },
-            IR::Slice { .. } => NEO::new([I::Observing], [!all_outputs_unordered]),
+            IR::Slice { .. } => P::new([I::Observing], [!all_outputs_unordered]),
             IR::HStack { exprs, .. } => {
                 let mut has_order_sensitive = false;
                 for e in exprs {
@@ -383,7 +383,7 @@ fn pushdown_orders(
                     I::Preserving
                 };
 
-                NEO::new([input], [!all_outputs_unordered])
+                P::new([input], [!all_outputs_unordered])
             },
             IR::Select { expr: exprs, .. } => {
                 let mut has_order_sensitive = false;
@@ -405,7 +405,7 @@ fn pushdown_orders(
                 };
                 let output = !all_outputs_unordered && !all_scalar;
 
-                NEO::new([input], [output])
+                P::new([input], [output])
             },
 
             IR::Filter {
@@ -426,27 +426,33 @@ fn pushdown_orders(
                     I::Preserving
                 };
 
-                NEO::new([input], [!all_outputs_unordered])
+                P::new([input], [!all_outputs_unordered])
             },
 
             IR::Union { inputs, options } => {
-                // @NOTE: It seems we cannot trust the `maintain_order` for now.
-                let input = if options.slice.is_some() {
-                    I::Observing
-                } else {
-                    I::Preserving
-                };
+                if options.slice.is_none() && all_outputs_unordered {
+                    options.maintain_order = false;
+                }
 
-                NEO::new(std::iter::repeat_n(input, inputs.len()), [true])
+                // @NOTE: It seems we cannot trust the `maintain_order` for now.
+                let input = match (options.slice.is_some(), options.maintain_order) {
+                    (true, true) => I::Observing,
+                    (true, false) => I::Consuming,
+                    (false, true) => I::Preserving,
+                    (false, false) => I::Unordered,
+                };
+                let output = options.maintain_order & !all_outputs_unordered;
+
+                P::new(std::iter::repeat_n(input, inputs.len()), [output])
             },
 
-            IR::HConcat { inputs, .. } => NEO::new(
+            IR::HConcat { inputs, .. } => P::new(
                 std::iter::repeat_n(I::Observing, inputs.len()),
                 [!all_outputs_unordered],
             ),
 
             #[cfg(feature = "python")]
-            IR::PythonScan { .. } => NEO::new([], [!all_outputs_unordered]),
+            IR::PythonScan { .. } => P::new([], [!all_outputs_unordered]),
 
             IR::Sink { payload, .. } => {
                 let input = if payload.maintain_order() {
@@ -454,13 +460,13 @@ fn pushdown_orders(
                 } else {
                     I::Unordered
                 };
-                NEO::new([input], [])
+                P::new([input], [])
             },
-            IR::Scan { .. } | IR::DataFrameScan { .. } => NEO::new([], [!all_outputs_unordered]),
+            IR::Scan { .. } | IR::DataFrameScan { .. } => P::new([], [!all_outputs_unordered]),
 
             IR::ExtContext { contexts, .. } => {
                 // This node is nonsense. Just do the most conservative thing you can.
-                NEO::new(
+                P::new(
                     std::iter::repeat_n(I::Consuming, contexts.len() + 1),
                     [!all_outputs_unordered],
                 )
@@ -609,9 +615,18 @@ fn pullup_orders(
                 // An input being unordered is technically valid as it is possible for all values
                 // to be the same in which case the rows are sorted.
             },
-            IR::Union { .. } => {
+            IR::Union { options, .. } => {
                 // Even if the inputs are unordered. The output still has an order given by the
                 // order of the inputs.
+
+                if node_ordering
+                    .inputs
+                    .iter()
+                    .all(|i| matches!(i, I::Unordered))
+                {
+                    node_ordering.set_unordered_output();
+                    options.maintain_order &= options.slice.is_some();
+                }
             },
             IR::MapFunction { input: _, function } => {
                 if function.is_streamable() && matches!(node_ordering.inputs[0], I::Unordered) {
