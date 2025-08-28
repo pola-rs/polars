@@ -7,6 +7,7 @@ use arrow::offset::OffsetsBuffer;
     feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
+use arrow::types::months_days_ns;
 use polars_compute::cast::cast_unchecked as cast;
 use polars_error::feature_gated;
 use polars_utils::itertools::Itertools;
@@ -759,18 +760,16 @@ unsafe fn import_arrow_dictionary_array(
 fn convert_month_day_nano_to_nanosecond_duration(
     chunk: Box<dyn Array>,
 ) -> PolarsResult<Box<dyn Array>> {
-    let arr: &PrimitiveArray<i128> = chunk.as_any().downcast_ref().unwrap();
+    let arr: &PrimitiveArray<months_days_ns> = chunk.as_any().downcast_ref().unwrap();
 
     let out: PrimitiveArray<i64> = arr
         .iter()
         .map(|x| {
             let Some(x) = x else { return Ok(None) };
 
-            let bytes: [u8; 16] = x.to_le_bytes();
-
-            let months: i32 = i32::from_le_bytes(bytes[..4].try_into().unwrap());
-            let days: i32 = i32::from_le_bytes(bytes[4..8].try_into().unwrap());
-            let nanoseconds: i64 = i64::from_le_bytes(bytes[8..16].try_into().unwrap());
+            let months: i32 = x.0;
+            let days: i32 = x.1;
+            let nanoseconds: i64 = x.2;
 
             // Convert using 30/360 day count convention.
             let nanoseconds_per_month: i64 = 2_592_000_000_000_000;
