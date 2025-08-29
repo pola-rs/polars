@@ -1086,8 +1086,6 @@ def test_to_arrow_24142() -> None:
 
 
 def test_month_day_nano_from_ffi_15969() -> None:
-    import datetime
-
     interval_scalar = partial(pa.scalar, type=pa.month_day_nano_interval())
 
     arrow_tbl = pa.Table.from_pydict(
