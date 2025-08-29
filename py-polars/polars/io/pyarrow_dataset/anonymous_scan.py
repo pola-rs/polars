@@ -64,8 +64,9 @@ def _scan_pyarrow_dataset_impl(
 
     Warnings
     --------
-    Don't use this if you accept user inputs. Predicates will be evaluated with
-    python 'eval'. There is sanitation in place, but it is a possible attack vector.
+    Don't use this if you accept untrusted user inputs. Predicates will be evaluated
+    with python 'eval'. There is sanitation in place, but it is a possible attack
+    vector.
 
     Returns
     -------
