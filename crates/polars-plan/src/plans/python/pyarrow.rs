@@ -23,6 +23,7 @@ fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
 
 fn sanitize(name: &str) -> Option<&str> {
     if name.chars().all(|c| match c {
+        ' ' => true,
         '-' => true,
         '_' => true,
         c => c.is_alphanumeric(),
