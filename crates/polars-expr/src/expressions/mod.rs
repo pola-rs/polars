@@ -530,7 +530,8 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                Cow::Owned(c.explode(false).unwrap())
+                // We should not insert nulls, otherwise the offsets in the groups will not be correct.
+                Cow::Owned(c.explode(true).unwrap())
             },
             AggState::AggregatedScalar(c) => Cow::Borrowed(c),
             AggState::LiteralScalar(c) => Cow::Borrowed(c),

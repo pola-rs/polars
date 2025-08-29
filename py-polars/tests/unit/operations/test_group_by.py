@@ -1517,3 +1517,20 @@ def test_group_by_head_tail_24215(maintain_order: bool) -> None:
         .tail(1)
     )
     assert_frame_equal(result, expected, check_row_order=maintain_order)
+
+
+def test_slice_group_by_offset_24259() -> None:
+    df = pl.DataFrame(
+        {
+            "letters": ["c", "c", "a", "c", "a", "b", "d"],
+            "nrs": [1, 2, 3, 4, 5, 6, None],
+        }
+    )
+    assert df.group_by("letters").agg(
+        x=pl.col("nrs").drop_nulls(),
+        tail=pl.col("nrs").drop_nulls().tail(1),
+    ).sort("letters").to_dict(as_series=False) == {
+        "letters": ["a", "b", "c", "d"],
+        "x": [[3, 5], [6], [1, 2, 4], []],
+        "tail": [[5], [6], [4], []],
+    }
