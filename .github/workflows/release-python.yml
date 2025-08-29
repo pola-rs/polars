@@ -1,7 +1,7 @@
 name: Release Python
 
 on:
-  pull_request:
+  pull_request: {}
   workflow_dispatch:
     inputs:
       # Latest commit to include with the release. If omitted, use the latest commit on the main branch.
