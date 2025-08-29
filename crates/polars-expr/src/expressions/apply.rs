@@ -330,15 +330,20 @@ impl PhysicalExpr for ApplyExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         if self.inputs.len() == 1 {
             let ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
+            dbg!(&self.expr);
+            dbg!(&ac);
 
-            match self.flags.is_elementwise() {
+            let out = match dbg!(self.flags.is_elementwise()) {
                 false => self.apply_single_group_aware(ac),
                 true => self.apply_single_elementwise(ac),
-            }
+            }?;
+            dbg!(&out);
+
+            Ok(out)
         } else {
             let acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match self.flags.is_elementwise() {
+            match dbg!(self.flags.is_elementwise()) {
                 false => self.apply_multiple_group_aware(acs, df),
                 true => {
                     let mut has_agg_list = false;
