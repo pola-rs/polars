@@ -429,21 +429,21 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             return run_conversion(lp, ctxt, "sort").map_err(|e| e.context(failed_here!(sort)));
         },
         DslPlan::Cache { input, id } => {
-            let node = match ctxt.seen_caches.get(&id) {
-                Some(node) => *node,
+            let input = match ctxt.seen_caches.get(&id) {
+                Some(input) => *input,
                 None => {
                     let input = to_alp_impl(owned(input), ctxt)
                         .map_err(|e| e.context(failed_here!(cache)))?;
-                    let node = ctxt.lp_arena.add(IR::Cache { input, id });
-                    let seen_before = ctxt.seen_caches.insert(id, node);
+                    let seen_before = ctxt.seen_caches.insert(id, input);
                     assert!(
                         seen_before.is_none(),
                         "Cache could not have been created in the mean time. That would make the DAG cyclic."
                     );
-                    node
+                    input
                 },
             };
-            return Ok(node);
+
+            IR::Cache { input, id }
         },
         DslPlan::GroupBy {
             input,

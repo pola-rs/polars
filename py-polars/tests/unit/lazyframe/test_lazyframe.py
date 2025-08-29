@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from functools import reduce
 from inspect import signature
@@ -1621,3 +1622,30 @@ def test_join_where_bad_input_type() -> None:
         pl.col("dur") < pl.col("time"),
         pl.col("rev") < pl.col("cost"),
     ).collect()
+
+
+def test_cache_hit_with_proj_and_pred_pushdown() -> None:
+    rgx = re.compile(r"CACHE\[id: (.*)\]")
+
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]}).cache()
+
+    q = pl.concat([lf, lf]).select("a", "b")
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"a": [1, 2, 3] * 2, "b": [3, 4, 5] * 2})
+    )
+    e = rgx.findall(q.explain())
+
+    assert len(e) == 2  # there are only 2 caches
+    assert e[0] == e[1]  # all caches are the same
+
+    q = pl.concat([lf, lf]).filter(pl.col.a != 0)
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"a": [1, 2, 3] * 2, "b": [3, 4, 5] * 2, "c": ["x", "y", "z"] * 2}
+        ),
+    )
+    e = rgx.findall(q.explain())
+
+    assert len(e) == 2  # there are only 2 caches
+    assert e[0] == e[1]  # all caches are the same
