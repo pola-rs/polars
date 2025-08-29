@@ -93,7 +93,7 @@ jobs:
         package: [polars, polars-lts-cpu, polars-u64-idx]
         # macos-13 is x86-64
         # macos-15 is aarch64
-        os: [ubuntu-latest, macos-13, macos-15, windows-latest, windows-11-arm]
+        os: [macos-13]
         architecture: [x86-64, aarch64]
         exclude:
           - os: windows-latest
