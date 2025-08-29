@@ -9895,7 +9895,7 @@ class DataFrame:
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> df.lazy()  # doctest: +ELLIPSIS
+        >>> df.lazy()
         <LazyFrame at ...>
         """
         return wrap_ldf(self._df.lazy())
