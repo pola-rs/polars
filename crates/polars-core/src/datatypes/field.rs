@@ -279,7 +279,7 @@ impl DataType {
                 DataType::List(Self::from_arrow_field(inner).boxed())
             },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
-                feature_gated!("dtype-struct", { DataType::_month_days_ns_struct_type() })
+                feature_gated!("dtype-struct", DataType::_month_days_ns_struct_type())
             },
             dt => panic!(
                 "Arrow datatype {dt:?} not supported by Polars. \
