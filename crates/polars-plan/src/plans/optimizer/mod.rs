@@ -124,7 +124,38 @@ pub fn optimize(
         };
     }
 
-    // Run before slice pushdown
+    if opt_flags.simplify_expr() {
+        #[cfg(feature = "fused")]
+        rules.push(Box::new(fused::FusedArithmetic {}));
+    }
+
+    #[cfg(feature = "cse")]
+    let _cse_plan_changed = if comm_subplan_elim {
+        let members = get_or_init_members!();
+        if (members.has_sink_multiple || members.has_joins_or_unions)
+            && members.has_duplicate_scans()
+            && !members.has_cache
+        {
+            if verbose {
+                eprintln!("found multiple sources; run comm_subplan_elim")
+            }
+
+            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+
+            prune_unused_caches(lp_arena, cid2c);
+
+            lp_top = lp;
+            members.has_cache |= changed;
+            changed
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    #[cfg(not(feature = "cse"))]
+    let _cse_plan_changed = false;
+
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         let members = get_or_init_members!();
         if members.has_group_by
@@ -158,38 +189,6 @@ pub fn optimize(
             }
         }
     }
-
-    if opt_flags.simplify_expr() {
-        #[cfg(feature = "fused")]
-        rules.push(Box::new(fused::FusedArithmetic {}));
-    }
-
-    #[cfg(feature = "cse")]
-    let _cse_plan_changed = if comm_subplan_elim {
-        let members = get_or_init_members!();
-        if (members.has_sink_multiple || members.has_joins_or_unions)
-            && members.has_duplicate_scans()
-            && !members.has_cache
-        {
-            if verbose {
-                eprintln!("found multiple sources; run comm_subplan_elim")
-            }
-
-            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-
-            prune_unused_caches(lp_arena, cid2c);
-
-            lp_top = lp;
-            members.has_cache |= changed;
-            changed
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-    #[cfg(not(feature = "cse"))]
-    let _cse_plan_changed = false;
 
     // Should be run before predicate pushdown.
     if opt_flags.projection_pushdown() {
