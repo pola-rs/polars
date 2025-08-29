@@ -122,7 +122,7 @@ pub trait StringMethods: AsString {
                         let mut it = s.chars();
                         it.next();
                         s = it.as_str();
-                    }
+                    },
                 }
             }
 
