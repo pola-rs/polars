@@ -375,6 +375,23 @@ def test_out_of_range_integers() -> None:
         assert series.index_of(np.int16(257))
 
 
+# TODO This might be fixed by https://github.com/pola-rs/polars/pull/24229
+def test_out_of_range_decimal() -> None:
+    # Up to 34 digits of integers:
+    series = pl.Series([1, None], dtype=pl.Decimal(36, 2))
+    assert series.index_of(10**34 - 1) is None
+    assert series.index_of(-(10**34 - 1)) is None
+    out_of_range = 10**34
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {out_of_range} losslessly"
+    ):
+        assert series.index_of(out_of_range)
+    with pytest.raises(
+        InvalidOperationError, match=f"cannot cast {-out_of_range} losslessly"
+    ):
+        assert series.index_of(-out_of_range)
+
+
 def test_out_of_range_float64() -> None:
     series = pl.Series([0, 255, None], dtype=pl.Float64)
     # Small numbers are fine:
@@ -405,9 +422,22 @@ def test_out_of_range_float32() -> None:
         assert series.index_of(-(2**24))
 
 
+def assert_lossy_cast_rejected(
+    series_dtype: PolarsDataType, value: Any, value_dtype: PolarsDataType
+) -> None:
+    # We create a Series with a null because previously lossless casts would
+    # sometimes get turned into nulls and you'd get an answer.
+    series = pl.Series([None], dtype=series_dtype)
+    with pytest.raises(InvalidOperationError, match="cannot cast losslessly"):
+        series.index_of(pl.lit(value, dtype=value_dtype))
+
+
 @pytest.mark.parametrize(
     ("series_dtype", "value", "value_dtype"),
     [
+        # Completely incompatible:
+        (pl.String, 1, pl.UInt8),
+        (pl.UInt8, "1", pl.String),
         # Larger integer doesn't fit in smaller integer:
         (pl.UInt8, 17, pl.UInt16),
         # Can't find negative numbers in unsigned integers:
@@ -420,13 +450,32 @@ def test_out_of_range_float32() -> None:
         (pl.Duration("ms"), 1, pl.Duration("ns")),
         # Arrays that are the wrong length:
         (pl.Array(pl.Int64, 2), [1], pl.Array(pl.Int64, 1)),
+        # Struct with wrong number of fields:
+        (
+            pl.Struct({"a": pl.Int64, "b": pl.Int64}),
+            {"a": 1},
+            pl.Struct({"a": pl.Int64}),
+        ),
+        # Struct with different field name:
+        (pl.Struct({"a": pl.Int64}), {"x": 1}, pl.Struct({"x": pl.Int64})),
     ],
 )
 def test_lossy_casts_are_rejected(
     series_dtype: PolarsDataType, value: Any, value_dtype: PolarsDataType
 ) -> None:
-    # We create a Series with a null because previously lossless casts would
-    # sometimes get turned into nulls and you'd get an answer.
-    series = pl.Series([None], dtype=series_dtype)
-    with pytest.raises(InvalidOperationError, match="cannot cast losslessly"):
-        series.index_of(pl.lit(value, dtype=value_dtype))
+    assert_lossy_cast_rejected(series_dtype, value, value_dtype)
+
+
+def test_lossy_casts_are_rejected_nested_dtypes():
+    # Make sure casting rules are applied recursively for Lists, Arrays,
+    # Struct:
+    series_dtype, value, value_dtype = pl.UInt8, 17, pl.UInt16
+    assert_lossy_cast_rejected(pl.List(series_dtype), [value], pl.List(value_dtype))
+    assert_lossy_cast_rejected(
+        pl.Array(series_dtype, 1), [value], pl.Array(value_dtype, 1)
+    )
+    assert_lossy_cast_rejected(
+        pl.Struct({"key": series_dtype}),
+        {"key": value},
+        pl.Struct({"key": value_dtype}),
+    )

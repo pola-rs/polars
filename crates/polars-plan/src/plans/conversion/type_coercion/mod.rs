@@ -1006,7 +1006,19 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
     let can_cast = match (to, from) {
         (a, b) if a == b => true,
         (_, DataType::Null) => true,
+        // Here we know the exact value, so we can report it to the user if it
+        // doesn't fit:
         (to, DataType::Unknown(UnknownKind::Int(value))) => match to {
+            DataType::Decimal(to_precision, to_scale)
+                if {
+                    let max =
+                        10i128.pow((to_precision.unwrap_or(38) - to_scale.unwrap_or(0)) as u32);
+                    let min = -max;
+                    *value < max && *value > min
+                } =>
+            {
+                true
+            },
             to if to.is_integer() && to.value_within_range(AnyValue::Int128(*value)) => true,
             // For floats, make sure it's in range where all integers convert
             // losslessly; this isn't quite every possible value that can be
@@ -1016,9 +1028,9 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             // Make sure we have error message that reports the value:
             _ => polars_bail!(InvalidOperation: "cannot cast {} losslessly to {}", value, to),
         },
-        // For Float32 we just can't tell if the value will fit, so can't do
-        // anything; for Float64 we can assume it'll work since presumably it's
-        // no larger than a float64 in practice.
+        // When casting to Float32 we can't tell if the value will fit, so can't
+        // do anything. When casting to Float64 we can assume it'll work since
+        // presumably it's no larger than a f64 in practice.
         (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
         // Handles both String and UnknownKind::Str:
         (DataType::String, from) => from.is_string(),
@@ -1082,15 +1094,15 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
                 return to_fields
                     .iter()
                     .zip(from_fields.iter())
-                    .map(|(to, from)| {
+                    .map(|(to_field, from_field)| {
                         polars_ensure!(
-                            to.name == from.name,
+                            to_field.name == from_field.name,
                             InvalidOperation:
-                            "field name {:?} doesn't match field name {:?}",
-                            to.name,
-                            from.name
+                            "cannot cast losslessly from {} to {}",
+                            from,
+                            to
                         );
-                        can_cast_to_lossless(&to.dtype, &from.dtype)
+                        can_cast_to_lossless(&to_field.dtype, &from_field.dtype)
                     })
                     .collect::<PolarsResult<()>>();
             }
