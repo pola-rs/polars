@@ -228,6 +228,7 @@ impl DataType {
         }
     }
 
+    #[cfg(feature = "dtype-struct")]
     pub fn _month_days_ns_struct_type() -> Self {
         DataType::Struct(vec![
             Field::new(PlSmallStr::from_static("months"), DataType::Int32),
