@@ -118,7 +118,6 @@ pub fn predicate_to_pa(
                 },
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
-                AnyValue::Binary(_) => None,
                 // Hard to sanitize
                 AnyValue::Binary(_)
                 | AnyValue::Struct(_, _, _)
