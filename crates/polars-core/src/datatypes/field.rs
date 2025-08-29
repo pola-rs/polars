@@ -278,7 +278,7 @@ impl DataType {
                 DataType::List(Self::from_arrow_field(inner).boxed())
             },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
-                DataType::Duration(TimeUnit::Nanoseconds)
+                DataType::_month_days_ns_struct_type()
             },
             dt => panic!(
                 "Arrow datatype {dt:?} not supported by Polars. \

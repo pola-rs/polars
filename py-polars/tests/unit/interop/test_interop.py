@@ -1114,19 +1114,21 @@ def test_month_day_nano_from_ffi_15969() -> None:
             pl.Series(
                 "interval",
                 [
-                    datetime.timedelta(days=30),
-                    datetime.timedelta(days=1),
-                    datetime.timedelta(microseconds=1),
-                    datetime.timedelta(days=31, seconds=1, microseconds=1),
-                    datetime.timedelta(days=-30),
-                    datetime.timedelta(days=-1),
-                    datetime.timedelta(days=-1, seconds=86399, microseconds=999999),
-                    datetime.timedelta(days=-32, seconds=86398, microseconds=999999),
-                    datetime.timedelta(days=106740),
-                    datetime.timedelta(days=-106740),
-                    datetime.timedelta(days=29, seconds=1, microseconds=999999),
+                    {"months": 1, "days": 0, "nanoseconds": 0},
+                    {"months": 0, "days": 1, "nanoseconds": 0},
+                    {"months": 0, "days": 0, "nanoseconds": 1000},
+                    {"months": 1, "days": 1, "nanoseconds": 1000001000},
+                    {"months": -1, "days": 0, "nanoseconds": 0},
+                    {"months": 0, "days": -1, "nanoseconds": 0},
+                    {"months": 0, "days": 0, "nanoseconds": -1000},
+                    {"months": -1, "days": -1, "nanoseconds": -1000001000},
+                    {"months": 3558, "days": 0, "nanoseconds": 0},
+                    {"months": -3558, "days": 0, "nanoseconds": 0},
+                    {"months": 1, "days": -1, "nanoseconds": 1999999000},
                 ],
-                dtype=pl.Duration(time_unit="ns"),
+                dtype=pl.Struct(
+                    {"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Int64}
+                ),
             ),
         ]
     )
@@ -1142,30 +1144,20 @@ def test_month_day_nano_from_ffi_15969() -> None:
                 {"interval": pa.array([], type=pa.month_day_nano_interval())}
             )
         ),
-        pl.DataFrame(schema={"interval": pl.Duration("ns")}),
+        pl.DataFrame(
+            schema={
+                "interval": pl.Struct(
+                    {"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Int64}
+                )
+            }
+        ),
     )
 
     assert_series_equal(
         pl.Series(pa.array([], type=pa.month_day_nano_interval())),
-        pl.Series(dtype=pl.Duration("ns")),
-    )
-
-    # Out of range - exceeds i64::MIN/MAX nanoseconds.
-    with pytest.raises(
-        ComputeError,
-        match="failed to convert month_day_nano_interval value to nanosecond duration: 3559M0d0ns",
-    ):
         pl.Series(
-            pa.array([interval_scalar((3559, 0, 0))], type=pa.month_day_nano_interval())
-        )
-
-    with pytest.raises(
-        ComputeError,
-        match="failed to convert month_day_nano_interval value to nanosecond duration: -3558M-30d-1000ns",
-    ):
-        pl.Series(
-            pa.array(
-                [interval_scalar((-3558, -30, -1_000))],
-                type=pa.month_day_nano_interval(),
+            dtype=pl.Struct(
+                {"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Int64}
             )
-        )
+        ),
+    )
