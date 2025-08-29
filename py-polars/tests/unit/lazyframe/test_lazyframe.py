@@ -1649,3 +1649,40 @@ def test_cache_hit_with_proj_and_pred_pushdown() -> None:
 
     assert len(e) == 2  # there are only 2 caches
     assert e[0] == e[1]  # all caches are the same
+
+
+def test_cache_hit_child_removal() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    )
+
+    q = df.lazy().sort("a").cache()
+
+    q1 = pl.concat([q.unique(), q.unique()])
+    q2 = pl.concat([q.unique(), q.unique(keep="none")])
+
+    e1 = q1.explain()
+    e2 = q2.explain()
+
+    assert "SORT" not in e1
+    assert "SORT" not in e2
+
+    rgx = re.compile(r"CACHE\[id: (.*)\]")
+
+    e1m = rgx.findall(e1)
+    e2m = rgx.findall(e2)
+
+    assert len(e1m) == 2  # there are only 2 caches
+    assert len(e2m) == 2  # there are only 2 caches
+    assert e1m[0] == e1m[1]  # all caches are the same
+    assert e2m[0] == e2m[1]  # all caches are the same
+
+    df1 = q1.collect()
+    df2 = q2.collect()
+
+    assert_frame_equal(df1.head(3), df, check_row_order=False)
+    assert_frame_equal(df1.tail(3), df, check_row_order=False)
+    assert_frame_equal(df2.head(3), df, check_row_order=False)
+    assert_frame_equal(df2.tail(3), df, check_row_order=False)
