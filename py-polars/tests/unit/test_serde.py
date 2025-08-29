@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import pickle
+import re
 from datetime import datetime, timedelta
 
 import pytest
@@ -245,3 +246,27 @@ def test_serialize_does_not_overflow_stack() -> None:
     actual = pl.LazyFrame.deserialize(f).collect()
     expected = pl.DataFrame({"a": range(n)})
     assert_frame_equal(actual, expected)
+
+
+def test_lf_cache_serde() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).cache()
+    lf = pl.concat([lf, lf])
+
+    ser = lf.serialize()
+    de = pl.LazyFrame.deserialize(io.BytesIO(ser))
+
+    e1 = de.explain()
+    e2 = de.explain(optimizations=pl.QueryOptFlags.none())
+
+    rgx = re.compile(r"CACHE\[id: (.*)\]")
+
+    e1_matches = rgx.findall(e1)
+    e2_matches = rgx.findall(e2)
+
+    # there are only 2 caches
+    assert len(e1_matches) == 2
+    assert len(e2_matches) == 2
+
+    # all caches are the same
+    assert e1_matches[0] == e1_matches[1]
+    assert e2_matches[0] == e2_matches[1]
