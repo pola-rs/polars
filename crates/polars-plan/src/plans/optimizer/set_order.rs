@@ -705,7 +705,7 @@ pub fn simplify_and_fetch_orderings(
             stack.extend(ir_arena.get(*root).inputs().map(|node| (*root, node)));
         }
 
-        while let Some((input, node)) = stack.pop() {
+        while let Some((parent, node)) = stack.pop() {
             let ir = ir_arena.get(node);
             let node = match ir {
                 IR::Cache { id, .. } => {
@@ -718,7 +718,7 @@ pub fn simplify_and_fetch_orderings(
 
             let outputs = outputs.entry(node).or_default();
             let has_been_visisited_before = !outputs.is_empty();
-            outputs.push(input);
+            outputs.push(parent);
 
             if has_been_visisited_before {
                 continue;
