@@ -39,6 +39,9 @@ def scan_pyarrow_dataset(
 
     Warnings
     --------
+    Don't use this if you accept untrusted user inputs. Predicates will be evaluated
+    with python 'eval'. There is sanitation in place, but it is a possible attack
+    vector.
     This method can only can push down predicates that are allowed by PyArrow
     (e.g. not the full Polars API).
 
