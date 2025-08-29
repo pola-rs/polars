@@ -16,6 +16,7 @@ use polars_core::prelude::PlHashMap;
 use polars_ops::frame::{JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::unique_id::UniqueId;
 
 use super::IR;
 use crate::dsl::{SinkTypeIR, UnionOptions};
@@ -82,6 +83,7 @@ fn pushdown_orders(
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
     outputs: &mut PlHashMap<Node, UnitVec<Node>>,
+    cache_proxy: &PlHashMap<UniqueId, Node>,
 ) -> PlHashMap<Node, PortOrder> {
     let mut orders: PlHashMap<Node, PortOrder> = PlHashMap::default();
     let mut node_hits: PlHashMap<Node, Vec<(usize, Node)>> = PlHashMap::default();
@@ -92,6 +94,13 @@ fn pushdown_orders(
     stack.extend(roots.iter().map(|n| (*n, None)));
 
     while let Some((node, outgoing)) = stack.pop() {
+        // @Hack. The IR creates caches for every path at the moment. That is super hacky. So is
+        // this, but we need to work around it.
+        let node = match ir_arena.get(node) {
+            IR::Cache { id, .. } => *cache_proxy.get(id).unwrap(),
+            _ => node,
+        };
+
         debug_assert!(!orders.contains_key(&node));
 
         let node_outputs = &outputs[&node];
@@ -501,6 +510,7 @@ fn pullup_orders(
     ir_arena: &mut Arena<IR>,
     outputs: &mut PlHashMap<Node, UnitVec<Node>>,
     orders: &mut PlHashMap<Node, PortOrder>,
+    cache_proxy: &PlHashMap<UniqueId, Node>,
 ) {
     let mut hits: PlHashMap<Node, Vec<(usize, Node)>> = PlHashMap::default();
     let mut stack = Vec::new();
@@ -517,6 +527,13 @@ fn pullup_orders(
     }
 
     while let Some((node, outgoing)) = stack.pop() {
+        // @Hack. The IR creates caches for every path at the moment. That is super hacky. So is
+        // this, but we need to work around it.
+        let node = match ir_arena.get(node) {
+            IR::Cache { id, .. } => *cache_proxy.get(id).unwrap(),
+            _ => node,
+        };
+
         let hits = hits.entry(node).or_default();
         hits.push(outgoing);
         if hits.len() < orders[&node].inputs.len() {
@@ -673,9 +690,10 @@ pub fn simplify_and_fetch_orderings(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
-) -> PlHashMap<Node, PortOrder> {
+) -> (PlHashMap<Node, PortOrder>, PlHashMap<UniqueId, Node>) {
     let mut leaves = Vec::new();
     let mut outputs = PlHashMap::default();
+    let mut cache_proxy = PlHashMap::default();
 
     // Get the per-node outputs and leaves
     {
@@ -688,11 +706,16 @@ pub fn simplify_and_fetch_orderings(
         }
 
         while let Some((input, node)) = stack.pop() {
+            let ir = ir_arena.get(node);
+            let node = match ir {
+                IR::Cache { id, .. } => *cache_proxy.entry(*id).or_insert(node),
+                _ => node,
+            };
+
             let outputs = outputs.entry(node).or_default();
             let has_been_visisited_before = !outputs.is_empty();
             outputs.push(input);
 
-            let ir = ir_arena.get(node);
             if has_been_visisited_before {
                 continue;
             }
@@ -706,9 +729,9 @@ pub fn simplify_and_fetch_orderings(
     }
 
     // Pushdown and optimize orders from the roots to the leaves.
-    let mut orders = pushdown_orders(roots, ir_arena, expr_arena, &mut outputs);
+    let mut orders = pushdown_orders(roots, ir_arena, expr_arena, &mut outputs, &cache_proxy);
     // Pullup orders from the leaves to the roots.
-    pullup_orders(&leaves, ir_arena, &mut outputs, &mut orders);
+    pullup_orders(&leaves, ir_arena, &mut outputs, &mut orders, &cache_proxy);
 
-    orders
+    (orders, cache_proxy)
 }

@@ -53,7 +53,7 @@ pub fn to_alp(
         cache_file_info: Default::default(),
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         verbose: verbose(),
-        cache_id_for_arc_ptr: Default::default(),
+        seen_caches: Default::default(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
@@ -428,14 +428,21 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             return run_conversion(lp, ctxt, "sort").map_err(|e| e.context(failed_here!(sort)));
         },
-        DslPlan::Cache { input } => {
-            let id = ctxt
-                .cache_id_for_arc_ptr
-                .entry(Arc::as_ptr(&input).addr())
-                .or_insert_with(UniqueId::new)
-                .to_owned();
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(cache)))?;
+        DslPlan::Cache { input, id } => {
+            let input = match ctxt.seen_caches.get(&id) {
+                Some(input) => *input,
+                None => {
+                    let input = to_alp_impl(owned(input), ctxt)
+                        .map_err(|e| e.context(failed_here!(cache)))?;
+                    let seen_before = ctxt.seen_caches.insert(id, input);
+                    assert!(
+                        seen_before.is_none(),
+                        "Cache could not have been created in the mean time. That would make the DAG cyclic."
+                    );
+                    input
+                },
+            };
+
             IR::Cache { input, id }
         },
         DslPlan::GroupBy {

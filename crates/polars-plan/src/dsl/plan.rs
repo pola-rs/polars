@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use polars_utils::arena::Node;
 #[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,7 @@ pub enum DslPlan {
     /// Cache the input at this point in the LP
     Cache {
         input: Arc<DslPlan>,
+        id: UniqueId,
     },
     Scan {
         sources: ScanSources,
@@ -172,7 +174,7 @@ impl Clone for DslPlan {
             #[cfg(feature = "python")]
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
-            Self::Cache { input } => Self::Cache { input: input.clone() },
+            Self::Cache { input, id } => Self::Cache { input: input.clone(), id: *id },
             Self::Scan { sources,  unified_scan_args, scan_type, cached_ir } => Self::Scan { sources: sources.clone(), unified_scan_args: unified_scan_args.clone(), scan_type: scan_type.clone(), cached_ir: cached_ir.clone() },
             Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
