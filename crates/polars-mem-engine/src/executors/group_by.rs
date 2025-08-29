@@ -11,7 +11,6 @@ pub(super) fn evaluate_aggs(
     POOL.install(|| {
         aggs.par_iter()
             .map(|expr| {
-                dbg!(expr.as_expression());
                 let agg = expr.evaluate_on_groups(df, groups, state)?.finalize();
                 polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
                 Ok(agg)

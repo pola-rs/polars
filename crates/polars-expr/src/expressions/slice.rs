@@ -111,8 +111,6 @@ impl PhysicalExpr for SliceExpr {
         })?;
         let mut ac = results.pop().unwrap();
 
-        dbg!(&ac);
-
         if let AggState::AggregatedScalar(_) = ac.agg_state() {
             polars_bail!(InvalidOperation: "cannot slice() an aggregated scalar value")
         }
@@ -130,7 +128,6 @@ impl PhysicalExpr for SliceExpr {
         use AggState::*;
         let groups = match (&ac_offset.state, &ac_length.state) {
             (LiteralScalar(offset), LiteralScalar(length)) => {
-                dbg!("hier");
                 let (offset, length) = extract_args(offset, length, &self.expr)?;
 
                 if let LiteralScalar(s) = ac.agg_state() {
@@ -162,7 +159,6 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             (LiteralScalar(offset), _) => {
-                dbg!("hier");
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
                 }
@@ -201,7 +197,6 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             (_, LiteralScalar(length)) => {
-                dbg!("hier");
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
                 }
@@ -289,7 +284,7 @@ impl PhysicalExpr for SliceExpr {
         ac.with_groups(groups.into_sliceable())
             .set_original_len(false);
 
-        Ok(dbg!(ac))
+        Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
