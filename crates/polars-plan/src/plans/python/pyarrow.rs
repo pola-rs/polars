@@ -123,7 +123,7 @@ pub fn predicate_to_pa(
                 AnyValue::Binary(_)
                 | AnyValue::Struct(_, _, _)
                 | AnyValue::List(_)
-                | AnyValue::Array(_, _) => return None,
+                | AnyValue::Array(_, _) => None,
                 // Activate once pyarrow supports them
                 // #[cfg(feature = "dtype-time")]
                 // AnyValue::Time(v) => {
