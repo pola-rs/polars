@@ -479,17 +479,19 @@ impl Series {
                 }
             },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
-                let chunks = chunks
-                    .into_iter()
-                    .map(convert_month_day_nano_to_struct)
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                feature_gated!("dtype-struct", {
+                    let chunks = chunks
+                        .into_iter()
+                        .map(convert_month_day_nano_to_struct)
+                        .collect::<PolarsResult<Vec<_>>>()?;
 
-                Ok(StructChunked::from_chunks_and_dtype_unchecked(
-                    name,
-                    chunks,
-                    DataType::_month_days_ns_struct_type(),
-                )
-                .into_series())
+                    Ok(StructChunked::from_chunks_and_dtype_unchecked(
+                        name,
+                        chunks,
+                        DataType::_month_days_ns_struct_type(),
+                    )
+                    .into_series())
+                })
             },
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
@@ -752,6 +754,7 @@ unsafe fn import_arrow_dictionary_array(
     }
 }
 
+#[cfg(feature = "dtype-struct")]
 fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<dyn Array>> {
     let arr: &PrimitiveArray<months_days_ns> = chunk.as_any().downcast_ref().unwrap();
 
