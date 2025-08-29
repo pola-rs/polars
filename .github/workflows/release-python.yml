@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.sha }}
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
