@@ -83,7 +83,7 @@ fn pushdown_orders(
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
     outputs: &mut PlHashMap<Node, UnitVec<Node>>,
-    cache_proxy: &PlHashMap<UniqueId, Node>,
+    cache_proxy: &PlHashMap<UniqueId, Vec<Node>>,
 ) -> PlHashMap<Node, PortOrder> {
     let mut orders: PlHashMap<Node, PortOrder> = PlHashMap::default();
     let mut node_hits: PlHashMap<Node, Vec<(usize, Node)>> = PlHashMap::default();
@@ -97,7 +97,7 @@ fn pushdown_orders(
         // @Hack. The IR creates caches for every path at the moment. That is super hacky. So is
         // this, but we need to work around it.
         let node = match ir_arena.get(node) {
-            IR::Cache { id, .. } => *cache_proxy.get(id).unwrap(),
+            IR::Cache { id, .. } => cache_proxy.get(id).unwrap()[0],
             _ => node,
         };
 
@@ -510,7 +510,7 @@ fn pullup_orders(
     ir_arena: &mut Arena<IR>,
     outputs: &mut PlHashMap<Node, UnitVec<Node>>,
     orders: &mut PlHashMap<Node, PortOrder>,
-    cache_proxy: &PlHashMap<UniqueId, Node>,
+    cache_proxy: &PlHashMap<UniqueId, Vec<Node>>,
 ) {
     let mut hits: PlHashMap<Node, Vec<(usize, Node)>> = PlHashMap::default();
     let mut stack = Vec::new();
@@ -530,7 +530,7 @@ fn pullup_orders(
         // @Hack. The IR creates caches for every path at the moment. That is super hacky. So is
         // this, but we need to work around it.
         let node = match ir_arena.get(node) {
-            IR::Cache { id, .. } => *cache_proxy.get(id).unwrap(),
+            IR::Cache { id, .. } => cache_proxy.get(id).unwrap()[0],
             _ => node,
         };
 
@@ -690,10 +690,10 @@ pub fn simplify_and_fetch_orderings(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
-) -> (PlHashMap<Node, PortOrder>, PlHashMap<UniqueId, Node>) {
+) -> PlHashMap<Node, PortOrder> {
     let mut leaves = Vec::new();
     let mut outputs = PlHashMap::default();
-    let mut cache_proxy = PlHashMap::default();
+    let mut cache_proxy = PlHashMap::<UniqueId, Vec<Node>>::default();
 
     // Get the per-node outputs and leaves
     {
@@ -708,7 +708,11 @@ pub fn simplify_and_fetch_orderings(
         while let Some((input, node)) = stack.pop() {
             let ir = ir_arena.get(node);
             let node = match ir {
-                IR::Cache { id, .. } => *cache_proxy.entry(*id).or_insert(node),
+                IR::Cache { id, .. } => {
+                    let nodes = cache_proxy.entry(*id).or_default();
+                    nodes.push(node);
+                    nodes[0]
+                },
                 _ => node,
             };
 
@@ -733,5 +737,27 @@ pub fn simplify_and_fetch_orderings(
     // Pullup orders from the leaves to the roots.
     pullup_orders(&leaves, ir_arena, &mut outputs, &mut orders, &cache_proxy);
 
-    (orders, cache_proxy)
+    // @Hack. Since not all caches might share the same node and the input of caches might have
+    // been updated, we need to ensure that all caches again have the same input.
+    //
+    // This can be removed when all caches with the same id share the same IR node.
+    for nodes in cache_proxy.into_values() {
+        let updated_node = nodes[0];
+        let IR::Cache {
+            input: updated_input,
+            id: _,
+        } = ir_arena.get(updated_node)
+        else {
+            unreachable!();
+        };
+        let updated_input = *updated_input;
+        for n in &nodes[1..] {
+            let IR::Cache { input, id: _ } = ir_arena.get_mut(*n) else {
+                unreachable!();
+            };
+            *input = updated_input;
+        }
+    }
+
+    orders
 }
