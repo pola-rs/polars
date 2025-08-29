@@ -189,6 +189,14 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
 
+      - name: Ensure correct rust-binutils arch
+        if: startsWith(matrix.os, 'macos-13')
+        run: |
+          cargo uninstall cargo-binutils || true
+          rustup component remove llvm-tools-preview || true
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
         if: matrix.os == 'windows-11-arm'
