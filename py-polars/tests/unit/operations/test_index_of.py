@@ -150,6 +150,12 @@ def test_integer(dtype: pl.DataType) -> None:
                 s.index_of(f)  # type: ignore[arg-type]
 
 
+def test_integer_upcast():
+    series = pl.Series([0, 123, 456, 789], dtype=pl.Int64)
+    for should_work in [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16, pl.Int32, pl.UInt32]:
+        assert series.index_of(pl.lit(123, dtype=should_work)) == 1
+
+
 def test_groupby() -> None:
     df = pl.DataFrame(
         {"label": ["a", "b", "a", "b", "a", "b"], "value": [10, 3, 20, 2, 40, 20]}
@@ -444,8 +450,10 @@ def assert_lossy_cast_rejected(
         (pl.UInt16, -1, pl.Int8),
         # Values after the decimal point that can't be represented:
         (pl.Decimal(3, 1), 1, pl.Decimal(4, 2)),
-        # Overly large decimal value:
+        # Can't fit in Decimal:
         (pl.Decimal(3, 0), 1, pl.Decimal(4, 0)),
+        (pl.Decimal(5, 2), 1, pl.Decimal(5, 1)),
+        (pl.Decimal(5, 2), 1, pl.UInt16),
         # Can't fit nanoseconds in milliseconds:
         (pl.Duration("ms"), 1, pl.Duration("ns")),
         # Arrays that are the wrong length:

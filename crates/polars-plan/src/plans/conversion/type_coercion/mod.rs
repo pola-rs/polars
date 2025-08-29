@@ -1028,9 +1028,9 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             // Make sure we have error message that reports the value:
             _ => polars_bail!(InvalidOperation: "cannot cast {} losslessly to {}", value, to),
         },
-        // When casting to Float32 we can't tell if the value will fit, so can't
-        // do anything. When casting to Float64 we can assume it'll work since
-        // presumably it's no larger than a f64 in practice.
+        // When casting unknown float to Float32 we can't tell if the value will
+        // fit, so can't do anything. When casting to Float64 we can assume
+        // it'll work since presumably it's no larger than a f64 in practice.
         (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
         // Handles both String and UnknownKind::Str:
         (DataType::String, from) => from.is_string(),
