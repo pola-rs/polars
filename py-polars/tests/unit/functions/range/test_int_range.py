@@ -293,7 +293,7 @@ def test_int_range_len_count() -> None:
 
     lf = pl.Series("a", values).to_frame().lazy()
 
-    def irange(e: pl.Expr) -> pl.Expr:
+    def irange(e: pl.Expr) -> pl.LazyFrame:
         return lf.select(r=pl.int_range(0, e, dtype=pl.get_index_type()))
 
     q = irange(pl.len())
