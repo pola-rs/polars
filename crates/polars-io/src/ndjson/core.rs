@@ -404,7 +404,7 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>, ignore
     for bytes in iter {
         match parse_impl(bytes, buffers, &mut scratch) {
             Ok(_) => {},
-            Err(e) if ignore_errors => {
+            Err(e) if !ignore_errors => {
                 return Err(e);
             },
             Err(_) => {},
