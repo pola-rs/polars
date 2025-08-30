@@ -373,6 +373,22 @@ impl AExprBuilder {
         nc.gt(idx_zero, arena)
     }
 
+    pub fn drop_nulls(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_retain_name(arena)],
+            IRFunctionExpr::DropNulls,
+            arena,
+        )
+    }
+
+    pub fn drop_nans(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_retain_name(arena)],
+            IRFunctionExpr::DropNans,
+            arena,
+        )
+    }
+
     pub fn eq(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
         self.binary_op(other, Operator::Eq, arena)
     }
@@ -455,6 +471,10 @@ impl AExprBuilder {
 
     pub fn expr_ir(self, name: impl Into<PlSmallStr>) -> ExprIR {
         ExprIR::new(self.node(), OutputName::Alias(name.into()))
+    }
+
+    pub fn expr_ir_retain_name(self, arena: &Arena<AExpr>) -> ExprIR {
+        ExprIR::from_node(self.node(), arena)
     }
 
     pub fn expr_ir_unnamed(self) -> ExprIR {
