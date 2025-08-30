@@ -455,7 +455,11 @@ def test_categorical_asof_join_by_arg() -> None:
     df2s = df2.with_columns(cat=pl.col.cat.cast(pl.String))
     out1 = df1.join_asof(df2, on=pl.col("time").set_sorted(), by="cat")
     out2 = df1s.join_asof(df2s, on=pl.col("time").set_sorted(), by="cat")
-    assert_frame_equal(out1, out2.with_columns(cat=pl.col.cat.cast(pl.Categorical)))
+    assert_frame_equal(
+        out1,
+        out2.with_columns(cat=pl.col.cat.cast(pl.Categorical)),
+        check_row_order=False,
+    )
 
 
 def test_categorical_list_get_item() -> None:

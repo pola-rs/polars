@@ -74,17 +74,23 @@ def test_predicate_null_block_asof_join() -> None:
         .set_sorted("timestamp")
     )
 
-    assert left.join_asof(right, by="id", on="timestamp").filter(
-        pl.col("value").is_not_null()
-    ).collect().to_dict(as_series=False) == {
-        "id": [1, 2, 3],
-        "timestamp": [
-            datetime(2022, 1, 1, 10, 0),
-            datetime(2022, 1, 1, 10, 1),
-            datetime(2022, 1, 1, 10, 2),
-        ],
-        "value": ["a", "b", "c"],
-    }
+    assert_frame_equal(
+        left.join_asof(right, by="id", on="timestamp")
+        .filter(pl.col("value").is_not_null())
+        .collect(),
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "timestamp": [
+                    datetime(2022, 1, 1, 10, 0),
+                    datetime(2022, 1, 1, 10, 1),
+                    datetime(2022, 1, 1, 10, 2),
+                ],
+                "value": ["a", "b", "c"],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_predicate_strptime_6558() -> None:

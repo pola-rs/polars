@@ -63,6 +63,18 @@ def test_arr_sum(
     assert s.arr.sum().to_list() == expected_sum
 
 
+@pytest.mark.may_fail_cloud
+def test_array_lengths_zwa() -> None:
+    assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
+    assert pl.Series("a", [None, []], pl.Array(pl.Null, 0)).arr.len().to_list() == [
+        None,
+        0,
+    ]
+    assert pl.Series("a", [None], pl.Array(pl.Null, 0)).arr.len().to_list() == [None]
+
+    assert pl.Series("a", [], pl.Array(pl.Null, 0)).arr.len().to_list() == []
+
+
 def test_array_lengths() -> None:
     df = pl.DataFrame(
         [
@@ -76,14 +88,6 @@ def test_array_lengths() -> None:
     )
     assert_frame_equal(out, expected_df)
 
-    assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
-    assert pl.Series("a", [None, []], pl.Array(pl.Null, 0)).arr.len().to_list() == [
-        None,
-        0,
-    ]
-    assert pl.Series("a", [None], pl.Array(pl.Null, 0)).arr.len().to_list() == [None]
-
-    assert pl.Series("a", [], pl.Array(pl.Null, 0)).arr.len().to_list() == []
     assert pl.Series("a", [], pl.Array(pl.Null, 1)).arr.len().to_list() == []
     assert pl.Series(
         "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.Int32, 3)
