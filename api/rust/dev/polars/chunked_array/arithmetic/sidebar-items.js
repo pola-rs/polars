@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["_get_decimal_scale_add_sub","_get_decimal_scale_div","_get_decimal_scale_mul"],"trait":["ArithmeticChunked"]};
