@@ -1082,3 +1082,195 @@ def test_schema_constructor_from_schema_capsule() -> None:
 def test_to_arrow_24142() -> None:
     df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
     df.to_arrow(compat_level=CompatLevel.oldest())
+
+
+def test_decimal_pycapsule_interface() -> None:
+    """Test that decimal series can be exported/imported via Arrow C Stream."""
+    from decimal import Decimal
+
+    test_cases = [
+        ([Decimal("0.1"), Decimal("0.2"), Decimal("0.3")], 28, 12),
+        ([Decimal("123.456"), Decimal("789.012")], 10, 3),
+        ([Decimal("1"), Decimal("2"), Decimal("3")], 5, 0),
+        ([Decimal("0.000001"), None, Decimal("0.000002")], 15, 6),
+    ]
+
+    for values, precision, scale in test_cases:
+        original_series = pl.Series(
+            "decimal_test", values, dtype=pl.Decimal(precision, scale)
+        )
+
+        # Export via Arrow C Stream interface and import back
+        stream_holder = PyCapsuleStreamHolder(original_series)
+        imported_series = pl.Series(stream_holder)
+
+        assert original_series.equals(imported_series, check_dtypes=True), (
+            f"Series values don't match for precision={precision}, scale={scale}"
+        )
+        assert original_series.dtype == imported_series.dtype, (
+            f"Dtypes don't match: {original_series.dtype} != {imported_series.dtype}"
+        )
+        assert original_series.name == imported_series.name, (
+            f"Names don't match: {original_series.name} != {imported_series.name}"
+        )
+
+
+def test_decimal_dataframe_pycapsule_interface() -> None:
+    """Test DataFrames with decimal columns via Arrow C Stream interface."""
+    from decimal import Decimal
+
+    df_orig = pl.DataFrame(
+        {
+            "integers": [1, 2, 3, 4],
+            "decimals": [Decimal("1.23"), Decimal("4.56"), Decimal("7.89"), None],
+            "strings": ["a", "b", "c", "d"],
+        }
+    ).with_columns(pl.col("decimals").cast(pl.Decimal(10, 2)))
+
+    # Export via Arrow C Stream interface and import back
+    stream_holder = PyCapsuleStreamHolder(df_orig)
+    df_imported = pl.DataFrame(stream_holder)
+
+    assert df_orig.equals(df_imported), (
+        f"DataFrames don't match:\nOriginal:\n{df_orig}\nImported:\n{df_imported}"
+    )
+
+    orig_decimal_dtype = df_orig.schema["decimals"]
+    imported_decimal_dtype = df_imported.schema["decimals"]
+    assert isinstance(orig_decimal_dtype, pl.Decimal), (
+        f"Original decimal dtype is not Decimal: {orig_decimal_dtype}"
+    )
+    assert isinstance(imported_decimal_dtype, pl.Decimal), (
+        f"Imported decimal dtype is not Decimal: {imported_decimal_dtype}"
+    )
+    assert orig_decimal_dtype.scale == imported_decimal_dtype.scale, (
+        f"Decimal scales don't match: {orig_decimal_dtype.scale} != {imported_decimal_dtype.scale}"
+    )
+
+
+def test_logical_types_pycapsule_interface() -> None:
+    """Test that all logical types requiring conversion work with Arrow C Stream."""
+    from datetime import date, datetime, time, timedelta
+    from decimal import Decimal
+
+    test_cases: list[tuple[str, list[Any], Any]] = [
+        ("Decimal", [Decimal("1.23"), Decimal("4.56"), None], pl.Decimal(10, 2)),
+        ("Date", [date(2023, 1, 1), date(2023, 1, 2), None], pl.Date),
+        (
+            "Datetime",
+            [datetime(2023, 1, 1, 12, 0), datetime(2023, 1, 2, 13, 30), None],
+            pl.Datetime,
+        ),
+        ("Time", [time(12, 0, 0), time(13, 30, 0), None], pl.Time),
+        (
+            "Duration",
+            [timedelta(days=1), timedelta(hours=2, minutes=30), None],
+            pl.Duration,
+        ),
+        (
+            "Duration_ms",
+            [timedelta(milliseconds=100), timedelta(microseconds=500), None],
+            pl.Duration("ms"),
+        ),
+        ("Categorical", ["apple", "banana", "apple", None], pl.Categorical),
+    ]
+
+    for type_name, values, dtype in test_cases:
+        original_series = pl.Series(f"{type_name.lower()}_test", values, dtype=dtype)
+
+        # Export via Arrow C Stream interface and import back
+        stream_holder = PyCapsuleStreamHolder(original_series)
+        imported_series = pl.Series(stream_holder)
+
+        assert original_series.equals(imported_series, check_dtypes=True), (
+            f"Series values don't match for {type_name}"
+        )
+        assert original_series.dtype == imported_series.dtype, (
+            f"Dtypes don't match for {type_name}: {original_series.dtype} != {imported_series.dtype}"
+        )
+        assert original_series.name == imported_series.name, (
+            f"Names don't match for {type_name}: {original_series.name} != {imported_series.name}"
+        )
+        assert original_series.len() == imported_series.len(), (
+            f"Lengths don't match for {type_name}: {original_series.len()} != {imported_series.len()}"
+        )
+
+
+def test_primitive_types_pycapsule_interface() -> None:
+    """Test that primitive types continue to work efficiently with Arrow C Stream."""
+    test_cases: list[tuple[str, list[Any], Any]] = [
+        ("Int32", [1, 2, 3, None], pl.Int32),
+        ("Int64", [1, 2, 3, None], pl.Int64),
+        ("Float32", [1.1, 2.2, 3.3, None], pl.Float32),
+        ("Float64", [1.1, 2.2, 3.3, None], pl.Float64),
+        ("Boolean", [True, False, None, True], pl.Boolean),
+        ("String", ["hello", "world", None, "polars"], pl.String),
+        ("Binary", [b"hello", b"world", None, b"polars"], pl.Binary),
+    ]
+
+    for type_name, values, dtype in test_cases:
+        original_series = pl.Series(f"{type_name.lower()}_test", values, dtype=dtype)
+
+        # Export via Arrow C Stream interface and import back
+        stream_holder = PyCapsuleStreamHolder(original_series)
+        imported_series = pl.Series(stream_holder)
+
+        assert original_series.equals(imported_series, check_dtypes=True), (
+            f"Series values don't match for {type_name}"
+        )
+        assert original_series.dtype == imported_series.dtype, (
+            f"Dtypes don't match for {type_name}: {original_series.dtype} != {imported_series.dtype}"
+        )
+        assert original_series.name == imported_series.name, (
+            f"Names don't match for {type_name}: {original_series.name} != {imported_series.name}"
+        )
+        assert original_series.len() == imported_series.len(), (
+            f"Lengths don't match for {type_name}: {original_series.len()} != {imported_series.len()}"
+        )
+
+
+def test_mixed_dataframe_logical_types_pycapsule_interface() -> None:
+    """Test DataFrames containing multiple logical types via Arrow C Stream."""
+    from datetime import date, datetime, time, timedelta
+    from decimal import Decimal
+
+    df_orig = pl.DataFrame(
+        {
+            "decimals": [Decimal("1.11"), Decimal("2.22"), Decimal("3.33")],
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+            "datetimes": [
+                datetime(2023, 1, 1, 10, 0),
+                datetime(2023, 1, 2, 11, 0),
+                datetime(2023, 1, 3, 12, 0),
+            ],
+            "times": [time(10, 0), time(11, 0), time(12, 0)],
+            "durations": [timedelta(days=1), timedelta(hours=2), timedelta(minutes=30)],
+            "categories": ["A", "B", "C"],
+            "integers": [1, 2, 3],
+        }
+    ).with_columns(
+        pl.col("decimals").cast(pl.Decimal(5, 2)),
+        pl.col("categories").cast(pl.Categorical),
+    )
+
+    # Export via Arrow C Stream interface and import back
+    stream_holder = PyCapsuleStreamHolder(df_orig)
+    df_imported = pl.DataFrame(stream_holder)
+
+    assert df_orig.equals(df_imported), (
+        f"DataFrames don't match:\nOriginal:\n{df_orig}\nImported:\n{df_imported}"
+    )
+
+    for col_name in [
+        "decimals",
+        "dates",
+        "datetimes",
+        "times",
+        "durations",
+        "categories",
+    ]:
+        orig_col = df_orig[col_name]
+        imported_col = df_imported[col_name]
+        assert orig_col.equals(imported_col, check_dtypes=True), (
+            f"Column {col_name} doesn't match after export/import"
+        )
