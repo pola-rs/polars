@@ -36,11 +36,15 @@ capabilities:
 
 ## What are the main use cases for Polars Cloud?
 
-Polars Cloud offers a way to run Polars queries at scale without infrastructure management. By
-default, Polars Cloud connects directly to a cluster allowing any user to run data processing
-workloads that require more compute than their local environment can offer. Job mode can be used for
-ETL workloads, analytics jobs or workloads that execute in cloud environments that requirement an
-additional security layer.
+Polars Cloud enables data teams to scale their existing Polars queries beyond local machine
+limitations. Teams should use it when datasets exceed local memory, when computationally intensive
+operations require more processing power, or when data resides in cloud storage and shouldn't or
+can't be downloaded locally.
+
+The platform allows the same query to run on appropriately sized compute instances while being
+executable from any environment (e.g. notebooks, serverless functions, or orchestration platforms).
+This eliminates the need for teams to refactor their code into different tools or coordinate
+handovers between analytics and infrastructure teams when moving from development to production.
 
 ## How can Polars Cloud integrate with my workflow?
 

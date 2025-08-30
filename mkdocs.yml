@@ -118,10 +118,10 @@ nav:
 
           - Queries:
                 - polars-cloud/run/first-query.md
-                - polars-cloud/run/example-workflow.md
                 - polars-cloud/run/distributed-engine.md
           - Context:
                 - polars-cloud/context/compute-context.md
+                - polars-cloud/context/reconnect.md
                 - polars-cloud/context/plugins.md
           - Organizations:
                 - polars-cloud/organization/organizations.md

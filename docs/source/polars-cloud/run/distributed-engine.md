@@ -8,11 +8,11 @@ when querying large datasets from cloud storage, performance is often constraine
 limitations of a single node. By scaling horizontally, these download limitations can be
 significantly reduced, allowing users to process data at scale.
 
-!!! info "Distributed engine is early stage"
+!!! info "Distributed engine is in open beta"
 
-    The distributed engine is in alpha and some operations are not supported yet.
+    The distributed engine is in open beta and currently supports most common operations. Check the specific operations that are [currently supported in the distributed engine](https://github.com/pola-rs/polars/issues/21487).
 
-    Find out which operations are [currently supported in the distributed engine](https://github.com/pola-rs/polars/issues/21487).
+    We are open to feedback and learning from your use cases. Reach the team at [support@polars.tech](mailto:support@polars.tech).
 
 ## Using distributed engine
 
@@ -24,7 +24,7 @@ lf: LazyFrame
 result = (
       lf.remote()
       .distributed()
-      .collect()
+      .sink_parquet()
 )
 ```
 

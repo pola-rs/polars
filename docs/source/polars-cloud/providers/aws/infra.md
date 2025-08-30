@@ -15,7 +15,7 @@ When you deploy Polars Cloud the following infrastructure is setup.
 
 1. A `VPC` and two `subnets` in which Polars EC2 workers can run.
 2. Two `security groups`. One for the default mode that allows direct communication between your
-   local environment and the cluster, and one for job mode, which does not have any public ports.
+   local environment and the cluster, and one for proxy mode, which does not have any public ports.
 3. `PolarsWorker` IAM role. Polars EC2 workers run under this IAM role.
 4. `UserInitiated` & `Unattended` IAM role. The `UserInitiated` role has the permissions to start
    Polars EC2 workers in your environment. The `Unattended` role can terminate unused compute
@@ -76,7 +76,7 @@ your choice.
 
 You can configure these subnets to align with your business requirements. By default, the Python
 client accessing Polars Cloud must have access, so the subnet must be public, but allows for access
-controls such as IP-whitelisting. For job mode, outbound traffic must be allowed.
+controls such as IP-whitelisting. For proxy mode, outbound traffic must be allowed.
 
 ## Custom requirements
 
