@@ -47,7 +47,7 @@ pub enum InputOrder {
 /// - If any output is ordered it is able to propgate on the ordering from any input that is
 ///   `Preserving` or `Observing`. Conversely, if no output is ordered or no input is `Preserving`
 ///   or `Observing`, no input order may be propagated to any of the outputs.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PortOrder {
     pub inputs: UnitVec<InputOrder>,
     pub output_ordered: UnitVec<bool>,
@@ -743,6 +743,7 @@ pub fn simplify_and_fetch_orderings(
     // This can be removed when all caches with the same id share the same IR node.
     for nodes in cache_proxy.into_values() {
         let updated_node = nodes[0];
+        let order = orders[&updated_node].clone();
         let IR::Cache {
             input: updated_input,
             id: _,
@@ -755,6 +756,8 @@ pub fn simplify_and_fetch_orderings(
             let IR::Cache { input, id: _ } = ir_arena.get_mut(*n) else {
                 unreachable!();
             };
+
+            orders.insert(*n, order.clone());
             *input = updated_input;
         }
     }
