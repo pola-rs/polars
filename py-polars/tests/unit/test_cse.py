@@ -143,7 +143,8 @@ def test_cse_9630() -> None:
 
 
 @pytest.mark.write_disk
-def test_schema_row_index_cse() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_schema_row_index_cse(maintain_order: bool) -> None:
     with NamedTemporaryFile() as csv_a:
         csv_a.write(b"A,B\nGr1,A\nGr1,B")
         csv_a.seek(0)
@@ -151,8 +152,8 @@ def test_schema_row_index_cse() -> None:
         df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
         result = (
-            df_a.join(df_a, on="B")
-            .group_by("A", maintain_order=True)
+            df_a.join(df_a, on="B", maintain_order="left" if maintain_order else "none")
+            .group_by("A", maintain_order=maintain_order)
             .all()
             .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
         )
@@ -167,7 +168,7 @@ def test_schema_row_index_cse() -> None:
         },
         schema_overrides={"Idx": pl.List(pl.UInt32), "Idx_right": pl.List(pl.UInt32)},
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
 @pytest.mark.debug

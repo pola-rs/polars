@@ -48,6 +48,7 @@ def test_cat_parquet_roundtrip(cats: pl.Categories) -> None:
     assert_frame_equal(df, df2)
 
 
+@pytest.mark.may_fail_cloud  # reason: these are not seen locally
 def test_local_categories_gc() -> None:
     dt = pl.Categorical(pl.Categories.random())
     df = pl.DataFrame({"x": ["foo", "bar", "moo"]}, schema={"x": dt})
