@@ -390,6 +390,34 @@ def test_temporal_downcasts() -> None:
     ]
 
 
+def test_slice_pushdown_queries() -> None:
+    lf = pl.LazyFrame({"a": range(100)}).cache()
+
+    q1 = lf.slice(50).select(pl.col.a + 200)
+    q2 = lf
+
+    q = pl.concat([q1, q2])
+
+    expected = pl.Series("a", list(range(250, 300)) + list(range(100))).to_frame()
+
+    assert_frame_equal(q.collect(), expected)
+
+    nq = q.unique()
+    assert_frame_equal(nq.collect(), expected, check_row_order=False)
+
+    nq = q.group_by("a").agg([])
+    assert_frame_equal(nq.collect(), expected, check_row_order=False)
+
+    nq = q.group_by("a", maintain_order=True).agg([])
+    assert_frame_equal(nq.collect(), expected)
+
+    nq = q.group_by("a").agg(b=pl.col.a.first()).select(a=pl.col.b)
+    assert_frame_equal(nq.collect(), expected, check_row_order=False)
+
+    nq = q.group_by("a", maintain_order=True).agg(b=pl.col.a.first()).select(a=pl.col.b)
+    assert_frame_equal(nq.collect(), expected)
+
+
 def test_temporal_time_casts() -> None:
     s = pl.Series([-1, 0, 1]).cast(pl.Datetime("us"))
 
