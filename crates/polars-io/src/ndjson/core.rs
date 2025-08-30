@@ -397,7 +397,11 @@ pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     })
 }
 
-fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>, ignore_errors: bool) -> PolarsResult<()> {
+fn parse_lines(
+    bytes: &[u8],
+    buffers: &mut PlIndexMap<BufferKey, Buffer>,
+    ignore_errors: bool,
+) -> PolarsResult<()> {
     let mut scratch = Scratch::default();
 
     let iter = json_lines(bytes);
