@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Callable
 
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import Expr
     from polars._typing import IntoExpr, IntoExprColumn
 
@@ -789,6 +792,130 @@ class ExprArrayNameSpace:
         └─────┘
         """
         return wrap_expr(self._pyexpr.arr_explode())
+
+    def concat(
+        self, exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+    ) -> Expr:
+        """
+        Horizontally concatenate columns into a single array column.
+
+        Non-array columns are reshaped to a unit-width array. All columns must have
+        a dtype of either `pl.Array(<DataType>, width)` or `pl.<DataType>`.
+
+        .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        exprs
+            Columns to concatenate into a single array column. Accepts expression input.
+            Strings are parsed as column names, other non-expression inputs are parsed
+            as literals.
+        *more_exprs
+            Additional columns to concatenate into a single array column, specified as
+            positional arguments.
+
+
+        Examples
+        --------
+        Concatenate 2 array columns:
+
+        >>> (
+        ...     pl.select(
+        ...         a=pl.Series([[1], [3], None], dtype=pl.Array(pl.Int64, 1)),
+        ...         b=pl.Series([[3], [None], [5]], dtype=pl.Array(pl.Int64, 1)),
+        ...     ).with_columns(
+        ...         pl.col("a").arr.concat("b").alias("concat_arr(a, b)"),
+        ...         pl.col("a")
+        ...         .arr.concat(pl.first("b"))
+        ...         .alias("concat_arr(a, first(b))"),
+        ...     )
+        ... )
+        shape: (3, 4)
+        ┌───────────────┬───────────────┬──────────────────┬─────────────────────────┐
+        │ a             ┆ b             ┆ concat_arr(a, b) ┆ concat_arr(a, first(b)) │
+        │ ---           ┆ ---           ┆ ---              ┆ ---                     │
+        │ array[i64, 1] ┆ array[i64, 1] ┆ array[i64, 2]    ┆ array[i64, 2]           │
+        ╞═══════════════╪═══════════════╪══════════════════╪═════════════════════════╡
+        │ [1]           ┆ [3]           ┆ [1, 3]           ┆ [1, 3]                  │
+        │ [3]           ┆ [null]        ┆ [3, null]        ┆ [3, 3]                  │
+        │ null          ┆ [5]           ┆ null             ┆ null                    │
+        └───────────────┴───────────────┴──────────────────┴─────────────────────────┘
+
+        Concatenate non-array columns:
+
+        >>> (
+        ...     pl.select(
+        ...         c=pl.Series([None, 5, 6], dtype=pl.Int64),
+        ...     )
+        ...     .with_columns(d=pl.col("c").reverse())
+        ...     .with_columns(
+        ...         pl.col("c").arr.concat("d").alias("concat_arr(c, d)"),
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌──────┬──────┬──────────────────┐
+        │ c    ┆ d    ┆ concat_arr(c, d) │
+        │ ---  ┆ ---  ┆ ---              │
+        │ i64  ┆ i64  ┆ array[i64, 2]    │
+        ╞══════╪══════╪══════════════════╡
+        │ null ┆ 6    ┆ [null, 6]        │
+        │ 5    ┆ 5    ┆ [5, 5]           │
+        │ 6    ┆ null ┆ [6, null]        │
+        └──────┴──────┴──────────────────┘
+
+        Concatenate mixed array and non-array columns:
+
+        >>> (
+        ...     pl.select(
+        ...         a=pl.Series([[1], [3], None], dtype=pl.Array(pl.Int64, 1)),
+        ...         b=pl.Series([[3], [None], [5]], dtype=pl.Array(pl.Int64, 1)),
+        ...         c=pl.Series([None, 5, 6], dtype=pl.Int64),
+        ...     ).with_columns(
+        ...         pl.col("a").arr.concat("b", "c").alias("concat_arr(a, b, c)"),
+        ...     )
+        ... )
+        shape: (3, 4)
+        ┌───────────────┬───────────────┬──────┬─────────────────────┐
+        │ a             ┆ b             ┆ c    ┆ concat_arr(a, b, c) │
+        │ ---           ┆ ---           ┆ ---  ┆ ---                 │
+        │ array[i64, 1] ┆ array[i64, 1] ┆ i64  ┆ array[i64, 3]       │
+        ╞═══════════════╪═══════════════╪══════╪═════════════════════╡
+        │ [1]           ┆ [3]           ┆ null ┆ [1, 3, null]        │
+        │ [3]           ┆ [null]        ┆ 5    ┆ [3, null, 5]        │
+        │ null          ┆ [5]           ┆ 6    ┆ null                │
+        └───────────────┴───────────────┴──────┴─────────────────────┘
+
+        Unit-length columns are broadcasted:
+
+        >>> (
+        ...     pl.select(
+        ...         a=pl.Series([1, 3, None]),
+        ...     ).with_columns(
+        ...         pl.col("a")
+        ...         .arr.concat(pl.lit(0, dtype=pl.Int64))
+        ...         .alias("concat_arr(a, 0)"),
+        ...         pl.col("a").arr.concat(pl.sum("a")).alias("concat_arr(a, sum(a))"),
+        ...         pl.col("a").arr.concat(pl.max("a")).alias("concat_arr(a, max(a))"),
+        ...     )
+        ... )
+        shape: (3, 4)
+        ┌──────┬──────────────────┬───────────────────────┬───────────────────────┐
+        │ a    ┆ concat_arr(a, 0) ┆ concat_arr(a, sum(a)) ┆ concat_arr(a, max(a)) │
+        │ ---  ┆ ---              ┆ ---                   ┆ ---                   │
+        │ i64  ┆ array[i64, 2]    ┆ array[i64, 2]         ┆ array[i64, 2]         │
+        ╞══════╪══════════════════╪═══════════════════════╪═══════════════════════╡
+        │ 1    ┆ [1, 0]           ┆ [1, 4]                ┆ [1, 3]                │
+        │ 3    ┆ [3, 0]           ┆ [3, 4]                ┆ [3, 3]                │
+        │ null ┆ [null, 0]        ┆ [null, 4]             ┆ [null, 3]             │
+        └──────┴──────────────────┴───────────────────────┴───────────────────────┘
+        """
+        msg = "`arr.concat` functionality is considered unstable"
+        issue_unstable_warning(msg)
+
+        exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+        return wrap_expr(self._pyexpr.arr_concat(exprs))
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
