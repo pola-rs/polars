@@ -1534,3 +1534,24 @@ def test_slice_group_by_offset_24259() -> None:
         "x": [[3, 5], [6], [1, 2, 4], []],
         "tail": [[5], [6], [4], []],
     }
+
+
+def test_group_by_first_nondet_24278() -> None:
+    values = [
+        96, 86, 0, 86, 43, 50, 9, 14, 98, 39, 93, 7, 71, 1, 93, 41, 56,
+        56, 93, 41, 58, 91, 81, 29, 81, 68, 5, 9, 32, 93, 78, 34, 17, 40,
+        14, 2, 52, 77, 81, 4, 56, 42, 64, 12, 29, 58, 71, 98, 32, 49, 34,
+        86, 29, 94, 37, 21, 41, 36, 9, 72, 23, 28, 71, 9, 66, 72, 84, 81,
+        23, 12, 64, 57, 99, 15, 77, 38, 95, 64, 13, 91, 43, 61, 70, 47,
+        39, 75, 47, 93, 45, 1, 95, 55, 29, 5, 83, 8, 3, 6, 45, 84,
+    ]  # fmt: skip
+    q = (
+        pl.LazyFrame({"a": values, "idx": range(100)})
+        .group_by("a")
+        .agg(pl.col.idx.first())
+        .select(a=pl.col.idx)
+    )
+
+    fst_value = q.collect().to_series().sum()
+    for _ in range(10):
+        assert q.collect().to_series().sum() == fst_value
