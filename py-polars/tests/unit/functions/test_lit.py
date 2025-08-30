@@ -245,3 +245,23 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 )
 def test_lit_structs(item: Any) -> None:
     assert pl.select(pl.lit(item)).to_dict(as_series=False) == {"literal": [item]}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_dtype"),
+    [
+        (np.float32(1.2), pl.Float32),
+        (np.float64(1.2), pl.Float64),
+        (np.int8(1), pl.Int8),
+        (np.uint8(1), pl.UInt8),
+        (np.int16(1), pl.Int16),
+        (np.uint16(1), pl.UInt16),
+        (np.int32(1), pl.Int32),
+        (np.uint32(1), pl.UInt32),
+        (np.int64(1), pl.Int64),
+        (np.uint64(1), pl.UInt64),
+    ],
+)
+def test_numpy_lit(value: Any, expected_dtype: PolarsDataType) -> None:
+    result = pl.select(pl.lit(value)).get_column("literal")
+    assert result.dtype == expected_dtype
