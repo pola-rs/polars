@@ -4,7 +4,7 @@ import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import pytest
@@ -22,10 +22,37 @@ def num_cse_occurrences(explanation: str) -> int:
     return len(set(re.findall('__POLARS_CSER_0x[^"]+"', explanation)))
 
 
-def test_cse_rename_cross_join_5405() -> None:
+def create_dataframe_source(
+    source_df: pl.DataFrame,
+    validate_schame: bool = False,
+) -> pl.LazyFrame:
+    """Generates a custom io source based on the provided pl.DataFrame."""
+
+    def dataframe_source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        _n_rows: int | None,
+        _batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        df = source_df.clone()
+        if predicate is not None:
+            df = df.filter(predicate)
+        if with_columns is not None:
+            df = df.select(with_columns)
+        yield df
+
+    return register_io_source(
+        dataframe_source, schema=source_df.schema, validate_schema=validate_schame
+    )
+
+
+@pytest.mark.parametrize("use_custom_io_source", [True, False])
+def test_cse_rename_cross_join_5405(use_custom_io_source: bool) -> None:
     # https://github.com/pola-rs/polars/issues/5405
 
     right = pl.DataFrame({"A": [1, 2], "B": [3, 4], "D": [5, 6]}).lazy()
+    if use_custom_io_source:
+        right = create_dataframe_source(right.collect())
     left = pl.DataFrame({"C": [3, 4]}).lazy().join(right.select("A"), how="cross")
 
     result = left.join(right.rename({"B": "C"}), on=["A", "C"], how="left").collect(
@@ -698,9 +725,14 @@ def test_cse_and_schema_update_projection_pd() -> None:
 
 @pytest.mark.debug
 @pytest.mark.may_fail_auto_streaming
-def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
+@pytest.mark.parametrize("use_custom_io_source", [True, False])
+def test_cse_predicate_self_join(
+    capfd: Any, monkeypatch: Any, use_custom_io_source: bool
+) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
+    if use_custom_io_source:
+        y = create_dataframe_source(y.collect())
 
     xf = y.filter(pl.col("y") == 2).select(["a", "b"])
     y_xf = y.join(xf, on=["a", "b"], how="left")
@@ -908,9 +940,13 @@ def test_cse_21115() -> None:
     }
 
 
-def test_cse_cache_leakage_22339() -> None:
+@pytest.mark.parametrize("use_custom_io_source", [True, False])
+def test_cse_cache_leakage_22339(use_custom_io_source: bool) -> None:
     lf1 = pl.LazyFrame({"x": [True] * 2})
     lf2 = pl.LazyFrame({"x": [True] * 3})
+    if use_custom_io_source:
+        lf1 = create_dataframe_source(lf1.collect())
+        lf2 = create_dataframe_source(lf2.collect())
 
     a = lf1
     b = lf1.filter(pl.col("x").not_().over(1))
@@ -939,21 +975,76 @@ def test_multiplex_predicate_pushdown() -> None:
 
 
 def test_cse_custom_io_source_same_object() -> None:
-    def my_source(
-        with_columns: list[str] | None,
-        predicate: pl.Expr | None,
-        _n_rows: int | None,
-        _batch_size: int | None,
-    ) -> Iterator[pl.DataFrame]:
-        df = pl.DataFrame({"a": [1, 2, 3]})
-
-        if predicate is not None:
-            df = df.filter(predicate)
-
-        if with_columns is not None:
-            df = df.select(with_columns)
-
-        yield df
-
-    lf = register_io_source(my_source, schema={"a": pl.Int64})
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    lf = create_dataframe_source(df)
     assert "CACHE[id:" in pl.explain_all([lf, lf])
+
+
+@pytest.mark.write_disk
+def test_cse_preferred_over_slice() -> None:
+    # This test asserts that even if we slice disjoint sections of a lazyframe, caching
+    # is preferred, and slicing is not pushed down
+    df = pl.DataFrame({"a": list(range(1, 21))})
+    with NamedTemporaryFile() as f:
+        val = df.write_csv()
+        f.write(val.encode())
+        f.seek(0)
+        ldf = pl.scan_csv(f.name)
+        left = ldf.slice(0, 5)
+        right = ldf.slice(6, 5)
+        q = left.join(right, on="a", how="inner")
+        assert "CACHE[id:" in q.explain(
+            optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+        )
+
+
+def test_cse_preferred_over_slice_custom_io_source() -> None:
+    # This test asserts that even if we slice disjoint sections of a custom io source,
+    # caching is preferred, and slicing is not pushed down
+    df = pl.DataFrame({"a": list(range(1, 21))})
+    lf = create_dataframe_source(df)
+    left = lf.slice(0, 5)
+    right = lf.slice(6, 5)
+    q = left.join(right, on="a", how="inner")
+    assert "CACHE[id:" in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+
+
+def test_cse_custom_io_source_diff_columns() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 11, 12, 13, 14]})
+    lf = create_dataframe_source(df)
+    collection = [lf.select("a"), lf.select("b")]
+    assert "CACHE[id:" in pl.explain_all(collection)
+    collected = pl.collect_all(
+        collection, optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+    assert_frame_equal(df.select("a"), collected[0])
+    assert_frame_equal(df.select("b"), collected[1])
+
+
+def test_cse_custom_io_source_diff_filters() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 11, 12, 13, 14]})
+    lf = create_dataframe_source(df)
+
+    # We use this so that the true type of the input is passed through
+    # to the output
+    PolarsFrame = TypeVar("PolarsFrame", pl.DataFrame, pl.LazyFrame)
+
+    def left_pipe(df_or_lf: PolarsFrame) -> PolarsFrame:
+        return df_or_lf.select("a").filter(pl.col("a").is_between(2, 6))
+
+    def right_pipe(df_or_lf: PolarsFrame) -> PolarsFrame:
+        return df_or_lf.select("b").filter(pl.col("b").is_between(10, 13))
+
+    collection = [lf.pipe(left_pipe), lf.pipe(right_pipe)]
+    explanation = pl.explain_all(collection)
+    # we prefer predicate pushdown over CSE
+    assert "CACHE[id:" not in explanation
+    assert 'SELECTION: col("a").is_between([2, 6])' in explanation
+    assert 'SELECTION: col("b").is_between([10, 13])' in explanation
+
+    res = pl.collect_all(collection)
+    expected = [df.pipe(left_pipe), df.pipe(right_pipe)]
+    assert_frame_equal(expected[0], res[0])
+    assert_frame_equal(expected[1], res[1])
