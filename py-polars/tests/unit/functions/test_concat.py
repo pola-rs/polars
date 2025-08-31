@@ -96,3 +96,36 @@ def test_concat_zip_series_21980() -> None:
     df = pl.DataFrame({"x": 1, "y": 2})
     out = df.select(pl.concat([pl.col.x, pl.col.y]), pl.Series([3, 4]))
     assert_frame_equal(out, pl.DataFrame({"x": [1, 2], "": [3, 4]}))
+
+
+def test_basic_union_properties() -> None:
+    a = pl.DataFrame(
+        data={"a": [1, 2, 3], "b": [4, 5, 6]},
+        schema={"a": pl.Int8, "b": pl.Int8},
+    )
+    b = pl.DataFrame(
+        data={"a": [7, 8, 9], "b": [10, 11, 12]},
+        schema={"a": pl.Int8, "b": pl.Int8},
+    )
+    result = pl.union([a, b])
+
+    assert result.shape == (6, 2)
+    assert result.columns == ["a", "b"]
+    assert result["a"].sum() == 30
+    assert result["b"].sum() == 48
+
+
+def test_union_content() -> None:
+    a = pl.DataFrame(
+        data={"a": [1, 2, 3], "b": [4, 5, 6]},
+        schema={"a": pl.Int8, "b": pl.Int8},
+    )
+    b = pl.DataFrame(
+        data={"a": [7, 8, 9], "b": [10, 11, 12]},
+        schema={"a": pl.Int8, "b": pl.Int8},
+    )
+    result = pl.union([a, b])
+    expected_rows = {(1, 4), (2, 5), (3, 6), (7, 10), (8, 11), (9, 12)}
+    actual_rows = set(result.rows())
+
+    assert actual_rows == expected_rows
