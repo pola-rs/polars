@@ -58,7 +58,19 @@ impl Hash for HashableEqLP<'_> {
         std::mem::discriminant(alp).hash(state);
         match alp {
             #[cfg(feature = "python")]
-            IR::PythonScan { .. } => {},
+            IR::PythonScan { options } => {
+                // Hash the Python function object using the pointer to the object
+                // This should be the same as calling id() in python, but we don't need the GIL
+                if let Some(scan_fn) = &options.scan_fn {
+                    let ptr_addr = scan_fn.0.as_ptr() as usize;
+                    ptr_addr.hash(state);
+                }
+                // Hash the stable fields
+                // We include the schema since it can be set by the user
+                options.schema.hash(state);
+                options.python_source.hash(state);
+                options.validate_schema.hash(state);
+            },
             IR::Slice {
                 offset,
                 len,
@@ -226,6 +238,19 @@ impl HashableEqLP<'_> {
             return false;
         }
         match (alp_l, alp_r) {
+            #[cfg(feature = "python")]
+            (IR::PythonScan { options: l }, IR::PythonScan { options: r }) => {
+                let scan_fn_eq = match (&l.scan_fn, &r.scan_fn) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => a.0.as_ptr() == b.0.as_ptr(),
+                    _ => false,
+                };
+
+                scan_fn_eq
+                    && l.schema == r.schema
+                    && l.python_source == r.python_source
+                    && l.validate_schema == r.validate_schema
+            },
             (
                 IR::Slice {
                     input: _,

@@ -4,13 +4,17 @@ import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.io.plugins import register_io_source
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def num_cse_occurrences(explanation: str) -> int:
@@ -932,3 +936,24 @@ def test_multiplex_predicate_pushdown() -> None:
         ldf = pl.scan_parquet(tmppath, hive_partitioning=True)
         ldf = ldf.filter(pl.col("a").eq(1)).select("b")
         assert 'SELECTION: [(col("a")) == (1)]' in pl.explain_all([ldf, ldf])
+
+
+def test_cse_custom_io_source_same_object() -> None:
+    def my_source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        _n_rows: int | None,
+        _batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        df = pl.DataFrame({"a": [1, 2, 3]})
+
+        if predicate is not None:
+            df = df.filter(predicate)
+
+        if with_columns is not None:
+            df = df.select(with_columns)
+
+        yield df
+
+    lf = register_io_source(my_source, schema={"a": pl.Int64})
+    assert "CACHE[id:" in pl.explain_all([lf, lf])
