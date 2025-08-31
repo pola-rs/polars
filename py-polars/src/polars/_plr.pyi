@@ -2122,7 +2122,8 @@ def concat_lf_diagonal(
     lfs: Any, rechunk: bool, parallel: bool, to_supertypes: bool, maintain_order: bool
 ) -> PyLazyFrame: ...
 def concat_lf_horizontal(
-    lfs: Any, parallel: bool, maintain_order: bool
+    lfs: Any,
+    parallel: bool,
 ) -> PyLazyFrame: ...
 def concat_expr(e: Sequence[PyExpr], rechunk: bool) -> PyExpr: ...
 def duration(

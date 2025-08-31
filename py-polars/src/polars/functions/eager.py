@@ -285,7 +285,6 @@ def concat(
                 plr.concat_lf_horizontal(
                     elems,
                     parallel=parallel,
-                    maintain_order=True,
                 )
             )
         else:
@@ -401,13 +400,7 @@ def union(  # noqa: D103
                 )
             ).collect(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
-            out = wrap_ldf(
-                plr.concat_lf_horizontal(
-                    [df.lazy() for df in elems],
-                    parallel=parallel,
-                    maintain_order=False,
-                )
-            ).collect(optimizations=QueryOptFlags._eager())
+            out = wrap_df(plr.concat_df_horizontal(elems))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
@@ -439,7 +432,6 @@ def union(  # noqa: D103
                 plr.concat_lf_horizontal(
                     elems,
                     parallel=parallel,
-                    maintain_order=False,
                 )
             )
         else:
