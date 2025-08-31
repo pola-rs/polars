@@ -310,7 +310,8 @@ def concat(
         return out.rechunk()
     return out
 
-def union(
+
+def union(  # noqa: D103
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
@@ -462,6 +463,7 @@ def union(
     if rechunk:
         return out.rechunk()
     return out
+
 
 def _alignment_join(
     *idx_frames: tuple[int, LazyFrame],
