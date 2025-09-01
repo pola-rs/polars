@@ -212,6 +212,7 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
     ).dtypes == [pl.UInt32, pl.String]
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
 def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -242,6 +243,7 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) 
     assert "Predicate pushdown: reading 0 / 1 row groups" in captured
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
 def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -1047,9 +1049,9 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4]}, schema={"a": pl.Int8})
 
     f = io.BytesIO()
-
     df.write_parquet(f)
 
+    f.seek(0)
     assert_frame_equal(
         (
             pl.scan_parquet(
@@ -1065,6 +1067,7 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_scan_parquet_prefilter_with_cast(
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
@@ -1129,10 +1132,13 @@ def test_prefilter_with_n_rows_23790() -> None:
 
     df.write_parquet(f, row_group_size=2)
 
+    f.seek(0)
+
     md = pq.read_metadata(f)
 
     assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [2, 2, 2]
 
+    f.seek(0)
     q = pl.scan_parquet(f, n_rows=3).filter(pl.col("b").is_in([1, 3]))
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": ["A", "C"], "b": [1, 3]}))
@@ -1150,10 +1156,12 @@ def test_prefilter_with_n_rows_23790() -> None:
 
     df.write_parquet(f, row_group_size=2)
 
+    f.seek(0)
     md = pq.read_metadata(f)
 
     assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [2, 2, 2]
 
+    f.seek(0)
     q = pl.scan_parquet(
         f,
         n_rows=3,

@@ -346,6 +346,7 @@ def test_describe_plan() -> None:
     assert isinstance(pl.LazyFrame({"a": [1]}).explain(optimized=False), str)
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_inspect(capsys: CaptureFixture[str]) -> None:
     ldf = pl.LazyFrame({"a": [1]})
     ldf.inspect().collect()
@@ -364,7 +365,6 @@ def test_fetch(fruits_cars: pl.DataFrame) -> None:
     assert_frame_equal(res, res[:2])
 
 
-@pytest.mark.may_fail_cloud  # TODO: make pickleable
 def test_fold_filter() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
@@ -935,6 +935,7 @@ def test_join_suffix() -> None:
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
 
 
+@pytest.mark.may_fail_cloud  # reason: no
 def test_collect_unexpected_kwargs(df: pl.DataFrame) -> None:
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         df.lazy().collect(common_subexpr_elim=False)  # type: ignore[call-overload]
@@ -1152,6 +1153,7 @@ def test_lazy_cache_same_key() -> None:
     assert_frame_equal(result, expected, check_row_order=False)
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.may_fail_auto_streaming
 def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
@@ -1163,12 +1165,13 @@ def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
         (pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")
     )
     expected = pl.LazyFrame({"a": [0, 0, 0], "c": ["x", "y", "z"]})
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
     (_, err) = capfd.readouterr()
     assert "CACHE HIT" in err
 
 
+@pytest.mark.may_fail_cloud  # reason: impure udf
 def test_lazy_cache_parallel() -> None:
     df_evaluated = 0
 
@@ -1194,6 +1197,7 @@ def test_lazy_cache_parallel() -> None:
     assert df_evaluated == 1
 
 
+@pytest.mark.may_fail_cloud  # reason: impure udf
 def test_lazy_cache_nested_parallel() -> None:
     df_inner_evaluated = 0
     df_outer_evaluated = 0

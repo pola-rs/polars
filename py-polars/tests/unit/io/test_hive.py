@@ -104,6 +104,7 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
 
 @pytest.mark.write_disk
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -896,6 +897,7 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_predicate_dates_14712(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
