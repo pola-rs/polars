@@ -1515,7 +1515,7 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
-    /// Compute the entropy as `-sum(pk * log(pk)`.
+    /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.map_unary(FunctionExpr::Entropy { base, normalize })

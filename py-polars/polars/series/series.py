@@ -2735,7 +2735,7 @@ class Series:
         """
         Computes the entropy.
 
-        Uses the formula `-sum(pk * log(pk)` where `pk` are discrete probabilities.
+        Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
 
         Parameters
         ----------

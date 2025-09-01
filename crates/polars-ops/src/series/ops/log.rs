@@ -88,7 +88,7 @@ pub trait LogSeries: SeriesSealed {
         }
     }
 
-    /// Compute the entropy as `-sum(pk * log(pk)`.
+    /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     fn entropy(&self, base: f64, normalize: bool) -> PolarsResult<f64> {
         let s = self.as_series().to_physical_repr();
