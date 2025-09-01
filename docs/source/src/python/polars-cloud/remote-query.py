@@ -46,11 +46,11 @@ ctx = pc.ComputeContext(
 )
 
 # Use a larger dataset available on S3
-lineitem_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/tpch/sf10/lineitem.parquet",
+lineitem_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/pdsh/sf10/lineitem.parquet",
         storage_options={"request_payer": "true"})
-customer_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/tpch/sf10/customer.parquet",
+customer_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/pdsh/sf10/customer.parquet",
         storage_options={"request_payer": "true"})
-orders_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/tpch/sf10/orders.parquet",
+orders_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/pdsh/sf10/orders.parquet",
         storage_options={"request_payer": "true"})
 
 # Your query remains the same
@@ -58,18 +58,11 @@ pdsh_q3(lineitem_sf10, customer_sf10, orders_sf10).remote(context=ctx).show()
 
 # --8<-- [end:context]
 
-# --8<-- [start:distributed]
-ctx = pc.ComputeContext(cpus=10, memory=10, cluster_size=10)
-
-pdsh_q6(lineitem_sf100).remote(context=ctx).distributed().await_and_scan()
-# --8<-- [end:distributed]
-
 # --8<-- [start:sink_parquet]
 # Replace the S3 url with your own to run the query successfully
 
 pdsh_q3(lineitem_sf10, customer_sf10, orders_sf10).remote(context=ctx).sink_parquet("s3://your-bucket/processed-data/")
 # --8<-- [end:sink_parquet]
-
 
 # --8<-- [start:show]
 pdsh_q3(lineitem_sf10, customer_sf10, orders_sf10).remote(context=ctx).show()

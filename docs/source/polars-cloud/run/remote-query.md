@@ -14,7 +14,7 @@ The following example uses a query from the PDS-H benchmark suite, a derived ver
 TPC-H benchmark. Data generation tools and additional queries are available in the
 [Polars benchmark repository](https://github.com/pola-rs/polars-benchmark).
 
-{{code_block('polars-cloud/first-query','local',[])}}
+{{code_block('polars-cloud/remote-query','local',[])}}
 
 ## Scale to the cloud
 
@@ -24,7 +24,7 @@ to execute your query and set compute resources. More
 elaborate options can be found on the
 [Compute context introduction page](../context/compute-context.md).
 
-{{code_block('polars-cloud/first-query','context',['ComputeContext'])}}
+{{code_block('polars-cloud/remote-query','context',['ComputeContext'])}}
 
 !!! info "Run the examples yourself"
 
@@ -33,28 +33,6 @@ elaborate options can be found on the
 !!! note "S3 bucket region"
 
     The example datasets are hosted in the `US-East-2 S3 region`. Query performance may be affected if you're running operations from a distant geographic location due to network latency.
-
-### Proxy mode
-
-Proxy mode routes queries through the Polars Cloud control plane rather than direct cluster
-connections. This approach provides enhanced security by eliminating the need to expose network
-ports on your compute cluster.
-
-Read more about the differences on the [compute context page](../context/compute-context.md).
-
-Using this mode, also allows your team to reconnect to the instance while it is active. There is
-more information available on the page about [reconnecting to clusters](../context/reconnect.md).
-
-<!--### Distributed execution
-
-To run your queries over multiple nodes, you must define your `cluster_size` in the `ComputeContext`
-and call the `.distributed()` method.
-
-{{code_block('polars-cloud/first-query','distributed',[])}}
-
-This distributes your query execution across 10 machines in this example, providing a total of 100
-cores and 100GB of RAM for processing. Find more information about executing your queries on
-multiple nodes on the [distributed queries](distributed-engine.md) page.-->
 
 ## Working with remote query results
 
@@ -67,7 +45,7 @@ The most straightforward approach for batch processing is to write results direc
 using `.sink_parquet()`. This method is ideal when you want to store processed data for later use or
 as part of a data pipeline:
 
-{{code_block('polars-cloud/first-query','sink_parquet',[])}}
+{{code_block('polars-cloud/remote-query','sink_parquet',[])}}
 
 Running `.sink_parquet()` will write the results to the defined bucket on S3. The query you execute
 runs in your cloud environment, and both the data and results remain secure in your own
@@ -78,7 +56,7 @@ persist large datasets without transferring them to your local machine.
 
 Using `.show()` will display the first 10 rows of the result so you can inspect the structure without having to transfer the whole dataset. This method displays the first 10 rows in your console or notebook.
 
-{{code_block('polars-cloud/first-query','show',[])}}
+{{code_block('polars-cloud/remote-query','show',[])}}
 
 ```text
 shape: (10, 4)
@@ -105,7 +83,7 @@ temporarily in your S3 environment. These intermediate result files are automati
 several hours. For persistent storage use `sink_parquet`. The output is a LazyFrame, allwowing
 continued query chaining for further analysis.
 
-{{code_block('polars-cloud/first-query','await_scan',[])}}
+{{code_block('polars-cloud/remote-query','await_scan',[])}}
 
 ```text
 shape: (114_003, 4)
