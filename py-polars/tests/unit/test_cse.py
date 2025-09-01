@@ -1033,6 +1033,10 @@ def test_cse_custom_io_source_same_object() -> None:
 
     # LazyFrames constructed from separate calls do not CSE even if the
     # io_source function is the same.
+    #
+    # Note: This behavior is achieved by having `register_io_source` wrap
+    # the user-provided io plugin with a locally constructed wrapper before
+    # passing to the Rust-side.
     lfs = [
         register_io_source(
             io_source,
