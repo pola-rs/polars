@@ -116,6 +116,7 @@ macro_rules! impl_float_min_max {
     };
 }
 
+impl_float_min_max!(half::f16);
 impl_float_min_max!(f32);
 impl_float_min_max!(f64);
 

@@ -119,5 +119,6 @@ macro_rules! impl_float_arith_kernel {
     };
 }
 
+impl_float_arith_kernel!(half::f16);
 impl_float_arith_kernel!(f32);
 impl_float_arith_kernel!(f64);

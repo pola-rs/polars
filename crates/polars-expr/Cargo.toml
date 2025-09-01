@@ -59,6 +59,7 @@ dtype-full = [
   "dtype-u16",
   "dtype-u128",
   "dtype-u8",
+  "dtype-f16",
   "object",
 ]
 object = ["polars-plan/object", "polars-ops/object"]
@@ -76,6 +77,7 @@ dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
 dtype-u128 = ["polars-plan/dtype-u128"]
 dtype-u16 = ["polars-plan/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8"]
+dtype-f16 = ["polars-plan/dtype-f16"]
 
 # operations
 approx_unique = ["polars-plan/approx_unique"]

@@ -38,6 +38,8 @@ use arrow::types::NativeType;
 use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
+#[cfg(feature = "dtype-f16")]
+use half;
 pub use into_scalar::*;
 use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
@@ -218,6 +220,7 @@ impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32, i32);
 impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64, i64);
 #[cfg(feature = "dtype-i128")]
 impl_polars_num_datatype!(PolarsIntegerType, Int128Type, Int128, i128, i128);
+impl_polars_num_datatype!(PolarsFloatType, Float16Type, Float16, half::f16, half::f16);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64, f64);
 
@@ -487,6 +490,10 @@ impl NumericNative for u64 {
 impl NumericNative for u128 {
     type PolarsType = UInt128Type;
     type TrueDivPolarsType = Float64Type;
+}
+impl NumericNative for half::f16 {
+    type PolarsType = Float16Type;
+    type TrueDivPolarsType = Float16Type;
 }
 impl NumericNative for f32 {
     type PolarsType = Float32Type;

@@ -96,6 +96,7 @@ pub enum DataType {
     Int32,
     Int64,
     Int128,
+    Float16,
     Float32,
     Float64,
     /// Fixed point decimal type optional precision and non-negative scale.

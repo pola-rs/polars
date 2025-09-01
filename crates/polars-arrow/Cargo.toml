@@ -20,6 +20,7 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 dyn-clone = { version = "1" }
 either = { workspace = true }
+half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] } # TODO: [amber] I set optional to false. Check if correct
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
 polars-error = { workspace = true }

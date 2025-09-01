@@ -406,6 +406,10 @@ class UInt128(UnsignedIntegerType):
     """
 
 
+class Float16(FloatType):
+    """16-bit floating point type."""
+
+
 class Float32(FloatType):
     """32-bit floating point type."""
 

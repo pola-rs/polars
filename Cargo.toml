@@ -51,6 +51,7 @@ fast-float2 = { version = "^0.2.2" }
 flate2 = { version = "1", default-features = false }
 foldhash = "0.2.0"
 futures = "0.3.25"
+half = { version = "2.6.0", features = ["num-traits"] }
 hashbrown = { version = "0.16.0", features = ["rayon", "serde"] }
 hex = "0.4.3"
 indexmap = { version = "2.12", features = ["std", "serde"] }

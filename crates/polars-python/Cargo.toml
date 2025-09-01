@@ -199,6 +199,7 @@ dtype-u16 = []
 dtype-i128 = []
 dtype-u128 = []
 dtype-array = []
+dtype-f16 = []
 object = ["polars/object"]
 
 dtypes = [
@@ -209,6 +210,7 @@ dtypes = [
   "dtype-u8",
   "dtype-i128",
   "dtype-u128",
+  "dtype-f16",
   "object",
 ]
 
