@@ -792,44 +792,6 @@ fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<d
     Ok(out.boxed())
 }
 
-#[cfg(feature = "dtype-struct")]
-fn convert_day_time_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<dyn Array>> {
-    use arrow::types::days_ms;
-
-    let arr: &PrimitiveArray<days_ms> = chunk.as_any().downcast_ref().unwrap();
-
-    let mut days_out: Vec<i32> = vec![0; arr.len()];
-    let mut milliseconds_out: Vec<i64> = vec![0; arr.len()];
-
-    for (i, x) in arr.iter().enumerate() {
-        let Some(x) = x else {
-            continue;
-        };
-
-        let days: i32 = x.0;
-        let milliseconds: i32 = x.1;
-
-        unsafe {
-            *days_out.get_unchecked_mut(i) = days;
-            *milliseconds_out.get_unchecked_mut(i) = milliseconds as i64;
-        }
-    }
-
-    let out = StructArray::new(
-        DataType::_day_time_struct_type()
-            .to_physical()
-            .to_arrow(CompatLevel::newest()),
-        arr.len(),
-        vec![
-            PrimitiveArray::<i32>::from_vec(days_out).boxed(),
-            PrimitiveArray::<i64>::from_vec(milliseconds_out).boxed(),
-        ],
-        arr.validity().cloned(),
-    );
-
-    Ok(out.boxed())
-}
-
 fn check_types(chunks: &[ArrayRef]) -> PolarsResult<ArrowDataType> {
     let mut chunks_iter = chunks.iter();
     let dtype: ArrowDataType = chunks_iter
