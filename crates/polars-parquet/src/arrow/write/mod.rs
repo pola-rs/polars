@@ -811,6 +811,27 @@ pub fn array_to_page_simple(
                 fixed_size_binary::array_to_page(&array, options, type_, statistics)
             }
         },
+        ArrowDataType::UInt128 => {
+            // TODO: [amber] See if wee can avoid this code duplication
+            let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
+            let statistics = if options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_decimal(
+                    array,
+                    type_.clone(),
+                    16,
+                    &options.statistics,
+                );
+                Some(stats)
+            } else {
+                None
+            };
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(16),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
+        },
         ArrowDataType::Int128 => {
             let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {

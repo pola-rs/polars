@@ -32,6 +32,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
         UInt16 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         UInt32 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         UInt64 => Box::new(|f, index| write!(f, "{}", array.value(index))),
+        UInt128 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Float16 => unreachable!(),
         Float32 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Float64 => Box::new(|f, index| write!(f, "{}", array.value(index))),
