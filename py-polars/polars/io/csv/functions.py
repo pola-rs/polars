@@ -850,8 +850,8 @@ def read_csv_batched(
         Number of lines to read into the buffer at once.
 
         This field is only considered if `batch_size_options` is not `None`.
-        `batch_size=None` is treaded the same as `batch_size_options=('default', 0)`
-        and batch_size=n is treaded the same as `batch_size_options=('rows', n)`
+        `batch_size=None` is treated the same as `batch_size_options=('default', 0)`
+        and batch_size=n is treated the same as `batch_size_options=('rows', n)`
     batch_size_options
         Allowed options:
 
