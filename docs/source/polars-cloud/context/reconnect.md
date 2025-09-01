@@ -26,7 +26,7 @@ If you lose connection or want to connect to a running cluster in your workspace
 
 !!! note "Connection permissions and proxy mode requirement"
 
-    You can only reconnect to clusters that you started yourself or clusters that were started in `proxy` mode. You cannot reconnect to a cluster in `default` mode that was started by another user in your workspace.
+    You can only reconnect to clusters that you started yourself or clusters that were started in `proxy` mode. You cannot reconnect to a cluster in `direct` mode that was started by another user in your workspace.
 
 {{code_block('polars-cloud/reconnect','connect_id',[])}}
 

@@ -24,6 +24,6 @@ ctx = pc.ComputeContext.select()
 
 # --8<-- [start:via_workspace]
 # List all clusters in the specified workspace
-pc.ComputeContext.list('your-workspace')
+pc.ComputeContext.list('your-workspace-name')
 # --8<-- [end:via_workspace]
 """

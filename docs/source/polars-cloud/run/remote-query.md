@@ -1,4 +1,4 @@
-# Run a query in the cloud
+# Execute remote query
 
 Polars Cloud enables you to execute existing Polars queries on cloud infrastructure with minimal
 code changes. This approach allows you to process datasets that exceed local resources or use
@@ -6,7 +6,7 @@ additional compute resources for faster execution.
 
 !!! note "Polars Cloud is set up and connected"
 
-    This page assumes that you have created an organization and connected a workspace to your cloud environment. If you haven't yet, find more information on [Connect cloud environment](../connect-cloud.md) page.
+    This page assumes that you have created an organization and connected a workspace to your cloud environment. If you haven't yet, follow the steps on the [Connect cloud environment](../connect-cloud.md) page.
 
 ## Define your query locally
 
@@ -19,10 +19,10 @@ TPC-H benchmark. Data generation tools and additional queries are available in t
 ## Scale to the cloud
 
 To execute your query in the cloud, you need to define a compute context. The compute context
-defines the hardware to use when executing the query in the cloud. It allows to define the workspace
-to execute your query, set compute resources and define if you want to execute in proxy mode. More
+specifies the hardware to use when executing the query in the cloud. It allows you to set the workspace
+to execute your query and set compute resources. More
 elaborate options can be found on the
-[Compute context introduction page](../context/compute-context.md)
+[Compute context introduction page](../context/compute-context.md).
 
 {{code_block('polars-cloud/first-query','context',['ComputeContext'])}}
 
@@ -76,8 +76,7 @@ persist large datasets without transferring them to your local machine.
 
 ### Inspect results
 
-Use `.show()` for interactive data exploration when you need to understand result structure without
-transferring large datasets. This method displays the first 10 rows in your console or notebook.
+Using `.show()` will display the first 10 rows of the result so you can inspect the structure without having to transfer the whole dataset. This method displays the first 10 rows in your console or notebook.
 
 {{code_block('polars-cloud/first-query','show',[])}}
 

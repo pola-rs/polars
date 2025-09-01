@@ -117,7 +117,7 @@ nav:
           - polars-cloud/connect-cloud.md
 
           - Queries:
-                - polars-cloud/run/first-query.md
+                - polars-cloud/run/remote-query.md
                 - polars-cloud/run/distributed-engine.md
           - Context:
                 - polars-cloud/context/compute-context.md
