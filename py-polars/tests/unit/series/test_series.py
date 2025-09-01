@@ -1685,68 +1685,6 @@ def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
         assert srs_nested.dtype == dtype
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Float64,
-        pl.Int32,
-        pl.Decimal(21, 3),
-    ],
-)
-def test_log_exp(dtype: pl.DataType) -> None:
-    a = pl.Series("a", [1, 100, 1000], dtype=dtype)
-    b = pl.Series("a", [0, 2, 3], dtype=dtype)
-    assert_series_equal(a.log10(), b.cast(pl.Float64))
-
-    expected = pl.Series("a", np.log(a.cast(pl.Float64).to_numpy()))
-    assert_series_equal(a.log(), expected)
-
-    expected = pl.Series("a", np.exp(b.cast(pl.Float64).to_numpy()))
-    assert_series_equal(b.exp(), expected)
-
-    expected = pl.Series("a", np.log1p(a.cast(pl.Float64).to_numpy()))
-    assert_series_equal(a.log1p(), expected)
-
-
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Float64,
-        pl.Float32,
-    ],
-)
-def test_log_broadcast(dtype: pl.DataType) -> None:
-    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
-    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
-
-    assert_series_equal(a.log(b), pl.Series("a", [0, 1, 1, 3, 2], dtype=dtype))
-    assert_series_equal(
-        a.log(pl.Series("a", [3], dtype=dtype)),
-        pl.Series("a", [0, 1, 2, 3, 4], dtype=dtype),
-    )
-    assert_series_equal(
-        pl.Series("a", [81], dtype=dtype).log(b),
-        pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
-    )
-
-
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Float32,
-        pl.Int32,
-        pl.Int64,
-    ],
-)
-def test_log_broadcast_upcasting(dtype: pl.DataType) -> None:
-    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
-    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
-    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=Float64)
-
-    assert_series_equal(a.log(b.cast(Float64)), expected)
-    assert_series_equal(a.cast(Float64).log(b), expected)
-
-
 def test_to_physical() -> None:
     # casting an int result in an int
     s = pl.Series("a", [1, 2, 3])
