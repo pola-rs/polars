@@ -101,6 +101,7 @@ impl Hash for HashableEqLP<'_> {
                         n_rows,
                         predicate,
                         validate_schema,
+                        is_pure,
                     },
             } => {
                 // Hash the Python function object using the pointer to the object
@@ -118,6 +119,7 @@ impl Hash for HashableEqLP<'_> {
                 n_rows.hash(state);
                 hash_python_predicate(predicate, self.expr_arena, state);
                 validate_schema.hash(state);
+                is_pure.hash(state);
             },
             IR::Slice {
                 offset,
@@ -299,6 +301,7 @@ impl HashableEqLP<'_> {
                             n_rows: n_rows_l,
                             predicate: predicate_l,
                             validate_schema: validate_schema_l,
+                            is_pure: is_pure_l,
                         },
                 },
                 IR::PythonScan {
@@ -312,9 +315,15 @@ impl HashableEqLP<'_> {
                             n_rows: n_rows_r,
                             predicate: predicate_r,
                             validate_schema: validate_schema_r,
+                            is_pure: is_pure_r,
                         },
                 },
             ) => {
+                // Require both to be pure to compare equal for CSE.
+                if !(*is_pure_l && *is_pure_r) {
+                    return false;
+                }
+
                 let scan_fn_eq = match (scan_fn_l, scan_fn_r) {
                     (None, None) => true,
                     (Some(a), Some(b)) => a.0.as_ptr() == b.0.as_ptr(),

@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import TYPE_CHECKING, Any, TypeVar
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -24,6 +25,7 @@ def num_cse_occurrences(explanation: str) -> int:
 
 def create_dataframe_source(
     source_df: pl.DataFrame,
+    is_pure: bool,
     validate_schame: bool = False,
 ) -> pl.LazyFrame:
     """Generates a custom io source based on the provided pl.DataFrame."""
@@ -42,7 +44,10 @@ def create_dataframe_source(
         yield df
 
     return register_io_source(
-        dataframe_source, schema=source_df.schema, validate_schema=validate_schame
+        dataframe_source,
+        schema=source_df.schema,
+        validate_schema=validate_schame,
+        is_pure=is_pure,
     )
 
 
@@ -52,7 +57,7 @@ def test_cse_rename_cross_join_5405(use_custom_io_source: bool) -> None:
 
     right = pl.DataFrame({"A": [1, 2], "B": [3, 4], "D": [5, 6]}).lazy()
     if use_custom_io_source:
-        right = create_dataframe_source(right.collect())
+        right = create_dataframe_source(right.collect(), is_pure=True)
     left = pl.DataFrame({"C": [3, 4]}).lazy().join(right.select("A"), how="cross")
 
     result = left.join(right.rename({"B": "C"}), on=["A", "C"], how="left").collect(
@@ -732,7 +737,7 @@ def test_cse_predicate_self_join(
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
     if use_custom_io_source:
-        y = create_dataframe_source(y.collect())
+        y = create_dataframe_source(y.collect(), is_pure=True)
 
     xf = y.filter(pl.col("y") == 2).select(["a", "b"])
     y_xf = y.join(xf, on=["a", "b"], how="left")
@@ -753,11 +758,6 @@ def test_cse_manual_cache_15688() -> None:
     df2 = df2.cache()
     res = df2.group_by("b").agg(pl.all().sum())
 
-    print(
-        res.cache()
-        .with_columns(foo=1)
-        .explain(optimizations=pl.QueryOptFlags(comm_subplan_elim=True))
-    )
     assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
         "b": [1],
         "a": [6],
@@ -945,8 +945,8 @@ def test_cse_cache_leakage_22339(use_custom_io_source: bool) -> None:
     lf1 = pl.LazyFrame({"x": [True] * 2})
     lf2 = pl.LazyFrame({"x": [True] * 3})
     if use_custom_io_source:
-        lf1 = create_dataframe_source(lf1.collect())
-        lf2 = create_dataframe_source(lf2.collect())
+        lf1 = create_dataframe_source(lf1.collect(), is_pure=True)
+        lf2 = create_dataframe_source(lf2.collect(), is_pure=True)
 
     a = lf1
     b = lf1.filter(pl.col("x").not_().over(1))
@@ -976,8 +976,54 @@ def test_multiplex_predicate_pushdown() -> None:
 
 def test_cse_custom_io_source_same_object() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    lf = create_dataframe_source(df)
-    assert "CACHE[id:" in pl.explain_all([lf, lf])
+
+    io_source = Mock(wraps=lambda *_: iter([df]))
+
+    lf = register_io_source(
+        io_source,
+        schema=df.schema,
+        validate_schema=True,
+        is_pure=True,
+    )
+
+    plan = pl.explain_all([lf, lf])
+    caches: list[str] = [
+        x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")
+    ]
+    assert len(caches) == 2
+    assert len(set(caches)) == 1
+
+    assert io_source.call_count == 0
+
+    assert_frame_equal(
+        pl.concat(pl.collect_all([lf, lf])),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 1
+
+    io_source = Mock(wraps=lambda *_: iter([df]))
+
+    # Without explicit is_pure parameter should default to False
+    lf = register_io_source(
+        io_source,
+        schema=df.schema,
+        validate_schema=True,
+    )
+
+    plan = pl.explain_all([lf, lf])
+
+    caches = [x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")]
+    assert len(caches) == 0
+
+    assert io_source.call_count == 0
+
+    assert_frame_equal(
+        pl.concat(pl.collect_all([lf, lf])),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 2
 
 
 @pytest.mark.write_disk
@@ -1002,7 +1048,7 @@ def test_cse_preferred_over_slice_custom_io_source() -> None:
     # This test asserts that even if we slice disjoint sections of a custom io source,
     # caching is preferred, and slicing is not pushed down
     df = pl.DataFrame({"a": list(range(1, 21))})
-    lf = create_dataframe_source(df)
+    lf = create_dataframe_source(df, is_pure=True)
     left = lf.slice(0, 5)
     right = lf.slice(6, 5)
     q = left.join(right, on="a", how="inner")
@@ -1010,10 +1056,18 @@ def test_cse_preferred_over_slice_custom_io_source() -> None:
         optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
 
+    lf = create_dataframe_source(df, is_pure=False)
+    left = lf.slice(0, 5)
+    right = lf.slice(6, 5)
+    q = left.join(right, on="a", how="inner")
+    assert "CACHE[id:" not in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+
 
 def test_cse_custom_io_source_diff_columns() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 11, 12, 13, 14]})
-    lf = create_dataframe_source(df)
+    lf = create_dataframe_source(df, is_pure=True)
     collection = [lf.select("a"), lf.select("b")]
     assert "CACHE[id:" in pl.explain_all(collection)
     collected = pl.collect_all(
@@ -1025,7 +1079,7 @@ def test_cse_custom_io_source_diff_columns() -> None:
 
 def test_cse_custom_io_source_diff_filters() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 11, 12, 13, 14]})
-    lf = create_dataframe_source(df)
+    lf = create_dataframe_source(df, is_pure=True)
 
     # We use this so that the true type of the input is passed through
     # to the output

@@ -21,6 +21,7 @@ pub struct PythonOptionsDsl {
     pub schema_fn: Option<SpecialEq<Arc<Either<PythonFunction, SchemaRef>>>>,
     pub python_source: PythonScanSource,
     pub validate_schema: bool,
+    pub is_pure: bool,
 }
 
 impl PythonOptionsDsl {

@@ -111,19 +111,30 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             cached_ir,
         } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, ctxt)?,
         #[cfg(feature = "python")]
-        DslPlan::PythonScan { mut options } => {
-            let scan_fn = options.scan_fn.take();
+        DslPlan::PythonScan { options } => {
+            use crate::dsl::python_dsl::PythonOptionsDsl;
+
             let schema = options.get_schema()?;
+
+            let PythonOptionsDsl {
+                scan_fn,
+                schema_fn: _,
+                python_source,
+                validate_schema,
+                is_pure,
+            } = options;
+
             IR::PythonScan {
                 options: PythonOptions {
                     scan_fn,
                     schema,
-                    python_source: options.python_source,
-                    validate_schema: options.validate_schema,
+                    python_source,
+                    validate_schema,
                     output_schema: Default::default(),
                     with_columns: Default::default(),
                     n_rows: Default::default(),
                     predicate: Default::default(),
+                    is_pure,
                 },
             }
         },
