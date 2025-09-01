@@ -60,6 +60,8 @@ pub enum ArrowDataType {
     UInt32,
     /// An [`u64`]
     UInt64,
+    /// An [`u128`]
+    UInt128,
     /// An 16-bit float
     Float16,
     /// A [`f32`]
@@ -300,6 +302,7 @@ impl ArrowDataType {
             Float16 => PhysicalType::Primitive(PrimitiveType::Float16),
             Float32 => PhysicalType::Primitive(PrimitiveType::Float32),
             Float64 => PhysicalType::Primitive(PrimitiveType::Float64),
+            UInt128 => PhysicalType::Primitive(PrimitiveType::UInt128),
             Int128 => PhysicalType::Primitive(PrimitiveType::Int128),
             Interval(IntervalUnit::DayTime) => PhysicalType::Primitive(PrimitiveType::DaysMs),
             Interval(IntervalUnit::MonthDayNano) => {
@@ -450,11 +453,12 @@ impl ArrowDataType {
             | D::Int16
             | D::Int32
             | D::Int64
+            | D::Int128
             | D::UInt8
             | D::UInt16
             | D::UInt32
             | D::UInt64
-            | D::Int128
+            | D::UInt128
             | D::Float16
             | D::Float32
             | D::Float64
@@ -501,6 +505,7 @@ impl From<IntegerType> for ArrowDataType {
             IntegerType::UInt16 => ArrowDataType::UInt16,
             IntegerType::UInt32 => ArrowDataType::UInt32,
             IntegerType::UInt64 => ArrowDataType::UInt64,
+            IntegerType::UInt128 => ArrowDataType::UInt128,
         }
     }
 }
@@ -516,6 +521,7 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::UInt16 => ArrowDataType::UInt16,
             PrimitiveType::UInt32 => ArrowDataType::UInt32,
             PrimitiveType::UInt64 => ArrowDataType::UInt64,
+            PrimitiveType::UInt128 => ArrowDataType::UInt128,
             PrimitiveType::Int128 => ArrowDataType::Int128,
             PrimitiveType::Int256 => ArrowDataType::Decimal256(32, 32),
             PrimitiveType::Float16 => ArrowDataType::Float16,
@@ -524,7 +530,6 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::DaysMs => ArrowDataType::Interval(IntervalUnit::DayTime),
             PrimitiveType::MonthDayNano => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
             PrimitiveType::MonthDayMillis => ArrowDataType::Interval(IntervalUnit::MonthDayMillis),
-            PrimitiveType::UInt128 => unimplemented!(),
         }
     }
 }

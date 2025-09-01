@@ -199,6 +199,10 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyOb
         UInt16 => numeric_series_to_numpy::<UInt16Type, f32>(py, s),
         UInt32 => numeric_series_to_numpy::<UInt32Type, f64>(py, s),
         UInt64 => numeric_series_to_numpy::<UInt64Type, f64>(py, s),
+        UInt128 => {
+            let s = s.cast(&DataType::Float64).unwrap();
+            series_to_numpy(py, &s, writable, true).unwrap()
+        },
         Float32 => numeric_series_to_numpy::<Float32Type, f32>(py, s),
         Float64 => numeric_series_to_numpy::<Float64Type, f64>(py, s),
         Boolean => boolean_series_to_numpy(py, s),

@@ -38,6 +38,8 @@ pub enum AnyValue<'a> {
     UInt32(u32),
     /// An unsigned 64-bit integer number.
     UInt64(u64),
+    /// An unsigned 128-bit integer number.
+    UInt128(u128),
     /// An 8-bit integer number.
     Int8(i8),
     /// A 16-bit integer number.
@@ -144,6 +146,7 @@ impl AnyValue<'static> {
             DT::UInt16 => AV::UInt16(numeric_to_one.into()),
             DT::UInt32 => AV::UInt32(numeric_to_one.into()),
             DT::UInt64 => AV::UInt64(numeric_to_one.into()),
+            DT::UInt128 => AV::UInt128(numeric_to_one.into()),
             DT::Int8 => AV::Int8(numeric_to_one.into()),
             DT::Int16 => AV::Int16(numeric_to_one.into()),
             DT::Int32 => AV::Int32(numeric_to_one.into()),
@@ -228,6 +231,7 @@ impl<'a> AnyValue<'a> {
             UInt16(_) => DataType::UInt16,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,
+            UInt128(_) => DataType::UInt128,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
             String(_) | StringOwned(_) => DataType::String,
@@ -675,6 +679,7 @@ impl<'a> AnyValue<'a> {
             | Self::UInt16(_)
             | Self::UInt32(_)
             | Self::UInt64(_)
+            | Self::UInt128(_) // TODO: [amber] Should there be a feature gate here?
             | Self::Int8(_)
             | Self::Int16(_)
             | Self::Int32(_)
@@ -781,6 +786,7 @@ impl AnyValue<'_> {
             UInt16(v) => v.hash(state),
             UInt32(v) => v.hash(state),
             UInt64(v) => v.hash(state),
+            UInt128(v) => feature_gated!("dtype-u128", v.hash(state)),
             String(v) => v.hash(state),
             StringOwned(v) => v.hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
@@ -995,6 +1001,7 @@ impl<'a> AnyValue<'a> {
             UInt16(v) => UInt16(v),
             UInt32(v) => UInt32(v),
             UInt64(v) => UInt64(v),
+            UInt128(v) => UInt128(v),
             Boolean(v) => Boolean(v),
             Float32(v) => Float32(v),
             Float64(v) => Float64(v),

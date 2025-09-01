@@ -50,6 +50,7 @@ unsafe impl IsFloat for u8 {}
 unsafe impl IsFloat for u16 {}
 unsafe impl IsFloat for u32 {}
 unsafe impl IsFloat for u64 {}
+unsafe impl IsFloat for u128 {}
 unsafe impl IsFloat for &str {}
 unsafe impl IsFloat for &[u8] {}
 unsafe impl IsFloat for bool {}
@@ -66,6 +67,7 @@ mod private {
     impl Sealed for u16 {}
     impl Sealed for u32 {}
     impl Sealed for u64 {}
+    impl Sealed for u128 {}
     impl Sealed for f32 {}
     impl Sealed for f64 {}
     impl Sealed for &str {}
