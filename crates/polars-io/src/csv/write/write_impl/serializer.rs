@@ -694,6 +694,7 @@ pub(super) fn serializer_for<'a>(
         DataType::Int64 => quote_wrapper!(integer_serializer::<i64>),
         DataType::UInt64 => quote_wrapper!(integer_serializer::<u64>),
         DataType::Int128 => quote_wrapper!(integer_serializer::<i128>),
+        DataType::UInt128 => quote_wrapper!(integer_serializer::<u128>),
         DataType::Float32 => {
             match (
                 options.decimal_comma,

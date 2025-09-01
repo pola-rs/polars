@@ -347,6 +347,12 @@ impl Debug for Series {
             DataType::UInt64 => {
                 format_array!(f, self.u64().unwrap(), "u64", self.name(), "Series")
             },
+            DataType::UInt128 => {
+                feature_gated!(
+                    "dtype-u128",
+                    format_array!(f, self.u128().unwrap(), "u128", self.name(), "Series")
+                )
+            },
             DataType::Int8 => {
                 format_array!(f, self.i8().unwrap(), "i8", self.name(), "Series")
             },
@@ -1154,6 +1160,7 @@ impl Display for AnyValue<'_> {
             AnyValue::UInt16(v) => fmt_integer(f, width, *v),
             AnyValue::UInt32(v) => fmt_integer(f, width, *v),
             AnyValue::UInt64(v) => fmt_integer(f, width, *v),
+            AnyValue::UInt128(v) => feature_gated!("dtype-u128", fmt_integer(f, width, *v)),
             AnyValue::Int8(v) => fmt_integer(f, width, *v),
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),

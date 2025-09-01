@@ -210,6 +210,7 @@ impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8, u8);
 impl_polars_num_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16, u16);
 impl_polars_num_datatype!(PolarsIntegerType, UInt32Type, UInt32, u32, u32);
 impl_polars_num_datatype!(PolarsIntegerType, UInt64Type, UInt64, u64, u64);
+impl_polars_num_datatype!(PolarsIntegerType, UInt128Type, UInt128, u128, u128);
 impl_polars_num_datatype!(PolarsIntegerType, Int8Type, Int8, i8, i8);
 impl_polars_num_datatype!(PolarsIntegerType, Int16Type, Int16, i16, i16);
 impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32, i32);
@@ -369,6 +370,8 @@ impl_phys_dtype!(BinaryType);
 impl_phys_dtype!(BinaryOffsetType);
 impl_phys_dtype!(BooleanType);
 
+#[cfg(feature = "dtype-u128")]
+impl_phys_dtype!(UInt128Type);
 #[cfg(feature = "dtype-i128")]
 impl_phys_dtype!(Int128Type);
 
@@ -393,6 +396,8 @@ pub type UInt8Chunked = ChunkedArray<UInt8Type>;
 pub type UInt16Chunked = ChunkedArray<UInt16Type>;
 pub type UInt32Chunked = ChunkedArray<UInt32Type>;
 pub type UInt64Chunked = ChunkedArray<UInt64Type>;
+#[cfg(feature = "dtype-u128")]
+pub type UInt128Chunked = ChunkedArray<UInt128Type>;
 pub type Int8Chunked = ChunkedArray<Int8Type>;
 pub type Int16Chunked = ChunkedArray<Int16Type>;
 pub type Int32Chunked = ChunkedArray<Int32Type>;
@@ -475,6 +480,11 @@ impl NumericNative for u32 {
 }
 impl NumericNative for u64 {
     type PolarsType = UInt64Type;
+    type TrueDivPolarsType = Float64Type;
+}
+#[cfg(feature = "dtype-u128")]
+impl NumericNative for u128 {
+    type PolarsType = UInt128Type;
     type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for f32 {

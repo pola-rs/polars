@@ -158,6 +158,11 @@ impl_bitwise_kernel! {
     (f64, f64::to_bits, f64::from_bits),
 }
 
+#[cfg(feature = "dtype-u128")]
+impl_bitwise_kernel! {
+    (u128, identity, identity),
+}
+
 #[cfg(feature = "dtype-i128")]
 impl_bitwise_kernel! {
     (i128, identity, identity),
