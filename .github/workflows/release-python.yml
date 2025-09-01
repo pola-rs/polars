@@ -37,7 +37,7 @@ jobs:
         package: [polars, polars-lts-cpu, polars-u64-idx]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
 
@@ -166,7 +166,7 @@ jobs:
           clang -v
           cmake --version
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
 
@@ -312,7 +312,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
 
@@ -376,7 +376,7 @@ jobs:
 
     steps:
       - name: Download sdists and wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
@@ -394,18 +394,18 @@ jobs:
     needs: [publish-to-pypi, build-wheel-pyodide]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
 
       - name: Download sdist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: sdist-polars
           path: dist
 
       - name: Download Pyodide wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: wheel-polars-emscripten-wasm32
           path: wasm-dist
