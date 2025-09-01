@@ -58,15 +58,13 @@ impl PySeries {
         _strict: bool,
     ) -> PyResult<Self> {
         let array = array.readonly();
-        
+
         // We use raw ptr methods to read this as a u8 slice to work around PyO3/rust-numpy#509.
         assert!(array.is_contiguous());
         let data_ptr = array.data().cast::<u8>();
         let data_len = array.len();
         let vals = unsafe { core::slice::from_raw_parts(data_ptr, data_len) };
-        py.enter_polars_series(|| {
-            Series::new(name.into(), vals).cast(&DataType::Boolean)
-        })
+        py.enter_polars_series(|| Series::new(name.into(), vals).cast(&DataType::Boolean))
     }
 
     #[staticmethod]

@@ -104,5 +104,5 @@ def test_init_from_numpy_values(np_dtype_cls: Any, expected_pl_dtype: Any) -> No
 
 
 def test_from_numpy_nonbit_bools_24296() -> None:
-    a = np.uint8([24, 15, 32, 1, 0]).view(np.bool)
+    a = np.array([24, 15, 32, 1, 0], dtype=np.uint8).view(bool)
     assert_series_equal(pl.Series(a), pl.Series([True, True, True, True, False]))
