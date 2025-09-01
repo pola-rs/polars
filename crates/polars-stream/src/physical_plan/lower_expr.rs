@@ -1174,12 +1174,12 @@ fn lower_exprs_with_ctx(
                     AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
                     _ => false,
                 };
-                let stop_is_count_or_len = matches!(
+                let stop_is_count = matches!(
                     ctx.expr_arena.get(inner_exprs[1].node()),
                     AExpr::Agg(IRAggExpr::Count { .. })
                 );
 
-                start_is_zero && stop_is_count_or_len
+                start_is_zero && stop_is_count
             } =>
             {
                 let AExpr::Agg(IRAggExpr::Count {
