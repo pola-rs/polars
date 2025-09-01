@@ -890,3 +890,75 @@ def test_float_truediv_output_type() -> None:
     assert lf.select(x=pl.col("f64") / pl.col("f64")).collect_schema() == pl.Schema(
         {"x": pl.Float64}
     )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Int32,
+        pl.Decimal(21, 3),
+    ],
+)
+def test_log_exp(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series("a", [1, 100, 1000], dtype=dtype),
+            "b": pl.Series("a", [0, 2, 3], dtype=dtype),
+        }
+    )
+
+    result = df.lazy().select(
+        log10=pl.col("a").log10(),
+        log=pl.col("a").log(),
+        exp=pl.col("b").exp(),
+        log1p=pl.col("a").log1p(),
+    )
+    expected = df.select(
+        log10=pl.col("b").cast(pl.Float64),
+        log=pl.Series(np.log(df["a"].cast(pl.Float64).to_numpy())),
+        exp=pl.Series(np.exp(df["b"].cast(pl.Float64).to_numpy())),
+        log1p=pl.Series(np.log1p(df["a"].cast(pl.Float64).to_numpy())),
+    )
+
+    assert_frame_equal(result.collect(), expected)
+    assert result.collect_schema() == expected.schema
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Float32,
+    ],
+)
+def test_log_broadcast(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
+    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
+
+    assert_series_equal(a.log(b), pl.Series("a", [0, 1, 1, 3, 2], dtype=dtype))
+    assert_series_equal(
+        a.log(pl.Series("a", [3], dtype=dtype)),
+        pl.Series("a", [0, 1, 2, 3, 4], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series("a", [81], dtype=dtype).log(b),
+        pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float32,
+        pl.Int32,
+        pl.Int64,
+    ],
+)
+def test_log_broadcast_upcasting(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
+    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
+    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=Float64)
+
+    assert_series_equal(a.log(b.cast(Float64)), expected)
+    assert_series_equal(a.cast(Float64).log(b), expected)
