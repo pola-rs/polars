@@ -292,6 +292,7 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
         "tDn" => ArrowDataType::Duration(TimeUnit::Nanosecond),
         "tiM" => ArrowDataType::Interval(IntervalUnit::YearMonth),
         "tiD" => ArrowDataType::Interval(IntervalUnit::DayTime),
+        "tin" => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
         "vu" => ArrowDataType::Utf8View,
         "vz" => ArrowDataType::BinaryView,
         "+l" => {

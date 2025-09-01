@@ -1,4 +1,4 @@
-use arrow::datatypes::Metadata;
+use arrow::datatypes::{IntervalUnit, Metadata};
 use arrow::offset::OffsetsBuffer;
 #[cfg(any(
     feature = "dtype-date",
@@ -7,6 +7,7 @@ use arrow::offset::OffsetsBuffer;
     feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
+use arrow::types::months_days_ns;
 use polars_compute::cast::cast_unchecked as cast;
 use polars_error::feature_gated;
 use polars_utils::itertools::Itertools;
@@ -477,6 +478,21 @@ impl Series {
                     Ok(out.into_series())
                 }
             },
+            ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
+                feature_gated!("dtype-struct", {
+                    let chunks = chunks
+                        .into_iter()
+                        .map(convert_month_day_nano_to_struct)
+                        .collect::<PolarsResult<Vec<_>>>()?;
+
+                    Ok(StructChunked::from_chunks_and_dtype_unchecked(
+                        name,
+                        chunks,
+                        DataType::_month_days_ns_struct_type(),
+                    )
+                    .into_series())
+                })
+            },
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
@@ -736,6 +752,82 @@ unsafe fn import_arrow_dictionary_array(
             IDX_DTYPE,
         ))
     }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<dyn Array>> {
+    let arr: &PrimitiveArray<months_days_ns> = chunk.as_any().downcast_ref().unwrap();
+
+    let mut months_out: Vec<i32> = vec![0; arr.len()];
+    let mut days_out: Vec<i32> = vec![0; arr.len()];
+    let mut nanoseconds_out: Vec<i64> = vec![0; arr.len()];
+
+    for (i, x) in arr.iter().enumerate() {
+        let Some(x) = x else { continue };
+
+        let months: i32 = x.0;
+        let days: i32 = x.1;
+        let nanoseconds: i64 = x.2;
+
+        unsafe {
+            *months_out.get_unchecked_mut(i) = months;
+            *days_out.get_unchecked_mut(i) = days;
+            *nanoseconds_out.get_unchecked_mut(i) = nanoseconds;
+        }
+    }
+
+    let out = StructArray::new(
+        DataType::_month_days_ns_struct_type()
+            .to_physical()
+            .to_arrow(CompatLevel::newest()),
+        arr.len(),
+        vec![
+            PrimitiveArray::<i32>::from_vec(months_out).boxed(),
+            PrimitiveArray::<i32>::from_vec(days_out).boxed(),
+            PrimitiveArray::<i64>::from_vec(nanoseconds_out).boxed(),
+        ],
+        arr.validity().cloned(),
+    );
+
+    Ok(out.boxed())
+}
+
+#[cfg(feature = "dtype-struct")]
+fn convert_day_time_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<dyn Array>> {
+    use arrow::types::days_ms;
+
+    let arr: &PrimitiveArray<days_ms> = chunk.as_any().downcast_ref().unwrap();
+
+    let mut days_out: Vec<i32> = vec![0; arr.len()];
+    let mut milliseconds_out: Vec<i64> = vec![0; arr.len()];
+
+    for (i, x) in arr.iter().enumerate() {
+        let Some(x) = x else {
+            continue;
+        };
+
+        let days: i32 = x.0;
+        let milliseconds: i32 = x.1;
+
+        unsafe {
+            *days_out.get_unchecked_mut(i) = days;
+            *milliseconds_out.get_unchecked_mut(i) = milliseconds as i64;
+        }
+    }
+
+    let out = StructArray::new(
+        DataType::_day_time_struct_type()
+            .to_physical()
+            .to_arrow(CompatLevel::newest()),
+        arr.len(),
+        vec![
+            PrimitiveArray::<i32>::from_vec(days_out).boxed(),
+            PrimitiveArray::<i64>::from_vec(milliseconds_out).boxed(),
+        ],
+        arr.validity().cloned(),
+    );
+
+    Ok(out.boxed())
 }
 
 fn check_types(chunks: &[ArrayRef]) -> PolarsResult<ArrowDataType> {

@@ -77,6 +77,14 @@ fn convert_days_ms(value: &[u8]) -> arrow::types::days_ms {
     )
 }
 
+fn convert_month_day_nano(value: [u8; 12]) -> arrow::types::months_days_ns {
+    arrow::types::months_days_ns(
+        i32::from_le_bytes(value[..4].try_into().unwrap()),
+        i32::from_le_bytes(value[4..8].try_into().unwrap()),
+        i32::from_le_bytes(value[8..12].try_into().unwrap()) as i64,
+    )
+}
+
 fn convert_i128(value: &[u8], n: usize) -> i128 {
     // Copy the fixed-size byte value to the start of a 16 byte stack
     // allocated buffer, then use an arithmetic right shift to fill in

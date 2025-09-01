@@ -4,7 +4,7 @@ use arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
     DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
-use arrow::types::{NativeType, days_ms, i256};
+use arrow::types::{NativeType, days_ms, i256, months_days_ns};
 use ethnum::I256;
 use polars_compute::cast::CastOptionsImpl;
 
@@ -178,6 +178,35 @@ pub fn page_iter_to_array(
             (
                 nested,
                 PrimitiveArray::<days_ms>::try_new(dtype.clone(), values.into(), validity)?
+                    .to_boxed(),
+                ptm,
+            )
+        },
+        (PhysicalType::FixedLenByteArray(12), Interval(IntervalUnit::MonthDayNano)) => {
+            // @TODO: Make a separate decoder for this
+
+            const N_BYTES: usize = 12;
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::FixedSizeBinary(N_BYTES),
+                fixed_size_binary::BinaryDecoder { size: N_BYTES },
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let values = array
+                .values()
+                .chunks_exact(N_BYTES)
+                .map(|x| {
+                    super::super::convert_month_day_nano(<[u8; N_BYTES]>::try_from(x).unwrap())
+                })
+                .collect::<Vec<_>>();
+            let validity = array.validity().cloned();
+
+            (
+                nested,
+                PrimitiveArray::<months_days_ns>::try_new(dtype.clone(), values.into(), validity)?
                     .to_boxed(),
                 ptm,
             )

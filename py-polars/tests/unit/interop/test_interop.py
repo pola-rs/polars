@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
+from functools import partial
 from typing import Any, cast
 
 import numpy as np
@@ -1082,3 +1083,119 @@ def test_schema_constructor_from_schema_capsule() -> None:
 def test_to_arrow_24142() -> None:
     df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
     df.to_arrow(compat_level=CompatLevel.oldest())
+
+
+def test_month_day_nano_from_ffi_15969() -> None:
+    import datetime
+
+    interval_scalar = partial(pa.scalar, type=pa.month_day_nano_interval())
+
+    arrow_tbl = pa.Table.from_pydict(
+        {
+            "interval": [
+                interval_scalar((1, 0, 0)),
+                interval_scalar((0, 1, 0)),
+                interval_scalar((0, 0, 1_000)),
+                interval_scalar((1, 1, 1_000_001_000)),
+                interval_scalar((-1, 0, 0)),
+                interval_scalar((0, -1, 0)),
+                interval_scalar((0, 0, -1_000)),
+                interval_scalar((-1, -1, -1_000_001_000)),
+                interval_scalar((3558, 0, 0)),
+                interval_scalar((-3558, 0, 0)),
+                interval_scalar((1, -1, 1_999_999_000)),
+            ]
+        },
+        schema=pa.schema([pa.field("interval", pa.month_day_nano_interval())]),
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series(
+                "interval",
+                [
+                    {"months": 1, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": 0, "days": 1, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 0,
+                        "days": 0,
+                        "nanoseconds": datetime.timedelta(microseconds=1),
+                    },
+                    {
+                        "months": 1,
+                        "days": 1,
+                        "nanoseconds": datetime.timedelta(seconds=1, microseconds=1),
+                    },
+                    {"months": -1, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": 0, "days": -1, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 0,
+                        "days": 0,
+                        "nanoseconds": datetime.timedelta(
+                            days=-1, seconds=86399, microseconds=999999
+                        ),
+                    },
+                    {
+                        "months": -1,
+                        "days": -1,
+                        "nanoseconds": datetime.timedelta(
+                            days=-1, seconds=86398, microseconds=999999
+                        ),
+                    },
+                    {"months": 3558, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": -3558, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 1,
+                        "days": -1,
+                        "nanoseconds": datetime.timedelta(
+                            seconds=1, microseconds=999999
+                        ),
+                    },
+                ],
+                dtype=pl.Struct(
+                    {
+                        "months": pl.Int32,
+                        "days": pl.Int32,
+                        "nanoseconds": pl.Duration(time_unit="ns"),
+                    }
+                ),
+            ),
+        ]
+    )
+
+    assert_frame_equal(pl.DataFrame(arrow_tbl), expect)
+    assert_series_equal(
+        pl.Series(arrow_tbl.column(0)).alias("interval"), expect.to_series()
+    )
+
+    assert_frame_equal(
+        pl.DataFrame(
+            pa.Table.from_pydict(
+                {"interval": pa.array([], type=pa.month_day_nano_interval())}
+            )
+        ),
+        pl.DataFrame(
+            schema={
+                "interval": pl.Struct(
+                    {
+                        "months": pl.Int32,
+                        "days": pl.Int32,
+                        "nanoseconds": pl.Duration(time_unit="ns"),
+                    }
+                )
+            }
+        ),
+    )
+
+    assert_series_equal(
+        pl.Series(pa.array([], type=pa.month_day_nano_interval())),
+        pl.Series(
+            dtype=pl.Struct(
+                {
+                    "months": pl.Int32,
+                    "days": pl.Int32,
+                    "nanoseconds": pl.Duration(time_unit="ns"),
+                }
+            )
+        ),
+    )
