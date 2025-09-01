@@ -93,6 +93,7 @@ impl IRFunctionExpr {
                     SumBy => mapper.sum_dtype(),
                 }
             },
+            Rechunk => mapper.with_same_dtype(),
             Append { upcast } => if *upcast {
                 mapper.map_to_supertype()
             } else {

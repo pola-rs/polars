@@ -186,6 +186,7 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
+    Rechunk,
     Append {
         upcast: bool,
     },
@@ -519,7 +520,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
             Append { upcast } => {
                 upcast.hash(state);
             },
@@ -770,6 +771,7 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Rechunk => "rechunk",
             Append { .. } => "append",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
@@ -1145,6 +1147,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     include_breakpoint
                 )
             },
+            Rechunk => map!(dispatch::rechunk),
             Append { upcast } => map_as_slice!(dispatch::append, upcast),
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
@@ -1463,6 +1466,7 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
+            F::Rechunk => FunctionOptions::length_preserving(),
             F::Append { .. } => FunctionOptions::groupwise(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
