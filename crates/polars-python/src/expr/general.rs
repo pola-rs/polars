@@ -453,10 +453,7 @@ impl PyExpr {
     }
 
     fn rechunk(&self) -> Self {
-        self.inner
-            .clone()
-            .map(|s| Ok(s.rechunk()), |_, f| Ok(f.clone()))
-            .into()
+        self.inner.clone().rechunk().into()
     }
 
     fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {

@@ -222,6 +222,11 @@ impl Expr {
         self.map_binary(FunctionExpr::Append { upcast }, other.into())
     }
 
+    /// Collect all chunks into a single chunk before continuing.
+    pub fn rechunk(self) -> Self {
+        self.map_unary(FunctionExpr::Rechunk)
+    }
+
     /// Get the first `n` elements of the Expr result.
     pub fn head(self, length: Option<usize>) -> Self {
         self.slice(lit(0), lit(length.unwrap_or(10) as u64))

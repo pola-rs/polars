@@ -732,6 +732,7 @@ pub(super) fn convert_functions(
                 options,
             }
         },
+        F::Rechunk => I::Rechunk,
         F::Append { upcast } => I::Append { upcast },
         F::ShiftAndFill => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
