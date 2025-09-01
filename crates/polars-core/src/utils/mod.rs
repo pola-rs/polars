@@ -397,6 +397,8 @@ macro_rules! match_dtype_to_logical_apply_macro {
             DataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
             DataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
             DataType::UInt64 => $macro!(UInt64Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => $macro!(UInt128Type $(, $opt_args)*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $macro!(Int8Type $(, $opt_args)*),
             #[cfg(feature = "dtype-i16")]

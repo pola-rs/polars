@@ -212,6 +212,29 @@ pub fn page_iter_to_array(
 
             (nested, out, ptm)
         },
+        (PhysicalType::FixedLenByteArray(16), UInt128) => {
+            // TODO: [amber] See if wee can avoid this code duplication
+            let n = 16;
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::FixedSizeBinary(n),
+                fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let (_, values, validity) = array.into_inner();
+            let values = values
+                .try_transmute()
+                .expect("this should work since the parquet decoder has alignment constraints");
+
+            (
+                nested,
+                PrimitiveArray::<u128>::try_new(dtype.clone(), values, validity)?.to_boxed(),
+                ptm,
+            )
+        },
         (PhysicalType::FixedLenByteArray(16), Int128) => {
             let n = 16;
             let (nested, array, ptm) = PageDecoder::new(
