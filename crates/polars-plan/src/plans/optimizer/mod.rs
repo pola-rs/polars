@@ -125,40 +125,6 @@ pub fn optimize(
     }
 
     // Run before slice pushdown
-    if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
-        let members = get_or_init_members!();
-        if members.has_group_by
-            | members.has_sort
-            | members.has_distinct
-            | members.has_joins_or_unions
-        {
-            match lp_arena.get(lp_top) {
-                IR::SinkMultiple { inputs } => {
-                    let mut roots = inputs.clone();
-                    for root in &mut roots {
-                        if !matches!(lp_arena.get(*root), IR::Sink { .. }) {
-                            *root = lp_arena.add(IR::Sink {
-                                input: *root,
-                                payload: SinkTypeIR::Memory,
-                            });
-                        }
-                    }
-                    set_order::simplify_and_fetch_orderings(&roots, lp_arena, expr_arena);
-                },
-                ir => {
-                    let mut tmp_top = lp_top;
-                    if !matches!(ir, IR::Sink { .. }) {
-                        tmp_top = lp_arena.add(IR::Sink {
-                            input: lp_top,
-                            payload: SinkTypeIR::Memory,
-                        });
-                    }
-                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], lp_arena, expr_arena)
-                },
-            }
-        }
-    }
-
     if opt_flags.simplify_expr() {
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
@@ -296,6 +262,40 @@ pub fn optimize(
             let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
             Ok(rewritten.node())
         })?;
+    }
+
+    if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
+        let members = get_or_init_members!();
+        if members.has_group_by
+            | members.has_sort
+            | members.has_distinct
+            | members.has_joins_or_unions
+        {
+            match lp_arena.get(lp_top) {
+                IR::SinkMultiple { inputs } => {
+                    let mut roots = inputs.clone();
+                    for root in &mut roots {
+                        if !matches!(lp_arena.get(*root), IR::Sink { .. }) {
+                            *root = lp_arena.add(IR::Sink {
+                                input: *root,
+                                payload: SinkTypeIR::Memory,
+                            });
+                        }
+                    }
+                    set_order::simplify_and_fetch_orderings(&roots, lp_arena, expr_arena);
+                },
+                ir => {
+                    let mut tmp_top = lp_top;
+                    if !matches!(ir, IR::Sink { .. }) {
+                        tmp_top = lp_arena.add(IR::Sink {
+                            input: lp_top,
+                            payload: SinkTypeIR::Memory,
+                        });
+                    }
+                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], lp_arena, expr_arena)
+                },
+            }
+        }
     }
 
     // During debug we check if the optimizations have not modified the final schema.
