@@ -367,6 +367,7 @@ fn visualize_plan_rec(
         },
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
+        PhysNodeKind::IsFirstDistinct(input) => ("is_first_distinct".to_owned(), &[*input][..]),
         PhysNodeKind::PeakMinMax { input, is_peak_max } => (
             if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
             &[*input][..],

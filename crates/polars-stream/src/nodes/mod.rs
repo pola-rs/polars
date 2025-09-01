@@ -9,6 +9,7 @@ pub mod in_memory_source;
 pub mod input_independent_select;
 pub mod io_sinks;
 pub mod io_sources;
+pub mod is_first_distinct;
 pub mod joins;
 pub mod map;
 #[cfg(feature = "merge_sorted")]

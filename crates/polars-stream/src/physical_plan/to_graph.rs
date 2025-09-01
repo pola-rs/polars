@@ -587,6 +587,17 @@ fn to_graph_rec<'a>(
             )
         },
 
+        IsFirstDistinct(input) => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            assert_eq!(input_schema.len(), 1);
+            let (name, dtype) = input_schema.get_at_index(0).unwrap();
+            ctx.graph.add_node(
+                nodes::is_first_distinct::IsFirstDistinctNode::new(name.clone(), dtype.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
         PeakMinMax { input, is_peak_max } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(

@@ -1509,6 +1509,27 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsFirstDistinct),
+                options: _,
+            } => {
+                let output_name = inner_exprs[0].output_name();
+                let stream = build_select_stream_with_ctx(input, inner_exprs, ctx)?;
+
+                let stream = PhysStream::first(ctx.phys_sm.insert(PhysNode {
+                    output_schema: Arc::new(Schema::from_iter([(
+                        output_name.clone(),
+                        DataType::Boolean,
+                    )])),
+                    kind: PhysNodeKind::IsFirstDistinct(stream),
+                }));
+
+                input_streams.insert(stream);
+                transformed_exprs
+                    .push(AExprBuilder::col(output_name.clone(), ctx.expr_arena).node());
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: IRFunctionExpr::ArgWhere,
                 options: _,
             } => {
