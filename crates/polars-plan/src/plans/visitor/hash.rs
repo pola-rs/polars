@@ -327,12 +327,16 @@ impl HashableEqLP<'_> {
                     return false;
                 }
 
-                let scan_fn_eq = match (scan_fn_l, scan_fn_r) {
-                    (Some(a), Some(b)) => a.0.as_ptr() == b.0.as_ptr(),
-                    _ => false,
+                let (Some(scan_fn_l), Some(scan_fn_r)) = (scan_fn_l, scan_fn_r) else {
+                    if cfg!(debug_assertions) {
+                        // `scan_fn` should not be `None` as this point.
+                        unreachable!()
+                    }
+
+                    return false;
                 };
 
-                scan_fn_eq
+                scan_fn_l.0.as_ptr() == scan_fn_r.0.as_ptr()
                     && schema_l == schema_r
                     && output_schema_l == output_schema_r
                     && with_columns_l == with_columns_r
