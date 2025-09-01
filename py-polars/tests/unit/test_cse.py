@@ -986,7 +986,9 @@ def test_cse_custom_io_source_same_object() -> None:
         is_pure=True,
     )
 
-    plan = pl.explain_all([lf, lf])
+    lfs = [lf, lf]
+
+    plan = pl.explain_all(lfs)
     caches: list[str] = [
         x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")
     ]
@@ -996,7 +998,7 @@ def test_cse_custom_io_source_same_object() -> None:
     assert io_source.call_count == 0
 
     assert_frame_equal(
-        pl.concat(pl.collect_all([lf, lf])),
+        pl.concat(pl.collect_all(lfs)),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
     )
 
@@ -1011,7 +1013,9 @@ def test_cse_custom_io_source_same_object() -> None:
         validate_schema=True,
     )
 
-    plan = pl.explain_all([lf, lf])
+    lfs = [lf, lf]
+
+    plan = pl.explain_all(lfs)
 
     caches = [x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")]
     assert len(caches) == 0
@@ -1019,8 +1023,41 @@ def test_cse_custom_io_source_same_object() -> None:
     assert io_source.call_count == 0
 
     assert_frame_equal(
-        pl.concat(pl.collect_all([lf, lf])),
+        pl.concat(pl.collect_all(lfs)),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 2
+
+    lfs = [
+        register_io_source(
+            io_source,
+            schema=df.schema,
+            validate_schema=True,
+        ),
+        register_io_source(
+            io_source,
+            schema=df.schema,
+            validate_schema=True,
+        ),
+        register_io_source(
+            io_source,
+            schema=df.schema,
+            validate_schema=False,
+        ),
+    ]
+
+    plan = pl.explain_all(lfs)
+
+    caches = [x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")]
+    assert len(caches) == 2
+    assert len(set(caches)) == 0
+
+    assert io_source.call_count == 0
+
+    assert_frame_equal(
+        pl.concat(pl.collect_all(lfs)),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
     )
 
     assert io_source.call_count == 2

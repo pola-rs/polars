@@ -64,7 +64,7 @@ def register_io_source(
         the given schema. It's an implementation error if this isn't
         the case and can lead to bugs that are hard to solve.
     is_pure
-        Whether the IO source is pure. Repeated occurences of same IO source in
+        Whether the IO source is pure. Repeated occurrences of same IO source in
         a LazyFrame plan can be de-duplicated during optimization if they are
         pure.
 
