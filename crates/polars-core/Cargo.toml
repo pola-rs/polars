@@ -123,6 +123,7 @@ dtype-i128 = ["polars-compute/dtype-i128"]
 dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
 dtype-u8 = []
 dtype-u16 = []
+dtype-u128 = ["polars-compute/dtype-u128"]
 dtype-categorical = []
 dtype-struct = []
 

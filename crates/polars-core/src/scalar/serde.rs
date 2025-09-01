@@ -73,6 +73,8 @@ pub enum SerializableScalar {
     UInt32(u32),
     /// An unsigned 64-bit integer number.
     UInt64(u64),
+    /// An unsigned 128-bit integer number.
+    UInt128(u128),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -146,6 +148,7 @@ impl TryFrom<Scalar> for SerializableScalar {
             AnyValue::UInt16(v) => Self::UInt16(v),
             AnyValue::UInt32(v) => Self::UInt32(v),
             AnyValue::UInt64(v) => Self::UInt64(v),
+            AnyValue::UInt128(v) => Self::UInt128(v),
             AnyValue::Float32(v) => Self::Float32(v),
             AnyValue::Float64(v) => Self::Float64(v),
             AnyValue::List(series) => Self::List(series),
@@ -276,6 +279,7 @@ impl TryFrom<SerializableScalar> for Scalar {
             S::UInt16(v) => Self::from(v),
             S::UInt32(v) => Self::from(v),
             S::UInt64(v) => Self::from(v),
+            S::UInt128(v) => Self::from(v),
             S::Float32(v) => Self::from(v),
             S::Float64(v) => Self::from(v),
             S::List(v) => Self::new_list(v),
