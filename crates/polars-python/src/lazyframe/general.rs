@@ -439,6 +439,7 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
         validate_schema: bool,
+        is_pure: bool,
     ) -> PyResult<Self> {
         let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
 
@@ -447,6 +448,7 @@ impl PyLazyFrame {
             scan_fn,
             pyarrow,
             validate_schema,
+            is_pure,
         )
         .into())
     }
@@ -457,6 +459,7 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
         validate_schema: bool,
+        is_pure: bool,
     ) -> PyResult<Self> {
         let schema = Arc::new(Schema::from_iter(
             schema
@@ -468,6 +471,7 @@ impl PyLazyFrame {
             scan_fn,
             pyarrow,
             validate_schema,
+            is_pure,
         )
         .into())
     }
@@ -477,12 +481,14 @@ impl PyLazyFrame {
         schema_fn: PyObject,
         scan_fn: PyObject,
         validate_schema: bool,
+        is_pure: bool,
     ) -> PyResult<Self> {
         Ok(LazyFrame::scan_from_python_function(
             Either::Left(schema_fn),
             scan_fn,
             false,
             validate_schema,
+            is_pure,
         )
         .into())
     }
