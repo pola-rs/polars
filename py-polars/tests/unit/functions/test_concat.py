@@ -109,6 +109,7 @@ def test_basic_union_properties() -> None:
     )
     result = pl.union([a, b])
 
+    assert isinstance(result, pl.DataFrame)
     assert result.shape == (6, 2)
     assert result.columns == ["a", "b"]
     assert result["a"].sum() == 30
@@ -129,3 +130,98 @@ def test_union_content() -> None:
     actual_rows = set(result.rows())
 
     assert actual_rows == expected_rows
+
+
+def test_union_horizontal_lazyframe() -> None:
+    lf1 = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}).lazy()
+    lf2 = pl.DataFrame({"c": [4.0, 5.0, 6.0], "d": [True, False, True]}).lazy()
+    result = pl.union([lf1, lf2], how="horizontal")
+    collected = result.collect()
+
+    assert isinstance(result, pl.LazyFrame)
+    assert list(collected.columns) == ["a", "b", "c", "d"]
+
+    expected_df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["x", "y", "z"],
+            "c": [4.0, 5.0, 6.0],
+            "d": [True, False, True],
+        }
+    )
+
+    assert collected.equals(expected_df)
+
+
+def test_union_vertically_relaxed() -> None:
+    a = pl.DataFrame(
+        data={"a": [1, 2, 3], "b": [True, False, None]},
+        schema={"a": pl.Int8, "b": pl.Boolean},
+    )
+    b = pl.DataFrame(
+        data={"a": [43, 2, 3], "b": [32, 1, None]},
+        schema={"a": pl.Int16, "b": pl.Int64},
+    )
+    out = pl.union([a, b], how="vertical_relaxed")
+    assert out.schema == {"a": pl.Int16, "b": pl.Int64}
+    assert out.to_dict(as_series=False) == {
+        "a": [1, 2, 3, 43, 2, 3],
+        "b": [1, 0, None, 32, 1, None],
+    }
+    out = pl.union([b, a], how="vertical_relaxed")
+    assert out.schema == {"a": pl.Int16, "b": pl.Int64}
+    assert out.to_dict(as_series=False) == {
+        "a": [43, 2, 3, 1, 2, 3],
+        "b": [32, 1, None, 1, 0, None],
+    }
+
+    c = pl.DataFrame({"a": [1, 2], "b": [2, 1]})
+    d = pl.DataFrame({"a": [1.0, 0.2], "b": [None, 0.1]})
+
+    out = pl.union([c, d], how="vertical_relaxed")
+    assert out.schema == {"a": pl.Float64, "b": pl.Float64}
+    assert out.to_dict(as_series=False) == {
+        "a": [1.0, 2.0, 1.0, 0.2],
+        "b": [2.0, 1.0, None, 0.1],
+    }
+    out = pl.union([d, c], how="vertical_relaxed")
+    assert out.schema == {"a": pl.Float64, "b": pl.Float64}
+    assert out.to_dict(as_series=False) == {
+        "a": [1.0, 0.2, 1.0, 2.0],
+        "b": [None, 0.1, 2.0, 1.0],
+    }
+
+
+def test_union_diagonal() -> None:
+    a = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    b = pl.DataFrame({"b": [5, 6], "c": [7, 8]})
+
+    result = pl.union([a, b], how="diagonal")
+
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape == (4, 3)
+    assert result.columns == ["a", "b", "c"]
+    assert result["a"].to_list() == [1, 2, None, None]
+    assert result["b"].to_list() == [3, 4, 5, 6]
+    assert result["c"].to_list() == [None, None, 7, 8]
+
+
+def test_union_diagonal_relaxed() -> None:
+    a = pl.DataFrame(
+        data={"a": [1, 2], "b": [3, 4]},
+        schema={"a": pl.Int8, "b": pl.Int16},
+    )
+    b = pl.DataFrame(
+        data={"b": [5, 6], "c": [7.0, 8.0]},
+        schema={"b": pl.Int32, "c": pl.Float64},
+    )
+
+    result = pl.union([a, b], how="diagonal_relaxed")
+
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape == (4, 3)
+    assert result.columns == ["a", "b", "c"]
+    assert result.schema == {"a": pl.Int8, "b": pl.Int32, "c": pl.Float64}
+    assert result["a"].to_list() == [1, 2, None, None]
+    assert result["b"].to_list() == [3, 4, 5, 6]
+    assert result["c"].to_list() == [None, None, 7.0, 8.0]
