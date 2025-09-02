@@ -352,6 +352,17 @@ def test_slice_pushdown_pushes_past_fallible(
     assert_frame_equal(q.collect(), pl.DataFrame(schema=q.collect_schema()))
 
 
+def slice_ref(a: list[int], offset: int, length: int) -> list[int]:
+    if offset < 0:
+        offset += len(a)
+    if offset < 0:
+        length += offset
+        offset = 0
+    if length < 0:
+        length = 0
+    return a[offset : offset + length]
+
+
 @pytest.mark.slow
 def test_slice_slice_pushdown() -> None:
     df = pl.DataFrame({"x": [1, 2, 3, 4]})
@@ -359,10 +370,11 @@ def test_slice_slice_pushdown() -> None:
         for outer_len in range(10):
             for inner_offset in range(-10, 10):
                 for inner_len in range(10):
+                    a = [1, 2, 3, 4]
+                    a = slice_ref(a, inner_offset, inner_len)
+                    a = slice_ref(a, outer_offset, outer_len)
                     assert_frame_equal(
-                        df.slice(inner_offset, inner_len).slice(
-                            outer_offset, outer_len
-                        ),
+                        pl.DataFrame({"x": a}, schema={"x": pl.Int64}),
                         df.lazy()
                         .slice(inner_offset, inner_len)
                         .slice(outer_offset, outer_len)
