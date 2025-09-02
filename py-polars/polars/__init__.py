@@ -21,14 +21,14 @@ Basic usage:
    ... })
    >>> df.filter(pl.col("age") > 28)
    shape: (2, 3)
-   ┌─────────┬─────┬─────────┐
-   │ name    ┆ age ┆ city    │
-   │ ---     ┆ --- ┆ ---     │
-   │ str     ┆ i64 ┆ str     │
-   ╞═════════╪═════╪═════════╡
-   │ Bob     ┆ 30  ┆ London  │
-   │ Charlie ┆ 35  ┆ Tokyo   │
-   └─────────┴─────┴─────────┘
+   ┌─────────┬─────┬────────┐
+   │ name    ┆ age ┆ city   │
+   │ ---     ┆ --- ┆ ---    │
+   │ str     ┆ i64 ┆ str    │
+   ╞═════════╪═════╪════════╡
+   │ Bob     ┆ 30  ┆ London │
+   │ Charlie ┆ 35  ┆ Tokyo  │
+   └─────────┴─────┴────────┘
 
 User Guide: https://docs.pola.rs/
 Python API Documentation: https://docs.pola.rs/api/python/stable/reference/
