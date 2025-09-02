@@ -395,7 +395,7 @@ pub fn get_supertype_with_options(
                     None => None
                 }
             },
-            (dt, String) if dt.is_categorical() => Some(dt.clone()),
+            (dt, String) if dt.is_categorical() || dt.is_enum() => Some(dt.clone()),
             (dt, Unknown(kind)) => {
                 match kind {
                     UnknownKind::Float | UnknownKind::Int(_) if  dt.is_string() => {
