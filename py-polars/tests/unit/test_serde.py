@@ -233,6 +233,7 @@ def test_pickle_class_objects_21021() -> None:
     assert isinstance(pickle.loads(pickle.dumps(pl.LazyFrame))(), pl.LazyFrame)
 
 
+@pytest.mark.slow
 def test_serialize_does_not_overflow_stack() -> None:
     n = 2000
     lf = pl.DataFrame({"a": 0}).lazy()

@@ -775,6 +775,7 @@ def test_credential_provider_init_from_partition_target(
     )
 
 
+@pytest.mark.slow
 def test_cache_user_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     user_provider = Mock(
         return_value=(
