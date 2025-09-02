@@ -17,30 +17,31 @@ bitflags::bitflags! {
         const UINT16 = 1 << 2;
         const UINT32 = 1 << 3;
         const UINT64 = 1 << 4;
-        const INT8 = 1 << 5;
-        const INT16 = 1 << 6;
-        const INT32 = 1 << 7;
-        const INT64 = 1 << 8;
-        const INT128 = 1 << 9;
-        const FLOAT32 = 1 << 10;
-        const FLOAT64 = 1 << 11;
-        const STRING = 1 << 12;
-        const BINARY = 1 << 13;
-        const BINARY_OFFSET = 1 << 14;
-        const DATE = 1 << 15;
-        const TIME = 1 << 16;
-        const NULL = 1 << 17;
+        const UINT128 = 1 << 5;
+        const INT8 = 1 << 6;
+        const INT16 = 1 << 7;
+        const INT32 = 1 << 8;
+        const INT64 = 1 << 9;
+        const INT128 = 1 << 10;
+        const FLOAT32 = 1 << 11;
+        const FLOAT64 = 1 << 12;
+        const STRING = 1 << 13;
+        const BINARY = 1 << 14;
+        const BINARY_OFFSET = 1 << 15;
+        const DATE = 1 << 16;
+        const TIME = 1 << 17;
+        const NULL = 1 << 18;
 
-        const DECIMAL = 1 << 18;
-        const DATETIME = 1 << 19;
-        const DURATION = 1 << 20;
-        const CATEGORICAL = 1 << 21;
-        const ENUM = 1 << 22;
-        const OBJECT = 1 << 23;
+        const DECIMAL = 1 << 19;
+        const DATETIME = 1 << 20;
+        const DURATION = 1 << 21;
+        const CATEGORICAL = 1 << 22;
+        const ENUM = 1 << 23;
+        const OBJECT = 1 << 24;
 
-        const LIST = 1 << 24;
-        const ARRAY = 1 << 25;
-        const STRUCT = 1 << 26;
+        const LIST = 1 << 25;
+        const ARRAY = 1 << 26;
+        const STRUCT = 1 << 27;
     }
 }
 
@@ -97,6 +98,7 @@ pub fn dtypes(
             _ if selection == S::UINT16 => Just(DataType::UInt16).boxed(),
             _ if selection == S::UINT32 => Just(DataType::UInt32).boxed(),
             _ if selection == S::UINT64 => Just(DataType::UInt64).boxed(),
+            _ if selection == S::UINT128 => Just(DataType::UInt128).boxed(),
             _ if selection == S::INT8 => Just(DataType::Int8).boxed(),
             _ if selection == S::INT16 => Just(DataType::Int16).boxed(),
             _ if selection == S::INT32 => Just(DataType::Int32).boxed(),
