@@ -163,4 +163,4 @@ jobs:
         run: cargo build --all-features
 
       - name: Run DSL schema check
-        run: ./target/debug/dsl-schema check-hash
+        run: ./target/debug/dsl-schema check-hashes

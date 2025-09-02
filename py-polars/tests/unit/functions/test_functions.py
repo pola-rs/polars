@@ -522,6 +522,7 @@ def test_overflow_diff() -> None:
     }
 
 
+@pytest.mark.may_fail_cloud  # reason: unknown type
 def test_fill_null_unknown_output_type() -> None:
     df = pl.DataFrame({"a": [None, 2, 3, 4, 5]})
     assert df.with_columns(
@@ -679,3 +680,52 @@ def test_var_std_lit_23156(func: str) -> None:
             assert_series_equal(
                 out["literal"], pl.Series("literal", [0.0], dtype=pl.Float64)
             )
+
+
+def test_row_index_expr() -> None:
+    lf = pl.LazyFrame({"x": ["A", "A", "B", "B", "B"]})
+
+    assert_frame_equal(
+        lf.with_columns(pl.row_index(), pl.row_index("another_index")).collect(),
+        pl.DataFrame(
+            {
+                "x": ["A", "A", "B", "B", "B"],
+                "index": [0, 1, 2, 3, 4],
+                "another_index": [0, 1, 2, 3, 4],
+            },
+            schema={
+                "x": pl.String,
+                "index": pl.get_index_type(),
+                "another_index": pl.get_index_type(),
+            },
+        ),
+    )
+
+    assert_frame_equal(
+        (
+            lf.group_by("x")
+            .agg(pl.row_index(), pl.row_index("another_index"))
+            .sort("x")
+            .collect()
+        ),
+        pl.DataFrame(
+            {
+                "x": ["A", "B"],
+                "index": [[0, 1], [0, 1, 2]],
+                "another_index": [[0, 1], [0, 1, 2]],
+            },
+            schema={
+                "x": pl.String,
+                "index": pl.List(pl.get_index_type()),
+                "another_index": pl.List(pl.get_index_type()),
+            },
+        ),
+    )
+
+    assert_frame_equal(
+        lf.select(pl.row_index()).collect(),
+        pl.DataFrame(
+            {"index": [0, 1, 2, 3, 4]},
+            schema={"index": pl.get_index_type()},
+        ),
+    )

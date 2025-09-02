@@ -76,7 +76,7 @@ impl Series {
                     s.to_arrow(0, compat_level)
                 };
 
-                let dtype = ListArray::<i64>::default_datatype(inner.to_arrow(compat_level));
+                let dtype = self.dtype().to_arrow(compat_level);
                 let arr = ListArray::<i64>::new(
                     dtype,
                     arr.offsets().clone(),

@@ -179,6 +179,7 @@ LISTS_STRATEGY = st.lists(
 )
 # The examples are cases where this test previously caught bugs:
 @example([], [], [None])
+@pytest.mark.slow
 def test_randomized(
     list1: list[int | None], list2: list[int | None], list3: list[int | None]
 ) -> None:

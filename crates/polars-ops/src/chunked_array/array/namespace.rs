@@ -57,6 +57,11 @@ pub trait ArrayNameSpace: AsArray {
         }
     }
 
+    fn array_mean(&self) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        dispersion::mean_with_nulls(ca)
+    }
+
     fn array_median(&self) -> PolarsResult<Series> {
         let ca = self.as_array();
         dispersion::median_with_nulls(ca)

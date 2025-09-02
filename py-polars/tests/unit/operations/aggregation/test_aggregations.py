@@ -429,6 +429,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: output order is defined for this in cloud
 @pytest.mark.slow
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (

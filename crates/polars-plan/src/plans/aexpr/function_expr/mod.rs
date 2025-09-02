@@ -34,6 +34,7 @@ mod ewm_by;
 mod fill_null;
 #[cfg(feature = "fused")]
 mod fused;
+mod horizontal;
 #[cfg(feature = "index_of")]
 mod index_of;
 mod list;
@@ -56,13 +57,13 @@ mod rolling;
 mod rolling_by;
 #[cfg(feature = "round_series")]
 mod round;
+mod row_encode;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 pub(super) mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
-mod shrink_type;
 #[cfg(feature = "sign")]
 mod sign;
 #[cfg(feature = "strings")]
@@ -111,6 +112,7 @@ pub use self::range::IRRangeFunction;
 pub use self::rolling::IRRollingFunction;
 #[cfg(feature = "rolling_window_by")]
 pub use self::rolling_by::IRRollingFunctionBy;
+pub use self::row_encode::RowEncodingVariant;
 #[cfg(feature = "strings")]
 pub use self::strings::IRStringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -184,6 +186,10 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
+    Rechunk,
+    Append {
+        upcast: bool,
+    },
     ShiftAndFill,
     Shift,
     DropNans,
@@ -199,6 +205,13 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
+    ArgMin,
+    ArgMax,
+    ArgSort {
+        descending: bool,
+        nulls_last: bool,
+    },
+    Product,
     #[cfg(feature = "rank")]
     Rank {
         options: RankOptions,
@@ -253,7 +266,6 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
     Coalesce,
-    ShrinkType,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
     #[cfg(feature = "pct_change")]
@@ -268,9 +280,7 @@ pub enum IRFunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -340,6 +350,31 @@ pub enum IRFunctionExpr {
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
+
+    FoldHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataType>,
+    },
+    ReduceHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataType>,
+    },
+    #[cfg(feature = "dtype-struct")]
+    CumReduceHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataType>,
+    },
+    #[cfg(feature = "dtype-struct")]
+    CumFoldHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataType>,
+        include_init: bool,
+    },
+
     MaxHorizontal,
     MinHorizontal,
     SumHorizontal {
@@ -377,6 +412,10 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "reinterpret")]
     Reinterpret(bool),
     ExtendConstant,
+
+    RowEncode(Vec<DataType>, RowEncodingVariant),
+    #[cfg(feature = "dtype-struct")]
+    RowDecode(Vec<Field>, RowEncodingVariant),
 }
 
 impl Hash for IRFunctionExpr {
@@ -439,16 +478,59 @@ impl Hash for IRFunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            MaxHorizontal
-            | MinHorizontal
-            | SumHorizontal { .. }
-            | MeanHorizontal { .. }
-            | DropNans
-            | DropNulls
-            | Reverse
-            | ArgUnique
-            | Shift
-            | ShiftAndFill => {},
+
+            FoldHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            }
+            | ReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+            },
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+            },
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+                include_init,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+                include_init.hash(state);
+            },
+
+            SumHorizontal { ignore_nulls } | MeanHorizontal { ignore_nulls } => {
+                ignore_nulls.hash(state)
+            },
+            MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
+            Append { upcast } => {
+                upcast.hash(state);
+            },
+            ArgSort {
+                descending,
+                nulls_last,
+            } => {
+                descending.hash(state);
+                nulls_last.hash(state);
+            },
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -526,7 +608,6 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             Coalesce => {},
-            ShrinkType => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
             #[cfg(feature = "log")]
@@ -535,7 +616,7 @@ impl Hash for IRFunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -626,6 +707,16 @@ impl Hash for IRFunctionExpr {
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
+
+            RowEncode(dts, variants) => {
+                dts.hash(state);
+                variants.hash(state);
+            },
+            #[cfg(feature = "dtype-struct")]
+            RowDecode(fs, variants) => {
+                fs.hash(state);
+                variants.hash(state);
+            },
         }
     }
 }
@@ -680,6 +771,8 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Rechunk => "rechunk",
+            Append { .. } => "append",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -690,6 +783,10 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
+            ArgSort { .. } => "arg_sort",
+            Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
@@ -731,7 +828,6 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             Coalesce => "coalesce",
-            ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
             #[cfg(feature = "pct_change")]
@@ -743,7 +839,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]
@@ -792,6 +888,14 @@ impl Display for IRFunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+
+            FoldHorizontal { .. } => "fold",
+            ReduceHorizontal { .. } => "reduce",
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal { .. } => "cum_reduce",
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal { .. } => "cum_fold",
+
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",
@@ -815,6 +919,10 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(_) => "reinterpret",
             ExtendConstant => "extend_constant",
+
+            RowEncode(..) => "row_encode",
+            #[cfg(feature = "dtype-struct")]
+            RowDecode(..) => "row_decode",
         };
         write!(f, "{s}")
     }
@@ -842,7 +950,7 @@ macro_rules! wrap {
 macro_rules! map_as_slice {
     ($func:path) => {{
         let f = move |s: &mut [Column]| {
-            $func(s).map(Some)
+            $func(s)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -850,7 +958,7 @@ macro_rules! map_as_slice {
 
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Column]| {
-            $func(s, $($args),*).map(Some)
+            $func(s, $($args),*)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -864,7 +972,7 @@ macro_rules! map_owned {
     ($func:path) => {{
         let f = move |c: &mut [Column]| {
             let c = std::mem::take(&mut c[0]);
-            $func(c).map(Some)
+            $func(c)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -873,7 +981,7 @@ macro_rules! map_owned {
     ($func:path, $($args:expr),*) => {{
         let f = move |c: &mut [Column]| {
             let c = std::mem::take(&mut c[0]);
-            $func(c, $($args),*).map(Some)
+            $func(c, $($args),*)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -886,7 +994,7 @@ macro_rules! map {
     ($func:path) => {{
         let f = move |c: &mut [Column]| {
             let c = &c[0];
-            $func(c).map(Some)
+            $func(c)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -895,7 +1003,7 @@ macro_rules! map {
     ($func:path, $($args:expr),*) => {{
         let f = move |c: &mut [Column]| {
             let c = &c[0];
-            $func(c, $($args),*).map(Some)
+            $func(c, $($args),*)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -932,10 +1040,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NullCount => {
                 let f = |s: &mut [Column]| {
                     let s = &s[0];
-                    Ok(Some(Column::new(
-                        s.name().clone(),
-                        [s.null_count() as IdxSize],
-                    )))
+                    Ok(Column::new(s.name().clone(), [s.null_count() as IdxSize]))
                 };
                 wrap!(f)
             },
@@ -1006,6 +1111,9 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                             is_corr
                         )
                     },
+                    Map(f) => {
+                        map!(rolling::rolling_map, options.clone(), f.clone())
+                    },
                 }
             },
             #[cfg(feature = "rolling_window_by")]
@@ -1039,6 +1147,8 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     include_breakpoint
                 )
             },
+            Rechunk => map!(dispatch::rechunk),
+            Append { upcast } => map_as_slice!(dispatch::append, upcast),
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
             },
@@ -1055,6 +1165,13 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "moment")]
             Kurtosis(fisher, bias) => map!(dispatch::kurtosis, fisher, bias),
             ArgUnique => map!(dispatch::arg_unique),
+            ArgMin => map!(dispatch::arg_min),
+            ArgMax => map!(dispatch::arg_max),
+            ArgSort {
+                descending,
+                nulls_last,
+            } => map!(dispatch::arg_sort, descending, nulls_last),
+            Product => map!(dispatch::product),
             Repeat => map_as_slice!(repeat::repeat),
             #[cfg(feature = "rank")]
             Rank { options, seed } => map!(dispatch::rank, options, seed),
@@ -1098,7 +1215,6 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => map!(dispatch::approx_n_unique),
             Coalesce => map_as_slice!(fill_null::coalesce),
-            ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
             Diff(null_behavior) => map_as_slice!(dispatch::diff, null_behavior),
             #[cfg(feature = "pct_change")]
@@ -1114,7 +1230,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
-            Log { base } => map!(log::log, base),
+            Log => map_as_slice!(log::log),
             #[cfg(feature = "log")]
             Log1p => map!(log::log1p),
             #[cfg(feature = "log")]
@@ -1209,6 +1325,52 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     kwargs.as_ref()
                 )
             },
+
+            FoldHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => map_as_slice!(
+                horizontal::fold,
+                &callback,
+                returns_scalar,
+                return_dtype.as_ref()
+            ),
+            ReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => map_as_slice!(
+                horizontal::reduce,
+                &callback,
+                returns_scalar,
+                return_dtype.as_ref()
+            ),
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => map_as_slice!(
+                horizontal::cum_reduce,
+                &callback,
+                returns_scalar,
+                return_dtype.as_ref()
+            ),
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+                include_init,
+            } => map_as_slice!(
+                horizontal::cum_fold,
+                &callback,
+                returns_scalar,
+                return_dtype.as_ref(),
+                include_init
+            ),
+
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
             SumHorizontal { ignore_nulls } => wrap!(dispatch::sum_horizontal, ignore_nulls),
@@ -1235,6 +1397,14 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),
             ExtendConstant => map_as_slice!(dispatch::extend_constant),
+
+            RowEncode(dts, variants) => {
+                map_as_slice!(row_encode::encode, dts.clone(), variants.clone())
+            },
+            #[cfg(feature = "dtype-struct")]
+            RowDecode(fs, variants) => {
+                map_as_slice!(row_encode::decode, fs.clone(), variants.clone())
+            },
         }
     }
 }
@@ -1296,6 +1466,8 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
+            F::Rechunk => FunctionOptions::length_preserving(),
+            F::Append { .. } => FunctionOptions::groupwise(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
             F::DropNans => FunctionOptions::row_separable(),
@@ -1312,6 +1484,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "repeat_by")]
             F::RepeatBy => FunctionOptions::elementwise(),
             F::ArgUnique => FunctionOptions::groupwise(),
+            F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
+            F::ArgSort { .. } => FunctionOptions::length_preserving(),
+            F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::groupwise(),
             F::Repeat => {
@@ -1345,7 +1520,6 @@ impl IRFunctionExpr {
             F::Coalesce => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
-            F::ShrinkType => FunctionOptions::length_preserving(),
             #[cfg(feature = "diff")]
             F::Diff(NullBehavior::Drop) => FunctionOptions::groupwise(),
             #[cfg(feature = "diff")]
@@ -1357,7 +1531,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log { .. } | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
             F::Entropy { .. } => FunctionOptions::aggregation(),
             F::Unique(_) => FunctionOptions::groupwise(),
@@ -1403,6 +1577,26 @@ impl IRFunctionExpr {
             }),
             F::MeanHorizontal { .. } | F::SumHorizontal { .. } => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+
+            F::FoldHorizontal { returns_scalar, .. }
+            | F::ReduceHorizontal { returns_scalar, .. } => FunctionOptions::groupwise()
+                .with_flags(|mut f| {
+                    f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
+                    if *returns_scalar {
+                        f |= FunctionFlags::RETURNS_SCALAR;
+                    }
+                    f
+                }),
+            #[cfg(feature = "dtype-struct")]
+            F::CumFoldHorizontal { returns_scalar, .. }
+            | F::CumReduceHorizontal { returns_scalar, .. } => FunctionOptions::groupwise()
+                .with_flags(|mut f| {
+                    f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
+                    if *returns_scalar {
+                        f |= FunctionFlags::RETURNS_SCALAR;
+                    }
+                    f
+                }),
             #[cfg(feature = "ewma")]
             F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => {
                 FunctionOptions::length_preserving()
@@ -1417,6 +1611,10 @@ impl IRFunctionExpr {
             #[cfg(feature = "reinterpret")]
             F::Reinterpret(_) => FunctionOptions::elementwise(),
             F::ExtendConstant => FunctionOptions::groupwise(),
+
+            F::RowEncode(..) => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            F::RowDecode(..) => FunctionOptions::elementwise(),
         }
     }
 }

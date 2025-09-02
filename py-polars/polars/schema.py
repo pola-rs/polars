@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import sys
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -8,11 +9,19 @@ from typing import TYPE_CHECKING, Literal, Union, overload
 from polars._typing import PythonDataType
 from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
+from polars.exceptions import DuplicateError
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import (
+        init_polars_schema_from_arrow_c_schema,
+        polars_schema_field_from_arrow_c_schema,
+    )
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
+    from polars._typing import ArrowSchemaExportable
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -92,14 +101,29 @@ class Schema(BaseSchema):
         self,
         schema: (
             Mapping[str, SchemaInitDataType]
-            | Iterable[tuple[str, SchemaInitDataType]]
+            | Iterable[tuple[str, SchemaInitDataType] | ArrowSchemaExportable]
+            | ArrowSchemaExportable
             | None
         ) = None,
         *,
         check_dtypes: bool = True,
     ) -> None:
+        if hasattr(schema, "__arrow_c_schema__") and not isinstance(schema, Schema):
+            init_polars_schema_from_arrow_c_schema(self, schema)
+            return
+
         input = schema.items() if isinstance(schema, Mapping) else (schema or ())
-        for name, tp in input:
+        for v in input:
+            name, tp = (
+                polars_schema_field_from_arrow_c_schema(v)
+                if hasattr(v, "__arrow_c_schema__")
+                else v
+            )
+
+            if name in self:
+                msg = f"iterable passed to pl.Schema contained duplicate name '{name}'"
+                raise DuplicateError(msg)
+
             if not check_dtypes:
                 super().__setitem__(name, tp)  # type: ignore[assignment]
             elif is_polars_dtype(tp):

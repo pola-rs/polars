@@ -6,7 +6,6 @@ import random
 import string
 import sys
 from contextlib import contextmanager
-from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
@@ -251,25 +250,6 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     #     tracemalloc.stop()
 
 
-@pytest.fixture(params=[True, False])
-def test_global_and_local(
-    request: FixtureRequest,
-) -> Generator[Any, Any, Any]:
-    """
-    Setup fixture which runs each test with and without global string cache.
-
-    Usage: @pytest.mark.usefixtures("test_global_and_local")
-    """
-    use_global = request.param
-    if use_global:
-        with pl.StringCache():
-            # Pre-fill some global items to ensure physical repr isn't 0..n.
-            pl.Series(["eapioejf", "2m4lmv", "3v3v9dlf"], dtype=pl.Categorical)
-            yield
-    else:
-        yield
-
-
 @contextmanager
 def mock_module_import(
     name: str, module: ModuleType, *, replace_if_exists: bool = False
@@ -298,23 +278,6 @@ def mock_module_import(
                 sys.modules[name] = original
             else:
                 del sys.modules[name]
-
-
-# The new streaming engine currently only works if you keep the same string cache
-# alive the entire time.
-def with_string_cache_if_auto_streaming(f: Any) -> Any:
-    if (
-        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
-        != "1"
-    ):
-        return f
-
-    @wraps(f)
-    def with_cache(*args: Any, **kwargs: Any) -> Any:
-        with pl.StringCache():
-            return f(*args, **kwargs)
-
-    return with_cache
 
 
 def time_func(func: Callable[[], Any], *, iterations: int = 3) -> float:

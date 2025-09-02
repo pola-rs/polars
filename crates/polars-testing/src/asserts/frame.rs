@@ -65,8 +65,8 @@ mod tests {
         assert!(options.check_column_order);
         assert!(options.check_dtypes);
         assert!(!options.check_exact);
-        assert_eq!(options.rtol, 1e-5);
-        assert_eq!(options.atol, 1e-8);
+        assert_eq!(options.rel_tol, 1e-5);
+        assert_eq!(options.abs_tol, 1e-8);
         assert!(!options.categorical_as_str);
     }
 
@@ -531,15 +531,34 @@ mod tests {
 
     // Testing categorical operations
     #[test]
-    #[should_panic(expected = "dtypes do not match")]
+    #[should_panic(expected = "value mismatch")]
     fn test_dataframe_categorical_as_string_mismatch() {
-        let mut categorical1 = Series::new("categories".into(), &["a", "b", "c", "a"]);
+        let mut categorical1 = Series::new("categories".into(), &["a", "b", "c", "d"]);
         categorical1 = categorical1
             .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         let df1 = DataFrame::new(vec![categorical1.into()]).unwrap();
 
-        let mut categorical2 = Series::new("categories".into(), &["a", "b", "c", "a"]);
+        let mut categorical2 = Series::new("categories".into(), &["a", "b", "c", "e"]);
+        categorical2 = categorical2
+            .cast(&DataType::from_categories(Categories::global()))
+            .unwrap();
+        let df2 = DataFrame::new(vec![categorical2.into()]).unwrap();
+
+        let options =
+            crate::asserts::DataFrameEqualOptions::default().with_categorical_as_str(true);
+        assert_dataframe_equal!(&df1, &df2, options);
+    }
+
+    #[test]
+    fn test_dataframe_categorical_as_string_match() {
+        let mut categorical1 = Series::new("categories".into(), &["a", "b", "c", "d"]);
+        categorical1 = categorical1
+            .cast(&DataType::from_categories(Categories::global()))
+            .unwrap();
+        let df1 = DataFrame::new(vec![categorical1.into()]).unwrap();
+
+        let mut categorical2 = Series::new("categories".into(), &["a", "b", "c", "d"]);
         categorical2 = categorical2
             .cast(&DataType::from_categories(Categories::global()))
             .unwrap();

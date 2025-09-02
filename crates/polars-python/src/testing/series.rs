@@ -5,7 +5,7 @@ use crate::PySeries;
 use crate::error::PyPolarsErr;
 
 #[pyfunction]
-#[pyo3(signature = (left, right, *, check_dtypes, check_names, check_order, check_exact, rtol, atol, categorical_as_str))]
+#[pyo3(signature = (left, right, *, check_dtypes, check_names, check_order, check_exact, rel_tol, abs_tol, categorical_as_str))]
 pub fn assert_series_equal_py(
     left: &PySeries,
     right: &PySeries,
@@ -13,20 +13,20 @@ pub fn assert_series_equal_py(
     check_names: bool,
     check_order: bool,
     check_exact: bool,
-    rtol: f64,
-    atol: f64,
+    rel_tol: f64,
+    abs_tol: f64,
     categorical_as_str: bool,
 ) -> PyResult<()> {
-    let left_series = &left.series;
-    let right_series = &right.series;
+    let left_series = &left.series.read();
+    let right_series = &right.series.read();
 
     let options = SeriesEqualOptions {
         check_dtypes,
         check_names,
         check_order,
         check_exact,
-        rtol,
-        atol,
+        rel_tol,
+        abs_tol,
         categorical_as_str,
     };
 

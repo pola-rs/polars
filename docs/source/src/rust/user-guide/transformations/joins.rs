@@ -60,10 +60,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:join-key-expression]
     let result = props_groups2
-        .clone()
         .lazy()
         .join(
-            props_prices2.clone().lazy(),
+            props_prices2.lazy(),
             [col("property_name")],
             [col("name").str().to_lowercase()],
             JoinArgs::default(),
@@ -182,7 +181,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:anti-join]
     let result = props_groups
-        .clone()
         .lazy()
         .join(
             props_prices.clone().lazy(),
@@ -207,7 +205,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .join_builder()
-        .with(props_prices.clone().lazy())
+        .with(props_prices.lazy())
         .join_where(vec![col("cash").cast(DataType::Int64).gt(col("cost"))])
         .collect()?;
     println!("{result}");
@@ -279,10 +277,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = players
-        .clone()
         .lazy()
         .select([col("name")])
-        .cross_join(tokens.clone().lazy(), None)
+        .cross_join(tokens.lazy(), None)
         .collect()?;
     println!("{result}");
     // --8<-- [end:cartesian-product]

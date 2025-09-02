@@ -155,6 +155,7 @@ if TYPE_CHECKING:
     import subprocess
 
     import altair
+    import boto3
     import deltalake
     import fsspec
     import gevent
@@ -179,6 +180,7 @@ else:
 
     # heavy/optional third party libs
     altair, _ALTAIR_AVAILABLE = _lazy_import("altair")
+    boto3, _BOTO3_AVAILABLE = _lazy_import("boto3")
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
     gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
@@ -315,6 +317,7 @@ __all__ = [
     "subprocess",
     # lazy-load third party libs
     "altair",
+    "boto3",
     "deltalake",
     "fsspec",
     "gevent",

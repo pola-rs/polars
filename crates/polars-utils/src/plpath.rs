@@ -1,5 +1,5 @@
 use core::fmt;
-use std::path::{Component, Path};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -299,47 +299,16 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    // Panics: will panic if n is out of bounds, or the path cannot be parsed
-    pub fn offset_bytes(&'a self, n: usize) -> Self {
-        match self {
-            Self::Local(path) => {
-                let s = path.to_str().expect("Path is not valid UTF-8");
-                PlPathRef::Local(Path::new(&s[n..]))
-            },
-            Self::Cloud(cloudpath) => {
-                let s = self.to_str();
-                PlPathRef::Cloud(PlCloudPathRef {
-                    scheme: cloudpath.scheme,
-                    uri: &s[n..],
-                })
-            },
+    // It is up to the caller to ensure that the offset parameter 'n' matches
+    // a valid path segment starting index
+    pub fn offset_bytes(&'a self, n: usize) -> PathBuf {
+        let s = self.to_str();
+        if let Some(scheme) = self.scheme()
+            && n > 0
+        {
+            debug_assert!(n >= scheme.as_str().len())
         }
-    }
-
-    /// Return an iterator over the 'normal' components. This excludes any
-    /// prefix (e.g. 'C:\' or server share), directory (such as '.' and '..'),
-    /// or scheme, query or fragment data.
-    //
-    // For reference:
-    //   URI syntax = scheme ":" ["//" authority] path ["?" query] ["#" fragment]
-    //
-    // TODO: change to custom Enum Iterator if we care about performance
-    pub fn get_normal_components(&self) -> Box<dyn Iterator<Item = &str> + '_> {
-        match self {
-            Self::Local(path) => Box::new(path.components().filter_map(|c| match c {
-                Component::Normal(seg) => Some(seg.to_str().unwrap()),
-                _ => None,
-            })),
-            Self::Cloud(cloudpath) => {
-                let separator = '/';
-                let query_delimiter = '?';
-                let path = cloudpath.strip_scheme();
-                let path = path
-                    .split_once(query_delimiter)
-                    .map_or(path, |(before, _)| before);
-                Box::new(path.split(separator))
-            },
-        }
+        PathBuf::from(&s[n..])
     }
 }
 

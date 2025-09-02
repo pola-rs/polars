@@ -1,17 +1,20 @@
 //! A tool for working with DSL schema.
 //!
 //! Usage:
-//! `dsl-check [generate|update-hash|check-hash] [PATH]`
-//! - `generate` the DSL schema as a JSON file in the current directory
-//! - `update-hash` the schema hash stored in the schema hash file,
-//! - `check-hash` that the schema hash in the file matches the code.
+//! `dsl-schema [generate|update-hashes|check-hashes] [PATH]`
+//! - `generate` the DSL schema as a full JSON file in the current directory
+//! - `update-hashes` stored in the schema hashes file,
+//! - `check-hashes` in the schema hashes file against the hashes from the code.
 //!
 //! The generated schema is affected by active features. To use a complete schema, first build
 //! the whole workspace with all features:
 //! ```sh
 //! cargo build --all-features
-//! ./target/debug/dsl-check update-hash
-//! ./target/debug/dsl-check check-hash
+//! ./target/debug/dsl-schema update-hashes
+//! ./target/debug/dsl-schema check-hashes
+//!
+//! The tool has the code schema built-in. After code changes, you need to run
+//! `cargo build --all-features` again.
 //! ```
 
 fn main() {
@@ -31,9 +34,10 @@ mod impls {
     use std::path::Path;
 
     use polars_plan::dsl::DslPlan;
+    use schemars::schema::SchemaObject;
     use sha2::Digest;
 
-    const DEFAULT_HASH_PATH: &str = "crates/polars-plan/dsl-schema.sha256";
+    const DEFAULT_HASHES_PATH: &str = "crates/polars-plan/dsl-schema-hashes.json";
 
     pub fn run() {
         let mut args = std::env::args();
@@ -41,7 +45,7 @@ mod impls {
         let _ = args.next();
         let cmd = args
             .next()
-            .expect("missing command [generate, update-hash, check-hash]");
+            .expect("missing command [generate, update-hashes, check-hashes]");
         let path = args.next();
 
         if let Some(unknown) = args.next() {
@@ -52,11 +56,11 @@ mod impls {
             "generate" => {
                 generate(path.unwrap_or("./dsl-schema.json".to_owned()));
             },
-            "update-hash" => {
-                update_hash(path.unwrap_or(DEFAULT_HASH_PATH.to_owned()));
+            "update-hashes" => {
+                update_hashes(path.unwrap_or(DEFAULT_HASHES_PATH.to_owned()));
             },
-            "check-hash" => {
-                check_hash(path.unwrap_or(DEFAULT_HASH_PATH.to_owned()));
+            "check-hashes" => {
+                check_hashes(path.unwrap_or(DEFAULT_HASHES_PATH.to_owned()));
             },
             unknown => {
                 panic!("unknown command: `{unknown}`");
@@ -76,35 +80,50 @@ mod impls {
         file.flush().expect("failed to flush the schema file");
     }
 
-    /// Outputs the current DSL schema hash into a file at the given path.
+    /// Outputs the current DSL schema hashes into a file at the given path.
     ///
     /// Any existing file at the path is overwritten.
-    fn update_hash(path: impl AsRef<Path>) {
-        std::fs::write(path, current_hash()).expect("failed to write the hash into the file");
-        eprintln!("the DSL schema hash file was updated");
+    fn update_hashes(path: impl AsRef<Path>) {
+        std::fs::write(path, current_schema_hashes())
+            .expect("failed to write the schema into the file");
+        eprintln!("the DSL schema file was updated");
     }
 
-    /// Checks that the current schema hash matches the schema in the file.
-    fn check_hash(path: impl AsRef<Path>) {
-        let file_hash =
-            std::fs::read_to_string(path).expect("faled to read the hash from the file");
-        if file_hash != current_hash() {
-            eprintln!(
-                "the schema hash is not up to date, please update the DSL_VERSION in `polars-plan/src/dsl/plan.rs` if needed and run `make update-dsl-schema-hash`"
-            );
+    /// Checks that the current schema hashes match the schema hashes in the file.
+    fn check_hashes(path: impl AsRef<Path>) {
+        let file_hashes =
+            std::fs::read_to_string(path).expect("failed to read the schema hashes from the file");
+        if file_hashes != current_schema_hashes() {
+            eprintln!("the schema hashes are not up to date, run `make update-dsl-schema-hashes`");
             std::process::exit(1);
         }
-        eprintln!("the DSL schema is up to date");
+        eprintln!("the DSL schema hashes are up to date");
     }
 
-    fn current_hash() -> String {
+    /// Returns the schema hashes as a serialized JSON object.
+    /// Each field is named after a data type, with its schema hash as the value.
+    fn current_schema_hashes() -> String {
         let schema = DslPlan::dsl_schema();
 
+        let mut hashes = serde_json::Map::new();
+
+        // Insert the top level enum schema
+        hashes.insert(String::from("DslPlan"), schema_hash(&schema.schema).into());
+
+        // Insert the subschemas
+        for (name, def) in schema.definitions {
+            hashes.insert(name, schema_hash(&def.into_object()).into());
+        }
+
+        hashes.sort_keys();
+
+        serde_json::to_string_pretty(&hashes).expect("failed to serialize schema hashes file")
+    }
+
+    fn schema_hash(schema: &SchemaObject) -> String {
         let mut digest = sha2::Sha256::new();
-        serde_json::to_writer(&mut digest, &schema).expect("failed to serialize the schema");
-
+        serde_json::to_writer(&mut digest, schema).expect("failed to serialize the schema");
         let hash = digest.finalize();
-
         format!("{hash:064x}")
     }
 }

@@ -1,6 +1,6 @@
 import pickle
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal as PyDecimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -356,23 +356,6 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     assert df.select(cs.datetime("ms")).columns == ["d5"]
 
     # bonus check; significantly more verbose, but equivalent to a selector -
-    print()
-    print()
-    print(
-        pl.all().exclude(
-            pl.Datetime("ms", time_zone="*"), pl.Datetime("ns", time_zone="*")
-        )
-    )
-    print(~cs.datetime(["ms", "ns"], time_zone="*"))
-    print(
-        df.select(
-            pl.all().exclude(
-                pl.Datetime("ms", time_zone="*"), pl.Datetime("ns", time_zone="*")
-            )
-        ).columns
-    )
-    print(df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns)
-
     assert (
         df.select(
             pl.all().exclude(
@@ -530,6 +513,8 @@ def test_selector_matches(df: pl.DataFrame) -> None:
     ]
 
 
+# Python objects are not supported by cloud #2410.
+@pytest.mark.may_fail_cloud
 def test_selector_miscellaneous(df: pl.DataFrame) -> None:
     assert df.select(cs.string()).columns == ["qqR"]
     assert df.select(cs.categorical()).columns == []
@@ -971,6 +956,8 @@ def test_enum_selector() -> None:
     assert df.select(~cs.enum()).columns == ["a", "b", "d", "e"]
 
 
+# Zero Field Structs are not supported by cloud #2410.
+@pytest.mark.may_fail_cloud
 def test_struct_selector() -> None:
     df = pl.DataFrame(
         [
@@ -1133,6 +1120,24 @@ def test_pickle_selector_11425() -> None:
 
     assert df.select(selectors[0] | selectors[1]).columns == ["a", "b"]
     assert df.select(unpickled_selectors[0] | unpickled_selectors[1]).columns == [
+        "a",
+        "b",
+    ]
+
+
+def test_list_eval_selector_23667() -> None:
+    df = pl.DataFrame({"x": [[1, 2], [3]]})
+    assert_frame_equal(df, df.select(pl.all().list.eval(pl.element())))
+
+
+def test_datetime_selectors_23767() -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 1, 1)], "b": [datetime(2020, 1, 2, tzinfo=timezone.utc)]}
+    )
+
+    assert df.select(pl.selectors.datetime("us", time_zone=None)).columns == ["a"]
+    assert df.select(pl.selectors.datetime("us", time_zone=["UTC"])).columns == ["b"]
+    assert df.select(pl.selectors.datetime("us", time_zone=[None, "UTC"])).columns == [
         "a",
         "b",
     ]

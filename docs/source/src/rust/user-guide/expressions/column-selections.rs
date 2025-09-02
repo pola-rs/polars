@@ -57,7 +57,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:expansion_by_dtype]
     let out = df
-        .clone()
         .lazy()
         .select([
             dtype_cols([DataType::Int64, DataType::UInt32, DataType::Boolean])

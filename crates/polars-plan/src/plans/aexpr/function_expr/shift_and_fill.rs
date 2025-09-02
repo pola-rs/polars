@@ -101,11 +101,15 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
             dt => polars_bail!(opq = shift_and_fill, dt),
         }
     } else {
+        polars_warn!(
+            Deprecation, // @2.0
+            "shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+        );
         Ok(Column::full_null(s.name().clone(), s.len(), s.dtype()))
     }
 }
 
-pub fn shift(args: &[Column]) -> PolarsResult<Column> {
+pub(super) fn shift(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let n_s = &args[1];
     polars_ensure!(
@@ -118,6 +122,12 @@ pub fn shift(args: &[Column]) -> PolarsResult<Column> {
 
     match n.get(0) {
         Some(n) => Ok(s.shift(n)),
-        None => Ok(Column::full_null(s.name().clone(), s.len(), s.dtype())),
+        None => {
+            polars_warn!(
+                Deprecation, // @2.0
+                "shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+            );
+            Ok(Column::full_null(s.name().clone(), s.len(), s.dtype()))
+        },
     }
 }

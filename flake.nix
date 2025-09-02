@@ -379,6 +379,10 @@
 
                 postShellHook =
                   let
+                    openCmd = 
+                      if pkgs.stdenv.isLinux then "xdg-open"
+                      else "open";
+                        # on darwin, /usr/bin/ld actually looks at the environment variable
                     # Borrowed from jujutsu's flake.nix
                     # on macOS and Linux, use faster parallel linkers that are much more
                     # efficient than the defaults. these noticeably improve link time even for
@@ -425,6 +429,7 @@
                     export PYO3_NO_REOCOMPILE=1
                     export PYO3_NO_RECOMPILE=1
 
+                    export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
                     export PYO3_PYTHON=$($VENV/bin/python -c "import sys,os; print(os.path.abspath(sys.executable))")
                     export PYTHON_SHARED_LIB=$($VENV/bin/python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
 

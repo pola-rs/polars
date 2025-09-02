@@ -33,13 +33,6 @@ impl PhysicalExpr for AliasExpr {
         Ok(self.finish(series))
     }
 
-    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
-        let depth_limit = depth_limit.checked_sub(1)?;
-        self.physical_expr
-            .evaluate_inline_impl(depth_limit)
-            .map(|s| self.finish(s))
-    }
-
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,

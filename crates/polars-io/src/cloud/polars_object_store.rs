@@ -18,11 +18,11 @@ use crate::pl_async::{
 mod inner {
     use std::future::Future;
     use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
 
     use object_store::ObjectStore;
     use polars_core::config;
     use polars_error::PolarsResult;
+    use polars_utils::relaxed_cell::RelaxedCell;
 
     use crate::cloud::PolarsObjectStoreBuilder;
 
@@ -33,24 +33,14 @@ mod inner {
     }
 
     /// Polars wrapper around [`ObjectStore`] functionality. This struct is cheaply cloneable.
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct PolarsObjectStore {
         inner: Arc<Inner>,
         /// Avoid contending the Mutex `lock()` until the first re-build.
         initial_store: std::sync::Arc<dyn ObjectStore>,
         /// Used for interior mutability. Doesn't need to be shared with other threads so it's not
         /// inside `Arc<>`.
-        rebuilt: AtomicBool,
-    }
-
-    impl Clone for PolarsObjectStore {
-        fn clone(&self) -> Self {
-            Self {
-                inner: self.inner.clone(),
-                initial_store: self.initial_store.clone(),
-                rebuilt: AtomicBool::new(self.rebuilt.load(std::sync::atomic::Ordering::Relaxed)),
-            }
-        }
+        rebuilt: RelaxedCell<bool>,
     }
 
     impl PolarsObjectStore {
@@ -65,13 +55,13 @@ mod inner {
                     builder,
                 }),
                 initial_store,
-                rebuilt: AtomicBool::new(false),
+                rebuilt: RelaxedCell::from(false),
             }
         }
 
         /// Gets the underlying [`ObjectStore`] implementation.
         pub async fn to_dyn_object_store(&self) -> Arc<dyn ObjectStore> {
-            if !self.rebuilt.load(std::sync::atomic::Ordering::Relaxed) {
+            if !self.rebuilt.load() {
                 self.initial_store.clone()
             } else {
                 self.inner.store.lock().await.clone()
@@ -84,15 +74,20 @@ mod inner {
         ) -> PolarsResult<Arc<dyn ObjectStore>> {
             let mut current_store = self.inner.store.lock().await;
 
-            self.rebuilt
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {
-                *current_store = self.inner.builder.clone().build_impl().await.map_err(|e| {
-                    e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
-                })?;
+                *current_store =
+                    self.inner
+                        .builder
+                        .clone()
+                        .build_impl(true)
+                        .await
+                        .map_err(|e| {
+                            e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
+                        })?;
             }
+
+            self.rebuilt.store(true);
 
             Ok((*current_store).clone())
         }
@@ -159,6 +154,10 @@ impl PolarsObjectStore {
     + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
     + use<'a, T> {
         futures::stream::iter(ranges.map(move |range| async move {
+            if range.is_empty() {
+                return Ok(Bytes::new());
+            }
+
             let out = store
                 .get_range(path, range.start as u64..range.end as u64)
                 .await?;
@@ -169,6 +168,10 @@ impl PolarsObjectStore {
     }
 
     pub async fn get_range(&self, path: &Path, range: Range<usize>) -> PolarsResult<Bytes> {
+        if range.is_empty() {
+            return Ok(Bytes::new());
+        }
+
         self.try_exec_rebuild_on_err(move |store| {
             let range = range.clone();
             let st = store.clone();
@@ -524,7 +527,7 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
         .flat_map(|x| {
             // Split large individual ranges within the list of ranges.
             let (range, end) = x;
-            let split = split_range(range.clone());
+            let split = split_range(range);
             let len = split.len();
 
             split

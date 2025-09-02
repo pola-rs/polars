@@ -82,6 +82,9 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
             _ if right.dtype().is_array() => left / right,
             List(_) => left / right,
             _ if right.dtype().is_list() => left / right,
+            _ if left.dtype().is_string() || right.dtype().is_string() => {
+                polars_bail!(InvalidOperation: "cannot divide using strings")
+            },
             _ => {
                 if right.dtype().is_temporal() {
                     return left / right;
@@ -244,18 +247,20 @@ impl PhysicalExpr for BinaryExpr {
         let ac_r = result_b?;
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
-            (AggState::Literal(s), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::Literal(s)) => match s.len() {
+            (AggState::LiteralScalar(s), AggState::NotAggregated(_))
+            | (AggState::NotAggregated(_), AggState::LiteralScalar(s)) => match s.len() {
                 1 => self.apply_elementwise(ac_l, ac_r, false),
                 _ => self.apply_group_aware(ac_l, ac_r),
             },
-            (AggState::Literal(_), AggState::Literal(_)) => self.apply_all_literal(ac_l, ac_r),
+            (AggState::LiteralScalar(_), AggState::LiteralScalar(_)) => {
+                self.apply_all_literal(ac_l, ac_r)
+            },
             (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
                 self.apply_elementwise(ac_l, ac_r, false)
             },
             (
-                AggState::AggregatedScalar(_) | AggState::Literal(_),
-                AggState::AggregatedScalar(_) | AggState::Literal(_),
+                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_),
+                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_),
             ) => self.apply_elementwise(ac_l, ac_r, true),
             (AggState::AggregatedScalar(_), AggState::NotAggregated(_))
             | (AggState::NotAggregated(_), AggState::AggregatedScalar(_)) => {
@@ -276,7 +281,7 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema, Context::Default)
+        self.expr.to_field(input_schema)
     }
 
     fn is_scalar(&self) -> bool {

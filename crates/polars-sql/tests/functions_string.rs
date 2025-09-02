@@ -96,7 +96,7 @@ fn test_array_to_string() {
     .unwrap();
 
     let mut context = SQLContext::new();
-    context.register("df", df.clone().lazy());
+    context.register("df", df.lazy());
 
     let sql = r#"
         SELECT b, ARRAY_TO_STRING("a",', ') AS a2s,

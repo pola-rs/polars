@@ -10,7 +10,7 @@ from polars.datatypes import Int64
 from polars.datatypes._parse import parse_into_datatype_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -221,9 +221,11 @@ def int_range(
             plr.eager_int_range(start, end, step, dtype_expr._pydatatype_expr)
         )
 
-    start = parse_into_expression(start)
-    end = parse_into_expression(end)
-    result = wrap_expr(plr.int_range(start, end, step, dtype_expr._pydatatype_expr))
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
+    result = wrap_expr(
+        plr.int_range(start_pyexpr, end_pyexpr, step, dtype_expr._pydatatype_expr)
+    )
 
     if eager:
         return F.select(result).to_series()
@@ -331,10 +333,14 @@ def int_ranges(
         start = 0
 
     dtype_expr = parse_into_datatype_expr(dtype)
-    start = parse_into_expression(start)
-    end = parse_into_expression(end)
-    step = parse_into_expression(step)
-    result = wrap_expr(plr.int_ranges(start, end, step, dtype_expr._pydatatype_expr))
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
+    step_pyexpr = parse_into_expression(step)
+    result = wrap_expr(
+        plr.int_ranges(
+            start_pyexpr, end_pyexpr, step_pyexpr, dtype_expr._pydatatype_expr
+        )
+    )
 
     if eager:
         return F.select(result).to_series()

@@ -16,6 +16,7 @@ pub mod chunks;
 pub mod clmul;
 mod config;
 pub mod cpuid;
+pub mod enum_unit_vec;
 pub mod error;
 pub mod floor_divmod;
 pub mod functions;
@@ -30,6 +31,7 @@ pub mod pl_str;
 pub mod plpath;
 pub mod priority;
 pub mod regex_cache;
+pub mod relaxed_cell;
 pub mod select;
 pub mod slice;
 pub mod slice_enum;
@@ -40,6 +42,7 @@ pub mod sync;
 pub mod sys;
 pub mod total_ord;
 pub mod unique_id;
+pub mod with_drop;
 
 pub use functions::*;
 pub mod file;
@@ -49,6 +52,7 @@ pub mod fixedringbuffer;
 pub mod fmt;
 pub mod itertools;
 pub mod macros;
+pub mod option;
 pub mod vec;
 #[cfg(target_family = "wasm")]
 pub mod wasm;
@@ -75,3 +79,4 @@ pub mod python_convert_registry;
 pub mod pl_serialize;
 
 pub mod kahan_sum;
+pub use either;

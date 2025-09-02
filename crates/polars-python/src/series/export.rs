@@ -15,7 +15,7 @@ impl PySeries {
     /// Convert this Series to a Python list.
     /// This operation copies data.
     pub fn to_list<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let series = &self.series;
+        let series = &self.series.read();
 
         fn to_list_recursive<'py>(py: Python<'py>, series: &Series) -> PyResult<Bound<'py, PyAny>> {
             let pylist = match series.dtype() {
@@ -147,13 +147,14 @@ impl PySeries {
 
     /// Return the underlying Arrow array.
     #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&mut self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<PyObject> {
+    fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<PyObject> {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
+        let s = self.series.read();
         interop::arrow::to_py::to_py_array(
-            self.series.to_arrow(0, compat_level.0),
-            &self.series.field().to_arrow(compat_level.0),
+            s.to_arrow(0, compat_level.0),
+            &s.field().to_arrow(compat_level.0),
             &pyarrow,
         )
     }
@@ -165,11 +166,11 @@ impl PySeries {
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        series_to_stream(&self.series, py)
+        series_to_stream(&self.series.read(), py)
     }
 
-    pub fn _export(&mut self, _py: Python<'_>, location: usize) {
-        let export = polars_ffi::version_0::export_series(&self.series);
+    pub fn _export(&self, _py: Python<'_>, location: usize) {
+        let export = polars_ffi::version_0::export_series(&self.series.read());
         unsafe {
             (location as *mut SeriesExport).write(export);
         }

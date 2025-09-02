@@ -10,12 +10,12 @@ from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from polars import Expr
+    from polars._plr import PyExpr
     from polars._typing import ColumnNameOrSelector, IntoExpr, PolarsDataType
-    from polars.polars import PyExpr
 
 
 def parse_into_expression(

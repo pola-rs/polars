@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-import polars.polars as plr
+import polars._plr as plr
 from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
 
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 @pytest.fixture(autouse=True)
 def _environ() -> Iterator[None]:
     """Fixture to restore the environment after/during tests."""
-    with pl.StringCache(), pl.Config(restore_defaults=True):
+    with pl.Config(restore_defaults=True):
         yield
 
 

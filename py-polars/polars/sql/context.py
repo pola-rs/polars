@@ -25,7 +25,7 @@ from polars.lazyframe import LazyFrame
 from polars.series import Series
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PySQLContext
+    from polars._plr import PySQLContext
 
 if TYPE_CHECKING:
     import sys

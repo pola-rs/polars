@@ -64,7 +64,7 @@ impl Policy for Last {
     }
 }
 
-#[expect(dead_code)]
+#[allow(dead_code)]
 struct Arbitrary;
 impl Policy for Arbitrary {
     fn index(_len: usize) -> usize {

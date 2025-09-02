@@ -125,7 +125,7 @@ fn test_group_by_expression_key() -> PolarsResult<()> {
     .unwrap();
 
     let mut context = SQLContext::new();
-    context.register("df", df.clone().lazy());
+    context.register("df", df.lazy());
 
     // check how we handle grouping by a key that gets used in select transform
     let df_sql = context
@@ -735,7 +735,7 @@ fn test_struct_field_selection() {
     let (df_struct, df_original) = create_struct_df();
 
     let mut context = SQLContext::new();
-    context.register("df", df_struct.clone().lazy());
+    context.register("df", df_struct.lazy());
 
     for sql in [
         r#"SELECT json_msg.* FROM df ORDER BY 1"#,

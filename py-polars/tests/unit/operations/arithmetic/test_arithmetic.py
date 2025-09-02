@@ -42,13 +42,13 @@ def test_sqrt_neg_inf() -> None:
 
 
 def test_arithmetic_with_logical_on_series_4920() -> None:
-    assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("ms")
+    assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("us")
 
 
 @pytest.mark.parametrize(
     ("left", "right", "expected_value", "expected_dtype"),
     [
-        (date(2021, 1, 1), date(2020, 1, 1), timedelta(days=366), pl.Duration("ms")),
+        (date(2021, 1, 1), date(2020, 1, 1), timedelta(days=366), pl.Duration("us")),
         (
             datetime(2021, 1, 1),
             datetime(2020, 1, 1),
@@ -874,3 +874,91 @@ def test_arithmetic_i128_nonint() -> None:
     s = pl.Series("a", [True], dtype=pl.Boolean)
     assert_series_equal(s + s128, pl.Series("a", [1], dtype=pl.Int128))
     assert_series_equal(s128 + s, pl.Series("a", [1], dtype=pl.Int128))
+
+
+def test_float_truediv_output_type() -> None:
+    lf = pl.LazyFrame(schema={"f32": pl.Float32, "f64": pl.Float64})
+    assert lf.select(x=pl.col("f32") / pl.col("f32")).collect_schema() == pl.Schema(
+        {"x": pl.Float32}
+    )
+    assert lf.select(x=pl.col("f32") / pl.col("f64")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )
+    assert lf.select(x=pl.col("f64") / pl.col("f32")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )
+    assert lf.select(x=pl.col("f64") / pl.col("f64")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Int32,
+        pl.Decimal(21, 3),
+    ],
+)
+def test_log_exp(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series("a", [1, 100, 1000], dtype=dtype),
+            "b": pl.Series("a", [0, 2, 3], dtype=dtype),
+        }
+    )
+
+    result = df.lazy().select(
+        log10=pl.col("a").log10(),
+        log=pl.col("a").log(),
+        exp=pl.col("b").exp(),
+        log1p=pl.col("a").log1p(),
+    )
+    expected = df.select(
+        log10=pl.col("b").cast(pl.Float64),
+        log=pl.Series(np.log(df["a"].cast(pl.Float64).to_numpy())),
+        exp=pl.Series(np.exp(df["b"].cast(pl.Float64).to_numpy())),
+        log1p=pl.Series(np.log1p(df["a"].cast(pl.Float64).to_numpy())),
+    )
+
+    assert_frame_equal(result.collect(), expected)
+    assert result.collect_schema() == expected.schema
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Float32,
+    ],
+)
+def test_log_broadcast(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
+    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
+
+    assert_series_equal(a.log(b), pl.Series("a", [0, 1, 1, 3, 2], dtype=dtype))
+    assert_series_equal(
+        a.log(pl.Series("a", [3], dtype=dtype)),
+        pl.Series("a", [0, 1, 2, 3, 4], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series("a", [81], dtype=dtype).log(b),
+        pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float32,
+        pl.Int32,
+        pl.Int64,
+    ],
+)
+def test_log_broadcast_upcasting(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
+    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
+    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=Float64)
+
+    assert_series_equal(a.log(b.cast(Float64)), expected)
+    assert_series_equal(a.cast(Float64).log(b), expected)

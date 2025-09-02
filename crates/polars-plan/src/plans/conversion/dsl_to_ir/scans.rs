@@ -161,7 +161,6 @@ pub(super) fn dsl_to_ir(
                 scan_type: Box::new(scan_type_ir),
                 output_schema: None,
                 unified_scan_args,
-                id: Default::default(),
             }
         };
 
@@ -347,9 +346,7 @@ pub fn csv_file_info(
                         .as_paths()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str()))
-                        .collect::<Vec<_>>()
-                        .as_slice(),
+                        .map(|path| Arc::from(path.to_str())),
                     cloud_options,
                 )?)
             })
@@ -463,9 +460,7 @@ pub fn ndjson_file_info(
                         .as_paths()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str()))
-                        .collect::<Vec<_>>()
-                        .as_slice(),
+                        .map(|path| Arc::from(path.to_str())),
                     cloud_options,
                 )?)
             })
@@ -477,7 +472,7 @@ pub fn ndjson_file_info(
     let owned = &mut vec![];
 
     let mut schema = if let Some(schema) = ndjson_options.schema.clone() {
-        schema.clone()
+        schema
     } else {
         let memslice = first.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
         let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);

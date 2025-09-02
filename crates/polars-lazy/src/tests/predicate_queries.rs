@@ -18,7 +18,7 @@ fn test_multiple_roots() -> PolarsResult<()> {
     assert!(predicate_at_scan(lf));
     // and that we don't have any filter node
     assert!(
-        !(&lp_arena)
+        !lp_arena
             .iter(root)
             .any(|(_, lp)| matches!(lp, IR::Filter { .. }))
     );
@@ -74,8 +74,8 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
     let q = df
         .lazy()
         .with_column(col("A").map(
-            |s| Ok(Some(s.is_null().into_column())),
-            GetOutput::from_type(DataType::Boolean),
+            |s| Ok(s.is_null().into_column()),
+            |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),
         ))
         .filter(col("B").gt(lit(10i32)));
 

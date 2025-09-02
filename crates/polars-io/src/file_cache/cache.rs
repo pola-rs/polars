@@ -89,10 +89,10 @@ impl FileCache {
 
     /// If `uri` is a local path, it must be an absolute path. This is not exposed
     /// for now - initialize entries using `init_entries_from_uri_list` instead.
-    pub(super) fn init_entry<F: Fn() -> PolarsResult<Arc<dyn FileFetcher>>>(
+    pub(super) fn init_entry(
         &self,
         uri: Arc<str>,
-        get_file_fetcher: F,
+        get_file_fetcher: &dyn Fn() -> PolarsResult<Arc<dyn FileFetcher>>,
         ttl: u64,
     ) -> PolarsResult<Arc<FileCacheEntry>> {
         let verbose = config::verbose();
@@ -148,9 +148,7 @@ impl FileCache {
 
             if verbose {
                 eprintln!(
-                    "[file_cache] init_entry: creating new entry for uri = {}, hash = {}",
-                    uri.clone(),
-                    uri_hash.clone()
+                    "[file_cache] init_entry: creating new entry for uri = {uri}, hash = {uri_hash}"
                 );
             }
 
@@ -162,7 +160,7 @@ impl FileCache {
                 ttl,
             ));
             entries.insert(uri, entry.clone());
-            Ok(entry.clone())
+            Ok(entry)
         }
     }
 

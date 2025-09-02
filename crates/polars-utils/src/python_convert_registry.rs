@@ -4,17 +4,24 @@ use std::sync::{Arc, LazyLock, RwLock};
 
 use pyo3::{Py, PyAny, PyResult};
 
-pub type PythonToPartitionTarget = Arc<dyn Fn(Py<PyAny>) -> PyResult<Box<dyn Any>> + Send + Sync>;
-pub type DataFrameToPython = Arc<dyn Fn(Box<dyn Any>) -> PyResult<Py<PyAny>> + Send + Sync>;
+pub type FromPython = Arc<dyn Fn(Py<PyAny>) -> PyResult<Box<dyn Any>> + Send + Sync>;
+pub type ToPython = Arc<dyn Fn(Box<dyn Any>) -> PyResult<Py<PyAny>> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct FromPythonConvertRegistry {
-    pub partition_target_cb_result: PythonToPartitionTarget,
+    pub partition_target_cb_result: FromPython,
+    pub series: FromPython,
+    pub df: FromPython,
+    pub dsl_plan: FromPython,
+    pub schema: FromPython,
 }
 
 #[derive(Clone)]
 pub struct ToPythonConvertRegistry {
-    pub df: DataFrameToPython,
+    pub df: ToPython,
+    pub series: ToPython,
+    pub dsl_plan: ToPython,
+    pub schema: ToPython,
 }
 
 #[derive(Clone)]

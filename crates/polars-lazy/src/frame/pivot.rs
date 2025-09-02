@@ -15,10 +15,16 @@ use polars_ops::pivot::PivotAgg;
 use crate::physical_plan::exotic::{contains_column_refs, prepare_expression_for_context};
 use crate::prelude::*;
 
-struct PivotExpr(Expr);
+pub struct PivotExpr(Expr);
+
+impl PivotExpr {
+    pub fn from_expr(expr: Expr) -> Self {
+        PivotExpr(expr)
+    }
+}
 
 impl PhysicalAggExpr for PivotExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &GroupPositions) -> PolarsResult<Series> {
+    fn evaluate_on_groups(&self, df: &DataFrame, groups: &GroupPositions) -> PolarsResult<Series> {
         let state = ExecutionState::new();
         let dtype = df.get_columns()[0].dtype();
         let phys_expr = prepare_expression_for_context(
@@ -61,7 +67,7 @@ where
         polars_bail!(InvalidOperation: "explicit column references are not allowed in aggregate_function");
     }
 
-    let agg_expr = agg_expr.map(|ae| PivotAgg::Expr(Arc::new(PivotExpr(ae))));
+    let agg_expr = agg_expr.map(|ae| PivotAgg(Arc::new(PivotExpr(ae))));
     polars_ops::pivot::pivot(df, on, index, values, sort_columns, agg_expr, separator)
 }
 
@@ -89,6 +95,6 @@ where
         polars_bail!(InvalidOperation: "explicit column references are not allowed in aggregate_function");
     }
 
-    let agg_expr = agg_expr.map(|ae| PivotAgg::Expr(Arc::new(PivotExpr(ae))));
+    let agg_expr = agg_expr.map(|ae| PivotAgg(Arc::new(PivotExpr(ae))));
     polars_ops::pivot::pivot_stable(df, on, index, values, sort_columns, agg_expr, separator)
 }

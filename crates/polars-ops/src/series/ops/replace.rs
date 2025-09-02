@@ -151,7 +151,7 @@ pub fn replace_strict(
     let old = old.strict_cast(s.dtype())?;
     let new = match return_dtype {
         Some(dtype) => new.strict_cast(&dtype)?,
-        None => new.clone(),
+        None => new,
     };
 
     if new.len() == 1 {

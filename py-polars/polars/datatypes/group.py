@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any
 
 from polars.datatypes.classes import (
     Array,
-    Categorical,
     DataType,
     DataTypeClass,
     Date,
@@ -101,13 +100,6 @@ INTEGER_DTYPES: frozenset[PolarsIntegerType] = (
 FLOAT_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([Float32, Float64])
 NUMERIC_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     FLOAT_DTYPES | INTEGER_DTYPES | frozenset([Decimal])
-)
-
-CATEGORICAL_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
-    [
-        Categorical,
-        Categorical("lexical"),
-    ]
 )
 
 DATETIME_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(

@@ -5,7 +5,12 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SchemaError,
+    ShapeError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -164,17 +169,11 @@ def test_int_range_input_shape_empty() -> None:
     empty = pl.Series(dtype=pl.Time)
     single = pl.Series([5])
 
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(empty, single, eager=True)
-    with pytest.raises(
-        ComputeError, match="`end` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(single, empty, eager=True)
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 0 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(empty, empty, eager=True)
 
 
@@ -182,17 +181,11 @@ def test_int_range_input_shape_multiple_values() -> None:
     single = pl.Series([5])
     multiple = pl.Series([10, 15])
 
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(multiple, single, eager=True)
-    with pytest.raises(
-        ComputeError, match="`end` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(single, multiple, eager=True)
-    with pytest.raises(
-        ComputeError, match="`start` must contain exactly one value, got 2 values"
-    ):
+    with pytest.raises(ShapeError):
         pl.int_range(multiple, multiple, eager=True)
 
 
@@ -217,7 +210,7 @@ def test_int_range_invalid_conversion() -> None:
 
 def test_int_range_non_integer_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_range`: 'f64'"
+        SchemaError, match="non-integer `dtype` passed to `int_range`: 'f64'"
     ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]
 
@@ -267,7 +260,7 @@ def test_int_ranges_broadcasting() -> None:
 # https://github.com/pola-rs/polars/issues/15307
 def test_int_range_non_int_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_range`: 'str'"
+        SchemaError, match="non-integer `dtype` passed to `int_range`: 'str'"
     ):
         pl.int_range(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
 
@@ -275,7 +268,7 @@ def test_int_range_non_int_dtype() -> None:
 # https://github.com/pola-rs/polars/issues/15307
 def test_int_ranges_non_int_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_ranges`: 'str'"
+        SchemaError, match="non-integer `dtype` passed to `int_ranges`: 'str'"
     ):
         pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
 
@@ -293,3 +286,42 @@ def test_int_ranges_non_numeric_input_should_error() -> None:
         _ = df.select(pl.int_ranges("start", "end"))
 
     assert "conversion from `str` to `i64` failed" in str(excinfo.value)
+
+
+def test_int_range_len_count() -> None:
+    values = [1, 2, None, 4, 5, 6]
+
+    lf = pl.Series("a", values).to_frame().lazy()
+
+    def irange(e: pl.Expr) -> pl.LazyFrame:
+        return lf.select(r=pl.int_range(0, e, dtype=pl.get_index_type()))
+
+    q = irange(pl.len())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3, 4, 5], pl.get_index_type()),
+    )
+
+    q = irange(pl.col.a.len())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3, 4, 5], pl.get_index_type()),
+    )
+
+    q = irange(pl.col.a.filter(pl.col.a.ne_missing(4)).len())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3, 4], pl.get_index_type()),
+    )
+
+    q = irange(pl.col.a.count())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3, 4], pl.get_index_type()),
+    )
+
+    q = irange(pl.col.a.filter(pl.col.a.ne_missing(4)).count())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3], pl.get_index_type()),
+    )

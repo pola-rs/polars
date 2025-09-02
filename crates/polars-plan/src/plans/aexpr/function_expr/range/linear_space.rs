@@ -1,4 +1,4 @@
-use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_core::prelude::*;
 use polars_ops::series::{ClosedInterval, new_linear_space_f32, new_linear_space_f64};
 
@@ -42,9 +42,9 @@ pub(super) fn linear_space(s: &[Column], closed: ClosedInterval) -> PolarsResult
 
             // A linear space of a Date produces a sequence of Datetimes, so we must upcast.
             if dt == DataType::Date {
-                start *= MILLISECONDS_IN_DAY;
-                end *= MILLISECONDS_IN_DAY;
-                dt = DataType::Datetime(TimeUnit::Milliseconds, None);
+                start *= MICROSECONDS_IN_DAY;
+                end *= MICROSECONDS_IN_DAY;
+                dt = DataType::Datetime(TimeUnit::Microseconds, None);
             }
             new_linear_space_f64(start as f64, end as f64, num_samples, closed, name.clone())
                 .map(|s| s.cast(&dt).unwrap().into_column())
@@ -125,9 +125,9 @@ pub(super) fn linear_spaces(
 
             // A linear space of a Date produces a sequence of Datetimes, so we must upcast.
             if dt == &DataType::Date {
-                start = start.cast(&DataType::Int64)? * MILLISECONDS_IN_DAY;
-                end = end.cast(&DataType::Int64)? * MILLISECONDS_IN_DAY;
-                dt = &DataType::Datetime(TimeUnit::Milliseconds, None);
+                start = start.cast(&DataType::Int64)? * MICROSECONDS_IN_DAY;
+                end = end.cast(&DataType::Int64)? * MICROSECONDS_IN_DAY;
+                dt = &DataType::Datetime(TimeUnit::Microseconds, None);
             }
 
             let start = start.cast(&DataType::Float64)?;

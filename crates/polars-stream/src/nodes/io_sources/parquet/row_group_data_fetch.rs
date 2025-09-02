@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::PlHashMap;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::Bitmap;
@@ -13,6 +12,7 @@ use polars_parquet::read::RowGroupMetadata;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 use crate::utils::task_handles_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
@@ -25,7 +25,8 @@ pub(super) struct RowGroupData {
 }
 
 pub(super) struct RowGroupDataFetcher {
-    pub(super) projection: Option<ArrowSchemaRef>,
+    pub(super) projection: Arc<[ArrowFieldProjection]>,
+    pub(super) is_full_projection: bool,
     #[allow(unused)] // TODO: Fix!
     pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) slice_range: Option<Range<usize>>,
@@ -79,6 +80,7 @@ impl RowGroupDataFetcher {
             let metadata = self.metadata.clone();
             let current_byte_source = self.byte_source.clone();
             let projection = self.projection.clone();
+            let is_full_projection = self.is_full_projection;
             let memory_prefetch_func = self.memory_prefetch_func;
             let io_runtime = polars_io::pl_async::get_runtime();
 
@@ -92,10 +94,10 @@ impl RowGroupDataFetcher {
                         {
                             let slice = mem_slice.0.as_ref();
 
-                            if let Some(columns) = projection.as_ref() {
+                            if !is_full_projection {
                                 for range in get_row_group_byte_ranges_for_projection(
                                     row_group_metadata,
-                                    &mut columns.iter_names(),
+                                    &mut projection.iter().map(|x| &x.arrow_field().name),
                                 ) {
                                     memory_prefetch_func(unsafe { slice.get_unchecked(range) })
                                 }
@@ -115,10 +117,10 @@ impl RowGroupDataFetcher {
                             offset: 0,
                             mem_slice,
                         }
-                    } else if let Some(columns) = projection.as_ref() {
+                    } else if !is_full_projection {
                         let mut ranges = get_row_group_byte_ranges_for_projection(
                             row_group_metadata,
-                            &mut columns.iter_names(),
+                            &mut projection.iter().map(|x| &x.arrow_field().name),
                         )
                         .collect::<Vec<_>>();
 

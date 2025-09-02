@@ -229,12 +229,12 @@ pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
     to_precision: usize,
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
-    let multiplier = 10_i128.pow(to_scale as u32);
+    assert!(to_precision <= 38);
+    assert!(to_scale <= 38);
 
-    let min_for_precision = 9_i128
-        .saturating_pow(1 + to_precision as u32)
-        .saturating_neg();
-    let max_for_precision = 9_i128.saturating_pow(1 + to_precision as u32);
+    let multiplier = 10_i128.pow(to_scale as u32);
+    let max_for_precision = 10_i128.pow(to_precision as u32) - 1;
+    let min_for_precision = -max_for_precision;
 
     let values = from.iter().map(|x| {
         x.and_then(|x| {
@@ -274,13 +274,13 @@ where
     T: NativeType + Float + ToPrimitive,
     f64: AsPrimitive<T>,
 {
+    assert!(to_precision <= 38);
+    assert!(to_scale <= 38);
+
     // 1.2 => 12
     let multiplier: T = (10_f64).powi(to_scale as i32).as_();
-
-    let min_for_precision = 9_i128
-        .saturating_pow(1 + to_precision as u32)
-        .saturating_neg();
-    let max_for_precision = 9_i128.saturating_pow(1 + to_precision as u32);
+    let max_for_precision = 10_i128.pow(to_precision as u32) - 1;
+    let min_for_precision = -max_for_precision;
 
     let values = from.iter().map(|x| {
         x.and_then(|x| {
@@ -516,7 +516,7 @@ pub fn timestamp_to_date64(from: &PrimitiveArray<i64>, from_unit: TimeUnit) -> P
     // math rounding down to zero
 
     match to_size.cmp(&from_size) {
-        std::cmp::Ordering::Less => unary(from, |x| (x / (from_size / to_size)), to_type),
+        std::cmp::Ordering::Less => unary(from, |x| x / (from_size / to_size), to_type),
         std::cmp::Ordering::Equal => primitive_to_same_primitive(from, &to_type),
         std::cmp::Ordering::Greater => fallible_unary(
             from,
@@ -578,7 +578,7 @@ pub fn timestamp_to_timestamp(
     let to_type = ArrowDataType::Timestamp(to_unit, tz.clone());
     // we either divide or multiply, depending on size of each unit
     if from_size >= to_size {
-        unary(from, |x| (x / (from_size / to_size)), to_type)
+        unary(from, |x| x / (from_size / to_size), to_type)
     } else {
         fallible_unary(
             from,

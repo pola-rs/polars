@@ -123,7 +123,7 @@ def scan_iceberg(
     >>> snapshot_id = 7051579356916758811
     >>> pl.scan_iceberg(table_path, snapshot_id=snapshot_id).collect()  # doctest: +SKIP
     """
-    from polars.polars import PyLazyFrame
+    from polars._plr import PyLazyFrame
 
     if reader_override is not None:
         msg = "the `reader_override` parameter of `scan_iceberg()` is considered unstable."

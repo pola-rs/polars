@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::ops::Deref;
 
 use polars_core::frame::row::Row;
@@ -60,9 +59,9 @@ pub struct SQLContext {
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
-    cte_map: RefCell<PlHashMap<String, LazyFrame>>,
-    table_aliases: RefCell<PlHashMap<String, String>>,
-    joined_aliases: RefCell<PlHashMap<String, PlHashMap<String, String>>>,
+    cte_map: PlHashMap<String, LazyFrame>,
+    table_aliases: PlHashMap<String, String>,
+    joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
 }
 
 impl Default for SQLContext {
@@ -163,9 +162,9 @@ impl SQLContext {
         res.set_cached_arena(lp_arena, expr_arena);
 
         // Every execution should clear the statement-level maps.
-        self.cte_map.borrow_mut().clear();
-        self.table_aliases.borrow_mut().clear();
-        self.joined_aliases.borrow_mut().clear();
+        self.cte_map.clear();
+        self.table_aliases.clear();
+        self.joined_aliases.clear();
 
         Ok(res)
     }
@@ -225,10 +224,9 @@ impl SQLContext {
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
         let table = self.table_map.get(name).cloned();
         table
-            .or_else(|| self.cte_map.borrow().get(name).cloned())
+            .or_else(|| self.cte_map.get(name).cloned())
             .or_else(|| {
                 self.table_aliases
-                    .borrow()
                     .get(name)
                     .and_then(|alias| self.table_map.get(alias).cloned())
             })
@@ -296,16 +294,12 @@ impl SQLContext {
     }
 
     pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
-        if self.joined_aliases.borrow().contains_key(tbl_name) {
-            self.joined_aliases
-                .borrow()
-                .get(tbl_name)
-                .and_then(|aliases| aliases.get(column_name))
-                .cloned()
-                .unwrap_or_else(|| column_name.to_string())
-        } else {
-            column_name.to_string()
+        if let Some(aliases) = self.joined_aliases.get(tbl_name) {
+            if let Some(name) = aliases.get(column_name) {
+                return name.to_string();
+            }
         }
+        column_name.to_string()
     }
 
     fn process_query(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
@@ -589,7 +583,7 @@ impl SQLContext {
     }
 
     fn register_cte(&mut self, name: &str, lf: LazyFrame) {
-        self.cte_map.borrow_mut().insert(name.to_owned(), lf);
+        self.cte_map.insert(name.to_owned(), lf);
     }
 
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
@@ -682,7 +676,7 @@ impl SQLContext {
                 // track join-aliased columns so we can resolve them later
                 let joined_schema = self.get_frame_schema(&mut lf)?;
 
-                self.joined_aliases.borrow_mut().insert(
+                self.joined_aliases.insert(
                     r_name.clone(),
                     right_schema
                         .iter_names()
@@ -803,10 +797,7 @@ impl SQLContext {
             // are used to ensure a correct final projection. If there's no 'order by',
             // clause then we can project the final column *expressions* directly.
             for p in projections.iter() {
-                let name = p
-                    .to_field(schema.deref(), Context::Default)?
-                    .name
-                    .to_string();
+                let name = p.to_field(schema.deref())?.name.to_string();
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
@@ -913,7 +904,7 @@ impl SQLContext {
                     .map(|e| {
                         let expr = parse_sql_expr(e, self, schema.as_deref())?;
                         if let Expr::Column(name) = expr {
-                            Ok(name.clone())
+                            Ok(name)
                         } else {
                             Err(polars_err!(SQLSyntax:"DISTINCT ON only supports column names"))
                         }
@@ -1117,7 +1108,6 @@ impl SQLContext {
                     match alias {
                         Some(alias) => {
                             self.table_aliases
-                                .borrow_mut()
                                 .insert(alias.name.value.clone(), tbl_name.to_string());
                             Ok((alias.to_string(), lf))
                         },
@@ -1183,9 +1173,9 @@ impl SQLContext {
                         .zip(column_names)
                         .map(|(s, name)| {
                             if let Some(name) = name {
-                                s.clone().with_name(name)
+                                s.with_name(name)
                             } else {
-                                s.clone()
+                                s
                             }
                         })
                         .map(Column::from)
@@ -1200,7 +1190,7 @@ impl SQLContext {
                     }
                     let table_name = alias.name.value.clone();
                     self.table_map.insert(table_name.clone(), lf.clone());
-                    Ok((table_name.clone(), lf))
+                    Ok((table_name, lf))
                 } else {
                     polars_bail!(SQLSyntax: "UNNEST table must have an alias");
                 }
@@ -1302,8 +1292,7 @@ impl SQLContext {
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
         let schema_before = self.get_frame_schema(&mut lf)?;
-        let group_by_keys_schema =
-            expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
+        let group_by_keys_schema = expressions_to_schema(group_by_keys, &schema_before)?;
 
         // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
@@ -1313,11 +1302,22 @@ impl SQLContext {
 
         for mut e in projections {
             // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_agg_or_window = has_expr(e, |e| {
-                matches!(e, Expr::Agg(_) | Expr::Len | Expr::Window { .. })
+            let is_non_group_key_expr = has_expr(e, |e| {
+                match e {
+                    Expr::Agg(_) | Expr::Len | Expr::Window { .. } => true,
+                    Expr::Function { function: func, .. }
+                        if !matches!(func, FunctionExpr::StructExpr(_)) =>
+                    {
+                        // If it's a function call containing a column NOT in the group by keys,
+                        // we treat it as an aggregation.
+                        has_expr(e, |e| match e {
+                            Expr::Column(name) => !group_by_keys_schema.contains(name),
+                            _ => false,
+                        })
+                    },
+                    _ => false,
+                }
             });
-
-            let mut is_function_under_alias = false;
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             if let Expr::Alias(expr, alias) = e {
@@ -1331,14 +1331,12 @@ impl SQLContext {
                 {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
-                } else if let Expr::Function { .. } = expr.deref() {
-                    is_function_under_alias = true;
-                } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
+                } else if !is_non_group_key_expr && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
             }
-            let field = e.to_field(&schema_before, Context::Default)?;
-            if group_by_keys_schema.get(&field.name).is_none() && is_agg_or_window {
+            let field = e.to_field(&schema_before)?;
+            if group_by_keys_schema.get(&field.name).is_none() && is_non_group_key_expr {
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode(expr)) = &e {
                     e = (**expr).clone();
@@ -1358,22 +1356,10 @@ impl SQLContext {
                 if !group_by_keys_schema.contains(&field.name) {
                     polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
                 }
-            } else if is_function_under_alias || matches!(e, Expr::Function { .. }) {
-                aggregation_projection.push(e.clone());
-            } else if let Expr::Literal { .. }
-            | Expr::Cast { .. }
-            | Expr::Ternary { .. }
-            | Expr::Field { .. }
-            | Expr::Alias { .. } = e
-            {
-                // do nothing
-            } else {
-                polars_bail!(SQLSyntax: "Unsupported operation in the GROUP BY clause: {}", e);
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
-        let projection_schema =
-            expressions_to_schema(projections, &schema_before, Context::Default)?;
+        let projection_schema = expressions_to_schema(projections, &schema_before)?;
 
         // A final projection to get the proper order and any deferred transforms/aliases.
         let final_projection = projection_schema

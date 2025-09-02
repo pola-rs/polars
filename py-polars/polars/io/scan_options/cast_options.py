@@ -98,8 +98,8 @@ class ScanCastOptions:
         """
         Default options suitable for Iceberg / Deltalake.
 
-        This in general has all casting options enabled. Note: do not return this
-        config object to the user - it's a cached global object.
+        This in general has all casting options enabled. Note: do not modify the
+        returned config object, it is a cached global object.
         """
         global _DEFAULT_CAST_OPTIONS_ICEBERG
 

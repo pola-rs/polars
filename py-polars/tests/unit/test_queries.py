@@ -113,21 +113,31 @@ def test_maintain_order_after_sampling() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_sorted_group_by_optimization() -> None:
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_group_by_optimization(
+    descending: bool, nulls_last: bool, maintain_order: bool
+) -> None:
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
 
     # the sorted optimization should not randomize the
     # groups, so this is tests that we hit the sorted optimization
-    for descending in [True, False]:
-        sorted_implicit = (
-            df.with_columns(pl.col("a").sort(descending=descending))
-            .group_by("a")
-            .agg(pl.len())
-        )
-        sorted_explicit = (
-            df.group_by("a").agg(pl.len()).sort("a", descending=descending)
-        )
-        assert_frame_equal(sorted_explicit, sorted_implicit)
+    sorted_implicit = (
+        df.with_columns(pl.col("a").sort(descending=descending, nulls_last=nulls_last))
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len())
+    )
+    sorted_explicit = (
+        df.group_by("a", maintain_order=maintain_order)
+        .agg(pl.len())
+        .sort("a", descending=descending, nulls_last=nulls_last)
+    )
+    assert_frame_equal(
+        sorted_explicit,
+        sorted_implicit,
+        check_row_order=maintain_order,
+    )
 
 
 def test_median_on_shifted_col_3522() -> None:
@@ -225,7 +235,8 @@ def test_opaque_filter_on_lists_3784() -> None:
             pl.col("str_list").map_elements(
                 lambda variant: pre in variant
                 and succ in variant
-                and variant.to_list().index(pre) < variant.to_list().index(succ)
+                and variant.to_list().index(pre) < variant.to_list().index(succ),
+                return_dtype=pl.Boolean,
             )
         )
     ).collect().to_dict(as_series=False) == {
@@ -379,6 +390,34 @@ def test_temporal_downcasts() -> None:
     ]
 
 
+def test_slice_pushdown_queries() -> None:
+    lf = pl.LazyFrame({"a": range(100)}).cache()
+
+    q1 = lf.slice(50).select(pl.col.a + 200)
+    q2 = lf
+
+    q = pl.concat([q1, q2])
+
+    expected = pl.Series("a", list(range(250, 300)) + list(range(100))).to_frame()
+
+    assert_frame_equal(q.collect(), expected)
+
+    nq = q.unique()
+    assert_frame_equal(nq.collect(), expected, check_row_order=False)
+
+    nq = q.group_by("a").agg([])
+    assert_frame_equal(nq.collect(), expected, check_row_order=False)
+
+    nq = q.group_by("a", maintain_order=True).agg([])
+    assert_frame_equal(nq.collect(), expected)
+
+    nq = q.group_by("a").agg(b=pl.col.a.first()).select(a=pl.col.b)
+    assert_frame_equal(nq.collect(), expected, check_row_order=False)
+
+    nq = q.group_by("a", maintain_order=True).agg(b=pl.col.a.first()).select(a=pl.col.b)
+    assert_frame_equal(nq.collect(), expected)
+
+
 def test_temporal_time_casts() -> None:
     s = pl.Series([-1, 0, 1]).cast(pl.Datetime("us"))
 
@@ -388,3 +427,33 @@ def test_temporal_time_casts() -> None:
             time(0, 0, 0, 0),
             time(0, 0, 0, 1),
         ]
+
+
+def assert_unopt_frame_equal(
+    lf: pl.LazyFrame, *, check_row_order: bool = False
+) -> None:
+    assert_frame_equal(
+        lf.collect(),
+        lf.collect(optimizations=pl.QueryOptFlags.none()),
+        check_row_order=check_row_order,
+    )
+
+
+def test_order_queries() -> None:
+    lf = pl.LazyFrame({"a": range(100), "b": range(100)})
+
+    q = lf.group_by(["a", "b"], maintain_order=True).agg([]).cache()
+    q1 = q.with_columns(pl.col.a.cum_sum())
+    q2 = q.with_columns(pl.col.b + 1).unique("a")
+
+    assert_unopt_frame_equal(pl.concat([q1, q]), check_row_order=True)
+    assert_unopt_frame_equal(pl.concat([q1, q]).unique(), check_row_order=False)
+    assert_unopt_frame_equal(pl.concat([q1, q2]).unique(), check_row_order=False)
+
+    q = lf.cache()
+    q1 = q.with_columns(pl.col.a.cum_sum())
+    q2 = q.with_columns(pl.col.b + 1).unique("a")
+
+    assert_unopt_frame_equal(pl.concat([q1, q]), check_row_order=True)
+    assert_unopt_frame_equal(pl.concat([q1, q]).unique(), check_row_order=False)
+    assert_unopt_frame_equal(pl.concat([q1, q2]).unique(), check_row_order=False)

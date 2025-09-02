@@ -364,6 +364,9 @@ def test_cum_sum_horizontal() -> None:
     expected = pl.DataFrame({"cum_sum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]})
     assert_frame_equal(result, expected)
 
+    q = df.lazy().select(pl.cum_sum_horizontal("a", "c"))
+    assert q.collect_schema() == q.collect().schema
+
 
 def test_sum_dtype_12028() -> None:
     result = pl.select(

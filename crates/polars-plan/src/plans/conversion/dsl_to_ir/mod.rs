@@ -12,14 +12,15 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 
 mod concat;
+mod datatype_fn_to_ir;
 mod expr_expansion;
 mod expr_to_ir;
 mod functions;
 mod join;
 mod scans;
 mod utils;
-pub use expr_expansion::{is_regex_projection, prepare_projection};
-pub use expr_to_ir::to_expr_ir;
+pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
+pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
 use utils::DslConversionContext;
 
@@ -52,6 +53,7 @@ pub fn to_alp(
         cache_file_info: Default::default(),
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         verbose: verbose(),
+        seen_caches: Default::default(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
@@ -88,7 +90,7 @@ pub fn to_alp(
 fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node, false)
         .map_err(|e| e.context(format!("'{name}' failed").into()))?;
 
     Ok(lp_node)
@@ -109,19 +111,30 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             cached_ir,
         } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, ctxt)?,
         #[cfg(feature = "python")]
-        DslPlan::PythonScan { mut options } => {
-            let scan_fn = options.scan_fn.take();
+        DslPlan::PythonScan { options } => {
+            use crate::dsl::python_dsl::PythonOptionsDsl;
+
             let schema = options.get_schema()?;
+
+            let PythonOptionsDsl {
+                scan_fn,
+                schema_fn: _,
+                python_source,
+                validate_schema,
+                is_pure,
+            } = options;
+
             IR::PythonScan {
                 options: PythonOptions {
                     scan_fn,
                     schema,
-                    python_source: options.python_source,
-                    validate_schema: options.validate_schema,
+                    python_source,
+                    validate_schema,
                     output_schema: Default::default(),
                     with_columns: Default::default(),
                     n_rows: Default::default(),
                     predicate: Default::default(),
+                    is_pure,
                 },
             }
         },
@@ -137,8 +150,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             if args.to_supertypes {
-                concat::convert_st_union(&mut inputs, ctxt.lp_arena, ctxt.expr_arena)
-                    .map_err(|e| e.context(failed_here!(vertical concat)))?;
+                concat::convert_st_union(
+                    &mut inputs,
+                    ctxt.lp_arena,
+                    ctxt.expr_arena,
+                    ctxt.opt_flags,
+                )
+                .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }
 
             let first = *inputs.first().ok_or_else(
@@ -174,11 +192,61 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Filter { input, predicate } => {
             let mut input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(filter)))?;
-            let schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
-            let predicate = expand_filter(predicate, input, ctxt.lp_arena, ctxt.opt_flags)
-                .map_err(|e| e.context(failed_here!(filter)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
-            let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena, &schema)?;
+            let mut out = Vec::with_capacity(1);
+            expr_expansion::expand_expression(
+                &predicate,
+                &PlHashSet::default(),
+                input_schema.as_ref().as_ref(),
+                &mut out,
+                ctxt.opt_flags,
+            )?;
+
+            let predicate = match out.len() {
+                1 => {
+                    // all good
+                    out.pop().unwrap()
+                },
+                0 => {
+                    let msg = "The predicate expanded to zero expressions. \
+                            This may for example be caused by a regex not matching column names or \
+                            a column dtype match not hitting any dtypes in the DataFrame";
+                    polars_bail!(ComputeError: msg);
+                },
+                _ => {
+                    let mut expanded = String::new();
+                    for e in out.iter().take(5) {
+                        expanded.push_str(&format!("\t{e:?},\n"))
+                    }
+                    // pop latest comma
+                    expanded.pop();
+                    if out.len() > 5 {
+                        expanded.push_str("\t...\n")
+                    }
+
+                    let msg = if cfg!(feature = "python") {
+                        format!(
+                            "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                                This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
+                        )
+                    } else {
+                        format!(
+                            "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                                This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
+                        )
+                    };
+                    polars_bail!(ComputeError: msg)
+                },
+            };
+            let predicate_ae = to_expr_ir(
+                predicate,
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &input_schema,
+                    ctxt.opt_flags,
+                ),
+            )?;
 
             if ctxt.opt_flags.predicate_pushdown() {
                 ctxt.nodes_scratch.clear();
@@ -247,7 +315,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 return Ok(input);
             }
 
-            let eirs = to_expr_irs(exprs, ctxt.expr_arena, &input_schema)?;
+            let eirs = to_expr_irs(
+                exprs,
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &input_schema,
+                    ctxt.opt_flags,
+                ),
+            )?;
             ctxt.conversion_optimizer
                 .fill_scratch(&eirs, ctxt.expr_arena);
 
@@ -332,9 +407,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let mut null_columns = vec![];
 
                 for (i, c) in by_column.iter().enumerate() {
-                    if let DataType::Null =
-                        c.dtype(&input_schema, Context::Default, ctxt.expr_arena)?
-                    {
+                    if let DataType::Null = c.dtype(&input_schema, ctxt.expr_arena)? {
                         null_columns.push(i);
                     }
                 }
@@ -366,15 +439,22 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             return run_conversion(lp, ctxt, "sort").map_err(|e| e.context(failed_here!(sort)));
         },
-        DslPlan::Cache { input } => {
-            let id = UniqueId::from_arc(input.clone());
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(cache)))?;
-            IR::Cache {
-                input,
-                id,
-                cache_hits: crate::constants::UNLIMITED_CACHE,
-            }
+        DslPlan::Cache { input, id } => {
+            let input = match ctxt.seen_caches.get(&id) {
+                Some(input) => *input,
+                None => {
+                    let input = to_alp_impl(owned(input), ctxt)
+                        .map_err(|e| e.context(failed_here!(cache)))?;
+                    let seen_before = ctxt.seen_caches.insert(id, input);
+                    assert!(
+                        seen_before.is_none(),
+                        "Cache could not have been created in the mean time. That would make the DAG cyclic."
+                    );
+                    input
+                },
+            };
+
+            IR::Cache { input, id }
         },
         DslPlan::GroupBy {
             input,
@@ -513,12 +593,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         let policy = CastColumnsPolicy {
                             integer_upcast: per_column.integer_cast == UpcastOrForbid::Upcast,
                             float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
-                            float_downcast: false,
-                            datetime_nanoseconds_downcast: false,
-                            datetime_microseconds_downcast: false,
-                            datetime_convert_timezone: false,
                             missing_struct_fields: per_column.missing_struct_fields,
                             extra_struct_fields: per_column.extra_struct_fields,
+
+                            ..Default::default()
                         };
 
                         let should_cast =
@@ -567,7 +645,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 polars_bail!(SchemaMismatch: "extra columns in `match_to_schema`: {formatted}");
             }
 
-            let exprs = to_expr_irs(exprs, ctxt.expr_arena, &input_schema)?;
+            let exprs = to_expr_irs(
+                exprs,
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &input_schema,
+                    ctxt.opt_flags,
+                ),
+            )?;
 
             ctxt.conversion_optimizer
                 .fill_scratch(&exprs, ctxt.expr_arena);
@@ -582,6 +667,25 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
             };
             return run_conversion(lp, ctxt, "match_to_schema");
+        },
+        DslPlan::PipeWithSchema { input, callback } => {
+            let input_owned = owned(input);
+
+            // Derive the schema from the input
+            let input = to_alp_impl(input_owned.clone(), ctxt)
+                .map_err(|e| e.context(failed_here!(pipe_with_schema)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            let input_owned = DslPlan::IR {
+                dsl: Arc::new(input_owned),
+                version: ctxt.lp_arena.version(),
+                node: Some(input),
+            };
+
+            // Adjust the input and start conversion again
+            let input_adjusted =
+                callback.call((input_owned, Arc::unwrap_or_clone(input_schema.into_owned())))?;
+            return to_alp_impl(input_adjusted, ctxt);
         },
         DslPlan::Distinct { input, options } => {
             let input =
@@ -721,12 +825,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                     };
-                    let schema = Arc::new(expressions_to_schema(
-                        &exprs,
-                        &input_schema,
-                        Context::Default,
-                    )?);
-                    let eirs = to_expr_irs(exprs, ctxt.expr_arena, &input_schema)?;
+                    let schema = Arc::new(expressions_to_schema(&exprs, &input_schema)?);
+                    let eirs = to_expr_irs(
+                        exprs,
+                        &mut ExprToIRContext::new_with_opt_eager(
+                            ctxt.expr_arena,
+                            &input_schema,
+                            ctxt.opt_flags,
+                        ),
+                    )?;
 
                     ctxt.conversion_optimizer
                         .fill_scratch(&eirs, ctxt.expr_arena);
@@ -786,7 +893,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         return Ok(input);
                     }
 
-                    let expr = to_expr_irs(expr, ctxt.expr_arena, &input_schema)?;
+                    let expr = to_expr_irs(
+                        expr,
+                        &mut ExprToIRContext::new_with_opt_eager(
+                            ctxt.expr_arena,
+                            &input_schema,
+                            ctxt.opt_flags,
+                        ),
+                    )?;
                     ctxt.conversion_optimizer
                         .fill_scratch(&expr, ctxt.expr_arena);
 
@@ -852,7 +966,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             key_exprs,
                             include_key,
                         } => {
-                            let eirs = to_expr_irs(key_exprs, ctxt.expr_arena, &input_schema)?;
+                            let eirs = to_expr_irs(
+                                key_exprs,
+                                &mut ExprToIRContext::new_with_opt_eager(
+                                    ctxt.expr_arena,
+                                    &input_schema,
+                                    ctxt.opt_flags,
+                                ),
+                            )?;
                             ctxt.conversion_optimizer
                                 .fill_scratch(&eirs, ctxt.expr_arena);
 
@@ -865,7 +986,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             key_exprs,
                             include_key,
                         } => {
-                            let eirs = to_expr_irs(key_exprs, ctxt.expr_arena, &input_schema)?;
+                            let eirs = to_expr_irs(
+                                key_exprs,
+                                &mut ExprToIRContext::new_with_opt_eager(
+                                    ctxt.expr_arena,
+                                    &input_schema,
+                                    ctxt.opt_flags,
+                                ),
+                            )?;
                             ctxt.conversion_optimizer
                                 .fill_scratch(&eirs, ctxt.expr_arena);
 
@@ -882,7 +1010,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             sort_by
                                 .into_iter()
                                 .map(|s| {
-                                    let expr = to_expr_ir(s.expr, ctxt.expr_arena, &input_schema)?;
+                                    let expr = to_expr_ir(
+                                        s.expr,
+                                        &mut ExprToIRContext::new_with_opt_eager(
+                                            ctxt.expr_arena,
+                                            &input_schema,
+                                            ctxt.opt_flags,
+                                        ),
+                                    )?;
                                     ctxt.conversion_optimizer
                                         .push_scratch(expr.node(), ctxt.expr_arena);
                                     Ok(SortColumnIR {
@@ -920,6 +1055,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input_right = to_alp_impl(owned(input_right), ctxt)
                 .map_err(|e| e.context(failed_here!(merge_sorted)))?;
 
+            let left_schema = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
+            let right_schema = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
+
+            left_schema
+                .ensure_is_exact_match(&right_schema)
+                .map_err(|err| err.context("merge_sorted".into()))?;
+
+            left_schema
+                .try_get(key.as_str())
+                .map_err(|err| err.context("merge_sorted".into()))?;
+
             IR::MergeSorted {
                 input_left,
                 input_right,
@@ -927,82 +1073,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::IR { node, dsl, version } => {
-            return if node.is_some()
-                && version == ctxt.lp_arena.version()
-                && ctxt.conversion_optimizer.used_arenas.insert(version)
-            {
-                Ok(node.unwrap())
-            } else {
-                to_alp_impl(owned(dsl), ctxt)
+            return match node {
+                Some(node)
+                    if version == ctxt.lp_arena.version()
+                        && ctxt.conversion_optimizer.used_arenas.insert(version) =>
+                {
+                    Ok(node)
+                },
+                _ => to_alp_impl(owned(dsl), ctxt),
             };
         },
     };
     Ok(ctxt.lp_arena.add(v))
-}
-
-fn expand_filter(
-    predicate: Expr,
-    input: Node,
-    lp_arena: &Arena<IR>,
-    opt_flags: &mut OptFlags,
-) -> PolarsResult<Expr> {
-    let schema = lp_arena.get(input).schema(lp_arena);
-    let predicate = if has_expr(&predicate, |e| match e {
-        Expr::Column(name) => is_regex_projection(name),
-        Expr::Selector(_) | Expr::RenameAlias { .. } => true,
-        #[cfg(feature = "dtype-struct")]
-        Expr::Field(_)
-        | Expr::Function {
-            function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
-            ..
-        } => true,
-        _ => false,
-    }) {
-        let mut rewritten =
-            rewrite_projections(vec![predicate], &PlHashSet::default(), &schema, opt_flags)?;
-        match rewritten.len() {
-            1 => {
-                // all good
-                rewritten.pop().unwrap()
-            },
-            0 => {
-                let msg = "The predicate expanded to zero expressions. \
-                        This may for example be caused by a regex not matching column names or \
-                        a column dtype match not hitting any dtypes in the DataFrame";
-                polars_bail!(ComputeError: msg);
-            },
-            _ => {
-                let mut expanded = String::new();
-                for e in rewritten.iter().take(5) {
-                    expanded.push_str(&format!("\t{e:?},\n"))
-                }
-                // pop latest comma
-                expanded.pop();
-                if rewritten.len() > 5 {
-                    expanded.push_str("\t...\n")
-                }
-
-                let msg = if cfg!(feature = "python") {
-                    format!(
-                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
-                    )
-                } else {
-                    format!(
-                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
-                    )
-                };
-                polars_bail!(ComputeError: msg)
-            },
-        }
-    } else {
-        predicate
-    };
-    expr_to_leaf_column_names_iter(&predicate)
-        .try_for_each(|c| schema.try_index_of(&c).and(Ok(())))?;
-
-    Ok(predicate)
 }
 
 fn resolve_with_columns(
@@ -1014,12 +1096,15 @@ fn resolve_with_columns(
 ) -> PolarsResult<(Vec<ExprIR>, SchemaRef)> {
     let input_schema = lp_arena.get(input).schema(lp_arena);
     let mut output_schema = (**input_schema).clone();
-    let (exprs, _) = prepare_projection(exprs, &input_schema, opt_flags)?;
+    let exprs = rewrite_projections(exprs, &PlHashSet::new(), &input_schema, opt_flags)?;
     let mut output_names = PlHashSet::with_capacity(exprs.len());
 
-    let eirs = to_expr_irs(exprs, expr_arena, &input_schema)?;
+    let eirs = to_expr_irs(
+        exprs,
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, &input_schema, opt_flags),
+    )?;
     for eir in eirs.iter() {
-        let field = eir.field(&input_schema, Context::Default, expr_arena)?;
+        let field = eir.field(&input_schema, expr_arena)?;
 
         if !output_names.insert(field.name().clone()) {
             let msg = format!(
@@ -1051,7 +1136,7 @@ fn resolve_group_by(
     let mut keys = rewrite_projections(keys, &PlHashSet::default(), input_schema, opt_flags)?;
 
     // Initialize schema from keys
-    let mut output_schema = expressions_to_schema(&keys, input_schema, Context::Default)?;
+    let mut output_schema = expressions_to_schema(&keys, input_schema)?;
     let mut key_names: PlHashSet<PlSmallStr> = output_schema.iter_names().cloned().collect();
 
     #[allow(unused_mut)]
@@ -1081,20 +1166,44 @@ fn resolve_group_by(
         }
     }
     let keys_index_len = output_schema.len();
-
-    let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
     if pop_keys {
         let _ = keys.pop();
     }
+    let keys = to_expr_irs(
+        keys,
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
+    )?;
 
     // Add aggregation column(s)
-    let aggs_schema = expressions_to_schema(&aggs, input_schema, Context::Aggregation)?;
-    output_schema.merge(aggs_schema);
-
-    let keys = to_expr_irs(keys, expr_arena, input_schema)?;
-    let aggs = to_expr_irs(aggs, expr_arena, input_schema)?;
+    let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
+    let aggs = to_expr_irs(
+        aggs,
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
+    )?;
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
+
+    let mut aggs_schema = expr_irs_to_schema(&aggs, input_schema, expr_arena);
+
+    // Make sure aggregation columns do not contain duplicates
+    if aggs_schema.len() < aggs.len() {
+        let mut names = PlHashSet::with_capacity(aggs.len());
+        for agg in aggs.iter() {
+            let name = agg.output_name();
+            polars_ensure!(names.insert(name.clone()), duplicate = name)
+        }
+    }
+
+    // Coerce aggregation column(s) into List unless not needed (auto-implode)
+    debug_assert!(aggs_schema.len() == aggs.len());
+    for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(&aggs) {
+        if !expr.is_scalar(expr_arena) {
+            *dtype = dtype.clone().implode();
+        }
+    }
+
+    // Final output_schema
+    output_schema.merge(aggs_schema);
 
     // Make sure aggregation columns do not contain keys or index columns
     if output_schema.len() < (keys_index_len + aggs.len()) {

@@ -326,13 +326,6 @@ mod inner {
                             }
 
                             if !in_field && self.eof_eol(c) {
-                                if c == self.eol_char {
-                                    // SAFETY:
-                                    // we are in bounds
-                                    return unsafe {
-                                        self.finish_eol(needs_escaping, current_idx + total_idx)
-                                    };
-                                }
                                 idx = current_idx;
                                 break;
                             }
@@ -387,14 +380,16 @@ mod inner {
                         }
                     }
                 }
-                unsafe {
-                    if *self.v.get_unchecked(total_idx) == self.eol_char {
-                        return self.finish_eol(needs_escaping, total_idx);
-                    } else {
-                        total_idx
-                    }
-                }
+                total_idx
             };
+
+            // Make sure the iterator is done when EOL.
+            let c = unsafe { *self.v.get_unchecked(pos) };
+            if c == self.eol_char {
+                // SAFETY:
+                // we are in bounds
+                return unsafe { self.finish_eol(needs_escaping, pos) };
+            }
 
             unsafe {
                 debug_assert!(pos < self.v.len());

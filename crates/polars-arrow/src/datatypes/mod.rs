@@ -18,6 +18,8 @@ pub use schema::{ArrowSchema, ArrowSchemaRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::array::LIST_VALUES_NAME;
+
 /// typedef for [BTreeMap<PlSmallStr, PlSmallStr>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
 pub type Metadata = BTreeMap<PlSmallStr, PlSmallStr>;
 /// typedef for [Option<(PlSmallStr, Option<PlSmallStr>)>] descr
@@ -426,11 +428,7 @@ impl ArrowDataType {
 
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
         ArrowDataType::FixedSizeList(
-            Box::new(Field::new(
-                PlSmallStr::from_static("item"),
-                self,
-                is_nullable,
-            )),
+            Box::new(Field::new(LIST_VALUES_NAME, self, is_nullable)),
             size,
         )
     }

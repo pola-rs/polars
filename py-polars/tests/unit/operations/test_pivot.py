@@ -90,10 +90,10 @@ def test_pivot_list() -> None:
     ("agg_fn", "expected_rows"),
     [
         ("first", [("a", 2, None, None), ("b", None, None, 10)]),
-        ("len", [("a", 2, None, None), ("b", None, 2, 1)]),
+        ("len", [("a", 2, 0, 0), ("b", 0, 2, 1)]),
         ("min", [("a", 2, None, None), ("b", None, 8, 10)]),
         ("max", [("a", 4, None, None), ("b", None, 8, 10)]),
-        ("sum", [("a", 6, None, None), ("b", None, 8, 10)]),
+        ("sum", [("a", 6, 0, 0), ("b", 0, 8, 10)]),
         ("mean", [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]),
         ("median", [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]),
     ],
@@ -141,7 +141,7 @@ def test_pivot_categorical_index() -> None:
     )
 
     result = df.pivot(index=["A"], on="B", values="B", aggregate_function="len")
-    expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
+    expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, 0]}
     assert result.to_dict(as_series=False) == expected
 
     # test expression dispatch
@@ -161,7 +161,7 @@ def test_pivot_categorical_index() -> None:
         "A": ["Fire", "Water"],
         "C": ["Paper", "Paper"],
         "Car": [1, 2],
-        "Ship": [1, None],
+        "Ship": [1, 0],
     }
     assert result.to_dict(as_series=False) == expected
 
@@ -248,7 +248,7 @@ def test_pivot_multiple_columns_12407() -> None:
     result = df.pivot(
         index="b", on=["c", "e"], values=["a"], aggregate_function="len"
     ).to_dict(as_series=False)
-    expected = {"b": ["a", "b"], '{"s","x"}': [1, None], '{"f","y"}': [None, 1]}
+    expected = {"b": ["a", "b"], '{"s","x"}': [1, 0], '{"f","y"}': [0, 1]}
     assert result == expected
 
 
@@ -590,3 +590,34 @@ def test_pivot_agg_column_ref_invalid_22479() -> None:
         df.pivot(
             on="a", index="b", values="c", aggregate_function=pl.element().sort_by("d")
         )
+
+
+def test_pivot_agg_null_methods_23408() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [0, 0, 1, 1],
+            "on": ["a", "b", "a", "c"],
+            "val": ["aa", "bb", "aa", "cc"],
+        }
+    )
+    out = df.pivot(
+        on="on",
+        index="idx",
+        values="val",
+        aggregate_function=pl.element().first().is_null(),
+    )
+    expected = pl.DataFrame(
+        {"idx": [0, 1], "a": [False, False], "b": [False, True], "c": [True, False]}
+    )
+    assert_frame_equal(out, expected)
+
+    out = df.pivot(
+        on="on",
+        index="idx",
+        values="val",
+        aggregate_function=pl.element().first().fill_null("xx"),
+    )
+    expected = pl.DataFrame(
+        {"idx": [0, 1], "a": ["aa", "aa"], "b": ["bb", "xx"], "c": ["xx", "cc"]}
+    )
+    assert_frame_equal(out, expected)

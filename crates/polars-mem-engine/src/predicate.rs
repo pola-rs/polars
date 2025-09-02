@@ -217,10 +217,19 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         let array = array.bool()?;
         let array = array.downcast_as_array();
 
-        if let Some(validity) = array.validity() {
-            Ok(array.values() & validity)
+        let array = if let Some(validity) = array.validity() {
+            array.values() & validity
         } else {
-            Ok(array.values().clone())
+            array.values().clone()
+        };
+
+        // @NOTE: Certain predicates like `1 == 1` will only output 1 value. We need to broadcast
+        // the result back to the dataframe length.
+        if array.len() == 1 && df.height() != 0 {
+            return Ok(Bitmap::new_with_value(array.get_bit(0), df.height()));
         }
+
+        assert_eq!(array.len(), df.height());
+        Ok(array)
     }
 }

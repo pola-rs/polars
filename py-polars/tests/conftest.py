@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import PosixPath
 from typing import Any, Callable, TypeVar, cast
 
 import pytest
@@ -27,7 +28,7 @@ def _patched_cloud(
         import uuid
         from pathlib import Path
 
-        from polars_cloud import ComputeContext, ComputeContextStatus, InteractiveQuery
+        from polars_cloud import ClusterContext, InteractiveQuery, set_compute_context
 
         TIMEOUT_SECS = 20
 
@@ -43,26 +44,8 @@ def _patched_cloud(
 
             return f()
 
-        class PatchedComputeContext(ComputeContext):
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                self._interactive = True
-                self._compute_address = "localhost:5051"
-                self._compute_public_key = b""
-                self._insecure = True
-                self._compute_id = uuid.uuid4()
-
-            def get_status(self: ComputeContext) -> ComputeContextStatus:
-                """Get the status of the compute cluster."""
-                return ComputeContextStatus.RUNNING
-
-        monkeypatch.setattr(
-            "polars_cloud.context.compute.ComputeContext.__init__",
-            PatchedComputeContext.__init__,
-        )
-        monkeypatch.setattr(
-            "polars_cloud.context.compute.ComputeContext.get_status",
-            PatchedComputeContext.get_status,
-        )
+        ctx = ClusterContext("localhost", insecure=True)
+        set_compute_context(ctx)
 
         prev_collect = pl.LazyFrame.collect
 
@@ -72,14 +55,15 @@ def _patched_cloud(
                 kwargs.pop("optimizations")
             if "engine" in kwargs:
                 kwargs.pop("engine")
-            df = prev_collect(
+
+            return prev_collect(
                 with_timeout(
                     lambda: lf.remote(plan_type="plain")
                     .distributed()
-                    .collect(*args, **kwargs)
-                )
+                    .execute()
+                    .await_result()
+                ).lazy()
             )
-            return df
 
         class LazyExe:
             def __init__(
@@ -91,46 +75,80 @@ def _patched_cloud(
                 self.path = path
 
             def collect(self) -> pl.DataFrame:
-                res = with_timeout(
-                    lambda: prev_collect(self.query.await_result().lazy())
-                )
+                # 1. Actually execute the query.
+                with_timeout(lambda: self.query.await_result())
+
+                # 2. If our target was different, write the result into our target
+                #    transparently.
                 if self.prev_tgt is not None:
-                    with Path.open(self.path, "rb") as f:
-                        self.prev_tgt.write(f.read())
+                    is_string = isinstance(self.prev_tgt, (io.StringIO, io.TextIOBase))
+
+                    if is_string:
+                        with Path.open(self.path, "r") as f:
+                            self.prev_tgt.write(f.read())  # type: ignore[arg-type]
+                    else:
+                        with Path.open(self.path, "rb") as f:
+                            self.prev_tgt.write(f.read())
 
                     # delete the temporary file
                     Path(self.path).unlink()
-                return res
 
-        def io_to_path(s: io.BytesIO, ext: str) -> Path:
+                # Sinks always return an empty DataFrame.
+                return pl.DataFrame({})
+
+        def io_to_path(s: io.IOBase, ext: str) -> Path:
             path = Path(f"/tmp/pc-{uuid.uuid4()!s}.{ext}")
 
-            offset = s.seek(0, 1)
             with Path.open(path, "wb") as f:
-                f.write(s.read())
-            s.seek(offset)
+                bs = s.read()
+                if isinstance(bs, str):
+                    bs = bytes(bs, encoding="utf-8")
+                f.write(bs)
+            s.seek(0, 2)
             return path
+
+        def prepare_scan_sources(src: Any) -> str | Path | list[str | Path]:
+            if isinstance(src, io.IOBase):
+                src = io_to_path(src, ext)
+            elif isinstance(src, bytes):
+                src = io_to_path(io.BytesIO(src), ext)
+            elif isinstance(src, list):
+                for i in range(len(src)):
+                    if isinstance(src[i], io.IOBase):
+                        src[i] = io_to_path(src[i], ext)
+                    elif isinstance(src[i], bytes):
+                        src[i] = io_to_path(io.BytesIO(src[i]), ext)
+
+            assert isinstance(src, (str, Path, list)) or (
+                isinstance(src, list) and all(isinstance(x, (str, Path)) for x in src)
+            )
+
+            return src
 
         def create_cloud_scan(ext: str) -> Callable[..., pl.LazyFrame]:
             prev_scan = getattr(pl, f"scan_{ext}")
             prev_scan = cast("Callable[..., pl.LazyFrame]", prev_scan)
 
             def _(
-                src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
+                source: io.BytesIO | io.StringIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.LazyFrame:
-                if isinstance(src, io.BytesIO):
-                    src = io_to_path(src, ext)
-                elif isinstance(src, list):
-                    for i in range(len(src)):
-                        if isinstance(src, io.BytesIO):
-                            src[i] = io_to_path(src[i], ext)
+                source = prepare_scan_sources(source)  # type: ignore[assignment]
+                return prev_scan(source, *args, **kwargs)  # type: ignore[no-any-return]
 
-                assert isinstance(src, (str, Path, list)) or (
-                    isinstance(src, list)
-                    and all(isinstance(x, (str, Path)) for x in src)
-                )
+            return _
 
-                return prev_scan(src, *args, **kwargs)  # type: ignore[no-any-return]
+        def create_read(ext: str) -> Callable[..., pl.DataFrame]:
+            prev_read = getattr(pl, f"read_{ext}")
+            prev_read = cast("Callable[..., pl.DataFrame]", prev_read)
+
+            def _(
+                source: io.BytesIO | str | Path, *args: Any, **kwargs: Any
+            ) -> pl.DataFrame:
+                if ext == "parquet" and kwargs.get("use_pyarrow", False):
+                    return prev_read(source, *args, **kwargs)  # type: ignore[no-any-return]
+
+                src = prepare_scan_sources(source)
+                return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
 
@@ -145,18 +163,43 @@ def _patched_cloud(
                 if args[0] == "placeholder-path" or isinstance(
                     args[0], PartitioningScheme
                 ):
-                    return prev_sink(lf, *args, **kwargs)  # type: ignore[no-any-return]
+                    prev_lazy = kwargs.get("lazy", False)
+                    kwargs["lazy"] = True
+                    lf = prev_sink(lf, *args, **kwargs)
+
+                    class SimpleLazyExe:
+                        def __init__(self, query: pl.LazyFrame) -> None:
+                            self._ldf = query._ldf
+                            self.query = query
+
+                        def collect(self, *args: Any, **kwargs: Any) -> pl.DataFrame:
+                            return prev_collect(self.query, *args, **kwargs)  # type: ignore[no-any-return]
+
+                    slf = SimpleLazyExe(lf)
+                    if prev_lazy:
+                        return slf  # type: ignore[return-value]
+
+                    slf.collect(
+                        optimizations=kwargs.get("optimizations", pl.QueryOptFlags()),
+                    )
+                    return None
 
                 prev_tgt = None
-                if isinstance(args[0], io.BytesIO):
+                if isinstance(
+                    args[0], (io.BytesIO, io.StringIO, io.TextIOBase)
+                ) or callable(getattr(args[0], "write", None)):
                     prev_tgt = args[0]
                     args = (f"/tmp/pc-{uuid.uuid4()!s}.{ext}",) + args[1:]
+                elif isinstance(args[0], PosixPath):
+                    args = (str(args[0]),) + args[1:]
 
                 lazy = kwargs.pop("lazy", False)
 
                 # these are all the unsupported flags
                 for u in unsupported:
                     _ = kwargs.pop(u, None)
+
+                kwargs["sink_to_single_file"] = "True"
 
                 sink = getattr(
                     lf.remote(plan_type="plain").distributed(), f"sink_{ext}"
@@ -171,22 +214,21 @@ def _patched_cloud(
 
                 if lazy:
                     return query  # type: ignore[return-value]
+
+                # If the sink is not lazy, we are expected to collect it.
+                query.collect()
                 return None
 
             return _
 
         # fix: these need to become supported somehow
         BASE_UNSUPPORTED = ["engine", "optimizations", "mkdir", "retries"]
-        for ext, unsupported in [
-            ("parquet", ["metadata"]),
-            ("csv", []),
-            ("ipc", []),
-            ("ndjson", []),
-        ]:
+        for ext in ["parquet", "csv", "ipc", "ndjson"]:
             monkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
+            monkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
             monkeypatch.setattr(
                 f"polars.LazyFrame.sink_{ext}",
-                create_cloud_sink(ext, BASE_UNSUPPORTED + unsupported),
+                create_cloud_sink(ext, BASE_UNSUPPORTED),
             )
 
         monkeypatch.setattr("polars.LazyFrame.collect", cloud_collect)

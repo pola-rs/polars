@@ -1,8 +1,10 @@
+mod datatype_fn;
 mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
+pub use datatype_fn::*;
 pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
@@ -37,8 +39,10 @@ pub enum AggExpr {
     Last(Arc<Expr>),
     Mean(Arc<Expr>),
     Implode(Arc<Expr>),
-    // include_nulls
-    Count(Arc<Expr>, bool),
+    Count {
+        input: Arc<Expr>,
+        include_nulls: bool,
+    },
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
@@ -62,7 +66,7 @@ impl AsRef<Expr> for AggExpr {
             Last(e) => e,
             Mean(e) => e,
             Implode(e) => e,
-            Count(e, _) => e,
+            Count { input, .. } => input,
             Quantile { expr, .. } => expr,
             Sum(e) => e,
             AggGroups(e) => e,
@@ -86,6 +90,7 @@ pub enum Expr {
     Column(PlSmallStr),
     Selector(Selector),
     Literal(LiteralValue),
+    DataTypeFunction(DataTypeFunction),
     BinaryExpr {
         left: Arc<Expr>,
         op: Operator,
@@ -156,8 +161,6 @@ pub enum Expr {
         input: Vec<Expr>,
         /// function to apply
         function: OpaqueColumnUdf,
-        /// output dtype of the function
-        output_type: GetOutput,
 
         options: FunctionOptions,
         /// used for formatting
@@ -183,7 +186,11 @@ pub enum Expr {
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
-    // Used by cloud
+    /// Named functions allow for serializing arbitrary Rust functions as long as both sides know
+    /// ahead of time which function it is. There is a registry of functions that both sides know
+    /// and every time we need serialize we serialize the function by name in the registry.
+    ///
+    /// Used by cloud.
     Named {
         // Name and payload are used by the NamedRegistry
         // To load the function `T` at runtime.
@@ -257,6 +264,7 @@ impl Hash for Expr {
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
             // Expr::Nth(v) => v.hash(state),
+            Expr::DataTypeFunction(v) => v.hash(state),
             Expr::Filter { input, by } => {
                 input.hash(state);
                 by.hash(state);
@@ -353,7 +361,6 @@ impl Hash for Expr {
             Expr::AnonymousFunction {
                 input,
                 function: _,
-                output_type: _,
                 options,
                 fmt_str,
             } => {
@@ -395,20 +402,21 @@ pub enum Excluded {
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
-    pub fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
+    pub fn to_field(&self, schema: &Schema) -> PolarsResult<Field> {
         // this is not called much and the expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
-        self.to_field_amortized(schema, ctxt, &mut arena)
+        self.to_field_amortized(schema, &mut arena)
     }
     pub(crate) fn to_field_amortized(
         &self,
         schema: &Schema,
-        ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let expr = to_expr_ir(self.clone(), expr_arena, schema)?;
+        let mut ctx = ExprToIRContext::new(expr_arena, schema);
+        ctx.allow_unknown = true;
+        let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();
-        let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
+        let dtype = expr_arena.get(node).to_dtype(schema, expr_arena)?;
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 
@@ -550,6 +558,26 @@ impl EvalVariant {
             (Self::List, DataType::List(inner)) => Ok(inner.as_ref()),
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
+        }
+    }
+
+    pub fn is_elementwise(&self) -> bool {
+        match self {
+            EvalVariant::List => true,
+            EvalVariant::Cumulative { min_samples: _ } => false,
+        }
+    }
+
+    pub fn is_row_separable(&self) -> bool {
+        match self {
+            EvalVariant::List => true,
+            EvalVariant::Cumulative { min_samples: _ } => false,
+        }
+    }
+
+    pub fn is_length_preserving(&self) -> bool {
+        match self {
+            EvalVariant::List | EvalVariant::Cumulative { .. } => true,
         }
     }
 }

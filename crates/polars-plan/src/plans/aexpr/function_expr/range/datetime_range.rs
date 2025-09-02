@@ -53,8 +53,8 @@ pub(super) fn datetime_range(
     };
 
     if start.dtype() == &DataType::Date {
-        start = start.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?;
-        end = end.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?;
+        start = start.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
+        end = end.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
     }
 
     // If `start` and `end` are naive, but a time zone was specified,
@@ -142,8 +142,8 @@ pub(super) fn datetime_ranges(
     };
 
     if start.dtype() == &DataType::Date {
-        start = start.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?;
-        end = end.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?;
+        start = start.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
+        end = end.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
     }
 
     // If `start` and `end` are naive, but a time zone was specified,

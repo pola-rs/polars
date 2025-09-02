@@ -204,18 +204,12 @@ def test_arr_var(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.var().name.suffix("_var"),
         pl.col("float").arr.var().name.suffix("_var"),
-        pl.col("duration").arr.var().name.suffix("_var"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_var", [2.5], dtype=pl.Float64),
             pl.Series("float_var", [2.5], dtype=pl.Float64),
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
         ]
     )
 
@@ -238,6 +232,30 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
             pl.Series(
                 "duration_std",
                 [timedelta(microseconds=1581)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_mean(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.mean().name.suffix("_mean"),
+        pl.col("float").arr.mean().name.suffix("_mean"),
+        pl.col("duration").arr.mean().name.suffix("_mean"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_mean", [3.0], dtype=pl.Float64),
+            pl.Series("float_mean", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_mean",
+                [timedelta(microseconds=3000)],
                 dtype=pl.Duration(time_unit="us"),
             ),
         ]
@@ -355,6 +373,7 @@ def test_array_invalid_physical_type_18920() -> None:
     assert_frame_equal(df, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: zero-width array
 @pytest.mark.parametrize(
     "fn",
     [

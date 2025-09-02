@@ -65,7 +65,6 @@ def test_dtype() -> None:
     ]
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical() -> None:
     # https://github.com/pola-rs/polars/issues/2038
     df = pl.DataFrame(
@@ -295,9 +294,17 @@ def test_fast_explode_on_list_struct_6208() -> None:
 def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
-    assert df.group_by("a", maintain_order=True).agg(
-        pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
-    ).to_dict(as_series=False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+    q = (
+        df.lazy()
+        .group_by("a", maintain_order=True)
+        .agg(
+            pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
+        )
+    )
+
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {"a": [1, 2], "b": [[0.0, 1.0], [3.0, 4.0]]}
+    assert q.collect_schema() == out.schema
 
 
 def test_list_count_matches() -> None:
@@ -683,30 +690,6 @@ def data_dispersion() -> pl.DataFrame:
     )
 
 
-def test_list_var(data_dispersion: pl.DataFrame) -> None:
-    df = data_dispersion
-
-    result = df.select(
-        pl.col("int").list.var().name.suffix("_var"),
-        pl.col("float").list.var().name.suffix("_var"),
-        pl.col("duration").list.var().name.suffix("_var"),
-    )
-
-    expected = pl.DataFrame(
-        [
-            pl.Series("int_var", [2.5], dtype=pl.Float64),
-            pl.Series("float_var", [2.5], dtype=pl.Float64),
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
-        ]
-    )
-
-    assert_frame_equal(result, expected)
-
-
 def test_list_std(data_dispersion: pl.DataFrame) -> None:
     df = data_dispersion
 
@@ -825,7 +808,6 @@ def test_list_list_sum_exception_12935() -> None:
         pl.Series([[1], [2]]).sum()
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_null_list_categorical_16405() -> None:
     df = pl.DataFrame(
         [(None, "foo")],
@@ -877,3 +859,21 @@ def test_list_agg_temporal(inner_dtype: PolarsDataType, agg: str) -> None:
     expected = lf.select(getattr(pl.col("a").explode(), agg)())
     assert result.collect_schema() == expected.collect_schema()
     assert_frame_equal(result.collect(), expected.collect())
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_list_implode_concat_agg_schema_23974(maintain_order: bool) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3]})
+    q = (
+        df.lazy()
+        .group_by("g", maintain_order=maintain_order)
+        .agg(
+            pl.concat_list(
+                [pl.col("a").first().implode(), pl.col("a").last().implode()]
+            )
+        )
+    )
+    expected = pl.DataFrame({"g": [10, 20], "a": [[1, 2], [3, 3]]})
+    out = q.collect()
+    assert_frame_equal(out, expected, check_row_order=maintain_order)
+    assert q.collect_schema() == out.schema

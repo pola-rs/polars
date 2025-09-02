@@ -20,6 +20,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.drop_nulls
     Expr.list.eval
     Expr.list.explode
+    Expr.list.filter
     Expr.list.first
     Expr.list.gather
     Expr.list.gather_every

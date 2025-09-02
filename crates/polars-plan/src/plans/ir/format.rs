@@ -1,10 +1,10 @@
 use std::fmt::{self, Display, Formatter};
 
+use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_utils::format_list_truncated;
 use polars_utils::slice_enum::Slice;
-use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
@@ -74,7 +74,6 @@ fn write_scan(
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
-    scan_mem_id: Option<&UniqueId>,
     deletion_files: Option<&DeletionFilesList>,
 ) -> fmt::Result {
     write!(
@@ -83,10 +82,6 @@ fn write_scan(
         "",
         ScanSourcesDisplay(sources),
     )?;
-
-    if let Some(scan_mem_id) = scan_mem_id {
-        write!(f, " [id: {scan_mem_id}]")?;
-    }
 
     let total_columns = total_columns - usize::from(row_index.is_some());
     if n_columns > 0 {
@@ -205,7 +200,7 @@ impl<'a> IRDisplay<'a> {
                 let right_on = self.display_expr_slice(right_on);
 
                 // Fused cross + filter (show as nested loop join)
-                if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+                if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                     let predicate = self.display_expr(predicate);
                     let name = "NESTED LOOP";
                     write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
@@ -259,8 +254,8 @@ impl<'a> IRDisplay<'a> {
             },
             ir_node => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
-                for input in ir_node.get_inputs().iter() {
-                    self.with_root(*input)._format(f, sub_indent)?;
+                for input in ir_node.inputs() {
+                    self.with_root(input)._format(f, sub_indent)?;
                 }
                 Ok(())
             },
@@ -460,8 +455,14 @@ impl Display for ExprIRDisplay<'_> {
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
                     AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),
-                    Count(expr, false) => write!(f, "{}.count()", self.with_root(expr)),
-                    Count(expr, true) => write!(f, "{}.len()", self.with_root(expr)),
+                    Count {
+                        input,
+                        include_nulls: false,
+                    } => write!(f, "{}.count()", self.with_root(input)),
+                    Count {
+                        input,
+                        include_nulls: true,
+                    } => write!(f, "{}.len()", self.with_root(input)),
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
                     Quantile {
@@ -688,7 +689,6 @@ pub fn write_ir_non_recursive(
                     .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len }),
                 None,
                 None,
-                None,
             )
         },
         IR::Slice {
@@ -715,7 +715,6 @@ pub fn write_ir_non_recursive(
             unified_scan_args,
             hive_parts: _,
             output_schema: _,
-            id: scan_mem_id,
         } => {
             let n_columns = unified_scan_args
                 .projection
@@ -735,7 +734,6 @@ pub fn write_ir_non_recursive(
                 &predicate,
                 unified_scan_args.pre_slice.clone(),
                 unified_scan_args.row_index.as_ref(),
-                Some(scan_mem_id),
                 unified_scan_args.deletion_files.as_ref(),
             )
         },
@@ -800,15 +798,7 @@ pub fn write_ir_non_recursive(
             };
             write!(f, "{:indent$}SORT BY {by_column}", "")
         },
-        IR::Cache {
-            input: _,
-            id,
-            cache_hits,
-        } => write!(
-            f,
-            "{:indent$}CACHE[id: {:x}, cache_hits: {}]",
-            "", *id, *cache_hits
-        ),
+        IR::Cache { input: _, id } => write!(f, "{:indent$}CACHE[id: {id}]", ""),
         IR::GroupBy {
             input: _,
             keys,
@@ -823,7 +813,7 @@ pub fn write_ir_non_recursive(
             expr_arena,
             keys,
             aggs,
-            apply.as_deref(),
+            apply.as_ref(),
             *maintain_order,
         ),
         IR::Join {
@@ -844,7 +834,7 @@ pub fn write_ir_non_recursive(
             };
 
             // Fused cross + filter (show as nested loop join)
-            if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+            if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                 let predicate = predicate.display(expr_arena);
                 write!(f, "{:indent$}NESTED_LOOP JOIN ON {predicate}", "")?;
             } else {
@@ -919,7 +909,7 @@ pub fn write_group_by(
     expr_arena: &Arena<AExpr>,
     keys: &[ExprIR],
     aggs: &[ExprIR],
-    apply: Option<&dyn DataFrameUdf>,
+    apply: Option<&PlanCallback<DataFrame, DataFrame>>,
     maintain_order: bool,
 ) -> fmt::Result {
     let sub_indent = indent + INDENT_INCREMENT;

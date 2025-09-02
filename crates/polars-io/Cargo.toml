@@ -135,6 +135,7 @@ http = ["object_store/http", "cloud"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []
 python = ["pyo3", "polars-error/python", "polars-utils/python"]
+allow_unused = []
 
 [package.metadata.docs.rs]
 all-features = true

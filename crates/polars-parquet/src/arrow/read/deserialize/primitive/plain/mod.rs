@@ -1,6 +1,7 @@
 use arrow::array::{PrimitiveArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::{AlignedBytes, NativeType, PrimitiveType};
+use polars_utils::vec::with_cast_mut_vec;
 
 use super::DecoderFunction;
 use crate::parquet::error::ParquetResult;
@@ -11,7 +12,7 @@ use crate::read::deserialize::utils::freeze_validity;
 use crate::read::expr::SpecializedParquetColumnExpr;
 use crate::read::{Filter, ParquetError};
 
-mod predicate;
+pub mod predicate;
 mod required;
 
 #[allow(clippy::too_many_arguments)]
@@ -23,7 +24,6 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     validity: &mut BitmapBuilder,
     intermediate: &mut Vec<P>,
     target: &mut Vec<T>,
-    pred_true_mask: &mut BitmapBuilder,
     dfn: D,
 ) -> ParquetResult<()> {
     let can_filter_on_raw_data =
@@ -58,7 +58,6 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
                 &mut unfiltered_validity,
                 intermediate,
                 &mut unfiltered_target,
-                &mut BitmapBuilder::new(),
                 dfn,
             )?;
 
@@ -75,7 +74,6 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
                 polars_compute::filter::filter_with_bitmap(&array, &intermediate_pred_true_mask);
             let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
-            pred_true_mask.extend_from_bitmap(&intermediate_pred_true_mask);
             target.extend(array.values().iter().copied());
             if is_optional {
                 match array.validity() {
@@ -93,7 +91,6 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
                 validity,
                 intermediate,
                 target,
-                pred_true_mask,
                 dfn,
             )?;
         },
@@ -115,7 +112,6 @@ pub fn decode_no_incompact_predicates<
     validity: &mut BitmapBuilder,
     intermediate: &mut Vec<P>,
     target: &mut Vec<T>,
-    pred_true_mask: &mut BitmapBuilder,
     dfn: D,
 ) -> ParquetResult<()> {
     if cfg!(debug_assertions) && is_optional {
@@ -128,15 +124,16 @@ pub fn decode_no_incompact_predicates<
         })?;
 
         let start_length = target.len();
-        decode_aligned_bytes_dispatch(
-            values,
-            is_optional,
-            page_validity,
-            filter,
-            validity,
-            <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
-            pred_true_mask,
-        )?;
+        with_cast_mut_vec::<T, T::AlignedBytes, _, _>(target, |aligned_bytes_vec| {
+            decode_aligned_bytes_dispatch(
+                values,
+                is_optional,
+                page_validity,
+                filter,
+                validity,
+                aligned_bytes_vec,
+            )
+        })?;
 
         if D::NEED_TO_DECODE {
             let to_decode: &mut [P] = bytemuck::cast_slice_mut(&mut target[start_length..]);
@@ -151,15 +148,16 @@ pub fn decode_no_incompact_predicates<
         })?;
 
         intermediate.clear();
-        decode_aligned_bytes_dispatch(
-            values,
-            is_optional,
-            page_validity,
-            filter,
-            validity,
-            <P::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(intermediate),
-            pred_true_mask,
-        )?;
+        with_cast_mut_vec::<P, P::AlignedBytes, _, _>(intermediate, |aligned_bytes_vec| {
+            decode_aligned_bytes_dispatch(
+                values,
+                is_optional,
+                page_validity,
+                filter,
+                validity,
+                aligned_bytes_vec,
+            )
+        })?;
 
         target.extend(intermediate.iter().copied().map(|v| dfn.decode(v)));
     }
@@ -179,50 +177,7 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
     filter: Option<Filter>,
     validity: &mut BitmapBuilder,
     target: &mut Vec<B>,
-    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
-    if let Some(Filter::Predicate(p)) = &filter {
-        assert!(page_validity.is_none());
-
-        let start_num_pred_true = pred_true_mask.set_bits();
-        match p.predicate.as_specialized().unwrap() {
-            SpecializedParquetColumnExpr::Equal(needle) => {
-                let needle = needle.to_aligned_bytes::<B>().unwrap();
-
-                predicate::decode_equals_no_values(values, needle, pred_true_mask);
-
-                if p.include_values {
-                    let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
-                    target.resize(target.len() + num_pred_true, needle);
-                }
-            },
-            SpecializedParquetColumnExpr::EqualOneOf(needles)
-                if (1..=8).contains(&needles.len()) =>
-            {
-                let mut needles_array = [B::zeroed(); 8];
-                for i in 0..8 {
-                    needles_array[i] = needles[i.min(needles.len() - 1)]
-                        .to_aligned_bytes::<B>()
-                        .unwrap();
-                }
-
-                if p.include_values {
-                    predicate::decode_is_in(values, &needles_array, target, pred_true_mask);
-                } else {
-                    predicate::decode_is_in_no_values(values, &needles_array, pred_true_mask);
-                }
-            },
-            _ => unreachable!(),
-        }
-
-        if is_optional && p.include_values {
-            let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
-            validity.extend_constant(num_pred_true, true);
-        }
-
-        return Ok(());
-    }
-
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
