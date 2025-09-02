@@ -83,7 +83,6 @@ def _set_numpy_to_constructor() -> None:
         np.uint16: PySeries.new_u16,
         np.uint32: PySeries.new_u32,
         np.uint64: PySeries.new_u64,
-        np.uint128: PySeries.new_u128,
         np.str_: PySeries.new_str,
         np.bytes_: PySeries.new_binary,
         np.bool_: PySeries.new_bool,
