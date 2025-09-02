@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
-
-if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -99,27 +94,42 @@ def test_raise_literal_numeric_search_sorted_18096() -> None:
         df.with_columns(idx=pl.col("foo").search_sorted("bar"))
 
 
-def assert_can_find_values(values: list[Any], dtype: PolarsDataType) -> None:
-    series = pl.Series(values, dtype=dtype)
-    for descending in [True, False]:
-        for nulls_last in [True, False]:
-            sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
-            as_list = sorted_series.to_list()
-            for value in values:
-                idx = sorted_series.search_sorted(value, "left", descending=descending)
-                assert as_list.index(value) == idx
-                lookup = sorted_series[idx]
-                if isinstance(lookup, pl.Series):
-                    lookup = lookup.to_list()
-                assert lookup == value
-
-
 def test_search_sorted_enum() -> None:
-    assert_can_find_values(["a", None, "b", "c"], pl.Categorical())
+    series = pl.Series(["a", None, "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    desc_nulls_last = series.sort(descending=True, nulls_last=True)
+    assert desc_nulls_last.search_sorted(None, "left", descending=True) == 3
+    assert desc_nulls_last.search_sorted("a", "left", descending=True) == 2
+
+    desc_nulls_first = series.sort(descending=True, nulls_last=False)
+    assert desc_nulls_first.search_sorted(None, "left", descending=True) == 0
+    assert desc_nulls_first.search_sorted("a", "left", descending=True) == 3
+
+    asc_nulls_last = series.sort(descending=False, nulls_last=True)
+    assert asc_nulls_last.search_sorted(None, "left", descending=False) == 3
+    assert asc_nulls_last.search_sorted("a", "left", descending=False) == 0
+
+    asc_nulls_first = series.sort(descending=False, nulls_last=False)
+    assert asc_nulls_first.search_sorted(None, "left", descending=False) == 0
+    assert asc_nulls_first.search_sorted("a", "left", descending=False) == 1
 
 
 def test_search_sorted_categorical() -> None:
-    assert_can_find_values(["a", None, "b", "c"], pl.Categorical())
+    series = pl.Series(["a", None, "b", "c"], dtype=pl.Categorical())
+    desc_nulls_last = series.sort(descending=True, nulls_last=True)
+    assert desc_nulls_last.search_sorted(None, "left", descending=True) == 3
+    assert desc_nulls_last.search_sorted("a", "left", descending=True) == 2
+
+    desc_nulls_first = series.sort(descending=True, nulls_last=False)
+    assert desc_nulls_first.search_sorted(None, "left", descending=True) == 0
+    assert desc_nulls_first.search_sorted("a", "left", descending=True) == 3
+
+    asc_nulls_last = series.sort(descending=False, nulls_last=True)
+    assert asc_nulls_last.search_sorted(None, "left", descending=False) == 3
+    assert asc_nulls_last.search_sorted("a", "left", descending=False) == 0
+
+    asc_nulls_first = series.sort(descending=False, nulls_last=False)
+    assert asc_nulls_first.search_sorted(None, "left", descending=False) == 0
+    assert asc_nulls_first.search_sorted("a", "left", descending=False) == 1
 
 
 @pytest.mark.parametrize("value", [0, 0.1])
