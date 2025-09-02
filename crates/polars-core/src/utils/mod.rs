@@ -463,6 +463,8 @@ macro_rules! with_match_physical_numeric_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => __with_ty__! { u128 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -490,6 +492,8 @@ macro_rules! with_match_physical_integer_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => __with_ty__! { u128 },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
