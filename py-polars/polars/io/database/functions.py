@@ -371,6 +371,10 @@ def read_database_uri(
         Only applicable for Postgres and MySQL source.
         Only applicable with the connectorx engine.
 
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
     Notes
     -----
     For `connectorx`, ensure that you have `connectorx>=0.3.2`. The documentation
