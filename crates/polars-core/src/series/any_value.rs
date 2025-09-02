@@ -109,6 +109,10 @@ impl Series {
             DataType::UInt16 => any_values_to_integer::<UInt16Type>(values, strict)?.into_series(),
             DataType::UInt32 => any_values_to_integer::<UInt32Type>(values, strict)?.into_series(),
             DataType::UInt64 => any_values_to_integer::<UInt64Type>(values, strict)?.into_series(),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => {
+                any_values_to_integer::<UInt128Type>(values, strict)?.into_series()
+            },
             DataType::Float32 => any_values_to_f32(values, strict)?.into_series(),
             DataType::Float64 => any_values_to_f64(values, strict)?.into_series(),
             DataType::Boolean => any_values_to_bool(values, strict)?.into_series(),
