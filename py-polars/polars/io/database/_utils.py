@@ -126,7 +126,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     adbc_driver = _import_optional_adbc_driver(module_name)
 
     # some backends require the driver name to be stripped from the URI
-    if driver_name in ("sqlite", "snowflake"):
+    if driver_name in ("duckdb", "snowflake", "sqlite"):
         connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
 
     return adbc_driver.connect(connection_uri)
