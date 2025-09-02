@@ -74,6 +74,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
         // One side is signed, the other is unsigned. We just need to upcast the
         // unsigned side to a signed integer with the next-largest bit width.
         match (l, r) {
+            (UInt128, _) | (_, UInt128) => Some(Int128),
             (UInt64, _) | (_, UInt64) | (Int128, _) | (_, Int128) => Some(Int128),
             (UInt32, _) | (_, UInt32) | (Int64, _) | (_, Int64) => Some(Int64),
             (UInt16, _) | (_, UInt16) | (Int32, _) | (_, Int32) => Some(Int32),
@@ -253,9 +254,9 @@ pub fn get_supertype_with_options(
             (UInt32, UInt64) => Some(UInt64),
 
             #[cfg(feature = "dtype-u128")]
-            (UInt128, a) if a.is_signed_integer() => Some(Int128),
-            #[cfg(feature = "dtype-u128")]
             (UInt128, a) if a.is_unsigned_integer() | a.is_bool() => Some(UInt128),
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_integer() => Some(Int128),
             #[cfg(feature = "dtype-u128")]
             (UInt128, a) if a.is_float() => Some(Float64),
 

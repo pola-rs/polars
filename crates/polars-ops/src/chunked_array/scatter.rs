@@ -36,6 +36,8 @@ impl PolarsOpsNumericType for UInt8Type {}
 impl PolarsOpsNumericType for UInt16Type {}
 impl PolarsOpsNumericType for UInt32Type {}
 impl PolarsOpsNumericType for UInt64Type {}
+#[cfg(feature = "dtype-u128")]
+impl PolarsOpsNumericType for UInt128Type {}
 impl PolarsOpsNumericType for Int8Type {}
 impl PolarsOpsNumericType for Int16Type {}
 impl PolarsOpsNumericType for Int32Type {}
