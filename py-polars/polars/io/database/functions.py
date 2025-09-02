@@ -245,7 +245,6 @@ def read_database(
             msg = "unable to identify string connection as valid ODBC (no driver)"
             raise ValueError(msg)
 
-    # TODO: could refactor
     # adbc_driver_manager must be >= 1.7.0 to support passing Python sequences into
     # parameterised queries (via execute_options) without PyArrow installed
     if (
