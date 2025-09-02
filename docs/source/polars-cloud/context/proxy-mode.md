@@ -6,7 +6,8 @@ ports on your compute cluster.
 
 ![Architectural overview of proxy mode](https://github.com/pola-rs/polars-static/blob/master/polars_cloud/proxy-mode.png?raw=true)
 
-In proxy mode the control plane polls the compute plane to retrieve the latest information about running compute and queries.
+In proxy mode the control plane polls the compute plane to retrieve the latest information about
+running compute and queries.
 
 ## Reconnect to active clusters
 
