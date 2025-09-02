@@ -30,6 +30,8 @@ impl_sum_cast!(
 impl_sum_cast!(u32, u64, i32, i64, f32, f64);
 #[cfg(feature = "dtype-i128")]
 impl_sum_cast!(i128);
+#[cfg(feature = "dtype-u128")]
+impl_sum_cast!(u128);
 
 fn out_dtype(in_dtype: &DataType) -> DataType {
     use DataType::*;

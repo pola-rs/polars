@@ -1346,6 +1346,7 @@ impl PartialOrd for AnyValue<'_> {
             (UInt16(l), UInt16(r)) => l.partial_cmp(r),
             (UInt32(l), UInt32(r)) => l.partial_cmp(r),
             (UInt64(l), UInt64(r)) => l.partial_cmp(r),
+            (UInt128(l), UInt128(r)) => l.partial_cmp(r),
             (Int8(l), Int8(r)) => l.partial_cmp(r),
             (Int16(l), Int16(r)) => l.partial_cmp(r),
             (Int32(l), Int32(r)) => l.partial_cmp(r),
@@ -1572,6 +1573,16 @@ impl GetAnyValue for ArrayRef {
                     Some(v) => AnyValue::UInt64(v),
                 }
             },
+            ArrowDataType::UInt128 => {
+                let arr = self
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<u128>>()
+                    .unwrap_unchecked();
+                match arr.get_unchecked(index) {
+                    None => AnyValue::Null,
+                    Some(v) => AnyValue::UInt128(v),
+                }
+            },
             ArrowDataType::Float32 => {
                 let arr = self
                     .as_any()
@@ -1630,6 +1641,9 @@ impl<K: NumericNative> From<K> for AnyValue<'static> {
                 PrimitiveType::UInt16 => AnyValue::UInt16(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt32 => AnyValue::UInt32(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt64 => AnyValue::UInt64(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt128 => {
+                    AnyValue::UInt128(NumCast::from(value).unwrap_unchecked())
+                },
                 PrimitiveType::Float32 => {
                     AnyValue::Float32(NumCast::from(value).unwrap_unchecked())
                 },

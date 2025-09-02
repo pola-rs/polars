@@ -57,6 +57,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
         }
     } else if l.is_unsigned_integer() && r.is_unsigned_integer() {
         match (l, r) {
+            (UInt128, _) | (_, UInt128) => Some(UInt128),
             (UInt64, _) | (_, UInt64) => Some(UInt64),
             (UInt32, _) | (_, UInt32) => Some(UInt32),
             (UInt16, _) | (_, UInt16) => Some(UInt16),
@@ -135,7 +136,8 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     get_supertype_with_options(l, r, SuperTypeOptions::default())
 }
 
-/// Given two data types, determine the data type that both types can safely be cast to.
+/// Given two data types, determine the data type that both types can reasonably safely be cast to.
+///
 ///
 /// Returns [`None`] if no such data type exists.
 pub fn get_supertype_with_options(
@@ -193,14 +195,6 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-i16")]
             (Int16, Float64) => Some(Float64),
 
-
-            #[cfg(feature = "dtype-i128")]
-            (a, Int128) if a.is_integer() | a.is_bool() => Some(Int128),
-            #[cfg(feature = "dtype-i128")]
-            (a, Int128) if a.is_float() => Some(Float64),
-            #[cfg(feature = "dtype-i128")]
-
-
             (Int32, Boolean) => Some(Int32),
             #[cfg(feature = "dtype-i8")]
             (Int32, Int8) => Some(Int32),
@@ -239,6 +233,16 @@ pub fn get_supertype_with_options(
             (Int64, Float32) => Some(Float64), // Follow numpy
             (Int64, Float64) => Some(Float64),
 
+            #[cfg(feature = "dtype-i128")]
+            (Int128, a) if a.is_integer() | a.is_bool() => Some(Int128),
+            #[cfg(feature = "dtype-i128")]
+            (Int128, a) if a.is_float() => Some(Float64),
+
+            #[cfg(feature = "dtype-u8")]
+            (UInt8, UInt32) => Some(UInt32),
+            #[cfg(feature = "dtype-u8")]
+            (UInt8, UInt64) => Some(UInt64),
+
             #[cfg(all(feature = "dtype-u16", feature = "dtype-u8"))]
             (UInt16, UInt8) => Some(UInt16),
             #[cfg(feature = "dtype-u16")]
@@ -246,12 +250,14 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-u16")]
             (UInt16, UInt64) => Some(UInt64),
 
-            #[cfg(feature = "dtype-u8")]
-            (UInt8, UInt32) => Some(UInt32),
-            #[cfg(feature = "dtype-u8")]
-            (UInt8, UInt64) => Some(UInt64),
-
             (UInt32, UInt64) => Some(UInt64),
+
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_signed_integer() => Some(Int128),
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_unsigned_integer() | a.is_bool() => Some(UInt128),
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_float() => Some(Float64),
 
             #[cfg(feature = "dtype-u8")]
             (Boolean, UInt8) => Some(UInt8),

@@ -702,7 +702,11 @@ impl DataType {
     pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
-            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
+            DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::UInt128,
         )
     }
 
