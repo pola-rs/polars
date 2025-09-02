@@ -242,6 +242,8 @@ pub fn cum_prod_with_init(
         UInt64 => cum_prod_numeric(s.u64()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-i128")]
         Int128 => cum_prod_numeric(s.i128()?, reverse, init.extract()).into_series(),
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => cum_prod_numeric(s.u128()?, reverse, init.extract()).into_series(),
         Float32 => cum_prod_numeric(s.f32()?, reverse, init.extract()).into_series(),
         Float64 => cum_prod_numeric(s.f64()?, reverse, init.extract()).into_series(),
         dt => polars_bail!(opq = cum_prod, dt),
@@ -276,6 +278,8 @@ pub fn cum_sum_with_init(
         UInt32 => cum_sum_numeric(s.u32()?, reverse, init.extract()).into_series(),
         Int64 => cum_sum_numeric(s.i64()?, reverse, init.extract()).into_series(),
         UInt64 => cum_sum_numeric(s.u64()?, reverse, init.extract()).into_series(),
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => cum_sum_numeric(s.u128()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-i128")]
         Int128 => cum_sum_numeric(s.i128()?, reverse, init.extract()).into_series(),
         Float32 => cum_sum_numeric(s.f32()?, reverse, init.extract()).into_series(),

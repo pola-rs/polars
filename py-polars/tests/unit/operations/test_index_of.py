@@ -107,11 +107,12 @@ def test_empty() -> None:
         pl.Int16,
         pl.Int32,
         pl.Int64,
+        pl.Int128,
         pl.UInt8,
         pl.UInt16,
         pl.UInt32,
         pl.UInt64,
-        pl.Int128,
+        # TODO: [amber] pl.UInt128 literals are too large for Polars
     ],
 )
 def test_integer(dtype: pl.DataType) -> None:
