@@ -19,10 +19,9 @@ TPC-H benchmark. Data generation tools and additional queries are available in t
 ## Scale to the cloud
 
 To execute your query in the cloud, you need to define a compute context. The compute context
-specifies the hardware to use when executing the query in the cloud. It allows you to set the workspace
-to execute your query and set compute resources. More
-elaborate options can be found on the
-[Compute context introduction page](../context/compute-context.md).
+specifies the hardware to use when executing the query in the cloud. It allows you to set the
+workspace to execute your query and set compute resources. More elaborate options can be found on
+the [Compute context introduction page](../context/compute-context.md).
 
 {{code_block('polars-cloud/remote-query','context',['ComputeContext'])}}
 
@@ -54,7 +53,9 @@ persist large datasets without transferring them to your local machine.
 
 ### Inspect results
 
-Using `.show()` will display the first 10 rows of the result so you can inspect the structure without having to transfer the whole dataset. This method displays the first 10 rows in your console or notebook.
+Using `.show()` will display the first 10 rows of the result so you can inspect the structure
+without having to transfer the whole dataset. This method displays the first 10 rows in your console
+or notebook.
 
 {{code_block('polars-cloud/remote-query','show',[])}}
 
@@ -80,7 +81,7 @@ shape: (10, 4)
 
 The `.await_and_scan()` method returns a LazyFrame pointing to intermediate results stored
 temporarily in your S3 environment. These intermediate result files are automatically deleted after
-several hours. For persistent storage use `sink_parquet`. The output is a LazyFrame, allwowing
+several hours. For persistent storage use `sink_parquet`. The output is a LazyFrame, allowing
 continued query chaining for further analysis.
 
 {{code_block('polars-cloud/remote-query','await_scan',[])}}
