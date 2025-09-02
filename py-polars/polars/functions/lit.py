@@ -199,7 +199,7 @@ def lit(
                 return lit(item).cast(Duration(time_unit))
 
         # handle numeric values
-        if isinstance(value, np.number):
+        if isinstance(value, np.generic):
             dtype = DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE.get(
                 (value.dtype.kind, value.dtype.itemsize)
             )
