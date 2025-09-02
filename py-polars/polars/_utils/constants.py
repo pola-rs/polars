@@ -15,6 +15,7 @@ U8_MAX = 2**8 - 1
 U16_MAX = 2**16 - 1
 U32_MAX = 2**32 - 1
 U64_MAX = 2**64 - 1
+U128_MAX = 2**128 - 1
 
 # Temporal
 SECONDS_PER_DAY = 86_400
