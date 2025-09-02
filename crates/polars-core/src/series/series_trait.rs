@@ -36,8 +36,8 @@ pub enum BitRepr {
     U16(UInt16Chunked),
     U32(UInt32Chunked),
     U64(UInt64Chunked),
-    #[cfg(feature = "dtype-i128")]
-    I128(Int128Chunked),
+    #[cfg(feature = "dtype-u128")]
+    U128(UInt128Chunked),
 }
 
 pub(crate) mod private {
