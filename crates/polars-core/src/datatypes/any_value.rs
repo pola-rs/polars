@@ -285,6 +285,7 @@ impl<'a> AnyValue<'a> {
             UInt16(v) => NumCast::from(*v),
             UInt32(v) => NumCast::from(*v),
             UInt64(v) => NumCast::from(*v),
+            UInt128(v) => NumCast::from(*v),
             Float32(v) => NumCast::from(*v),
             Float64(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-date")]
@@ -357,7 +358,11 @@ impl<'a> AnyValue<'a> {
     pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
-            AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
+            AnyValue::UInt8(_)
+                | AnyValue::UInt16(_)
+                | AnyValue::UInt32(_)
+                | AnyValue::UInt64(_)
+                | AnyValue::UInt128(_)
         )
     }
 
@@ -394,6 +399,7 @@ impl<'a> AnyValue<'a> {
             (av, DataType::UInt16) => AnyValue::UInt16(av.extract::<u16>()?),
             (av, DataType::UInt32) => AnyValue::UInt32(av.extract::<u32>()?),
             (av, DataType::UInt64) => AnyValue::UInt64(av.extract::<u64>()?),
+            (av, DataType::UInt128) => AnyValue::UInt128(av.extract::<u128>()?),
             (av, DataType::Int8) => AnyValue::Int8(av.extract::<i8>()?),
             (av, DataType::Int16) => AnyValue::Int16(av.extract::<i16>()?),
             (av, DataType::Int32) => AnyValue::Int32(av.extract::<i32>()?),
@@ -407,6 +413,7 @@ impl<'a> AnyValue<'a> {
             (AnyValue::UInt16(v), DataType::Boolean) => AnyValue::Boolean(*v != u16::default()),
             (AnyValue::UInt32(v), DataType::Boolean) => AnyValue::Boolean(*v != u32::default()),
             (AnyValue::UInt64(v), DataType::Boolean) => AnyValue::Boolean(*v != u64::default()),
+            (AnyValue::UInt128(v), DataType::Boolean) => AnyValue::Boolean(*v != u128::default()),
             (AnyValue::Int8(v), DataType::Boolean) => AnyValue::Boolean(*v != i8::default()),
             (AnyValue::Int16(v), DataType::Boolean) => AnyValue::Boolean(*v != i16::default()),
             (AnyValue::Int32(v), DataType::Boolean) => AnyValue::Boolean(*v != i32::default()),
@@ -679,7 +686,7 @@ impl<'a> AnyValue<'a> {
             | Self::UInt16(_)
             | Self::UInt32(_)
             | Self::UInt64(_)
-            | Self::UInt128(_) // TODO: [amber] Should there be a feature gate here?
+            | Self::UInt128(_)
             | Self::Int8(_)
             | Self::Int16(_)
             | Self::Int32(_)
@@ -1158,6 +1165,7 @@ impl AnyValue<'_> {
             (UInt16(l), UInt16(r)) => *l == *r,
             (UInt32(l), UInt32(r)) => *l == *r,
             (UInt64(l), UInt64(r)) => *l == *r,
+            (UInt128(l), UInt128(r)) => *l == *r,
             (Int8(l), Int8(r)) => *l == *r,
             (Int16(l), Int16(r)) => *l == *r,
             (Int32(l), Int32(r)) => *l == *r,
