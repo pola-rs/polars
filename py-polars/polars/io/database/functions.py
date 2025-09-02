@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import qualified_type_name
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import import_optional
@@ -460,6 +461,10 @@ def read_database_uri(
         if execute_options:
             msg = "the 'connectorx' engine does not support use of `execute_options`"
             raise ValueError(msg)
+        if pre_execution_query:
+            issue_unstable_warning(
+                "the 'pre-execution-query' parameter is considered unstable."
+            )
         return _read_sql_connectorx(
             query,
             connection_uri=uri,
