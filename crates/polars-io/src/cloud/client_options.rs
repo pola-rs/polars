@@ -78,21 +78,28 @@ impl Default for PlClientOptions {
 }
 
 impl From<PlClientOptions> for ClientOptions {
-    fn from(pl_opts: PlClientOptions) -> Self {
+    fn from(
+        PlClientOptions {
+            timeout,
+            connect_timeout,
+            allow_http,
+            root_certificates,
+        }: PlClientOptions,
+    ) -> Self {
         let mut opts = ClientOptions::new();
 
-        if let Some(timeout) = pl_opts.timeout {
+        if let Some(timeout) = timeout {
             opts = opts.with_timeout(timeout);
         } else {
             opts = opts.with_timeout_disabled();
         }
-        if let Some(connect_timeout) = pl_opts.connect_timeout {
+        if let Some(connect_timeout) = connect_timeout {
             opts = opts.with_connect_timeout(connect_timeout);
         } else {
             opts = opts.with_connect_timeout_disabled();
         }
-        opts = opts.with_allow_http(pl_opts.allow_http);
-        for certificate in pl_opts.root_certificates.0.iter() {
+        opts = opts.with_allow_http(allow_http);
+        for certificate in root_certificates.0.iter() {
             opts = opts.with_root_certificate(certificate.clone());
         }
 
