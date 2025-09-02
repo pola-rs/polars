@@ -59,7 +59,7 @@ _SIMPLE_DTYPES: list[DataTypeClass] = [
     UInt16,
     UInt32,
     UInt64,
-    # UInt128,
+    UInt128,
     String,
     Binary,
     Date,
