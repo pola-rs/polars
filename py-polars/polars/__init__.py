@@ -1,3 +1,43 @@
+#  ____       _
+# |  _ \ ___ | | __ _ _ __ ___
+# | |_) / _ \| |/ _` | '__/ __|
+# |  __/ (_) | | (_| | |  \__ \
+# |_|   \___/|_|\__,_|_|  |___/
+#
+
+"""
+Polars: Blazingly fast DataFrames in Python
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Polars is a fast, open-source library for data manipulation with an expressive, typed API.
+
+Basic usage:
+
+   >>> import polars as pl
+   >>> df = pl.DataFrame({
+   ...     "name": ["Alice", "Bob", "Charlie"],
+   ...     "age": [25, 30, 35],
+   ...     "city": ["New York", "London", "Tokyo"]
+   ... })
+   >>> df.filter(pl.col("age") > 28)
+   shape: (2, 3)
+   ┌─────────┬─────┬─────────┐
+   │ name    ┆ age ┆ city    │
+   │ ---     ┆ --- ┆ ---     │
+   │ str     ┆ i64 ┆ str     │
+   ╞═════════╪═════╪═════════╡
+   │ Bob     ┆ 30  ┆ London  │
+   │ Charlie ┆ 35  ┆ Tokyo   │
+   └─────────┴─────┴─────────┘
+
+User Guide: https://docs.pola.rs/
+Python API Documentation: https://docs.pola.rs/api/python/stable/reference/
+Source Code: https://github.com/pola-rs/polars
+
+:copyright: (c) 2025 Ritchie Vink. Portions (c) 2024 NVIDIA CORPORATION & AFFILIATES.
+:license: MIT, see LICENSE for more details.
+"""  # noqa: D400, W505, D205
+
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
