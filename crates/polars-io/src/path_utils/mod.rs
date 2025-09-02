@@ -4,6 +4,7 @@ use std::sync::{Arc, LazyLock};
 
 use polars_core::config;
 use polars_core::error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
+use polars_error::polars_ensure;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::{CloudScheme, PlPath, PlPathRef};
 
@@ -500,6 +501,7 @@ pub fn expand_paths_hive(
 
     assert_eq!(out_paths.current_idx, out_paths.paths.len());
 
+    polars_ensure!(!out_paths.paths.is_empty(), ComputeError: "no input files found for addresses: {:?}", paths);
     if expanded_from_single_directory(paths, out_paths.paths.as_slice()) {
         if let [Some((_, i1)), Some((_, i2))] = out_paths.exts {
             polars_bail!(
