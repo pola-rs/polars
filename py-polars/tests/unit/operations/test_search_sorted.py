@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -94,27 +99,9 @@ def test_raise_literal_numeric_search_sorted_18096() -> None:
         df.with_columns(idx=pl.col("foo").search_sorted("bar"))
 
 
-def test_search_sorted_enum() -> None:
-    series = pl.Series(["a", None, "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
-    desc_nulls_last = series.sort(descending=True, nulls_last=True)
-    assert desc_nulls_last.search_sorted(None, "left", descending=True) == 3
-    assert desc_nulls_last.search_sorted("a", "left", descending=True) == 2
-
-    desc_nulls_first = series.sort(descending=True, nulls_last=False)
-    assert desc_nulls_first.search_sorted(None, "left", descending=True) == 0
-    assert desc_nulls_first.search_sorted("a", "left", descending=True) == 3
-
-    asc_nulls_last = series.sort(descending=False, nulls_last=True)
-    assert asc_nulls_last.search_sorted(None, "left", descending=False) == 3
-    assert asc_nulls_last.search_sorted("a", "left", descending=False) == 0
-
-    asc_nulls_first = series.sort(descending=False, nulls_last=False)
-    assert asc_nulls_first.search_sorted(None, "left", descending=False) == 0
-    assert asc_nulls_first.search_sorted("a", "left", descending=False) == 1
-
-
-def test_search_sorted_categorical() -> None:
-    series = pl.Series(["a", None, "b", "c"], dtype=pl.Categorical())
+@pytest.mark.parametrize("dtype", [pl.Categorical(), pl.Enum(["a", "b", "c"])])
+def test_search_sorted_enum_categorical(dtype: PolarsDataType) -> None:
+    series = pl.Series(["a", None, "b", "c"], dtype=dtype)
     desc_nulls_last = series.sort(descending=True, nulls_last=True)
     assert desc_nulls_last.search_sorted(None, "left", descending=True) == 3
     assert desc_nulls_last.search_sorted("a", "left", descending=True) == 2
