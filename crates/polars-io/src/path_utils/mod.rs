@@ -501,7 +501,9 @@ pub fn expand_paths_hive(
 
     assert_eq!(out_paths.current_idx, out_paths.paths.len());
 
-    polars_ensure!(!out_paths.paths.is_empty(), ComputeError: "no input files found for addresses: {:?}", paths);
+    if !paths.is_empty() {
+        polars_ensure!(!out_paths.paths.is_empty(), ComputeError: "no input files found for addresses: {:?}", paths);
+    }
     if expanded_from_single_directory(paths, out_paths.paths.as_slice()) {
         if let [Some((_, i1)), Some((_, i2))] = out_paths.exts {
             polars_bail!(
