@@ -291,6 +291,7 @@ impl ArrowDataType {
             Int64 | Date64 | Timestamp(_, _) | Time64(_) | Duration(_) => {
                 PhysicalType::Primitive(PrimitiveType::Int64)
             },
+            Int128 => PhysicalType::Primitive(PrimitiveType::Int128),
             Decimal(_, _) => PhysicalType::Primitive(PrimitiveType::Int128),
             Decimal32(_, _) => PhysicalType::Primitive(PrimitiveType::Int32),
             Decimal64(_, _) => PhysicalType::Primitive(PrimitiveType::Int64),
@@ -299,11 +300,10 @@ impl ArrowDataType {
             UInt16 => PhysicalType::Primitive(PrimitiveType::UInt16),
             UInt32 => PhysicalType::Primitive(PrimitiveType::UInt32),
             UInt64 => PhysicalType::Primitive(PrimitiveType::UInt64),
+            UInt128 => PhysicalType::Primitive(PrimitiveType::UInt128),
             Float16 => PhysicalType::Primitive(PrimitiveType::Float16),
             Float32 => PhysicalType::Primitive(PrimitiveType::Float32),
             Float64 => PhysicalType::Primitive(PrimitiveType::Float64),
-            UInt128 => PhysicalType::Primitive(PrimitiveType::UInt128),
-            Int128 => PhysicalType::Primitive(PrimitiveType::Int128),
             Interval(IntervalUnit::DayTime) => PhysicalType::Primitive(PrimitiveType::DaysMs),
             Interval(IntervalUnit::MonthDayNano) => {
                 PhysicalType::Primitive(PrimitiveType::MonthDayNano)
@@ -427,6 +427,7 @@ impl ArrowDataType {
                 | D::UInt16
                 | D::UInt32
                 | D::UInt64
+                | D::UInt128
                 | D::Float32
                 | D::Float64
                 | D::Decimal(_, _)
@@ -517,12 +518,12 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::Int16 => ArrowDataType::Int16,
             PrimitiveType::Int32 => ArrowDataType::Int32,
             PrimitiveType::Int64 => ArrowDataType::Int64,
+            PrimitiveType::Int128 => ArrowDataType::Int128,
             PrimitiveType::UInt8 => ArrowDataType::UInt8,
             PrimitiveType::UInt16 => ArrowDataType::UInt16,
             PrimitiveType::UInt32 => ArrowDataType::UInt32,
             PrimitiveType::UInt64 => ArrowDataType::UInt64,
             PrimitiveType::UInt128 => ArrowDataType::UInt128,
-            PrimitiveType::Int128 => ArrowDataType::Int128,
             PrimitiveType::Int256 => ArrowDataType::Decimal256(32, 32),
             PrimitiveType::Float16 => ArrowDataType::Float16,
             PrimitiveType::Float32 => ArrowDataType::Float32,
