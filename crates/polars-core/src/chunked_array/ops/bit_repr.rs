@@ -101,13 +101,13 @@ where
     fn to_bit_repr(&self) -> BitRepr {
         match size_of::<T::Native>() {
             16 => {
-                feature_gated!("dtype-i128", {
-                    if matches!(self.dtype(), DataType::Int128) {
-                        let ca: &Int128Chunked = self.as_any().downcast_ref().unwrap();
-                        return BitRepr::I128(ca.clone());
+                feature_gated!("dtype-u128", {
+                    if matches!(self.dtype(), DataType::UInt128) {
+                        let ca: &UInt128Chunked = self.as_any().downcast_ref().unwrap();
+                        return BitRepr::U128(ca.clone());
                     }
 
-                    BitRepr::I128(reinterpret_chunked_array(self))
+                    BitRepr::U128(reinterpret_chunked_array(self))
                 })
             },
 

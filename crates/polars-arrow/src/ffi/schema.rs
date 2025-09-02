@@ -623,7 +623,7 @@ mod tests {
             ArrowDataType::UInt16,
             ArrowDataType::UInt32,
             ArrowDataType::UInt64,
-            ArrowDataType::Int128,
+            ArrowDataType::UInt128,
             ArrowDataType::Int8,
             ArrowDataType::Int16,
             ArrowDataType::Int32,
