@@ -703,8 +703,9 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
                 "div", a.len(), b.len()
             );
             let mut fields = Vec::with_capacity(a.len());
-            // In case b.len() == 1, we broadcast the first field (b[0])
-            let b_iter = b.iter().cycle().take(a.len());
+            // In case b.len() == 1, we broadcast the first field (b[0]).
+            // Safety is assured by the constraints above.
+            let b_iter = (0..a.len()).map(|i| b.get(i.min(b.len() - 1)).unwrap());
             for (left, right) in a.iter().zip(b_iter) {
                 let name = left.name.clone();
                 let (left, right) = (left.dtype(), right.dtype());
