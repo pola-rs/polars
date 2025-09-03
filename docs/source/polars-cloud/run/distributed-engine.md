@@ -8,6 +8,10 @@ when querying large datasets from cloud storage, performance is often constraine
 limitations of a single node. By scaling horizontally, these download limitations can be
 significantly reduced, allowing users to process data at scale.
 
+!!! info "Distributed engine is in open beta"
+
+    The distributed engine currently supports most of Polars API and datatypes. Follow [the tracking issue](https://github.com/pola-rs/polars/issues/21487) to stay up to date.
+
 ## Using distributed engine
 
 To execute queries using the distributed engine, you can call the `distributed()` method.
