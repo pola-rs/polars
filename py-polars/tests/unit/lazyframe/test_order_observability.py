@@ -166,8 +166,9 @@ def test_merge_sorted_to_union() -> None:
         pl.arange(0, pl.len()),
         pl.int_range(pl.len()),
         pl.row_index().cast(pl.Int64),
-        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
+        pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(),
         pl.lit(pl.Series([0, 1, 2, 3, 4])),
+        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
     ],
 )
 def test_row_separable_observes_order(order_sensitive_expr: pl.Expr) -> None:
