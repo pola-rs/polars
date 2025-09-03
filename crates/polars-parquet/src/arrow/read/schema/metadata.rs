@@ -1,6 +1,7 @@
 use arrow::datatypes::{
     ArrowDataType, ArrowSchema, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW,
-    DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Field, IntegerType, Metadata,
+    DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Field, IntegerType, MAINTAIN_PL_TYPE,
+    Metadata, PL_KEY,
 };
 use arrow::io::ipc::read::deserialize_schema;
 use base64::Engine as _;
@@ -51,6 +52,14 @@ fn convert_field(field: &mut Field) {
             } else {
                 convert_dtype(*value_type)
             }
+        },
+        ArrowDataType::LargeBinary
+            if field
+                .metadata
+                .as_ref()
+                .is_some_and(|md| md.get(PL_KEY).map(|s| s.as_str()) == Some(MAINTAIN_PL_TYPE)) =>
+        {
+            ArrowDataType::LargeBinary
         },
         dt => convert_dtype(dt),
     };

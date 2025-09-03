@@ -211,7 +211,7 @@ fn no_more_bitpacked_values() -> ParquetError {
 }
 
 #[inline(always)]
-fn verify_dict_indices(indices: &[u32], dict_size: usize) -> ParquetResult<()> {
+pub(super) fn verify_dict_indices(indices: &[u32], dict_size: usize) -> ParquetResult<()> {
     debug_assert!(dict_size <= u32::MAX as usize);
     let dict_size = dict_size as u32;
 
