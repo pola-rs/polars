@@ -317,6 +317,7 @@ __all__ = [
     "UInt16",
     "UInt32",
     "UInt64",
+    "UInt128",
     "Unknown",
     "Utf8",
     # polars.io
