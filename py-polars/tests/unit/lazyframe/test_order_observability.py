@@ -161,7 +161,7 @@ def test_merge_sorted_to_union() -> None:
 
 
 @pytest.mark.parametrize(
-    "row_separable_expr",
+    "order_sensitive_expr",
     [
         pl.arange(0, pl.len()),
         pl.int_range(pl.len()),
@@ -170,13 +170,13 @@ def test_merge_sorted_to_union() -> None:
         pl.lit(pl.Series([0, 1, 2, 3, 4])),
     ],
 )
-def test_row_separable_observes_order(row_separable_expr: pl.Expr) -> None:
+def test_row_separable_observes_order(order_sensitive_expr: pl.Expr) -> None:
     expect = pl.DataFrame({"x": [1, 2, 3, 4, 5], "out": [0, 1, 2, 3, 4]})
 
     q = (
         pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
         .unique(maintain_order=True)
-        .with_columns(row_separable_expr.alias("out"))
+        .with_columns(order_sensitive_expr.alias("out"))
         .unique()
     )
 
