@@ -34,7 +34,7 @@ managed through the dashboard interface.
 
 ```python
 ctx= plc.ComputeContext(
-    workspace="PolarsUserGuide",
+    workspace="your-workspace",
     labels=["docs", "user-guide"],
 )
 ```

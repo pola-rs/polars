@@ -820,9 +820,18 @@ def test_parquet_schema_arg(
         lf.collect(engine="streaming" if streaming else "in-memory")
 
 
-def test_scan_parquet_schema_specified_with_empty_files_list(tmp_path: Path) -> None:
+def test_scan_parquet_empty_path_expansion(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
+    with pytest.raises(
+        ComputeError,
+        match=r"failed to retrieve first file schema \(parquet\): "
+        r"expanded paths were empty \(path expansion input: "
+        ".*Hint: passing a schema can allow this scan to succeed with an empty DataFrame",
+    ):
+        pl.scan_parquet(tmp_path).collect()
+
+    # Scan succeeds when schema is provided
     assert_frame_equal(
         pl.scan_parquet(tmp_path, schema={"x": pl.Int64}).collect(),
         pl.DataFrame(schema={"x": pl.Int64}),
