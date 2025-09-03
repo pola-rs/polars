@@ -92,6 +92,7 @@ __all__ = [
     "TemporalType",
     "Time",
     "UInt16",
+    "UInt128",
     "UInt32",
     "UInt64",
     "UInt8",
