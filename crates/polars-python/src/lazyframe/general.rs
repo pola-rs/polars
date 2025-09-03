@@ -670,36 +670,38 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (engine, lambda))]
-    fn collect_with_callback(&self, engine: Wrap<Engine>, lambda: PyObject) {
-        let ldf = self.ldf.read().clone();
+    fn collect_with_callback(&self, py: Python<'_>, engine: Wrap<Engine>, lambda: PyObject) {
+        py.enter_polars_ok(|| {
+            let ldf = self.ldf.read().clone();
 
-        let func = move || {
-            let result = ldf
-                .collect_with_engine(engine.0)
-                .map(PyDataFrame::new)
-                .map_err(PyPolarsErr::from);
+            let func = move || {
+                let result = ldf
+                    .collect_with_engine(engine.0)
+                    .map(PyDataFrame::new)
+                    .map_err(PyPolarsErr::from);
 
-            Python::with_gil(|py| match result {
-                Ok(df) => {
-                    lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
-                },
-                Err(err) => {
-                    lambda
-                        .call1(py, (PyErr::from(err),))
-                        .map_err(|err| err.restore(py))
-                        .ok();
-                },
-            });
-        };
+                Python::with_gil(|py| match result {
+                    Ok(df) => {
+                        lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
+                    },
+                    Err(err) => {
+                        lambda
+                            .call1(py, (PyErr::from(err),))
+                            .map_err(|err| err.restore(py))
+                            .ok();
+                    },
+                });
+            };
 
-        #[cfg(feature = "cloud")]
-        {
-            polars_io::pl_async::get_runtime().spawn_blocking(func);
-        }
-        #[cfg(not(feature = "cloud"))]
-        {
-            std::thread::spawn(func);
-        }
+            #[cfg(feature = "cloud")]
+            {
+                polars_io::pl_async::get_runtime().spawn_blocking(func);
+            }
+            #[cfg(not(feature = "cloud"))]
+            {
+                std::thread::spawn(func);
+            }
+        })
     }
 
     #[cfg(feature = "parquet")]
