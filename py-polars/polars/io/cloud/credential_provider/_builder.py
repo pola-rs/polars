@@ -411,6 +411,8 @@ def _init_credential_provider_builder(
                         "endpoint_url",
                     }:
                         has_endpoint_url = True
+                    elif k in {"aws_request_payer", "request_payer"}:
+                        continue
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
                         continue
                     else:
