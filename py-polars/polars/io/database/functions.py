@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import qualified_type_name
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import import_optional
@@ -288,6 +289,7 @@ def read_database_uri(
     engine: Literal["adbc"],
     schema_overrides: SchemaDict | None = None,
     execute_options: dict[str, Any] | None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame: ...
 
 
@@ -303,6 +305,7 @@ def read_database_uri(
     engine: Literal["connectorx"] | None = None,
     schema_overrides: SchemaDict | None = None,
     execute_options: None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame: ...
 
 
@@ -318,6 +321,7 @@ def read_database_uri(
     engine: DbReadEngine | None = None,
     schema_overrides: None = None,
     execute_options: dict[str, Any] | None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame: ...
 
 
@@ -332,6 +336,7 @@ def read_database_uri(
     engine: DbReadEngine | None = None,
     schema_overrides: SchemaDict | None = None,
     execute_options: dict[str, Any] | None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame:
     """
     Read the results of a SQL query into a DataFrame, given a URI.
@@ -379,6 +384,15 @@ def read_database_uri(
         These options will be passed to the underlying query execution method as
         kwargs. Note that connectorx does not support this parameter and ADBC currently
         only supports positional 'qmark' style parameterization.
+    pre_execution_query
+        SQL query or list of SQL queries executed before main query (connectorx>=0.4.2).
+        Can be used to set runtime configurations using SET statements.
+        Only applicable for Postgres and MySQL source.
+        Only applicable with the connectorx engine.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Notes
     -----
@@ -470,6 +484,10 @@ def read_database_uri(
         if execute_options:
             msg = "the 'connectorx' engine does not support use of `execute_options`"
             raise ValueError(msg)
+        if pre_execution_query:
+            issue_unstable_warning(
+                "the 'pre-execution-query' parameter is considered unstable."
+            )
         return _read_sql_connectorx(
             query,
             connection_uri=uri,
@@ -478,10 +496,14 @@ def read_database_uri(
             partition_num=partition_num,
             protocol=protocol,
             schema_overrides=schema_overrides,
+            pre_execution_query=pre_execution_query,
         )
     elif engine == "adbc":
         if not isinstance(query, str):
             msg = "only a single SQL query string is accepted for adbc"
+            raise ValueError(msg)
+        if pre_execution_query:
+            msg = "the 'adbc' engine does not support use of `pre_execution_query`"
             raise ValueError(msg)
         return _read_sql_adbc(
             query,

@@ -775,15 +775,6 @@ def test_scan_stringio(method: str) -> None:
     assert_frame_equal(df.vstack(df), result)
 
 
-@pytest.mark.parametrize(
-    "method",
-    [pl.scan_parquet, pl.scan_csv, pl.scan_ipc, pl.scan_ndjson],
-)
-def test_empty_list(method: Callable[[list[str]], pl.LazyFrame]) -> None:
-    with pytest.raises(pl.exceptions.ComputeError, match="expected at least 1 source"):
-        _ = (method)([]).collect()
-
-
 def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
     lf = pl.scan_csv(io.BytesIO(b"a\n1\n2\n3"))
 
@@ -1100,3 +1091,100 @@ def test_scan_no_glob_special_chars_23292(tmp_path: Path) -> None:
     df.write_parquet(path)
 
     assert_frame_equal(pl.scan_parquet(f"file://{path}", glob=False).collect(), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan_function", "failed_message", "name_in_context"),
+    [
+        (
+            pl.scan_parquet,
+            "failed to retrieve first file schema (parquet)",
+            "'parquet scan'",
+        ),
+        (pl.scan_ipc, "failed to retrieve first file schema (ipc)", "'ipc scan'"),
+        (pl.scan_csv, "failed to retrieve file schemas (csv)", "'csv scan'"),
+        (
+            pl.scan_ndjson,
+            "failed to retrieve first file schema (ndjson)",
+            "'ndjson scan'",
+        ),
+    ],
+)
+def test_scan_empty_paths_friendly_error(
+    tmp_path: Path,
+    scan_function: Any,
+    failed_message: str,
+    name_in_context: str,
+) -> None:
+    q = scan_function(tmp_path)
+
+    with pytest.raises(pl.exceptions.ComputeError) as exc:
+        q.collect()
+
+    exc_str = exc.exconly()
+
+    assert (
+        f"ComputeError: {failed_message}: expanded paths were empty "
+        "(path expansion input: 'paths: [Local"
+    ) in exc_str
+
+    assert "glob: true)." in exc_str
+    assert exc_str.count(tmp_path.name) == 1
+
+    assert (
+        name_in_context
+        in exc_str.split(
+            "This error occurred with the following context stack:", maxsplit=1
+        )[1]
+    )
+
+    if scan_function is pl.scan_parquet:
+        assert (
+            "Hint: passing a schema can allow this scan to succeed with an empty DataFrame."
+            in exc_str
+        )
+
+    # Multiple input paths
+    q = scan_function([tmp_path, tmp_path])
+
+    with pytest.raises(pl.exceptions.ComputeError) as exc:
+        q.collect()
+
+    exc_str = exc.exconly()
+
+    assert (
+        f"ComputeError: {failed_message}: expanded paths were empty "
+        "(path expansion input: 'paths: [Local"
+    ) in exc_str
+
+    assert "glob: true)." in exc_str
+
+    assert exc_str.count(tmp_path.name) == 2
+
+    q = scan_function([])
+
+    with pytest.raises(pl.exceptions.ComputeError) as exc:
+        q.collect()
+
+    exc_str = exc.exconly()
+
+    # There is no "path expansion resulted in" for this error message as the
+    # original input sources were empty.
+    assert f"ComputeError: {failed_message}: empty input: paths: []" in exc_str
+
+    if scan_function is pl.scan_parquet:
+        assert (
+            "Hint: passing a schema can allow this scan to succeed with an empty DataFrame."
+            in exc_str
+        )
+
+    # TODO: glob parameter not supported in some scan types
+    cx = (
+        pytest.raises(pl.exceptions.ComputeError, match="glob: false")
+        if scan_function is pl.scan_csv or scan_function is pl.scan_parquet
+        else pytest.raises(TypeError, match="unexpected keyword argument 'glob'")  # type: ignore[arg-type]
+    )
+
+    with cx:
+        scan_function(tmp_path, glob=False).collect()
