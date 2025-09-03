@@ -169,13 +169,21 @@ def test_merge_sorted_to_union() -> None:
         pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(),
         pl.lit(pl.Series([0, 1, 2, 3, 4])),
         pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
+        pl.col("y").sort_by(pl.col("y")),
+        pl.col("x").gather(pl.col("x")),
     ],
 )
 def test_order_sensitive_exprs_24335(order_sensitive_expr: pl.Expr) -> None:
-    expect = pl.DataFrame({"x": [1, 2, 3, 4, 5], "out": [0, 1, 2, 3, 4]})
+    expect = pl.DataFrame(
+        {
+            "x": [0, 1, 2, 3, 4],
+            "y": [3, 4, 0, 1, 2],
+            "out": [0, 1, 2, 3, 4],
+        }
+    )
 
     q = (
-        pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
+        pl.LazyFrame({"x": [0, 1, 2, 3, 4], "y": [3, 4, 0, 1, 2]})
         .unique(maintain_order=True)
         .with_columns(order_sensitive_expr.alias("out"))
         .unique()

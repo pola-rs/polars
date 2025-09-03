@@ -72,7 +72,7 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
             expr: _,
             idx: _,
             returns_scalar: _,
-        } => false,
+        } => true,
         AExpr::SortBy {
             expr: _,
             by: _,
