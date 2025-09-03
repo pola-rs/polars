@@ -418,14 +418,6 @@ impl PyLazyFrame {
         dataset_object
     ))]
     fn new_from_dataset_object(dataset_object: PyObject) -> PyResult<Self> {
-        use crate::dataset::dataset_provider_funcs;
-
-        polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
-            name: dataset_provider_funcs::name,
-            schema: dataset_provider_funcs::schema,
-            to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
-        });
-
         let lf =
             LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
                 .into();
