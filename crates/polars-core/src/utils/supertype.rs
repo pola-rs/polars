@@ -254,9 +254,9 @@ pub fn get_supertype_with_options(
             (UInt32, UInt64) => Some(UInt64),
 
             #[cfg(feature = "dtype-u128")]
-            (UInt128, a) if a.is_unsigned_integer() | a.is_bool() => Some(UInt128),
+            (UInt128, a) if a.is_unsigned_integer() || a.is_bool() => Some(UInt128),
             #[cfg(feature = "dtype-u128")]
-            (UInt128, a) if a.is_integer() => Some(Int128),
+            (UInt128, a) if a.is_signed_integer() => Some(Int128),
             #[cfg(feature = "dtype-u128")]
             (UInt128, a) if a.is_float() => Some(Float64),
 
