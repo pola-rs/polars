@@ -1104,18 +1104,18 @@ def test_scan_no_glob_special_chars_23292(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
-    ("scan_function", "expected_operation_name"),
+    ("scan_function", "failed_message"),
     [
-        (pl.scan_parquet, "infer_parquet_schema"),
-        (pl.scan_ipc, "infer_ipc_schema"),
-        (pl.scan_csv, "infer_csv_schema"),
-        (pl.scan_ndjson, "infer_ndjson_schema"),
+        (pl.scan_parquet, "failed to retrieve first file schema (parquet)"),
+        (pl.scan_ipc, "failed to retrieve first file schema (ipc)"),
+        (pl.scan_csv, "failed to retrieve file schemas (csv)"),
+        (pl.scan_ndjson, "failed to retrieve first file schema (ndjson)"),
     ],
 )
 def test_scan_empty_paths_friendly_error(
     tmp_path: Path,
     scan_function: Any,
-    expected_operation_name: str,
+    failed_message: str,
 ) -> None:
     q = scan_function(tmp_path)
 
@@ -1125,8 +1125,7 @@ def test_scan_empty_paths_friendly_error(
     exc_str = exc.exconly()
 
     assert (
-        f"ComputeError: failed {expected_operation_name}: at least 1 source is needed. "
-        "However, path expansion resulted in no files "
+        f"ComputeError: {failed_message}: expanded paths were empty "
         "(path expansion input: 'paths: [Local"
     ) in exc_str
 
@@ -1148,8 +1147,7 @@ def test_scan_empty_paths_friendly_error(
     exc_str = exc.exconly()
 
     assert (
-        f"ComputeError: failed {expected_operation_name}: at least 1 source is needed. "
-        "However, path expansion resulted in no files "
+        f"ComputeError: {failed_message}: expanded paths were empty "
         "(path expansion input: 'paths: [Local"
     ) in exc_str
 
@@ -1166,10 +1164,7 @@ def test_scan_empty_paths_friendly_error(
 
     # There is no "path expansion resulted in" for this error message as the
     # original input sources were empty.
-    assert (
-        f"ComputeError: failed {expected_operation_name}: at least 1 source is needed (input sources: paths: [])."
-        in exc_str
-    )
+    assert f"ComputeError: {failed_message}: empty input: paths: []" in exc_str
 
     if scan_function is pl.scan_parquet:
         assert (

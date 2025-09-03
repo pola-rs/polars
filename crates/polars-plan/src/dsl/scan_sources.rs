@@ -263,7 +263,7 @@ impl ScanSources {
 
     pub fn first_or_empty_expand_err(
         &self,
-        failed_operation_name: &'static str,
+        failed_message: &'static str,
         sources_before_expansion: &ScanSources,
         glob: bool,
         hint: &'static str,
@@ -273,15 +273,14 @@ impl ScanSources {
         self.first().ok_or_else(|| match self {
             Self::Paths(_) if !sources_before_expansion.is_empty() => polars_err!(
                 ComputeError:
-                "failed {}: at least 1 source is needed. \
-                However, path expansion resulted in no files \
+                "{}: expanded paths were empty \
                 (path expansion input: '{:?}', glob: {}).{}{}",
-                failed_operation_name, sources_before_expansion, glob, hint_padding, hint
+                failed_message, sources_before_expansion, glob, hint_padding, hint
             ),
             _ => polars_err!(
                 ComputeError:
-                "failed {}: at least 1 source is needed (input sources: {:?}).{}{}",
-                failed_operation_name, self, hint_padding, hint
+                "{}: empty input: {:?}.{}{}",
+                failed_message, self, hint_padding, hint
             ),
         })
     }

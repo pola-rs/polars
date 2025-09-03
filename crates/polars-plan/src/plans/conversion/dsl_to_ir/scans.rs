@@ -218,7 +218,7 @@ fn prepare_schemas(
 }
 
 #[cfg(feature = "parquet")]
-pub(super) fn infer_parquet_schema(
+pub(super) fn parquet_file_info(
     first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
@@ -265,7 +265,7 @@ pub(super) fn infer_parquet_schema(
 
 // TODO! return metadata arced
 #[cfg(feature = "ipc")]
-pub(super) fn infer_ipc_schema(
+pub(super) fn ipc_file_info(
     first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
@@ -311,7 +311,7 @@ pub(super) fn infer_ipc_schema(
 }
 
 #[cfg(feature = "csv")]
-pub fn infer_csv_schema(
+pub fn csv_file_info(
     sources: &ScanSources,
     _first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
@@ -435,7 +435,7 @@ pub fn infer_csv_schema(
 }
 
 #[cfg(feature = "json")]
-pub fn infer_ndjson_schema(
+pub fn ndjson_file_info(
     sources: &ScanSources,
     first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
@@ -524,31 +524,20 @@ impl SourcesToFileInfo {
         unified_scan_args: &mut UnifiedScanArgs,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
-        macro_rules! require_first_source {
-            ($failed_operation_name:expr, hint = $hint:expr) => {{
-                sources.first_or_empty_expand_err(
-                    $failed_operation_name,
-                    sources_before_expansion,
-                    unified_scan_args.glob,
-                    $hint,
-                )?
-            }};
-
-            ($failed_operation_name:expr) => {{
-                sources.first_or_empty_expand_err(
-                    $failed_operation_name,
-                    sources_before_expansion,
-                    unified_scan_args.glob,
-                    "",
-                )?
-            }};
-        }
+        let require_first_source = |failed_operation_name: &'static str, hint: &'static str| {
+            sources.first_or_empty_expand_err(
+                failed_operation_name,
+                sources_before_expansion,
+                unified_scan_args.glob,
+                hint,
+            )
+        };
 
         Ok(match scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 if let Some(schema) = &options.schema {
-                    // We were passed a schema, we don't have to call `infer_parquet_schema`,
+                    // We were passed a schema, we don't have to call `parquet_file_info`,
                     // but this does mean we don't have `row_estimation` and `first_metadata`.
                     (
                         FileInfo {
@@ -564,11 +553,13 @@ impl SourcesToFileInfo {
                         },
                     )
                 } else {
-                    let (file_info, metadata) = scans::infer_parquet_schema(
-                        require_first_source!(
-                            "infer_parquet_schema",
-                            hint = "passing a schema can allow this scan to succeed with an empty DataFrame."
-                        ),
+                    let first_scan_source = require_first_source(
+                        "failed to retrieve first file schema (parquet)",
+                        "passing a schema can allow this scan to succeed with an empty DataFrame.",
+                    )?;
+
+                    let (file_info, metadata) = scans::parquet_file_info(
+                        first_scan_source,
                         unified_scan_args.row_index.as_ref(),
                         cloud_options,
                     )
@@ -579,8 +570,8 @@ impl SourcesToFileInfo {
             },
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { options } => {
-                let (file_info, md) = scans::infer_ipc_schema(
-                    require_first_source!("infer_ipc_schema"),
+                let (file_info, md) = scans::ipc_file_info(
+                    require_first_source("failed to retrieve first file schema (ipc)", "")?,
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
                 )
@@ -603,9 +594,9 @@ impl SourcesToFileInfo {
                 }
 
                 (
-                    scans::infer_csv_schema(
+                    scans::csv_file_info(
                         sources,
-                        require_first_source!("infer_csv_schema"),
+                        require_first_source("failed to retrieve file schemas (csv)", "")?,
                         unified_scan_args.row_index.as_ref(),
                         &mut options,
                         cloud_options,
@@ -616,9 +607,9 @@ impl SourcesToFileInfo {
             },
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => (
-                scans::infer_ndjson_schema(
+                scans::ndjson_file_info(
                     sources,
-                    require_first_source!("infer_ndjson_schema"),
+                    require_first_source("failed to retrieve first file schema (ndjson)", "")?,
                     unified_scan_args.row_index.as_ref(),
                     &options,
                     cloud_options,

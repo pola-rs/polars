@@ -825,7 +825,7 @@ def test_scan_parquet_empty_path_expansion(tmp_path: Path) -> None:
 
     with pytest.raises(
         ComputeError,
-        match="failed infer_parquet_schema: at least 1 source is needed"
+        match="failed parquet_file_info: at least 1 source is needed"
         ".*Hint: passing a schema can allow this scan to succeed with an empty DataFrame",
     ):
         pl.scan_parquet(tmp_path).collect()
