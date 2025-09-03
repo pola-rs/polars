@@ -3,6 +3,7 @@ use std::fs::File;
 use std::sync::Arc;
 
 use polars_core::error::{PolarsResult, feature_gated};
+use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
 use polars_io::file_cache::FileCacheEntry;
@@ -260,6 +261,30 @@ impl ScanSources {
         self.get(0)
     }
 
+    pub fn first_or_empty_expand_err(
+        &self,
+        failed_message: &'static str,
+        sources_before_expansion: &ScanSources,
+        glob: bool,
+        hint: &'static str,
+    ) -> PolarsResult<ScanSourceRef<'_>> {
+        let hint_padding = if hint.is_empty() { "" } else { " Hint: " };
+
+        self.first().ok_or_else(|| match self {
+            Self::Paths(_) if !sources_before_expansion.is_empty() => polars_err!(
+                ComputeError:
+                "{}: expanded paths were empty \
+                (path expansion input: '{:?}', glob: {}).{}{}",
+                failed_message, sources_before_expansion, glob, hint_padding, hint
+            ),
+            _ => polars_err!(
+                ComputeError:
+                "{}: empty input: {:?}.{}{}",
+                failed_message, self, hint_padding, hint
+            ),
+        })
+    }
+
     /// Turn the [`ScanSources`] into some kind of identifier
     pub fn id(&self) -> PlSmallStr {
         if self.is_empty() {
@@ -316,6 +341,17 @@ impl ScanSourceRef<'_> {
             },
             ScanSourceRef::Buffer(buffer) => ScanSource::Buffer((*buffer).clone()),
         })
+    }
+
+    pub fn as_path(&self) -> Option<PlPathRef<'_>> {
+        match self {
+            Self::Path(path) => Some(*path),
+            Self::File(_) | Self::Buffer(_) => None,
+        }
+    }
+
+    pub fn is_cloud_url(&self) -> bool {
+        self.as_path().is_some_and(|x| x.is_cloud_url())
     }
 
     /// Turn the scan source into a memory slice
