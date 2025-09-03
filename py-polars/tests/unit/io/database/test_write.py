@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from typing import TYPE_CHECKING, Any
 
@@ -235,6 +236,33 @@ class TestWriteDatabase:
             match="unrecognised connection type",
         ):
             df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "connection",
+    [
+        pytest.param(
+            create_engine("sqlite:///:memory:").connect(), id="conn: sqlalchemy"
+        ),
+        pytest.param(
+            _open_adbc_connection("sqlite:///:memory:"),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="conn: adbc",
+        ),
+    ],
+)
+def test_write_database_respect_open_connection(connection: Any) -> None:
+    # Polars claims it will not close a connection or cursor it did not open
+    pl.DataFrame({"a": 1}).write_database("my_table", connection)
+    if "sqlalchemy" in os.environ["PYTEST_CURRENT_TEST"]:
+        assert not connection.closed
+    else:
+        # for ADBC, create a cursor to prove the connection is open
+        cursor = connection.cursor()
+        cursor.close()
 
 
 @pytest.mark.write_disk

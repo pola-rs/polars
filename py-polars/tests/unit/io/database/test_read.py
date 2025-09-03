@@ -404,6 +404,51 @@ def test_read_database(
     assert df_empty["date"].to_list() == []
 
 
+@pytest.mark.parametrize(
+    "connection_or_cursor",
+    [
+        pytest.param(sqlite3.connect(":memory:"), id="conn: sqlite3"),
+        pytest.param(sqlite3.connect(":memory:").cursor(), id="cursor: sqlite3"),
+        pytest.param(
+            create_engine("sqlite:///:memory:").connect(), id="conn: sqlalchemy"
+        ),
+        pytest.param(
+            create_engine("sqlite:///:memory:").raw_connection().cursor(),
+            id="cursor: sqlalchemy",
+        ),
+        pytest.param(
+            adbc_sqlite_connect(),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="conn: adbc",
+        ),
+        pytest.param(
+            adbc_sqlite_connect().cursor(),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="cursor: adbc",
+        ),
+    ],
+)
+def test_read_database_respect_open_connection(connection_or_cursor: Any) -> None:
+    # Polars claims it will not close a connection or cursor it did not open
+    pl.read_database("SELECT 1", connection_or_cursor)
+    if "conn:" in os.environ["PYTEST_CURRENT_TEST"]:
+        if "sqlalchemy" in os.environ["PYTEST_CURRENT_TEST"]:
+            assert not connection_or_cursor.closed
+        else:
+            # for ADBC and sqlite, create a cursor to prove the connection is open
+            cursor = connection_or_cursor.cursor()
+            cursor.close()
+    elif "cursor:" in os.environ["PYTEST_CURRENT_TEST"]:
+        # for cursors, prove they are still open by executing another statement
+        connection_or_cursor.execute("SELECT 1")
+
+
 def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
     # various flavours of alchemy connection
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
