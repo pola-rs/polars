@@ -228,6 +228,23 @@ class ExceptionTestParams(NamedTuple):
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
+                connect_using=lambda path: sqlite3.connect(
+                    path, detect_types=True
+                ).cursor(),
+                expected_dtypes={
+                    "id": pl.UInt8,
+                    "name": pl.String,
+                    "value": pl.Float32,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.UInt8, "value": pl.Float32},
+            ),
+            id="cursor: sqlite3",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
                 connect_using=lambda path: create_engine(
                     f"sqlite:///{path}",
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
@@ -241,6 +258,25 @@ class ExceptionTestParams(NamedTuple):
                 expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
             ),
             id="conn: sqlalchemy",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: create_engine(
+                    f"sqlite:///{path}",
+                    connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
+                )
+                .raw_connection()
+                .cursor(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+            ),
+            id="cursor: sqlalchemy",
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -279,6 +315,24 @@ class ExceptionTestParams(NamedTuple):
             ),
             id="conn: adbc (batched)",
         ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: adbc_sqlite_connect(path).cursor(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="cursor: adbc (fetchall)",
+        ),
     ],
 )
 def test_read_database(
@@ -306,7 +360,7 @@ def test_read_database(
             schema_overrides=schema_overrides,
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
-        # externally instantiated adbc connections
+        # externally instantiated ADBC connections
         with connect_using(tmp_sqlite_db) as conn:
             df = pl.read_database(
                 connection=conn,
@@ -320,6 +374,9 @@ def test_read_database(
                 schema_overrides=schema_overrides,
                 batch_size=batch_size,
             )
+        # if we passed an ADBC cursor, we must also close the parent connection
+        if "cursor" in os.environ["PYTEST_CURRENT_TEST"]:
+            conn.connection.close()
     else:
         # other user-supplied connections
         df = pl.read_database(
