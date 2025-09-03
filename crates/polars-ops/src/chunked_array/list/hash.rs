@@ -78,7 +78,7 @@ pub(crate) fn hash(
                             Some(BitRepr::U16(ca)) => hash_agg(&ca, &build_hasher),
                             Some(BitRepr::U32(ca)) => hash_agg(&ca, &build_hasher),
                             Some(BitRepr::U64(ca)) => hash_agg(&ca, &build_hasher),
-                            #[cfg(feature = "dtype-i128")]
+                            #[cfg(feature = "dtype-u128")]
                             Some(BitRepr::U128(ca)) => hash_agg(&ca, &build_hasher),
                         }
                     }

@@ -95,12 +95,11 @@ dtype-full = [
   "dtype-duration",
   "dtype-i16",
   "dtype-i128",
-  "dtype-u128",
   "dtype-i8",
   "dtype-struct",
   "dtype-time",
-  "dtype-u128",
   "dtype-u16",
+  "dtype-u128",
   "dtype-u8",
 ]
 dtype-array = [

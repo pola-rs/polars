@@ -876,7 +876,7 @@ pub fn cast(
         (Float32, UInt16) => primitive_to_primitive_dyn::<f32, u16>(array, to_type, options),
         (Float32, UInt32) => primitive_to_primitive_dyn::<f32, u32>(array, to_type, options),
         (Float32, UInt64) => primitive_to_primitive_dyn::<f32, u64>(array, to_type, options),
-        #[cfg(feature = "dtype-i128")]
+        #[cfg(feature = "dtype-u128")]
         (Float32, UInt128) => primitive_to_primitive_dyn::<f32, u128>(array, to_type, options),
         (Float32, Int8) => primitive_to_primitive_dyn::<f32, i8>(array, to_type, options),
         (Float32, Int16) => primitive_to_primitive_dyn::<f32, i16>(array, to_type, options),
