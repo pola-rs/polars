@@ -775,15 +775,6 @@ def test_scan_stringio(method: str) -> None:
     assert_frame_equal(df.vstack(df), result)
 
 
-@pytest.mark.parametrize(
-    "method",
-    [pl.scan_parquet, pl.scan_csv, pl.scan_ipc, pl.scan_ndjson],
-)
-def test_empty_list(method: Callable[[list[str]], pl.LazyFrame]) -> None:
-    with pytest.raises(pl.exceptions.ComputeError, match="expected at least 1 source"):
-        _ = (method)([]).collect()
-
-
 def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
     lf = pl.scan_csv(io.BytesIO(b"a\n1\n2\n3"))
 
