@@ -210,6 +210,7 @@ impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8, u8);
 impl_polars_num_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16, u16);
 impl_polars_num_datatype!(PolarsIntegerType, UInt32Type, UInt32, u32, u32);
 impl_polars_num_datatype!(PolarsIntegerType, UInt64Type, UInt64, u64, u64);
+#[cfg(feature = "dtype-u128")]
 impl_polars_num_datatype!(PolarsIntegerType, UInt128Type, UInt128, u128, u128);
 impl_polars_num_datatype!(PolarsIntegerType, Int8Type, Int8, i8, i8);
 impl_polars_num_datatype!(PolarsIntegerType, Int16Type, Int16, i16, i16);
