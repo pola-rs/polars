@@ -1100,3 +1100,89 @@ def test_scan_no_glob_special_chars_23292(tmp_path: Path) -> None:
     df.write_parquet(path)
 
     assert_frame_equal(pl.scan_parquet(f"file://{path}", glob=False).collect(), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan_function", "expected_operation_name"),
+    [
+        (pl.scan_parquet, "infer_parquet_schema"),
+        (pl.scan_ipc, "infer_ipc_schema"),
+        (pl.scan_csv, "infer_csv_schema"),
+        (pl.scan_ndjson, "infer_ndjson_schema"),
+    ],
+)
+def test_scan_empty_paths_friendly_error(
+    tmp_path: Path,
+    scan_function: Any,
+    expected_operation_name: str,
+) -> None:
+    q = scan_function(tmp_path)
+
+    with pytest.raises(pl.exceptions.ComputeError) as exc:
+        q.collect()
+
+    exc_str = exc.exconly()
+
+    assert (
+        f"ComputeError: failed {expected_operation_name}: at least 1 source is needed. "
+        "However, path expansion resulted in no files "
+        "(path expansion input: 'paths: [Local"
+    ) in exc_str
+
+    assert "glob: true)." in exc_str
+    assert exc_str.count(tmp_path.name) == 1
+
+    if scan_function is pl.scan_parquet:
+        assert (
+            "Hint: passing a schema can allow this scan to succeed with an empty DataFrame."
+            in exc_str
+        )
+
+    # Multiple input paths
+    q = scan_function([tmp_path, tmp_path])
+
+    with pytest.raises(pl.exceptions.ComputeError) as exc:
+        q.collect()
+
+    exc_str = exc.exconly()
+
+    assert (
+        f"ComputeError: failed {expected_operation_name}: at least 1 source is needed. "
+        "However, path expansion resulted in no files "
+        "(path expansion input: 'paths: [Local"
+    ) in exc_str
+
+    assert "glob: true)." in exc_str
+
+    assert exc_str.count(tmp_path.name) == 2
+
+    q = scan_function([])
+
+    with pytest.raises(pl.exceptions.ComputeError) as exc:
+        q.collect()
+
+    exc_str = exc.exconly()
+
+    # There is no "path expansion resulted in" for this error message as the
+    # original input sources were empty.
+    assert (
+        f"ComputeError: failed {expected_operation_name}: at least 1 source is needed (input sources: paths: [])."
+        in exc_str
+    )
+
+    if scan_function is pl.scan_parquet:
+        assert (
+            "Hint: passing a schema can allow this scan to succeed with an empty DataFrame."
+            in exc_str
+        )
+
+    # TODO: glob parameter not supported in some scan types
+    cx = (
+        pytest.raises(pl.exceptions.ComputeError, match="glob: false")
+        if scan_function is pl.scan_csv or scan_function is pl.scan_parquet
+        else pytest.raises(TypeError, match="unexpected keyword argument 'glob'")
+    )
+
+    with cx:
+        scan_function(tmp_path, glob=False).collect()

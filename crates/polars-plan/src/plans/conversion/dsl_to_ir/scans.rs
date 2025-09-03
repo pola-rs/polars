@@ -40,6 +40,8 @@ pub(super) fn dsl_to_ir(
             }
         }
 
+        let sources_before_expansion = &sources;
+
         let sources = match &*scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { .. } => {
@@ -59,7 +61,7 @@ pub(super) fn dsl_to_ir(
                 // so we just give a dummy path here.
                 ScanSources::Paths(Arc::from([PlPath::from_str("dummy")]))
             },
-            FileScanDsl::Anonymous { .. } => sources,
+            FileScanDsl::Anonymous { .. } => sources.clone(),
         };
 
         // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
@@ -67,6 +69,7 @@ pub(super) fn dsl_to_ir(
         let (mut file_info, scan_type_ir) = ctxt.cache_file_info.get_or_insert(
             &scan_type,
             &sources,
+            sources_before_expansion,
             unified_scan_args,
             cloud_options,
             ctxt.verbose,
@@ -215,16 +218,16 @@ fn prepare_schemas(
 }
 
 #[cfg(feature = "parquet")]
-pub(super) fn parquet_file_info(
-    sources: &ScanSources,
+pub(super) fn infer_parquet_schema(
+    first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, Option<FileMetadataRef>)> {
     use polars_core::error::feature_gated;
 
     let (reader_schema, num_rows, metadata) = {
-        if sources.is_cloud_url() {
-            let first_path = &sources.first_path().unwrap();
+        if first_scan_source.is_cloud_url() {
+            let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
                 let uri = first_path.to_str();
                 get_runtime().block_in_place_on(async {
@@ -238,10 +241,7 @@ pub(super) fn parquet_file_info(
                 })?
             })
         } else {
-            let first_source = sources
-                .first()
-                .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 source"))?;
-            let memslice = first_source.to_memslice()?;
+            let memslice = first_scan_source.to_memslice()?;
             let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
             (
                 reader.schema()?,
@@ -265,19 +265,15 @@ pub(super) fn parquet_file_info(
 
 // TODO! return metadata arced
 #[cfg(feature = "ipc")]
-pub(super) fn ipc_file_info(
-    sources: &ScanSources,
+pub(super) fn infer_ipc_schema(
+    first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
     use polars_utils::plpath::PlPathRef;
 
-    let Some(first) = sources.first() else {
-        polars_bail!(ComputeError: "expected at least 1 source");
-    };
-
-    let metadata = match first {
+    let metadata = match first_scan_source {
         ScanSourceRef::Path(addr) => match addr {
             PlPathRef::Cloud(uri) => {
                 feature_gated!("cloud", {
@@ -315,8 +311,9 @@ pub(super) fn ipc_file_info(
 }
 
 #[cfg(feature = "csv")]
-pub fn csv_file_info(
+pub fn infer_csv_schema(
     sources: &ScanSources,
+    _first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
@@ -329,7 +326,8 @@ pub fn csv_file_info(
     use polars_io::utils::get_reader_bytes;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-    polars_ensure!(!sources.is_empty(), ComputeError: "expected at least 1 source");
+    // Holding _first_scan_source should guarantee sources is not empty.
+    debug_assert!(!sources.is_empty());
 
     // TODO:
     // * See if we can do better than scanning all files if there is a row limit
@@ -437,18 +435,15 @@ pub fn csv_file_info(
 }
 
 #[cfg(feature = "json")]
-pub fn ndjson_file_info(
+pub fn infer_ndjson_schema(
     sources: &ScanSources,
+    first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     ndjson_options: &NDJsonReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
     use polars_core::config;
     use polars_core::error::feature_gated;
-
-    let Some(first) = sources.first() else {
-        polars_bail!(ComputeError: "expected at least 1 source");
-    };
 
     let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
@@ -474,7 +469,8 @@ pub fn ndjson_file_info(
     let mut schema = if let Some(schema) = ndjson_options.schema.clone() {
         schema
     } else {
-        let memslice = first.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
+        let memslice =
+            first_scan_source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
         let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
 
         Arc::new(polars_io::ndjson::infer_schema(
@@ -524,14 +520,35 @@ impl SourcesToFileInfo {
         &mut self,
         scan_type: FileScanDsl,
         sources: &ScanSources,
+        sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
+        macro_rules! require_first_source {
+            ($failed_operation_name:expr, hint = $hint:expr) => {{
+                sources.first_or_empty_expand_err(
+                    $failed_operation_name,
+                    sources_before_expansion,
+                    unified_scan_args.glob,
+                    $hint,
+                )?
+            }};
+
+            ($failed_operation_name:expr) => {{
+                sources.first_or_empty_expand_err(
+                    $failed_operation_name,
+                    sources_before_expansion,
+                    unified_scan_args.glob,
+                    "",
+                )?
+            }};
+        }
+
         Ok(match scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 if let Some(schema) = &options.schema {
-                    // We were passed a schema, we don't have to call `parquet_file_info`,
+                    // We were passed a schema, we don't have to call `infer_parquet_schema`,
                     // but this does mean we don't have `row_estimation` and `first_metadata`.
                     (
                         FileInfo {
@@ -547,8 +564,11 @@ impl SourcesToFileInfo {
                         },
                     )
                 } else {
-                    let (file_info, metadata) = scans::parquet_file_info(
-                        sources,
+                    let (file_info, metadata) = scans::infer_parquet_schema(
+                        require_first_source!(
+                            "infer_parquet_schema",
+                            hint = "passing a schema can allow this scan to succeed with an empty DataFrame."
+                        ),
                         unified_scan_args.row_index.as_ref(),
                         cloud_options,
                     )
@@ -559,8 +579,8 @@ impl SourcesToFileInfo {
             },
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { options } => {
-                let (file_info, md) = scans::ipc_file_info(
-                    sources,
+                let (file_info, md) = scans::infer_ipc_schema(
+                    require_first_source!("infer_ipc_schema"),
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
                 )
@@ -583,8 +603,9 @@ impl SourcesToFileInfo {
                 }
 
                 (
-                    scans::csv_file_info(
+                    scans::infer_csv_schema(
                         sources,
+                        require_first_source!("infer_csv_schema"),
                         unified_scan_args.row_index.as_ref(),
                         &mut options,
                         cloud_options,
@@ -595,8 +616,9 @@ impl SourcesToFileInfo {
             },
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => (
-                scans::ndjson_file_info(
+                scans::infer_ndjson_schema(
                     sources,
+                    require_first_source!("infer_ndjson_schema"),
                     unified_scan_args.row_index.as_ref(),
                     &options,
                     cloud_options,
@@ -641,27 +663,25 @@ impl SourcesToFileInfo {
         &mut self,
         scan_type: &FileScanDsl,
         sources: &ScanSources,
+        sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
         cloud_options: Option<&CloudOptions>,
         verbose: bool,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
-        // Only cache paths. Others are directly parsed.
-        let ScanSources::Paths(paths) = sources else {
-            return self.infer_or_parse(
-                scan_type.clone(),
-                sources,
-                unified_scan_args,
-                cloud_options,
-            );
+        // Only cache non-empty paths. Others are directly parsed.
+        let paths = match sources {
+            ScanSources::Paths(paths) if !paths.is_empty() => paths.clone(),
+
+            _ => {
+                return self.infer_or_parse(
+                    scan_type.clone(),
+                    sources,
+                    sources_before_expansion,
+                    unified_scan_args,
+                    cloud_options,
+                );
+            },
         };
-        if paths.is_empty() {
-            return self.infer_or_parse(
-                scan_type.clone(),
-                sources,
-                unified_scan_args,
-                cloud_options,
-            );
-        }
 
         let (k, v): (CachedSourceKey, Option<&(FileInfo, FileScanIR)>) = match scan_type {
             #[cfg(feature = "parquet")]
@@ -708,6 +728,7 @@ impl SourcesToFileInfo {
                 return self.infer_or_parse(
                     scan_type.clone(),
                     sources,
+                    sources_before_expansion,
                     unified_scan_args,
                     cloud_options,
                 );
@@ -720,8 +741,13 @@ impl SourcesToFileInfo {
             }
             Ok(out.clone())
         } else {
-            let v =
-                self.infer_or_parse(scan_type.clone(), sources, unified_scan_args, cloud_options)?;
+            let v = self.infer_or_parse(
+                scan_type.clone(),
+                sources,
+                sources_before_expansion,
+                unified_scan_args,
+                cloud_options,
+            )?;
             self.inner.insert(k, v.clone());
             Ok(v)
         }
