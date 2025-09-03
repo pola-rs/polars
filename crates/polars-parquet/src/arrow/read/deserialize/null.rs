@@ -106,6 +106,7 @@ impl utils::Decoder for NullDecoder {
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         if matches!(filter, Some(Filter::Predicate(_))) {
             todo!()

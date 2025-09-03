@@ -18,9 +18,9 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::types::int96_to_i64_ns;
 use crate::read::ParquetError;
-use crate::read::deserialize::binview;
 use crate::read::deserialize::categorical::CategoricalDecoder;
 use crate::read::deserialize::utils::PageDecoder;
+use crate::read::deserialize::{binary, binview};
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
 /// `dtype` with a maximum of `num_rows` elements.
@@ -441,8 +441,17 @@ pub fn page_iter_to_array(
             init_nested,
         )?
         .collect_boxed(filter)?,
+        // Decoder for BinaryOffset
+        (PhysicalType::ByteArray, LargeBinary) => PageDecoder::new(
+            &field.name,
+            pages,
+            dtype,
+            binary::BinaryDecoder,
+            init_nested,
+        )?
+        .collect_boxed(filter)?,
         // Don't compile this code with `i32` as we don't use this in polars
-        (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
+        (PhysicalType::ByteArray, LargeUtf8) => {
             let is_string = matches!(dtype, LargeUtf8);
             PageDecoder::new(
                 &field.name,
