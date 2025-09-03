@@ -344,7 +344,7 @@ impl MMapSemaphore {
         file: &File,
         options: MmapOptions,
     ) -> PolarsResult<MMapSemaphore> {
-        let mmap = unsafe { options.map(file) }?;
+        let mmap = unsafe { options.map_copy_read_only(file) }?;
 
         #[cfg(target_family = "unix")]
         {
