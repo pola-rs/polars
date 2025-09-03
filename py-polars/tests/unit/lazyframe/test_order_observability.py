@@ -171,7 +171,7 @@ def test_merge_sorted_to_union() -> None:
         pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
     ],
 )
-def test_row_separable_observes_order(order_sensitive_expr: pl.Expr) -> None:
+def test_order_sensitive_exprs_24335(order_sensitive_expr: pl.Expr) -> None:
     expect = pl.DataFrame({"x": [1, 2, 3, 4, 5], "out": [0, 1, 2, 3, 4]})
 
     q = (
