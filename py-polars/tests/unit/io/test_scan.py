@@ -1104,18 +1104,27 @@ def test_scan_no_glob_special_chars_23292(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
-    ("scan_function", "failed_message"),
+    ("scan_function", "failed_message", "name_in_context"),
     [
-        (pl.scan_parquet, "failed to retrieve first file schema (parquet)"),
-        (pl.scan_ipc, "failed to retrieve first file schema (ipc)"),
-        (pl.scan_csv, "failed to retrieve file schemas (csv)"),
-        (pl.scan_ndjson, "failed to retrieve first file schema (ndjson)"),
+        (
+            pl.scan_parquet,
+            "failed to retrieve first file schema (parquet)",
+            "'parquet scan'",
+        ),
+        (pl.scan_ipc, "failed to retrieve first file schema (ipc)", "'ipc scan'"),
+        (pl.scan_csv, "failed to retrieve file schemas (csv)", "'csv scan'"),
+        (
+            pl.scan_ndjson,
+            "failed to retrieve first file schema (ndjson)",
+            "'ndjson scan'",
+        ),
     ],
 )
 def test_scan_empty_paths_friendly_error(
     tmp_path: Path,
     scan_function: Any,
     failed_message: str,
+    name_in_context: str,
 ) -> None:
     q = scan_function(tmp_path)
 
@@ -1131,6 +1140,13 @@ def test_scan_empty_paths_friendly_error(
 
     assert "glob: true)." in exc_str
     assert exc_str.count(tmp_path.name) == 1
+
+    assert (
+        name_in_context
+        in exc_str.split(
+            "This error occurred with the following context stack:", maxsplit=1
+        )[1]
+    )
 
     if scan_function is pl.scan_parquet:
         assert (

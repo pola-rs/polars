@@ -553,72 +553,81 @@ impl SourcesToFileInfo {
                         },
                     )
                 } else {
-                    let first_scan_source = require_first_source(
-                        "failed to retrieve first file schema (parquet)",
-                        "passing a schema can allow this scan to succeed with an empty DataFrame.",
-                    )?;
+                    (|| {
+                        let first_scan_source = require_first_source(
+                            "failed to retrieve first file schema (parquet)",
+                            "\
+passing a schema can allow \
+this scan to succeed with an empty DataFrame.",
+                        )?;
 
-                    let (file_info, metadata) = scans::parquet_file_info(
-                        first_scan_source,
-                        unified_scan_args.row_index.as_ref(),
-                        cloud_options,
-                    )
-                    .map_err(|e| e.context(failed_here!(parquet scan)))?;
+                        let (file_info, metadata) = scans::parquet_file_info(
+                            first_scan_source,
+                            unified_scan_args.row_index.as_ref(),
+                            cloud_options,
+                        )?;
 
-                    (file_info, FileScanIR::Parquet { options, metadata })
+                        PolarsResult::Ok((file_info, FileScanIR::Parquet { options, metadata }))
+                    })()
+                    .map_err(|e| e.context(failed_here!(parquet scan)))?
                 }
             },
             #[cfg(feature = "ipc")]
-            FileScanDsl::Ipc { options } => {
+            FileScanDsl::Ipc { options } => (|| {
                 let (file_info, md) = scans::ipc_file_info(
                     require_first_source("failed to retrieve first file schema (ipc)", "")?,
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
-                )
-                .map_err(|e| e.context(failed_here!(ipc scan)))?;
-                (
+                )?;
+
+                PolarsResult::Ok((
                     file_info,
                     FileScanIR::Ipc {
                         options,
                         metadata: Some(Arc::new(md)),
                     },
-                )
-            },
+                ))
+            })()
+            .map_err(|e| e.context(failed_here!(ipc scan)))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
-                // TODO: This is a hack. We conditionally set `allow_missing_columns` to
-                // mimic existing behavior, but this should be taken from a user provided
-                // parameter instead.
-                if options.schema.is_some() && options.has_header {
-                    unified_scan_args.missing_columns_policy = MissingColumnsPolicy::Insert;
-                }
+                (|| {
+                    // TODO: This is a hack. We conditionally set `allow_missing_columns` to
+                    // mimic existing behavior, but this should be taken from a user provided
+                    // parameter instead.
+                    if options.schema.is_some() && options.has_header {
+                        unified_scan_args.missing_columns_policy = MissingColumnsPolicy::Insert;
+                    }
 
-                (
-                    scans::csv_file_info(
-                        sources,
-                        require_first_source("failed to retrieve file schemas (csv)", "")?,
-                        unified_scan_args.row_index.as_ref(),
-                        &mut options,
-                        cloud_options,
-                    )
-                    .map_err(|e| e.context(failed_here!(csv scan)))?,
-                    FileScanIR::Csv { options },
-                )
+                    PolarsResult::Ok((
+                        scans::csv_file_info(
+                            sources,
+                            require_first_source("failed to retrieve file schemas (csv)", "")?,
+                            unified_scan_args.row_index.as_ref(),
+                            &mut options,
+                            cloud_options,
+                        )?,
+                        FileScanIR::Csv { options },
+                    ))
+                })()
+                .map_err(|e| e.context(failed_here!(csv scan)))?
             },
             #[cfg(feature = "json")]
-            FileScanDsl::NDJson { options } => (
-                scans::ndjson_file_info(
-                    sources,
-                    require_first_source("failed to retrieve first file schema (ndjson)", "")?,
-                    unified_scan_args.row_index.as_ref(),
-                    &options,
-                    cloud_options,
-                )
-                .map_err(|e| e.context(failed_here!(ndjson scan)))?,
-                FileScanIR::NDJson { options },
-            ),
+            FileScanDsl::NDJson { options } => (|| {
+                PolarsResult::Ok((
+                    scans::ndjson_file_info(
+                        sources,
+                        require_first_source("failed to retrieve first file schema (ndjson)", "")?,
+                        unified_scan_args.row_index.as_ref(),
+                        &options,
+                        cloud_options,
+                    )?,
+                    FileScanIR::NDJson { options },
+                ))
+            })()
+            .map_err(|e| e.context(failed_here!(ndjson scan)))?,
             #[cfg(feature = "python")]
-            FileScanDsl::PythonDataset { dataset_object } => {
+            FileScanDsl::PythonDataset { dataset_object } => (|| {
                 if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
                     polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
                 }
@@ -630,7 +639,7 @@ impl SourcesToFileInfo {
                     insert_row_index_to_schema(Arc::make_mut(&mut schema), row_index.name.clone())?;
                 }
 
-                (
+                PolarsResult::Ok((
                     FileInfo {
                         schema,
                         reader_schema: Some(either::Either::Right(reader_schema)),
@@ -640,8 +649,9 @@ impl SourcesToFileInfo {
                         dataset_object,
                         cached_ir: Default::default(),
                     },
-                )
-            },
+                ))
+            })()
+            .map_err(|e| e.context(failed_here!(python dataset scan)))?,
             FileScanDsl::Anonymous {
                 file_info,
                 options,
