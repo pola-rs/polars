@@ -54,9 +54,9 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
         AExpr::Explode {
             expr: _,
             skip_empty: _,
-        } => false,
+        } => true,
         AExpr::Column(_) => false,
-        AExpr::Literal(_) => false,
+        AExpr::Literal(lv) => !lv.is_scalar(),
         AExpr::BinaryExpr {
             left: _,
             op: _,
@@ -96,12 +96,12 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
             input: _,
             function: _,
             options,
-        } => !options.is_row_separable(),
+        } => !options.is_elementwise(),
         AExpr::Eval {
             expr: _,
             evaluation: _,
             variant,
-        } => !variant.is_row_separable(),
+        } => !variant.is_elementwise(),
         AExpr::Window {
             function: _,
             partition_by: _,

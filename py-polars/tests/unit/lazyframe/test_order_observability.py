@@ -158,3 +158,30 @@ def test_merge_sorted_to_union() -> None:
     explain = lf.explain()
     assert "MERGE_SORTED" not in explain
     assert "UNION" in explain
+
+
+@pytest.mark.parametrize(
+    "row_separable_expr",
+    [
+        pl.arange(0, pl.len()),
+        pl.int_range(pl.len()),
+        pl.row_index().cast(pl.Int64),
+        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
+        pl.lit(pl.Series([0, 1, 2, 3, 4])),
+    ],
+)
+def test_row_separable_observes_order(row_separable_expr: pl.Expr) -> None:
+    expect = pl.DataFrame({"x": [1, 2, 3, 4, 5], "out": [0, 1, 2, 3, 4]})
+
+    q = (
+        pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
+        .unique(maintain_order=True)
+        .with_columns(row_separable_expr.alias("out"))
+        .unique()
+    )
+
+    plan = q.explain()
+
+    assert plan.index("UNIQUE[maintain_order: true") > plan.index("WITH_COLUMNS")
+
+    assert_frame_equal(q.collect().sort(pl.all()), expect)
