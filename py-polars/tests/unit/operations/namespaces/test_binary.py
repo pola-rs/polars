@@ -296,6 +296,11 @@ def test_reinterpret_to_array_numeric_types(
             b"\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
             [6],
         ),
+        (
+            pl.UInt128(),
+            b"\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            [6],
+        ),
     ],
 )
 def test_reinterpret_to_additional_types(
