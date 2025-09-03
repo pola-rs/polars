@@ -670,7 +670,12 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (engine, lambda))]
-    fn collect_with_callback(&self, py: Python<'_>, engine: Wrap<Engine>, lambda: PyObject) {
+    fn collect_with_callback(
+        &self,
+        py: Python<'_>,
+        engine: Wrap<Engine>,
+        lambda: PyObject,
+    ) -> PyResult<()> {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
 
