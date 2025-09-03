@@ -698,14 +698,7 @@ impl PyLazyFrame {
                 });
             };
 
-            #[cfg(feature = "cloud")]
-            {
-                polars_io::pl_async::get_runtime().spawn_blocking(func);
-            }
-            #[cfg(not(feature = "cloud"))]
-            {
-                std::thread::spawn(func);
-            }
+            polars_io::utils::spawn_blocking(func);
         })
     }
 
