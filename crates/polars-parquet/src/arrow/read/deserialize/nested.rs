@@ -18,7 +18,7 @@ pub fn columns_to_iter_recursive(
     field: Field,
     mut init: Vec<InitNested>,
     filter: Option<Filter>,
-) -> ParquetResult<(NestedState, Vec<Box<dyn Array>>, Bitmap)> {
+) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
     if !field.dtype().is_nested() {
         let pages = columns.pop().unwrap();
         init.push(InitNested::Primitive(field.is_nullable));
@@ -36,10 +36,7 @@ pub fn columns_to_iter_recursive(
                     init,
                     filter,
                 )?;
-                let array = array
-                    .into_iter()
-                    .map(|array| create_list(field.dtype().clone(), &mut nested, array))
-                    .collect();
+                let array = create_list(field.dtype().clone(), &mut nested, array);
                 Ok((nested, array, ptm))
             },
             ArrowDataType::FixedSizeList(inner, width) => {
@@ -51,10 +48,7 @@ pub fn columns_to_iter_recursive(
                     init,
                     filter,
                 )?;
-                let array = array
-                    .into_iter()
-                    .map(|array| create_list(field.dtype().clone(), &mut nested, array))
-                    .collect();
+                let array = create_list(field.dtype().clone(), &mut nested, array);
                 Ok((nested, array, ptm))
             },
             ArrowDataType::Struct(fields) => {
@@ -90,17 +84,16 @@ pub fn columns_to_iter_recursive(
                         )
                     };
 
-                let (mut nested, mut last_array, _) =
+                let (mut nested, last_array, _) =
                     field_to_nested_array(init.clone(), &mut columns, &mut types, last_field)?;
                 debug_assert!(matches!(nested.last().unwrap(), NestedContent::Struct));
                 let (length, _, struct_validity) = nested.pop().unwrap();
 
                 let mut field_arrays = Vec::<Box<dyn Array>>::with_capacity(fields.len());
-                assert_eq!(last_array.len(), 1);
-                field_arrays.push(last_array.pop().unwrap());
+                field_arrays.push(last_array);
 
                 for field in fields.iter().rev().skip(1) {
-                    let (mut _nested, mut array, _) =
+                    let (mut _nested, array, _) =
                         field_to_nested_array(init.clone(), &mut columns, &mut types, field)?;
 
                     #[cfg(debug_assertions)]
@@ -112,8 +105,7 @@ pub fn columns_to_iter_recursive(
                         );
                     }
 
-                    assert_eq!(array.len(), 1);
-                    field_arrays.push(array.pop().unwrap());
+                    field_arrays.push(array);
                 }
 
                 field_arrays.reverse();
@@ -121,15 +113,13 @@ pub fn columns_to_iter_recursive(
 
                 Ok((
                     nested,
-                    vec![
-                        StructArray::new(
-                            ArrowDataType::Struct(fields.clone()),
-                            length,
-                            field_arrays,
-                            struct_validity,
-                        )
-                        .to_boxed(),
-                    ],
+                    StructArray::new(
+                        ArrowDataType::Struct(fields.clone()),
+                        length,
+                        field_arrays,
+                        struct_validity,
+                    )
+                    .to_boxed(),
                     Bitmap::new(),
                 ))
             },
@@ -142,10 +132,7 @@ pub fn columns_to_iter_recursive(
                     init,
                     filter,
                 )?;
-                let array = array
-                    .into_iter()
-                    .map(|array| create_map(field.dtype().clone(), &mut nested, array))
-                    .collect();
+                let array = create_map(field.dtype().clone(), &mut nested, array);
                 Ok((nested, array, ptm))
             },
 
@@ -163,7 +150,7 @@ pub fn columns_to_iter_recursive(
                         && !md.contains_key(DTYPE_CATEGORICAL_NEW)
                         && !md.contains_key(DTYPE_CATEGORICAL_LEGACY)
                 }) {
-                    let (nested, arrays, ptm) = PageDecoder::new(
+                    let (nested, arr, ptm) = PageDecoder::new(
                         &field.name,
                         columns.pop().unwrap(),
                         ArrowDataType::Utf8View,
@@ -172,19 +159,14 @@ pub fn columns_to_iter_recursive(
                     )?
                     .collect_nested(filter)?;
 
-                    let arrays = arrays
-                        .into_iter()
-                        .map(|arr| {
-                            polars_compute::cast::cast(
-                                arr.as_ref(),
-                                field.dtype(),
-                                CastOptionsImpl::default(),
-                            )
-                            .unwrap()
-                        })
-                        .collect();
+                    let arr = polars_compute::cast::cast(
+                        arr.as_ref(),
+                        field.dtype(),
+                        CastOptionsImpl::default(),
+                    )
+                    .unwrap();
 
-                    Ok((nested, arrays, ptm))
+                    Ok((nested, arr, ptm))
                 } else {
                     let (nested, arr, ptm) = match key_type {
                         IntegerType::UInt8 => PageDecoder::new(
