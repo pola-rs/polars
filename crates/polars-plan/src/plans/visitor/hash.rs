@@ -53,6 +53,8 @@ fn hash_exprs<H: Hasher>(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mu
     }
 }
 
+/// Specialized Hash that dispatches to `ExprIR::traverse_and_hash` instead of just hashing
+/// the `Node`.
 #[cfg(feature = "python")]
 fn hash_python_predicate<H: Hasher>(
     pred: &crate::prelude::PythonPredicate,
@@ -68,8 +70,9 @@ fn hash_python_predicate<H: Hasher>(
     }
 }
 
+/// Specialized Eq that dispatches to `expr_ir_eq` rather than simply comparing `Node` equality.
 #[cfg(feature = "python")]
-fn pred_eq(
+fn python_predicate_eq(
     l: &crate::prelude::PythonPredicate,
     r: &crate::prelude::PythonPredicate,
     expr_arena: &Arena<AExpr>,
@@ -324,20 +327,23 @@ impl HashableEqLP<'_> {
                     return false;
                 }
 
-                let scan_fn_eq = match (scan_fn_l, scan_fn_r) {
-                    (None, None) => true,
-                    (Some(a), Some(b)) => a.0.as_ptr() == b.0.as_ptr(),
-                    _ => false,
+                let (Some(scan_fn_l), Some(scan_fn_r)) = (scan_fn_l, scan_fn_r) else {
+                    if cfg!(debug_assertions) {
+                        // `scan_fn` should not be `None` as this point.
+                        unreachable!()
+                    }
+
+                    return false;
                 };
 
-                scan_fn_eq
+                scan_fn_l.0.as_ptr() == scan_fn_r.0.as_ptr()
                     && schema_l == schema_r
                     && output_schema_l == output_schema_r
                     && with_columns_l == with_columns_r
                     && python_source_l == python_source_r
                     && n_rows_l == n_rows_r
                     && validate_schema_l == validate_schema_r
-                    && pred_eq(predicate_l, predicate_r, self.expr_arena)
+                    && python_predicate_eq(predicate_l, predicate_r, self.expr_arena)
             },
             (
                 IR::Slice {
