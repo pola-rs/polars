@@ -33,7 +33,7 @@ of data) using Polars Cloud distributed engine.
 
 !!! note "Run the example yourself"
 
-    Copy and paste the code to you environment and run it. The datasets are hosted in our S3 bucket. You will only pay for the transfer costs to AWS. The datasets are hosted in `US-East-2`, so you might experience a higher latency than you are used to.
+    Copy and paste the code to you environment and run it. The data is hosted in S3 buckets that use [AWS Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html), meaning you pay only for pays the cost of the request and the data download from the bucket. The storage costs are covered.
 
 First import the required packages and point to the S3 bucket. In this example, we take one of the
 PDS-H benchmarks queries for demonstration purposes.
