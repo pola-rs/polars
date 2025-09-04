@@ -71,12 +71,11 @@ def test_float(dtype: pl.DataType) -> None:
 
     extra_values = [
         np.int8(3),
-        np.int64(2**42),
-        np.float64(1.5),
         np.float32(1.5),
-        np.float32(2**37),
-        np.float64(2**100),
+        np.float32(2**10),
     ]
+    if dtype == pl.Float64:
+        extra_values.extend([np.int32(2**10), np.float64(2**10), np.float64(1.5)])
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         for value in values:
             assert_index_of(s, value, convert_to_literal=True)
@@ -85,8 +84,8 @@ def test_float(dtype: pl.DataType) -> None:
             assert_index_of(s, value)
 
     # Explicitly check some extra-tricky edge cases:
-    assert series.index_of(-np.nan) == 1  # -np.nan should match np.nan
-    assert series.index_of(-0.0) == 6  # -0.0 should match 0.0
+    assert series.index_of(-np.float32("nan")) == 1  # -np.nan should match np.nan
+    assert series.index_of(-np.float32(0.0)) == 6  # -0.0 should match 0.0
 
 
 def test_null() -> None:
@@ -374,11 +373,13 @@ def test_index_of_null_parametric(s: pl.Series) -> None:
 
 
 def test_out_of_range_integers() -> None:
-    series = pl.Series([0, 255, None, 1, 2], dtype=pl.UInt8)
-    with pytest.raises(InvalidOperationError, match="cannot cast 256 losslessly to u8"):
-        assert series.index_of(256)
-    with pytest.raises(InvalidOperationError, match="cannot cast 257 losslessly to u8"):
-        assert series.index_of(np.int16(257))
+    series = pl.Series([0, 100, None, 1, 2], dtype=pl.Int8)
+    with pytest.raises(InvalidOperationError, match="cannot cast 128 losslessly to i8"):
+        assert series.index_of(128)
+    with pytest.raises(
+        InvalidOperationError, match="cannot cast -200 losslessly to i8"
+    ):
+        assert series.index_of(-200)
 
 
 # TODO This might be fixed by https://github.com/pola-rs/polars/pull/24229
