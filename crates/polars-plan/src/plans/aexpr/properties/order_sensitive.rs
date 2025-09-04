@@ -67,7 +67,10 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
             dtype: _,
             options: _,
         } => false,
-        AExpr::Sort { expr: _, options } => true,
+        AExpr::Sort {
+            expr: _,
+            options: _,
+        } => true,
         AExpr::Gather {
             expr: _,
             idx: _,
@@ -76,7 +79,7 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
         AExpr::SortBy {
             expr: _,
             by: _,
-            sort_options,
+            sort_options: _,
         } => true,
         AExpr::Filter { input: _, by: _ } => false,
         AExpr::Agg(agg) => is_order_sensitive_agg_top_level(agg),
