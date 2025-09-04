@@ -213,7 +213,6 @@ pub fn page_iter_to_array(
             (nested, out, ptm)
         },
         (PhysicalType::FixedLenByteArray(16), UInt128) => {
-            // TODO: [amber] See if wee can avoid this code duplication
             let n = 16;
             let (nested, array, ptm) = PageDecoder::new(
                 &field.name,

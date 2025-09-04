@@ -812,7 +812,6 @@ pub fn array_to_page_simple(
             }
         },
         ArrowDataType::UInt128 => {
-            // TODO: [amber] See if wee can avoid this code duplication
             let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
                 let stats = fixed_size_binary::build_statistics_decimal(
@@ -1112,7 +1111,6 @@ fn array_to_page_nested(
             fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
         },
         UInt128 => {
-            // TODO: [amber] See if wee can avoid this code duplication
             let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
                 let stats = fixed_size_binary::build_statistics_decimal(
