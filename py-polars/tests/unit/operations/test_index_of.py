@@ -62,7 +62,7 @@ def test_float(dtype: pl.DataType) -> None:
     values = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
     if dtype == pl.Float32:
         # Can't pass Python literals to index_of() for Float32
-        values = [(None if v is None else np.float32(v)) for v in values]
+        values = [(None if v is None else np.float32(v)) for v in values]  # type: ignore[misc]
 
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -83,9 +83,10 @@ def test_float(dtype: pl.DataType) -> None:
         for value in extra_values:  # type: ignore[assignment]
             assert_index_of(s, value)
 
-    # Explicitly check some extra-tricky edge cases:
-    assert series.index_of(-np.float32("nan")) == 1  # -np.nan should match np.nan
-    assert series.index_of(-np.float32(0.0)) == 6  # -0.0 should match 0.0
+    # -np.nan should match np.nan:
+    assert series.index_of(-np.float32("nan")) == 1  # type: ignore[arg-type]
+    # -0.0 should match 0.0:
+    assert series.index_of(-np.float32(0.0)) == 6  # type: ignore[arg-type]
 
 
 def test_null() -> None:
@@ -149,7 +150,7 @@ def test_integer(dtype: pl.DataType) -> None:
                 s.index_of(f)  # type: ignore[arg-type]
 
 
-def test_integer_upcast():
+def test_integer_upcast() -> None:
     series = pl.Series([0, 123, 456, 789], dtype=pl.Int64)
     for should_work in [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16, pl.Int32, pl.UInt32]:
         assert series.index_of(pl.lit(123, dtype=should_work)) == 1
@@ -382,7 +383,6 @@ def test_out_of_range_integers() -> None:
         assert series.index_of(-200)
 
 
-# TODO This might be fixed by https://github.com/pola-rs/polars/pull/24229
 def test_out_of_range_decimal() -> None:
     # Up to 34 digits of integers:
     series = pl.Series([1, None], dtype=pl.Decimal(36, 2))
@@ -475,7 +475,7 @@ def test_lossy_casts_are_rejected(
     assert_lossy_cast_rejected(series_dtype, value, value_dtype)
 
 
-def test_lossy_casts_are_rejected_nested_dtypes():
+def test_lossy_casts_are_rejected_nested_dtypes() -> None:
     # Make sure casting rules are applied recursively for Lists, Arrays,
     # Struct:
     series_dtype, value, value_dtype = pl.UInt8, 17, pl.UInt16

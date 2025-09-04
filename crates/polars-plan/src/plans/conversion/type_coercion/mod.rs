@@ -1104,10 +1104,8 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             if to_fields.len() != from_fields.len() {
                 false
             } else {
-                return to_fields
-                    .iter()
-                    .zip(from_fields.iter())
-                    .map(|(to_field, from_field)| {
+                return to_fields.iter().zip(from_fields.iter()).try_for_each(
+                    |(to_field, from_field)| {
                         polars_ensure!(
                             to_field.name == from_field.name,
                             InvalidOperation:
@@ -1116,8 +1114,8 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
                             to
                         );
                         can_cast_to_lossless(&to_field.dtype, &from_field.dtype)
-                    })
-                    .collect::<PolarsResult<()>>();
+                    },
+                );
             }
         },
         _ => false,
