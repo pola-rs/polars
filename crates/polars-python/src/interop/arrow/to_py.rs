@@ -90,6 +90,7 @@ pub(crate) fn dataframe_to_stream<'py>(
     PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
+#[cfg(feature = "c_api")]
 #[pyfunction]
 pub(crate) fn polars_schema_to_pycapsule<'py>(
     py: Python<'py>,
