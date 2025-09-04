@@ -119,6 +119,14 @@ def test_search_sorted_enum_categorical(dtype: PolarsDataType) -> None:
     assert asc_nulls_first.search_sorted("a", "left", descending=False) == 1
 
 
+def test_enum_wrong_value() -> None:
+    series = pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"]))
+    with pytest.raises(
+        InvalidOperationError, match="conversion from `str` to `enum` failed"
+    ):
+        series.search_sorted("c")
+
+
 @pytest.mark.parametrize("value", [0, 0.1])
 def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
     series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)

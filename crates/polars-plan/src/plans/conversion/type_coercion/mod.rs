@@ -437,8 +437,14 @@ impl OptimizationRule for TypeCoercionRule {
                         _ => {},
                     }
 
+                    let cast_options = match function {
+                        IRFunctionExpr::SearchSorted { .. } if super_type.is_enum() => {
+                            CastOptions::Strict
+                        },
+                        _ => CastOptions::NonStrict,
+                    };
                     for (e, dtype) in input.iter_mut().zip(dtypes) {
-                        cast_expr_ir(e, &dtype, &super_type, expr_arena, CastOptions::NonStrict)?;
+                        cast_expr_ir(e, &dtype, &super_type, expr_arena, cast_options)?;
                     }
                 }
 
