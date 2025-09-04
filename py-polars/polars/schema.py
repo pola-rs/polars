@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Literal, Union, overload
 
 from polars._typing import PythonDataType
+from polars._utils.unstable import unstable
 from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
 from polars.exceptions import DuplicateError
@@ -251,5 +252,6 @@ class Schema(BaseSchema):
         """
         return {name: tp.to_python() for name, tp in self.items()}
 
+    @unstable()
     def __arrow_c_schema__(self) -> object:
         return polars_schema_to_pycapsule(self)
