@@ -1,6 +1,5 @@
 use std::io;
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
 
 #[cfg(feature = "cloud")]
 pub use async_writeable::AsyncWriteable;
@@ -9,7 +8,7 @@ use polars_error::{PolarsError, PolarsResult, feature_gated};
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;
-use polars_utils::plpath::{CloudScheme, PlPathRef};
+use polars_utils::plpath::PlPathRef;
 
 use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
