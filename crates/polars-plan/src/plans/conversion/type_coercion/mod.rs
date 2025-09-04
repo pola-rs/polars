@@ -438,6 +438,7 @@ impl OptimizationRule for TypeCoercionRule {
                     }
 
                     let cast_options = match function {
+                        #[cfg(feature = "search_sorted")]
                         IRFunctionExpr::SearchSorted { .. } if super_type.is_enum() => {
                             CastOptions::Strict
                         },
