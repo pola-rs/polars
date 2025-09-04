@@ -169,7 +169,9 @@ def test_merge_sorted_to_union() -> None:
         pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(),
         pl.lit(pl.Series([0, 1, 2, 3, 4])),
         pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
-        pl.col("y").sort_by(pl.col("y")),
+        pl.col("y").sort(),
+        pl.col("y").sort_by(pl.col("y"), maintain_order=True),
+        pl.col("y").sort_by(pl.col("y"), maintain_order=False),
         pl.col("x").gather(pl.col("x")),
     ],
 )
