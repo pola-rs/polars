@@ -1,4 +1,7 @@
 """
+import polars as pl
+import polars_cloud as pc
+
 # --8<-- [start:set-context]
 ctx = pc.ComputeContext(workspace="your-workspace",
     cpus=12,
