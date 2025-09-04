@@ -71,10 +71,6 @@ impl Writeable {
                         eprintln!("Writeable: try_new: cloud: {p}")
                     }
 
-                    if p.scheme() == CloudScheme::File {
-                        create_file(Path::new(p.strip_scheme()))?;
-                    }
-
                     let writer = crate::pl_async::get_runtime().block_in_place_on(
                         BlockingCloudWriter::new(&p.to_string(), cloud_options),
                     )?;
