@@ -82,13 +82,6 @@ impl ParquetScalar {
             _ => None,
         }
     }
-
-    pub(crate) fn as_bool(&self) -> Option<bool> {
-        match self {
-            Self::Boolean(s) => Some(*s),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Clone)]
