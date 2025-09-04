@@ -1009,6 +1009,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
         // Here we know the exact value, so we can report it to the user if it
         // doesn't fit:
         (to, DataType::Unknown(UnknownKind::Int(value))) => match to {
+            #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(to_precision, to_scale)
                 if {
                     let max =
