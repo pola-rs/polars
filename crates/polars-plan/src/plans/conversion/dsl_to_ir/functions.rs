@@ -732,6 +732,7 @@ pub(super) fn convert_functions(
                 options,
             }
         },
+        F::Rechunk => I::Rechunk,
         F::Append { upcast } => I::Append { upcast },
         F::ShiftAndFill => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
@@ -822,7 +823,7 @@ pub(super) fn convert_functions(
         #[cfg(feature = "log")]
         F::Entropy { base, normalize } => I::Entropy { base, normalize },
         #[cfg(feature = "log")]
-        F::Log { base } => I::Log { base },
+        F::Log => I::Log,
         #[cfg(feature = "log")]
         F::Log1p => I::Log1p,
         #[cfg(feature = "log")]

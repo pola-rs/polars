@@ -24,6 +24,7 @@ def register_io_source(
     *,
     schema: Callable[[], SchemaDict] | SchemaDict,
     validate_schema: bool = False,
+    is_pure: bool = False,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -92,7 +93,11 @@ def register_io_source(
         ), parsed_predicate_success
 
     return pl.LazyFrame._scan_python_function(
-        schema=schema, scan_fn=wrap, pyarrow=False, validate_schema=validate_schema
+        schema=schema,
+        scan_fn=wrap,
+        pyarrow=False,
+        validate_schema=validate_schema,
+        is_pure=is_pure,
     )
 
 

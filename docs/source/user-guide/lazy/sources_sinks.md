@@ -49,5 +49,5 @@ lf: LazyFrame
 q1 = lf.sink_parquet(.., lazy=True)
 q2 = lf.sink_ipc(.., lazy=True)
 
-lf.collect_all([q1, q2])
+pl.collect_all([q1, q2])
 ```

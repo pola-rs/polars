@@ -90,7 +90,6 @@ impl Hash for IRAggExpr {
     }
 }
 
-#[cfg(feature = "cse")]
 impl IRAggExpr {
     pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
         use IRAggExpr::*;
@@ -261,7 +260,7 @@ impl AExpr {
     }
 
     #[recursive::recursive]
-    fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
+    pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
             AExpr::Literal(lv) => lv.is_scalar(),
             AExpr::Function { options, input, .. }

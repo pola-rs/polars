@@ -17,8 +17,8 @@ pub fn assert_series_equal_py(
     abs_tol: f64,
     categorical_as_str: bool,
 ) -> PyResult<()> {
-    let left_series = &left.series;
-    let right_series = &right.series;
+    let left_series = &left.series.read();
+    let right_series = &right.series.read();
 
     let options = SeriesEqualOptions {
         check_dtypes,

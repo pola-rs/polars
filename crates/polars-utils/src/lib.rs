@@ -42,6 +42,7 @@ pub mod sync;
 pub mod sys;
 pub mod total_ord;
 pub mod unique_id;
+pub mod with_drop;
 
 pub use functions::*;
 pub mod file;
@@ -78,3 +79,4 @@ pub mod python_convert_registry;
 pub mod pl_serialize;
 
 pub mod kahan_sum;
+pub use either;

@@ -3220,7 +3220,7 @@ class DataFrame:
         workbook : {str, Workbook}
             String name or path of the workbook to create, BytesIO object, file opened
             in binary-mode, or an `xlsxwriter.Workbook` object that has not been closed.
-            If None, writes to a `dataframe.xlsx` workbook in the working directory.
+            If None, writes to `dataframe.xlsx` in the working directory.
         worksheet : {str, Worksheet}
             Name of target worksheet or an `xlsxwriter.Worksheet` object (in which
             case `workbook` must be the parent `xlsxwriter.Workbook` object); if None,
@@ -3371,6 +3371,10 @@ class DataFrame:
           syntax to ensure the formula is applied correctly and is table-relative.
           https://support.microsoft.com/en-us/office/using-structured-references-with-excel-tables-f5ed2452-2337-4f71-bed3-c8ae6d2b276e
 
+        * If you want unformatted output, you can use a selector to apply the "General"
+          format to all columns (or all *non-temporal* columns to preserve formatting
+          of date/datetime columns), eg: `column_formats={~cs.temporal(): "General"}`.
+
         Examples
         --------
         Instantiate a basic DataFrame:
@@ -3387,14 +3391,14 @@ class DataFrame:
         ... )
 
         Export to "dataframe.xlsx" (the default workbook name, if not specified) in the
-        working directory, add column totals ("sum" by default) on all numeric columns,
+        working directory, add column totals on all numeric columns ("sum" by default),
         then autofit:
 
         >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +SKIP
 
         Write frame to a specific location on the sheet, set a named table style,
-        apply US-style date formatting, increase default float precision, apply a
-        non-default total function to a single column, autofit:
+        apply US-style date formatting, increase floating point formatting precision,
+        apply a non-default column total function to a specific column, autofit:
 
         >>> df.write_excel(  # doctest: +SKIP
         ...     position="B4",
@@ -3406,8 +3410,8 @@ class DataFrame:
         ... )
 
         Write the same frame to a named worksheet twice, applying different styles
-        and conditional formatting to each table, adding table titles using explicit
-        xlsxwriter integration:
+        and conditional formatting to each table, adding custom-formatted table
+        titles using explicit `xlsxwriter` integration:
 
         >>> from xlsxwriter import Workbook
         >>> with Workbook("multi_frame.xlsx") as wb:  # doctest: +SKIP
@@ -3460,13 +3464,11 @@ class DataFrame:
         ...         }
         ...     )
         ...     ws.write(2, 1, "Basic/default conditional formatting", fmt_title)
-        ...     ws.write(
-        ...         df.height + 6, 1, "Customised conditional formatting", fmt_title
-        ...     )
+        ...     ws.write(df.height + 6, 1, "Custom conditional formatting", fmt_title)
 
         Export a table containing two different types of sparklines. Use default
         options for the "trend" sparkline and customized options (and positioning)
-        for the "+/-" win_loss sparkline, with non-default integer dtype formatting,
+        for the "+/-" `win_loss` sparkline, with non-default integer formatting,
         column totals, a subtle two-tone heatmap and hidden worksheet gridlines:
 
         >>> df = pl.DataFrame(
@@ -3540,7 +3542,7 @@ class DataFrame:
 
         Create and reference a Worksheet object directly, adding a basic chart.
         Taking advantage of structured references to set chart series values and
-        categories is strongly recommended so that you do not have to calculate
+        categories is *strongly* recommended so you do not have to calculate
         cell positions with respect to the frame data and worksheet:
 
         >>> with Workbook("basic_chart.xlsx") as wb:  # doctest: +SKIP
@@ -3568,6 +3570,21 @@ class DataFrame:
         ...     )
         ...     # add chart to the worksheet
         ...     ws.insert_chart("D1", chart)
+
+        Export almost entirely unformatted data (no numeric styling or standardised
+        floating point precision), omit autofilter, but keep date/datetime formatting:
+
+        >>> import polars.selectors as cs
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "n1": [-100, None, 200, 555],
+        ...         "n2": [987.4321, -200, 44.444, 555.5],
+        ...     }
+        ... )
+        >>> df.write_excel(  # doctest: +SKIP
+        ...     column_formats={~cs.temporal(): "General"},
+        ...     autofilter=False,
+        ... )
         """  # noqa: W505
         from polars.io.spreadsheet._write_utils import (
             _unpack_multi_column_dict,
@@ -3954,6 +3971,7 @@ class DataFrame:
         ) = "auto",
         retries: int = 2,
         metadata: ParquetMetadata | None = None,
+        mkdir: bool = False,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -4046,6 +4064,12 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+        mkdir: bool
+            Recursively create all the directories in the path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
 
         Examples
         --------
@@ -4091,6 +4115,9 @@ class DataFrame:
             if metadata is not None:
                 msg = "write_parquet with `use_pyarrow=True` cannot be combined with `metadata`"
                 raise ValueError(msg)
+            if mkdir:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `mkdir`"
+                raise ValueError(msg)
 
             tbl = self.to_arrow()
             data = {}
@@ -4133,7 +4160,6 @@ class DataFrame:
             return
 
         target: str | Path | IO[bytes] | PartitioningScheme = file
-        mkdir: bool = False
         engine: EngineType = "in-memory"
         if partition_by is not None:
             if not isinstance(file, str):
@@ -8378,16 +8404,8 @@ class DataFrame:
         """
         require_same_type(self, other)
         if in_place:
-            try:
-                self._df.vstack_mut(other._df)
-            except RuntimeError as exc:
-                if str(exc) == "Already mutably borrowed":
-                    self._df.vstack_mut(other._df.clone())
-                    return self
-                else:
-                    raise
-            else:
-                return self
+            self._df.vstack_mut(other._df)
+            return self
 
         return self._from_pydf(self._df.vstack(other._df))
 
@@ -8445,13 +8463,7 @@ class DataFrame:
         └─────┴─────┘
         """
         require_same_type(self, other)
-        try:
-            self._df.extend(other._df)
-        except RuntimeError as exc:
-            if str(exc) == "Already mutably borrowed":
-                self._df.extend(other._df.clone())
-            else:
-                raise
+        self._df.extend(other._df)
         return self
 
     def drop(
@@ -9904,7 +9916,7 @@ class DataFrame:
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> df.lazy()  # doctest: +ELLIPSIS
+        >>> df.lazy()
         <LazyFrame at ...>
         """
         return wrap_ldf(self._df.lazy())

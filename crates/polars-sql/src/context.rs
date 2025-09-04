@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::ops::Deref;
 
 use polars_core::frame::row::Row;
@@ -60,9 +59,9 @@ pub struct SQLContext {
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
-    cte_map: RefCell<PlHashMap<String, LazyFrame>>,
-    table_aliases: RefCell<PlHashMap<String, String>>,
-    joined_aliases: RefCell<PlHashMap<String, PlHashMap<String, String>>>,
+    cte_map: PlHashMap<String, LazyFrame>,
+    table_aliases: PlHashMap<String, String>,
+    joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
 }
 
 impl Default for SQLContext {
@@ -163,9 +162,9 @@ impl SQLContext {
         res.set_cached_arena(lp_arena, expr_arena);
 
         // Every execution should clear the statement-level maps.
-        self.cte_map.borrow_mut().clear();
-        self.table_aliases.borrow_mut().clear();
-        self.joined_aliases.borrow_mut().clear();
+        self.cte_map.clear();
+        self.table_aliases.clear();
+        self.joined_aliases.clear();
 
         Ok(res)
     }
@@ -225,10 +224,9 @@ impl SQLContext {
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
         let table = self.table_map.get(name).cloned();
         table
-            .or_else(|| self.cte_map.borrow().get(name).cloned())
+            .or_else(|| self.cte_map.get(name).cloned())
             .or_else(|| {
                 self.table_aliases
-                    .borrow()
                     .get(name)
                     .and_then(|alias| self.table_map.get(alias).cloned())
             })
@@ -296,16 +294,12 @@ impl SQLContext {
     }
 
     pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
-        if self.joined_aliases.borrow().contains_key(tbl_name) {
-            self.joined_aliases
-                .borrow()
-                .get(tbl_name)
-                .and_then(|aliases| aliases.get(column_name))
-                .cloned()
-                .unwrap_or_else(|| column_name.to_string())
-        } else {
-            column_name.to_string()
+        if let Some(aliases) = self.joined_aliases.get(tbl_name) {
+            if let Some(name) = aliases.get(column_name) {
+                return name.to_string();
+            }
         }
+        column_name.to_string()
     }
 
     fn process_query(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
@@ -589,7 +583,7 @@ impl SQLContext {
     }
 
     fn register_cte(&mut self, name: &str, lf: LazyFrame) {
-        self.cte_map.borrow_mut().insert(name.to_owned(), lf);
+        self.cte_map.insert(name.to_owned(), lf);
     }
 
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
@@ -682,7 +676,7 @@ impl SQLContext {
                 // track join-aliased columns so we can resolve them later
                 let joined_schema = self.get_frame_schema(&mut lf)?;
 
-                self.joined_aliases.borrow_mut().insert(
+                self.joined_aliases.insert(
                     r_name.clone(),
                     right_schema
                         .iter_names()
@@ -1114,7 +1108,6 @@ impl SQLContext {
                     match alias {
                         Some(alias) => {
                             self.table_aliases
-                                .borrow_mut()
                                 .insert(alias.name.value.clone(), tbl_name.to_string());
                             Ok((alias.to_string(), lf))
                         },

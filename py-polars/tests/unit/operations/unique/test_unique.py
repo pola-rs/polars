@@ -295,3 +295,16 @@ def test_unique_booleans_22753() -> None:
         pl.Series([None, None, True]).head(2).unique(),
         pl.Series([None], dtype=pl.Boolean()),
     )
+
+
+def test_unique_i128_24231() -> None:
+    df = pl.Series(
+        [-(1 << 127), -(1 << 126), 1 << 125, 1 << 126], dtype=pl.Int128
+    ).to_frame("a")
+    assert_frame_equal(df, df.unique(), check_row_order=False)
+
+
+def test_unique_keep_none_24260() -> None:
+    data = pl.DataFrame({"a": [1, 3, 2], "b": [4, 4, 6]})
+    out = data.lazy().unique(subset="b", keep="none").collect()
+    assert_frame_equal(out, pl.DataFrame({"a": [2], "b": [6]}))

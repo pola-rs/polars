@@ -215,7 +215,7 @@ def concat(
                 ),
                 [df.lazy() for df in elems],
             )
-            .sort(by=common_cols)
+            .sort(by=common_cols, maintain_order=True)
             .select(*output_column_order)
         )
         eager = isinstance(elems[0], pl.DataFrame)
@@ -334,7 +334,9 @@ def _alignment_join(
 
     from polars.lazyframe import QueryOptFlags
 
-    joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
+    joined = reduce(join_func, idx_frames)[1].sort(
+        by=align_on, descending=descending, maintain_order=True
+    )
     if post_align_collect:
         joined = joined.collect(optimizations=QueryOptFlags.none()).lazy()
     return joined

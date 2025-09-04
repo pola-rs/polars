@@ -28,7 +28,6 @@ pub trait NativeType:
     + TotalOrd
     + IsNull
     + MinMax
-    + AlignedBytesCast<Self::AlignedBytes>
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;

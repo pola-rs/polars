@@ -10,9 +10,11 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
+from polars._typing import PartitioningScheme
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     AutoInit,
+    CredentialProviderBuilder,
     _init_credential_provider_builder,
 )
 from polars.io.cloud.credential_provider._providers import (
@@ -749,3 +751,61 @@ def test_cached_credential_provider_returns_copied_creds() -> None:
     assert provider() == ({"A": "A"}, None)
 
     assert provider_func.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "partition_target",
+    [
+        pl.PartitionByKey("s3://.../...", by=""),
+        pl.PartitionMaxSize("s3://.../...", max_size=1),
+        pl.PartitionParted("s3://.../...", by=""),
+    ],
+)
+def test_credential_provider_init_from_partition_target(
+    partition_target: PartitioningScheme,
+) -> None:
+    assert isinstance(
+        _init_credential_provider_builder(
+            "auto",
+            partition_target,
+            None,
+            "test",
+        ),
+        CredentialProviderBuilder,
+    )
+
+
+@pytest.mark.slow
+def test_cache_user_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    user_provider = Mock(
+        return_value=(
+            {"aws_access_key_id": "...", "aws_secret_access_key": "..."},
+            None,
+        )
+    )
+
+    def get_q() -> pl.LazyFrame:
+        return pl.scan_parquet(
+            "s3://.../...",
+            storage_options={"aws_endpoint_url": "http://localhost:333"},
+            credential_provider=user_provider,
+        )
+
+    assert user_provider.call_count == 0
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert user_provider.call_count == 2
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert user_provider.call_count == 3
+
+    monkeypatch.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert user_provider.call_count == 5

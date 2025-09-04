@@ -1,7 +1,7 @@
 # Manage team
 
 The Team page allows you to manage who has access to the workspace. You can invite already existing
-organization members to join your workspace or invite by email/url where they will both join the
+organization members to join your workspace or invite by email address where they will both join the
 organization and workspace once they've accepted.
 
 ## Roles

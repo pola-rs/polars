@@ -81,9 +81,7 @@ def test_sort_on_agg_maintain_order() -> None:
             "val": [[1, 2, 33], [4, 5, 66], [7, 8, 99]],
         }
     )
-    assert_frame_equal(
-        out.collect(optimizations=opts).sort("grp"), expected, check_row_order=False
-    )
+    assert_frame_equal(out.collect(optimizations=opts), expected, check_row_order=False)
 
 
 @pytest.mark.parametrize(
@@ -112,3 +110,51 @@ def test_sort_agg_with_nested_windowing_22918(func: pl.Expr, result: int) -> Non
 
     assert_frame_equal(out.collect(), expected)
     assert "SORT" in out.explain()
+
+
+def test_remove_sorts_on_unordered() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").sort("a").sort("a")
+    explain = lf.explain()
+    assert explain.count("SORT") == 1
+
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .sort("a")
+        .group_by("a")
+        .agg([])
+        .sort("a")
+        .group_by("a")
+        .agg([])
+        .sort("a")
+        .group_by("a")
+        .agg([])
+    )
+    explain = lf.explain()
+    assert explain.count("SORT") == 0
+
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .sort("a")
+        .join(pl.LazyFrame({"b": [1, 2, 3]}), on=pl.lit(1))
+    )
+    explain = lf.explain()
+    assert explain.count("SORT") == 0
+
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").unique()
+    explain = lf.explain()
+    assert explain.count("SORT") == 0
+
+
+def test_merge_sorted_to_union() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3]})
+    lf2 = pl.LazyFrame({"a": [2, 3, 4]})
+
+    lf = lf1.merge_sorted(lf2, "a").unique()
+
+    explain = lf.explain(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert "MERGE_SORTED" in explain
+    assert "UNION" not in explain
+
+    explain = lf.explain()
+    assert "MERGE_SORTED" not in explain
+    assert "UNION" in explain

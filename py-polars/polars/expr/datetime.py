@@ -11,7 +11,7 @@ from polars._utils.parse import parse_into_expression, parse_into_list_of_expres
 from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32, Int64
 
 if TYPE_CHECKING:
     import sys
@@ -1792,7 +1792,7 @@ class ExprDateTimeNameSpace:
         if time_unit in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(time_unit)  # type: ignore[arg-type]
         elif time_unit == "s":
-            return wrap_expr(self._pyexpr.dt_epoch_seconds())
+            return self.timestamp("ms") // F.lit(1000, Int64)
         elif time_unit == "d":
             return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
