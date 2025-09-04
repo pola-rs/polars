@@ -7,18 +7,23 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Literal, Union, overload
 
 from polars._typing import PythonDataType
+from polars._utils.unstable import unstable
 from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
+from polars.dependencies import _PYARROW_AVAILABLE
 from polars.exceptions import DuplicateError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import (
         init_polars_schema_from_arrow_c_schema,
         polars_schema_field_from_arrow_c_schema,
+        polars_schema_to_pycapsule,
     )
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    import pyarrow as pa
 
     from polars import DataFrame, LazyFrame
     from polars._typing import ArrowSchemaExportable
@@ -66,7 +71,8 @@ class Schema(BaseSchema):
     ----------
     schema
         The schema definition given by column names and their associated
-        Polars data type. Accepts a mapping or an iterable of tuples.
+        Polars data type. Accepts a mapping, or an iterable of tuples, or any
+        object implementing `__arrow_c_schema__` (e.g. pyarrow schemas).
 
     Examples
     --------
@@ -95,6 +101,16 @@ class Schema(BaseSchema):
     [String, Duration(time_unit='us'), Array(Int8, shape=(4,))]
     >>> schema.len()
     3
+
+    Import a pyarrow schema.
+
+    >>> pl.Schema(pa.schema([pa.field("x", pa.int32())]))
+    Schema({'x': Int32})
+
+    Export a schema to pyarrow.
+
+    >>> pa.schema(pl.Schema({"x": pl.Int32}))
+    x: int32
     """  # noqa: W505
 
     def __init__(
@@ -238,3 +254,6 @@ class Schema(BaseSchema):
         {'x': <class 'int'>, 'y':  <class 'str'>, 'z': <class 'datetime.timedelta'>}
         """
         return {name: tp.to_python() for name, tp in self.items()}
+
+    def __arrow_c_schema__(self) -> object:
+        return polars_schema_to_pycapsule(self)

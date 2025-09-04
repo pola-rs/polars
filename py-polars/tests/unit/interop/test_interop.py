@@ -1053,6 +1053,11 @@ def test_schema_constructor_from_schema_capsule() -> None:
         "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
     }
 
+    # Test __arrow_c_schema__ implementation on `pl.Schema`
+    assert pa.schema(pl.Schema({"x": pl.Int32})) == pa.schema(
+        [pa.field("x", pa.int32())]
+    )
+
     arrow_schema = pa.schema([pa.field("a", pa.int32()), pa.field("a", pa.int32())])
 
     with pytest.raises(

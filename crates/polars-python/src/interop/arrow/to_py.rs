@@ -5,13 +5,15 @@ use arrow::ffi;
 use arrow::record_batch::RecordBatch;
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
-use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
+use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, Schema, SchemaExt};
 use polars::series::Series;
 use polars_core::utils::arrow;
 use polars_error::PolarsResult;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
+
+use crate::prelude::Wrap;
 
 /// Arrow array to Python.
 pub(crate) fn to_py_array(
@@ -86,6 +88,27 @@ pub(crate) fn dataframe_to_stream<'py>(
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
     PyCapsule::new(py, stream, Some(stream_capsule_name))
+}
+
+#[pyfunction]
+pub(crate) fn polars_schema_to_pycapsule<'py>(
+    py: Python<'py>,
+    schema: Wrap<Schema>,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
+        PlSmallStr::EMPTY,
+        ArrowDataType::Struct(
+            schema
+                .0
+                .iter_fields()
+                .map(|x| x.to_arrow(CompatLevel::newest()))
+                .collect(),
+        ),
+        false,
+    ));
+
+    let capsule_name = CString::new("arrow_schema").unwrap();
+    PyCapsule::new(py, schema, Some(capsule_name))
 }
 
 pub struct DataFrameStreamIterator {
