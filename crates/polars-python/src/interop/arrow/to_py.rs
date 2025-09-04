@@ -5,15 +5,13 @@ use arrow::ffi;
 use arrow::record_batch::RecordBatch;
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
-use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, Schema, SchemaExt};
+use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
 use polars::series::Series;
 use polars_core::utils::arrow;
 use polars_error::PolarsResult;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
-
-use crate::prelude::Wrap;
 
 /// Arrow array to Python.
 pub(crate) fn to_py_array(
@@ -94,7 +92,7 @@ pub(crate) fn dataframe_to_stream<'py>(
 #[pyfunction]
 pub(crate) fn polars_schema_to_pycapsule<'py>(
     py: Python<'py>,
-    schema: Wrap<Schema>,
+    schema: crate::prelude::Wrap<polars::prelude::Schema>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
         PlSmallStr::EMPTY,
