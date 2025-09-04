@@ -405,11 +405,11 @@ def test_out_of_range_float64() -> None:
     assert series.index_of(1_000_000) is None
     assert series.index_of(-1_000_000) is None
     with pytest.raises(
-        InvalidOperationError, match=f"cannot cast {2 ** 53} losslessly to f64"
+        InvalidOperationError, match=f"cannot cast {2**53} losslessly to f64"
     ):
         assert series.index_of(2**53)
     with pytest.raises(
-        InvalidOperationError, match=f"cannot cast {- (2 ** 53)} losslessly to f64"
+        InvalidOperationError, match=f"cannot cast {-(2**53)} losslessly to f64"
     ):
         assert series.index_of(-(2**53))
 
@@ -420,11 +420,11 @@ def test_out_of_range_float32() -> None:
     assert series.index_of(1_000_000) is None
     assert series.index_of(-1_000_000) is None
     with pytest.raises(
-        InvalidOperationError, match=f"cannot cast {2 ** 24} losslessly to f32"
+        InvalidOperationError, match=f"cannot cast {2**24} losslessly to f32"
     ):
         assert series.index_of(2**24)
     with pytest.raises(
-        InvalidOperationError, match=f"cannot cast {- (2 ** 24)} losslessly to f32"
+        InvalidOperationError, match=f"cannot cast {-(2**24)} losslessly to f32"
     ):
         assert series.index_of(-(2**24))
 
