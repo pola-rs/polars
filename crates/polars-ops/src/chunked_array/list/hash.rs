@@ -74,6 +74,8 @@ pub(crate) fn hash(
                     } else {
                         match s.bit_repr() {
                             None => unimplemented!("Hash for lists without bit representation"),
+                            Some(BitRepr::U8(ca)) => hash_agg(&ca, &build_hasher),
+                            Some(BitRepr::U16(ca)) => hash_agg(&ca, &build_hasher),
                             Some(BitRepr::U32(ca)) => hash_agg(&ca, &build_hasher),
                             Some(BitRepr::U64(ca)) => hash_agg(&ca, &build_hasher),
                             #[cfg(feature = "dtype-i128")]

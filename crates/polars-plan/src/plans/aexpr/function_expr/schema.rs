@@ -93,6 +93,7 @@ impl IRFunctionExpr {
                     SumBy => mapper.sum_dtype(),
                 }
             },
+            Rechunk => mapper.with_same_dtype(),
             Append { upcast } => if *upcast {
                 mapper.map_to_supertype()
             } else {
@@ -227,7 +228,14 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
-            Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
+            Entropy { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Log => mapper.with_dtype(
+                match args_to_supertype(fields)? {
+                    DataType::Float32 => DataType::Float32,
+                    _ => DataType::Float64,
+                }
+            ),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),

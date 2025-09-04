@@ -14,6 +14,7 @@ impl LazyFrame {
         pyarrow: bool,
         // Validate that the source gives the proper schema
         validate_schema: bool,
+        is_pure: bool,
     ) -> Self {
         DslPlan::PythonScan {
             options: PythonOptionsDsl {
@@ -26,6 +27,7 @@ impl LazyFrame {
                     PythonScanSource::IOPlugin
                 },
                 validate_schema,
+                is_pure,
             },
         }
         .into()

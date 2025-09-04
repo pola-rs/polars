@@ -433,6 +433,11 @@ fn get_arithmetic_field(
                 (Struct(_), Struct(_)) => {
                     return Ok(left_field);
                 },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
+                    return Ok(left_field);
+                },
                 (Duration(_), Datetime(_, _))
                 | (Datetime(_, _), Duration(_))
                 | (Duration(_), Date)
@@ -497,6 +502,15 @@ fn get_arithmetic_field(
         Operator::Plus => {
             let right_type = right_ae.to_field_impl(ctx)?.dtype;
             match (&left_field.dtype, &right_type) {
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), Struct(_)) => {
+                    return Ok(left_field);
+                },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
+                    return Ok(left_field);
+                },
                 (Duration(_), Datetime(_, _))
                 | (Datetime(_, _), Duration(_))
                 | (Duration(_), Date)
@@ -554,6 +568,11 @@ fn get_arithmetic_field(
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
+                    return Ok(left_field);
+                },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
                     return Ok(left_field);
                 },
                 (Datetime(_, _), _)
@@ -677,6 +696,45 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
     // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code
     // originally (mostly) only looked at the LHS dtype.
     let out_type = match (left_dtype, right_dtype) {
+        #[cfg(feature = "dtype-struct")]
+        (Struct(a), Struct(b)) => {
+            polars_ensure!(a.len() == b.len() || b.len() == 1,
+                InvalidOperation: "cannot {} two structs of different length (left: {}, right: {})",
+                "div", a.len(), b.len()
+            );
+            let mut fields = Vec::with_capacity(a.len());
+            // In case b.len() == 1, we broadcast the first field (b[0]).
+            // Safety is assured by the constraints above.
+            let b_iter = (0..a.len()).map(|i| b.get(i.min(b.len() - 1)).unwrap());
+            for (left, right) in a.iter().zip(b_iter) {
+                let name = left.name.clone();
+                let (left, right) = (left.dtype(), right.dtype());
+                if !(left.is_numeric() && right.is_numeric()) {
+                    polars_bail!(InvalidOperation:
+                        "cannot {} two structs with non-numeric fields: (left: {}, right: {})",
+                        "div", left, right,)
+                };
+                let field = Field::new(name, get_truediv_dtype(left, right)?);
+                fields.push(field);
+            }
+            Struct(fields)
+        },
+        #[cfg(feature = "dtype-struct")]
+        (Struct(a), n) if n.is_numeric() => {
+            let mut fields = Vec::with_capacity(a.len());
+            for left in a.iter() {
+                let name = left.name.clone();
+                let left = left.dtype();
+                if !(left.is_numeric()) {
+                    polars_bail!(InvalidOperation:
+                        "cannot {} a struct with non-numeric field: (left: {})",
+                        "div", left)
+                };
+                let field = Field::new(name, get_truediv_dtype(left, n)?);
+                fields.push(field);
+            }
+            Struct(fields)
+        },
         (l @ List(a), r @ List(b))
             if ![a, b]
                 .into_iter()

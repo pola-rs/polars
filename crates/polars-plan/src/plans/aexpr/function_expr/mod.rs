@@ -186,6 +186,7 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
+    Rechunk,
     Append {
         upcast: bool,
     },
@@ -279,9 +280,7 @@ pub enum IRFunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -521,7 +520,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
             Append { upcast } => {
                 upcast.hash(state);
             },
@@ -617,7 +616,7 @@ impl Hash for IRFunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -772,6 +771,7 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Rechunk => "rechunk",
             Append { .. } => "append",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
@@ -839,7 +839,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]
@@ -1147,6 +1147,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     include_breakpoint
                 )
             },
+            Rechunk => map!(dispatch::rechunk),
             Append { upcast } => map_as_slice!(dispatch::append, upcast),
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
@@ -1229,7 +1230,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
-            Log { base } => map!(log::log, base),
+            Log => map_as_slice!(log::log),
             #[cfg(feature = "log")]
             Log1p => map!(log::log1p),
             #[cfg(feature = "log")]
@@ -1465,6 +1466,7 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
+            F::Rechunk => FunctionOptions::length_preserving(),
             F::Append { .. } => FunctionOptions::groupwise(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
@@ -1529,7 +1531,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log { .. } | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
             F::Entropy { .. } => FunctionOptions::aggregation(),
             F::Unique(_) => FunctionOptions::groupwise(),

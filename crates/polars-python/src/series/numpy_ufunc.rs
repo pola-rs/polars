@@ -108,9 +108,10 @@ macro_rules! impl_ufuncs {
                             // args and the lambda return have a reference, making a total of 3
                             assert!(get_refcnt(&out_array) <= 3);
 
-                            let validity = self.series.chunks()[0].validity().cloned();
+                            let s = self.series.read();
+                            let validity = s.chunks()[0].validity().cloned();
                             let ca = ChunkedArray::<$type>::from_vec_validity(
-                                self.series.name().clone(),
+                                s.name().clone(),
                                 av,
                                 validity,
                             );

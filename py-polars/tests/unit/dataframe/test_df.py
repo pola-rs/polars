@@ -2445,7 +2445,11 @@ def test_asof_by_multiple_keys() -> None:
         rhs, on=pl.col("a").set_sorted(), by=["by", "by2"], strategy="backward"
     ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
-    assert_frame_equal(result, expected)
+    assert_frame_equal(
+        result.group_by("by").agg("a"),
+        expected.group_by("by").agg("a"),
+        check_row_order=False,
+    )
 
 
 def test_asof_bad_input_type() -> None:

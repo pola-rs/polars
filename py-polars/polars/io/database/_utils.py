@@ -34,10 +34,21 @@ def _read_sql_connectorx(
     partition_num: int | None = None,
     protocol: str | None = None,
     schema_overrides: SchemaDict | None = None,
+    pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame:
     cx = import_optional("connectorx")
+
+    if parse_version(cx.__version__) < (0, 4, 2):
+        if pre_execution_query:
+            msg = "'pre_execution_query' is only supported in connectorx version 0.4.2 or later"
+            raise ValueError(msg)
+        return_type = "arrow2"
+        pre_execution_args = {}
+    else:
+        return_type = "arrow"
+        pre_execution_args = {"pre_execution_query": pre_execution_query}
+
     try:
-        return_type = "arrow2" if parse_version(cx.__version__) < (0, 4, 2) else "arrow"
         tbl = cx.read_sql(
             conn=connection_uri,
             query=query,
@@ -46,6 +57,7 @@ def _read_sql_connectorx(
             partition_range=partition_range,
             partition_num=partition_num,
             protocol=protocol,
+            **pre_execution_args,
         )
     except BaseException as err:
         # basic sanitisation of /user:pass/ credentials exposed in connectorx errs
@@ -126,7 +138,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     adbc_driver = _import_optional_adbc_driver(module_name)
 
     # some backends require the driver name to be stripped from the URI
-    if driver_name in ("sqlite", "snowflake"):
+    if driver_name in ("duckdb", "snowflake", "sqlite"):
         connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
 
     return adbc_driver.connect(connection_uri)

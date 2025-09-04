@@ -29,6 +29,7 @@ pub trait HotGrouper: Any + Send + Sync {
         hot_idxs: &mut Vec<IdxSize>,
         hot_group_idxs: &mut Vec<EvictIdx>,
         cold_idxs: &mut Vec<IdxSize>,
+        force_hot: bool,
     );
 
     /// Get all the current hot keys, in group order.

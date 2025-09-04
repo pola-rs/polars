@@ -3522,6 +3522,7 @@ dependencies = [
  "ndarray",
  "num-traits",
  "numpy",
+ "parking_lot",
  "polars",
  "polars-arrow",
  "polars-compute",
@@ -3803,7 +3804,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.32.3"
+version = "1.33.0"
 dependencies = [
  "either",
  "libc",

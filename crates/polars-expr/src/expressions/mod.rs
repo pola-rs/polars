@@ -393,7 +393,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    /// Aggregate into `ListChunked.
+    /// Aggregate into `ListChunked`.
     pub fn aggregated_as_list<'b>(&'b mut self) -> Cow<'b, ListChunked> {
         self.aggregated();
         let out = self.get_values();
@@ -439,6 +439,7 @@ impl<'a> AggregationContext<'a> {
                 let s = s.new_from_index(0, rows);
                 let s = s.into_column();
                 self.state = AggState::AggregatedList(s.clone());
+                self.with_update_groups(UpdateGroups::WithSeriesLen);
                 s.clone()
             },
         }
@@ -529,7 +530,8 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                Cow::Owned(c.explode(false).unwrap())
+                // We should not insert nulls, otherwise the offsets in the groups will not be correct.
+                Cow::Owned(c.explode(true).unwrap())
             },
             AggState::AggregatedScalar(c) => Cow::Borrowed(c),
             AggState::LiteralScalar(c) => Cow::Borrowed(c),
@@ -625,9 +627,17 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         if self.has_window_function {
             state.insert_has_window_function_flag();
         }
-        self.expr
-            .evaluate(df, &state)
-            .map(|c| c.take_materialized_series())
+        self.expr.evaluate(df, &state).map(|c| {
+            // IO expression result should be boolean-typed.
+            debug_assert_eq!(c.dtype(), &DataType::Boolean);
+            (if c.len() == 1 && df.height() != 1 {
+                // filter(lit(True)) will hit here.
+                c.new_from_index(0, df.height())
+            } else {
+                c
+            })
+            .take_materialized_series()
+        })
     }
 }
 

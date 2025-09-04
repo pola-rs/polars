@@ -338,7 +338,7 @@ class ExprMetaNameSpace:
         The bytes can later be deserialized back into an `Expr` object.
 
         >>> import io
-        >>> pl.Expr.deserialize(io.BytesIO(bytes))  # doctest: +ELLIPSIS
+        >>> pl.Expr.deserialize(io.BytesIO(bytes))
         <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
         if format == "binary":
