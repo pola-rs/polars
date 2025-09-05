@@ -5,6 +5,7 @@ mod optflags;
 #[cfg(feature = "pymethods")]
 mod serde;
 mod sink;
+pub mod streaming_unique;
 pub mod visit;
 pub mod visitor;
 
