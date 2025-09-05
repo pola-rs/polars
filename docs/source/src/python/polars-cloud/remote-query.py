@@ -46,11 +46,11 @@ ctx = pc.ComputeContext(
 )
 
 # Use a larger dataset available on S3
-lineitem_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/pdsh/sf10/lineitem.parquet",
+lineitem_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-prd/pdsh/sf10/lineitem.parquet",
         storage_options={"request_payer": "true"})
-customer_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/pdsh/sf10/customer.parquet",
+customer_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-prd/pdsh/sf10/customer.parquet",
         storage_options={"request_payer": "true"})
-orders_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-dev/pdsh/sf10/orders.parquet",
+orders_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-prd/pdsh/sf10/orders.parquet",
         storage_options={"request_payer": "true"})
 
 # Your query remains the same

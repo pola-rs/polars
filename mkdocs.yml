@@ -143,6 +143,7 @@ nav:
           # - polars-cloud/integrations/airflow.md
           - Misc:
                 - polars-cloud/cli.md
+                - polars-cloud/public-datasets.md
                 - polars-cloud/faq.md
                 - API Reference: https://docs.cloud.pola.rs
                 - polars-cloud/release-notes.md
