@@ -158,3 +158,41 @@ def test_merge_sorted_to_union() -> None:
     explain = lf.explain()
     assert "MERGE_SORTED" not in explain
     assert "UNION" in explain
+
+
+@pytest.mark.parametrize(
+    "order_sensitive_expr",
+    [
+        pl.arange(0, pl.len()),
+        pl.int_range(pl.len()),
+        pl.row_index().cast(pl.Int64),
+        pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(),
+        pl.lit(pl.Series([0, 1, 2, 3, 4])),
+        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
+        pl.col("y").sort(),
+        pl.col("y").sort_by(pl.col("y"), maintain_order=True),
+        pl.col("y").sort_by(pl.col("y"), maintain_order=False),
+        pl.col("x").gather(pl.col("x")),
+    ],
+)
+def test_order_sensitive_exprs_24335(order_sensitive_expr: pl.Expr) -> None:
+    expect = pl.DataFrame(
+        {
+            "x": [0, 1, 2, 3, 4],
+            "y": [3, 4, 0, 1, 2],
+            "out": [0, 1, 2, 3, 4],
+        }
+    )
+
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2, 3, 4], "y": [3, 4, 0, 1, 2]})
+        .unique(maintain_order=True)
+        .with_columns(order_sensitive_expr.alias("out"))
+        .unique()
+    )
+
+    plan = q.explain()
+
+    assert plan.index("UNIQUE[maintain_order: true") > plan.index("WITH_COLUMNS")
+
+    assert_frame_equal(q.collect().sort(pl.all()), expect)

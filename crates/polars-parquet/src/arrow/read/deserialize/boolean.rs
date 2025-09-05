@@ -5,16 +5,15 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use polars_compute::filter::filter_boolean_kernel;
 
-use super::Filter;
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
     self, Decoded, Decoder, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity,
 };
+use super::{Filter, PredicateFilter};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
-use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -287,14 +286,9 @@ impl Decoded for (BitmapBuilder, BitmapBuilder) {
     fn len(&self) -> usize {
         self.0.len()
     }
-
     fn extend_nulls(&mut self, n: usize) {
         self.0.extend_constant(n, false);
         self.1.extend_constant(n, false);
-    }
-
-    fn remaining_capacity(&self) -> usize {
-        self.0.capacity().min(self.1.capacity())
     }
 }
 
@@ -327,12 +321,10 @@ impl Decoder for BooleanDecoder {
         Ok(BooleanArray::new(dtype, values.freeze(), validity))
     }
 
-    fn evaluate_predicate(
-        &mut self,
+    fn has_predicate_specialization(
+        &self,
         _state: &utils::State<'_, Self>,
-        _predicate: &SpecializedParquetColumnExpr,
-        _pred_true_mask: &mut BitmapBuilder,
-        _dict_mask: Option<&Bitmap>,
+        _predicate: &PredicateFilter,
     ) -> ParquetResult<bool> {
         // @TODO: This can be enabled for the fast paths
         Ok(false)
@@ -359,6 +351,7 @@ impl Decoder for BooleanDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         (target, validity): &mut Self::DecodedState,
+        _pred_true_mask: &mut BitmapBuilder,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
@@ -459,24 +452,5 @@ impl Decoder for BooleanDecoder {
                 Ok(())
             },
         }
-    }
-
-    fn extend_constant(
-        &mut self,
-        decoded: &mut Self::DecodedState,
-        length: usize,
-        value: &ParquetScalar,
-    ) -> ParquetResult<()> {
-        if value.is_null() {
-            decoded.extend_nulls(length);
-            return Ok(());
-        }
-
-        let value = value.as_bool().unwrap();
-
-        decoded.0.extend_constant(length, value);
-        decoded.1.extend_constant(length, true);
-
-        Ok(())
     }
 }
