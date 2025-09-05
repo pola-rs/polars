@@ -272,6 +272,20 @@ def test_object_polars_dtypes_20572() -> None:
     assert all(dt.is_object() for dt in df.schema.dtypes())
 
 
+def test_object_list_formatting_22814() -> None:
+    # https://github.com/pola-rs/polars/issues/22814
+    class CustomObject:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+        def __repr__(self) -> str:
+            return f"CustomObject({self.value})"
+
+    df = pl.DataFrame({"objects": [CustomObject(i) for i in range(2)]})
+
+    assert "object" in str(df)
+
+
 def test_err_nested_object() -> None:
     a = object()
     df = pl.DataFrame({"obj": [a]})
