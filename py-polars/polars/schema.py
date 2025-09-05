@@ -69,7 +69,8 @@ class Schema(BaseSchema):
     schema
         The schema definition given by column names and their associated
         Polars data type. Accepts a mapping, or an iterable of tuples, or any
-        object implementing `__arrow_c_schema__` (e.g. pyarrow schemas).
+        object implementing the  `__arrow_c_schema__` PyCapsule interface
+        (e.g. pyarrow schemas).
 
     Examples
     --------
