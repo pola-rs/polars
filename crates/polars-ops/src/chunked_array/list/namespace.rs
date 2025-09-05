@@ -19,7 +19,9 @@ use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
 use crate::chunked_array::list::sum_product_mean::sum_with_nulls;
 #[cfg(feature = "diff")]
 use crate::prelude::diff;
-use crate::prelude::list::sum_product_mean::{mean_list_numerical, product_list_numerical, product_with_nulls, sum_list_numerical};
+use crate::prelude::list::sum_product_mean::{
+    mean_list_numerical, product_list_numerical, product_with_nulls, sum_list_numerical,
+};
 use crate::series::ArgAgg;
 
 pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
@@ -220,9 +222,10 @@ pub trait ListNameSpaceImpl: AsList {
                         let scalar = s.as_ref().product()?;
                         match scalar.value() {
                             AnyValue::Boolean(v) => Ok(*v as IdxSize),
-                            _ => unreachable!()
+                            _ => unreachable!(),
                         }
-                    }).transpose()
+                    })
+                    .transpose()
                 })?;
                 Ok(out.into_series())
             },

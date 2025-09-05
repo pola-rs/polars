@@ -8,7 +8,8 @@ use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
 
 use super::*;
-use crate::chunked_array::{sum::sum_slice, product::product_slice};
+use crate::chunked_array::product::product_slice;
+use crate::chunked_array::sum::sum_slice;
 
 fn sum_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>
 where
@@ -188,9 +189,10 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
                         AnyValue::Boolean(v) => Ok(*v as IdxSize),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
-                }).transpose()
+                })
+                .transpose()
             })?;
             out.into_series()
         },
@@ -200,9 +202,10 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
                         AnyValue::UInt32(v) => Ok(*v),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
-                }).transpose()
+                })
+                .transpose()
             })?;
             out.into_series()
         },
@@ -212,9 +215,10 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
                         AnyValue::UInt64(v) => Ok(*v),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
-                }).transpose()
+                })
+                .transpose()
             })?;
             out.into_series()
         },
@@ -224,9 +228,10 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
                         AnyValue::Int32(v) => Ok(*v),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
-                }).transpose()
+                })
+                .transpose()
             })?;
             out.into_series()
         },
@@ -236,9 +241,10 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
                         AnyValue::Int64(v) => Ok(*v),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
-                }).transpose()
+                })
+                .transpose()
             })?;
             out.into_series()
         },
@@ -248,9 +254,10 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
                         AnyValue::Float32(v) => Ok(*v),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
-                }).transpose()
+                })
+                .transpose()
             })?;
             out.into_series()
         },
@@ -260,9 +267,10 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
                         AnyValue::Float64(v) => Ok(*v),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
-                }).transpose()
+                })
+                .transpose()
             })?;
             out.into_series()
         },
