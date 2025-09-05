@@ -1,0 +1,6 @@
+﻿polars.date
+===========
+
+.. currentmodule:: polars
+
+.. autofunction:: date
