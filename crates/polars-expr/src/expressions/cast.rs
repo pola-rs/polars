@@ -56,7 +56,7 @@ impl PhysicalExpr for CastExpr {
             },
             AggState::NotAggregated(_) => {
                 // We need to perform aggregation only for strict mode, since if this is not done,
-                // a cast error may occur if the `groups` have been filtered, but this is not reflected in the `state'.
+                // filtered-out values may incorrectly cause a cast error
                 // Otherwise, we will use `flat_naive` to improve performance.
                 match self.options {
                     CastOptions::Strict => {
