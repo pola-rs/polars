@@ -405,19 +405,21 @@ def test_read_database(
 
 
 @pytest.mark.parametrize(
-    "connection_or_cursor",
+    "connection_func",
     [
-        pytest.param(sqlite3.connect(":memory:"), id="conn: sqlite3"),
-        pytest.param(sqlite3.connect(":memory:").cursor(), id="cursor: sqlite3"),
+        pytest.param(lambda: sqlite3.connect(":memory:"), id="conn: sqlite3"),
         pytest.param(
-            create_engine("sqlite:///:memory:").connect(), id="conn: sqlalchemy"
+            lambda: sqlite3.connect(":memory:").cursor(), id="cursor: sqlite3"
         ),
         pytest.param(
-            create_engine("sqlite:///:memory:").raw_connection().cursor(),
+            lambda: create_engine("sqlite:///:memory:").connect(), id="conn: sqlalchemy"
+        ),
+        pytest.param(
+            lambda: create_engine("sqlite:///:memory:").raw_connection().cursor(),
             id="cursor: sqlalchemy",
         ),
         pytest.param(
-            adbc_sqlite_connect(),
+            lambda: adbc_sqlite_connect(),
             marks=pytest.mark.skipif(
                 sys.platform == "win32",
                 reason="adbc_driver_sqlite not available on Windows",
@@ -425,7 +427,7 @@ def test_read_database(
             id="conn: adbc",
         ),
         pytest.param(
-            adbc_sqlite_connect().cursor(),
+            lambda: adbc_sqlite_connect().cursor(),
             marks=pytest.mark.skipif(
                 sys.platform == "win32",
                 reason="adbc_driver_sqlite not available on Windows",
@@ -434,19 +436,27 @@ def test_read_database(
         ),
     ],
 )
-def test_read_database_respect_open_connection(connection_or_cursor: Any) -> None:
+def test_read_database_respect_open_connection(connection_func: Any) -> None:
     # Polars claims it will not close a connection or cursor it did not open
+    connection_or_cursor = connection_func()
     pl.read_database("SELECT 1", connection_or_cursor)
+
     if "conn:" in os.environ["PYTEST_CURRENT_TEST"]:
         if "sqlalchemy" in os.environ["PYTEST_CURRENT_TEST"]:
             assert not connection_or_cursor.closed
         else:
             # for ADBC and sqlite, create a cursor to prove the connection is open
             cursor = connection_or_cursor.cursor()
+            # clean up open resources so pytest doesn't complain
             cursor.close()
+            connection_or_cursor.close()
+    # for cursors, prove they are still open by executing another statement
     elif "cursor:" in os.environ["PYTEST_CURRENT_TEST"]:
-        # for cursors, prove they are still open by executing another statement
         connection_or_cursor.execute("SELECT 1")
+        # ADBC requires the cursor and the parent connection to be closed in pytest
+        if "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
+            connection_or_cursor.close()
+            connection_or_cursor.connection.close()
 
 
 def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:

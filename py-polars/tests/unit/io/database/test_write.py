@@ -239,13 +239,13 @@ class TestWriteDatabase:
 
 
 @pytest.mark.parametrize(
-    "connection",
+    "connection_func",
     [
         pytest.param(
-            create_engine("sqlite:///:memory:").connect(), id="conn: sqlalchemy"
+            lambda: create_engine("sqlite:///:memory:").connect(), id="conn: sqlalchemy"
         ),
         pytest.param(
-            _open_adbc_connection("sqlite:///:memory:"),
+            lambda: _open_adbc_connection("sqlite:///:memory:"),
             marks=pytest.mark.skipif(
                 sys.platform == "win32",
                 reason="adbc_driver_sqlite not available on Windows",
@@ -254,15 +254,19 @@ class TestWriteDatabase:
         ),
     ],
 )
-def test_write_database_respect_open_connection(connection: Any) -> None:
+def test_write_database_respect_open_connection(connection_func: Any) -> None:
     # Polars claims it will not close a connection or cursor it did not open
+    connection = connection_func()
     pl.DataFrame({"a": 1}).write_database("my_table", connection)
+
     if "sqlalchemy" in os.environ["PYTEST_CURRENT_TEST"]:
         assert not connection.closed
     else:
         # for ADBC, create a cursor to prove the connection is open
         cursor = connection.cursor()
+        # clean up open resources so pytest doesn't complain
         cursor.close()
+        connection.close()
 
 
 @pytest.mark.write_disk
