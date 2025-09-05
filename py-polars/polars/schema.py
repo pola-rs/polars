@@ -101,6 +101,7 @@ class Schema(BaseSchema):
 
     Import a pyarrow schema.
 
+    >>> import pyarrow as pa
     >>> pl.Schema(pa.schema([pa.field("x", pa.int32())]))
     Schema({'x': Int32})
 
