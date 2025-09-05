@@ -14,7 +14,7 @@ use polars::prelude::DataFrame;
 use pyo3::pyclass;
 
 #[pyclass(frozen)]
-#[repr(transparent)]
+#[repr(C)]
 pub struct PyDataFrame {
     pub df: RwLock<DataFrame>,
 }
