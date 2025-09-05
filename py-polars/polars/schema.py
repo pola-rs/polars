@@ -262,4 +262,4 @@ class Schema(BaseSchema):
 
         https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
         """
-        return polars_schema_to_pycapsule(self, CompatLevel.newest())
+        return polars_schema_to_pycapsule(self, CompatLevel.newest()._version)
