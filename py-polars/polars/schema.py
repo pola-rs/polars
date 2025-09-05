@@ -132,7 +132,7 @@ class Schema(BaseSchema):
         for v in input:
             name, tp = (
                 polars_schema_field_from_arrow_c_schema(v)
-                if hasattr(v, "__arrow_c_schema__")
+                if hasattr(v, "__arrow_c_schema__") and not isinstance(v, DataType)
                 else v
             )
 
@@ -165,6 +165,15 @@ class Schema(BaseSchema):
     ) -> None:
         dtype = _check_dtype(parse_into_dtype(dtype))
         super().__setitem__(name, dtype)
+
+    @unstable()
+    def __arrow_c_schema__(self) -> object:
+        """
+        Export a Schema via the Arrow PyCapsule Interface.
+
+        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+        """
+        return polars_schema_to_pycapsule(self, CompatLevel.newest()._version)
 
     def names(self) -> list[str]:
         """
@@ -254,12 +263,3 @@ class Schema(BaseSchema):
         {'x': <class 'int'>, 'y':  <class 'str'>, 'z': <class 'datetime.timedelta'>}
         """
         return {name: tp.to_python() for name, tp in self.items()}
-
-    @unstable()
-    def __arrow_c_schema__(self) -> object:
-        """
-        Export a Schema via the Arrow PyCapsule Interface.
-
-        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
-        """
-        return polars_schema_to_pycapsule(self, CompatLevel.newest()._version)
