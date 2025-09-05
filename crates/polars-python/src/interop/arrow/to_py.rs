@@ -93,6 +93,7 @@ pub(crate) fn dataframe_to_stream<'py>(
 pub(crate) fn polars_schema_to_pycapsule<'py>(
     py: Python<'py>,
     schema: crate::prelude::Wrap<polars::prelude::Schema>,
+    compat_level: crate::prelude::PyCompatLevel,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
         PlSmallStr::EMPTY,
@@ -100,7 +101,7 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
             schema
                 .0
                 .iter_fields()
-                .map(|x| x.to_arrow(CompatLevel::newest()))
+                .map(|x| x.to_arrow(compat_level.0))
                 .collect(),
         ),
         false,

@@ -11,6 +11,7 @@ from polars._utils.unstable import unstable
 from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
 from polars.exceptions import DuplicateError
+from polars.interchange.protocol import CompatLevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import (
@@ -256,4 +257,9 @@ class Schema(BaseSchema):
 
     @unstable()
     def __arrow_c_schema__(self) -> object:
-        return polars_schema_to_pycapsule(self)
+        """
+        Export a Schema via the Arrow PyCapsule Interface.
+
+        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+        """
+        return polars_schema_to_pycapsule(self, CompatLevel.newest())
