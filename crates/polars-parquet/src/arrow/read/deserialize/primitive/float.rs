@@ -9,12 +9,12 @@ use crate::parquet::encoding::{Encoding, byte_stream_split, hybrid_rle};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::parquet::types::{NativeType as ParquetNativeType, decode};
-use crate::read::Filter;
 use crate::read::deserialize::dictionary_encoded;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, unspecialized_decode,
 };
-use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
+use crate::read::expr::SpecializedParquetColumnExpr;
+use crate::read::{Filter, PredicateFilter};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -27,7 +27,7 @@ pub(crate) enum StateTranslation<'a> {
 impl<'a, P, T, D> utils::StateTranslation<'a, FloatDecoder<P, T, D>> for StateTranslation<'a>
 where
     T: NativeType,
-    P: ParquetNativeType + for<'b> TryFrom<&'b ParquetScalar>,
+    P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
     type PlainDecoder = &'a [u8];
@@ -111,14 +111,9 @@ impl<T: NativeType> utils::Decoded for (Vec<T>, BitmapBuilder) {
     fn len(&self) -> usize {
         self.0.len()
     }
-
     fn extend_nulls(&mut self, n: usize) {
         self.0.resize(self.0.len() + n, T::default());
         self.1.extend_constant(n, false);
-    }
-
-    fn remaining_capacity(&self) -> usize {
-        (self.0.capacity() - self.0.len()).min(self.1.capacity() - self.1.len())
     }
 }
 
@@ -152,6 +147,7 @@ where
             &mut BitmapBuilder::new(),
             &mut self.0.intermediate,
             &mut target,
+            &mut BitmapBuilder::new(),
             self.0.decoder,
         )?;
         Ok(PrimitiveArray::new(
@@ -161,29 +157,25 @@ where
         ))
     }
 
-    fn evaluate_predicate(
-        &mut self,
+    fn has_predicate_specialization(
+        &self,
         state: &utils::State<'_, Self>,
-        _predicate: &SpecializedParquetColumnExpr,
-        pred_true_mask: &mut BitmapBuilder,
-        dict_mask: Option<&Bitmap>,
+        predicate: &PredicateFilter,
     ) -> ParquetResult<bool> {
-        if state.page_validity.is_some() {
-            // @Performance: implement validity aware
-            return Ok(false);
-        }
+        let mut has_predicate_specialization = false;
 
-        if let StateTranslation::Dictionary(values) = &state.translation {
-            let dict_mask = dict_mask.unwrap();
-            super::super::dictionary_encoded::predicate::decode(
-                values.clone(),
-                dict_mask,
-                pred_true_mask,
-            )?;
-            return Ok(true);
-        }
+        has_predicate_specialization |=
+            matches!(state.translation, StateTranslation::Dictionary(_));
+        has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
+            && matches!(
+                predicate.predicate.as_specialized(),
+                Some(SpecializedParquetColumnExpr::Equal(_))
+            );
 
-        Ok(false)
+        // @TODO: This should be implemented
+        has_predicate_specialization &= state.page_validity.is_none();
+
+        Ok(has_predicate_specialization)
     }
 
     fn extend_decoded(
@@ -210,6 +202,7 @@ where
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
@@ -221,16 +214,19 @@ where
                 &mut decoded.1,
                 &mut self.0.intermediate,
                 &mut decoded.0,
+                pred_true_mask,
                 self.0.decoder,
             ),
             StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(
                 indexes.clone(),
                 state.dict.unwrap().values().as_slice(),
+                state.dict_mask,
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,
                 &mut decoded.1,
                 &mut decoded.0,
+                pred_true_mask,
             ),
             StateTranslation::ByteStreamSplit(mut decoder) => {
                 let num_rows = decoder.len();
@@ -247,15 +243,6 @@ where
                 )
             },
         }
-    }
-
-    fn extend_constant(
-        &mut self,
-        decoded: &mut Self::DecodedState,
-        length: usize,
-        value: &ParquetScalar,
-    ) -> ParquetResult<()> {
-        self.0.extend_constant(decoded, length, value)
     }
 
     fn finalize(
