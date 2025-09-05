@@ -55,28 +55,27 @@ impl PhysicalExpr for CastExpr {
                 }
             },
             AggState::NotAggregated(_) => {
-                // We need to perform aggregation only for strict mode, since if this is not done,
-                // filtered-out values may incorrectly cause a cast error
-                // Otherwise, we will use `flat_naive` to improve performance.
-                match self.options {
-                    CastOptions::Strict => {
-                        let s = ac.aggregated();
-                        let ca = s.list().unwrap();
-                        let casted = ca.apply_to_inner(&|s| {
-                            self.finish(&s.into_column())
-                                .map(|c| c.take_materialized_series())
-                        })?;
-                        ac.with_values(casted.into_column(), true, None)?;
-                    },
-                    CastOptions::NonStrict | CastOptions::Overflowing => {
-                        // before we flatten, make sure that groups are updated
-                        ac.groups();
+                if match self.options {
+                    CastOptions::NonStrict | CastOptions::Overflowing => true,
+                    CastOptions::Strict => ac.original_len,
+                } {
+                    // before we flatten, make sure that groups are updated
+                    ac.groups();
 
-                        let s = ac.flat_naive();
-                        let s = self.finish(&s.as_ref().clone().into_column())?;
+                    let s = ac.flat_naive();
+                    let s = self.finish(&s.as_ref().clone().into_column())?;
 
-                        ac.with_values(s, false, None)?;
-                    },
+                    ac.with_values(s, false, None)?;
+                } else {
+                    // We need to perform aggregation only for strict mode, since if this is not done,
+                    // filtered-out values may incorrectly cause a cast error.
+                    let s = ac.aggregated();
+                    let ca = s.list().unwrap();
+                    let casted = ca.apply_to_inner(&|s| {
+                        self.finish(&s.into_column())
+                            .map(|c| c.take_materialized_series())
+                    })?;
+                    ac.with_values(casted.into_column(), true, None)?;
                 }
             },
 
