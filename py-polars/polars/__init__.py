@@ -1,3 +1,35 @@
+"""
+Polars: Blazingly fast DataFrames
+=================================
+
+Polars is a fast, open-source library for data manipulation with an expressive, typed API.
+
+Basic usage:
+
+   >>> import polars as pl
+   >>> df = pl.DataFrame(
+   ...     {
+   ...         "name": ["Alice", "Bob", "Charlie"],
+   ...         "age": [25, 30, 35],
+   ...         "city": ["New York", "London", "Tokyo"],
+   ...     }
+   ... )
+   >>> df.filter(pl.col("age") > 28)
+   shape: (2, 3)
+   ┌─────────┬─────┬────────┐
+   │ name    ┆ age ┆ city   │
+   │ ---     ┆ --- ┆ ---    │
+   │ str     ┆ i64 ┆ str    │
+   ╞═════════╪═════╪════════╡
+   │ Bob     ┆ 30  ┆ London │
+   │ Charlie ┆ 35  ┆ Tokyo  │
+   └─────────┴─────┴────────┘
+
+User Guide: https://docs.pola.rs/
+Python API Documentation: https://docs.pola.rs/api/python/stable/
+Source Code: https://github.com/pola-rs/polars
+"""  # noqa: D400, W505, D205
+
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
