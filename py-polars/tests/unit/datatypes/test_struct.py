@@ -16,7 +16,7 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, SerializationFormat
 
 
 def test_struct_to_list() -> None:
@@ -1152,7 +1152,7 @@ def test_zfs_struct_fns() -> None:
 
 @pytest.mark.parametrize("format", ["binary", "json"])
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
-def test_zfs_serialization_roundtrip(format: pl.SerializationFormat, size: int) -> None:
+def test_zfs_serialization_roundtrip(format: SerializationFormat, size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
 
     f = io.BytesIO()
