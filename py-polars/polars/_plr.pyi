@@ -2321,7 +2321,7 @@ class PyBatchedCsv:
     @staticmethod
     def new(
         infer_schema_length: int | None,
-        chunk_size: int,
+        batch_size_options: tuple[str, int] | None,
         has_header: bool,
         ignore_errors: bool,
         n_rows: int | None,
