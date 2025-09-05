@@ -139,6 +139,10 @@ impl PyExpr {
         self.inner.clone().list().sum().into()
     }
 
+    fn list_product(&self) -> Self {
+        self.inner.clone().list().product().into()
+    }
+
     #[cfg(feature = "list_drop_nulls")]
     fn list_drop_nulls(&self) -> Self {
         self.inner.clone().list().drop_nulls().into()

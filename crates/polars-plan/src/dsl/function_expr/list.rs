@@ -28,6 +28,7 @@ pub enum ListFunction {
     #[cfg(feature = "list_count")]
     CountMatches,
     Sum,
+    Product,
     Length,
     Max,
     Min,
@@ -87,6 +88,7 @@ impl Display for ListFunction {
             #[cfg(feature = "list_count")]
             CountMatches => "count_matches",
             Sum => "sum",
+            Product => "product",
             Min => "min",
             Max => "max",
             Mean => "mean",

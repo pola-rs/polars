@@ -16,10 +16,10 @@ use super::*;
 #[cfg(feature = "list_any_all")]
 use crate::chunked_array::list::any_all::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
-use crate::chunked_array::list::sum_mean::sum_with_nulls;
+use crate::chunked_array::list::sum_product_mean::sum_with_nulls;
 #[cfg(feature = "diff")]
 use crate::prelude::diff;
-use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
+use crate::prelude::list::sum_product_mean::{mean_list_numerical, product_list_numerical, product_with_nulls, sum_list_numerical};
 use crate::series::ArgAgg;
 
 pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
@@ -206,16 +206,41 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
+    fn lst_product(&self) -> PolarsResult<Series> {
+        let ca = self.as_list();
+
+        if has_inner_nulls(ca) {
+            return product_with_nulls(ca, ca.inner_dtype());
+        };
+
+        match ca.inner_dtype() {
+            DataType::Boolean => {
+                let out: IdxCa = ca.try_apply_amortized_generic(|s| {
+                    s.map(|s| {
+                        let scalar = s.as_ref().product()?;
+                        match scalar.value() {
+                            AnyValue::Boolean(v) => Ok(*v as IdxSize),
+                            _ => unreachable!()
+                        }
+                    }).transpose()
+                })?;
+                Ok(out.into_series())
+            },
+            dt if dt.is_primitive_numeric() => Ok(product_list_numerical(ca, dt)),
+            dt => product_with_nulls(ca, dt),
+        }
+    }
+
     fn lst_mean(&self) -> Series {
         let ca = self.as_list();
 
         if has_inner_nulls(ca) {
-            return sum_mean::mean_with_nulls(ca);
+            return sum_product_mean::mean_with_nulls(ca);
         };
 
         match ca.inner_dtype() {
             dt if dt.is_primitive_numeric() => mean_list_numerical(ca, dt),
-            _ => sum_mean::mean_with_nulls(ca),
+            _ => sum_product_mean::mean_with_nulls(ca),
         }
     }
 

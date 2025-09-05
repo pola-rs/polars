@@ -32,6 +32,7 @@ pub enum IRListFunction {
     #[cfg(feature = "list_count")]
     CountMatches,
     Sum,
+    Product,
     Length,
     Max,
     Min,
@@ -84,6 +85,7 @@ impl IRListFunction {
             #[cfg(feature = "list_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
+            Product => mapper.nested_sum_type(),
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.nested_mean_median_type(),
@@ -173,6 +175,7 @@ impl IRListFunction {
             #[cfg(feature = "list_count")]
             L::CountMatches => FunctionOptions::elementwise(),
             L::Sum
+            | L::Product
             | L::Slice
             | L::Shift
             | L::Get(_)
@@ -237,6 +240,7 @@ impl Display for IRListFunction {
             #[cfg(feature = "list_count")]
             CountMatches => "count_matches",
             Sum => "sum",
+            Product => "product",
             Min => "min",
             Max => "max",
             Mean => "mean",
@@ -306,6 +310,7 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "list_count")]
             CountMatches => map_as_slice!(count_matches),
             Sum => map!(sum),
+            Product => map!(product),
             Length => map!(length),
             Max => map!(max),
             Min => map!(min),
@@ -564,6 +569,10 @@ pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
 
 pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
     s.list()?.lst_sum().map(Column::from)
+}
+
+pub(super) fn product(s: &Column) -> PolarsResult<Column> {
+    s.list()?.lst_product().map(Column::from)
 }
 
 pub(super) fn length(s: &Column) -> PolarsResult<Column> {

@@ -174,6 +174,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "list_count")]
                 L::CountMatches => IL::CountMatches,
                 L::Sum => IL::Sum,
+                L::Product => IL::Product,
                 L::Length => IL::Length,
                 L::Max => IL::Max,
                 L::Min => IL::Min,

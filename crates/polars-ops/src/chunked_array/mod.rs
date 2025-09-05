@@ -11,6 +11,7 @@ pub mod peaks;
 mod scatter;
 pub mod strings;
 mod sum;
+mod product;
 #[cfg(feature = "top_k")]
 mod top_k;
 
