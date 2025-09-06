@@ -460,6 +460,44 @@ def test_array_explode() -> None:
     assert_series_equal(out_s, expected_s)
 
 
+def test_array_concat() -> None:
+    a = pl.Series([[1], [3], None], dtype=pl.Array(pl.Int64, 1))
+    b = pl.Series([[3], [None], [5]], dtype=pl.Array(pl.Int64, 1))
+
+    expected = pl.Series([[1, 3], [3, None], None], dtype=pl.Array(pl.Int64, 2))
+    assert_series_equal(a.arr.concat(b), expected)
+
+    c = pl.Series([None, 5, 6], dtype=pl.Int64)
+    expected = pl.Series(
+        [[1, 3, None], [3, None, 5], None], dtype=pl.Array(pl.Int64, 3)
+    )
+    assert_series_equal(a.arr.concat(b, c), expected)
+    assert_series_equal(a.arr.concat((b, c)), expected)
+
+    df = pl.select(
+        a=pl.Series([1, 3, None]),
+    ).with_columns(
+        pl.col("a").arr.concat(pl.lit(0, dtype=pl.Int64)).alias("concat_arr(a, 0)"),
+        pl.col("a").arr.concat(pl.sum("a")).alias("concat_arr(a, sum(a))"),
+        pl.col("a").arr.concat(pl.max("a")).alias("concat_arr(a, max(a))"),
+    )
+    expected_df = pl.DataFrame(
+        {
+            "a": [1, 3, None],
+            "concat_arr(a, 0)": [[1, 0], [3, 0], [None, 0]],
+            "concat_arr(a, sum(a))": [[1, 4], [3, 4], [None, 4]],
+            "concat_arr(a, max(a))": [[1, 3], [3, 3], [None, 3]],
+        },
+        schema={
+            "a": pl.Int64,
+            "concat_arr(a, 0)": pl.Array(pl.Int64, 2),
+            "concat_arr(a, sum(a))": pl.Array(pl.Int64, 2),
+            "concat_arr(a, max(a))": pl.Array(pl.Int64, 2),
+        },
+    )
+    assert_frame_equal(df, expected_df)
+
+
 @pytest.mark.parametrize(
     ("arr", "data", "expected", "dtype"),
     [
