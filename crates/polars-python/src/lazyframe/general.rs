@@ -679,7 +679,7 @@ impl PyLazyFrame {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
 
-            polars_core::POOL.spawn(move || {
+            polars_io::utils::spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
                     .map(PyDataFrame::new)
