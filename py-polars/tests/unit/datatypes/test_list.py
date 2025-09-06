@@ -378,7 +378,6 @@ def test_list_product_and_dtypes() -> None:
         )
 
         producted = df.explode("a").product()
-        print(producted.dtypes, df.select(pl.col("a").list.product()).dtypes, dt_in, dt_out)
         assert producted.dtypes == [dt_out]
         assert producted.item() == 17280
         assert df.select(pl.col("a").list.product()).dtypes == [dt_out]
@@ -406,7 +405,6 @@ def test_list_product_and_dtypes() -> None:
     assert pl.DataFrame(
         {"a": [[True], [True, True], [True, True, True]]},
     ).select(pl.col("a").list.product()).to_dict(as_series=False) == {"a": [1, 1, 1]}
-
 
 
 def test_list_product() -> None:
