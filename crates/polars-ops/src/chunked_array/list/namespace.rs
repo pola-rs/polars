@@ -221,7 +221,7 @@ pub trait ListNameSpaceImpl: AsList {
                     s.map(|s| {
                         let scalar = s.as_ref().product()?;
                         match scalar.value() {
-                            AnyValue::Boolean(v) => Ok(*v as IdxSize),
+                            AnyValue::Int64(v) => Ok(*v as IdxSize),
                             _ => unreachable!(),
                         }
                     })

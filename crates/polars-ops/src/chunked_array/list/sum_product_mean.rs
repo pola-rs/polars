@@ -108,12 +108,12 @@ pub(super) fn product_list_numerical(ca: &ListChunked, inner_type: &DataType) ->
             match inner_type {
                 Int8 => dispatch_product::<i8, i64>(values, offsets, arr.validity()),
                 Int16 => dispatch_product::<i16, i64>(values, offsets, arr.validity()),
-                Int32 => dispatch_product::<i32, i32>(values, offsets, arr.validity()),
+                Int32 => dispatch_product::<i32, i64>(values, offsets, arr.validity()),
                 Int64 => dispatch_product::<i64, i64>(values, offsets, arr.validity()),
                 Int128 => dispatch_product::<i128, i128>(values, offsets, arr.validity()),
                 UInt8 => dispatch_product::<u8, i64>(values, offsets, arr.validity()),
                 UInt16 => dispatch_product::<u16, i64>(values, offsets, arr.validity()),
-                UInt32 => dispatch_product::<u32, u32>(values, offsets, arr.validity()),
+                UInt32 => dispatch_product::<u32, i64>(values, offsets, arr.validity()),
                 UInt64 => dispatch_product::<u64, u64>(values, offsets, arr.validity()),
                 Float32 => dispatch_product::<f32, f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_product::<f64, f64>(values, offsets, arr.validity()),
@@ -188,7 +188,7 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                 s.map(|s| {
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
-                        AnyValue::Boolean(v) => Ok(*v as IdxSize),
+                        AnyValue::Int64(v) => Ok(*v as IdxSize),
                         _ => unreachable!(),
                     }
                 })

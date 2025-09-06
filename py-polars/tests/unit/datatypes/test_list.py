@@ -360,6 +360,83 @@ def test_list_sum_and_dtypes() -> None:
     ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {"a": [1, 2, 3]}
 
 
+def test_list_product_and_dtypes() -> None:
+    # ensure the dtypes of product align with normal product
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int64),
+        (pl.Int64, pl.Int64),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.Int64),
+        (pl.UInt64, pl.UInt64),
+    ]:
+        df = pl.DataFrame(
+            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+            schema={"a": pl.List(dt_in)},
+        )
+
+        producted = df.explode("a").product()
+        print(producted.dtypes, df.select(pl.col("a").list.product()).dtypes, dt_in, dt_out)
+        assert producted.dtypes == [dt_out]
+        assert producted.item() == 17280
+        assert df.select(pl.col("a").list.product()).dtypes == [dt_out]
+
+    assert df.select(pl.col("a").list.product()).to_dict(as_series=False) == {
+        "a": [1, 6, 24, 120]
+    }
+
+    # include nulls
+    assert pl.DataFrame(
+        {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]}
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {
+        "a": [1, 6, 24, 120, None]
+    }
+
+    # Booleans
+    assert pl.DataFrame(
+        {"a": [[True], [True, True], [True, False, True], [True, True, True, None]]},
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {"a": [1, 1, 0, 1]}
+
+    assert pl.DataFrame(
+        {"a": [[False], [False, False], [False, False, False]]},
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {"a": [0, 0, 0]}
+
+    assert pl.DataFrame(
+        {"a": [[True], [True, True], [True, True, True]]},
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {"a": [1, 1, 1]}
+
+
+
+def test_list_product() -> None:
+    # Test basic product functionality
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
+    expected = pl.Series("a", [6, 120])
+    assert_series_equal(s.list.product(), expected)
+
+    # Test with empty lists (should return 1)
+    s_empty = pl.Series("a", [[], [2, 3]])
+    expected_empty = pl.Series("a", [1, 6])
+    assert_series_equal(s_empty.list.product(), expected_empty)
+
+    # Test with nulls
+    s_null = pl.Series("a", [None, [1, 2, 3], [4, 5]])
+    expected_null = pl.Series("a", [None, 6, 20])
+    assert_series_equal(s_null.list.product(), expected_null)
+
+    # Test with floats
+    s_float = pl.Series("a", [[1.5, 2.0], [2.5, 4.0]])
+    expected_float = pl.Series("a", [3.0, 10.0])
+    assert_series_equal(s_float.list.product(), expected_float)
+
+    # Test with DataFrame expression
+    df = pl.DataFrame({"values": [[1, 2, 3], [4, 5, 6]]})
+    result = df.with_columns(product=pl.col("values").list.product())
+    expected_df = pl.DataFrame({"values": [[1, 2, 3], [4, 5, 6]], "product": [6, 120]})
+    assert_frame_equal(result, expected_df)
+
+
 def test_list_mean() -> None:
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]}).select(
         pl.col("a").list.mean()

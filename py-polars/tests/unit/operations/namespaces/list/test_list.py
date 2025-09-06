@@ -961,34 +961,6 @@ def test_list_sum_bool_schema() -> None:
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
 
 
-def test_list_product() -> None:
-    # Test basic product functionality
-    s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-    expected = pl.Series("a", [6, 120])
-    assert_series_equal(s.list.product(), expected)
-
-    # Test with empty lists (should return 1)
-    s_empty = pl.Series("a", [[], [2, 3]])
-    expected_empty = pl.Series("a", [1, 6])
-    assert_series_equal(s_empty.list.product(), expected_empty)
-
-    # Test with nulls
-    s_null = pl.Series("a", [None, [1, 2, 3], [4, 5]])
-    expected_null = pl.Series("a", [None, 6, 20])
-    assert_series_equal(s_null.list.product(), expected_null)
-
-    # Test with floats
-    s_float = pl.Series("a", [[1.5, 2.0], [2.5, 4.0]])
-    expected_float = pl.Series("a", [3.0, 10.0])
-    assert_series_equal(s_float.list.product(), expected_float)
-
-    # Test with DataFrame expression
-    df = pl.DataFrame({"values": [[1, 2, 3], [4, 5, 6]]})
-    result = df.with_columns(product=pl.col("values").list.product())
-    expected_df = pl.DataFrame({"values": [[1, 2, 3], [4, 5, 6]], "product": [6, 120]})
-    assert_frame_equal(result, expected_df)
-
-
 def test_list_product_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.product()).collect_schema()["x"] == pl.UInt32
