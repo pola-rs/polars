@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.datatypes.group import INTEGER_DTYPES
 from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
@@ -1434,7 +1433,10 @@ def test_join_asof_planner_schema_24000() -> None:
     assert q.collect().schema == q.collect_schema()
 
 
-@pytest.mark.parametrize("dtype", list(INTEGER_DTYPES))
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
+)
 def test_join_asof_int_dtypes_24383(dtype: PolarsIntegerType) -> None:
     lf1 = pl.LazyFrame(
         {
