@@ -377,9 +377,9 @@ def test_list_product_and_dtypes() -> None:
             schema={"a": pl.List(dt_in)},
         )
 
-        producted = df.explode("a").product()
-        assert producted.dtypes == [dt_out]
-        assert producted.item() == 17280
+        product = df.explode("a").product()
+        assert product.dtypes == [dt_out]
+        assert product.item() == 17280
         assert df.select(pl.col("a").list.product()).dtypes == [dt_out]
 
     assert df.select(pl.col("a").list.product()).to_dict(as_series=False) == {
