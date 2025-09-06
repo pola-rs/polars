@@ -13,7 +13,7 @@ use parking_lot::RwLock;
 use polars::prelude::DataFrame;
 use pyo3::pyclass;
 
-#[pyclass(frozen)]
+#[pyclass]
 #[repr(transparent)]
 pub struct PyDataFrame {
     pub df: RwLock<DataFrame>,
