@@ -111,8 +111,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     (B::U64(lhs), B::U64(rhs)) => {
                         num_group_join_left(&lhs, &rhs, validate, nulls_equal)
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(lhs), B::I128(rhs)) => {
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), B::U128(rhs)) => {
                         num_group_join_left(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
@@ -214,8 +214,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     (B::U64(lhs), B::U64(rhs)) => {
                         num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(lhs), B::I128(rhs)) => {
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), B::U128(rhs)) => {
                         num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
                     },
                     _ => {
@@ -338,8 +338,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     (B::U64(lhs), BitRepr::U64(rhs)) => {
                         group_join_inner(&lhs, &rhs, validate, nulls_equal)
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(lhs), BitRepr::I128(rhs)) => {
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), BitRepr::U128(rhs)) => {
                         group_join_inner(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
@@ -428,8 +428,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     (B::U64(lhs), B::U64(rhs)) => {
                         hash_join_outer(&lhs, &rhs, validate, nulls_equal)
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(lhs), B::I128(rhs)) => {
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), B::U128(rhs)) => {
                         hash_join_outer(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {

@@ -171,6 +171,10 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
             bit_width: 64,
             is_signed: false,
         })),
+        UInt128 => ipc::Type::Int(Box::new(ipc::Int {
+            bit_width: 128,
+            is_signed: false,
+        })),
         Int8 => ipc::Type::Int(Box::new(ipc::Int {
             bit_width: 8,
             is_signed: true,
@@ -291,11 +295,12 @@ fn serialize_children(
         | Int16
         | Int32
         | Int64
+        | Int128
         | UInt8
         | UInt16
         | UInt32
         | UInt64
-        | Int128
+        | UInt128
         | Float16
         | Float32
         | Float64
@@ -346,7 +351,7 @@ pub(crate) fn serialize_dictionary(
     use IntegerType::*;
     let is_signed = match index_type {
         Int8 | Int16 | Int32 | Int64 | Int128 => true,
-        UInt8 | UInt16 | UInt32 | UInt64 => false,
+        UInt8 | UInt16 | UInt32 | UInt64 | UInt128 => false,
     };
 
     let bit_width = match index_type {
@@ -354,7 +359,7 @@ pub(crate) fn serialize_dictionary(
         Int16 | UInt16 => 16,
         Int32 | UInt32 => 32,
         Int64 | UInt64 => 64,
-        Int128 => 128,
+        Int128 | UInt128 => 128,
     };
 
     let index_type = arrow_format::ipc::Int {

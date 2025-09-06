@@ -410,6 +410,8 @@ def test_series_to_numpy_temporal() -> None:
         min_size=1,
         max_size=10,
         excluded_dtypes=[
+            pl.Int128,
+            pl.UInt128,
             pl.Categorical,
             pl.List,
             pl.Struct,

@@ -179,11 +179,12 @@ init_method_opt!(new_opt_u8, UInt8Type, u8);
 init_method_opt!(new_opt_u16, UInt16Type, u16);
 init_method_opt!(new_opt_u32, UInt32Type, u32);
 init_method_opt!(new_opt_u64, UInt64Type, u64);
+init_method_opt!(new_opt_u128, UInt128Type, u128);
 init_method_opt!(new_opt_i8, Int8Type, i8);
 init_method_opt!(new_opt_i16, Int16Type, i16);
 init_method_opt!(new_opt_i32, Int32Type, i32);
 init_method_opt!(new_opt_i64, Int64Type, i64);
-init_method_opt!(new_opt_i128, Int128Type, i64);
+init_method_opt!(new_opt_i128, Int128Type, i128);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 

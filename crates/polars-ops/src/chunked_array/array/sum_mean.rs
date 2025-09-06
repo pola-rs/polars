@@ -47,6 +47,7 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
                 UInt16 => dispatch_sum::<u16, i64>(values, width, arr.validity()),
                 UInt32 => dispatch_sum::<u32, u32>(values, width, arr.validity()),
                 UInt64 => dispatch_sum::<u64, u64>(values, width, arr.validity()),
+                UInt128 => dispatch_sum::<u128, u128>(values, width, arr.validity()),
                 Float32 => dispatch_sum::<f32, f32>(values, width, arr.validity()),
                 Float64 => dispatch_sum::<f64, f64>(values, width, arr.validity()),
                 _ => unimplemented!(),
@@ -78,6 +79,14 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
             },
             UInt64 => {
                 let out: UInt64Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => {
+                let out: UInt128Chunked = ca
                     .amortized_iter()
                     .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                     .collect();
