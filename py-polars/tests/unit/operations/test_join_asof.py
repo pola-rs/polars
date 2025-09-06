@@ -1434,7 +1434,7 @@ def test_join_asof_planner_schema_24000() -> None:
     assert q.collect().schema == q.collect_schema()
 
 
-@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+@pytest.mark.parametrize("dtype", list(INTEGER_DTYPES))
 def test_join_asof_int_dtypes_24383(dtype: PolarsIntegerType) -> None:
     lf1 = pl.LazyFrame(
         {
