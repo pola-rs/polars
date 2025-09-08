@@ -132,8 +132,8 @@ pub fn is_order_sensitive_agg_top_level(agg: &IRAggExpr) -> bool {
         } => false,
         IRAggExpr::Median(_) => false,
         IRAggExpr::NUnique(_) => false,
-        IRAggExpr::First(_) => true,
-        IRAggExpr::Last(_) => true,
+        IRAggExpr::First { .. } => true,
+        IRAggExpr::Last { .. } => true,
         IRAggExpr::Mean(_) => false,
         IRAggExpr::Implode(_) => true,
         IRAggExpr::Quantile {

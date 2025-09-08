@@ -1562,3 +1562,60 @@ def test_group_by_cum_sum_key_24489() -> None:
     out = df.group_by((pl.col.x > 1).cum_sum()).agg().collect()
     expected = pl.DataFrame({"x": [0, 1]}, schema={"x": pl.UInt32})
     assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("group_as_slice", [False, True])
+def test_group_by_first_last(group_as_slice: bool) -> None:
+    idx = pl.Series([1, 2], dtype=pl.Int32)
+    lf = pl.LazyFrame(
+        {
+            "idx": pl.Series([1, 1, 1, 1, 2, 2, 2, 2], dtype=pl.Int32),
+            "b": pl.Series([None, 2, 3, None, 4, 5, 6, 7], dtype=pl.Int32),
+        }
+    )
+    if group_as_slice:
+        lf = lf.set_sorted("idx")  # use GroupSlice path
+
+    # first()
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("b").first(ignore_nulls=False))
+        .collect()
+    )
+    expected = pl.DataFrame({"idx": idx, "b": pl.Series([None, 4], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).first().collect()
+    assert_frame_equal(result, expected)
+
+    # first(ignore_nulls=True)
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("b").first(ignore_nulls=True))
+        .collect()
+    )
+    expected = pl.DataFrame({"idx": idx, "b": pl.Series([2, 4], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).first(ignore_nulls=True).collect()
+    assert_frame_equal(result, expected)
+
+    # last()
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("b").last(ignore_nulls=False))
+        .collect()
+    )
+    expected = pl.DataFrame({"idx": idx, "b": pl.Series([None, 7], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).last().collect()
+    assert_frame_equal(result, expected)
+
+    # last(ignore_nulls=True)
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("b").last(ignore_nulls=True))
+        .collect()
+    )
+    expected = pl.DataFrame({"idx": idx, "b": pl.Series([3, 7], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=True).collect()
+    assert_frame_equal(result, expected)
