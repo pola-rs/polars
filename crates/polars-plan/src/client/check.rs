@@ -47,12 +47,9 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     SinkType::Memory => {
                         return ineligible_error("contains memory sink");
                     },
-                    SinkType::File(_) => {
+                    SinkType::File(_) | SinkType::Partition(_) => {
                         // The sink destination is passed around separately, can't check the
                         // eligibility here.
-                    },
-                    SinkType::Partition(_) => {
-                        return ineligible_error("contains partition sink");
                     },
                 }
             },
