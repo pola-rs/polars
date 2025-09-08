@@ -363,9 +363,9 @@ fn parse_impl(
     let value = simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
         .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
     match value {
-        simd_json::BorrowedValue::Object(ref obj) => {
+        simd_json::BorrowedValue::Object(value) => {
             buffers.iter_mut().try_for_each(|(s, inner)| {
-                match s.0.map_lookup(obj) {
+                match s.0.map_lookup(&value) {
                     Some(v) => inner.add(v)?,
                     None => inner.add_null(),
                 }
