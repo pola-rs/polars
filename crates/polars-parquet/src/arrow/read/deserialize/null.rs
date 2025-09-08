@@ -73,7 +73,7 @@ impl utils::Decoder for NullDecoder {
     fn evaluate_predicate(
         &mut self,
         _state: &utils::State<'_, Self>,
-        _predicate: &SpecializedParquetColumnExpr,
+        _predicate: Option<&SpecializedParquetColumnExpr>,
         _pred_true_mask: &mut BitmapBuilder,
         _dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {

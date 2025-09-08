@@ -164,7 +164,7 @@ where
     fn evaluate_predicate(
         &mut self,
         state: &utils::State<'_, Self>,
-        _predicate: &SpecializedParquetColumnExpr,
+        _predicate: Option<&SpecializedParquetColumnExpr>,
         pred_true_mask: &mut BitmapBuilder,
         dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
