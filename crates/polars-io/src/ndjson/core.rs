@@ -367,10 +367,7 @@ fn parse_impl(
             buffers.iter_mut().try_for_each(|(s, inner)| {
                 match s.0.map_lookup(obj) {
                     Some(v) => inner.add(v)?,
-                    None if ignore_errors => inner.add_null(),
-                    None => polars_bail!(
-                        ComputeError: "item with key '{}' missing in JSON object: {}", s.0.key(), value
-                    ),
+                    None => inner.add_null(),
                 }
                 PolarsResult::Ok(())
             })?;
@@ -379,7 +376,7 @@ fn parse_impl(
             buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
         },
         v => {
-            polars_bail!(ComputeError: "NDJSON row expected to be JSON object: {v}");
+            polars_bail!(ComputeError: "NDJSON line expected to contain JSON object: {v}");
         },
     };
     Ok(n)
