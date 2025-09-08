@@ -666,12 +666,16 @@ def test_json_encode_enum_23826() -> None:
     "ndjson_str", ["10", "null", "true", "false", "1.5", "[]", "[1, 2]"]
 )
 def test_ndjson_row_not_an_object_24267(ndjson_str: str) -> None:
-    with pytest.raises(ComputeError, match="NDJSON row expected to be JSON object: "):
+    with pytest.raises(
+        ComputeError, match="NDJSON line expected to contain JSON object: "
+    ):
         pl.read_ndjson(
             io.StringIO(ndjson_str), ignore_errors=False, infer_schema_length=100
         )
 
-    with pytest.raises(ComputeError, match="NDJSON row expected to be JSON object: "):
+    with pytest.raises(
+        ComputeError, match="NDJSON line expected to contain JSON object: "
+    ):
         pl.read_ndjson(
             io.StringIO('{"a": 10}\n' + ndjson_str),
             ignore_errors=False,

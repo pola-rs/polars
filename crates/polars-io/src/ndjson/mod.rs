@@ -18,7 +18,7 @@ pub fn infer_schema<R: std::io::BufRead>(
         crate::json::infer::dtypes_to_supertype(dtypes.map(|dt| DataType::from_arrow_dtype(&dt)))?;
 
     if !matches!(&dtype, DataType::Struct(_)) {
-        polars_bail!(ComputeError: "NDJSON row expected to be JSON object: {dtype}");
+        polars_bail!(ComputeError: "NDJSON line expected to contain JSON object: {dtype}");
     }
 
     let schema = StructArray::get_fields(&dtype.to_arrow(CompatLevel::newest()))
