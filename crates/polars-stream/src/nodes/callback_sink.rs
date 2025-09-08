@@ -123,10 +123,9 @@ impl ComputeNode for CallbackSinkNode {
                         break;
                     }
                 }
-                drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
-                // morsel has started encoding in its entirety. This still
-                // allows for parallelism of Morsels, but prevents large
-                // bunches of Morsels from stacking up here.
+                drop(consume_token);
+                // Increase the backpressure. Only free up a pipeline when the morsel has been
+                // processed in its entirety.
             }
 
             Ok(())
