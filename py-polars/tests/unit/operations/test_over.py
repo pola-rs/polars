@@ -124,3 +124,32 @@ def test_implode_explode_list_over_24616(col: list[Any]) -> None:
     expected = df
     assert_frame_equal(q.collect(), expected)
     assert_frame_equal(q_base.collect(), expected)
+
+
+def test_first_last_over() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2],
+            "b": pl.Series([1, 2, 3, None, None, 4, 5, 6], dtype=pl.Int32),
+        }
+    )
+
+    result = df.select(pl.col("b").first().over("a"))
+    expected = pl.DataFrame(
+        {"b": pl.Series([1, 1, 1, 1, None, None, None, None], dtype=pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").first_non_null().over("a"))
+    expected = pl.DataFrame({"b": pl.Series([1, 1, 1, 1, 4, 4, 4, 4], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").last().over("a"))
+    expected = pl.DataFrame(
+        {"b": pl.Series([None, None, None, None, 6, 6, 6, 6], dtype=pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").last_non_null().over("a"))
+    expected = pl.DataFrame({"b": pl.Series([3, 3, 3, 3, 6, 6, 6, 6], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)

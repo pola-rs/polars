@@ -541,6 +541,34 @@ class GroupBy:
         """
         return self.agg(F.all().first())
 
+    def first_non_null(self) -> DataFrame:
+        """
+        Aggregate the first non-null value for each group.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [None, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.group_by("d", maintain_order=True).first_non_null()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ true  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+        """
+        return self.agg(F.all().first_non_null())
+
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
@@ -550,24 +578,52 @@ class GroupBy:
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 14, 13],
-        ...         "c": [True, True, True, False, False, True],
+        ...         "b": [0.5, 0.5, 4, 10, 14, None],
+        ...         "c": [True, True, True, None, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
         >>> df.group_by("d", maintain_order=True).last()
         shape: (3, 4)
-        ┌────────┬─────┬──────┬───────┐
-        │ d      ┆ a   ┆ b    ┆ c     │
-        │ ---    ┆ --- ┆ ---  ┆ ---   │
-        │ str    ┆ i64 ┆ f64  ┆ bool  │
-        ╞════════╪═════╪══════╪═══════╡
-        │ Apple  ┆ 3   ┆ 10.0 ┆ false │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 5   ┆ 13.0 ┆ true  │
-        └────────┴─────┴──────┴───────┘
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ null │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ null ┆ true │
+        └────────┴─────┴──────┴──────┘
         """
         return self.agg(F.all().last())
+
+    def last_non_null(self) -> DataFrame:
+        """
+        Aggregate the last non-null value for each group.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, None, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 14, None],
+        ...         "c": [True, True, True, None, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.group_by("d", maintain_order=True).last_non_null()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 2   ┆ 10.0 ┆ true │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ 14.0 ┆ true │
+        └────────┴─────┴──────┴──────┘
+        """
+        return self.agg(F.all().last_non_null())
 
     def max(self) -> DataFrame:
         """

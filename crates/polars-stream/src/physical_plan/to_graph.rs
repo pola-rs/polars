@@ -762,7 +762,12 @@ fn to_graph_rec<'a>(
             for agg in aggs {
                 has_order_sensitive_agg |= matches!(
                     ctx.expr_arena.get(agg.node()),
-                    AExpr::Agg(IRAggExpr::First(..) | IRAggExpr::Last(..))
+                    AExpr::Agg(
+                        IRAggExpr::First(_)
+                            | IRAggExpr::FirstNonNull(_)
+                            | IRAggExpr::Last(_)
+                            | IRAggExpr::LastNonNull(_)
+                    )
                 );
                 let (reduction, input_node) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;

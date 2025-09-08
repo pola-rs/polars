@@ -44,6 +44,7 @@ Computation
     Series.ewm_var
     Series.exp
     Series.first
+    Series.first_non_null
     Series.hash
     Series.hist
     Series.index_of
@@ -51,6 +52,7 @@ Computation
     Series.is_close
     Series.kurtosis
     Series.last
+    Series.last_non_null
     Series.log
     Series.log10
     Series.log1p

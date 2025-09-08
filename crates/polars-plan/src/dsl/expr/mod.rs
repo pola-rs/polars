@@ -32,7 +32,9 @@ pub enum AggExpr {
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
+    FirstNonNull(Arc<Expr>),
     Last(Arc<Expr>),
+    LastNonNull(Arc<Expr>),
     Item {
         input: Arc<Expr>,
         /// Give a missing value if there are no values.
@@ -64,7 +66,9 @@ impl AsRef<Expr> for AggExpr {
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,
+            FirstNonNull(e) => e,
             Last(e) => e,
+            LastNonNull(e) => e,
             Item { input, .. } => input,
             Mean(e) => e,
             Implode(e) => e,

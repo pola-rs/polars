@@ -92,6 +92,65 @@ impl Series {
     }
 
     #[doc(hidden)]
+    pub unsafe fn agg_first_non_null(&self, groups: &GroupsType) -> Series {
+        if !self.has_nulls() {
+            return self.agg_first(groups);
+        }
+
+        // Prevent a rechunk for every individual group.
+        let s = if groups.len() > 1 {
+            self.rechunk()
+        } else {
+            self.clone()
+        };
+
+        let indices = match groups {
+            GroupsType::Idx(groups) => {
+                let null_s = s.is_null();
+                let null_values = null_s.downcast_as_array();
+                groups
+                    .iter()
+                    .map(|(_, idx)| {
+                        let mut this_idx = None;
+                        for &ii in idx.iter() {
+                            // SAFETY: null_values has no null values
+                            if !null_values.value_unchecked(ii as usize) {
+                                this_idx = Some(ii);
+                                break;
+                            }
+                        }
+                        this_idx
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+            GroupsType::Slice { groups, .. } => {
+                let null_s = s.is_null();
+                let null_values = null_s.downcast_as_array();
+                groups
+                    .iter()
+                    .map(|&[first, len]| {
+                        let mut this_idx = None;
+                        for ii in first..first + len {
+                            // SAFETY: null_values has no null values
+                            if !null_values.value_unchecked(ii as usize) {
+                                this_idx = Some(ii);
+                                break;
+                            }
+                        }
+                        this_idx
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+        };
+        // SAFETY: groups are always in bounds.
+        let mut out = s.take_unchecked(&indices);
+        if groups.is_sorted_flag() {
+            out.set_sorted_flag(s.is_sorted_flag())
+        }
+        s.restore_logical(out)
+    }
+
+    #[doc(hidden)]
     pub unsafe fn agg_n_unique(&self, groups: &GroupsType) -> Series {
         let values = self.to_physical_repr();
         let dtype = values.dtype();
@@ -327,6 +386,65 @@ impl Series {
                 s.take_unchecked(&indices)
             },
         };
+        s.restore_logical(out)
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_last_non_null(&self, groups: &GroupsType) -> Series {
+        if !self.has_nulls() {
+            return self.agg_last(groups);
+        }
+
+        // Prevent a rechunk for every individual group.
+        let s = if groups.len() > 1 {
+            self.rechunk()
+        } else {
+            self.clone()
+        };
+
+        let indices = match groups {
+            GroupsType::Idx(groups) => {
+                let null_s = s.is_null();
+                let null_values = null_s.downcast_as_array();
+                groups
+                    .iter()
+                    .map(|(_, idx)| {
+                        let mut this_idx = None;
+                        for &ii in idx.iter().rev() {
+                            // SAFETY: null_values has no null values
+                            if !null_values.value_unchecked(ii as usize) {
+                                this_idx = Some(ii);
+                                break;
+                            }
+                        }
+                        this_idx
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+            GroupsType::Slice { groups, .. } => {
+                let null_s = s.is_null();
+                let null_values = null_s.downcast_as_array();
+                groups
+                    .iter()
+                    .map(|&[first, len]| {
+                        let mut this_idx = None;
+                        for ii in (first..first + len).rev() {
+                            // SAFETY: null_values has no null values
+                            if !null_values.value_unchecked(ii as usize) {
+                                this_idx = Some(ii);
+                                break;
+                            }
+                        }
+                        this_idx
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+        };
+        // SAFETY: groups are always in bounds.
+        let mut out = s.take_unchecked(&indices);
+        if groups.is_sorted_flag() {
+            out.set_sorted_flag(s.is_sorted_flag())
+        }
         s.restore_logical(out)
     }
 }

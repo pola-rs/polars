@@ -13,8 +13,10 @@ This namespace becomes available by calling `LazyFrame.group_by(...)`.
     LazyGroupBy.all
     LazyGroupBy.count
     LazyGroupBy.first
+    LazyGroupBy.first_non_null
     LazyGroupBy.head
     LazyGroupBy.last
+    LazyGroupBy.last_non_null
     LazyGroupBy.len
     LazyGroupBy.map_groups
     LazyGroupBy.max

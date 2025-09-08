@@ -116,7 +116,9 @@ impl fmt::Debug for Expr {
                     Median(expr) => write!(f, "{expr:?}.median()"),
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
+                    FirstNonNull(expr) => write!(f, "{expr:?}.first_non_null()"),
                     Last(expr) => write!(f, "{expr:?}.last()"),
+                    LastNonNull(expr) => write!(f, "{expr:?}.last_non_null()"),
                     Item { input, allow_empty } => {
                         if *allow_empty {
                             write!(f, "{input:?}.item(allow_empty=true)")

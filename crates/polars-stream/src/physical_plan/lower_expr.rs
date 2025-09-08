@@ -1694,7 +1694,9 @@ fn lower_exprs_with_ctx(
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
+                | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
+                | IRAggExpr::LastNonNull(_)
                 | IRAggExpr::Item { .. }
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Mean(_)

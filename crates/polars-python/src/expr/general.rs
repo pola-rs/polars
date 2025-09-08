@@ -149,8 +149,14 @@ impl PyExpr {
     fn first(&self) -> Self {
         self.inner.clone().first().into()
     }
+    fn first_non_null(&self) -> Self {
+        self.inner.clone().first_non_null().into()
+    }
     fn last(&self) -> Self {
         self.inner.clone().last().into()
+    }
+    fn last_non_null(&self) -> Self {
+        self.inner.clone().last_non_null().into()
     }
     fn item(&self, allow_empty: bool) -> Self {
         self.inner.clone().item(allow_empty).into()

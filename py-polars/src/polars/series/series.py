@@ -9166,6 +9166,14 @@ class Series:
         """
         return self._s.first()
 
+    def first_non_null(self) -> PythonLiteral | None:
+        """
+        Get the first non-null element of the Series.
+
+        Returns `None` if the Series is empty or if no non-null values exist.
+        """
+        return self._s.first_non_null()
+
     def last(self) -> PythonLiteral | None:
         """
         Get the last element of the Series.
@@ -9173,6 +9181,14 @@ class Series:
         Returns `None` if the Series is empty.
         """
         return self._s.last()
+
+    def last_non_null(self) -> PythonLiteral | None:
+        """
+        Get the last non-null element of the Series.
+
+        Returns `None` if the Series is empty or if no non-null values exist.
+        """
+        return self._s.last_non_null()
 
     def approx_n_unique(self) -> PythonLiteral | None:
         """
