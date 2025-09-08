@@ -34,11 +34,11 @@ def test_sink_batches_early_stop() -> None:
     df.lazy().sink_batches(cb)  # type: ignore[call-overload]
 
 
-def test_sink_generator() -> None:
+def test_collect_batches() -> None:
     df = pl.DataFrame({"a": range(100)})
     frames = []
 
-    for f in df.lazy().sink_generator():
+    for f in df.lazy().collect_batches():
         frames += [f]
 
     assert_frame_equal(pl.concat(frames), df)
@@ -47,7 +47,7 @@ def test_sink_generator() -> None:
 def test_chunk_size() -> None:
     df = pl.DataFrame({"a": range(113)})
 
-    for f in df.lazy().sink_generator(chunk_size=17):
+    for f in df.lazy().collect_batches(chunk_size=17):
         expected = df.head(17)
         df = df.slice(17)
 
@@ -55,7 +55,7 @@ def test_chunk_size() -> None:
 
     df = pl.DataFrame({"a": range(10)})
 
-    for f in df.lazy().sink_generator(chunk_size=10):
+    for f in df.lazy().collect_batches(chunk_size=10):
         assert not f.is_empty()
 
         expected = df.head(10)
