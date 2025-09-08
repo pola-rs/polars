@@ -73,6 +73,7 @@ impl PortOrder {
 fn simplify_edge(tx: bool, rx: InputOrder) -> (bool, InputOrder) {
     use InputOrder as I;
     match (tx, rx) {
+        (o, I::Observing) => (o, I::Observing),
         (false, _) | (_, I::Unordered) => (false, I::Unordered),
         (o, i) => (o, i),
     }

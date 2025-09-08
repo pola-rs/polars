@@ -196,3 +196,21 @@ def test_order_sensitive_exprs_24335(order_sensitive_expr: pl.Expr) -> None:
     assert plan.index("UNIQUE[maintain_order: true") > plan.index("WITH_COLUMNS")
 
     assert_frame_equal(q.collect().sort(pl.all()), expect)
+
+
+def test_ordered_expr_output_24386() -> None:
+    q = (
+        pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
+        .unique(maintain_order=False)
+        .with_columns(pl.col("x").sort().alias("y"))
+        .unique(maintain_order=True)
+    )
+
+    plan = q.explain()
+
+    assert plan.startswith("UNIQUE[maintain_order: true")
+
+    assert_frame_equal(
+        q.collect().select("y"),
+        pl.Series("y", [1, 2, 3, 4, 5]).to_frame(),
+    )
