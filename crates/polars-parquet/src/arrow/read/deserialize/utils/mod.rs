@@ -23,7 +23,6 @@ use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 #[derive(Debug)]
 pub(crate) struct State<'a, D: Decoder> {
     pub(crate) dict: Option<&'a D::Dict>,
-    pub(crate) dict_mask: Option<&'a Bitmap>,
     pub(crate) is_optional: bool,
     pub(crate) page_validity: Option<Bitmap>,
     pub(crate) translation: D::Translation<'a>,
@@ -42,12 +41,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
 }
 
 impl<'a, D: Decoder> State<'a, D> {
-    pub fn new(
-        decoder: &D,
-        page: &'a DataPage,
-        dict: Option<&'a D::Dict>,
-        dict_mask: Option<&'a Bitmap>,
-    ) -> ParquetResult<Self> {
+    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> ParquetResult<Self> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
 
@@ -63,7 +57,6 @@ impl<'a, D: Decoder> State<'a, D> {
 
         Ok(Self {
             dict,
-            dict_mask,
             is_optional,
             page_validity,
             translation,
@@ -90,7 +83,6 @@ impl<'a, D: Decoder> State<'a, D> {
 
         Ok(Self {
             dict,
-            dict_mask: None,
             translation,
             is_optional,
             page_validity,
@@ -101,10 +93,9 @@ impl<'a, D: Decoder> State<'a, D> {
         self,
         decoder: &mut D,
         decoded: &mut D::DecodedState,
-        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        decoder.extend_filtered_with_state(self, decoded, pred_true_mask, filter)
+        decoder.extend_filtered_with_state(self, decoded, filter)
     }
 }
 
@@ -294,6 +285,8 @@ pub(crate) fn unspecialized_decode<T: Default>(
 pub(super) trait Decoded {
     /// The number of items in the container
     fn len(&self) -> usize;
+    /// How much capacity is left.
+    fn remaining_capacity(&self) -> usize;
     /// Extend the decoded state with `n` nulls.
     fn extend_nulls(&mut self, n: usize);
 }
@@ -323,10 +316,12 @@ pub(super) trait Decoder: Sized {
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict>;
 
-    fn has_predicate_specialization(
-        &self,
+    fn evaluate_predicate(
+        &mut self,
         state: &State<'_, Self>,
-        predicate: &PredicateFilter,
+        predicate: &SpecializedParquetColumnExpr,
+        pred_true_mask: &mut BitmapBuilder,
+        dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool>;
 
     fn extend_decoded(
@@ -351,12 +346,7 @@ pub(super) trait Decoder: Sized {
         if let Some(dict) = dict.as_ref() {
             self.apply_dictionary(&mut intermediate_array, dict)?;
         }
-        self.extend_filtered_with_state(
-            state,
-            &mut intermediate_array,
-            &mut BitmapBuilder::new(),
-            None,
-        )?;
+        self.extend_filtered_with_state(state, &mut intermediate_array, None)?;
         let intermediate_array = self
             .finalize(dtype.underlying_physical_type(), dict, intermediate_array)?
             .into_boxed();
@@ -387,8 +377,15 @@ pub(super) trait Decoder: Sized {
         &mut self,
         state: State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
+    ) -> ParquetResult<()>;
+
+    /// Extend the decoded state with `length` times the same `value`.
+    fn extend_constant(
+        &mut self,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &ParquetScalar,
     ) -> ParquetResult<()>;
 
     fn apply_dictionary(
@@ -504,35 +501,223 @@ impl<D: Decoder> PageDecoder<D> {
     pub fn collect(
         self,
         filter: Option<Filter>,
-    ) -> ParquetResult<(Option<NestedState>, D::Output, Bitmap)> {
+    ) -> ParquetResult<(Option<NestedState>, Vec<D::Output>, Bitmap)> {
         if self.init_nested.is_some() {
             self.collect_nested(filter)
                 .map(|(nested, arr, ptm)| (Some(nested), arr, ptm))
         } else {
-            self.collect_flat(filter).map(|(arr, ptm)| (None, arr, ptm))
+            match filter {
+                Some(Filter::Predicate(p)) => self
+                    .collect_predicate_flat(&p)
+                    .map(|(arr, ptm)| (None, arr, ptm)),
+                filter => self
+                    .collect_flat(filter)
+                    .map(|arr| (None, vec![arr], Bitmap::new())),
+            }
         }
     }
 
-    pub fn collect_flat(
+    pub fn collect_predicate_flat(
         mut self,
-        mut filter: Option<Filter>,
-    ) -> ParquetResult<(D::Output, Bitmap)> {
+        p: &PredicateFilter,
+    ) -> ParquetResult<(Vec<D::Output>, Bitmap)> {
+        let mut target = self.decoder.with_capacity(0);
+        let mut pred_true_mask = BitmapBuilder::with_capacity(self.iter.total_num_values());
+
+        let specialized_pred = p.predicate.as_specialized();
+        let pred_is_eq_null = matches!(
+            specialized_pred,
+            Some(SpecializedParquetColumnExpr::Equal(ParquetScalar::Null)),
+        );
+        let pred_tracks_nulls = p.predicate.evaluate_null();
+
+        let mut dict_mask = None;
+        if let Some(dict) = self.dict.as_ref() {
+            // @Performance. If we have a predicate, we can prune stuff out of the dictionary and
+            // reduce memory consumption.
+            self.decoder.apply_dictionary(&mut target, dict)?;
+            dict_mask = Some(self.decoder.evaluate_dict_predicate(dict, p)?);
+        }
+
+        if let Some(metrics) = self.metrics.as_deref_mut() {
+            metrics.decode_type = DecodeType::Predicate;
+        }
+
+        const MINIMUM_CHUNK_SIZE: usize = 256;
+        let mut chunks = Vec::new();
+        while let Some(page) = self.iter.next() {
+            let page = page?;
+
+            let mut can_skip_page = false;
+
+            // Skip a dictionary encoded page if none of the dictionary values match the predicate.
+            // This is essentially a slower version of statistics skipping.
+            can_skip_page |= dict_mask.as_ref().is_some_and(|dm| dm.set_bits() == 0)
+                && page.page().header().is_dictionary_encoded()
+                && (!pred_tracks_nulls
+                    || page.page().null_count() == Some(0)
+                    || page.page().descriptor.primitive_type.field_info.repetition
+                        != Repetition::Optional);
+
+            // If we are looking for nulls, but this page does not contain any nulls.
+            can_skip_page |= pred_is_eq_null
+                && (page.page().descriptor.primitive_type.field_info.repetition
+                    == Repetition::Required
+                    || page.page().null_count() == Some(0));
+
+            if can_skip_page {
+                pred_true_mask.extend_constant(page.num_values(), false);
+                continue;
+            }
+
+            if let Some(metrics) = self.metrics.as_deref_mut() {
+                metrics.num_compressed_bytes += page.page().buffer.len() as u64;
+                metrics.num_uncompressed_bytes += page.page().uncompressed_size() as u64;
+            }
+
+            let iter = &mut self.iter;
+            let (page, time) = option_time(self.metrics.is_some(), move || page.decompress(iter));
+            let page = page?;
+
+            if let Some(time) = time {
+                let metrics = self.metrics.as_deref_mut().unwrap();
+                metrics.num_micros_spent_decompressing += time;
+                metrics.num_decompressed_pages += 1;
+            }
+
+            let state = State::new(&self.decoder, &page, self.dict.as_ref())?;
+
+            let (result, time) = option_time(self.metrics.is_some(), || {
+                // Handle the case where column is held equal to Null. This can be the same for all
+                // non-nested columns.
+                if matches!(
+                    p.predicate.as_specialized(),
+                    Some(SpecializedParquetColumnExpr::Equal(ParquetScalar::Null)),
+                ) {
+                    if state.is_optional
+                        && let Some(v) = &state.page_validity
+                    {
+                        let start_set_bits = pred_true_mask.set_bits();
+                        pred_true_mask.extend_from_bitmap(&!v);
+                        if p.include_values {
+                            target.extend_nulls(pred_true_mask.set_bits() - start_set_bits);
+                        }
+                    } else {
+                        pred_true_mask.extend_constant(page.num_values(), false)
+                    };
+
+                    return Ok(());
+                }
+
+                // For now, we have a function that indicates whether the predicate can actually be
+                // handled in the kernels. If it cannot be handled in the kernels, catch it here
+                // and load it as if it weren't filtered.
+                let mut page_ptm = BitmapBuilder::new();
+                if let Some(specialized_pred) = specialized_pred
+                    && self.decoder.evaluate_predicate(
+                        &state,
+                        specialized_pred,
+                        &mut page_ptm,
+                        dict_mask.as_ref(),
+                    )?
+                {
+                    let num_filtered_values = page_ptm.set_bits();
+                    if page_ptm.set_bits() == 0 {
+                        pred_true_mask.extend_constant(page_ptm.len(), false);
+                        return Ok(());
+                    }
+
+                    // If we would need to move data, just create a new chunk.
+                    if p.include_values && num_filtered_values > target.remaining_capacity() {
+                        let previous_target = std::mem::replace(
+                            &mut target,
+                            self.decoder
+                                .with_capacity(usize::max(num_filtered_values, MINIMUM_CHUNK_SIZE)),
+                        );
+                        if previous_target.len() > 0 {
+                            let chunk = self.decoder.finalize(
+                                self.dtype.clone(),
+                                self.dict.clone(),
+                                previous_target,
+                            )?;
+                            chunks.push(chunk);
+                        }
+
+                        if let Some(dict) = self.dict.as_ref() {
+                            self.decoder.apply_dictionary(&mut target, dict)?;
+                        }
+                    }
+
+                    let page_ptm = page_ptm.freeze();
+                    pred_true_mask.extend_from_bitmap(&page_ptm);
+
+                    if p.include_values {
+                        if let SpecializedParquetColumnExpr::Equal(needle) = specialized_pred {
+                            self.decoder.extend_constant(
+                                &mut target,
+                                num_filtered_values,
+                                needle,
+                            )?;
+                        } else {
+                            state.decode(
+                                &mut self.decoder,
+                                &mut target,
+                                Some(Filter::Mask(page_ptm)),
+                            )?;
+                        }
+                    }
+                } else {
+                    self.decoder.unspecialized_predicate_decode(
+                        state,
+                        &mut target,
+                        &mut pred_true_mask,
+                        p,
+                        self.dict.clone(),
+                        &self.dtype,
+                    )?;
+                }
+
+                ParquetResult::Ok(())
+            });
+            result?;
+
+            if let Some(time) = time {
+                let metrics = self.metrics.as_deref_mut().unwrap();
+                metrics.num_micros_spent_decoding += time;
+            }
+
+            self.iter.reuse_page_buffer(page);
+        }
+
+        if let Some(metrics) = self.metrics.as_ref() {
+            eprintln!(
+                "PQ-Metrics: {},{},{},{},{},{},{}",
+                metrics.field_name,
+                metrics.num_micros_spent_decompressing,
+                metrics.num_micros_spent_decoding,
+                metrics.num_compressed_bytes,
+                metrics.num_uncompressed_bytes,
+                metrics.num_decompressed_pages,
+                metrics.decode_type,
+            );
+        }
+
+        if target.len() > 0 || chunks.is_empty() {
+            chunks.push(self.decoder.finalize(self.dtype, self.dict, target)?);
+        }
+        Ok((chunks, pred_true_mask.freeze()))
+    }
+
+    pub fn collect_flat(mut self, mut filter: Option<Filter>) -> ParquetResult<D::Output> {
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
         // @TODO: Don't allocate if include_values == false
         let mut target = self.decoder.with_capacity(num_rows_remaining);
-        let mut pred_true_mask = BitmapBuilder::new();
 
-        let mut pred_tracks_nulls = true;
-        let mut dict_mask = None;
         if let Some(dict) = self.dict.as_ref() {
+            // @Performance. If we have a predicate, we can prune stuff out of the dictionary and
+            // reduce memory consumption.
             self.decoder.apply_dictionary(&mut target, dict)?;
-
-            if let Some(Filter::Predicate(p)) = &filter {
-                pred_tracks_nulls = p.predicate.evaluate_null();
-                pred_true_mask.reserve(num_rows_remaining);
-                dict_mask = Some(self.decoder.evaluate_dict_predicate(dict, p)?);
-            }
         }
 
         if let Some(metrics) = self.metrics.as_deref_mut() {
@@ -540,7 +725,7 @@ impl<D: Decoder> PageDecoder<D> {
                 None => DecodeType::Plain,
                 Some(Filter::Range(_)) => DecodeType::Range,
                 Some(Filter::Mask(_)) => DecodeType::Mask,
-                Some(Filter::Predicate(_)) => DecodeType::Predicate,
+                Some(Filter::Predicate(_)) => unreachable!(),
             };
         }
 
@@ -563,18 +748,6 @@ impl<D: Decoder> PageDecoder<D> {
                 continue;
             }
 
-            // Skip a dictionary encoded page if none of the dictionary values match the predicate.
-            // This is essentially a slower version of statistics skipping.
-            if dict_mask.as_ref().is_some_and(|dm| dm.set_bits() == 0)
-                && page.page().header().is_dictionary_encoded()
-                && (page.page().descriptor.primitive_type.field_info.repetition
-                    != Repetition::Optional
-                    || !pred_tracks_nulls)
-            {
-                pred_true_mask.extend_constant(page.num_values(), false);
-                continue;
-            }
-
             if let Some(metrics) = self.metrics.as_deref_mut() {
                 metrics.num_compressed_bytes += page.page().buffer.len() as u64;
                 metrics.num_uncompressed_bytes += page.page().uncompressed_size() as u64;
@@ -590,59 +763,11 @@ impl<D: Decoder> PageDecoder<D> {
                 metrics.num_decompressed_pages += 1;
             }
 
-            let state = State::new(&self.decoder, &page, self.dict.as_ref(), dict_mask.as_ref())?;
+            let state = State::new(&self.decoder, &page, self.dict.as_ref())?;
 
             let start_length = target.len();
             let (result, time) = option_time(self.metrics.is_some(), || {
-                match &state_filter {
-                    // Handle the case where column is held equal to Null. This can be the same for all
-                    // non-nested columns.
-                    Some(Filter::Predicate(p))
-                        if matches!(
-                            p.predicate.as_specialized(),
-                            Some(SpecializedParquetColumnExpr::Equal(ParquetScalar::Null)),
-                        ) =>
-                    {
-                        if state.is_optional {
-                            match &state.page_validity {
-                                None => pred_true_mask.extend_constant(page.num_values(), false),
-                                Some(v) => {
-                                    let start_set_bits = pred_true_mask.set_bits();
-                                    pred_true_mask.extend_from_bitmap(&!v);
-                                    if p.include_values {
-                                        target.extend_nulls(
-                                            pred_true_mask.set_bits() - start_set_bits,
-                                        );
-                                    }
-                                },
-                            }
-                        } else {
-                            pred_true_mask.extend_constant(page.num_values(), false);
-                        }
-                    },
-
-                    // For now, we have a function that indicates whether the predicate can actually be
-                    // handled in the kernels. If it cannot be handled in the kernels, catch it here
-                    // and load it as if it weren't filtered.
-                    Some(Filter::Predicate(p))
-                        if !self.decoder.has_predicate_specialization(&state, p)? =>
-                    {
-                        self.decoder.unspecialized_predicate_decode(
-                            state,
-                            &mut target,
-                            &mut pred_true_mask,
-                            p,
-                            self.dict.clone(),
-                            &self.dtype,
-                        )?
-                    },
-                    _ => state.decode(
-                        &mut self.decoder,
-                        &mut target,
-                        &mut pred_true_mask,
-                        state_filter,
-                    )?,
-                }
+                state.decode(&mut self.decoder, &mut target, state_filter)?;
 
                 ParquetResult::Ok(())
             });
@@ -674,16 +799,17 @@ impl<D: Decoder> PageDecoder<D> {
         }
 
         let array = self.decoder.finalize(self.dtype, self.dict, target)?;
-        Ok((array, pred_true_mask.freeze()))
+        Ok(array)
     }
 
     pub fn collect_boxed(
         self,
         filter: Option<Filter>,
-    ) -> ParquetResult<(Option<NestedState>, Box<dyn Array>, Bitmap)> {
+    ) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)> {
         use arrow::array::IntoBoxedArray;
         let (nested, array, ptm) = self.collect(filter)?;
-        Ok((nested, array.into_boxed(), ptm))
+        let array = array.into_iter().map(|arr| arr.into_boxed()).collect();
+        Ok((nested, array, ptm))
     }
 }
 
