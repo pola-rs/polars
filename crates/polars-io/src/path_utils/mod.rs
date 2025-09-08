@@ -413,19 +413,19 @@ pub fn expand_paths_hive(
                         // See https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access
                         // Path format: https://bucket-name.s3.region-code.amazonaws.com/key-name
                         let p = path.as_ref().as_ref();
-                        let after_host = p.strip_scheme();
-                        if let Some(bucket_end) = after_host.find(".s3.") {
-                            if let Some(region_end) = after_host.find(".amazonaws.com/") {
+                        let after_scheme = p.strip_scheme();
+                        if let Some(bucket_end) = after_scheme.find(".s3.") {
+                            if let Some(region_end) = after_scheme.find(".amazonaws.com/") {
                                 if bucket_end < region_end
-                                    && region_end < after_host.find("/").unwrap()
+                                    && region_end < after_scheme.find("/").unwrap()
                                 {
                                     use crate::cloud::CloudConfig;
 
                                     rewrite_aws = true;
 
-                                    let bucket = &after_host[..bucket_end];
-                                    let region = &after_host[bucket_end + 4..region_end];
-                                    let key = &after_host[region_end + 15..];
+                                    let bucket = &after_scheme[..bucket_end];
+                                    let region = &after_scheme[bucket_end + 4..region_end];
+                                    let key = &after_scheme[region_end + 15..];
 
                                     if let CloudConfig::Aws(configs) = cloud_options
                                         .get_or_insert_default()
