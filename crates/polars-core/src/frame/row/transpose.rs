@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use either::Either;
 
 use super::*;
+use crate::utils::av_buffer::AnyValueBufferTrusted;
 
 impl DataFrame {
     pub(crate) fn transpose_from_dtype(
