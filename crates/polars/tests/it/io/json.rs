@@ -138,7 +138,9 @@ fn test_read_ndjson_iss_5875() {
     "#;
     let cursor = Cursor::new(jsonlines);
 
-    let df = JsonLineReader::new(cursor).finish();
+    let df = JsonLineReader::new(cursor)
+        .with_ignore_errors(true)
+        .finish();
     assert!(df.is_ok());
 
     let field_int_inner = Field::new(

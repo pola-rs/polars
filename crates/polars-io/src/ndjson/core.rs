@@ -363,10 +363,17 @@ fn parse_impl(
     let value = simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
         .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
     match value {
-        simd_json::BorrowedValue::Object(value) => {
-            buffers
-                .iter_mut()
-                .try_for_each(|(s, inner)| inner.add(s.0.map_lookup(&value).unwrap()))?;
+        simd_json::BorrowedValue::Object(ref obj) => {
+            buffers.iter_mut().try_for_each(|(s, inner)| {
+                match s.0.map_lookup(obj) {
+                    Some(v) => inner.add(v)?,
+                    None if ignore_errors => inner.add_null(),
+                    None => polars_bail!(
+                        ComputeError: "item with key '{}' missing in JSON object: {}", s.0.key(), value
+                    ),
+                }
+                PolarsResult::Ok(())
+            })?;
         },
         _ if ignore_errors => {
             buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
