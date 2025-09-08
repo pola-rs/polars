@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -64,6 +65,23 @@ def test_unique_on_list_df() -> None:
 def test_list_unique() -> None:
     s = pl.Series("a", [[1, 2], [3], [1, 2], [4, 5], [2], [2]])
     assert s.unique(maintain_order=True).to_list() == [[1, 2], [3], [4, 5], [2]]
+    assert s.arg_unique().to_list() == [0, 1, 3, 4]
+    assert s.n_unique() == 4
+
+
+def test_array_unique() -> None:
+    s = pl.Series(
+        "a",
+        [
+            np.array([1, 2]),
+            np.array([3, 1]),
+            np.array([1, 2]),
+            np.array([4, 5]),
+            np.array([2, 2]),
+            np.array([2, 2]),
+        ],
+    )
+    assert s.unique(maintain_order=True).to_list() == [[1, 2], [3, 1], [4, 5], [2, 2]]
     assert s.arg_unique().to_list() == [0, 1, 3, 4]
     assert s.n_unique() == 4
 
