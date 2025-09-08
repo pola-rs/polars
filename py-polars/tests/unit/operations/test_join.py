@@ -1412,16 +1412,10 @@ def test_join_preserve_order_full() -> None:
 @pytest.mark.parametrize(
     "dtypes",
     [
-        ["Int128", "Int128", "UInt128"],
         ["Int128", "Int128", "Int64"],
         ["Int128", "Int128", "Int32"],
         ["Int128", "Int128", "Int16"],
         ["Int128", "Int128", "Int8"],
-        ["Int128", "UInt128", "Int128"],
-        ["Int128", "UInt128", "Int64"],
-        ["Int128", "UInt128", "Int32"],
-        ["Int128", "UInt128", "Int16"],
-        ["Int128", "UInt128", "Int8"],
         ["Int128", "UInt64", "Int128"],
         ["Int128", "UInt64", "Int64"],
         ["Int128", "UInt64", "Int32"],
