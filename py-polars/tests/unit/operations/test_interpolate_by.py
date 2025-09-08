@@ -88,6 +88,31 @@ def test_interpolate_by(
     )
     assert_frame_equal(result, expected)
 
+    some_nulls = pl.DataFrame(
+        {
+            "times": [None, None, None, None],
+            "values": [1, 2, 3, 4],
+        },
+        schema={"times": times_dtype, "values": values_dtype},
+    )
+
+    with_null_df = (
+        pl.concat([df, some_nulls], how="vertical")
+        .sample(fraction=1.0, shuffle=True)
+    )
+
+    # Test sorted implementation
+    result = with_null_df.sort('times').with_columns(pl.col("values").interpolate_by("times"))
+
+    assert_frame_equal(result.drop_nulls(subset='times').sort('times').select('values'), expected)
+    assert_frame_equal(result.filter(pl.col('times').is_null()).sort('values'), some_nulls.sort('values'), check_dtypes=False)
+
+    # Test unsorted implementation
+    result = with_null_df.with_columns(pl.col("values").interpolate_by("times"))
+
+    assert_frame_equal(result.drop_nulls(subset='times').sort('times').select('values'), expected)
+    assert_frame_equal(result.filter(pl.col('times').is_null()).sort('values'), some_nulls.sort('values'), check_dtypes=False)
+
 
 def test_interpolate_by_leading_nulls() -> None:
     df = pl.DataFrame(
@@ -161,9 +186,9 @@ def test_interpolate_by_trailing_nulls(dataset: str) -> None:
     )
     assert_frame_equal(result, expected)
 
-
 @given(data=st.data(), x_dtype=st.sampled_from([pl.Date, pl.Float64]))
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
+    # Strategy for `ts` values if float; for Date we let hypothesis generate valid dates
     if x_dtype == pl.Float64:
         by_strategy = st.floats(
             min_value=-1e150,
@@ -175,21 +200,13 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
     else:
         by_strategy = None
 
+    # Base dataframe: unique, sorted ts; value may be null
     dataframe = (
         data.draw(
             dataframes(
                 [
-                    column(
-                        "ts",
-                        dtype=x_dtype,
-                        allow_null=False,
-                        strategy=by_strategy,
-                    ),
-                    column(
-                        "value",
-                        dtype=pl.Float64,
-                        allow_null=True,
-                    ),
+                    column("ts", dtype=x_dtype, allow_null=False, strategy=by_strategy),
+                    column("value", dtype=pl.Float64, allow_null=True),
                 ],
                 min_size=1,
             )
@@ -200,6 +217,7 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
     )
 
     if x_dtype == pl.Float64:
+        # Guard against bad float inputs for NumPy
         assume(not dataframe["ts"].is_nan().any())
         assume(not dataframe["ts"].is_null().any())
         assume(not dataframe["ts"].is_in([float("-inf"), float("inf")]).any())
@@ -209,32 +227,163 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
 
     dataframe = dataframe.sort("ts")
 
+    # ===== Original check: no nulls in `by` =====
     result = dataframe.select(pl.col("value").interpolate_by("ts"))["value"]
 
-    mask = dataframe["value"].is_not_null()
-
+    mask_val = dataframe["value"].is_not_null()
     np_dtype = "int64" if x_dtype == pl.Date else "float64"
     x = dataframe["ts"].to_numpy().astype(np_dtype)
-    xp = dataframe["ts"].filter(mask).to_numpy().astype(np_dtype)
-    yp = dataframe["value"].filter(mask).to_numpy().astype("float64")
+    xp = dataframe["ts"].filter(mask_val).to_numpy().astype(np_dtype)
+    yp = dataframe["value"].filter(mask_val).to_numpy().astype("float64")
     interp = np.interp(x, xp, yp)
-    # Polars preserves nulls on boundaries, but NumPy doesn't.
+
+    # Polars preserves boundary nulls; NumPy does not—adjust expected
     first_non_null = dataframe["value"].is_not_null().arg_max()
     last_non_null = len(dataframe) - dataframe["value"][::-1].is_not_null().arg_max()  # type: ignore[operator]
     interp[:first_non_null] = float("nan")
     interp[last_non_null:] = float("nan")
-    expected = dataframe.with_columns(value=pl.Series(interp, nan_to_null=True))[
-        "value"
-    ]
 
-    # We increase the absolute error threshold, numpy has some instability, see #22348.
-    assert_series_equal(result, expected, abs_tol=1e-4)
+    expected = dataframe.with_columns(value=pl.Series(interp, nan_to_null=True))["value"]
+
+    # Allow a tiny absolute error due to NumPy quirks
+    assert_series_equal(result, expected, abs_tol=1e-4, check_names=False)
+
     result_from_unsorted = (
         dataframe.sort("ts", descending=True)
         .with_columns(pl.col("value").interpolate_by("ts"))
         .sort("ts")["value"]
     )
-    assert_series_equal(result_from_unsorted, expected, abs_tol=1e-4)
+    assert_series_equal(result_from_unsorted, expected, abs_tol=1e-4, check_names=False)
+
+    # ===== New check: introduce nulls in `by` (ts) and verify "as-if filtered" semantics =====
+    n = len(dataframe)
+    # Random null mask for ts (length-n list of booleans)
+    ts_null_mask = np.array(data.draw(st.lists(st.booleans(), min_size=n, max_size=n)), dtype=bool)
+    # Ensure not all ts become null (we need at least some anchors left)
+    assume(~ts_null_mask.all())
+
+    # Inject nulls into ts
+    null_ts = pl.lit(None).cast(x_dtype)
+    dataframe_null_ts = dataframe.with_columns(
+        ts=pl.when(pl.Series(ts_null_mask)).then(null_ts).otherwise(pl.col("ts"))
+    )
+
+    # Expected: compute interpolation after filtering out rows where ts is null,
+    # then place results back in the original positions, leaving ts-null rows as nulls.
+    filtered = dataframe_null_ts.filter(pl.col("ts").is_not_null())
+    # Need at least one non-null y remaining after filtering, otherwise nothing to interpolate
+    assume(filtered.height > 0)
+    assume(not filtered["value"].is_null().all())
+
+    mask_val_f = filtered["value"].is_not_null()
+    x_f = filtered["ts"].to_numpy().astype(np_dtype)
+    xp_f = filtered["ts"].filter(mask_val_f).to_numpy().astype(np_dtype)
+    yp_f = filtered["value"].filter(mask_val_f).to_numpy().astype("float64")
+    interp_f = np.interp(x_f, xp_f, yp_f)
+
+    # Boundary behavior on the filtered frame
+    first_non_null_f = filtered["value"].is_not_null().arg_max()
+    last_non_null_f = len(filtered) - filtered["value"][::-1].is_not_null().arg_max()  # type: ignore[operator]
+    interp_f[:first_non_null_f] = float("nan")
+    interp_f[last_non_null_f:] = float("nan")
+
+    expected_filtered = pl.Series(interp_f, nan_to_null=True)
+
+    # Re-expand to original length: put expected_filtered into positions where ts is not null; else null
+    pos = dataframe_null_ts["ts"].is_not_null().to_numpy()
+    full_expected = np.empty(n, dtype="float64")
+    full_expected[:] = np.nan
+    full_expected[pos] = expected_filtered.to_numpy()
+    expected_with_ts_nulls = pl.Series(full_expected, nan_to_null=True)
+
+    # Actual null-aware interpolate_by result (your implementation should now handle ts-null rows)
+    result_with_ts_nulls = dataframe_null_ts.select(
+        pl.col("value").interpolate_by("ts")
+    )["value"]
+
+    assert_series_equal(result_with_ts_nulls, expected_with_ts_nulls, abs_tol=1e-4, check_names=False)
+
+    # Also verify unsorted input path still matches expected under ts nulls
+    result_unsorted_ts_nulls = (
+        dataframe_null_ts.sort("ts", descending=True)
+        .with_columns(pl.col("value").interpolate_by("ts"))
+        .sort("ts")["value"]
+    )
+    assert_series_equal(result_unsorted_ts_nulls, expected_with_ts_nulls, abs_tol=1e-4, check_names=False)
+
+# @given(data=st.data(), x_dtype=st.sampled_from([pl.Date, pl.Float64]))
+# def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
+#     if x_dtype == pl.Float64:
+#         by_strategy = st.floats(
+#             min_value=-1e150,
+#             max_value=1e150,
+#             allow_nan=False,
+#             allow_infinity=False,
+#             allow_subnormal=False,
+#         )
+#     else:
+#         by_strategy = None
+
+#     dataframe = (
+#         data.draw(
+#             dataframes(
+#                 [
+#                     column(
+#                         "ts",
+#                         dtype=x_dtype,
+#                         allow_null=False,
+#                         strategy=by_strategy,
+#                     ),
+#                     column(
+#                         "value",
+#                         dtype=pl.Float64,
+#                         allow_null=True,
+#                     ),
+#                 ],
+#                 min_size=1,
+#             )
+#         )
+#         .sort("ts")
+#         .fill_nan(None)
+#         .unique("ts")
+#     )
+
+#     if x_dtype == pl.Float64:
+#         assume(not dataframe["ts"].is_nan().any())
+#         assume(not dataframe["ts"].is_null().any())
+#         assume(not dataframe["ts"].is_in([float("-inf"), float("inf")]).any())
+
+#     assume(not dataframe["value"].is_null().all())
+#     assume(not dataframe["value"].is_in([float("-inf"), float("inf")]).any())
+
+#     dataframe = dataframe.sort("ts")
+
+#     result = dataframe.select(pl.col("value").interpolate_by("ts"))["value"]
+
+#     mask = dataframe["value"].is_not_null()
+
+#     np_dtype = "int64" if x_dtype == pl.Date else "float64"
+#     x = dataframe["ts"].to_numpy().astype(np_dtype)
+#     xp = dataframe["ts"].filter(mask).to_numpy().astype(np_dtype)
+#     yp = dataframe["value"].filter(mask).to_numpy().astype("float64")
+#     interp = np.interp(x, xp, yp)
+#     # Polars preserves nulls on boundaries, but NumPy doesn't.
+#     first_non_null = dataframe["value"].is_not_null().arg_max()
+#     last_non_null = len(dataframe) - dataframe["value"][::-1].is_not_null().arg_max()  # type: ignore[operator]
+#     interp[:first_non_null] = float("nan")
+#     interp[last_non_null:] = float("nan")
+#     expected = dataframe.with_columns(value=pl.Series(interp, nan_to_null=True))[
+#         "value"
+#     ]
+
+#     # We increase the absolute error threshold, numpy has some instability, see #22348.
+#     assert_series_equal(result, expected, abs_tol=1e-4)
+#     result_from_unsorted = (
+#         dataframe.sort("ts", descending=True)
+#         .with_columns(pl.col("value").interpolate_by("ts"))
+#         .sort("ts")["value"]
+#     )
+#     assert_series_equal(result_from_unsorted, expected, abs_tol=1e-4)
 
 
 def test_interpolate_by_invalid() -> None:
@@ -243,9 +392,9 @@ def test_interpolate_by_invalid() -> None:
     with pytest.raises(InvalidOperationError, match=r"\(3\), got 2"):
         s.interpolate_by(by)
 
-    by = pl.Series([1, None, 3])
-    with pytest.raises(
-        InvalidOperationError,
-        match="null values in `by` column are not yet supported in 'interpolate_by'",
-    ):
-        s.interpolate_by(by)
+    # by = pl.Series([1, None, 3])
+    # with pytest.raises(
+    #     InvalidOperationError,
+    #     match="null values in `by` column are not yet supported in 'interpolate_by'",
+    # ):
+    #     s.interpolate_by(by)
