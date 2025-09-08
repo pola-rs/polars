@@ -38,7 +38,9 @@ fn test_pivot_date_() -> PolarsResult<()> {
         Some(["index"]),
         Some(["values1"]),
         true,
-        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").first())))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(
+            col("").first(false),
+        )))),
         None,
     )?;
     out.try_apply("1", |s| {
@@ -226,7 +228,9 @@ fn test_pivot_2() -> PolarsResult<()> {
         Some(["index"]),
         Some(["values"]),
         false,
-        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").first())))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(
+            col("").first(false),
+        )))),
         None,
     )?;
     let expected = df![

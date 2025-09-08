@@ -280,7 +280,7 @@ fn pivot_impl_single_column(
                             "found multiple elements in the same group, \
                             please specify an aggregation function"
                         ),
-                        false => value_col.agg_first(&groups),
+                        false => value_col.agg_first(&groups, false),
                     },
                     Some(agg_fn) => {
                         let expr = agg_fn.0.clone();

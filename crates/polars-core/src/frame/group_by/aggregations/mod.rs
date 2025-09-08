@@ -447,10 +447,10 @@ where
         // faster paths
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
+                return self.clone().into_series().agg_first(groups, false);
             },
             (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
+                return self.clone().into_series().agg_last(groups, false);
             },
             _ => {},
         }
@@ -522,10 +522,10 @@ where
         // faster paths
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_last(groups);
+                return self.clone().into_series().agg_last(groups, false);
             },
             (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_first(groups);
+                return self.clone().into_series().agg_first(groups, false);
             },
             _ => {},
         }

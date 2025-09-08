@@ -1437,8 +1437,8 @@ impl SQLFunctionVisitor<'_> {
             Count => self.visit_count(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
-            First => self.visit_unary(Expr::first),
-            Last => self.visit_unary(Expr::last),
+            First => self.visit_unary(|e| Expr::first(e, false)),
+            Last => self.visit_unary(|e| Expr::last(e, false)),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
             QuantileCont => {

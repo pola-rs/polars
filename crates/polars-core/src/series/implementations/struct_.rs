@@ -198,7 +198,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let groups = self.group_tuples(main_thread, false);
         // SAFETY:
         // groups are in bounds
-        Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
+        Ok(unsafe { self.0.clone().into_series().agg_first(&groups?, false) })
     }
 
     /// Get unique values in the Series.

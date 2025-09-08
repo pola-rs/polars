@@ -58,6 +58,14 @@ impl PyExpr {
             .into()
     }
 
+    fn list_first(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().list().first(ignore_nulls).into()
+    }
+
+    fn list_last(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().list().last(ignore_nulls).into()
+    }
+
     fn list_get(&self, index: PyExpr, null_on_oob: bool) -> Self {
         self.inner
             .clone()

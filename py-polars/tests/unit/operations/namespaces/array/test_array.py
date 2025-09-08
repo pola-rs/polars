@@ -315,27 +315,26 @@ def test_array_get_null_on_oob() -> None:
 
 
 def test_arr_first_last() -> None:
-    s = pl.Series(
-        "a",
-        [[1, 2, 3], [None, 5, 6], [None, None, None]],
-        dtype=pl.Array(pl.Int64, 3),
-    )
+    dt = pl.Array(pl.Int64, 3)
+    s1 = pl.Series("a", [[1, 2, None]], dtype=dt)
+    s2 = pl.Series([[None, 5, 6], [None, None, None]], dtype=dt)
+    s = s1.append(s2)
 
-    first = s.arr.first()
-    expected_first = pl.Series(
-        "a",
-        [1, None, None],
-        dtype=pl.Int64,
-    )
-    assert_series_equal(first, expected_first)
+    result = s.arr.first()
+    expected = pl.Series("a", [1, None, None], dtype=pl.Int64)
+    assert_series_equal(result, expected)
 
-    last = s.arr.last()
-    expected_last = pl.Series(
-        "a",
-        [3, 6, None],
-        dtype=pl.Int64,
-    )
-    assert_series_equal(last, expected_last)
+    result = s.arr.first(ignore_nulls=True)
+    expected = pl.Series("a", [1, 5, None], dtype=pl.Int64)
+    assert_series_equal(result, expected)
+
+    result = s.arr.last()
+    expected = pl.Series("a", [None, 6, None], dtype=pl.Int64)
+    assert_series_equal(result, expected)
+
+    result = s.arr.last(ignore_nulls=True)
+    expected = pl.Series("a", [2, 6, None], dtype=pl.Int64)
+    assert_series_equal(result, expected)
 
 
 @pytest.mark.parametrize(

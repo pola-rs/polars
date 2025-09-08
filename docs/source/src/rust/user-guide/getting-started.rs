@@ -134,7 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([
             (col("birthdate").dt().year() / lit(10) * lit(10)).alias("decade"),
-            col("name").str().split(lit(" ")).list().first(),
+            col("name").str().split(lit(" ")).list().first(false),
         ])
         .select([all().exclude_cols(["birthdate"]).as_expr()])
         .group_by([col("decade")])

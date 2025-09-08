@@ -601,7 +601,7 @@ fn test_lazy_wildcard() {
         .group_by([col("b")])
         .agg([
             col("*").sum().name().suffix(""),
-            col("*").first().name().suffix("_first"),
+            col("*").first(false).name().suffix("_first"),
         ])
         .collect()
         .unwrap();
@@ -809,7 +809,7 @@ fn test_lazy_group_by_sort() {
         .clone()
         .lazy()
         .group_by([col("a")])
-        .agg([col("b").sort(Default::default()).first()])
+        .agg([col("b").sort(Default::default()).first(false)])
         .collect()
         .unwrap()
         .sort(["a"], Default::default())
@@ -823,7 +823,7 @@ fn test_lazy_group_by_sort() {
     let out = df
         .lazy()
         .group_by([col("a")])
-        .agg([col("b").sort(Default::default()).last()])
+        .agg([col("b").sort(Default::default()).last(false)])
         .collect()
         .unwrap()
         .sort(["a"], Default::default())
@@ -852,7 +852,7 @@ fn test_lazy_group_by_sort_by() {
                 [col("c")],
                 SortMultipleOptions::default().with_order_descending(true),
             )
-            .first()])
+            .first(false)])
         .collect()
         .unwrap()
         .sort(["a"], Default::default())
@@ -923,7 +923,7 @@ fn test_lazy_group_by_filter() -> PolarsResult<()> {
             col("b").filter(col("a").eq(lit("a"))).sum().alias("b_sum"),
             col("b")
                 .filter(col("a").eq(lit("a")))
-                .first()
+                .first(false)
                 .alias("b_first"),
             col("b")
                 .filter(col("a").eq(lit("e")))
@@ -931,7 +931,7 @@ fn test_lazy_group_by_filter() -> PolarsResult<()> {
                 .alias("b_mean"),
             col("b")
                 .filter(col("a").eq(lit("a")))
-                .last()
+                .last(false)
                 .alias("b_last"),
         ])
         .sort(["a"], SortMultipleOptions::default())

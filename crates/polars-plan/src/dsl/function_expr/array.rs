@@ -29,6 +29,12 @@ pub enum ArrayFunction {
     ArgMin,
     ArgMax,
     Get(bool),
+    First {
+        ignore_nulls: bool,
+    },
+    Last {
+        ignore_nulls: bool,
+    },
     Join(bool),
     #[cfg(feature = "is_in")]
     Contains {
@@ -71,6 +77,8 @@ impl fmt::Display for ArrayFunction {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             Get(_) => "get",
+            First { .. } => "first",
+            Last { .. } => "last",
             Join(_) => "join",
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => "contains",

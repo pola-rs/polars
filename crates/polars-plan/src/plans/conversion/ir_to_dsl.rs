@@ -113,13 +113,27 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::NUnique(Arc::new(exp)).into()
             },
-            IRAggExpr::First(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::First(Arc::new(exp)).into()
+            IRAggExpr::First {
+                input,
+                ignore_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::First {
+                    input: Arc::new(input),
+                    ignore_nulls,
+                }
+                .into()
             },
-            IRAggExpr::Last(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Last(Arc::new(exp)).into()
+            IRAggExpr::Last {
+                input,
+                ignore_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::Last {
+                    input: Arc::new(input),
+                    ignore_nulls,
+                }
+                .into()
             },
             IRAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -273,6 +287,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::ArgMin => A::ArgMin,
                 IA::ArgMax => A::ArgMax,
                 IA::Get(v) => A::Get(v),
+                IA::First { ignore_nulls } => A::First { ignore_nulls },
+                IA::Last { ignore_nulls } => A::Last { ignore_nulls },
                 IA::Join(v) => A::Join(v),
                 #[cfg(feature = "is_in")]
                 IA::Contains { nulls_equal } => A::Contains { nulls_equal },
@@ -343,6 +359,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 },
                 IL::Slice => L::Slice,
                 IL::Shift => L::Shift,
+                IL::First { ignore_nulls } => L::First { ignore_nulls },
+                IL::Last { ignore_nulls } => L::Last { ignore_nulls },
                 IL::Get(v) => L::Get(v),
                 #[cfg(feature = "list_gather")]
                 IL::Gather(v) => L::Gather(v),

@@ -2,6 +2,7 @@ use arrow::array::builder::{ShareStrategy, make_builder};
 use arrow::array::{Array, FixedSizeListArray};
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::arity::unary_kernel;
+use polars_core::utils::av_buffer::AnyValueBuffer;
 use polars_core::utils::slice_offsets;
 
 use super::min_max::AggType;
@@ -30,6 +31,17 @@ fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> Series {
     let values = ca.get_inner();
     let width = ca.width();
     min_max::array_dispatch(ca.name().clone(), &values, width, agg_type)
+}
+
+fn apply_scalar_fn<F: Fn(&Series) -> Scalar>(ca: &ArrayChunked, f: F) -> Series {
+    let mut buf = AnyValueBuffer::new(ca.inner_dtype(), ca.len());
+    ca.for_each_amortized(|sa| {
+        buf.add(match sa {
+            Some(s) => f(s.as_ref()).into_value(),
+            None => AnyValue::Null,
+        });
+    });
+    buf.into_series()
 }
 
 pub trait ArrayNameSpace: AsArray {
@@ -136,6 +148,14 @@ pub trait ArrayNameSpace: AsArray {
     fn array_get(&self, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_array();
         array_get(ca, index, null_on_oob)
+    }
+
+    fn array_first(&self, ignore_nulls: bool) -> Series {
+        apply_scalar_fn(self.as_array(), |s: &Series| s.first(ignore_nulls))
+    }
+
+    fn array_last(&self, ignore_nulls: bool) -> Series {
+        apply_scalar_fn(self.as_array(), |s: &Series| s.last(ignore_nulls))
     }
 
     fn array_join(&self, separator: &StringChunked, ignore_nulls: bool) -> PolarsResult<Series> {

@@ -96,6 +96,14 @@ impl PyExpr {
             .into()
     }
 
+    fn arr_first(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().arr().first(ignore_nulls).into()
+    }
+
+    fn arr_last(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().arr().last(ignore_nulls).into()
+    }
+
     fn arr_join(&self, separator: PyExpr, ignore_nulls: bool) -> Self {
         self.inner
             .clone()

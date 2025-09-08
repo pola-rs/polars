@@ -20,6 +20,12 @@ pub enum ListFunction {
     },
     Slice,
     Shift,
+    First {
+        ignore_nulls: bool,
+    },
+    Last {
+        ignore_nulls: bool,
+    },
     Get(bool),
     #[cfg(feature = "list_gather")]
     Gather(bool),
@@ -79,6 +85,8 @@ impl Display for ListFunction {
             },
             Slice => "slice",
             Shift => "shift",
+            First { .. } => "first",
+            Last { .. } => "last",
             Get(_) => "get",
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",

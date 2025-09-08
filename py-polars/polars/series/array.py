@@ -529,44 +529,72 @@ class ArrayNameSpace:
 
         """
 
-    def first(self) -> Series:
+    def first(self, *, ignore_nulls: bool = False) -> Series:
         """
         Get the first value of the sub-arrays.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each sub-array is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
         >>> s = pl.Series(
-        ...     "a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int32, 3)
+        ...     "a", [[None, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int32, 3)
         ... )
         >>> s.arr.first()
         shape: (3,)
         Series: 'a' [i32]
         [
-            1
+            null
             4
             7
         ]
-
+        >>> s.arr.first(ignore_nulls=True)
+        shape: (3,)
+        Series: 'a' [i32]
+        [
+            2
+            4
+            7
+        ]
         """
 
-    def last(self) -> Series:
+    def last(self, *, ignore_nulls: bool = False) -> Series:
         """
         Get the last value of the sub-arrays.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each sub-array is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
         >>> s = pl.Series(
-        ...     "a", [[1, 2, 3], [4, 5, 6], [7, 9, 8]], dtype=pl.Array(pl.Int32, 3)
+        ...     "a", [[1, 2, None], [4, 5, 6], [7, 9, 8]], dtype=pl.Array(pl.Int32, 3)
         ... )
         >>> s.arr.last()
         shape: (3,)
         Series: 'a' [i32]
         [
-            3
+            null
             6
             8
         ]
-
+        >>> s.arr.last(ignore_nulls=True)
+        shape: (3,)
+        Series: 'a' [i32]
+        [
+            2
+            6
+            8
+        ]
         """
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Series:

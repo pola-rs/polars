@@ -1889,6 +1889,17 @@ def test_cumulative_eval() -> None:
     assert_series_equal(s.cumulative_eval(expr3), expected3)
 
 
+def test_first_last() -> None:
+    s1 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
+    s3 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s = s1.append(s2).append(s3)
+    assert s.first() is None
+    assert s.first(ignore_nulls=True) == 3
+    assert s.last() is None
+    assert s.last(ignore_nulls=True) == 4
+
+
 def test_clip() -> None:
     s = pl.Series("foo", [-50, 5, None, 50])
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]

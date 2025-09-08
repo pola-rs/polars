@@ -163,13 +163,15 @@ impl ListNameSpace {
     }
 
     /// Get first item of every sublist.
-    pub fn first(self) -> Expr {
-        self.get(lit(0i64), true)
+    pub fn first(self, ignore_nulls: bool) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ListExpr(ListFunction::First { ignore_nulls }))
     }
 
     /// Get last item of every sublist.
-    pub fn last(self) -> Expr {
-        self.get(lit(-1i64), true)
+    pub fn last(self, ignore_nulls: bool) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Last { ignore_nulls }))
     }
 
     /// Join all string items in a sublist and place a separator between them.

@@ -641,47 +641,83 @@ class ExprListNameSpace:
         offset_pyexpr = parse_into_expression(offset)
         return wrap_expr(self._pyexpr.list_gather_every(n_pyexpr, offset_pyexpr))
 
-    def first(self) -> Expr:
+    def first(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the first value of the sublists.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each sublist is returned,
+            otherwise `None` is returned if no non-null value exists.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [[3, 2, 1], [], [1, 2]]})
+        >>> df = pl.DataFrame({"a": [[None, 2, 1], [], [1, 2]]})
         >>> df.with_columns(first=pl.col("a").list.first())
         shape: (3, 2)
-        ┌───────────┬───────┐
-        │ a         ┆ first │
-        │ ---       ┆ ---   │
-        │ list[i64] ┆ i64   │
-        ╞═══════════╪═══════╡
-        │ [3, 2, 1] ┆ 3     │
-        │ []        ┆ null  │
-        │ [1, 2]    ┆ 1     │
-        └───────────┴───────┘
+        ┌──────────────┬───────┐
+        │ a            ┆ first │
+        │ ---          ┆ ---   │
+        │ list[i64]    ┆ i64   │
+        ╞══════════════╪═══════╡
+        │ [null, 2, 1] ┆ null  │
+        │ []           ┆ null  │
+        │ [1, 2]       ┆ 1     │
+        └──────────────┴───────┘
+        >>> df.with_columns(first=pl.col("a").list.first(ignore_nulls=True))
+        shape: (3, 2)
+        ┌──────────────┬───────┐
+        │ a            ┆ first │
+        │ ---          ┆ ---   │
+        │ list[i64]    ┆ i64   │
+        ╞══════════════╪═══════╡
+        │ [null, 2, 1] ┆ 2     │
+        │ []           ┆ null  │
+        │ [1, 2]       ┆ 1     │
+        └──────────────┴───────┘
         """
-        return self.get(0, null_on_oob=True)
+        return wrap_expr(self._pyexpr.list_first(ignore_nulls))
 
-    def last(self) -> Expr:
+    def last(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the last value of the sublists.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each sublist is returned,
+            otherwise `None` is returned if no non-null value exists.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [[3, 2, 1], [], [1, 2]]})
+        >>> df = pl.DataFrame({"a": [[3, 2, None], [], [1, 2]]})
         >>> df.with_columns(last=pl.col("a").list.last())
         shape: (3, 2)
-        ┌───────────┬──────┐
-        │ a         ┆ last │
-        │ ---       ┆ ---  │
-        │ list[i64] ┆ i64  │
-        ╞═══════════╪══════╡
-        │ [3, 2, 1] ┆ 1    │
-        │ []        ┆ null │
-        │ [1, 2]    ┆ 2    │
-        └───────────┴──────┘
+        ┌──────────────┬──────┐
+        │ a            ┆ last │
+        │ ---          ┆ ---  │
+        │ list[i64]    ┆ i64  │
+        ╞══════════════╪══════╡
+        │ [3, 2, null] ┆ null │
+        │ []           ┆ null │
+        │ [1, 2]       ┆ 2    │
+        └──────────────┴──────┘
+        >>> df.with_columns(last=pl.col("a").list.last(ignore_nulls=True))
+        shape: (3, 2)
+        ┌──────────────┬──────┐
+        │ a            ┆ last │
+        │ ---          ┆ ---  │
+        │ list[i64]    ┆ i64  │
+        ╞══════════════╪══════╡
+        │ [3, 2, null] ┆ 2    │
+        │ []           ┆ null │
+        │ [1, 2]       ┆ 2    │
+        └──────────────┴──────┘
         """
-        return self.get(-1, null_on_oob=True)
+        return wrap_expr(self._pyexpr.list_last(ignore_nulls))
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """

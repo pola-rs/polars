@@ -246,7 +246,7 @@ fn test_group_by_on_lists() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by([col("groups")])
-        .agg([col("arrays").first()])
+        .agg([col("arrays").first(false)])
         .collect()?;
 
     assert_eq!(

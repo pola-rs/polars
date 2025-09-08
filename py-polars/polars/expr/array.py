@@ -667,14 +667,21 @@ class ExprArrayNameSpace:
         index_pyexpr = parse_into_expression(index)
         return wrap_expr(self._pyexpr.arr_get(index_pyexpr, null_on_oob))
 
-    def first(self) -> Expr:
+    def first(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the first value of the sub-arrays.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each sub-array is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]},
+        ...     {"a": [[None, 2, 3], [4, 5, 6], [7, 8, 9]]},
         ...     schema={"a": pl.Array(pl.Int32, 3)},
         ... )
         >>> df.with_columns(first=pl.col("a").arr.first())
@@ -684,21 +691,39 @@ class ExprArrayNameSpace:
         │ ---           ┆ ---   │
         │ array[i32, 3] ┆ i32   │
         ╞═══════════════╪═══════╡
-        │ [1, 2, 3]     ┆ 1     │
+        │ [null, 2, 3]  ┆ null  │
+        │ [4, 5, 6]     ┆ 4     │
+        │ [7, 8, 9]     ┆ 7     │
+        └───────────────┴───────┘
+        >>> df.with_columns(first=pl.col("a").arr.first(ignore_nulls=True))
+        shape: (3, 2)
+        ┌───────────────┬───────┐
+        │ a             ┆ first │
+        │ ---           ┆ ---   │
+        │ array[i32, 3] ┆ i32   │
+        ╞═══════════════╪═══════╡
+        │ [null, 2, 3]  ┆ 2     │
         │ [4, 5, 6]     ┆ 4     │
         │ [7, 8, 9]     ┆ 7     │
         └───────────────┴───────┘
         """
-        return self.get(0, null_on_oob=True)
+        return wrap_expr(self._pyexpr.arr_first(ignore_nulls))
 
-    def last(self) -> Expr:
+    def last(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the last value of the sub-arrays.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each sub-array is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [[1, 2, 3], [4, 5, 6], [7, 9, 8]]},
+        ...     {"a": [[1, 2, None], [4, 5, 6], [7, 9, 8]]},
         ...     schema={"a": pl.Array(pl.Int32, 3)},
         ... )
         >>> df.with_columns(last=pl.col("a").arr.last())
@@ -708,12 +733,23 @@ class ExprArrayNameSpace:
         │ ---           ┆ ---  │
         │ array[i32, 3] ┆ i32  │
         ╞═══════════════╪══════╡
-        │ [1, 2, 3]     ┆ 3    │
+        │ [1, 2, null]  ┆ null │
+        │ [4, 5, 6]     ┆ 6    │
+        │ [7, 9, 8]     ┆ 8    │
+        └───────────────┴──────┘
+        >>> df.with_columns(last=pl.col("a").arr.last(ignore_nulls=True))
+        shape: (3, 2)
+        ┌───────────────┬──────┐
+        │ a             ┆ last │
+        │ ---           ┆ ---  │
+        │ array[i32, 3] ┆ i32  │
+        ╞═══════════════╪══════╡
+        │ [1, 2, null]  ┆ 2    │
         │ [4, 5, 6]     ┆ 6    │
         │ [7, 9, 8]     ┆ 8    │
         └───────────────┴──────┘
         """
-        return self.get(-1, null_on_oob=True)
+        return wrap_expr(self._pyexpr.arr_last(ignore_nulls))
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """

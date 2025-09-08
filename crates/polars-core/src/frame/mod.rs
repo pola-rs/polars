@@ -29,7 +29,7 @@ mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
 pub(crate) mod horizontal;
-#[cfg(any(feature = "rows", feature = "object"))]
+#[cfg(any(feature = "rows", feature = "object", feature = "dtype-array",))]
 pub mod row;
 mod top_k;
 mod upstream_traits;
@@ -3036,7 +3036,7 @@ impl DataFrame {
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
+                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups, false) })
             },
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
@@ -3067,14 +3067,14 @@ impl DataFrame {
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
+                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups, false) })
             },
             (UniqueKeepStrategy::Last, false) => {
                 let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                df._apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
+                df._apply_columns_par(&|s| unsafe { s.agg_last(&groups, false) })
             },
             (UniqueKeepStrategy::None, _) => {
                 let df_part = df.select(names)?;

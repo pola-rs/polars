@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .reverse()
                 .head(Some(3))
                 .alias("day/eom"),
-            ((col("time").last() - col("time").first()).map(
+            ((col("time").last(false) - col("time").first(false)).map(
                 // had to use map as .duration().days() is not available
                 |s| {
                     Ok(s.duration()?

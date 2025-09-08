@@ -192,7 +192,7 @@ impl PartitionedColumn {
         // @TODO: IdxSize checks
         let new_length = (self.len() + n) as IdxSize;
 
-        let values = if !self.is_empty() && self.values.last().value() == &value {
+        let values = if !self.is_empty() && self.values.last(false).value() == &value {
             *new_ends.last_mut().unwrap() = new_length;
             self.values.clone()
         } else {

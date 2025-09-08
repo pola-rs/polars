@@ -536,35 +536,65 @@ class ListNameSpace:
         ]
         """
 
-    def first(self) -> Series:
+    def first(self, *, ignore_nulls: bool = False) -> Series:
         """
         Get the first value of the sublists.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each sublist is returned,
+            otherwise `None` is returned if no non-null value exists.
+
         Examples
         --------
-        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s = pl.Series("a", [[None, 2, 1], [], [1, 2]])
         >>> s.list.first()
         shape: (3,)
         Series: 'a' [i64]
         [
-            3
+            null
+            null
+            1
+        ]
+        >>> s.list.first(ignore_nulls=True)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            2
             null
             1
         ]
         """
 
-    def last(self) -> Series:
+    def last(self, *, ignore_nulls: bool = False) -> Series:
         """
         Get the last value of the sublists.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each sublist is returned,
+            otherwise `None` is returned if no non-null value exists.
+
         Examples
         --------
-        >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
+        >>> s = pl.Series("a", [[4, 3, None], [], [1, 2]])
         >>> s.list.last()
         shape: (3,)
         Series: 'a' [i64]
         [
-            1
+            null
+            null
+            2
+        ]
+        >>> s.list.last(ignore_nulls=True)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            3
             null
             2
         ]

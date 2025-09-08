@@ -52,7 +52,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub unsafe fn agg_first(&self, groups: &GroupsType) -> Series {
+    pub unsafe fn agg_first(&self, groups: &GroupsType, ignore_nulls: bool) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {
             self.rechunk()
@@ -62,24 +62,141 @@ impl Series {
 
         let mut out = match groups {
             GroupsType::Idx(groups) => {
-                let indices = groups
-                    .iter()
-                    .map(
-                        |(first, idx)| {
-                            if idx.is_empty() { None } else { Some(first) }
-                        },
+                if ignore_nulls && s.null_count() != 0 {
+                    let values = groups
+                        .iter()
+                        .map(|(_, idx)| {
+                            // SAFETY: groups are always in bounds.
+                            let take = unsafe { s.take_slice_unchecked(idx) };
+                            take.first(ignore_nulls).into_value()
+                        })
+                        .collect::<Vec<AnyValue>>();
+                    Series::from_any_values_and_dtype(
+                        PlSmallStr::EMPTY,
+                        values.as_slice(),
+                        s.dtype(),
+                        true,
                     )
-                    .collect_ca(PlSmallStr::EMPTY);
-                // SAFETY: groups are always in bounds.
-                s.take_unchecked(&indices)
+                    .unwrap()
+                } else {
+                    let indices = groups
+                        .iter()
+                        .map(
+                            |(first, idx)| {
+                                if idx.is_empty() { None } else { Some(first) }
+                            },
+                        )
+                        .collect_ca(PlSmallStr::EMPTY);
+                    // SAFETY: groups are always in bounds.
+                    s.take_unchecked(&indices)
+                }
             },
             GroupsType::Slice { groups, .. } => {
-                let indices = groups
-                    .iter()
-                    .map(|&[first, len]| if len == 0 { None } else { Some(first) })
-                    .collect_ca(PlSmallStr::EMPTY);
-                // SAFETY: groups are always in bounds.
-                s.take_unchecked(&indices)
+                if ignore_nulls && s.null_count() != 0 {
+                    let values = groups
+                        .iter()
+                        .map(|&[first, len]| {
+                            // SAFETY: groups are always in bounds.
+                            let take = s.slice(first as i64, len as usize);
+                            take.first(ignore_nulls).into_value()
+                        })
+                        .collect::<Vec<AnyValue>>();
+                    Series::from_any_values_and_dtype(
+                        PlSmallStr::EMPTY,
+                        values.as_slice(),
+                        s.dtype(),
+                        true,
+                    )
+                    .unwrap()
+                } else {
+                    let indices = groups
+                        .iter()
+                        .map(|&[first, len]| if len == 0 { None } else { Some(first) })
+                        .collect_ca(PlSmallStr::EMPTY);
+                    // SAFETY: groups are always in bounds.
+                    s.take_unchecked(&indices)
+                }
+            },
+        };
+        if groups.is_sorted_flag() {
+            out.set_sorted_flag(s.is_sorted_flag())
+        }
+        s.restore_logical(out)
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_last(&self, groups: &GroupsType, ignore_nulls: bool) -> Series {
+        // Prevent a rechunk for every individual group.
+        let s = if groups.len() > 1 {
+            self.rechunk()
+        } else {
+            self.clone()
+        };
+
+        let mut out = match groups {
+            GroupsType::Idx(groups) => {
+                if ignore_nulls && s.null_count() != 0 {
+                    let values = groups
+                        .iter()
+                        .map(|(_, idx)| {
+                            // SAFETY: groups are always in bounds.
+                            let take = unsafe { s.take_slice_unchecked(idx) };
+                            take.last(ignore_nulls).into_value()
+                        })
+                        .collect::<Vec<AnyValue>>();
+                    Series::from_any_values_and_dtype(
+                        PlSmallStr::EMPTY,
+                        values.as_slice(),
+                        s.dtype(),
+                        true,
+                    )
+                    .unwrap()
+                } else {
+                    let indices = groups
+                        .iter()
+                        .map(|(_, idx)| {
+                            if idx.is_empty() {
+                                None
+                            } else {
+                                Some(idx[idx.len() - 1])
+                            }
+                        })
+                        .collect_ca(PlSmallStr::EMPTY);
+                    // SAFETY: groups are always in bounds.
+                    s.take_unchecked(&indices)
+                }
+            },
+            GroupsType::Slice { groups, .. } => {
+                if ignore_nulls && s.null_count() != 0 {
+                    let values = groups
+                        .iter()
+                        .map(|&[first, len]| {
+                            // SAFETY: groups are always in bounds.
+                            let take = s.slice(first as i64, len as usize);
+                            take.last(ignore_nulls).into_value()
+                        })
+                        .collect::<Vec<AnyValue>>();
+                    Series::from_any_values_and_dtype(
+                        PlSmallStr::EMPTY,
+                        values.as_slice(),
+                        s.dtype(),
+                        true,
+                    )
+                    .unwrap()
+                } else {
+                    let indices = groups
+                        .iter()
+                        .map(|&[first, len]| {
+                            if len == 0 {
+                                None
+                            } else {
+                                Some(first + len - 1)
+                            }
+                        })
+                        .collect_ca(PlSmallStr::EMPTY);
+                    // SAFETY: groups are always in bounds.
+                    s.take_unchecked(&indices)
+                }
             },
         };
         if groups.is_sorted_flag() {
@@ -263,46 +380,5 @@ impl Series {
             },
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn agg_last(&self, groups: &GroupsType) -> Series {
-        // Prevent a rechunk for every individual group.
-        let s = if groups.len() > 1 {
-            self.rechunk()
-        } else {
-            self.clone()
-        };
-
-        let out = match groups {
-            GroupsType::Idx(groups) => {
-                let indices = groups
-                    .all()
-                    .iter()
-                    .map(|idx| {
-                        if idx.is_empty() {
-                            None
-                        } else {
-                            Some(idx[idx.len() - 1])
-                        }
-                    })
-                    .collect_ca(PlSmallStr::EMPTY);
-                s.take_unchecked(&indices)
-            },
-            GroupsType::Slice { groups, .. } => {
-                let indices = groups
-                    .iter()
-                    .map(|&[first, len]| {
-                        if len == 0 {
-                            None
-                        } else {
-                            Some(first + len - 1)
-                        }
-                    })
-                    .collect_ca(PlSmallStr::EMPTY);
-                s.take_unchecked(&indices)
-            },
-        };
-        s.restore_logical(out)
     }
 }

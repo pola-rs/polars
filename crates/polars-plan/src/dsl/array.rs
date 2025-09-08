@@ -120,6 +120,22 @@ impl ArrayNameSpace {
         )
     }
 
+    /// Get first item of every sub-array.
+    pub fn first(self, ignore_nulls: bool) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::First {
+                ignore_nulls,
+            }))
+    }
+
+    /// Get last item of every sub-array.
+    pub fn last(self, ignore_nulls: bool) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Last {
+                ignore_nulls,
+            }))
+    }
+
     /// Join all string items in a sub-array and place a separator between them.
     /// # Error
     /// Raise if inner type of array is not `DataType::String`.

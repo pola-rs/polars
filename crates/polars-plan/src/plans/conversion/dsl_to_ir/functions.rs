@@ -82,6 +82,8 @@ pub(super) fn convert_functions(
                 A::ArgMin => IA::ArgMin,
                 A::ArgMax => IA::ArgMax,
                 A::Get(v) => IA::Get(v),
+                A::First { ignore_nulls } => IA::First { ignore_nulls },
+                A::Last { ignore_nulls } => IA::Last { ignore_nulls },
                 A::Join(v) => IA::Join(v),
                 #[cfg(feature = "is_in")]
                 A::Contains { nulls_equal } => IA::Contains { nulls_equal },
@@ -166,6 +168,8 @@ pub(super) fn convert_functions(
                 },
                 L::Slice => IL::Slice,
                 L::Shift => IL::Shift,
+                L::First { ignore_nulls } => IL::First { ignore_nulls },
+                L::Last { ignore_nulls } => IL::Last { ignore_nulls },
                 L::Get(v) => IL::Get(v),
                 #[cfg(feature = "list_gather")]
                 L::Gather(v) => IL::Gather(v),

@@ -1234,3 +1234,26 @@ def test_list_contains() -> None:
 def test_list_diff_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([1, 2, 3]).list.diff()
+
+
+def test_list_first_last() -> None:
+    dt = pl.List(pl.Int64)
+    s1 = pl.Series("a", [[1, 2, None]], dtype=dt)
+    s2 = pl.Series([[None, 5, 6], [None, None, None]], dtype=dt)
+    s = s1.append(s2)
+
+    result = s.list.first()
+    expected = pl.Series("a", [1, None, None], dtype=pl.Int64)
+    assert_series_equal(result, expected)
+
+    result = s.list.first(ignore_nulls=True)
+    expected = pl.Series("a", [1, 5, None], dtype=pl.Int64)
+    assert_series_equal(result, expected)
+
+    result = s.list.last()
+    expected = pl.Series("a", [None, 6, None], dtype=pl.Int64)
+    assert_series_equal(result, expected)
+
+    result = s.list.last(ignore_nulls=True)
+    expected = pl.Series("a", [2, 6, None], dtype=pl.Int64)
+    assert_series_equal(result, expected)

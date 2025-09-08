@@ -1,5 +1,6 @@
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::utils::SuperTypeOptions;
+use polars_core::utils::av_buffer::AnyValueBuffer;
 use polars_ops::chunked_array::list::*;
 
 use super::*;
@@ -24,6 +25,12 @@ pub enum IRListFunction {
     },
     Slice,
     Shift,
+    First {
+        ignore_nulls: bool,
+    },
+    Last {
+        ignore_nulls: bool,
+    },
     Get(bool),
     #[cfg(feature = "list_gather")]
     Gather(bool),
@@ -76,6 +83,8 @@ impl IRListFunction {
             Sample { .. } => mapper.with_same_dtype(),
             Slice => mapper.with_same_dtype(),
             Shift => mapper.with_same_dtype(),
+            First { .. } => mapper.map_to_list_and_array_inner_dtype(),
+            Last { .. } => mapper.map_to_list_and_array_inner_dtype(),
             Get(_) => mapper.map_to_list_and_array_inner_dtype(),
             #[cfg(feature = "list_gather")]
             Gather(_) => mapper.with_same_dtype(),
@@ -156,6 +165,8 @@ impl IRListFunction {
             L::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sample")]
             L::Sample { .. } => FunctionOptions::elementwise(),
+            L::First { .. } => FunctionOptions::elementwise(),
+            L::Last { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
             L::Gather(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
@@ -229,6 +240,8 @@ impl Display for IRListFunction {
             },
             Slice => "slice",
             Shift => "shift",
+            First { .. } => "first",
+            Last { .. } => "last",
             Get(_) => "get",
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
@@ -299,6 +312,8 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Slice => wrap!(slice),
             Shift => map_as_slice!(shift),
             Get(null_on_oob) => wrap!(get, null_on_oob),
+            First { ignore_nulls } => map!(first, ignore_nulls),
+            Last { ignore_nulls } => map!(last, ignore_nulls),
             #[cfg(feature = "list_gather")]
             Gather(null_on_oob) => map_as_slice!(gather, null_on_oob),
             #[cfg(feature = "list_gather")]
@@ -510,6 +525,25 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
     }
 
     first_ca.lst_concat(other).map(IntoColumn::into_column)
+}
+
+fn apply_scalar_fn<F: Fn(&Series) -> Scalar>(ca: &ListChunked, f: F) -> Series {
+    let mut buf = AnyValueBuffer::new(ca.inner_dtype(), ca.len());
+    ca.for_each_amortized(|sa| {
+        buf.add(match sa {
+            Some(s) => f(s.as_ref()).into_value(),
+            None => AnyValue::Null,
+        });
+    });
+    buf.into_series()
+}
+
+pub(super) fn first(c: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
+    Ok(apply_scalar_fn(c.list()?, |s: &Series| s.first(ignore_nulls)).into_column())
+}
+
+pub(super) fn last(c: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
+    Ok(apply_scalar_fn(c.list()?, |s: &Series| s.last(ignore_nulls)).into_column())
 }
 
 pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Column> {

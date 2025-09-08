@@ -3407,14 +3407,30 @@ class Expr:
             return wrap_expr(self._pyexpr.unique_stable())
         return wrap_expr(self._pyexpr.unique())
 
-    def first(self) -> Expr:
+    def first(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the first value.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df = pl.DataFrame({"a": [None, 1, 2]})
         >>> df.select(pl.col("a").first())
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        >>> df.select(pl.col("a").first(ignore_nulls=True))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -3424,11 +3440,18 @@ class Expr:
         │ 1   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.first())
+        return wrap_expr(self._pyexpr.first(ignore_nulls=ignore_nulls))
 
-    def last(self) -> Expr:
+    def last(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the last value.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
 
         Examples
         --------
@@ -3443,7 +3466,7 @@ class Expr:
         │ 2   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.last())
+        return wrap_expr(self._pyexpr.last(ignore_nulls=ignore_nulls))
 
     def over(
         self,

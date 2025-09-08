@@ -449,8 +449,14 @@ impl Display for ExprIRDisplay<'_> {
                     },
                     Median(expr) => write!(f, "{}.median()", self.with_root(expr)),
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
-                    First(expr) => write!(f, "{}.first()", self.with_root(expr)),
-                    Last(expr) => write!(f, "{}.last()", self.with_root(expr)),
+                    First {
+                        input,
+                        ignore_nulls,
+                    } => write!(f, "{}.first({ignore_nulls})", self.with_root(input)),
+                    Last {
+                        input,
+                        ignore_nulls,
+                    } => write!(f, "{}.last({ignore_nulls})", self.with_root(input)),
                     Implode(expr) => write!(f, "{}.implode()", self.with_root(expr)),
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),

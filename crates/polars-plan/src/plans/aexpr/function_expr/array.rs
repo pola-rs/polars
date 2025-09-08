@@ -27,6 +27,12 @@ pub enum IRArrayFunction {
     ArgMin,
     ArgMax,
     Get(bool),
+    First {
+        ignore_nulls: bool,
+    },
+    Last {
+        ignore_nulls: bool,
+    },
     Join(bool),
     #[cfg(feature = "is_in")]
     Contains {
@@ -73,6 +79,8 @@ impl IRArrayFunction {
             Reverse => mapper.with_same_dtype(),
             ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
             Get(_) => mapper.map_to_list_and_array_inner_dtype(),
+            First { .. } => mapper.map_to_list_and_array_inner_dtype(),
+            Last { .. } => mapper.map_to_list_and_array_inner_dtype(),
             Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => mapper.with_dtype(DataType::Boolean),
@@ -130,6 +138,8 @@ impl IRArrayFunction {
             | A::ArgMin
             | A::ArgMax
             | A::Get(_)
+            | A::First { .. }
+            | A::Last { .. }
             | A::Join(_)
             | A::Shift
             | A::Slice(_, _) => FunctionOptions::elementwise(),
@@ -194,6 +204,8 @@ impl Display for IRArrayFunction {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             Get(_) => "get",
+            First { .. } => "first",
+            Last { .. } => "last",
             Join(_) => "join",
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => "contains",
@@ -233,7 +245,13 @@ impl From<IRArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Reverse => map!(reverse),
             ArgMin => map!(arg_min),
             ArgMax => map!(arg_max),
-            Get(null_on_oob) => map_as_slice!(get, null_on_oob),
+            Get(null_on_oob) => {
+                map_as_slice!(get, null_on_oob)
+            },
+            First { ignore_nulls } => {
+                map!(first, ignore_nulls)
+            },
+            Last { ignore_nulls } => map!(last, ignore_nulls),
             Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
             #[cfg(feature = "is_in")]
             Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
@@ -349,6 +367,16 @@ pub(super) fn get(s: &[Column], null_on_oob: bool) -> PolarsResult<Column> {
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
     ca.array_get(index, null_on_oob).map(Column::from)
+}
+
+pub(super) fn first(c: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
+    let ca = c.array()?;
+    Ok(ca.array_first(ignore_nulls).into_column())
+}
+
+pub(super) fn last(s: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
+    let ca = s.array()?;
+    Ok(ca.array_last(ignore_nulls).into_column())
 }
 
 pub(super) fn join(s: &[Column], ignore_nulls: bool) -> PolarsResult<Column> {

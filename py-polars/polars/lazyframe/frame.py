@@ -2073,9 +2073,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          └─────────────────────────┴───────┴──────┘)
         """
         for k in _kwargs:
-            if k not in (  # except "private" kwargs
-                "post_opt_callback",
-            ):
+            if k not in ("post_opt_callback",):  # except "private" kwargs
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
         engine = _select_engine(engine)
@@ -2571,17 +2569,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
+        field_overwrites: (
+            ParquetFieldOverwrites
+            | Sequence[ParquetFieldOverwrites]
+            | Mapping[str, ParquetFieldOverwrites]
+            | None
+        ) = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -2599,17 +2599,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
+        field_overwrites: (
+            ParquetFieldOverwrites
+            | Sequence[ParquetFieldOverwrites]
+            | Mapping[str, ParquetFieldOverwrites]
+            | None
+        ) = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -2626,18 +2628,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
         mkdir: bool = False,
         lazy: bool = False,
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
+        field_overwrites: (
+            ParquetFieldOverwrites
+            | Sequence[ParquetFieldOverwrites]
+            | Mapping[str, ParquetFieldOverwrites]
+            | None
+        ) = None,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
@@ -2893,9 +2897,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -2913,9 +2917,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -2932,9 +2936,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3113,9 +3117,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3145,9 +3149,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3176,9 +3180,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3394,9 +3398,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3412,9 +3416,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -3429,9 +3433,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
@@ -6343,53 +6347,85 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.tail(n))
 
-    def last(self) -> LazyFrame:
+    def first(self, *, ignore_nulls: bool = False) -> LazyFrame:
         """
-        Get the last row of the DataFrame.
+        Get the first value of each column of the DataFrame.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each column is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": [1, 5, 3],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> lf.last().collect()
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 3   ┆ 6   │
-        └─────┴─────┘
-        """
-        return self.tail(1)
-
-    def first(self) -> LazyFrame:
-        """
-        Get the first row of the DataFrame.
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
+        ...         "a": [None, 3, 5],
         ...         "b": [2, 4, 6],
         ...     }
         ... )
         >>> lf.first().collect()
         shape: (1, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ null ┆ 2   │
+        └──────┴─────┘
+        >>> lf.first(ignore_nulls=True).collect()
+        shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 1   ┆ 2   │
+        │ 3   ┆ 2   │
         └─────┴─────┘
         """
-        return self.slice(0, 1)
+        return self.select(F.all().first(ignore_nulls=ignore_nulls))
+
+    def last(self, *, ignore_nulls: bool = False) -> LazyFrame:
+        """
+        Get the last row of the DataFrame.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each column is returned,
+            otherwise `None` is returned if no non-null value exists.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 5, None],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> lf.last().collect()
+        shape: (1, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ null ┆ 6   │
+        └──────┴─────┘
+        >>> lf.last(ignore_nulls=True).collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 5   ┆ 6   │
+        └─────┴─────┘
+        """
+        return self.select(F.all().last(ignore_nulls=ignore_nulls))
 
     @deprecated(
         "`LazyFrame.approx_n_unique` is deprecated; "
@@ -8101,17 +8137,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         schema: SchemaDict | Schema,
         *,
-        missing_columns: Literal["insert", "raise"]
-        | Mapping[str, Literal["insert", "raise"] | Expr] = "raise",
-        missing_struct_fields: Literal["insert", "raise"]
-        | Mapping[str, Literal["insert", "raise"]] = "raise",
+        missing_columns: (
+            Literal["insert", "raise"] | Mapping[str, Literal["insert", "raise"] | Expr]
+        ) = "raise",
+        missing_struct_fields: (
+            Literal["insert", "raise"] | Mapping[str, Literal["insert", "raise"]]
+        ) = "raise",
         extra_columns: Literal["ignore", "raise"] = "raise",
-        extra_struct_fields: Literal["ignore", "raise"]
-        | Mapping[str, Literal["ignore", "raise"]] = "raise",
-        integer_cast: Literal["upcast", "forbid"]
-        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
-        float_cast: Literal["upcast", "forbid"]
-        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
+        extra_struct_fields: (
+            Literal["ignore", "raise"] | Mapping[str, Literal["ignore", "raise"]]
+        ) = "raise",
+        integer_cast: (
+            Literal["upcast", "forbid"] | Mapping[str, Literal["upcast", "forbid"]]
+        ) = "forbid",
+        float_cast: (
+            Literal["upcast", "forbid"] | Mapping[str, Literal["upcast", "forbid"]]
+        ) = "forbid",
     ) -> LazyFrame:
         """
         Match or evolve the schema of a LazyFrame into a specific schema.
