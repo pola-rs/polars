@@ -193,7 +193,7 @@ where
     fn evaluate_predicate(
         &mut self,
         state: &utils::State<'_, Self>,
-        predicate: &SpecializedParquetColumnExpr,
+        predicate: Option<&SpecializedParquetColumnExpr>,
         pred_true_mask: &mut BitmapBuilder,
         dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
@@ -215,6 +215,10 @@ where
         if state.page_validity.is_some() {
             return Ok(false);
         }
+
+        let Some(predicate) = predicate else {
+            return Ok(false);
+        };
 
         use SpecializedParquetColumnExpr as S;
         match (&state.translation, predicate) {

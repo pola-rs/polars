@@ -319,7 +319,7 @@ pub(super) trait Decoder: Sized {
     fn evaluate_predicate(
         &mut self,
         state: &State<'_, Self>,
-        predicate: &SpecializedParquetColumnExpr,
+        predicate: Option<&SpecializedParquetColumnExpr>,
         pred_true_mask: &mut BitmapBuilder,
         dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool>;
@@ -613,14 +613,12 @@ impl<D: Decoder> PageDecoder<D> {
                 // handled in the kernels. If it cannot be handled in the kernels, catch it here
                 // and load it as if it weren't filtered.
                 let mut page_ptm = BitmapBuilder::new();
-                if let Some(specialized_pred) = specialized_pred
-                    && self.decoder.evaluate_predicate(
-                        &state,
-                        specialized_pred,
-                        &mut page_ptm,
-                        dict_mask.as_ref(),
-                    )?
-                {
+                if self.decoder.evaluate_predicate(
+                    &state,
+                    specialized_pred,
+                    &mut page_ptm,
+                    dict_mask.as_ref(),
+                )? {
                     let num_filtered_values = page_ptm.set_bits();
                     if page_ptm.set_bits() == 0 {
                         pred_true_mask.extend_constant(page_ptm.len(), false);
@@ -652,7 +650,8 @@ impl<D: Decoder> PageDecoder<D> {
                     pred_true_mask.extend_from_bitmap(&page_ptm);
 
                     if p.include_values {
-                        if let SpecializedParquetColumnExpr::Equal(needle) = specialized_pred {
+                        if let Some(SpecializedParquetColumnExpr::Equal(needle)) = specialized_pred
+                        {
                             self.decoder.extend_constant(
                                 &mut target,
                                 num_filtered_values,
