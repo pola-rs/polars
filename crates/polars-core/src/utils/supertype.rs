@@ -74,7 +74,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
         // One side is signed, the other is unsigned. We just need to upcast the
         // unsigned side to a signed integer with the next-largest bit width.
         match (l, r) {
-            (UInt128, _) | (_, UInt128) => Some(Int128),
+            (UInt128, _) | (_, UInt128) => None, // No lossless cast possible
             (UInt64, _) | (_, UInt64) | (Int128, _) | (_, Int128) => Some(Int128),
             (UInt32, _) | (_, UInt32) | (Int64, _) | (_, Int64) => Some(Int64),
             (UInt16, _) | (_, UInt16) | (Int32, _) | (_, Int32) => Some(Int32),
