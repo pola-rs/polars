@@ -845,16 +845,16 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_first(&self, groups: &GroupsType) -> Self {
-        self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_first(g) })
+    pub unsafe fn agg_first(&self, groups: &GroupsType, ignore_nulls: bool) -> Self {
+        self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_first(g, ignore_nulls) })
     }
 
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_last(&self, groups: &GroupsType) -> Self {
-        self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_last(g) })
+    pub unsafe fn agg_last(&self, groups: &GroupsType, ignore_nulls: bool) -> Self {
+        self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_last(g, ignore_nulls) })
     }
 
     /// # Safety

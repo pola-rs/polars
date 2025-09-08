@@ -252,8 +252,8 @@ pub(super) fn iejoin_par(
             l1_idx: &'a IdxCa,
             s: &'a Series,
         ) -> Option<(AnyValue<'a>, AnyValue<'a>)> {
-            let first = l1_idx.first()?;
-            let last = l1_idx.last()?;
+            let first = l1_idx.first(false)?;
+            let last = l1_idx.last(false)?;
 
             let start = s.get(first as usize).unwrap();
             let end = s.get(last as usize).unwrap();

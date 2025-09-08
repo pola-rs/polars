@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .group_by(["first_name"])
-        .agg([len(), col("gender"), col("last_name").first()])
+        .agg([len(), col("gender"), col("last_name").first(false)])
         .sort(
             ["len"],
             SortMultipleOptions::default()
@@ -175,8 +175,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .group_by(["state"])
         .agg([
-            get_name().first().alias("youngest"),
-            get_name().last().alias("oldest"),
+            get_name().first(false).alias("youngest"),
+            get_name().last(false).alias("oldest"),
         ])
         .limit(5)
         .collect()?;
@@ -196,11 +196,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .group_by(["state"])
         .agg([
-            get_name().first().alias("youngest"),
-            get_name().last().alias("oldest"),
+            get_name().first(false).alias("youngest"),
+            get_name().last(false).alias("oldest"),
             get_name()
                 .sort(Default::default())
-                .first()
+                .first(false)
                 .alias("alphabetical_first"),
         ])
         .limit(5)
@@ -220,15 +220,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .group_by(["state"])
         .agg([
-            get_name().first().alias("youngest"),
-            get_name().last().alias("oldest"),
+            get_name().first(false).alias("youngest"),
+            get_name().last(false).alias("oldest"),
             get_name()
                 .sort(Default::default())
-                .first()
+                .first(false)
                 .alias("alphabetical_first"),
             col("gender")
                 .sort_by(["first_name"], SortMultipleOptions::default())
-                .first(),
+                .first(false),
         ])
         .sort(["state"], SortMultipleOptions::default())
         .limit(5)

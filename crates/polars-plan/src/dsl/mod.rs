@@ -167,13 +167,21 @@ impl Expr {
     }
 
     /// Get the first value in the group.
-    pub fn first(self) -> Self {
-        AggExpr::First(Arc::new(self)).into()
+    pub fn first(self, ignore_nulls: bool) -> Self {
+        AggExpr::First {
+            input: Arc::new(self),
+            ignore_nulls,
+        }
+        .into()
     }
 
     /// Get the last value in the group.
-    pub fn last(self) -> Self {
-        AggExpr::Last(Arc::new(self)).into()
+    pub fn last(self, ignore_nulls: bool) -> Self {
+        AggExpr::Last {
+            input: Arc::new(self),
+            ignore_nulls,
+        }
+        .into()
     }
 
     /// Get the single value in the group. If there are multiple values, an error is returned.

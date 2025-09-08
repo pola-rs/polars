@@ -1209,10 +1209,14 @@ pub fn lower_ir(
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
                     use UniqueKeepStrategy::*;
                     let agg_expr = match options.keep_strategy {
-                        First | None | Any => {
-                            expr_arena.add(AExpr::Agg(IRAggExpr::First(col_expr)))
-                        },
-                        Last => expr_arena.add(AExpr::Agg(IRAggExpr::Last(col_expr))),
+                        First | None | Any => expr_arena.add(AExpr::Agg(IRAggExpr::First {
+                            input: col_expr,
+                            ignore_nulls: false,
+                        })),
+                        Last => expr_arena.add(AExpr::Agg(IRAggExpr::Last {
+                            input: col_expr,
+                            ignore_nulls: false,
+                        })),
                     };
                     ExprIR::new(agg_expr, OutputName::ColumnLhs(name.clone()))
                 })

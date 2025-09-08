@@ -114,13 +114,27 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::NUnique(Arc::new(exp)).into()
             },
-            IRAggExpr::First(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::First(Arc::new(exp)).into()
+            IRAggExpr::First {
+                input,
+                ignore_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::First {
+                    input: Arc::new(input),
+                    ignore_nulls,
+                }
+                .into()
             },
-            IRAggExpr::Last(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Last(Arc::new(exp)).into()
+            IRAggExpr::Last {
+                input,
+                ignore_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::Last {
+                    input: Arc::new(input),
+                    ignore_nulls,
+                }
+                .into()
             },
             IRAggExpr::Item { input, allow_empty } => {
                 let exp = node_to_expr(input, expr_arena);

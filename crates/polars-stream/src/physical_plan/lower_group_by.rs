@@ -310,8 +310,8 @@ fn try_lower_elementwise_scalar_agg_expr(
             match agg {
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
-                | IRAggExpr::First(_)
-                | IRAggExpr::Last(_)
+                | IRAggExpr::First { .. }
+                | IRAggExpr::Last { .. }
                 | IRAggExpr::Item { .. }
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Sum(_)
@@ -374,7 +374,10 @@ fn try_build_streaming_group_by(
     let mut agg_storage;
     let aggs = if maintain_order {
         input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
-        let first_agg_node = expr_arena.add(AExpr::Agg(IRAggExpr::First(row_idx_node)));
+        let first_agg_node = expr_arena.add(AExpr::Agg(IRAggExpr::First {
+            input: row_idx_node,
+            ignore_nulls: false,
+        }));
         agg_storage = aggs.to_vec();
         agg_storage.push(ExprIR::from_node(first_agg_node, expr_arena));
         &agg_storage

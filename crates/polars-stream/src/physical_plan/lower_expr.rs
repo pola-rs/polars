@@ -961,7 +961,7 @@ fn lower_exprs_with_ctx(
                 //      ->
                 //    .with_row_index(IDX)
                 //    .group_by(expr)
-                //    .agg(IDX = IDX.first())
+                //    .agg(IDX = IDX.first(false))
                 //    .select(IDX.sort())
 
                 assert_eq!(inner_exprs.len(), 1);
@@ -984,7 +984,7 @@ fn lower_exprs_with_ctx(
                 let keys =
                     [AExprBuilder::col(expr_name.clone(), ctx.expr_arena).expr_ir(expr_name)];
                 let aggs = [AExprBuilder::col(idx_name.clone(), ctx.expr_arena)
-                    .first(ctx.expr_arena)
+                    .first(ctx.expr_arena, false)
                     .expr_ir(idx_name.clone())];
 
                 let stream = build_group_by_stream(
@@ -1659,8 +1659,8 @@ fn lower_exprs_with_ctx(
                 // Change agg mutably so we can share the codepath for all of these.
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
-                | IRAggExpr::First(_)
-                | IRAggExpr::Last(_)
+                | IRAggExpr::First { .. }
+                | IRAggExpr::Last { .. }
                 | IRAggExpr::Item { .. }
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Mean(_)

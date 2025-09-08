@@ -22,8 +22,8 @@ fn test_duration() -> PolarsResult<()> {
         )
         .group_by([col("groups")])
         .agg([
-            (col("date") - col("date").first()).alias("date"),
-            (col("datetime") - col("datetime").first()).alias("datetime"),
+            (col("date") - col("date").first(false)).alias("date"),
+            (col("datetime") - col("datetime").first(false)).alias("datetime"),
         ])
         .explode(by_name(["date", "datetime"], true))
         .collect()?;

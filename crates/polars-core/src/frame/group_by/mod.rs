@@ -488,7 +488,7 @@ impl<'a> GroupBy<'a> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.group_by(["date"])?.select(["temp"]).first()
+    ///     df.group_by(["date"])?.select(["temp"]).first(false)
     /// }
     /// ```
     /// Returns:
@@ -507,11 +507,14 @@ impl<'a> GroupBy<'a> {
     /// +------------+------------+
     /// ```
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
-    pub fn first(&self) -> PolarsResult<DataFrame> {
+    pub fn first(&self, ignore_nulls: bool) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::First);
-            let mut agg = unsafe { agg_col.agg_first(&self.groups) };
+            let new_name = fmt_group_by_column(
+                agg_col.name().as_str(),
+                GroupByMethod::First { ignore_nulls },
+            );
+            let mut agg = unsafe { agg_col.agg_first(&self.groups, ignore_nulls) };
             agg.rename(new_name);
             cols.push(agg);
         }
@@ -525,7 +528,7 @@ impl<'a> GroupBy<'a> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.group_by(["date"])?.select(["temp"]).last()
+    ///     df.group_by(["date"])?.select(["temp"]).last(false)
     /// }
     /// ```
     /// Returns:
@@ -544,11 +547,14 @@ impl<'a> GroupBy<'a> {
     /// +------------+------------+
     /// ```
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
-    pub fn last(&self) -> PolarsResult<DataFrame> {
+    pub fn last(&self, ignore_nulls: bool) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::Last);
-            let mut agg = unsafe { agg_col.agg_last(&self.groups) };
+            let new_name = fmt_group_by_column(
+                agg_col.name().as_str(),
+                GroupByMethod::Last { ignore_nulls },
+            );
+            let mut agg = unsafe { agg_col.agg_last(&self.groups, ignore_nulls) };
             agg.rename(new_name);
             cols.push(agg);
         }
@@ -873,8 +879,8 @@ pub enum GroupByMethod {
     NanMax,
     Median,
     Mean,
-    First,
-    Last,
+    First { ignore_nulls: bool },
+    Last { ignore_nulls: bool },
     Item { allow_empty: bool },
     Sum,
     Groups,
@@ -896,8 +902,8 @@ impl Display for GroupByMethod {
             NanMax => "nan_max",
             Median => "median",
             Mean => "mean",
-            First => "first",
-            Last => "last",
+            First { .. } => "first",
+            Last { .. } => "last",
             Item { .. } => "item",
             Sum => "sum",
             Groups => "groups",
@@ -922,8 +928,22 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         NanMax => format_pl_smallstr!("{name}_nan_max"),
         Median => format_pl_smallstr!("{name}_median"),
         Mean => format_pl_smallstr!("{name}_mean"),
-        First => format_pl_smallstr!("{name}_first"),
-        Last => format_pl_smallstr!("{name}_last"),
+        First { ignore_nulls } => {
+            let arg_str = if ignore_nulls {
+                "ignore_nulls=True"
+            } else {
+                ""
+            };
+            format_pl_smallstr!("{name}_first({arg_str})")
+        },
+        Last { ignore_nulls } => {
+            let arg_str = if ignore_nulls {
+                "ignore_nulls=True"
+            } else {
+                ""
+            };
+            format_pl_smallstr!("{name}_last({arg_str})")
+        },
         Item { .. } => format_pl_smallstr!("{name}_item"),
         Sum => format_pl_smallstr!("{name}_sum"),
         Groups => PlSmallStr::from_static("groups"),

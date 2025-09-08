@@ -451,21 +451,37 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::NUnique(Arc::new(e))),
                 )?,
-                AggExpr::First(expr) => expand_single(
-                    expr.as_ref(),
+                AggExpr::First {
+                    input,
+                    ignore_nulls,
+                } => expand_single(
+                    input.as_ref(),
                     ignored_selector_columns,
                     schema,
                     out,
                     opt_flags,
-                    |e| Expr::Agg(AggExpr::First(Arc::new(e))),
+                    |e| {
+                        Expr::Agg(AggExpr::First {
+                            input: Arc::new(e),
+                            ignore_nulls: *ignore_nulls,
+                        })
+                    },
                 )?,
-                AggExpr::Last(expr) => expand_single(
-                    expr.as_ref(),
+                AggExpr::Last {
+                    input,
+                    ignore_nulls,
+                } => expand_single(
+                    input.as_ref(),
                     ignored_selector_columns,
                     schema,
                     out,
                     opt_flags,
-                    |e| Expr::Agg(AggExpr::Last(Arc::new(e))),
+                    |e| {
+                        Expr::Agg(AggExpr::Last {
+                            input: Arc::new(e),
+                            ignore_nulls: *ignore_nulls,
+                        })
+                    },
                 )?,
                 AggExpr::Item { input, allow_empty } => expand_single(
                     input.as_ref(),

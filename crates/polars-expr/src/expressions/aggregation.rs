@@ -115,16 +115,14 @@ impl PhysicalExpr for AggregationExpr {
             },
             GroupByMethod::Median => s.median_reduce().map(|sc| sc.into_column(s.name().clone())),
             GroupByMethod::Mean => s.mean_reduce().map(|sc| sc.into_column(s.name().clone())),
-            GroupByMethod::First => Ok(if s.is_empty() {
-                Column::full_null(s.name().clone(), 1, s.dtype())
-            } else {
-                s.head(Some(1))
-            }),
-            GroupByMethod::Last => Ok(if s.is_empty() {
-                Column::full_null(s.name().clone(), 1, s.dtype())
-            } else {
-                s.tail(Some(1))
-            }),
+            GroupByMethod::First { ignore_nulls } => Ok(s
+                .as_materialized_series()
+                .first(ignore_nulls)
+                .into_column(s.name().clone())),
+            GroupByMethod::Last { ignore_nulls } => Ok(s
+                .as_materialized_series()
+                .last(ignore_nulls)
+                .into_column(s.name().clone())),
             GroupByMethod::Item { allow_empty } => Ok(match s.len() {
                 0 if allow_empty => Column::full_null(s.name().clone(), 1, s.dtype()),
                 1 => s,
@@ -327,14 +325,14 @@ impl PhysicalExpr for AggregationExpr {
                         }
                     }
                 },
-                GroupByMethod::First => {
+                GroupByMethod::First { ignore_nulls } => {
                     let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_first(&groups);
+                    let agg_s = s.agg_first(&groups, ignore_nulls);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
-                GroupByMethod::Last => {
+                GroupByMethod::Last { ignore_nulls } => {
                     let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_last(&groups);
+                    let agg_s = s.agg_last(&groups, ignore_nulls);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Item { allow_empty } => {
@@ -348,7 +346,7 @@ impl PhysicalExpr for AggregationExpr {
                             },
                         }
                     }
-                    let agg_s = s.agg_first(&groups);
+                    let agg_s = s.agg_first(&groups, false);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::NUnique => {

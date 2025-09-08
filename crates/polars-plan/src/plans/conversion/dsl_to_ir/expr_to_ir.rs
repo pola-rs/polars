@@ -245,13 +245,31 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::NUnique(input), output_name)
                 },
-                AggExpr::First(input) => {
+                AggExpr::First {
+                    input,
+                    ignore_nulls,
+                } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::First(input), output_name)
+                    (
+                        IRAggExpr::First {
+                            input,
+                            ignore_nulls,
+                        },
+                        output_name,
+                    )
                 },
-                AggExpr::Last(input) => {
+                AggExpr::Last {
+                    input,
+                    ignore_nulls,
+                } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Last(input), output_name)
+                    (
+                        IRAggExpr::Last {
+                            input,
+                            ignore_nulls,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Item { input, allow_empty } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;

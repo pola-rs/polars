@@ -376,8 +376,18 @@ fn create_physical_expr_inner(
                         I::Max { .. } => GBM::Max,
                         I::Median(_) => GBM::Median,
                         I::NUnique(_) => GBM::NUnique,
-                        I::First(_) => GBM::First,
-                        I::Last(_) => GBM::Last,
+                        I::First {
+                            input: _,
+                            ignore_nulls,
+                        } => GBM::First {
+                            ignore_nulls: *ignore_nulls,
+                        },
+                        I::Last {
+                            input: _,
+                            ignore_nulls,
+                        } => GBM::Last {
+                            ignore_nulls: *ignore_nulls,
+                        },
                         I::Item { allow_empty, .. } => GBM::Item {
                             allow_empty: *allow_empty,
                         },

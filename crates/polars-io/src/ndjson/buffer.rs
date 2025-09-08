@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
-use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
+use polars_core::utils::av_buffer::AnyValueBuffer;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::string::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]

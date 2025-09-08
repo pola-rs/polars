@@ -566,7 +566,7 @@ def approx_n_unique(*columns: str) -> Expr:
     return F.col(*columns).approx_n_unique()
 
 
-def first(*columns: str) -> Expr:
+def first(*columns: str, ignore_nulls: bool = False) -> Expr:
     """
     Get the first column or value.
 
@@ -578,12 +578,18 @@ def first(*columns: str) -> Expr:
     ----------
     *columns
         One or more column names.
+    ignore_nulls
+        Ignore null values (default `False`).
+        If set to `True`, the first non-null value for each column is returned,
+        otherwise `None` is returned if no non-null value exists.
+
+        This parameter only applies when 'columns' is supplied.
 
     Examples
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [1, 8, 3],
+    ...         "a": [None, 8, 3],
     ...         "b": [4, 5, 2],
     ...         "c": ["foo", "bar", "baz"],
     ...     }
@@ -593,15 +599,15 @@ def first(*columns: str) -> Expr:
 
     >>> df.select(pl.first())
     shape: (3, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 1   │
-    │ 8   │
-    │ 3   │
-    └─────┘
+    ┌──────┐
+    │ a    │
+    │ ---  │
+    │ i64  │
+    ╞══════╡
+    │ null │
+    │ 8    │
+    │ 3    │
+    └──────┘
 
     Return the first value for the given column(s):
 
@@ -614,24 +620,23 @@ def first(*columns: str) -> Expr:
     ╞═════╡
     │ 4   │
     └─────┘
-    >>> df.select(pl.first("a", "c"))
+    >>> df.select(pl.first("a", "c", ignore_nulls=True))
     shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ c   │
     │ --- ┆ --- │
     │ i64 ┆ str │
     ╞═════╪═════╡
-    │ 1   ┆ foo │
+    │ 8   ┆ foo │
     └─────┴─────┘
-
     """
     if not columns:
         return cs.first().as_expr()
 
-    return F.col(*columns).first()
+    return F.col(*columns).first(ignore_nulls=ignore_nulls)
 
 
-def last(*columns: str) -> Expr:
+def last(*columns: str, ignore_nulls: bool = False) -> Expr:
     """
     Get the last column or value.
 
@@ -643,13 +648,19 @@ def last(*columns: str) -> Expr:
     ----------
     *columns
         One or more column names.
+    ignore_nulls
+        Ignore null values (default `False`).
+        If set to `True`, the first non-null value for each column is returned,
+        otherwise `None` is returned if no non-null value exists.
+
+        This parameter only applies when 'columns' is supplied.
 
     Examples
     --------
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 8, 3],
-    ...         "b": [4, 5, 2],
+    ...         "b": [4, 5, None],
     ...         "c": ["foo", "bar", "baz"],
     ...     }
     ... )
@@ -679,21 +690,20 @@ def last(*columns: str) -> Expr:
     ╞═════╡
     │ 3   │
     └─────┘
-    >>> df.select(pl.last("b", "c"))
+    >>> df.select(pl.last("b", "c", ignore_nulls=True))
     shape: (1, 2)
     ┌─────┬─────┐
     │ b   ┆ c   │
     │ --- ┆ --- │
     │ i64 ┆ str │
     ╞═════╪═════╡
-    │ 2   ┆ baz │
+    │ 5   ┆ baz │
     └─────┴─────┘
-
     """
     if not columns:
         return cs.last().as_expr()
 
-    return F.col(*columns).last()
+    return F.col(*columns).last(ignore_nulls=ignore_nulls)
 
 
 def nth(*indices: int | Sequence[int], strict: bool = True) -> Expr:

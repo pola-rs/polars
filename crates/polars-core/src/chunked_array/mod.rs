@@ -554,19 +554,24 @@ where
     }
 
     #[inline]
-    pub fn first(&self) -> Option<T::Physical<'_>> {
-        unsafe {
-            let arr = self.downcast_get_unchecked(0);
-            arr.get_unchecked(0)
-        }
+    pub fn first(&self, ignore_nulls: bool) -> Option<T::Physical<'_>> {
+        let idx = if ignore_nulls && self.has_nulls() {
+            first_non_null(self.chunks().iter().map(|c| c.validity())).unwrap_or(0)
+        } else {
+            0
+        };
+        unsafe { self.get_unchecked(idx) }
     }
 
     #[inline]
-    pub fn last(&self) -> Option<T::Physical<'_>> {
-        unsafe {
-            let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
-            arr.get_unchecked(arr.len().checked_sub(1)?)
-        }
+    pub fn last(&self, ignore_nulls: bool) -> Option<T::Physical<'_>> {
+        let n = self.len();
+        let idx = if ignore_nulls && self.has_nulls() {
+            last_non_null(self.chunks().iter().map(|c| c.validity()), n).unwrap_or(n - 1)
+        } else {
+            n - 1
+        };
+        unsafe { self.get_unchecked(idx) }
     }
 
     pub fn set_validity(&mut self, validity: &Bitmap) {

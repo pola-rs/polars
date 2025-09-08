@@ -6,6 +6,7 @@ pub(crate) mod series;
 mod supertype;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
+pub mod av_buffer;
 mod schema;
 
 pub use any_value::*;

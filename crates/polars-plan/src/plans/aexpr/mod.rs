@@ -47,11 +47,17 @@ pub enum IRAggExpr {
     },
     Median(Node),
     NUnique(Node),
-    First(Node),
-    Last(Node),
     Item {
         input: Node,
         allow_empty: bool,
+    },
+    First {
+        input: Node,
+        ignore_nulls: bool,
+    },
+    Last {
+        input: Node,
+        ignore_nulls: bool,
     },
     Mean(Node),
     Implode(Node),
@@ -149,8 +155,14 @@ impl From<IRAggExpr> for GroupByMethod {
             },
             Median(_) => GroupByMethod::Median,
             NUnique(_) => GroupByMethod::NUnique,
-            First(_) => GroupByMethod::First,
-            Last(_) => GroupByMethod::Last,
+            First {
+                input: _,
+                ignore_nulls,
+            } => GroupByMethod::First { ignore_nulls },
+            Last {
+                input: _,
+                ignore_nulls,
+            } => GroupByMethod::Last { ignore_nulls },
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,

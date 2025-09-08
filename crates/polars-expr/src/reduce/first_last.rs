@@ -2,17 +2,26 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use polars_core::frame::row::AnyValueBufferTrusted;
+use polars_core::utils::av_buffer::AnyValueBufferTrusted;
 use polars_core::with_match_physical_numeric_polars_type;
 
+use super::first_last_nonnull::new_nonnull_reduction_with_policy;
 use super::*;
 
-pub fn new_first_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
-    new_reduction_with_policy(dtype, First)
+pub fn new_first_reduction(dtype: DataType, ignore_nulls: bool) -> Box<dyn GroupedReduction> {
+    if ignore_nulls {
+        new_nonnull_reduction_with_policy(dtype, First)
+    } else {
+        new_reduction_with_policy(dtype, First)
+    }
 }
 
-pub fn new_last_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
-    new_reduction_with_policy(dtype, Last)
+pub fn new_last_reduction(dtype: DataType, ignore_nulls: bool) -> Box<dyn GroupedReduction> {
+    if ignore_nulls {
+        new_nonnull_reduction_with_policy(dtype, Last)
+    } else {
+        new_reduction_with_policy(dtype, Last)
+    }
 }
 
 pub fn new_item_reduction(dtype: DataType, allow_empty: bool) -> Box<dyn GroupedReduction> {
@@ -47,7 +56,7 @@ fn new_reduction_with_policy<P: Policy + 'static>(
     }
 }
 
-trait Policy: Copy + Send + Sync + 'static {
+pub trait Policy: Copy + Send + Sync + 'static {
     fn index(self, len: usize) -> usize;
     fn should_replace(self, new: u64, old: u64) -> bool;
     fn item_policy(self) -> Option<bool> {
@@ -56,7 +65,7 @@ trait Policy: Copy + Send + Sync + 'static {
 }
 
 #[derive(Clone, Copy)]
-struct First;
+pub struct First;
 impl Policy for First {
     fn index(self, _len: usize) -> usize {
         0
@@ -70,7 +79,7 @@ impl Policy for First {
 }
 
 #[derive(Clone, Copy)]
-struct Last;
+pub struct Last;
 impl Policy for Last {
     fn index(self, len: usize) -> usize {
         len - 1
@@ -174,7 +183,7 @@ where
     }
 }
 
-struct BinaryFirstLastReducer<P>(P);
+struct BinaryFirstLastReducer<P: Policy>(P);
 
 impl<P: Policy> Clone for BinaryFirstLastReducer<P> {
     fn clone(&self) -> Self {
@@ -182,7 +191,7 @@ impl<P: Policy> Clone for BinaryFirstLastReducer<P> {
     }
 }
 
-fn replace_opt_bytes(l: &mut Option<Vec<u8>>, r: Option<&[u8]>) {
+pub fn replace_opt_bytes(l: &mut Option<Vec<u8>>, r: Option<&[u8]>) {
     match (l, r) {
         (Some(l), Some(r)) => {
             l.clear();

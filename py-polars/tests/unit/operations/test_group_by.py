@@ -1983,3 +1983,114 @@ def test_group_by_explode_none_dtype_25045() -> None:
     )
     expected_c = pl.DataFrame({"a": [[1.0], [2.0], [None]]})
     assert_frame_equal(out_c, expected_c)
+
+
+@pytest.mark.parametrize("group_as_slice", [False, True])
+@pytest.mark.parametrize("n", [10, 100, 1_000, 10_000])
+@pytest.mark.parametrize(
+    "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List(pl.Int32)]
+)
+def test_group_by_first_last(
+    group_as_slice: bool, n: int, dtype: PolarsDataType
+) -> None:
+    idx = pl.Series([1, 2, 3, 4, 5], dtype=pl.Int32)
+
+    lf = pl.LazyFrame(
+        {
+            "idx": pl.Series(
+                [1] * n + [2] * n + [3] * n + [4] * n + [5] * n, dtype=pl.Int32
+            ),
+            # Each successive group has an additional None spanning the elements
+            "a": pl.Series(
+                [
+                    *[None] * 0,
+                    *list(range(1, n + 1)),
+                    *[None] * 0,  # idx = 0
+                    *[None] * 1,
+                    *list(range(2, n - 0)),
+                    *[None] * 1,  # idx = 1
+                    *[None] * 2,
+                    *list(range(3, n - 1)),
+                    *[None] * 2,  # idx = 2
+                    *[None] * 3,
+                    *list(range(4, n - 2)),
+                    *[None] * 3,  # idx = 3
+                    *[None] * 4,
+                    *list(range(5, n - 3)),
+                    *[None] * 4,  # idx = 4
+                ],
+                dtype=pl.Int32,
+            ),  # fmt: skip
+        }
+    )
+    if group_as_slice:
+        lf = lf.set_sorted("idx")  # Use GroupSlice path
+
+    if dtype == pl.Categorical:
+        # for Categorical, we must first go through String
+        lf = lf.with_columns(pl.col("a").cast(pl.String))
+    lf = lf.with_columns(pl.col("a").cast(dtype))
+
+    # first()
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("a").first(ignore_nulls=False))
+        .collect()
+    )
+    expected_vals = pl.Series([1, None, None, None, None])
+    if dtype == pl.Categorical:
+        # for Categorical, we must first go through String
+        expected_vals = expected_vals.cast(pl.String)
+    expected_vals = expected_vals.cast(dtype)
+    expected = pl.DataFrame({"idx": idx, "a": expected_vals})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).first().collect()
+    assert_frame_equal(result, expected)
+
+    # first(ignore_nulls=True)
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("a").first(ignore_nulls=True))
+        .collect()
+    )
+    expected_vals = pl.Series([1, 2, 3, 4, 5])
+    if dtype == pl.Categorical:
+        # for Categorical, we must first go through String
+        expected_vals = expected_vals.cast(pl.String)
+    expected_vals = expected_vals.cast(dtype)
+    expected = pl.DataFrame({"idx": idx, "a": expected_vals})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).first(ignore_nulls=True).collect()
+    assert_frame_equal(result, expected)
+
+    # last()
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("a").last(ignore_nulls=False))
+        .collect()
+    )
+    expected_vals = pl.Series([n, None, None, None, None])
+    if dtype == pl.Categorical:
+        # for Categorical, we must first go through String
+        expected_vals = expected_vals.cast(pl.String)
+    expected_vals = expected_vals.cast(dtype)
+    expected = pl.DataFrame({"idx": idx, "a": expected_vals})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).last().collect()
+    assert_frame_equal(result, expected)
+
+    # last(ignore_nulls=True)
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("a").last(ignore_nulls=True))
+        .collect()
+    )
+    expected_vals = pl.Series([n, n - 1, n - 2, n - 3, n - 4])
+    if dtype == pl.Categorical:
+        # for Categorical, we must first go through String
+        expected_vals = expected_vals.cast(pl.String)
+    expected_vals = expected_vals.cast(dtype)
+    expected = pl.DataFrame({"idx": idx, "a": expected_vals})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=True).collect()
+    assert_frame_equal(result, expected)

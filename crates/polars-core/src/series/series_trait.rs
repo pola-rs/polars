@@ -10,6 +10,7 @@ use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
+use crate::utils::{first_non_null, last_non_null};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -547,26 +548,39 @@ pub trait SeriesTrait:
     /// Get the first element of the [`Series`] as a [`Scalar`]
     ///
     /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
-    fn first(&self) -> Scalar {
-        let dt = self.dtype();
-        let av = self.get(0).map_or(AnyValue::Null, AnyValue::into_static);
-
-        Scalar::new(dt.clone(), av)
+    /// If `ignore_nulls` is true, the first non-null element is returned.
+    fn first(&self, ignore_nulls: bool) -> Scalar {
+        let av = if self.len() == 0 {
+            AnyValue::Null
+        } else {
+            let idx = if ignore_nulls && self.has_nulls() {
+                first_non_null(self.chunks().iter().map(|c| c.validity())).unwrap_or(0)
+            } else {
+                0
+            };
+            self.get(idx).map_or(AnyValue::Null, AnyValue::into_static)
+        };
+        Scalar::new(self.dtype().clone(), av)
     }
 
     /// Get the last element of the [`Series`] as a [`Scalar`]
     ///
     /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
-    fn last(&self) -> Scalar {
-        let dt = self.dtype();
-        let av = if self.len() == 0 {
+    /// If `ignore_nulls` is true, the last non-null element is returned.
+    fn last(&self, ignore_nulls: bool) -> Scalar {
+        let n = self.len();
+        let av = if n == 0 {
             AnyValue::Null
         } else {
+            let idx = if ignore_nulls && self.has_nulls() {
+                last_non_null(self.chunks().iter().map(|c| c.validity()), n).unwrap_or(n - 1)
+            } else {
+                n - 1
+            };
             // SAFETY: len-1 < len if len != 0
-            unsafe { self.get_unchecked(self.len() - 1) }.into_static()
+            unsafe { self.get_unchecked(idx) }.into_static()
         };
-
-        Scalar::new(dt.clone(), av)
+        Scalar::new(self.dtype().clone(), av)
     }
 
     #[cfg(feature = "approx_unique")]

@@ -419,8 +419,8 @@ fn test_agg_functions() {
         .lazy()
         .select(&[
             col("a").sum().alias("sum_a"),
-            col("a").first().alias("first_a"),
-            col("a").last().alias("last_a"),
+            col("a").first(false).alias("first_a"),
+            col("a").last(false).alias("last_a"),
             col("a").mean().alias("avg_a"),
             col("a").max().alias("max_a"),
             col("a").min().alias("min_a"),

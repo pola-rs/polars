@@ -775,7 +775,7 @@ fn scan_anonymous_fn_count() -> PolarsResult<()> {
             .cast(&DataType::UInt32)
             .unwrap()
             .as_materialized_series()
-            .first(),
+            .first(false),
         Scalar::new(DataType::UInt32, AnyValue::UInt32(5))
     );
 

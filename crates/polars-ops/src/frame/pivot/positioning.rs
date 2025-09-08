@@ -3,6 +3,7 @@ use std::hash::Hash;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
+use polars_core::utils::av_buffer::AnyValueBufferTrusted;
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
@@ -82,7 +83,6 @@ pub(super) fn position_aggregates(
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => {
                         // we know we can trust this data, so we use the explicit builder
-                        use polars_core::frame::row::AnyValueBufferTrusted;
                         let mut buf = AnyValueBufferTrusted::new(&phys_type, avs.len());
                         for av in avs {
                             unsafe {
@@ -233,7 +233,7 @@ pub(super) fn compute_col_idx(
     groups: &GroupsType,
 ) -> PolarsResult<(Vec<IdxSize>, Column)> {
     let column_s = pivot_df.column(column)?;
-    let column_agg = unsafe { column_s.agg_first(groups) };
+    let column_agg = unsafe { column_s.agg_first(groups, false) };
     let column_agg_physical = column_agg.to_physical_repr();
 
     use DataType as T;
@@ -404,7 +404,7 @@ pub(super) fn compute_row_idx(
 ) -> PolarsResult<(Vec<IdxSize>, usize, Option<Vec<Column>>)> {
     let (row_locations, n_rows, row_index) = if index.len() == 1 {
         let index_s = pivot_df.column(&index[0])?;
-        let index_agg = unsafe { index_s.agg_first(groups) };
+        let index_agg = unsafe { index_s.agg_first(groups, false) };
         let index_agg_physical = index_agg.to_physical_repr();
 
         use DataType as T;
@@ -488,7 +488,7 @@ pub(super) fn compute_row_idx(
             fields,
         )?
         .into_series();
-        let index_agg = unsafe { index_struct_series.agg_first(groups) };
+        let index_agg = unsafe { index_struct_series.agg_first(groups, false) };
         let index_agg_physical = index_agg.to_physical_repr();
         let ca = index_agg_physical.struct_()?;
         let ca = ca.get_row_encoded(Default::default())?;

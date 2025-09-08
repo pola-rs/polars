@@ -130,7 +130,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
             let value_as_column = Column::new_scalar(PlSmallStr::EMPTY, needle, 1);
             let value_as_row_encoded_ca = encode_rows_unordered(&[value_as_column])?;
             let value = value_as_row_encoded_ca
-                .first()
+                .first(false)
                 .expect("Shouldn't have nulls in a row-encoded result");
             let ca = encode_rows_unordered(&[series.clone().into_column()])?;
             Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))

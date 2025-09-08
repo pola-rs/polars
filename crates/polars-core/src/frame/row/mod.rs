@@ -1,4 +1,3 @@
-mod av_buffer;
 mod dataframe;
 mod transpose;
 
@@ -8,7 +7,6 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
 use arrow::bitmap::Bitmap;
-pub use av_buffer::*;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "object")]
 use polars_utils::total_ord::TotalHash;

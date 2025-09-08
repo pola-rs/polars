@@ -35,7 +35,7 @@ fn test_distinct_on() {
                 .with_maintain_order(true),
         )
         .group_by_stable(vec![col("Name")])
-        .agg(vec![col("*").first()]);
+        .agg(vec![col("*").first(false)]);
     let expected = expected.collect().unwrap();
     assert!(actual.equals(&expected))
 }
