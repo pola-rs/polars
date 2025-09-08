@@ -111,6 +111,7 @@ if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterator, Sequence
     from io import IOBase
+    from threading import Thread
     from types import TracebackType
     from typing import IO, Literal
 
@@ -3726,6 +3727,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         from queue import Queue
 
         class BatchCollector:
+            _thread: Thread | None
+
             def __init__(
                 self,
                 *,
@@ -3734,7 +3737,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 maintain_order: bool,
                 lazy: bool,
                 engine: EngineType,
-                optimizations: pl.QueryOptFlags,
+                optimizations: QueryOptFlags,
             ) -> None:
                 self._lf = lf
                 self._chunk_size = chunk_size
@@ -3775,7 +3778,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 self._thread.start()
 
             def stop(self) -> None:
-                if self._stopped:
+                if self._stopped or self._thread is None:
                     return
 
                 self._stopped = True
@@ -3787,6 +3790,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             def __iter__(self) -> Iterator[DataFrame]:
                 """Returns a generator that yields batches from the queue."""
+                if self._stopped:
+                    return
+
                 if lazy:
                     self._start()
 
@@ -3796,6 +3802,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                         break
                     yield df
 
+                assert self._thread is not None
                 self._thread.join()
 
             def __enter__(self) -> Self:
@@ -3806,7 +3813,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
-            ) -> bool:
+            ) -> Literal[False]:
                 self.stop()
                 return False
 
