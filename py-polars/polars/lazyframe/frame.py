@@ -109,8 +109,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Sequence
+    from collections.abc import Awaitable, Iterator, Sequence
     from io import IOBase
+    from types import TracebackType
     from typing import IO, Literal
 
     from polars.lazyframe.opt_flags import QueryOptFlags
@@ -3602,9 +3603,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> pl.LazyFrame | None:
         """
-        Evaluate the query in streaming mode and call a function with every ready batch.
+        Evaluate the query and call a user-defined function for every ready batch.
 
-        This allows streaming results that are larger than RAM to be written to disk.
+        This allows streaming results that are larger than RAM in certain cases.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3665,11 +3666,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return None
         return LazyFrame._from_pyldf(ldf)
 
-    def sink_generator(
+    def collect_batches(
         self,
         *,
         chunk_size: int | None = None,
         maintain_order: bool = True,
+        lazy: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Iterable[DataFrame]:
@@ -3678,8 +3680,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This allows streaming results that are larger than RAM to be written to disk.
 
-        The query will always be fully executed, so you should call next until all
-        chunks have been seen.
+        The query will always be fully executed unless `stop` is called, so you should
+        call next until all chunks have been seen.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3696,6 +3698,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
+        lazy
+            Start the query when first requesting a batch.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -3710,45 +3714,110 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Examples
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
-        >>> for df in lf.sink_generator():
+        >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
+
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")
+        >>> with lf.collect_batches() as it:
+        ...     print(next(iter(it)))  # print first batch, stop afterwards
+        ...     pass  # doctest: +SKIP
         """
+        import threading
+        from queue import Queue
 
-        def batch_generator() -> Iterable[DataFrame]:
-            import threading
-            from queue import Queue
+        class BatchCollector:
+            def __init__(
+                self,
+                *,
+                lf: pl.LazyFrame,
+                chunk_size: int | None,
+                maintain_order: bool,
+                lazy: bool,
+                engine: EngineType,
+                optimizations: pl.QueryOptFlags,
+            ) -> None:
+                self._lf = lf
+                self._chunk_size = chunk_size
+                self._maintain_order = maintain_order
+                self._engine = engine
+                self._optimizations = optimizations
+                self._queue: Queue[pl.DataFrame | None] = Queue(maxsize=1)
+                self._thread = None
+                self._stopped = False
 
-            q: Queue[pl.DataFrame | None] = Queue(maxsize=1)
+                if not lazy:
+                    self._start()
 
-            def task() -> None:
-                def _wrap(df: DataFrame) -> bool | None:
-                    q.put(df)
+            def _task(self) -> None:
+                """The worker thread's task to collect batches."""
+
+                def _put_batch_in_queue(df: DataFrame) -> bool | None:
+                    if self._stopped:
+                        return False
+
+                    self._queue.put(df)
                     return True
 
                 try:
-                    self.sink_batches(
-                        _wrap,
-                        chunk_size=chunk_size,
-                        maintain_order=maintain_order,
-                        engine=engine,
-                        optimizations=optimizations,
+                    self._lf.sink_batches(
+                        _put_batch_in_queue,
+                        chunk_size=self._chunk_size,
+                        maintain_order=self._maintain_order,
+                        engine=self._engine,
+                        optimizations=self._optimizations,
                         lazy=False,
                     )
                 finally:
-                    q.put(None)
+                    self._queue.put(None)  # Signal the end of batches
 
-            t = threading.Thread(target=task)
-            t.start()
+            def _start(self) -> None:
+                self._thread = threading.Thread(target=self._task)
+                self._thread.start()
 
-            while True:
-                df = q.get()
-                if df is None:
-                    break
-                yield df
+            def stop(self) -> None:
+                if self._stopped:
+                    return
 
-            t.join()
+                self._stopped = True
+                while True:
+                    df = self._queue.get()
+                    if df is None:
+                        break
+                self._thread.join()
 
-        return batch_generator()
+            def __iter__(self) -> Iterator[DataFrame]:
+                """Returns a generator that yields batches from the queue."""
+                if lazy:
+                    self._start()
+
+                while True:
+                    df = self._queue.get()
+                    if df is None:
+                        break
+                    yield df
+
+                self._thread.join()
+
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(
+                self,
+                exc_type: type[BaseException] | None,
+                exc_value: BaseException | None,
+                traceback: TracebackType | None,
+            ) -> bool:
+                self.stop()
+                return False
+
+        return BatchCollector(
+            lf=self,
+            chunk_size=chunk_size,
+            maintain_order=maintain_order,
+            lazy=lazy,
+            engine=engine,
+            optimizations=optimizations,
+        )
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
