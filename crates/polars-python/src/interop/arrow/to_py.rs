@@ -92,6 +92,29 @@ pub(crate) fn dataframe_to_stream<'py>(
     PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
+#[cfg(feature = "c_api")]
+#[pyfunction]
+pub(crate) fn polars_schema_to_pycapsule<'py>(
+    py: Python<'py>,
+    schema: crate::prelude::Wrap<polars::prelude::Schema>,
+    compat_level: crate::prelude::PyCompatLevel,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
+        PlSmallStr::EMPTY,
+        ArrowDataType::Struct(
+            schema
+                .0
+                .iter_fields()
+                .map(|x| x.to_arrow(compat_level.0))
+                .collect(),
+        ),
+        false,
+    ));
+
+    let capsule_name = CString::new("arrow_schema").unwrap();
+    PyCapsule::new(py, schema, Some(capsule_name))
+}
+
 pub struct DataFrameStreamIterator {
     columns: Vec<Series>,
     dtype: ArrowDataType,
