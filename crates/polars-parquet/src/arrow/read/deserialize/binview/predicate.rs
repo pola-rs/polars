@@ -91,9 +91,8 @@ fn decode_equals_non_inlineable(
 pub fn decode_is_in_no_values_non_inlinable(
     num_expected_values: usize,
     mut values: &[u8],
-    needles: &PlIndexSet<&[u8]>,
+    needles: &PlIndexSet<Box<[u8]>>,
     pred_true_mask: &mut BitmapBuilder,
-    total_bytes_len: &mut usize,
 ) -> ParquetResult<()> {
     pred_true_mask.reserve(num_expected_values);
     for _ in 0..num_expected_values {
@@ -113,12 +112,9 @@ pub fn decode_is_in_no_values_non_inlinable(
         let value;
         (value, values) = values.split_at(length as usize);
 
-        let is_pred_true = needles.contains(&value);
+        let is_pred_true = needles.contains(value);
         // SAFETY: We reserved enough just before the loop.
         unsafe { pred_true_mask.push_unchecked(is_pred_true) };
-        if is_pred_true {
-            *total_bytes_len += value.len();
-        }
     }
 
     Ok(())
@@ -127,16 +123,14 @@ pub fn decode_is_in_no_values_non_inlinable(
 pub fn decode_is_in_non_inlinable(
     num_expected_values: usize,
     mut values: &[u8],
-    needles: &PlIndexSet<&[u8]>,
+    needles: &PlIndexSet<Box<[u8]>>,
     needle_views: &[View],
     target: &mut Vec<View>,
-    pred_true_mask: &mut BitmapBuilder,
     total_bytes_len: &mut usize,
 ) -> ParquetResult<()> {
     assert_eq!(needles.len(), needle_views.len());
     assert!(!needles.is_empty());
 
-    pred_true_mask.reserve(num_expected_values);
     target.reserve(num_expected_values);
     let mut next_idx = target.len();
     for _ in 0..num_expected_values {
@@ -156,11 +150,8 @@ pub fn decode_is_in_non_inlinable(
         let value;
         (value, values) = values.split_at(length as usize);
 
-        let needle_idx = needles.get_index_of(&value);
+        let needle_idx = needles.get_index_of(value);
         unsafe {
-            // SAFETY: We reserved enough just before the loop.
-            pred_true_mask.push_unchecked(needle_idx.is_some());
-
             // SAFETY: We checked that 0 < needle_views.len() == needles.len().
             let view = needle_views.get_unchecked(needle_idx.unwrap_or_default());
 
@@ -188,7 +179,6 @@ pub fn decode_is_in_no_values_inlinable(
     mut values: &[u8],
     needles: &[View; 4],
     pred_true_mask: &mut BitmapBuilder,
-    total_bytes_len: &mut usize,
 ) -> ParquetResult<()> {
     pred_true_mask.reserve(num_expected_values);
     for _ in 0..num_expected_values {
@@ -216,9 +206,6 @@ pub fn decode_is_in_no_values_inlinable(
         let is_pred_true = needles.contains(&view);
         // SAFETY: We reserved enough just before the loop.
         unsafe { pred_true_mask.push_unchecked(is_pred_true) };
-        if is_pred_true {
-            *total_bytes_len += value.len();
-        }
     }
 
     Ok(())
@@ -229,10 +216,8 @@ pub fn decode_is_in_inlinable(
     mut values: &[u8],
     needles: &[View; 4],
     target: &mut Vec<View>,
-    pred_true_mask: &mut BitmapBuilder,
     total_bytes_len: &mut usize,
 ) -> ParquetResult<()> {
-    pred_true_mask.reserve(num_expected_values);
     target.reserve(num_expected_values);
     let mut next_idx = target.len();
     for _ in 0..num_expected_values {
@@ -260,7 +245,6 @@ pub fn decode_is_in_inlinable(
         let is_pred_true = needles.contains(&view);
         // SAFETY: We reserved enough just before the loop.
         unsafe {
-            pred_true_mask.push_unchecked(is_pred_true);
             target.as_mut_ptr().add(next_idx).write(view);
         }
         if is_pred_true {
