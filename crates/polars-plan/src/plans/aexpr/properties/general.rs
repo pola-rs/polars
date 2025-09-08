@@ -382,8 +382,14 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             IRAggExpr::Min { .. }
                                 | IRAggExpr::Max { .. }
                                 | IRAggExpr::Sum(_)
-                                | IRAggExpr::Last(_)
-                                | IRAggExpr::First(_)
+                                | IRAggExpr::First {
+                                    input: _,
+                                    ignore_nulls: false
+                                }
+                                | IRAggExpr::Last {
+                                    input: _,
+                                    ignore_nulls: false
+                                }
                                 | IRAggExpr::Count {
                                     input: _,
                                     include_nulls: true

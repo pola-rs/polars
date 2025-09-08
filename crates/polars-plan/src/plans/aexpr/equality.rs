@@ -104,12 +104,12 @@ impl IRAggExpr {
             A::Count { input: _, include_nulls: l_include_nulls } => matches!(other, A::Count { input: _, include_nulls: r_include_nulls } if l_include_nulls == r_include_nulls),
             A::Std(_, l_ddof) => matches!(other, A::Std(_, r_ddof) if l_ddof == r_ddof),
             A::Var(_, l_ddof) => matches!(other, A::Var(_, r_ddof) if l_ddof == r_ddof),
+            A::First{ input: _, ignore_nulls: l_ignore_nulls} => matches!(other, A::First {input: _, ignore_nulls: r_ignore_nulls } if l_ignore_nulls == r_ignore_nulls),
+            A::Last{ input: _, ignore_nulls: l_ignore_nulls} => matches!(other, A::Last {input: _, ignore_nulls: r_ignore_nulls } if l_ignore_nulls == r_ignore_nulls),
 
             // Discriminant check done above.
             A::Median(_) |
             A::NUnique(_) |
-            A::First(_) |
-            A::Last(_) |
             A::Mean(_) |
             A::Implode(_) |
             A::Sum(_) |

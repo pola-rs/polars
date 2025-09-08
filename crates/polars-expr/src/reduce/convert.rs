@@ -46,8 +46,15 @@ pub fn into_reduction(
             IRAggExpr::Std(input, ddof) => {
                 (new_var_std_reduction(get_dt(*input)?, true, *ddof), *input)
             },
-            IRAggExpr::First(input) => (new_first_reduction(get_dt(*input)?), *input),
-            IRAggExpr::Last(input) => (new_last_reduction(get_dt(*input)?), *input),
+            // NOTE!! remember to update. We will have to implement ignore_nulls in new_first/last reduction
+            IRAggExpr::First {
+                input,
+                ignore_nulls: _,
+            } => (new_first_reduction(get_dt(*input)?), *input),
+            IRAggExpr::Last {
+                input,
+                ignore_nulls: _,
+            } => (new_last_reduction(get_dt(*input)?), *input),
             IRAggExpr::Count {
                 input,
                 include_nulls,

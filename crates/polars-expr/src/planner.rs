@@ -369,8 +369,18 @@ fn create_physical_expr_inner(
                         I::Max { .. } => GBM::Max,
                         I::Median(_) => GBM::Median,
                         I::NUnique(_) => GBM::NUnique,
-                        I::First(_) => GBM::First,
-                        I::Last(_) => GBM::Last,
+                        I::First {
+                            input: _,
+                            ignore_nulls,
+                        } => GBM::First {
+                            ignore_nulls: *ignore_nulls,
+                        },
+                        I::Last {
+                            input: _,
+                            ignore_nulls,
+                        } => GBM::Last {
+                            ignore_nulls: *ignore_nulls,
+                        },
                         I::Mean(_) => GBM::Mean,
                         I::Implode(_) => GBM::Implode,
                         I::Quantile { .. } => unreachable!(),

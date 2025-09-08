@@ -382,7 +382,7 @@ impl Wrap<&DataFrame> {
         // note that if 'group_by' is none we can be sure that the index column, the lower column and the
         // upper column remain/are sorted
 
-        let dt = unsafe { dt.clone().into_series().agg_first(&groups) };
+        let dt = unsafe { dt.clone().into_series().agg_first(&groups, false) };
         let mut dt = dt.datetime().unwrap().physical().clone();
 
         let lower =

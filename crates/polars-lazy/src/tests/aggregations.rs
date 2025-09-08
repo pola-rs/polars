@@ -52,11 +52,11 @@ fn test_agg_unique_first() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("g")])
         .agg([
-            col("v").unique().first().alias("v_first"),
+            col("v").unique().first(false).alias("v_first"),
             col("v")
                 .unique()
                 .sort(Default::default())
-                .first()
+                .first(false)
                 .alias("true_first"),
             col("v").unique().implode(),
         ])
@@ -87,7 +87,7 @@ fn test_cum_sum_agg_as_key() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("soil")
-            .neq(col("soil").shift_and_fill(lit(1), col("soil").first()))
+            .neq(col("soil").shift_and_fill(lit(1), col("soil").first(false)))
             .cum_sum(false)
             .alias("key")])
         .agg([col("depth").max().name().keep()])
@@ -241,7 +241,7 @@ fn test_binary_agg_context_0() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("groups")])
-        .agg([when(col("vals").first().neq(lit(1)))
+        .agg([when(col("vals").first(false).neq(lit(1)))
             .then(repeat(lit("a"), len()))
             .otherwise(repeat(lit("b"), len()))
             .alias("foo")])
@@ -337,7 +337,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("groups")])
-        .agg([(col("vals").first() - col("vals")).alias("vals")])
+        .agg([(col("vals").first(false) - col("vals")).alias("vals")])
         .collect()?;
 
     // 0 - [1, 2] = [0, -1]
@@ -355,7 +355,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("groups")])
-        .agg([((col("vals")) - col("vals").first()).alias("vals")])
+        .agg([((col("vals")) - col("vals").first(false)).alias("vals")])
         .collect()?;
 
     // [1, 2] - 1 = [0, 1]
@@ -379,7 +379,7 @@ fn test_binary_agg_context_3() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("cars")])
-        .agg([(col("A") - col("A").first()).last().alias("last")])
+        .agg([(col("A") - col("A").first(false)).last(false).alias("last")])
         .collect()?;
 
     let out = out.column("last")?;
