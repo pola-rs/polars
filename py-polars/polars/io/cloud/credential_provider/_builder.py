@@ -388,7 +388,7 @@ def _init_credential_provider_builder(
                 )
             )
 
-        elif _is_aws_cloud(scheme=scheme, first_scan_path=first_scan_path):
+        elif _is_aws_cloud(scheme=scheme, first_scan_path=str(first_scan_path)):
             region = None
             profile = None
             default_region = None
