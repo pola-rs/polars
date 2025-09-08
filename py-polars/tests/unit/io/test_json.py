@@ -659,3 +659,13 @@ def test_json_encode_enum_23826() -> None:
         s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
         pl.Series("c", ['{"a":"0"}'], pl.String),
     )
+
+
+@pytest.mark.parametrize(
+    "ndjson_str", ["10", "null", "true", "false", "1.5", "[]", "[1, 2]"]
+)
+def test_ndjson_non_object_error_24267(ndjson_str: str) -> None:
+    with pytest.raises(
+        ComputeError, match="NDJSON rows are required to be JSON objects, got: "
+    ):
+        pl.read_ndjson(io.StringIO(ndjson_str))
