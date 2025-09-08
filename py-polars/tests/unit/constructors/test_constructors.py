@@ -1188,6 +1188,13 @@ def test_from_dicts_missing_columns() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_from_dicts_schema_columns_do_not_match() -> None:
+    data = [{"a": 1, "b": 2}]
+    result = pl.from_dicts(data, schema=["x"])
+    expected = pl.DataFrame({"x": [None]})
+    assert_frame_equal(result, expected)
+
+
 def test_from_dicts_infer_integer_types() -> None:
     data = [
         {
