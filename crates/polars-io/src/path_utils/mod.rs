@@ -163,7 +163,7 @@ pub fn expanded_from_single_directory(addrs: &[PlPath], expanded_addrs: &[PlPath
 pub fn expand_paths(
     paths: &[PlPath],
     glob: bool,
-    #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
+    #[allow(unused_variables)] cloud_options: &mut Option<CloudOptions>,
 ) -> PolarsResult<Arc<[PlPath]>> {
     expand_paths_hive(paths, glob, cloud_options, false).map(|x| x.0)
 }
@@ -204,7 +204,7 @@ impl HiveIdxTracker<'_> {
 pub fn expand_paths_hive(
     paths: &[PlPath],
     glob: bool,
-    #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
+    #[allow(unused_variables)] cloud_options: &mut Option<CloudOptions>,
     check_directory_level: bool,
 ) -> PolarsResult<(Arc<[PlPath]>, usize)> {
     let Some(first_path) = paths.first() else {
@@ -398,13 +398,63 @@ pub fn expand_paths_hive(
             };
 
             for (path_idx, path) in paths.iter().enumerate() {
+                use std::borrow::Cow;
+
+                let mut path = Cow::Borrowed(path);
+
                 if matches!(
                     path.cloud_scheme(),
                     Some(CloudScheme::Http | CloudScheme::Https)
                 ) {
-                    out_paths.push(path.clone());
-                    hive_idx_tracker.update(0, path_idx)?;
-                    continue;
+                    let mut rewrite_aws = false;
+
+                    #[cfg(feature = "aws")]
+                    {
+                        let p = path.as_ref().as_ref();
+                        let after_host = p.strip_scheme();
+                        if let Some(bucket_end) = after_host.find(".s3.") {
+                            if let Some(region_end) = after_host.find(".amazonaws.com/") {
+                                if bucket_end < region_end
+                                    && region_end < after_host.find("/").unwrap()
+                                {
+                                    use crate::cloud::CloudConfig;
+
+                                    rewrite_aws = true;
+
+                                    let bucket = &after_host[..bucket_end];
+                                    let region = &after_host[bucket_end + 4..region_end];
+                                    let key = &after_host[region_end + 15..];
+
+                                    if let CloudConfig::Aws(configs) = cloud_options
+                                        .get_or_insert_default()
+                                        .config
+                                        .get_or_insert_with(|| {
+                                            CloudConfig::Aws(Vec::with_capacity(1))
+                                        })
+                                    {
+                                        use object_store::aws::AmazonS3ConfigKey;
+
+                                        if !matches!(
+                                            configs.last(),
+                                            Some((AmazonS3ConfigKey::Region, _))
+                                        ) {
+                                            configs.push((AmazonS3ConfigKey::Region, region.into()))
+                                        }
+                                    }
+
+                                    path = Cow::Owned(PlPath::from_string(format!(
+                                        "s3://{bucket}/{key}"
+                                    )))
+                                }
+                            }
+                        }
+                    }
+
+                    if !rewrite_aws {
+                        out_paths.push(path.into_owned());
+                        hive_idx_tracker.update(0, path_idx)?;
+                        continue;
+                    }
                 }
 
                 let glob_start_idx = get_glob_start_idx(path.to_str().as_bytes());
@@ -413,7 +463,7 @@ pub fn expand_paths_hive(
                     path.clone()
                 } else {
                     let (expand_start_idx, paths) =
-                        expand_path_cloud(path.to_str(), cloud_options)?;
+                        expand_path_cloud(path.to_str(), cloud_options.as_ref())?;
                     out_paths.extend_from_slice(&paths);
                     hive_idx_tracker.update(expand_start_idx, path_idx)?;
                     continue;
@@ -422,7 +472,7 @@ pub fn expand_paths_hive(
                 hive_idx_tracker.update(0, path_idx)?;
 
                 let iter = crate::pl_async::get_runtime()
-                    .block_in_place_on(crate::async_glob(path.to_str(), cloud_options))?;
+                    .block_in_place_on(crate::async_glob(path.to_str(), cloud_options.as_ref()))?;
 
                 if is_cloud {
                     out_paths.extend(iter.into_iter().map(PlPath::from_string));
@@ -577,7 +627,7 @@ mod tests {
 
         let path = "https://pola.rs/test.csv?token=bear";
         let paths = &[PlPath::new(path)];
-        let out = expand_paths(paths, true, None).unwrap();
+        let out = expand_paths(paths, true, &mut None).unwrap();
         assert_eq!(out.as_ref(), paths);
     }
 }
