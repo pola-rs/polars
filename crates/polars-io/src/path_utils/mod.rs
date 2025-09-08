@@ -410,6 +410,8 @@ pub fn expand_paths_hive(
 
                     #[cfg(feature = "aws")]
                     {
+                        // See https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access
+                        // Path format: https://bucket-name.s3.region-code.amazonaws.com/key-name
                         let p = path.as_ref().as_ref();
                         let after_host = p.strip_scheme();
                         if let Some(bucket_end) = after_host.find(".s3.") {
