@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import re
 import zlib
 from collections import OrderedDict
 from datetime import datetime
@@ -664,8 +665,53 @@ def test_json_encode_enum_23826() -> None:
 @pytest.mark.parametrize(
     "ndjson_str", ["10", "null", "true", "false", "1.5", "[]", "[1, 2]"]
 )
-def test_ndjson_non_object_error_24267(ndjson_str: str) -> None:
+def test_ndjson_row_not_an_object_24267(ndjson_str: str) -> None:
+    with pytest.raises(ComputeError, match="NDJSON row expected to be JSON object: "):
+        pl.read_ndjson(
+            io.StringIO(ndjson_str), ignore_errors=False, infer_schema_length=100
+        )
+
+    with pytest.raises(ComputeError, match="NDJSON row expected to be JSON object: "):
+        pl.read_ndjson(
+            io.StringIO('{"a": 10}\n' + ndjson_str),
+            ignore_errors=False,
+            infer_schema_length=1,
+        )
+
+    assert_frame_equal(
+        pl.read_ndjson(
+            io.StringIO('{"a": 10}\n' + ndjson_str),
+            infer_schema_length=1,
+            ignore_errors=True,
+        ),
+        pl.DataFrame({"a": [10, None]}),
+    )
+
+
+def test_ndjson_no_cast_int_to_float_19138() -> None:
     with pytest.raises(
-        ComputeError, match="NDJSON rows are required to be JSON objects, got: "
+        ComputeError, match=re.escape("cannot parse '2.7' (f64) as i64")
     ):
-        pl.read_ndjson(io.StringIO(ndjson_str))
+        pl.read_ndjson(
+            io.StringIO('{"a": 1}\n{"a": 2.7}\n'),
+            infer_schema_length=1,
+            ignore_errors=False,
+        )
+
+    assert_frame_equal(
+        pl.read_ndjson(
+            io.StringIO('{"a": 1}\n{"a": 2.7}\n'),
+            infer_schema_length=1,
+            ignore_errors=True,
+        ),
+        pl.DataFrame({"a": [1, None]}),
+    )
+
+    assert_frame_equal(
+        pl.read_ndjson(
+            io.StringIO('{"a": 2.7}\n{"a": 1}\n'),
+            infer_schema_length=1,
+            ignore_errors=False,
+        ),
+        pl.DataFrame({"a": [2.7, 1]}),
+    )
