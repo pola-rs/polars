@@ -634,12 +634,14 @@ impl<D: Decoder> PageDecoder<D> {
                             self.decoder
                                 .with_capacity(usize::max(num_filtered_values, MINIMUM_CHUNK_SIZE)),
                         );
-                        let chunk = self.decoder.finalize(
-                            self.dtype.clone(),
-                            self.dict.clone(),
-                            previous_target,
-                        )?;
-                        chunks.push(chunk);
+                        if previous_target.len() > 0 {
+                            let chunk = self.decoder.finalize(
+                                self.dtype.clone(),
+                                self.dict.clone(),
+                                previous_target,
+                            )?;
+                            chunks.push(chunk);
+                        }
 
                         if let Some(dict) = self.dict.as_ref() {
                             self.decoder.apply_dictionary(&mut target, dict)?;
