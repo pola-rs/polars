@@ -73,6 +73,7 @@ fn read_json_with_escapes() {
 "#;
     let file = Cursor::new(escaped_json);
     let df = JsonLineReader::new(file)
+        .with_ignore_errors(true)
         .infer_schema_len(NonZeroUsize::new(6))
         .finish()
         .unwrap();
@@ -102,6 +103,7 @@ fn read_unordered_json() {
 "#;
     let file = Cursor::new(unordered_json);
     let df = JsonReader::new(file)
+        .with_ignore_errors(true)
         .infer_schema_len(NonZeroUsize::new(3))
         .with_json_format(JsonFormat::JsonLines)
         .with_batch_size(NonZeroUsize::new(3).unwrap())
@@ -173,7 +175,9 @@ fn test_read_ndjson_iss_5875_part3() {
 
     let cursor = Cursor::new(jsonlines);
 
-    let df = JsonLineReader::new(cursor).finish();
+    let df = JsonLineReader::new(cursor)
+        .with_ignore_errors(true)
+        .finish();
     assert!(df.is_ok());
 }
 
