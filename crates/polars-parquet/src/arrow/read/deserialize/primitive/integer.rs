@@ -197,6 +197,11 @@ where
         pred_true_mask: &mut BitmapBuilder,
         dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
+        // @Performance: This should be added
+        if state.page_validity.is_some() {
+            return Ok(false);
+        }
+
         if let StateTranslation::Dictionary(values) = &state.translation {
             let dict_mask = dict_mask.unwrap();
             super::super::dictionary_encoded::predicate::decode(
@@ -208,11 +213,6 @@ where
         }
 
         if !D::CAN_TRANSMUTE || D::NEED_TO_DECODE {
-            return Ok(false);
-        }
-
-        // @Performance: This should be added
-        if state.page_validity.is_some() {
             return Ok(false);
         }
 
