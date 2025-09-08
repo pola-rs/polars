@@ -16,6 +16,7 @@ from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     from polars._typing import IntoExpr
+    from polars.datatypes import IntegerType
 
 
 def isnan(value: object) -> bool:
@@ -115,7 +116,7 @@ def test_empty() -> None:
         pl.UInt128,
     ],
 )
-def test_integer(dtype: pl.IntegerType) -> None:
+def test_integer(dtype: IntegerType) -> None:
     print(dtype)
     dtype_min = dtype.min()
     dtype_max = pl.Int128.max() if dtype == pl.UInt128 else dtype.max()
