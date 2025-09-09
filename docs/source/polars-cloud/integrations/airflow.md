@@ -1,10 +1,31 @@
 # Airflow
 
-Putting aside any hardcoded solution in a DAG (!) [`Apache Airflow`](https://airflow.apache.org/) offers a few different ways to store and use the credentials from the Polars Cloud service account:
+Putting aside any hardcoded solution in a DAG (!) [`Apache Airflow`](https://airflow.apache.org/)
+offers a few different ways to store and use the credentials from the Polars Cloud service account:
 
-1. **Secret manager** ([docs](https://airflow.apache.org/docs/apache-airflow/stable/security/secrets/secrets-backend/index.html)): is the <ins>`Airflow`-recommended way to handle secrets</ins>. It involves setting up a `Secret Backend` (many providers maintained by the community) in the `airflow.cfg` and let `Airflow` workers pull the given secrets via the `airflow.models.Variable` API as `Variable.get("<SECRET NAME>")`. Note `Airflow` will pull the secret in its own metastore; if this situation is not desirable, interacting with the cloud provider's Secret Manager (or any other vault accessible via API) can simply be performed as a task of your DAG; see relevant official docs (here is [AWS](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python.html)' as an example).
-2. **Environment variables** ([docs](https://airflow.apache.org/docs/apache-airflow/stable/howto/variable.html#storing-variables-in-environment-variables)): load your environment variables into your containers after prefixing them by `AIRFLOW_VAR_`, for instance `AIRFLOW_VAR_POLARS_CLOUD_CLIENT_ID` and `AIRFLOW_VAR_POLARS_CLOUD_CLIENT_SECRET`. They should then be available through the `airflow.models.Variable` API as `Variable.get("POLARS_CLOUD_CLIENT_ID")`.
-3. **`Airflow` `Variables`** ([docs](https://airflow.apache.org/docs/apache-airflow/stable/howto/variable.html#managing-variables)): in the `Airflow` UI > Admin > Variables tab one can add/edit key: value pairs provided to `Airflow`, which will make them accessible through the `airflow.models.Variable` API. Note these objects can also be defined using the `Airflow` CLI (if accessible): `airflow variables set POLARS_CLOUD_CLIENT_ID "<SECRET>"`.
+1. **Secret manager**
+   ([docs](https://airflow.apache.org/docs/apache-airflow/stable/security/secrets/secrets-backend/index.html)):
+   is the <ins> `Airflow`-recommended way to handle secrets</ins>. It involves setting up a
+   `Secret Backend` (many providers maintained by the community) in the `airflow.cfg` and let
+   `Airflow` workers pull the given secrets via the `airflow.models.Variable` API as
+   `Variable.get("<SECRET NAME>")`. Note `Airflow` will pull the secret in its own metastore; if
+   this situation is not desirable, interacting with the cloud provider's Secret Manager (or any
+   other vault accessible via API) can simply be performed as a task of your DAG; see relevant
+   official docs (here is
+   [AWS](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python.html)'
+   as an example).
+2. **Environment variables**
+   ([docs](https://airflow.apache.org/docs/apache-airflow/stable/howto/variable.html#storing-variables-in-environment-variables)):
+   load your environment variables into your containers after prefixing them by `AIRFLOW_VAR_`, for
+   instance `AIRFLOW_VAR_POLARS_CLOUD_CLIENT_ID` and `AIRFLOW_VAR_POLARS_CLOUD_CLIENT_SECRET`. They
+   should then be available through the `airflow.models.Variable` API as
+   `Variable.get("POLARS_CLOUD_CLIENT_ID")`.
+3. **`Airflow` `Variables`**
+   ([docs](https://airflow.apache.org/docs/apache-airflow/stable/howto/variable.html#managing-variables)):
+   in the `Airflow` UI > Admin > Variables tab one can add/edit key: value pairs provided to
+   `Airflow`, which will make them accessible through the `airflow.models.Variable` API. Note these
+   objects can also be defined using the `Airflow` CLI (if accessible):
+   `airflow variables set POLARS_CLOUD_CLIENT_ID "<SECRET>"`.
 
 Some code snippets for solutions **#1** and **#2** described above:
 
