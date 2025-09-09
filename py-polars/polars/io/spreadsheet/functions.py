@@ -313,7 +313,7 @@ def read_excel(
         Where supported, this allows for additional control over parsing. The
         specific read methods associated with each engine are:
 
-        * "calamine": `load_sheet_by_name <https://fastexcel.toucantoco.dev/fastexcel.html#ExcelReader.load_sheet_by_name>`_
+        * "calamine": `load_sheet <https://fastexcel.toucantoco.dev/fastexcel.html#ExcelReader.load_sheet>`_
           (or `load_table <https://fastexcel.toucantoco.dev/fastexcel.html#ExcelReader.load_table>`_
           if using the `table_name` parameter).
         * "openpyxl": n/a (can only provide `engine_options`)
@@ -1073,7 +1073,7 @@ def _read_spreadsheet_calamine(
         read_options["dtypes"] = parser_dtypes
 
     if fastexcel_version < (0, 11, 2):
-        ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
+        ws = parser.load_sheet(name=sheet_name, **read_options)
         df = ws.to_polars()
     else:
         if table_name:
@@ -1083,7 +1083,7 @@ def _read_spreadsheet_calamine(
                 raise RuntimeError(msg)
             df = xl_table.to_polars()
         else:
-            ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)
+            ws_arrow = parser.load_sheet(sheet_name, **read_options)
             df = from_arrow(ws_arrow)
 
         if read_options.get("header_row", False) is None and not read_options.get(
