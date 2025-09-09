@@ -111,8 +111,8 @@ Want to contribute? Read our [contributing guide](https://docs.pola.rs/developme
 
 ## Managed/Distributed Polars
 
-Do you want a managed solution or scale out to distributed clusters? Take a look at our
-[offering](https://cloud.pola.rs/)
+Do you want a managed solution or scale out to distributed clusters? Consider our
+[offering](https://cloud.pola.rs/) and help the project!
 
 ## Python: compile Polars from source
 
