@@ -42,6 +42,7 @@ pub struct CsvReadOptions {
     pub raise_if_empty: bool,
     pub ignore_errors: bool,
     pub fields_to_cast: Vec<Field>,
+    pub include_file_paths: Option<PlSmallStr>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -88,6 +89,7 @@ impl Default for CsvReadOptions {
             raise_if_empty: true,
             ignore_errors: false,
             fields_to_cast: vec![],
+            include_file_paths: None,
         }
     }
 }
@@ -244,6 +246,12 @@ impl CsvReadOptions {
     /// Continue with next batch when a ParserError is encountered.
     pub fn with_ignore_errors(mut self, ignore_errors: bool) -> Self {
         self.ignore_errors = ignore_errors;
+        self
+    }
+
+    /// Include the file paths in the DataFrame.
+    pub fn with_include_file_paths(mut self, include_file_paths: Option<PlSmallStr>) -> Self {
+        self.include_file_paths = include_file_paths;
         self
     }
 

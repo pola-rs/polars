@@ -173,6 +173,33 @@ where
         let csv_reader = self.core_reader()?;
         let mut df = csv_reader.finish()?;
 
+        // Add the include_file_paths column if specified
+        if let Some(col) = &self.options.include_file_paths {
+            if df.get_column_index(col).is_some() {
+                polars_bail!(
+                    Duplicate: r#"column name specified by include_file_paths "{}" conflicts with column name from csv file"#,
+                    col
+                );
+            }
+            unsafe {
+                df.with_column_unchecked(Column::new_scalar(
+                    col.clone(),
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(
+                            self.options
+                                .path
+                                .unwrap()
+                                .to_string_lossy()
+                                .into_owned()
+                                .into(),
+                        ),
+                    ),
+                    df.height(),
+                ));
+            }
+        }
+
         // Important that this rechunk is never done in parallel.
         // As that leads to great memory overhead.
         if rechunk && df.first_col_n_chunks() > 1 {
