@@ -90,7 +90,7 @@ where
         return EUnitVec::new_single(first_fut);
     };
 
-    let mut futures = Vec::with_capacity(2 + futures_iter.size_hint().0);
+    let mut futures = EUnitVec::with_capacity(2 + futures_iter.size_hint().0);
 
     // Note:
     // * The local future must come first to ensure we don't block polling it.
@@ -98,5 +98,5 @@ where
     futures.extend([first_fut, LocalOrSpawnedFuture::spawn(second_fut)]);
     futures.extend(futures_iter.map(LocalOrSpawnedFuture::spawn));
 
-    EUnitVec::from(futures)
+    futures
 }
