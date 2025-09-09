@@ -205,9 +205,12 @@ pub fn page_iter_to_array(
             )?
             .collect(filter)?;
 
-            let out: StructArray = convert_interval_bytes_to_month_day_nano_struct(array);
+            let out = array
+                .into_iter()
+                .map(|arr| convert_interval_bytes_to_month_day_nano_struct(arr).boxed())
+                .collect();
 
-            (nested, out.boxed(), ptm)
+            (nested, out, ptm)
         },
         (PhysicalType::FixedLenByteArray(16), Int128) => {
             let n = 16;
