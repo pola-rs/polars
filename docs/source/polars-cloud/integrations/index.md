@@ -1,5 +1,7 @@
 # Orchestrate your queries
 
+Until Polars Cloud provides an integrated orchestration feature, we are left to use third party tools.
+
 In these sections we imagine a simple scenario: two datasets that need to be ingested (with
 cleanup/transformations) and joined together as part of a report. Most of the `Polars` code will be
 omitted for clarity, and to focus on what is relevant here: the overall data flow including Polars
