@@ -222,6 +222,32 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
             })?;
             out.into_series()
         },
+        Int8 => {
+            let out: Int64Chunked = ca.try_apply_amortized_generic(|s| {
+                s.map(|s| {
+                    let scalar = s.as_ref().product()?;
+                    match scalar.value() {
+                        AnyValue::Int64(v) => Ok(*v),
+                        _ => unreachable!(),
+                    }
+                })
+                .transpose()
+            })?;
+            out.into_series()
+        },
+        Int16 => {
+            let out: Int64Chunked = ca.try_apply_amortized_generic(|s| {
+                s.map(|s| {
+                    let scalar = s.as_ref().product()?;
+                    match scalar.value() {
+                        AnyValue::Int64(v) => Ok(*v),
+                        _ => unreachable!(),
+                    }
+                })
+                .transpose()
+            })?;
+            out.into_series()
+        },
         Int32 => {
             let out: Int32Chunked = ca.try_apply_amortized_generic(|s| {
                 s.map(|s| {

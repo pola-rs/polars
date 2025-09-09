@@ -963,7 +963,7 @@ def test_list_sum_bool_schema() -> None:
 
 def test_list_product_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
-    assert q.select(pl.col("x").list.product()).collect_schema()["x"] == pl.UInt32
+    assert q.select(pl.col("x").list.product()).collect_schema()["x"] == pl.Int64
 
 
 def test_list_concat_struct_19279() -> None:

@@ -367,24 +367,37 @@ def test_list_product_and_dtypes() -> None:
         (pl.Int16, pl.Int64),
         (pl.Int32, pl.Int64),
         (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
         (pl.UInt8, pl.Int64),
         (pl.UInt16, pl.Int64),
         (pl.UInt32, pl.Int64),
         (pl.UInt64, pl.UInt64),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
     ]:
-        df = pl.DataFrame(
+        df1 = pl.DataFrame(
             {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
             schema={"a": pl.List(dt_in)},
         )
 
-        product = df.explode("a").product()
+        product = df1.explode("a").product()
         assert product.dtypes == [dt_out]
         assert product.item() == 17280
-        assert df.select(pl.col("a").list.product()).dtypes == [dt_out]
+        assert df1.select(pl.col("a").list.product()).dtypes == [dt_out]
+        assert df1.select(pl.col("a").list.product()).to_dict(as_series=False) == {
+            "a": [1, 6, 24, 120]
+        }
 
-    assert df.select(pl.col("a").list.product()).to_dict(as_series=False) == {
-        "a": [1, 6, 24, 120]
-    }
+        # include nulls in the list
+        df2 = pl.DataFrame(
+            {"a": [[2, 3, 4, None]]},
+            schema={"a": pl.List(dt_in)},
+        )
+
+        product = df2.explode("a").product()
+        assert product.dtypes == [dt_out]
+        assert product.item() == 24
+        assert df2.select(pl.col("a").list.product()).dtypes == [dt_out]
 
     # include nulls
     assert pl.DataFrame(
