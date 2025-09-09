@@ -397,12 +397,22 @@ pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     })
 }
 
-fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
+fn parse_lines(
+    bytes: &[u8],
+    buffers: &mut PlIndexMap<BufferKey, Buffer>,
+    ignore_errors: bool,
+) -> PolarsResult<()> {
     let mut scratch = Scratch::default();
 
     let iter = json_lines(bytes);
     for bytes in iter {
-        parse_impl(bytes, buffers, &mut scratch)?;
+        match parse_impl(bytes, buffers, &mut scratch) {
+            Ok(_) => {},
+            Err(e) if !ignore_errors => {
+                return Err(e);
+            },
+            Err(_) => {},
+        }
     }
     Ok(())
 }
@@ -416,7 +426,7 @@ pub fn parse_ndjson(
     let capacity = n_rows_hint.unwrap_or_else(|| estimate_n_lines_in_chunk(bytes));
 
     let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
-    parse_lines(bytes, &mut buffers)?;
+    parse_lines(bytes, &mut buffers, ignore_errors)?;
 
     DataFrame::new(
         buffers

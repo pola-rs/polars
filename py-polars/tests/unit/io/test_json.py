@@ -201,6 +201,17 @@ def test_ndjson_nested_null() -> None:
     assert df.to_dict(as_series=False) == {"foo": [{"bar": [{}]}]}
 
 
+def test_ndjson_with_ignore_error() -> None:
+    json_payload = """{"Column1": "Value0"}
+        {"Column1":"Value1"}{}
+        {"Column1": "Value2"}"""
+    df = pl.read_ndjson(
+        io.StringIO(json_payload), infer_schema_length=1, ignore_errors=True
+    )
+    expected = pl.DataFrame({"Column1": ["Value0", "Value2"]})
+    assert_frame_equal(df, expected)
+
+
 def test_ndjson_nested_string_int() -> None:
     ndjson = """{"Accumulables":[{"Value":32395888},{"Value":"539454"}]}"""
     assert pl.read_ndjson(io.StringIO(ndjson)).to_dict(as_series=False) == {
