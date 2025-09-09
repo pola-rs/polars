@@ -694,7 +694,7 @@ def test_ndjson_row_not_an_object_24267(ndjson_str: str) -> None:
 
 def test_ndjson_no_cast_int_to_float_19138() -> None:
     with pytest.raises(
-        ComputeError, match=re.escape("cannot parse '2.7' (f64) as i64")
+        ComputeError, match=re.escape("cannot parse '2.7' (f64) as Int64")
     ):
         pl.read_ndjson(
             io.StringIO('{"a": 1}\n{"a": 2.7}\n'),

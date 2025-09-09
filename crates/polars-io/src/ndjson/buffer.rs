@@ -173,7 +173,7 @@ fn deserialize_numeric<T: PolarsNumericType>(
         Some(v) => Ok(Some(v)),
         None if ignore_errors => Ok(None),
         None => Err(
-            polars_err!(ComputeError: "cannot parse '{}' ({}) as {}", value, value.value_type(), T::get_static_dtype()),
+            polars_err!(ComputeError: "cannot parse '{}' ({}) as {:?}", value, value.value_type(), T::get_static_dtype()),
         ),
     }
 }
