@@ -228,6 +228,12 @@ impl<T> Deref for UnitVec<T> {
     }
 }
 
+impl<T> std::ops::DerefMut for UnitVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_slice()
+    }
+}
+
 impl<T> AsRef<[T]> for UnitVec<T> {
     fn as_ref(&self) -> &[T] {
         unsafe { std::slice::from_raw_parts(self.data_ptr(), self.len as usize) }
@@ -317,6 +323,12 @@ impl<T> From<Vec<T>> for UnitVec<T> {
     }
 }
 
+impl<T, const N: usize> From<[T; N]> for UnitVec<T> {
+    fn from(value: [T; N]) -> Self {
+        value.into_iter().collect()
+    }
+}
+
 impl<T> From<UnitVec<T>> for Vec<T> {
     fn from(mut value: UnitVec<T>) -> Self {
         if value.is_inline() {
@@ -352,26 +364,26 @@ impl<T: Clone> From<&[T]> for UnitVec<T> {
 
 #[macro_export]
 macro_rules! unitvec {
-    () => (
+    () => {{
         $crate::idx_vec::UnitVec::new()
-    );
-    ($elem:expr; $n:expr) => (
+    }};
+    ($elem:expr; $n:expr) => {{
         let mut new = $crate::idx_vec::UnitVec::new();
         for _ in 0..$n {
             new.push($elem)
         }
         new
-    );
-    ($elem:expr) => (
-        {let mut new = $crate::idx_vec::UnitVec::new();
+    }};
+    ($elem:expr) => {{
+        let mut new = $crate::idx_vec::UnitVec::new();
         let v = $elem;
         // SAFETY: first element always fits.
         unsafe { new.push_unchecked(v) };
-        new}
-    );
-    ($($x:expr),+ $(,)?) => (
-            vec![$($x),+].into()
-    );
+        new
+    }};
+    ($($x:expr),+ $(,)?) => {{
+        vec![$($x),+].into()
+    }};
 }
 
 mod tests {
@@ -416,5 +428,10 @@ mod tests {
             let v = unitvec![n];
             assert_eq!(v, v.clone());
         }
+    }
+
+    #[test]
+    fn test_unitvec_repeat_n() {
+        assert_eq!(unitvec![5; 3].as_slice(), &[5, 5, 5])
     }
 }
