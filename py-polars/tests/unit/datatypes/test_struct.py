@@ -1346,3 +1346,14 @@ def test_struct_nulls_in_equality_23527() -> None:
     )
     expected = pl.DataFrame({"a": [False, True, True, False, False, True]})
     assert_frame_equal(out, expected)
+
+
+def test_struct_null_propagation_23955() -> None:
+    df = pl.DataFrame({"a": [{"b": None}, None]})
+    df = df.with_columns(
+        c=pl.col("a").struct.with_fields(
+            pl.field("b").fill_null(pl.lit(10, dtype=pl.Int32))
+        )
+    )
+    df = df.with_columns(d=pl.col("c").struct.field("b")).select(pl.col("d"))
+    assert_frame_equal(df, pl.DataFrame({"d": [10, None]}, schema={"d": pl.Int32}))
