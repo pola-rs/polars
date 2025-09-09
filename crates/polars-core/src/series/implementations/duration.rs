@@ -537,6 +537,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         ))
     }
 
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
