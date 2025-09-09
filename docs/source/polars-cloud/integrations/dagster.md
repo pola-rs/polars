@@ -1,6 +1,6 @@
 # Dagster
 
-Putting aside any hardcoded solution in the code itself (!) [`Dagster`](https://dagster.io/)
+Putting aside any hardcoded solution in the code itself (!) [Dagster](https://dagster.io/)
 recommends to define secrets as `Resource`
 ([docs](https://docs.dagster.io/getting-started/concepts#resource)). To define such an object and
 store the Polars Cloud service account credentials, the solution boils down to either:
@@ -9,8 +9,8 @@ store the Polars Cloud service account credentials, the solution boils down to e
    of your secret manager; here is
    [AWS](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python.html)'
    as an example).
-2. **Environment variables**: define the values as environment variables in your `Dagster`
-   environment (containers or else), and pick them up from your code or `Dagster` configuration (via
+2. **Environment variables**: define the values as environment variables in your Dagster
+   environment (containers or else), and pick them up from your code or Dagster configuration (via
    the `dagster.yaml` or `workspace.yaml`).
 
 Some code snippets for the solutions described above:
@@ -21,8 +21,8 @@ Some code snippets for the solutions described above:
 def service_account_from_aws(_):
     client = boto3.client("secretsmanager")
     return {
-        "client_id": client.get_secret_value(SecretId="<SECRET NAME>")["SecretString"],
-        "client_secret": client.get_secret_value(SecretId="<SECRET NAME>")["SecretString"],
+        "client_id": client.get_secret_value(SecretId="<SECRET>").get("SecretString"),
+        "client_secret": client.get_secret_value(SecretId="<SECRET>").get("SecretString"),
     }
 ```
 
@@ -36,7 +36,7 @@ def service_account_from_env(_):
     }
 ```
 
-Below a few lines of _pseudo-code_ to define a `Dagster` flow:
+Below a few lines of _pseudo-code_ to define a Dagster flow:
 
 ```python
 import os
@@ -69,7 +69,7 @@ def join_datasets():
 @job(resource_defs={"sa": service_account_from_aws})
 def report():
     # authenticate to polars cloud with the secrets created above
-    authenticate(client_id=sa["client_id"], client_secret=sa["client_secret"])
+    authenticate(**sa)
 
     prepare_dataset_1()
     prepare_dataset_2()

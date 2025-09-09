@@ -1,17 +1,17 @@
 # Prefect
 
-Putting aside any hardcoded solution in the code (!) [`Prefect`](https://www.prefect.io/) offers a
+Putting aside any hardcoded solution in the code (!) [Prefect](https://www.prefect.io/) offers a
 few different ways to store and use the credentials from the Polars Cloud service account:
 
 1. **Secret manager** (<ins>recommended</ins>): pull the secret secret manager of your choice and
    use it in your workflow (see official docs; here is
    [AWS](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python.html)'
-   as an example). One can also use the `AWS`-specific `Secret` `Block` (see below;
+   as an example). One can also use the AWS-specific `Secret` `Block` (see below;
    [docs](https://docs.prefect.io/v3/how-to-guides/configuration/store-secrets)) to interact with
    the AWS Secret Manager.
 2. **Environment variables**: load your environment variables into your running instance (container
    or else).
-3. **`Block` system** ([docs](https://docs.prefect.io/v3/concepts/blocks)): `Prefect` defined a
+3. **`Block` system** ([docs](https://docs.prefect.io/v3/concepts/blocks)): Prefect defined a
    `Block` framework that can be used via the CLI
    (`prefect block register -m prefect.blocks.system`) or directly in the code
    (`from prefect.blocks.system import Secret`). A secret can be created via CLI (for instance):
@@ -25,8 +25,8 @@ Some code snippets for solutions **#1** and **#2** described above:
 def service_account_from_aws(_):
     client = boto3.client("secretsmanager")
     return {
-        "client_id": client.get_secret_value(SecretId="<SECRET NAME>")["SecretString"],
-        "client_secret": client.get_secret_value(SecretId="<SECRET NAME>")["SecretString"],
+        "client_id": client.get_secret_value(SecretId="<SECRET>").get("SecretString"),
+        "client_secret": client.get_secret_value(SecretId="<SECRET>").get("SecretString"),
     }
 ```
 
@@ -40,7 +40,7 @@ def service_account_from_env(_):
     }
 ```
 
-Below a few lines of _pseudo-code_ to define a `Prefect` flow:
+Below a few lines of _pseudo-code_ to define a Prefect flow:
 
 ```python
 import os

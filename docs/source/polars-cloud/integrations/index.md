@@ -8,9 +8,9 @@ Cloud, and secret management; the only secret being the
 
 The most commonly used data orchestrators are presented in alphabetical order:
 
-- [`Airflow`](/polars-cloud/integrations/airflow)
-- [`Dagster`](/polars-cloud/integrations/dagster)
-- [`Prefect`](/polars-cloud/integrations/prefect)
+- [Airflow](/polars-cloud/integrations/airflow)
+- [Dagster](/polars-cloud/integrations/dagster)
+- [Prefect](/polars-cloud/integrations/prefect)
 
 In a similar manner, we suggest a way to orchestrate Polars Cloud queries using AWS-native
 infrastructure:

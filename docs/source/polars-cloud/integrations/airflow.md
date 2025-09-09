@@ -1,14 +1,14 @@
 # Airflow
 
-Putting aside any hardcoded solution in a DAG (!) [`Apache Airflow`](https://airflow.apache.org/)
+Putting aside any hardcoded solution in a DAG (!) [Apache Airflow](https://airflow.apache.org/)
 offers a few different ways to store and use the credentials from the Polars Cloud service account:
 
 1. **Secret manager**
    ([docs](https://airflow.apache.org/docs/apache-airflow/stable/security/secrets/secrets-backend/index.html)):
-   is the <ins> `Airflow`-recommended way to handle secrets</ins>. It involves setting up a
+   is the <ins> Airflow-recommended way to handle secrets</ins>. It involves setting up a
    `Secret Backend` (many providers maintained by the community) in the `airflow.cfg` and let
-   `Airflow` workers pull the given secrets via the `airflow.models.Variable` API as
-   `Variable.get("<SECRET NAME>")`. Note `Airflow` will pull the secret in its own metastore; if
+   Airflow workers pull the given secrets via the `airflow.models.Variable` API as
+   `Variable.get("<SECRET NAME>")`. Note Airflow will pull the secret in its own metastore; if
    this situation is not desirable, interacting with the cloud provider's Secret Manager (or any
    other vault accessible via API) can simply be performed as a task of your DAG; see relevant
    official docs (here is
@@ -20,11 +20,11 @@ offers a few different ways to store and use the credentials from the Polars Clo
    instance `AIRFLOW_VAR_POLARS_CLOUD_CLIENT_ID` and `AIRFLOW_VAR_POLARS_CLOUD_CLIENT_SECRET`. They
    should then be available through the `airflow.models.Variable` API as
    `Variable.get("POLARS_CLOUD_CLIENT_ID")`.
-3. **`Airflow` `Variables`**
+3. **Airflow `Variables`**
    ([docs](https://airflow.apache.org/docs/apache-airflow/stable/howto/variable.html#managing-variables)):
-   in the `Airflow` UI > Admin > Variables tab one can add/edit key: value pairs provided to
-   `Airflow`, which will make them accessible through the `airflow.models.Variable` API. Note these
-   objects can also be defined using the `Airflow` CLI (if accessible):
+   in the Airflow UI > Admin > Variables tab one can add/edit key: value pairs provided to
+   Airflow, which will make them accessible through the `airflow.models.Variable` API. Note these
+   objects can also be defined using the Airflow CLI (if accessible):
    `airflow variables set POLARS_CLOUD_CLIENT_ID "<SECRET>"`.
 
 Some code snippets for solutions **#1** and **#2** described above:
@@ -34,8 +34,14 @@ Some code snippets for solutions **#1** and **#2** described above:
 @resource
 def service_account_from_aws(_):
     client = boto3.client("secretsmanager")
-    Variable.set("client_id", client.get_secret_value(SecretId="<SECRET NAME>")["SecretString"])
-    Variable.set("client_secret", client.get_secret_value(SecretId="<SECRET NAME>")["SecretString"])
+    Variable.set(
+        "client_id",
+        client.get_secret_value(SecretId="<SECRET NAME>").get("SecretString"),
+    )
+    Variable.set(
+        "client_secret",
+        client.get_secret_value(SecretId="<SECRET NAME>").get("SecretString"),
+    )
 ```
 
 ```python
@@ -46,7 +52,7 @@ def service_account_from_env(_):
     Variable.set("client_secret", os.getenv("POLARS_CLOUD_CLIENT_SECRET"))
 ```
 
-Below a few lines of _pseudo-code_ using `Airflow`' `TaskFlow` API:
+Below a few lines of _pseudo-code_ using Airflow' `TaskFlow` API:
 
 ```python
 import polars as pl
@@ -80,7 +86,10 @@ def taskflow():
         pl.scan_parquet(...).remote().sink_parquet(...)
 
     # authenticate to polars cloud with the secrets created above
-    authenticate(client_id=Variable.get("secret_id"), client_secret=Variable.get("secret_secret"))
+    authenticate(
+        client_id=Variable.get("secret_id"),
+        client_secret=Variable.get("secret_secret"),
+    )
 
     prepare_dataset_1()
     prepare_dataset_2()
