@@ -211,6 +211,7 @@ impl ApplyExpr {
         ac.with_values_and_args(c, aggregated, Some(&self.expr), true, self.is_scalar())?;
         Ok(ac)
     }
+
     fn apply_multiple_group_aware<'a>(
         &self,
         mut acs: Vec<AggregationContext<'a>>,
@@ -441,7 +442,11 @@ fn apply_multiple_elementwise<'a>(
 
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
-            ac.with_values_and_args(c, aggregated, None, true, returns_scalar)?;
+            let all_literal = acs
+                .iter()
+                .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
+            // TODO - add condition that for F(lit) => lit, F must be pure (deterministic & no side-effects)
+            ac.with_values_and_args(c, aggregated, None, all_literal, returns_scalar)?;
             Ok(ac)
         },
     }

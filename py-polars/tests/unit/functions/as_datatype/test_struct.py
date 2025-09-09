@@ -293,3 +293,24 @@ def test_struct_nested_naming_in_group_by_23701() -> None:
     agg_df = df.group_by("ID").agg(expr_outer_struct)
 
     assert agg_df.collect_schema() == agg_df.collect().schema
+
+
+agg_expressions = [
+    pl.lit("blah"),  # LiteralScalar
+    pl.col("s"),  # NotAggregated
+    pl.arange(pl.len()),  # AggregatedList
+    pl.col("s").first(),  # AggregatedScalar
+]
+
+
+@pytest.mark.parametrize("lhs", agg_expressions)
+@pytest.mark.parametrize("rhs", agg_expressions)
+@pytest.mark.parametrize("n_rows", [0, 1, 2, 3])
+def test_struct_schema_in_group_by_apply_expr_24168(
+    lhs: pl.Expr, rhs: pl.Expr, n_rows: int
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "s": ["foo11", "foo12", "foo21"]})
+    lf = df.head(n_rows).lazy()
+    expr = pl.struct(lhs.alias("lhs"), rhs.alias("rhs")).alias("expr")
+    q = lf.group_by("g").agg(expr)
+    assert q.collect_schema() == q.collect().schema
