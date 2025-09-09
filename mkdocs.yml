@@ -85,8 +85,8 @@ nav:
                 - Migrating:
                       - user-guide/migration/pandas.md
                       - user-guide/migration/spark.md
-                - user-guide/ecosystem.md
                 - Misc:
+                      - user-guide/ecosystem.md
                       - user-guide/misc/multiprocessing.md
                       - user-guide/misc/visualization.md
                       - user-guide/misc/styling.md
@@ -105,48 +105,52 @@ nav:
                       - development/contributing/code-style.md
                 - development/versioning.md
           - Releases:
-                - releases/changelog.md
                 - Upgrade guides:
                       - releases/upgrade/index.md
                       - releases/upgrade/1.md
                       - releases/upgrade/0.20.md
                       - releases/upgrade/0.19.md
+                - releases/changelog.md
     - Polars Cloud:
-          - polars-cloud/index.md
-          - polars-cloud/quickstart.md
-          - polars-cloud/connect-cloud.md
-
-          - Queries:
-                - polars-cloud/run/remote-query.md
-                - polars-cloud/run/distributed-engine.md
-          - Context:
-                - polars-cloud/context/compute-context.md
-                - polars-cloud/context/reconnect.md
-                - polars-cloud/context/plugins.md
-                - polars-cloud/context/proxy-mode.md
-          - Organizations:
-                - polars-cloud/organization/organizations.md
-                - polars-cloud/organization/start-trial.md
-                - polars-cloud/organization/billing.md
-                - polars-cloud/organization/members.md
-          - Workspaces:
-                - polars-cloud/workspace/settings.md
-                - polars-cloud/workspace/team.md
-          - Authentication:
-                - polars-cloud/explain/authentication.md
-                - polars-cloud/explain/service-accounts.md
-          - Providers:
-                - AWS:
-                      - polars-cloud/providers/aws/infra.md
-                      - polars-cloud/providers/aws/permissions.md
-          # - Integrations:
-          # - polars-cloud/integrations/airflow.md
-          - Misc:
-                - polars-cloud/cli.md
-                - polars-cloud/public-datasets.md
-                - polars-cloud/faq.md
-                - API Reference: https://docs.cloud.pola.rs
-                - polars-cloud/release-notes.md
+          - User guide:
+                - polars-cloud/index.md
+                - polars-cloud/quickstart.md
+                - Connect to your cloud: polars-cloud/connect-cloud.md
+                - Queries:
+                      - polars-cloud/run/remote-query.md
+                      - polars-cloud/run/distributed-engine.md
+                      - polars-cloud/run/query-progress.md
+                - Context:
+                      - polars-cloud/context/compute-context.md
+                      - polars-cloud/context/reconnect.md
+                      - polars-cloud/context/plugins.md
+                      - polars-cloud/context/proxy-mode.md
+                - Organizations:
+                      - polars-cloud/organization/organizations.md
+                      - polars-cloud/organization/start-trial.md
+                      - polars-cloud/organization/billing.md
+                      - polars-cloud/organization/members.md
+                - Workspaces:
+                      - polars-cloud/workspace/settings.md
+                      - polars-cloud/workspace/team.md
+                - Authentication:
+                      - polars-cloud/explain/authentication.md
+                      - polars-cloud/explain/service-accounts.md
+                - Providers:
+                      - AWS:
+                            - polars-cloud/providers/aws/infra.md
+                            - polars-cloud/providers/aws/permissions.md
+                - Integrations:
+                      - polars-cloud/integrations/lambda.md
+                      - polars-cloud/integrations/orchestrators.md
+                - Misc:
+                      - polars-cloud/cli.md
+                      - polars-cloud/public-datasets.md
+                      - polars-cloud/faq.md
+                      - API Reference: https://docs.cloud.pola.rs
+                      - polars-cloud/release-notes.md
+          - API:
+                - Reference guide: https://docs.cloud.pola.rs/
 not_in_nav: |
     /_build/
 validation:
