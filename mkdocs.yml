@@ -112,14 +112,21 @@ nav:
                       - releases/upgrade/0.19.md
                 - releases/changelog.md
     - Polars Cloud:
-          - User guide:
-                - polars-cloud/index.md
-                - polars-cloud/quickstart.md
-                - Connect to your cloud: polars-cloud/connect-cloud.md
-                - Queries:
-                      - polars-cloud/run/remote-query.md
-                      - polars-cloud/run/distributed-engine.md
-                      - polars-cloud/run/query-progress.md
+          - polars-cloud/index.md
+          - polars-cloud/quickstart.md
+          - polars-cloud/connect-cloud.md
+          - Queries:
+                - polars-cloud/run/remote-query.md
+                - polars-cloud/run/distributed-engine.md
+                - polars-cloud/run/query-progress.md
+          - Integrations:
+                - Orchestration:
+                      - polars-cloud/integrations/index.md
+                      - polars-cloud/integrations/airflow.md
+                      - polars-cloud/integrations/dagster.md
+                      - polars-cloud/integrations/prefect.md
+                      - polars-cloud/integrations/lambda.md
+          - Concepts:
                 - Context:
                       - polars-cloud/context/compute-context.md
                       - polars-cloud/context/reconnect.md
@@ -140,9 +147,6 @@ nav:
                       - AWS:
                             - polars-cloud/providers/aws/infra.md
                             - polars-cloud/providers/aws/permissions.md
-                - Integrations:
-                      - polars-cloud/integrations/lambda.md
-                      - polars-cloud/integrations/orchestrators.md
                 - Misc:
                       - polars-cloud/cli.md
                       - polars-cloud/public-datasets.md
