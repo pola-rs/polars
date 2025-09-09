@@ -1073,7 +1073,7 @@ def _read_spreadsheet_calamine(
         read_options["dtypes"] = parser_dtypes
 
     if fastexcel_version < (0, 11, 2):
-        ws = parser.load_sheet(name=sheet_name, **read_options)
+        ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
         df = ws.to_polars()
     else:
         if table_name:
