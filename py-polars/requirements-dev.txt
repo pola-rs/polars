@@ -15,7 +15,7 @@ pip
 # DEPENDENCIES
 # ------------
 
-polars-cloud
+# polars-cloud # TODO neither sdist nor free-thread wheel is available
 # Interop
 numpy
 numba >= 0.54; python_version < '3.14'  # Numba can lag Python releases
