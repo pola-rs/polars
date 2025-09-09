@@ -15,6 +15,7 @@ pub mod cell;
 pub mod chunks;
 pub mod clmul;
 mod config;
+pub use config::check_allow_importing_interval_as_struct;
 pub mod cpuid;
 pub mod enum_unit_vec;
 pub mod error;
