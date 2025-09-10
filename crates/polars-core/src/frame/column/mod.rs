@@ -1596,7 +1596,7 @@ impl Column {
             },
         }
     }
-    pub fn mean_reduce(&self) -> Scalar {
+    pub fn mean_reduce(&self) -> PolarsResult<Scalar> {
         match self {
             Column::Series(s) => s.mean_reduce(),
             Column::Partitioned(s) => s.as_materialized_series().mean_reduce(),

@@ -933,7 +933,7 @@ impl Series {
         self.slice(-(len as i64), len)
     }
 
-    pub fn mean_reduce(&self) -> Scalar {
+    pub fn mean_reduce(&self) -> PolarsResult<Scalar> {
         crate::scalar::reduce::mean_reduce(self.mean(), self.dtype().clone())
     }
 

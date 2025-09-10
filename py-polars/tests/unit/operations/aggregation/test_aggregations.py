@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 import pytest
@@ -815,3 +815,81 @@ def test_agg_with_slice_then_cast_23682(
             [{"a": 123, "b": [12]}], schema={"a": pl.Int64, "b": pl.List(pl.UInt8)}
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("op", "agg"),
+    [
+        ("sum", lambda df: df.sum()),
+        ("min", lambda df: df.min()),
+        ("max", lambda df: df.max()),
+        ("mean", lambda df: df.mean()),
+        ("count", lambda df: df.count()),
+        ("std", lambda df: df.std()),
+        ("var", lambda df: df.var()),
+        ("median", lambda df: df.median()),
+        ("quantile", lambda df: df.quantile(0.5)),
+        ("first", lambda df: df.first()),
+        ("last", lambda df: df.last()),
+        ("n_unique", lambda df: df.n_unique()),
+        ("any", lambda df: df.cast(pl.Boolean).any()),
+        ("all", lambda df: df.cast(pl.Boolean).all()),
+        ("mode", lambda df: df.mode()),
+        ("cum_sum", lambda df: df.cum_sum()),
+    ],
+)
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [[10]]}, schema={"a": pl.Array(shape=(1,), inner=pl.Int32)}),
+        pl.DataFrame({"a": [[1]]}, schema={"a": pl.Struct(fields={"a": pl.Int32})}),
+        pl.DataFrame({"a": [True]}, schema={"a": pl.Boolean}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Categorical}),
+        pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Int32}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Float64}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
+        pl.DataFrame({"a": [None]}, schema={"a": pl.Null}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Decimal()}),
+        pl.DataFrame({"a": [datetime.now()]}, schema={"a": pl.Datetime}),
+        pl.DataFrame({"a": [date.today()]}, schema={"a": pl.Date}),
+        pl.DataFrame({"a": [timedelta(seconds=10)]}, schema={"a": pl.Duration}),
+    ],
+)
+def test_agg_invalid_same_engines_behavior(
+    op: str, agg: Callable[[pl.DataFrame], pl.DataFrame], df: pl.DataFrame
+) -> None:
+    # If the in-memory engine produces a good result, then the streaming engine
+    # should also produce a good result, and then it should match the in-memory result.
+
+    inmemory_result, inmemory_error = None, None
+    streaming_result, streaming_error = None, None
+
+    try:
+        inmemory_result = df.select(agg(pl.all()))
+    except pl.exceptions.PolarsError as e:
+        inmemory_error = e
+
+    try:
+        streaming_result = df.lazy().select(agg(pl.all())).collect(engine="streaming")
+    except pl.exceptions.PolarsError as e:
+        streaming_error = e
+
+    print(inmemory_error, streaming_error)
+    print("inmemory:", inmemory_result)
+    print("streaming:", streaming_result)
+
+    assert (streaming_error is None) == (inmemory_error is None), (
+        f"mismatch in errors for: {streaming_error} != {inmemory_error}"
+    )
+    if inmemory_error:
+        assert streaming_error, (
+            f"streaming engine did not error (expected in-memory error: {inmemory_error})"
+        )
+        assert streaming_error.args == inmemory_error.args, (
+            f"mismatch in errors: {streaming_error} != {inmemory_error}"
+        )
+
+    if not inmemory_error:
+        assert_frame_equal(streaming_result, inmemory_result)

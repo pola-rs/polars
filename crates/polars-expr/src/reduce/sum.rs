@@ -40,10 +40,10 @@ fn out_dtype(in_dtype: &DataType) -> DataType {
     }
 }
 
-pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
+pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
     use VecGroupedReduction as VGR;
-    match dtype {
+    Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolSumReducer)),
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
@@ -53,10 +53,9 @@ pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
         Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
-        // For compatibility with the current engine, should probably be an error.
-        String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),
-        _ => unimplemented!("{dtype:?} is not supported by sum reduction"),
-    }
+        String | Binary | Categorical(..) => Box::new(super::NullGroupedReduction::new(dtype)),
+        _ => polars_bail!(InvalidOperation: "`sum` operation not supported for dtype `{dtype}`"),
+    })
 }
 
 struct NumSumReducer<T>(PhantomData<T>);

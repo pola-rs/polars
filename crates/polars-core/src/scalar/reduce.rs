@@ -1,11 +1,9 @@
-use crate::datatypes::AnyValue;
 use crate::datatypes::time_unit::TimeUnit;
 #[cfg(feature = "dtype-date")]
-use crate::prelude::US_IN_DAY;
-use crate::prelude::{DataType, Scalar};
+use crate::prelude::*;
 
-pub fn mean_reduce(value: Option<f64>, dtype: DataType) -> Scalar {
-    match dtype {
+pub fn mean_reduce(value: Option<f64>, dtype: DataType) -> PolarsResult<Scalar> {
+    Ok(match dtype {
         DataType::Float32 => {
             let val = value.map(|m| m as f32);
             Scalar::new(dtype, val.into())
@@ -33,6 +31,6 @@ pub fn mean_reduce(value: Option<f64>, dtype: DataType) -> Scalar {
             let val = value.map(|v| v as i64);
             Scalar::new(dt, val.into())
         },
-        dt => Scalar::new(dt, AnyValue::Null),
-    }
+        _ => polars_bail!(InvalidOperation: "`mean` operation not supported for dtype `{dtype}`"),
+    })
 }

@@ -13,10 +13,13 @@ use polars_utils::min_max::MinMax;
 
 use super::*;
 
-pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
+pub fn new_min_reduction(
+    dtype: DataType,
+    propagate_nans: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
-    match &dtype {
+    Ok(match &dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
@@ -41,14 +44,17 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
             Box::new(VMGR::new(dtype.clone(), CatMinReducer::<$C>(map.clone(), PhantomData)))
         }),
-        _ => unimplemented!(),
-    }
+        _ => polars_bail!(InvalidOperation: "`min` operation not supported for dtype `{dtype}`"),
+    })
 }
 
-pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
+pub fn new_max_reduction(
+    dtype: DataType,
+    propagate_nans: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
-    match &dtype {
+    Ok(match &dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
@@ -73,8 +79,8 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
             Box::new(VMGR::new(dtype.clone(), CatMaxReducer::<$C>(map.clone(), PhantomData)))
         }),
-        _ => unimplemented!(),
-    }
+        _ => polars_bail!(InvalidOperation: "`max` operation not supported for dtype `{dtype}`"),
+    })
 }
 
 // These two variants ignore nans.
