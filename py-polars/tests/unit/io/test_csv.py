@@ -2823,12 +2823,12 @@ def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
 
 @pytest.mark.parametrize(("number_of_files"), [1, 2])
 def test_read_csv_include_file_paths(number_of_files: int) -> None:
-    with tempfile.TemporaryDirectory() as tmp_path:
-        tmp_path = Path(tmp_path)
+    with tempfile.TemporaryDirectory() as tmp_path_str:
+        tmp_path = Path(tmp_path_str)
         dfs: list[pl.DataFrame] = []
 
         for x in ["1", "2"][:number_of_files]:
-            path = Path(tmp_path / f"{x}.csv").absolute()
+            path = (tmp_path / f"{x}.csv").absolute()
             dfs.append(
                 pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path)))
             )
@@ -2857,8 +2857,8 @@ def test_read_csv_include_file_paths(number_of_files: int) -> None:
 
 
 def test_read_csv_include_file_name_file_obj() -> None:
-    with tempfile.TemporaryDirectory() as tmp_path:
-        tmp_path = Path(tmp_path)
+    with tempfile.TemporaryDirectory() as tmp_path_str:
+        tmp_path = Path(tmp_path_str)
         path = Path(tmp_path / "1.csv").absolute()
         df = pl.DataFrame({"x": 10 * [1]})
         df.write_csv(path)
