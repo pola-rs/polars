@@ -7,6 +7,7 @@ use polars_io::csv::read::CsvReadOptions;
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
+use polars_utils::unique_id::UniqueId;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
@@ -117,7 +118,11 @@ impl DslBuilder {
 
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
-        DslPlan::Cache { input }.into()
+        DslPlan::Cache {
+            input,
+            id: UniqueId::new(),
+        }
+        .into()
     }
 
     pub fn drop(self, columns: Selector) -> Self {
@@ -184,6 +189,14 @@ impl DslBuilder {
             match_schema,
             per_column,
             extra_columns,
+        }
+        .into()
+    }
+
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+        DslPlan::PipeWithSchema {
+            input: Arc::new(self.0),
+            callback,
         }
         .into()
     }

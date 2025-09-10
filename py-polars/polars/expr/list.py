@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import copy
-import warnings
 from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
+from polars import exceptions
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
-from polars._utils.various import find_stacklevel
+from polars._utils.various import issue_warning
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -1105,11 +1105,9 @@ class ExprListNameSpace:
 
     def to_struct(
         self,
-        n_field_strategy: ListToStructWidthStrategy = "first_non_null",
+        n_field_strategy: ListToStructWidthStrategy | None = None,
         fields: Sequence[str] | Callable[[int], str] | None = None,
         upper_bound: int | None = None,
-        *,
-        _eager: bool = False,
     ) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.
@@ -1117,45 +1115,30 @@ class ExprListNameSpace:
         Parameters
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
-            Strategy to determine the number of fields of the struct.
-
-            * "first_non_null": set number of fields equal to the length of the
-              first non zero-length sublist.
-            * "max_width": set number of fields as max length of all sublists.
+            Deprecated and ignored.
         fields
             If the name and number of the desired fields is known in advance
             a list of field names can be given, which will be assigned by index.
             Otherwise, to dynamically assign field names, a custom function can be
             used; if neither are set, fields will be `field_0, field_1 .. field_n`.
         upper_bound
-            A polars `LazyFrame` needs to know the schema at all times, so the
-            caller must provide an upper bound of the number of struct fields that
-            will be created; if set incorrectly, subsequent operations may fail.
-            (For example, an `all().sum()` expression will look in the current
-            schema to determine which columns to select).
+            A polars expression needs to be able to evaluate the output datatype at all
+            times, so the caller must provide an upper bound of the number of struct
+            fields that will be created if `fields` is not a sequence of field names.
 
-            When operating on a `DataFrame`, the schema does not need to be
-            tracked or pre-determined, as the result will be eagerly evaluated,
-            so you can leave this parameter unset.
-
-        Notes
-        -----
-        It is recommended to set 'upper_bound' to the correct output size of the struct.
-        If this is not set, Polars will not know the output type of this operation and
-        will set it to 'Unknown' which can lead to errors because Polars is not able
-        to resolve the query.
-
-        For performance reasons, the length of the first non-null sublist is used
-        to determine the number of output fields. If the sublists can be of different
-        lengths then `n_field_strategy="max_width"` must be used to obtain the expected
-        result.
+        .. versionchanged: 1.33.0
+            The `n_field_strategy` parameter is ignored and deprecated. The `fields`
+            needs to be a sequence of field names or the upper bound is regarded as
+            ground truth.
 
         Examples
         --------
         Convert list to struct with default field name assignment:
 
         >>> df = pl.DataFrame({"n": [[0, 1], [0, 1, 2]]})
-        >>> df.with_columns(struct=pl.col("n").list.to_struct())  # doctest: +SKIP
+        >>> df.with_columns(
+        ...     struct=pl.col("n").list.to_struct(upper_bound=2)
+        ... )  # doctest: +SKIP
         shape: (2, 2)
         ┌───────────┬───────────┐
         │ n         ┆ struct    │
@@ -1166,28 +1149,12 @@ class ExprListNameSpace:
         │ [0, 1, 2] ┆ {0,1}     │ # NOT OK - last value missing
         └───────────┴───────────┘
 
-        As the shorter sublist comes first, we must use the `max_width`
-        strategy to force a search for the longest.
-
-        >>> df.with_columns(
-        ...     struct=pl.col("n").list.to_struct(n_field_strategy="max_width")
-        ... )  # doctest: +SKIP
-        shape: (2, 2)
-        ┌───────────┬────────────┐
-        │ n         ┆ struct     │
-        │ ---       ┆ ---        │
-        │ list[i64] ┆ struct[3]  │ # <- struct with 3 fields
-        ╞═══════════╪════════════╡
-        │ [0, 1]    ┆ {0,1,null} │ # OK
-        │ [0, 1, 2] ┆ {0,1,2}    │ # OK
-        └───────────┴────────────┘
-
         Convert list to struct with field name assignment by function/index:
 
         >>> df = pl.DataFrame({"n": [[0, 1], [2, 3]]})
-        >>> df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
-        ...     named=True
-        ... )  # doctest: +SKIP
+        >>> df.select(
+        ...     pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=2)
+        ... ).rows(named=True)  # doctest: +SKIP
         [{'n': {'n0': 0, 'n1': 1}}, {'n': {'n0': 2, 'n1': 3}}]
 
         Convert list to struct with field name assignment by index from a list of names:
@@ -1197,19 +1164,23 @@ class ExprListNameSpace:
         ... )
         [{'n': {'one': 0, 'two': 1}}, {'n': {'one': 2, 'two': 3}}]
         """
-        if isinstance(fields, Sequence):
-            pyexpr = self._pyexpr.list_to_struct_fixed_width(fields)
-            return wrap_expr(pyexpr)
-        else:
-            if not _eager:
-                msg = (
-                    "`to_struct()` should be passed a list of field names to avoid "
-                    "query errors in subsequent operations (e.g. <struct operation> "
-                    "not supported for dtype Unknown)"
-                )
-                warnings.warn(msg, stacklevel=find_stacklevel())
-            pyexpr = self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
-            return wrap_expr(pyexpr)
+        if n_field_strategy is not None:
+            issue_warning(
+                "`Expr.list.to_struct` with `n_field_strategy` is deprecated and has no effect on execution.",
+                DeprecationWarning,
+            )
+
+        if not isinstance(fields, Sequence):
+            if upper_bound is None:
+                msg = "`Expr.list.to_struct` requires either `fields` to be a sequence or `upper_bound` to be set.\n\nThis used to be allowed but produced unpredictable results."
+                raise exceptions.InvalidOperationError(msg)
+
+            if fields is None:
+                fields = [f"field_{i}" for i in range(upper_bound)]
+            else:
+                fields = [fields(i) for i in range(upper_bound)]
+
+        return wrap_expr(self._pyexpr.list_to_struct(fields))
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """

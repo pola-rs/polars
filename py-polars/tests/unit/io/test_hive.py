@@ -104,6 +104,7 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
 
 @pytest.mark.write_disk
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -723,7 +724,7 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
             pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
         ):
             if perc_escape:
-                date2 = urllib.parse.quote(date2)  # type: ignore[call-overload]
+                date2 = urllib.parse.quote(date2)
 
             path = root / f"date1={date1}/date2={date2}/data.bin"
             path.parent.mkdir(exist_ok=True, parents=True)
@@ -896,6 +897,7 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_predicate_dates_14712(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -1070,3 +1072,63 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+def test_hive_decode_reserved_ascii_23241(tmp_path: Path) -> None:
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    start, stop = 32, 127
+    df = pl.DataFrame(
+        {
+            "a": list(range(start, stop)),
+            "strings": [chr(i) for i in range(start, stop)],
+        }
+    )
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "strings": [
+                "Türkiye And Egpyt",
+                "résumé père forêt Noël",
+                "😊",
+                "北极熊",  # a polar bear perhaps ?!
+            ],
+            "a": [10, 20, 30, 40],
+        }
+    )
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+@pytest.mark.write_disk
+def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
+    df = pl.DataFrame({"p": [1, 2, 3, 4, 5], "x": [1, 1, 2, 2, 3]})
+    df.lazy().sink_parquet(pl.PartitionByKey(tmp_path, by="p"), mkdir=True)
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(True).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.lit(True)).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(False).collect(),
+        df.clear(),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.lit(False)).collect(),
+        df.clear(),
+    )

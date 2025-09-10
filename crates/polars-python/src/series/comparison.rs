@@ -8,27 +8,27 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PySeries {
     fn eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series.equal(&rhs.series))
+        py.enter_polars_series(|| self.series.read().equal(&*rhs.series.read()))
     }
 
     fn neq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series.not_equal(&rhs.series))
+        py.enter_polars_series(|| self.series.read().not_equal(&*rhs.series.read()))
     }
 
     fn gt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series.gt(&rhs.series))
+        py.enter_polars_series(|| self.series.read().gt(&*rhs.series.read()))
     }
 
     fn gt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series.gt_eq(&rhs.series))
+        py.enter_polars_series(|| self.series.read().gt_eq(&*rhs.series.read()))
     }
 
     fn lt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series.lt(&rhs.series))
+        py.enter_polars_series(|| self.series.read().lt(&*rhs.series.read()))
     }
 
     fn lt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series.lt_eq(&rhs.series))
+        py.enter_polars_series(|| self.series.read().lt_eq(&*rhs.series.read()))
     }
 }
 
@@ -37,7 +37,7 @@ macro_rules! impl_op {
         #[pymethods]
         impl PySeries {
             fn $name(&self, py: Python<'_>, rhs: $type) -> PyResult<Self> {
-                py.enter_polars_series(|| self.series.$op(rhs))
+                py.enter_polars_series(|| self.series.read().$op(rhs))
             }
         }
     };
@@ -166,7 +166,7 @@ macro_rules! impl_decimal {
                     PlSmallStr::from_static("decimal"),
                     &[AnyValue::Decimal(rhs.0, rhs.1)],
                 );
-                py.enter_polars_series(|| self.series.$method(&rhs))
+                py.enter_polars_series(|| self.series.read().$method(&rhs))
             }
         }
     };

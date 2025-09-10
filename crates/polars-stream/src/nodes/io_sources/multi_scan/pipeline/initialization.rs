@@ -78,6 +78,10 @@ async fn finish_initialize_multi_scan_pipeline(
         verbose,
     )?;
 
+    if let Some(skip_files_mask) = &skip_files_mask {
+        assert_eq!(skip_files_mask.len(), config.sources.len());
+    }
+
     if verbose {
         eprintln!(
             "[MultiScanTaskInit]: \
@@ -118,6 +122,22 @@ async fn finish_initialize_multi_scan_pipeline(
 
     let num_pipelines = config.num_pipelines();
     let reader_capabilities = config.reader_capabilities();
+
+    if config.sources.first().is_some_and(|x| x.run_async())
+        && reader_capabilities.contains(ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
+    {
+        // In cloud execution the entries may not exist at this point due to DSL resolution
+        // happening on a separate machine.
+        polars_io::file_cache::init_entries_from_uri_list(
+            config
+                .sources
+                .as_paths()
+                .unwrap()
+                .iter()
+                .map(|path| Arc::from(path.to_str())),
+            config.cloud_options.as_deref(),
+        )?;
+    }
 
     // Row index should only be pushed if we have a predicate or negative slice as there is a
     // serial synchronization cost from needing to track the row position.

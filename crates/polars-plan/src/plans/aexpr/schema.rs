@@ -98,10 +98,16 @@ impl AExpr {
                 let e = ctx.arena.get(*function);
                 let mut field = e.to_field_impl(ctx)?;
 
-                if let WindowType::Over(WindowMapping::Join) = options {
-                    if !is_scalar_ae(*function, ctx.arena) {
-                        field.dtype = DataType::List(Box::new(field.dtype));
-                    }
+                let mut implicit_implode = false;
+
+                implicit_implode |= matches!(options, WindowType::Over(WindowMapping::Join));
+                #[cfg(feature = "dynamic_group_by")]
+                {
+                    implicit_implode |= matches!(options, WindowType::Rolling(_));
+                }
+
+                if implicit_implode && !is_scalar_ae(*function, ctx.arena) {
+                    field.dtype = field.dtype.implode();
                 }
 
                 Ok(field)
@@ -188,7 +194,7 @@ impl AExpr {
                     Median(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
+                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
                             _ => {
                                 let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                                 let mapper = FieldsMapper::new(&field);
@@ -200,7 +206,7 @@ impl AExpr {
                     Mean(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
+                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
                             _ => {
                                 let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                                 let mapper = FieldsMapper::new(&field);
@@ -229,8 +235,8 @@ impl AExpr {
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
-                    Count(expr, _) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                    Count { input, .. } => {
+                        let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
@@ -363,7 +369,7 @@ impl AExpr {
             | Agg(Std(expr, _))
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))
-            | Agg(Count(expr, _))
+            | Agg(Count { input: expr, .. })
             | Agg(AggGroups(expr))
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
             AnonymousFunction { input, fmt_str, .. } => {
@@ -427,6 +433,11 @@ fn get_arithmetic_field(
                 (Struct(_), Struct(_)) => {
                     return Ok(left_field);
                 },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
+                    return Ok(left_field);
+                },
                 (Duration(_), Datetime(_, _))
                 | (Datetime(_, _), Duration(_))
                 | (Duration(_), Date)
@@ -439,7 +450,7 @@ fn get_arithmetic_field(
                 (_, Datetime(_, _)) | (Datetime(_, _), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
-                (Date, Date) => Duration(TimeUnit::Milliseconds),
+                (Date, Date) => Duration(TimeUnit::Microseconds),
                 (_, Date) | (Date, _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
@@ -491,6 +502,15 @@ fn get_arithmetic_field(
         Operator::Plus => {
             let right_type = right_ae.to_field_impl(ctx)?.dtype;
             match (&left_field.dtype, &right_type) {
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), Struct(_)) => {
+                    return Ok(left_field);
+                },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
+                    return Ok(left_field);
+                },
                 (Duration(_), Datetime(_, _))
                 | (Datetime(_, _), Duration(_))
                 | (Duration(_), Date)
@@ -548,6 +568,11 @@ fn get_arithmetic_field(
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
+                    return Ok(left_field);
+                },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
                     return Ok(left_field);
                 },
                 (Datetime(_, _), _)
@@ -671,6 +696,45 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
     // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code
     // originally (mostly) only looked at the LHS dtype.
     let out_type = match (left_dtype, right_dtype) {
+        #[cfg(feature = "dtype-struct")]
+        (Struct(a), Struct(b)) => {
+            polars_ensure!(a.len() == b.len() || b.len() == 1,
+                InvalidOperation: "cannot {} two structs of different length (left: {}, right: {})",
+                "div", a.len(), b.len()
+            );
+            let mut fields = Vec::with_capacity(a.len());
+            // In case b.len() == 1, we broadcast the first field (b[0]).
+            // Safety is assured by the constraints above.
+            let b_iter = (0..a.len()).map(|i| b.get(i.min(b.len() - 1)).unwrap());
+            for (left, right) in a.iter().zip(b_iter) {
+                let name = left.name.clone();
+                let (left, right) = (left.dtype(), right.dtype());
+                if !(left.is_numeric() && right.is_numeric()) {
+                    polars_bail!(InvalidOperation:
+                        "cannot {} two structs with non-numeric fields: (left: {}, right: {})",
+                        "div", left, right,)
+                };
+                let field = Field::new(name, get_truediv_dtype(left, right)?);
+                fields.push(field);
+            }
+            Struct(fields)
+        },
+        #[cfg(feature = "dtype-struct")]
+        (Struct(a), n) if n.is_numeric() => {
+            let mut fields = Vec::with_capacity(a.len());
+            for left in a.iter() {
+                let name = left.name.clone();
+                let left = left.dtype();
+                if !(left.is_numeric()) {
+                    polars_bail!(InvalidOperation:
+                        "cannot {} a struct with non-numeric field: (left: {})",
+                        "div", left)
+                };
+                let field = Field::new(name, get_truediv_dtype(left, n)?);
+                fields.push(field);
+            }
+            Struct(fields)
+        },
         (l @ List(a), r @ List(b))
             if ![a, b]
                 .into_iter()
@@ -691,6 +755,9 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
             list_dtype.cast_leaf(dtype)
         },
+        (Boolean, Float32) => Float32,
+        (Boolean, b) if b.is_numeric() => Float64,
+        (Boolean, Boolean) => Float64,
         #[cfg(feature = "dtype-u8")]
         (Float32, UInt8 | Int8) => Float32,
         #[cfg(feature = "dtype-u16")]
@@ -698,6 +765,9 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Float32, other) if other.is_integer() => Float64,
         (Float32, Float64) => Float64,
         (Float32, _) => Float32,
+        (String, _) | (_, String) => polars_bail!(
+            InvalidOperation: "division with 'String' datatypes is not allowed"
+        ),
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, Some(scale_left)), Decimal(_, _)) => {
             let scale = _get_decimal_scale_div(*scale_left);

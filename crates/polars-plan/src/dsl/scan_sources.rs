@@ -3,6 +3,7 @@ use std::fs::File;
 use std::sync::Arc;
 
 use polars_core::error::{PolarsResult, feature_gated};
+use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
 use polars_io::file_cache::FileCacheEntry;
@@ -158,16 +159,12 @@ impl PartialEq for ScanSources {
 impl Eq for ScanSources {}
 
 impl ScanSources {
-    pub fn expand_paths(
-        &self,
-        scan_args: &UnifiedScanArgs,
-        #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
-    ) -> PolarsResult<Self> {
+    pub fn expand_paths(&self, scan_args: &mut UnifiedScanArgs) -> PolarsResult<Self> {
         match self {
             Self::Paths(paths) => Ok(Self::Paths(expand_paths(
                 paths,
                 scan_args.glob,
-                cloud_options,
+                &mut scan_args.cloud_options,
             )?)),
             v => Ok(v.clone()),
         }
@@ -179,14 +176,13 @@ impl ScanSources {
     pub fn expand_paths_with_hive_update(
         &self,
         scan_args: &mut UnifiedScanArgs,
-        #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         match self {
             Self::Paths(paths) => {
                 let (expanded_paths, hive_start_idx) = expand_paths_hive(
                     paths,
                     scan_args.glob,
-                    cloud_options,
+                    &mut scan_args.cloud_options,
                     scan_args.hive_options.enabled.unwrap_or(false),
                 )?;
 
@@ -260,6 +256,30 @@ impl ScanSources {
         self.get(0)
     }
 
+    pub fn first_or_empty_expand_err(
+        &self,
+        failed_message: &'static str,
+        sources_before_expansion: &ScanSources,
+        glob: bool,
+        hint: &'static str,
+    ) -> PolarsResult<ScanSourceRef<'_>> {
+        let hint_padding = if hint.is_empty() { "" } else { " Hint: " };
+
+        self.first().ok_or_else(|| match self {
+            Self::Paths(_) if !sources_before_expansion.is_empty() => polars_err!(
+                ComputeError:
+                "{}: expanded paths were empty \
+                (path expansion input: '{:?}', glob: {}).{}{}",
+                failed_message, sources_before_expansion, glob, hint_padding, hint
+            ),
+            _ => polars_err!(
+                ComputeError:
+                "{}: empty input: {:?}.{}{}",
+                failed_message, self, hint_padding, hint
+            ),
+        })
+    }
+
     /// Turn the [`ScanSources`] into some kind of identifier
     pub fn id(&self) -> PlSmallStr {
         if self.is_empty() {
@@ -318,6 +338,17 @@ impl ScanSourceRef<'_> {
         })
     }
 
+    pub fn as_path(&self) -> Option<PlPathRef<'_>> {
+        match self {
+            Self::Path(path) => Some(*path),
+            Self::File(_) | Self::Buffer(_) => None,
+        }
+    }
+
+    pub fn is_cloud_url(&self) -> bool {
+        self.as_path().is_some_and(|x| x.is_cloud_url())
+    }
+
     /// Turn the scan source into a memory slice
     pub fn to_memslice(&self) -> PolarsResult<MemSlice> {
         self.to_memslice_possibly_async(false, None, 0)
@@ -327,22 +358,13 @@ impl ScanSourceRef<'_> {
     #[cfg(feature = "cloud")]
     fn to_memslice_async<F: Fn(Arc<FileCacheEntry>) -> PolarsResult<std::fs::File>>(
         &self,
-        assume: F,
+        open_cache_entry: F,
         run_async: bool,
     ) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = if run_async {
-                    feature_gated!("cloud", {
-                        // This isn't filled if we modified the DSL (e.g. in cloud)
-                        let entry = polars_io::file_cache::FILE_CACHE.get_entry(*path);
-
-                        if let Some(entry) = entry {
-                            assume(entry)?
-                        } else {
-                            polars_utils::open_file(path.as_local_path().unwrap())?
-                        }
-                    })
+                    open_cache_entry(polars_io::file_cache::FILE_CACHE.get_entry(*path).unwrap())?
                 } else {
                     polars_utils::open_file(path.as_local_path().unwrap())?
                 };
@@ -430,7 +452,7 @@ impl ScanSourceRef<'_> {
         }
     }
 
-    pub(crate) fn run_async(&self) -> bool {
+    pub fn run_async(&self) -> bool {
         matches!(self, Self::Path(p) if p.is_cloud_url() || polars_core::config::force_async())
     }
 }

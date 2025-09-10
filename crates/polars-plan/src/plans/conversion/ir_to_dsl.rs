@@ -155,9 +155,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Arc::new(exp)).into()
             },
-            IRAggExpr::Count(expr, include_nulls) => {
-                let expr = node_to_expr(expr, expr_arena);
-                AggExpr::Count(Arc::new(expr), include_nulls).into()
+            IRAggExpr::Count {
+                input,
+                include_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::Count {
+                    input: Arc::new(input),
+                    include_nulls,
+                }
+                .into()
             },
         },
         AExpr::Ternary {
@@ -408,13 +415,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::LenChars => B::LenChars,
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
-                IB::JsonDecode {
-                    dtype,
-                    infer_schema_len,
-                } => B::JsonDecode {
-                    dtype: dtype.map(Into::into),
-                    infer_schema_len,
-                },
+                IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonPathMatch => B::JsonPathMatch,
                 #[cfg(feature = "regex")]
@@ -454,7 +455,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 },
                 IB::Split(v) => B::Split(v),
                 #[cfg(feature = "dtype-decimal")]
-                IB::ToDecimal(v) => B::ToDecimal(v),
+                IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
                 IB::Titlecase => B::Titlecase,
                 IB::Uppercase => B::Uppercase,
@@ -821,6 +822,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
+        IF::Rechunk => F::Rechunk,
         IF::Append { upcast } => F::Append { upcast },
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
@@ -886,7 +888,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
         IF::Coalesce => F::Coalesce,
-        IF::ShrinkType => F::ShrinkType,
         #[cfg(feature = "diff")]
         IF::Diff(nb) => F::Diff(nb),
         #[cfg(feature = "pct_change")]
@@ -898,7 +899,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "log")]
         IF::Entropy { base, normalize } => F::Entropy { base, normalize },
         #[cfg(feature = "log")]
-        IF::Log { base } => F::Log { base },
+        IF::Log => F::Log,
         #[cfg(feature = "log")]
         IF::Log1p => F::Log1p,
         #[cfg(feature = "log")]
@@ -1072,7 +1073,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Reinterpret(v) => F::Reinterpret(v),
         IF::ExtendConstant => F::ExtendConstant,
 
-        IF::RowEncode(v) => F::RowEncode(v),
+        IF::RowEncode(_, v) => F::RowEncode(v),
         #[cfg(feature = "dtype-struct")]
         IF::RowDecode(fs, v) => F::RowDecode(
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),

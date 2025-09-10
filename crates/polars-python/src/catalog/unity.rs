@@ -39,7 +39,7 @@ static NAMESPACE_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
 static TABLE_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
 static COLUMN_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyCatalogClient(CatalogClient);
 
 #[pymethods]

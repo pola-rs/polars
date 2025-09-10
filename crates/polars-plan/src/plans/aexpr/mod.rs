@@ -56,8 +56,10 @@ pub enum IRAggExpr {
         method: QuantileMethod,
     },
     Sum(Node),
-    // include_nulls
-    Count(Node, bool),
+    Count {
+        input: Node,
+        include_nulls: bool,
+    },
     Std(Node, u8),
     Var(Node, u8),
     AggGroups(Node),
@@ -67,20 +69,27 @@ impl Hash for IRAggExpr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
-            Self::Min { propagate_nans, .. } | Self::Max { propagate_nans, .. } => {
-                propagate_nans.hash(state)
-            },
+            Self::Min {
+                input: _,
+                propagate_nans,
+            }
+            | Self::Max {
+                input: _,
+                propagate_nans,
+            } => propagate_nans.hash(state),
             Self::Quantile {
                 method: interpol, ..
             } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
-            Self::Count(_, include_nulls) => include_nulls.hash(state),
+            Self::Count {
+                input: _,
+                include_nulls,
+            } => include_nulls.hash(state),
             _ => {},
         }
     }
 }
 
-#[cfg(feature = "cse")]
 impl IRAggExpr {
     pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
         use IRAggExpr::*;
@@ -113,14 +122,20 @@ impl From<IRAggExpr> for GroupByMethod {
     fn from(value: IRAggExpr) -> Self {
         use IRAggExpr::*;
         match value {
-            Min { propagate_nans, .. } => {
+            Min {
+                input: _,
+                propagate_nans,
+            } => {
                 if propagate_nans {
                     GroupByMethod::NanMin
                 } else {
                     GroupByMethod::Min
                 }
             },
-            Max { propagate_nans, .. } => {
+            Max {
+                input: _,
+                propagate_nans,
+            } => {
                 if propagate_nans {
                     GroupByMethod::NanMax
                 } else {
@@ -134,7 +149,10 @@ impl From<IRAggExpr> for GroupByMethod {
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,
             Sum(_) => GroupByMethod::Sum,
-            Count(_, include_nulls) => GroupByMethod::Count { include_nulls },
+            Count {
+                input: _,
+                include_nulls,
+            } => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
@@ -242,7 +260,7 @@ impl AExpr {
     }
 
     #[recursive::recursive]
-    fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
+    pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
             AExpr::Literal(lv) => lv.is_scalar(),
             AExpr::Function { options, input, .. }

@@ -64,7 +64,6 @@ pub(super) mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
-mod shrink_type;
 #[cfg(feature = "sign")]
 mod sign;
 #[cfg(feature = "strings")]
@@ -187,6 +186,7 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
+    Rechunk,
     Append {
         upcast: bool,
     },
@@ -266,7 +266,6 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
     Coalesce,
-    ShrinkType,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
     #[cfg(feature = "pct_change")]
@@ -281,9 +280,7 @@ pub enum IRFunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -416,7 +413,7 @@ pub enum IRFunctionExpr {
     Reinterpret(bool),
     ExtendConstant,
 
-    RowEncode(RowEncodingVariant),
+    RowEncode(Vec<DataType>, RowEncodingVariant),
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
 }
@@ -523,7 +520,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
             Append { upcast } => {
                 upcast.hash(state);
             },
@@ -611,7 +608,6 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             Coalesce => {},
-            ShrinkType => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
             #[cfg(feature = "log")]
@@ -620,7 +616,7 @@ impl Hash for IRFunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -712,7 +708,10 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
 
-            RowEncode(variants) => variants.hash(state),
+            RowEncode(dts, variants) => {
+                dts.hash(state);
+                variants.hash(state);
+            },
             #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 fs.hash(state);
@@ -772,6 +771,7 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Rechunk => "rechunk",
             Append { .. } => "append",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
@@ -828,7 +828,6 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             Coalesce => "coalesce",
-            ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
             #[cfg(feature = "pct_change")]
@@ -840,7 +839,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]
@@ -1148,6 +1147,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     include_breakpoint
                 )
             },
+            Rechunk => map!(dispatch::rechunk),
             Append { upcast } => map_as_slice!(dispatch::append, upcast),
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
@@ -1215,7 +1215,6 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => map!(dispatch::approx_n_unique),
             Coalesce => map_as_slice!(fill_null::coalesce),
-            ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
             Diff(null_behavior) => map_as_slice!(dispatch::diff, null_behavior),
             #[cfg(feature = "pct_change")]
@@ -1231,7 +1230,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
-            Log { base } => map!(log::log, base),
+            Log => map_as_slice!(log::log),
             #[cfg(feature = "log")]
             Log1p => map!(log::log1p),
             #[cfg(feature = "log")]
@@ -1399,7 +1398,9 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),
             ExtendConstant => map_as_slice!(dispatch::extend_constant),
 
-            RowEncode(variants) => map_as_slice!(row_encode::encode, variants.clone()),
+            RowEncode(dts, variants) => {
+                map_as_slice!(row_encode::encode, dts.clone(), variants.clone())
+            },
             #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 map_as_slice!(row_encode::decode, fs.clone(), variants.clone())
@@ -1465,6 +1466,7 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
+            F::Rechunk => FunctionOptions::length_preserving(),
             F::Append { .. } => FunctionOptions::groupwise(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
@@ -1518,7 +1520,6 @@ impl IRFunctionExpr {
             F::Coalesce => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
-            F::ShrinkType => FunctionOptions::length_preserving(),
             #[cfg(feature = "diff")]
             F::Diff(NullBehavior::Drop) => FunctionOptions::groupwise(),
             #[cfg(feature = "diff")]
@@ -1530,7 +1531,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log { .. } | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
             F::Entropy { .. } => FunctionOptions::aggregation(),
             F::Unique(_) => FunctionOptions::groupwise(),

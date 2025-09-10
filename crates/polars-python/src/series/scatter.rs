@@ -7,20 +7,21 @@ use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
-    fn scatter(&mut self, py: Python<'_>, idx: PySeries, values: PySeries) -> PyResult<()> {
-        // we take the value because we want a ref count of 1 so that we can
-        // have mutable access cheaply via _get_inner_mut().
-        let s = std::mem::take(&mut self.series);
+    fn scatter(&self, py: Python<'_>, idx: PySeries, values: PySeries) -> PyResult<()> {
         py.enter_polars(|| {
-            let result = scatter(s, &idx.series, &values.series);
+            // we take the value because we want a ref count of 1 so that we can
+            // have mutable access cheaply via _get_inner_mut().
+            let mut lock = self.series.write();
+            let s = std::mem::take(&mut *lock);
+            let result = scatter(s, &idx.series.into_inner(), &values.series.into_inner());
             match result {
                 Ok(out) => {
-                    self.series = out;
+                    *lock = out;
                     Ok(())
                 },
                 Err((s, e)) => {
                     // Restore original series:
-                    self.series = s;
+                    *lock = s;
                     Err(e)
                 },
             }

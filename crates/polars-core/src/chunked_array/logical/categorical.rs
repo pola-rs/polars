@@ -1,6 +1,5 @@
 use std::marker::PhantomData;
 
-use arrow::array::builder::StaticArrayBuilder;
 use arrow::bitmap::BitmapBuilder;
 use num_traits::Zero;
 
@@ -192,76 +191,15 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     }
 
     pub fn to_arrow(&self, compat_level: CompatLevel) -> DictionaryArray<T::Native> {
-        let in_keys = self.physical().rechunk();
-        let in_keys = in_keys.downcast_as_array();
-        let mapping = self.get_mapping();
-        let as_views = compat_level != CompatLevel::oldest();
-
-        // To minimize dictionary size only include used categories.
-        let mut len = 0;
-        let bound = mapping.num_cats_upper_bound();
-        let bound_native = <T as PolarsCategoricalType>::Native::from_cat(bound as CatSize);
-        let mut new_key_idx_map = vec![bound_native; bound];
-
-        let new_key_idxs: Vec<_>;
-        let values = if as_views {
-            let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
-            new_key_idxs = in_keys
-                .iter()
-                .map(|opt_k| {
-                    if let Some(k) = opt_k {
-                        unsafe {
-                            let mut new_k = *new_key_idx_map.get_unchecked(k.as_cat() as usize);
-                            if new_k == bound_native {
-                                new_k = <_>::from_cat(len);
-                                len += 1;
-
-                                let s = mapping.cat_to_str(k.as_cat()).unwrap_or_default();
-                                builder.push_value_ignore_validity(s);
-                                *new_key_idx_map.get_unchecked_mut(k.as_cat() as usize) = new_k;
-                            }
-                            new_k
-                        }
-                    } else {
-                        <_>::from_cat(0)
-                    }
-                })
-                .collect();
-            builder.freeze().boxed()
-        } else {
-            let mut builder = MutableUtf8Array::new();
-            new_key_idxs = in_keys
-                .iter()
-                .map(|opt_k| {
-                    if let Some(k) = opt_k {
-                        unsafe {
-                            let mut new_k = *new_key_idx_map.get_unchecked(k.as_cat() as usize);
-                            if new_k == bound_native {
-                                new_k = <_>::from_cat(len);
-                                len += 1;
-
-                                let s = mapping.cat_to_str(k.as_cat()).unwrap_or_default();
-                                builder.push(Some(s));
-                                *new_key_idx_map.get_unchecked_mut(k.as_cat() as usize) = new_k;
-                            }
-                            new_k
-                        }
-                    } else {
-                        <_>::from_cat(0)
-                    }
-                })
-                .collect();
-            let arr: Utf8Array<i64> = builder.into();
-            arr.boxed()
-        };
-
-        let keys = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(new_key_idxs)
-            .with_validity(in_keys.validity().cloned());
-
+        let keys = self.physical().rechunk();
+        let keys = keys.downcast_as_array();
+        let values = self
+            .get_mapping()
+            .to_arrow(compat_level != CompatLevel::oldest());
         let values_dtype = Box::new(values.dtype().clone());
         let dtype =
             ArrowDataType::Dictionary(<T::Native as DictionaryKey>::KEY_TYPE, values_dtype, false);
-        unsafe { DictionaryArray::try_new_unchecked(dtype, keys, values).unwrap() }
+        unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }
     }
 }
 

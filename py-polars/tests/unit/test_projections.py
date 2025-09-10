@@ -140,9 +140,7 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(
-            n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}", _eager=True
-        )
+        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
     ).unnest("genres")
 
     out = q.collect()
@@ -234,40 +232,46 @@ def test_asof_join_projection_() -> None:
     dirty_lf1 = lf1.select(expressions)
 
     concatted = pl.concat([joined, dirty_lf1])
-    assert concatted.select(["b", "a"]).collect().to_dict(as_series=False) == {
-        "b": [
-            0.0,
-            0.8333333333333334,
-            1.6666666666666667,
-            2.5,
-            3.3333333333333335,
-            4.166666666666667,
-            5.0,
-            0.0,
-            0.8333333333333334,
-            1.6666666666666667,
-            2.5,
-            3.3333333333333335,
-            4.166666666666667,
-            5.0,
-        ],
-        "a": [
-            0.0,
-            0.8333333333333334,
-            1.6666666666666667,
-            2.5,
-            3.3333333333333335,
-            4.166666666666667,
-            5.0,
-            0.0,
-            0.8333333333333334,
-            1.6666666666666667,
-            2.5,
-            3.3333333333333335,
-            4.166666666666667,
-            5.0,
-        ],
-    }
+    assert_frame_equal(
+        concatted.select(["b", "a"]).collect(),
+        pl.DataFrame(
+            {
+                "b": [
+                    0.0,
+                    0.8333333333333334,
+                    1.6666666666666667,
+                    2.5,
+                    3.3333333333333335,
+                    4.166666666666667,
+                    5.0,
+                    0.0,
+                    0.8333333333333334,
+                    1.6666666666666667,
+                    2.5,
+                    3.3333333333333335,
+                    4.166666666666667,
+                    5.0,
+                ],
+                "a": [
+                    0.0,
+                    0.8333333333333334,
+                    1.6666666666666667,
+                    2.5,
+                    3.3333333333333335,
+                    4.166666666666667,
+                    5.0,
+                    0.0,
+                    0.8333333333333334,
+                    1.6666666666666667,
+                    2.5,
+                    3.3333333333333335,
+                    4.166666666666667,
+                    5.0,
+                ],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_merge_sorted_projection_pd() -> None:

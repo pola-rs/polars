@@ -32,6 +32,8 @@ impl IsSorted {
 }
 
 pub enum BitRepr {
+    U8(UInt8Chunked),
+    U16(UInt16Chunked),
     U32(UInt32Chunked),
     U64(UInt64Chunked),
     #[cfg(feature = "dtype-i128")]
@@ -619,7 +621,7 @@ pub trait SeriesTrait:
     }
 }
 
-impl (dyn SeriesTrait + '_) {
+impl dyn SeriesTrait + '_ {
     pub fn unpack<T: PolarsPhysicalType>(&self) -> PolarsResult<&ChunkedArray<T>> {
         polars_ensure!(&T::get_static_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())

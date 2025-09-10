@@ -90,7 +90,7 @@ impl IR {
                 options,
                 ..
             } => match &options.options {
-                Some(JoinTypeOptionsIR::Cross { predicate }) => Exprs::Boxed(Box::new(
+                Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) => Exprs::Boxed(Box::new(
                     left_on
                         .iter()
                         .chain(right_on.iter())
@@ -162,7 +162,7 @@ impl IR {
                 options,
                 ..
             } => match Arc::make_mut(options).options.as_mut() {
-                Some(JoinTypeOptionsIR::Cross { predicate }) => ExprsMut::Boxed(Box::new(
+                Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) => ExprsMut::Boxed(Box::new(
                     left_on
                         .iter_mut()
                         .chain(right_on.iter_mut())

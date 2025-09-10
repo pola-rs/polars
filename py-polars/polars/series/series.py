@@ -54,7 +54,7 @@ from polars._utils.various import (
     sphinx_accessor,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_df
+from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     Array,
     Boolean,
@@ -1813,7 +1813,7 @@ class Series:
         """
         return self._s.all(ignore_nulls=ignore_nulls)
 
-    def log(self, base: float = math.e) -> Series:
+    def log(self, base: float | Series = math.e) -> Series:
         """
         Compute the logarithm to a given base.
 
@@ -2694,6 +2694,7 @@ class Series:
         └───────┴─────┘
 
         Return the count as a relative frequency, normalized to 1.0:
+
         >>> s.value_counts(sort=True, normalize=True, name="fraction")
         shape: (3, 2)
         ┌───────┬──────────┐
@@ -2734,7 +2735,7 @@ class Series:
         """
         Computes the entropy.
 
-        Uses the formula `-sum(pk * log(pk)` where `pk` are discrete probabilities.
+        Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
 
         Parameters
         ----------
@@ -3086,13 +3087,7 @@ class Series:
         2
         """
         require_same_type(self, other)
-        try:
-            self._s.append(other._s)
-        except RuntimeError as exc:
-            if str(exc) == "Already mutably borrowed":
-                self._s.append(other._s.clone())
-            else:
-                raise
+        self._s.append(other._s)
         return self
 
     def extend(self, other: Series) -> Self:
@@ -3150,13 +3145,7 @@ class Series:
         1
         """
         require_same_type(self, other)
-        try:
-            self._s.extend(other._s)
-        except RuntimeError as exc:
-            if str(exc) == "Already mutably borrowed":
-                self._s.extend(other._s.clone())
-            else:
-                raise
+        self._s.extend(other._s)
         return self
 
     def filter(self, predicate: Series | Iterable[bool]) -> Self:
@@ -4815,7 +4804,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s = s.to_arrow()
-        >>> s  # doctest: +ELLIPSIS
+        >>> s
         <pyarrow.lib.Int64Array object at ...>
         [
           1,
@@ -8932,6 +8921,7 @@ class Series:
                 6
         ]
         """
+        return wrap_s(self._s.shrink_dtype())
 
     def get_chunks(self) -> list[Series]:
         """

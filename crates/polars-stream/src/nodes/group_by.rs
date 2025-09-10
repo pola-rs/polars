@@ -110,6 +110,7 @@ struct GroupBySinkState {
     locals: Vec<LocalGroupBySinkState>,
     random_state: PlRandomState,
     partitioner: HashPartitioner,
+    has_order_sensitive_agg: bool,
 }
 
 impl GroupBySinkState {
@@ -126,6 +127,7 @@ impl GroupBySinkState {
             let grouped_reduction_cols = &self.grouped_reduction_cols;
             let random_state = &self.random_state;
             let partitioner = self.partitioner.clone();
+            let has_order_sensitive_agg = self.has_order_sensitive_agg;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut hot_idxs = Vec::new();
                 let mut hot_group_idxs = Vec::new();
@@ -150,6 +152,7 @@ impl GroupBySinkState {
                         &mut hot_idxs,
                         &mut hot_group_idxs,
                         &mut cold_idxs,
+                        has_order_sensitive_agg,
                     );
 
                     // Drop columns not used for reductions (key-only columns).
@@ -466,6 +469,7 @@ impl GroupByNode {
         output_schema: Arc<Schema>,
         random_state: PlRandomState,
         num_pipelines: usize,
+        has_order_sensitive_agg: bool,
     ) -> Self {
         let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
             .map(|sz| sz.parse::<usize>().unwrap())
@@ -499,6 +503,7 @@ impl GroupByNode {
                 grouped_reduction_cols,
                 locals,
                 partitioner,
+                has_order_sensitive_agg,
             }),
             key_schema,
             output_schema,

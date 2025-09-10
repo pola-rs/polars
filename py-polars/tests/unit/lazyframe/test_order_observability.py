@@ -81,7 +81,7 @@ def test_sort_on_agg_maintain_order() -> None:
             "val": [[1, 2, 33], [4, 5, 66], [7, 8, 99]],
         }
     )
-    assert_frame_equal(out.collect(optimizations=opts).sort("grp"), expected)
+    assert_frame_equal(out.collect(optimizations=opts), expected, check_row_order=False)
 
 
 @pytest.mark.parametrize(
@@ -110,3 +110,89 @@ def test_sort_agg_with_nested_windowing_22918(func: pl.Expr, result: int) -> Non
 
     assert_frame_equal(out.collect(), expected)
     assert "SORT" in out.explain()
+
+
+def test_remove_sorts_on_unordered() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").sort("a").sort("a")
+    explain = lf.explain()
+    assert explain.count("SORT") == 1
+
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .sort("a")
+        .group_by("a")
+        .agg([])
+        .sort("a")
+        .group_by("a")
+        .agg([])
+        .sort("a")
+        .group_by("a")
+        .agg([])
+    )
+    explain = lf.explain()
+    assert explain.count("SORT") == 0
+
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .sort("a")
+        .join(pl.LazyFrame({"b": [1, 2, 3]}), on=pl.lit(1))
+    )
+    explain = lf.explain()
+    assert explain.count("SORT") == 0
+
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").unique()
+    explain = lf.explain()
+    assert explain.count("SORT") == 0
+
+
+def test_merge_sorted_to_union() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3]})
+    lf2 = pl.LazyFrame({"a": [2, 3, 4]})
+
+    lf = lf1.merge_sorted(lf2, "a").unique()
+
+    explain = lf.explain(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert "MERGE_SORTED" in explain
+    assert "UNION" not in explain
+
+    explain = lf.explain()
+    assert "MERGE_SORTED" not in explain
+    assert "UNION" in explain
+
+
+@pytest.mark.parametrize(
+    "order_sensitive_expr",
+    [
+        pl.arange(0, pl.len()),
+        pl.int_range(pl.len()),
+        pl.row_index().cast(pl.Int64),
+        pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(),
+        pl.lit(pl.Series([0, 1, 2, 3, 4])),
+        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
+        pl.col("y").sort(),
+        pl.col("y").sort_by(pl.col("y"), maintain_order=True),
+        pl.col("y").sort_by(pl.col("y"), maintain_order=False),
+        pl.col("x").gather(pl.col("x")),
+    ],
+)
+def test_order_sensitive_exprs_24335(order_sensitive_expr: pl.Expr) -> None:
+    expect = pl.DataFrame(
+        {
+            "x": [0, 1, 2, 3, 4],
+            "y": [3, 4, 0, 1, 2],
+            "out": [0, 1, 2, 3, 4],
+        }
+    )
+
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2, 3, 4], "y": [3, 4, 0, 1, 2]})
+        .unique(maintain_order=True)
+        .with_columns(order_sensitive_expr.alias("out"))
+        .unique()
+    )
+
+    plan = q.explain()
+
+    assert plan.index("UNIQUE[maintain_order: true") > plan.index("WITH_COLUMNS")
+
+    assert_frame_equal(q.collect().sort(pl.all()), expect)

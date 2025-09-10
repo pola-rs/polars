@@ -155,7 +155,7 @@ def linear_space(
     ...     eager=True,
     ... )
     shape: (3,)
-    Series: 'literal' [datetime[ms]]
+    Series: 'literal' [datetime[μs]]
     [
             2025-01-11 08:00:00
             2025-01-21 16:00:00

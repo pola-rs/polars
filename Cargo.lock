@@ -3336,6 +3336,7 @@ name = "polars-lazy"
 version = "0.50.0"
 dependencies = [
  "bitflags",
+ "bytes",
  "chrono",
  "either",
  "futures",
@@ -3521,6 +3522,7 @@ dependencies = [
  "ndarray",
  "num-traits",
  "numpy",
+ "parking_lot",
  "polars",
  "polars-arrow",
  "polars-compute",
@@ -3802,7 +3804,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.32.3"
+version = "1.33.1"
 dependencies = [
  "either",
  "libc",

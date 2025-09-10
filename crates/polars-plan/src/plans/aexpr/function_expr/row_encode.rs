@@ -1,5 +1,5 @@
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
-use polars_core::prelude::{Column, Field, IntoColumn, RowEncodingOptions};
+use polars_core::prelude::{Column, DataType, Field, IntoColumn, RowEncodingOptions};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -14,7 +14,21 @@ pub enum RowEncodingVariant {
     },
 }
 
-pub fn encode(c: &mut [Column], variant: RowEncodingVariant) -> PolarsResult<Column> {
+pub fn encode(
+    c: &mut [Column],
+    dts: Vec<DataType>,
+    variant: RowEncodingVariant,
+) -> PolarsResult<Column> {
+    assert_eq!(c.len(), dts.len());
+
+    // We need to make sure that the output types are correct or we will get wrong results or even
+    // segfaults when decoding.
+    for (dt, c) in dts.iter().zip(c.iter_mut()) {
+        if c.dtype().matches_schema_type(dt)? {
+            *c = c.cast(dt)?;
+        }
+    }
+
     let name = PlSmallStr::from_static("row_encoded");
     match variant {
         RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(name, c),

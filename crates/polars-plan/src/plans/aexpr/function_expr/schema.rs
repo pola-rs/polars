@@ -93,6 +93,7 @@ impl IRFunctionExpr {
                     SumBy => mapper.sum_dtype(),
                 }
             },
+            Rechunk => mapper.with_same_dtype(),
             Append { upcast } => if *upcast {
                 mapper.map_to_supertype()
             } else {
@@ -206,7 +207,7 @@ impl IRFunctionExpr {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, _) => DataType::Duration(*tu),
                 #[cfg(feature = "dtype-date")]
-                DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
+                DataType::Date => DataType::Duration(TimeUnit::Microseconds),
                 #[cfg(feature = "dtype-time")]
                 DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
                 DataType::UInt64 | DataType::UInt32 => DataType::Int64,
@@ -226,31 +227,15 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
-            ShrinkType => {
-                // we return the smallest type this can return
-                // this might not be correct once the actual data
-                // comes in, but if we set the smallest datatype
-                // we have the least chance that the smaller dtypes
-                // get cast to larger types in type-coercion
-                // this will lead to an incorrect schema in polars
-                // but we because only the numeric types deviate in
-                // bit size this will likely not lead to issues
-                mapper.map_dtype(|dt| {
-                    if dt.is_primitive_numeric() {
-                        if dt.is_float() {
-                            DataType::Float32
-                        } else if dt.is_unsigned_integer() {
-                            DataType::Int8
-                        } else {
-                            DataType::UInt8
-                        }
-                    } else {
-                        dt.clone()
-                    }
-                })
-            },
             #[cfg(feature = "log")]
-            Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
+            Entropy { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Log => mapper.with_dtype(
+                match args_to_supertype(fields)? {
+                    DataType::Float32 => DataType::Float32,
+                    _ => DataType::Float64,
+                }
+            ),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),
@@ -366,7 +351,6 @@ impl IRFunctionExpr {
                 Some(dtype) => mapper.with_dtype(dtype.clone()),
             },
             ReduceHorizontal { return_dtype, .. } => match return_dtype {
-                // @2.0: This should probably map to `Unknown`.
                 None => mapper.map_to_supertype(),
                 Some(dtype) => mapper.with_dtype(dtype.clone()),
             },
@@ -374,13 +358,11 @@ impl IRFunctionExpr {
             CumReduceHorizontal {
                 return_dtype, ..
             }=> match return_dtype {
-                // @2.0: This should probably map to `Unknown`.
                 None => mapper.with_dtype(DataType::Struct(fields.to_vec())),
                 Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
             },
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal { return_dtype, include_init, .. } => match return_dtype {
-                // @2.0: This should probably map to `Unknown`.
                 None => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), fields[0].dtype().clone())).collect())),
                 Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
             },
@@ -429,8 +411,8 @@ impl IRFunctionExpr {
             },
             ExtendConstant => mapper.with_same_dtype(),
 
-            RowEncode(_) => mapper.try_map_field(|_| Ok(Field::new(PlSmallStr::from_static("row-encode"), DataType::BinaryOffset))),
-#[cfg(feature = "dtype-struct")]
+            RowEncode(..) => mapper.try_map_field(|_| Ok(Field::new(PlSmallStr::from_static("row_encoded"), DataType::BinaryOffset))),
+            #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
         }
     }
@@ -509,17 +491,21 @@ impl<'a> FieldsMapper<'a> {
 
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
         let map_inner = |dt: &DataType| match dt {
+            DataType::Boolean => DataType::Float64,
+            DataType::Float32 => DataType::Float32,
+            DataType::Float64 => DataType::Float64,
+            dt if dt.is_primitive_numeric() => DataType::Float64,
             #[cfg(feature = "dtype-datetime")]
             dt @ DataType::Datetime(_, _) => dt.clone(),
             #[cfg(feature = "dtype-duration")]
             dt @ DataType::Duration(_) => dt.clone(),
             #[cfg(feature = "dtype-time")]
             dt @ DataType::Time => dt.clone(),
-            DataType::Float32 => DataType::Float32,
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(..) => DataType::Float64,
-            DataType::Boolean => DataType::Float64,
-            _ => DataType::Float64,
+
+            // All other types get mapped to a single `null` of the same type.
+            dt => dt.clone(),
         };
 
         self.map_dtype(|dt| match dt {
@@ -690,7 +676,7 @@ impl<'a> FieldsMapper<'a> {
 
         let new_dt = match dt {
             #[cfg(feature = "dtype-datetime")]
-            Date => Datetime(TimeUnit::Milliseconds, None),
+            Date => Datetime(TimeUnit::Microseconds, None),
             dt if dt.is_temporal() => dt,
             Float32 => Float32,
             _ => Float64,

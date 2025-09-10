@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 from pathlib import PosixPath
 from typing import Any, Callable, TypeVar, cast
 
@@ -29,7 +28,7 @@ def _patched_cloud(
         import uuid
         from pathlib import Path
 
-        from polars_cloud import ComputeContext, ComputeContextStatus, InteractiveQuery
+        from polars_cloud import ClusterContext, DirectQuery, set_compute_context
 
         TIMEOUT_SECS = 20
 
@@ -45,26 +44,8 @@ def _patched_cloud(
 
             return f()
 
-        class PatchedComputeContext(ComputeContext):
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                self._interactive = True
-                self._compute_address = os.environ.get("SCHEDULER_ADDRESS", "localhost")
-                self._compute_public_key = b""
-                self._insecure = True
-                self._compute_id = uuid.uuid4()
-
-            def get_status(self: ComputeContext) -> ComputeContextStatus:
-                """Get the status of the compute cluster."""
-                return ComputeContextStatus.RUNNING
-
-        monkeypatch.setattr(
-            "polars_cloud.context.compute.ComputeContext.__init__",
-            PatchedComputeContext.__init__,
-        )
-        monkeypatch.setattr(
-            "polars_cloud.context.compute.ComputeContext.get_status",
-            PatchedComputeContext.get_status,
-        )
+        ctx = ClusterContext("localhost", insecure=True)
+        set_compute_context(ctx)
 
         prev_collect = pl.LazyFrame.collect
 
@@ -86,7 +67,7 @@ def _patched_cloud(
 
         class LazyExe:
             def __init__(
-                self, query: InteractiveQuery, prev_tgt: io.BytesIO | None, path: Path
+                self, query: DirectQuery, prev_tgt: io.BytesIO | None, path: Path
             ) -> None:
                 self.query = query
 
@@ -163,6 +144,9 @@ def _patched_cloud(
             def _(
                 source: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.DataFrame:
+                if ext == "parquet" and kwargs.get("use_pyarrow", False):
+                    return prev_read(source, *args, **kwargs)  # type: ignore[no-any-return]
+
                 src = prepare_scan_sources(source)
                 return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
 
@@ -179,7 +163,26 @@ def _patched_cloud(
                 if args[0] == "placeholder-path" or isinstance(
                     args[0], PartitioningScheme
                 ):
-                    return prev_sink(lf, *args, **kwargs)  # type: ignore[no-any-return]
+                    prev_lazy = kwargs.get("lazy", False)
+                    kwargs["lazy"] = True
+                    lf = prev_sink(lf, *args, **kwargs)
+
+                    class SimpleLazyExe:
+                        def __init__(self, query: pl.LazyFrame) -> None:
+                            self._ldf = query._ldf
+                            self.query = query
+
+                        def collect(self, *args: Any, **kwargs: Any) -> pl.DataFrame:
+                            return prev_collect(self.query, *args, **kwargs)  # type: ignore[no-any-return]
+
+                    slf = SimpleLazyExe(lf)
+                    if prev_lazy:
+                        return slf  # type: ignore[return-value]
+
+                    slf.collect(
+                        optimizations=kwargs.get("optimizations", pl.QueryOptFlags()),
+                    )
+                    return None
 
                 prev_tgt = None
                 if isinstance(
@@ -196,11 +199,13 @@ def _patched_cloud(
                 for u in unsupported:
                     _ = kwargs.pop(u, None)
 
+                kwargs["sink_to_single_file"] = "True"
+
                 sink = getattr(
                     lf.remote(plan_type="plain").distributed(), f"sink_{ext}"
                 )
                 q = sink(*args, **kwargs)
-                assert isinstance(q, InteractiveQuery)
+                assert isinstance(q, DirectQuery)
                 query = LazyExe(
                     q,
                     prev_tgt,
@@ -218,17 +223,12 @@ def _patched_cloud(
 
         # fix: these need to become supported somehow
         BASE_UNSUPPORTED = ["engine", "optimizations", "mkdir", "retries"]
-        for ext, unsupported in [
-            ("parquet", ["metadata"]),
-            ("csv", []),
-            ("ipc", []),
-            ("ndjson", []),
-        ]:
+        for ext in ["parquet", "csv", "ipc", "ndjson"]:
             monkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
             monkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
             monkeypatch.setattr(
                 f"polars.LazyFrame.sink_{ext}",
-                create_cloud_sink(ext, BASE_UNSUPPORTED + unsupported),
+                create_cloud_sink(ext, BASE_UNSUPPORTED),
             )
 
         monkeypatch.setattr("polars.LazyFrame.collect", cloud_collect)

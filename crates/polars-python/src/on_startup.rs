@@ -16,6 +16,7 @@ use pyo3::{IntoPyObjectExt, intern};
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
+use crate::lazyframe::PyLazyFrame;
 use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
@@ -34,7 +35,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         let pypolars = polars(py).bind(py);
 
         // create a PySeries struct/object for Python
-        let mut pydf = PyDataFrame::new(df);
+        let pydf = PyDataFrame::new(df);
         // Wrap this PySeries object in the python side Series wrapper
         let mut python_df_wrapper = pypolars
             .getattr("wrap_df")
@@ -76,7 +77,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         })?;
         // Downcast to Rust
         match py_pydf.extract::<PyDataFrame>(py) {
-            Ok(pydf) => Ok(pydf.df),
+            Ok(pydf) => Ok(pydf.df.into_inner()),
             Err(_) => python_df_to_rust(py, result_df_wrapper.into_bound(py)),
         }
     })
@@ -141,10 +142,29 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                     })
                 }),
                 series: Arc::new(|py_f| {
-                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PySeries>(py)?.series) as _))
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<PySeries>(py)?.series.into_inner()) as _)
+                    })
                 }),
                 df: Arc::new(|py_f| {
-                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df) as _))
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df.into_inner()) as _)
+                    })
+                }),
+                dsl_plan: Arc::new(|py_f| {
+                    Python::with_gil(|py| {
+                        Ok(Box::new(
+                            py_f.extract::<PyLazyFrame>(py)?
+                                .ldf
+                                .into_inner()
+                                .logical_plan,
+                        ) as _)
+                    })
+                }),
+                schema: Arc::new(|py_f| {
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<Wrap<polars_core::schema::Schema>>(py)?.0) as _)
+                    })
                 }),
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
@@ -154,6 +174,20 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                 series: Arc::new(|series| {
                     Python::with_gil(|py| {
                         PySeries::new(*series.downcast().unwrap()).into_py_any(py)
+                    })
+                }),
+                dsl_plan: Arc::new(|dsl_plan| {
+                    Python::with_gil(|py| {
+                        PyLazyFrame::from(LazyFrame::from(
+                            *dsl_plan.downcast::<polars_plan::dsl::DslPlan>().unwrap(),
+                        ))
+                        .into_py_any(py)
+                    })
+                }),
+                schema: Arc::new(|schema| {
+                    Python::with_gil(|py| {
+                        Wrap(*schema.downcast::<polars_core::schema::Schema>().unwrap())
+                            .into_py_any(py)
                     })
                 }),
             },
@@ -167,6 +201,15 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             pyobject_converter,
             physical_dtype,
         );
+
+        use crate::dataset::dataset_provider_funcs;
+
+        polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
+            name: dataset_provider_funcs::name,
+            schema: dataset_provider_funcs::schema,
+            to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
+        });
+
         // Register SERIES UDF.
         python_dsl::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series);
         // Register DATAFRAME UDF.

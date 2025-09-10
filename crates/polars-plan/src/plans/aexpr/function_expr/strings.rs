@@ -56,10 +56,7 @@ pub enum IRStringFunction {
     LenChars,
     Lowercase,
     #[cfg(feature = "extract_jsonpath")]
-    JsonDecode {
-        dtype: Option<DataType>,
-        infer_schema_len: Option<usize>,
-    },
+    JsonDecode(DataType),
     #[cfg(feature = "extract_jsonpath")]
     JsonPathMatch,
     #[cfg(feature = "regex")]
@@ -112,7 +109,9 @@ pub enum IRStringFunction {
     Strptime(DataType, StrptimeOptions),
     Split(bool),
     #[cfg(feature = "dtype-decimal")]
-    ToDecimal(usize),
+    ToDecimal {
+        scale: usize,
+    },
     #[cfg(feature = "nightly")]
     Titlecase,
     Uppercase,
@@ -159,7 +158,7 @@ impl IRStringFunction {
             #[cfg(feature = "regex")]
             Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
-            JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            JsonDecode(dtype) => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => mapper.with_dtype(DataType::String),
             LenBytes => mapper.with_dtype(DataType::UInt32),
@@ -180,6 +179,7 @@ impl IRStringFunction {
                         .format
                         .as_ref()
                         .is_some_and(|format| TZ_AWARE_RE.is_match(format.as_str()))
+                        && time_zone.is_none()
                     {
                         time_zone = Some(time_zone.unwrap_or(TimeZone::UTC));
                     }
@@ -191,7 +191,7 @@ impl IRStringFunction {
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
+            ToDecimal { scale } => mapper.with_dtype(DataType::Decimal(None, Some(*scale))),
             #[cfg(feature = "string_encoding")]
             HexEncode => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
@@ -253,10 +253,7 @@ impl IRStringFunction {
             #[cfg(feature = "regex")]
             S::Find { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
             #[cfg(feature = "extract_jsonpath")]
-            S::JsonDecode { dtype: Some(_), .. } => FunctionOptions::elementwise(),
-            // because dtype should be inferred only once and be consistent over chunks/morsels.
-            #[cfg(feature = "extract_jsonpath")]
-            S::JsonDecode { dtype: None, .. } => FunctionOptions::elementwise_with_infer(),
+            S::JsonDecode { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "extract_jsonpath")]
             S::JsonPathMatch => FunctionOptions::elementwise(),
             S::LenBytes | S::LenChars => FunctionOptions::elementwise(),
@@ -276,7 +273,7 @@ impl IRStringFunction {
             #[cfg(feature = "nightly")]
             S::Titlecase => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-decimal")]
-            S::ToDecimal(_) => FunctionOptions::elementwise_with_infer(),
+            S::ToDecimal { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "string_encoding")]
             S::HexEncode | S::Base64Encode => FunctionOptions::elementwise(),
             #[cfg(feature = "binary_encoding")]
@@ -333,7 +330,7 @@ impl Display for IRStringFunction {
             Head => "head",
             Tail => "tail",
             #[cfg(feature = "extract_jsonpath")]
-            JsonDecode { .. } => "json_decode",
+            JsonDecode(..) => "json_decode",
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
@@ -386,7 +383,7 @@ impl Display for IRStringFunction {
             #[cfg(feature = "nightly")]
             Titlecase => "titlecase",
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal(_) => "to_decimal",
+            ToDecimal { .. } => "to_decimal",
             Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
             ZFill => "zfill",
@@ -492,12 +489,9 @@ impl From<IRStringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "binary_encoding")]
             Base64Decode(strict) => map!(strings::base64_decode, strict),
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
+            ToDecimal { scale } => map!(strings::to_decimal, scale),
             #[cfg(feature = "extract_jsonpath")]
-            JsonDecode {
-                dtype,
-                infer_schema_len,
-            } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
+            JsonDecode(dtype) => map!(strings::json_decode, dtype.clone()),
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => map_as_slice!(strings::json_path_match),
             #[cfg(feature = "find_many")]
@@ -889,6 +883,7 @@ fn to_datetime(
                 tz_aware,
                 time_zone,
                 ambiguous,
+                true,
             )?
             .into_column()
     };
@@ -1204,19 +1199,15 @@ pub(super) fn base64_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "dtype-decimal")]
-pub(super) fn to_decimal(s: &Column, infer_len: usize) -> PolarsResult<Column> {
+pub(super) fn to_decimal(s: &Column, scale: usize) -> PolarsResult<Column> {
     let ca = s.str()?;
-    ca.to_decimal(infer_len).map(Column::from)
+    ca.to_decimal(scale).map(Column::from)
 }
 
 #[cfg(feature = "extract_jsonpath")]
-pub(super) fn json_decode(
-    s: &Column,
-    dtype: Option<DataType>,
-    infer_schema_len: Option<usize>,
-) -> PolarsResult<Column> {
+pub(super) fn json_decode(s: &Column, dtype: DataType) -> PolarsResult<Column> {
     let ca = s.str()?;
-    ca.json_decode(dtype, infer_schema_len).map(Column::from)
+    ca.json_decode(Some(dtype), None).map(Column::from)
 }
 
 #[cfg(feature = "extract_jsonpath")]

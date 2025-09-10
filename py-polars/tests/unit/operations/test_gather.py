@@ -376,3 +376,24 @@ def test_gather_group_by_23696(maintain_order: bool) -> None:
     )
 
     assert_frame_equal(df, expected, check_row_order=maintain_order)
+
+
+def test_gather_invalid_indices_groupby_24182() -> None:
+    df = pl.DataFrame({"x": [1, 2]})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.group_by(True).agg(pl.col("x").gather(pl.lit("y")))
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_gather_group_by_lit(maintain_order: bool) -> None:
+    assert_frame_equal(
+        pl.DataFrame(
+            {
+                "a": [1, 2, 3],
+            }
+        )
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.lit([1]).gather([0, 0, 0])),
+        pl.DataFrame({"a": [1, 2, 3], "literal": [[[1], [1], [1]]] * 3}),
+        check_row_order=maintain_order,
+    )

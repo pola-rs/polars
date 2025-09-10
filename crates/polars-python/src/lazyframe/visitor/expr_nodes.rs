@@ -26,7 +26,7 @@ use pyo3::types::{PyInt, PyTuple};
 use crate::Wrap;
 use crate::series::PySeries;
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Alias {
     #[pyo3(get)]
     expr: usize,
@@ -34,13 +34,13 @@ pub struct Alias {
     name: PyObject,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Column {
     #[pyo3(get)]
     name: PyObject,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Literal {
     #[pyo3(get)]
     value: PyObject,
@@ -48,7 +48,7 @@ pub struct Literal {
     dtype: PyObject,
 }
 
-#[pyclass(name = "Operator", eq)]
+#[pyclass(name = "Operator", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
@@ -129,7 +129,7 @@ impl<'py> IntoPyObject<'py> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction", eq)]
+#[pyclass(name = "StringFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
@@ -185,7 +185,7 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction", eq)]
+#[pyclass(name = "BooleanFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
@@ -215,7 +215,7 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction", eq)]
+#[pyclass(name = "TemporalFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
@@ -272,7 +272,7 @@ impl PyTemporalFunction {
     }
 }
 
-#[pyclass(name = "StructFunction", eq)]
+#[pyclass(name = "StructFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
     FieldByName,
@@ -291,7 +291,7 @@ impl PyStructFunction {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct BinaryExpr {
     #[pyo3(get)]
     left: usize,
@@ -301,7 +301,7 @@ pub struct BinaryExpr {
     right: usize,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Cast {
     #[pyo3(get)]
     expr: usize,
@@ -314,7 +314,7 @@ pub struct Cast {
     options: u8,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Sort {
     #[pyo3(get)]
     expr: usize,
@@ -323,7 +323,7 @@ pub struct Sort {
     options: (bool, bool, bool),
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Gather {
     #[pyo3(get)]
     expr: usize,
@@ -333,7 +333,7 @@ pub struct Gather {
     scalar: bool,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Filter {
     #[pyo3(get)]
     input: usize,
@@ -341,7 +341,7 @@ pub struct Filter {
     by: usize,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct SortBy {
     #[pyo3(get)]
     expr: usize,
@@ -352,7 +352,7 @@ pub struct SortBy {
     sort_options: (bool, Vec<bool>, Vec<bool>),
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Agg {
     #[pyo3(get)]
     name: PyObject,
@@ -363,7 +363,7 @@ pub struct Agg {
     options: PyObject,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Ternary {
     #[pyo3(get)]
     predicate: usize,
@@ -373,7 +373,7 @@ pub struct Ternary {
     falsy: usize,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Function {
     #[pyo3(get)]
     input: Vec<usize>,
@@ -383,7 +383,7 @@ pub struct Function {
     options: PyObject,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Slice {
     #[pyo3(get)]
     input: usize,
@@ -393,10 +393,10 @@ pub struct Slice {
     length: usize,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Len {}
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Window {
     #[pyo3(get)]
     function: usize,
@@ -412,7 +412,7 @@ pub struct Window {
     options: PyObject,
 }
 
-#[pyclass(name = "WindowMapping")]
+#[pyclass(name = "WindowMapping", frozen)]
 pub struct PyWindowMapping {
     inner: WindowMapping,
 }
@@ -443,7 +443,7 @@ impl<'py> IntoPyObject<'py> for Wrap<Duration> {
     }
 }
 
-#[pyclass(name = "RollingGroupOptions")]
+#[pyclass(name = "RollingGroupOptions", frozen)]
 pub struct PyRollingGroupOptions {
     inner: RollingGroupOptions,
 }
@@ -471,7 +471,7 @@ impl PyRollingGroupOptions {
     }
 }
 
-#[pyclass(name = "DynamicGroupOptions")]
+#[pyclass(name = "DynamicGroupOptions", frozen)]
 pub struct PyDynamicGroupOptions {
     inner: DynamicGroupOptions,
 }
@@ -518,7 +518,7 @@ impl PyDynamicGroupOptions {
     }
 }
 
-#[pyclass(name = "GroupbyOptions")]
+#[pyclass(name = "GroupbyOptions", frozen)]
 pub struct PyGroupbyOptions {
     inner: GroupbyOptions,
 }
@@ -707,10 +707,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Count(n, include_null) => Agg {
+            IRAggExpr::Count {
+                input: n,
+                include_nulls,
+            } => Agg {
                 name: "count".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: include_null.into_py_any(py)?,
+                options: include_nulls.into_py_any(py)?,
             },
             IRAggExpr::Std(n, ddof) => Agg {
                 name: "std".into_py_any(py)?,
@@ -812,10 +815,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRStringFunction::LenChars => (PyStringFunction::LenChars,).into_py_any(py),
                     IRStringFunction::Lowercase => (PyStringFunction::Lowercase,).into_py_any(py),
                     #[cfg(feature = "extract_jsonpath")]
-                    IRStringFunction::JsonDecode {
-                        dtype: _,
-                        infer_schema_len,
-                    } => (PyStringFunction::JsonDecode, infer_schema_len).into_py_any(py),
+                    IRStringFunction::JsonDecode(_) => {
+                        (PyStringFunction::JsonDecode, <Option<usize>>::None).into_py_any(py)
+                    },
                     #[cfg(feature = "extract_jsonpath")]
                     IRStringFunction::JsonPathMatch => {
                         (PyStringFunction::JsonPathMatch,).into_py_any(py)
@@ -886,8 +888,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRStringFunction::Split(inclusive) => {
                         (PyStringFunction::Split, inclusive).into_py_any(py)
                     },
-                    IRStringFunction::ToDecimal(inference_length) => {
-                        (PyStringFunction::ToDecimal, inference_length).into_py_any(py)
+                    IRStringFunction::ToDecimal { scale } => {
+                        (PyStringFunction::ToDecimal, scale).into_py_any(py)
                     },
                     #[cfg(feature = "nightly")]
                     IRStringFunction::Titlecase => (PyStringFunction::Titlecase,).into_py_any(py),
@@ -1179,6 +1181,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
                 },
+                IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::Append { upcast } => ("append", upcast).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
@@ -1235,7 +1238,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::UniqueCounts => ("unique_counts",).into_py_any(py),
                 IRFunctionExpr::ApproxNUnique => ("approx_n_unique",).into_py_any(py),
                 IRFunctionExpr::Coalesce => ("coalesce",).into_py_any(py),
-                IRFunctionExpr::ShrinkType => ("shrink_dtype",).into_py_any(py),
                 IRFunctionExpr::Diff(null_behaviour) => (
                     "diff",
                     match null_behaviour {
@@ -1258,7 +1260,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::Entropy { base, normalize } => {
                     ("entropy", base, normalize).into_py_any(py)
                 },
-                IRFunctionExpr::Log { base } => ("log", base).into_py_any(py),
+                IRFunctionExpr::Log => ("log",).into_py_any(py),
                 IRFunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 IRFunctionExpr::Exp => ("exp",).into_py_any(py),
                 IRFunctionExpr::Unique(maintain_order) => {
@@ -1379,7 +1381,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::EwmMeanBy { half_life: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm_mean_by"));
                 },
-                IRFunctionExpr::RowEncode(_) => {
+                IRFunctionExpr::RowEncode(..) => {
                     return Err(PyNotImplementedError::new_err("row_encode"));
                 },
                 IRFunctionExpr::RowDecode(..) => {

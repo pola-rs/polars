@@ -37,9 +37,9 @@ polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
-polars-ops = { workspace = true, features = ["rle", "unique_counts", "dtype-struct"] }
+polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["cse", "rle", "unique_counts", "dtype-struct"] }
+polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -59,6 +59,7 @@ parquet = ["polars-mem-engine/parquet", "polars-plan/parquet", "cloud"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
+diff = ["polars-ops/diff", "polars-plan/diff"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-plan/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-plan/dtype-u16"]
@@ -74,6 +75,7 @@ is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]
 replace = ["polars-ops/replace", "polars-plan/replace"]
 range = ["polars-plan/range"]
 top_k = ["polars-plan/top_k"]
+cum_agg = ["polars-plan/cum_agg", "polars-ops/cum_agg"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.

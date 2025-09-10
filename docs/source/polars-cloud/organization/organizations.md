@@ -1,8 +1,7 @@
 # Set up organization
 
 Organizations in Polars Cloud are the top-level entity and typically represent a company. They can
-have members, contain multiple workspaces and are what you couple your billing to after the current
-free testing phase ends.
+have members, contain multiple workspaces and are used to manage billing.
 
 To set up an organization you can either use [the dashboard](https://cloud.pola.rs/portal/) or the
 following CLI commands:
@@ -30,7 +29,7 @@ usage: pc organization [-h] [-v] [-t TOKEN] [-p TOKEN_PATH] {list,setup,delete,d
 positional arguments:
   {list,setup,delete,details}
     list                List all active organizations
-    setup               Set up a workspace in AWS
+    setup               Set up an organization
     delete              Delete an organization
     details             Print the details of an organization
 ```
