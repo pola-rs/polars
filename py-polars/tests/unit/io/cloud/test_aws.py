@@ -106,6 +106,7 @@ def test_lazy_count_s3(s3: str) -> None:
 
 
 def test_read_parquet_metadata(s3: str) -> None:
-    lf = pl.read_parquet_metadata(
+    metadata = pl.read_parquet_metadata(
         "s3://bucket/foods1.parquet", storage_options={"endpoint_url": s3}
     )
+    assert "ARROW:schema" in metadata
