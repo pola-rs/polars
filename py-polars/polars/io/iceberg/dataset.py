@@ -282,7 +282,12 @@ class IcebergDataset:
 
         arrow_schema = schema_to_pyarrow(tbl.schema())
 
-        lf = pl.LazyFrame._scan_python_function(arrow_schema, func, pyarrow=True)
+        lf = pl.LazyFrame._scan_python_function(
+            arrow_schema,
+            func,
+            pyarrow=True,
+            is_pure=True,
+        )
 
         return lf, snapshot_id_key
 

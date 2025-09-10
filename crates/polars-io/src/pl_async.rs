@@ -235,7 +235,7 @@ where
     drop(tuner);
 
     // Reduce locking by letting only 1 in 5 tasks lock the tuner
-    if (INCR.fetch_add(1) % 5) != 0 {
+    if !INCR.fetch_add(1).is_multiple_of(5) {
         return res;
     }
     // Never lock as we will deadlock. This can run under rayon

@@ -119,7 +119,7 @@ def read_excel(
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
     has_header: bool = ...,
-    columns: Sequence[int] | Sequence[str] | None = ...,
+    columns: Sequence[int] | Sequence[str] | str | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     include_file_paths: str | None = ...,
@@ -140,7 +140,7 @@ def read_excel(
     engine_options: dict[str, Any] | None = ...,
     has_header: bool = ...,
     read_options: dict[str, Any] | None = ...,
-    columns: Sequence[int] | Sequence[str] | None = ...,
+    columns: Sequence[int] | Sequence[str] | str | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     include_file_paths: str | None = ...,
@@ -161,7 +161,7 @@ def read_excel(
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
     has_header: bool = ...,
-    columns: Sequence[int] | Sequence[str] | None = ...,
+    columns: Sequence[int] | Sequence[str] | str | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     include_file_paths: str | None = ...,
@@ -184,7 +184,7 @@ def read_excel(
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
     has_header: bool = ...,
-    columns: Sequence[int] | Sequence[str] | None = ...,
+    columns: Sequence[int] | Sequence[str] | str | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     include_file_paths: str | None = ...,
@@ -205,7 +205,7 @@ def read_excel(
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
     has_header: bool = ...,
-    columns: Sequence[int] | Sequence[str] | None = ...,
+    columns: Sequence[int] | Sequence[str] | str | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     include_file_paths: str | None = ...,
@@ -226,7 +226,7 @@ def read_excel(
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
     has_header: bool = ...,
-    columns: Sequence[int] | Sequence[str] | None = ...,
+    columns: Sequence[int] | Sequence[str] | str | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     include_file_paths: str | None = ...,
@@ -248,7 +248,7 @@ def read_excel(
     engine_options: dict[str, Any] | None = None,
     read_options: dict[str, Any] | None = None,
     has_header: bool = True,
-    columns: Sequence[int] | Sequence[str] | None = None,
+    columns: Sequence[int] | Sequence[str] | str | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     include_file_paths: str | None = None,
@@ -324,7 +324,7 @@ def read_excel(
         `x` being an enumeration over every column in the dataset, starting at 1.
     columns
         Columns to read from the sheet; if not specified, all columns are read. Can
-        be given as a sequence of column names or indices.
+        be given as a sequence of column names or indices, or a single column name.
     schema_overrides
         Support type specification or override of one or more columns.
     infer_schema_length
@@ -650,7 +650,7 @@ def _read_spreadsheet(
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     include_file_paths: str | None = None,
-    columns: Sequence[int] | Sequence[str] | None = None,
+    columns: Sequence[int] | Sequence[str] | str | None = None,
     has_header: bool = True,
     raise_if_empty: bool = True,
     drop_empty_rows: bool = True,
@@ -660,6 +660,9 @@ def _read_spreadsheet(
         source = normalize_filepath(source)
         if looks_like_url(source):
             source = process_file_url(source)
+
+    if isinstance(columns, str):
+        columns = [columns]
 
     read_options = _get_read_options(
         read_options,
@@ -1039,6 +1042,8 @@ def _read_spreadsheet_calamine(
         raise ValueError(msg)
 
     if columns:
+        if not isinstance(columns, list):
+            columns = list(columns)  # type: ignore[assignment]
         read_options["use_columns"] = columns
 
     schema_overrides = schema_overrides or {}

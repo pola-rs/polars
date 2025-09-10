@@ -265,6 +265,7 @@ def test_is_nan_on_non_boolean() -> None:
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
@@ -382,7 +383,7 @@ def test_sort_by_different_lengths() -> None:
     )
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -392,7 +393,7 @@ def test_sort_by_different_lengths() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -485,6 +486,7 @@ def test_with_column_duplicates() -> None:
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
     with pytest.raises(
@@ -611,7 +613,7 @@ def test_sort_by_error() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="expressions in 'sort_by' produced a different number of groups",
+        match="expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
@@ -664,6 +666,7 @@ def test_raise_array_of_cats() -> None:
         pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_raise_invalid_arithmetic() -> None:
     df = pl.Series("a", [object()]).to_frame()
 
@@ -741,3 +744,21 @@ def test_raise_on_different_results_20104() -> None:
             .gather_every(2, offset=1)
             .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )
+
+
+@pytest.mark.parametrize("fill_value", [None, -1])
+def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    df_shift = None
+    with pytest.deprecated_call(  # @2.0
+        match=r"shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+    ):
+        df_shift = df.select(
+            pl.col.x.shift(pl.col.x.filter(pl.col.x > 3).first(), fill_value=fill_value)
+        )
+    # Check that the result is a column of nulls, even if the fill_value is different
+    assert_frame_equal(
+        df_shift,
+        pl.DataFrame({"x": [None, None, None]}),
+        check_dtypes=False,
+    )

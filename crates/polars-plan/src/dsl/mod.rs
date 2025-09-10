@@ -222,6 +222,11 @@ impl Expr {
         self.map_binary(FunctionExpr::Append { upcast }, other.into())
     }
 
+    /// Collect all chunks into a single chunk before continuing.
+    pub fn rechunk(self) -> Self {
+        self.map_unary(FunctionExpr::Rechunk)
+    }
+
     /// Get the first `n` elements of the Expr result.
     pub fn head(self, length: Option<usize>) -> Self {
         self.slice(lit(0), lit(length.unwrap_or(10) as u64))
@@ -868,11 +873,19 @@ impl Expr {
     /// or
     /// Get counts of the group by operation.
     pub fn count(self) -> Self {
-        AggExpr::Count(Arc::new(self), false).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: false,
+        }
+        .into()
     }
 
     pub fn len(self) -> Self {
-        AggExpr::Count(Arc::new(self), true).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: true,
+        }
+        .into()
     }
 
     /// Get a mask of duplicated values.
@@ -1490,8 +1503,8 @@ impl Expr {
 
     #[cfg(feature = "log")]
     /// Compute the logarithm to a given base.
-    pub fn log(self, base: f64) -> Self {
-        self.map_unary(FunctionExpr::Log { base })
+    pub fn log(self, base: Expr) -> Self {
+        self.map_binary(FunctionExpr::Log, base)
     }
 
     #[cfg(feature = "log")]
@@ -1507,7 +1520,7 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
-    /// Compute the entropy as `-sum(pk * log(pk)`.
+    /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.map_unary(FunctionExpr::Entropy { base, normalize })

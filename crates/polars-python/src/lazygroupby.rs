@@ -10,7 +10,7 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::{PyExpr, PyLazyFrame};
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 pub struct PyLazyGroupBy {
     // option because we cannot get a self by value in pyo3
@@ -19,28 +19,24 @@ pub struct PyLazyGroupBy {
 
 #[pymethods]
 impl PyLazyGroupBy {
-    fn agg(&mut self, aggs: Vec<PyExpr>) -> PyLazyFrame {
+    fn agg(&self, aggs: Vec<PyExpr>) -> PyLazyFrame {
         let lgb = self.lgb.clone().unwrap();
         let aggs = aggs.to_exprs();
         lgb.agg(aggs).into()
     }
 
-    fn head(&mut self, n: usize) -> PyLazyFrame {
+    fn head(&self, n: usize) -> PyLazyFrame {
         let lgb = self.lgb.clone().unwrap();
         lgb.head(Some(n)).into()
     }
 
-    fn tail(&mut self, n: usize) -> PyLazyFrame {
+    fn tail(&self, n: usize) -> PyLazyFrame {
         let lgb = self.lgb.clone().unwrap();
         lgb.tail(Some(n)).into()
     }
 
     #[pyo3(signature = (lambda, schema))]
-    fn map_groups(
-        &mut self,
-        lambda: PyObject,
-        schema: Option<Wrap<Schema>>,
-    ) -> PyResult<PyLazyFrame> {
+    fn map_groups(&self, lambda: PyObject, schema: Option<Wrap<Schema>>) -> PyResult<PyLazyFrame> {
         let lgb = self.lgb.clone().unwrap();
         let schema = match schema {
             Some(schema) => Arc::new(schema.0),

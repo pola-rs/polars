@@ -99,14 +99,14 @@ pub enum PhysNodeKind {
         extend_original: bool,
     },
 
+    InputIndependentSelect {
+        selectors: Vec<ExprIR>,
+    },
+
     WithRowIndex {
         input: PhysStream,
         name: PlSmallStr,
         offset: Option<IdxSize>,
-    },
-
-    InputIndependentSelect {
-        selectors: Vec<ExprIR>,
     },
 
     Reduce {
@@ -130,6 +130,12 @@ pub enum PhysNodeKind {
         input: PhysStream,
         offset: PhysStream,
         length: PhysStream,
+    },
+
+    Shift {
+        input: PhysStream,
+        offset: PhysStream,
+        fill: Option<PhysStream>,
     },
 
     Filter {
@@ -425,6 +431,23 @@ fn visit_node_inputs_mut(
                 visit(input);
                 visit(offset);
                 visit(length);
+            },
+
+            PhysNodeKind::Shift {
+                input,
+                offset,
+                fill,
+            } => {
+                rec!(input.node);
+                rec!(offset.node);
+                if let Some(fill) = fill {
+                    rec!(fill.node);
+                }
+                visit(input);
+                visit(offset);
+                if let Some(fill) = fill {
+                    visit(fill);
+                }
             },
 
             PhysNodeKind::Repeat { value, repeats } => {

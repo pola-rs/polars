@@ -14,10 +14,7 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
 
     let chunks = ca.downcast_iter().map(|array| {
         let buf = array.values().clone();
-        // SAFETY: we checked that the size and alignment matches.
-        #[allow(clippy::transmute_undefined_repr)]
-        let reinterpreted_buf =
-            unsafe { std::mem::transmute::<Buffer<T::Native>, Buffer<U::Native>>(buf) };
+        let reinterpreted_buf = Buffer::try_transmute::<U::Native>(buf).unwrap();
         PrimitiveArray::from_data_default(reinterpreted_buf, array.validity().cloned())
     });
 
@@ -26,7 +23,6 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
 
 /// Reinterprets the type of a [`ListChunked`]. T and U must have the same size
 /// and alignment.
-#[cfg(feature = "reinterpret")]
 fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ListChunked,
 ) -> ListChunked {
@@ -39,11 +35,8 @@ fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
             .as_any()
             .downcast_ref::<PrimitiveArray<T::Native>>()
             .unwrap();
-        // SAFETY: we checked that the size and alignment matches.
-        #[allow(clippy::transmute_undefined_repr)]
-        let reinterpreted_buf = unsafe {
-            std::mem::transmute::<Buffer<T::Native>, Buffer<U::Native>>(inner_arr.values().clone())
-        };
+        let reinterpreted_buf =
+            Buffer::try_transmute::<U::Native>(inner_arr.values().clone()).unwrap();
         let pa =
             PrimitiveArray::from_data_default(reinterpreted_buf, inner_arr.validity().cloned());
         LargeListArray::new(
@@ -57,7 +50,7 @@ fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ListChunked::from_chunk_iter(ca.name().clone(), chunks)
 }
 
-#[cfg(all(feature = "reinterpret", feature = "dtype-i16", feature = "dtype-u16"))]
+#[cfg(all(feature = "dtype-i16", feature = "dtype-u16"))]
 impl Reinterpret for Int16Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
@@ -68,7 +61,7 @@ impl Reinterpret for Int16Chunked {
     }
 }
 
-#[cfg(all(feature = "reinterpret", feature = "dtype-u16", feature = "dtype-i16"))]
+#[cfg(all(feature = "dtype-u16", feature = "dtype-i16"))]
 impl Reinterpret for UInt16Chunked {
     fn reinterpret_signed(&self) -> Series {
         reinterpret_chunked_array::<_, Int16Type>(self).into_series()
@@ -79,7 +72,7 @@ impl Reinterpret for UInt16Chunked {
     }
 }
 
-#[cfg(all(feature = "reinterpret", feature = "dtype-i8", feature = "dtype-u8"))]
+#[cfg(all(feature = "dtype-i8", feature = "dtype-u8"))]
 impl Reinterpret for Int8Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
@@ -90,7 +83,7 @@ impl Reinterpret for Int8Chunked {
     }
 }
 
-#[cfg(all(feature = "reinterpret", feature = "dtype-u8", feature = "dtype-i8"))]
+#[cfg(all(feature = "dtype-u8", feature = "dtype-i8"))]
 impl Reinterpret for UInt8Chunked {
     fn reinterpret_signed(&self) -> Series {
         reinterpret_chunked_array::<_, Int8Type>(self).into_series()
@@ -110,11 +103,8 @@ where
             16 => {
                 feature_gated!("dtype-i128", {
                     if matches!(self.dtype(), DataType::Int128) {
-                        let ca = self.clone();
-                        // Convince the compiler we are this type. This keeps flags.
-                        return BitRepr::I128(unsafe {
-                            std::mem::transmute::<ChunkedArray<T>, Int128Chunked>(ca)
-                        });
+                        let ca: &Int128Chunked = self.as_any().downcast_ref().unwrap();
+                        return BitRepr::I128(ca.clone());
                     }
 
                     BitRepr::I128(reinterpret_chunked_array(self))
@@ -123,75 +113,68 @@ where
 
             8 => {
                 if matches!(self.dtype(), DataType::UInt64) {
-                    let ca = self.clone();
-                    // Convince the compiler we are this type. This keeps flags.
-                    return BitRepr::U64(unsafe {
-                        std::mem::transmute::<ChunkedArray<T>, UInt64Chunked>(ca)
-                    });
+                    let ca: &UInt64Chunked = self.as_any().downcast_ref().unwrap();
+                    return BitRepr::U64(ca.clone());
                 }
 
                 BitRepr::U64(reinterpret_chunked_array(self))
             },
 
-            byte_size => {
-                assert!(byte_size <= 4);
+            4 => {
+                if matches!(self.dtype(), DataType::UInt32) {
+                    let ca: &UInt32Chunked = self.as_any().downcast_ref().unwrap();
+                    return BitRepr::U32(ca.clone());
+                }
 
-                BitRepr::U32(if byte_size == 4 {
-                    if matches!(self.dtype(), DataType::UInt32) {
-                        let ca = self.clone();
-                        // Convince the compiler we are this type. This preserves flags.
-                        return BitRepr::U32(unsafe {
-                            std::mem::transmute::<ChunkedArray<T>, UInt32Chunked>(ca)
-                        });
-                    }
-
-                    reinterpret_chunked_array(self)
-                } else {
-                    // SAFETY: an unchecked cast to uint32 (which has no invariants) is
-                    // always sound.
-                    unsafe {
-                        self.cast_unchecked(&DataType::UInt32)
-                            .unwrap()
-                            .u32()
-                            .unwrap()
-                            .clone()
-                    }
-                })
+                BitRepr::U32(reinterpret_chunked_array(self))
             },
+
+            2 => {
+                if matches!(self.dtype(), DataType::UInt16) {
+                    let ca: &UInt16Chunked = self.as_any().downcast_ref().unwrap();
+                    return BitRepr::U16(ca.clone());
+                }
+
+                BitRepr::U16(reinterpret_chunked_array(self))
+            },
+
+            1 => {
+                if matches!(self.dtype(), DataType::UInt8) {
+                    let ca: &UInt8Chunked = self.as_any().downcast_ref().unwrap();
+                    return BitRepr::U8(ca.clone());
+                }
+
+                BitRepr::U8(reinterpret_chunked_array(self))
+            },
+
+            _ => unreachable!(),
         }
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for UInt64Chunked {
     fn reinterpret_signed(&self) -> Series {
-        let signed: Int64Chunked = reinterpret_chunked_array(self);
-        signed.into_series()
+        reinterpret_chunked_array::<_, Int64Type>(self).into_series()
     }
 
     fn reinterpret_unsigned(&self) -> Series {
         self.clone().into_series()
     }
 }
-#[cfg(feature = "reinterpret")]
+
 impl Reinterpret for Int64Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
     }
 
     fn reinterpret_unsigned(&self) -> Series {
-        let BitRepr::U64(b) = self.to_bit_repr() else {
-            unreachable!()
-        };
-        b.into_series()
+        reinterpret_chunked_array::<_, UInt64Type>(self).into_series()
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for UInt32Chunked {
     fn reinterpret_signed(&self) -> Series {
-        let signed: Int32Chunked = reinterpret_chunked_array(self);
-        signed.into_series()
+        reinterpret_chunked_array::<_, Int32Type>(self).into_series()
     }
 
     fn reinterpret_unsigned(&self) -> Series {
@@ -199,21 +182,16 @@ impl Reinterpret for UInt32Chunked {
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for Int32Chunked {
     fn reinterpret_signed(&self) -> Series {
         self.clone().into_series()
     }
 
     fn reinterpret_unsigned(&self) -> Series {
-        let BitRepr::U32(b) = self.to_bit_repr() else {
-            unreachable!()
-        };
-        b.into_series()
+        reinterpret_chunked_array::<_, UInt32Type>(self).into_series()
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for Float32Chunked {
     fn reinterpret_signed(&self) -> Series {
         reinterpret_chunked_array::<_, Int32Type>(self).into_series()
@@ -224,7 +202,6 @@ impl Reinterpret for Float32Chunked {
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for ListChunked {
     fn reinterpret_signed(&self) -> Series {
         match self.inner_dtype() {
@@ -245,7 +222,6 @@ impl Reinterpret for ListChunked {
     }
 }
 
-#[cfg(feature = "reinterpret")]
 impl Reinterpret for Float64Chunked {
     fn reinterpret_signed(&self) -> Series {
         reinterpret_chunked_array::<_, Int64Type>(self).into_series()

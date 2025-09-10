@@ -1,32 +1,23 @@
-# Manage members
+# Manage team
 
-The Team page serves as a central hub for managing who has access to the workspace. Administrators
-are able to invite collaborators, monitor membership status, and manage user permissions.
+The Team page allows you to manage who has access to the workspace. You can invite already existing
+organization members to join your workspace or invite by email address where they will both join the
+organization and workspace once they've accepted.
 
-## Adding your team to the workspace
+## Roles
 
-### Email invitations
+There are two types of roles:
 
-The primary method for adding team members is through email invitations:
+1. `Admin` - Able to do anything a member can and additionally invite new members, change roles or
+   workspace settings
+2. `Member` - Able to start compute, run queries and inspect results but not able to change settings
+   or invite others.
 
-1. Enter the email address of the person you wish to add in the provided input field
-2. Click "Send email" to deliver an invitation directly to their inbox
+There is also the notion of implicit and explicit roles. An organization admin is implicitly also a
+workspace admin even though they are not an explicit member of the workspace. You can still add them
+as an explicit member so they keep access to the workspace even when they are demoted down from
+organization admin.
 
-Invitees will receive in invitation email that they can use to register and get added to the
-workspace.
-
-### Invitation links
-
-With an invite link you can share the personal invitation link with an invitee.
-
-1. Click "Generate invite link" to create a shareable URL
-2. Copy and share the link to the invitee.
-
-The invitee can use this link to join the workspace without requiring an email invitation.
-
-<!-- dprint-ignore-start -->
-
-!!! info "Inviting existing users"
-Users that are already part of another workspace will get a prompt to join the workspace they are invited for.
-
-<!-- dprint-ignore-end -->
+Workspace admins are able to promote others to admin or demote other admins to member. The system
+enforces that there is always at least one workspace admin. In case you are unable to contact the
+only admin of a workspace, you can ask an organization admin for help.

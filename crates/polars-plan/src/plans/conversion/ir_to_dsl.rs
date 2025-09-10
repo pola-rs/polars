@@ -155,9 +155,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Arc::new(exp)).into()
             },
-            IRAggExpr::Count(expr, include_nulls) => {
-                let expr = node_to_expr(expr, expr_arena);
-                AggExpr::Count(Arc::new(expr), include_nulls).into()
+            IRAggExpr::Count {
+                input,
+                include_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::Count {
+                    input: Arc::new(input),
+                    include_nulls,
+                }
+                .into()
             },
         },
         AExpr::Ternary {
@@ -815,6 +822,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
+        IF::Rechunk => F::Rechunk,
         IF::Append { upcast } => F::Append { upcast },
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
@@ -891,7 +899,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "log")]
         IF::Entropy { base, normalize } => F::Entropy { base, normalize },
         #[cfg(feature = "log")]
-        IF::Log { base } => F::Log { base },
+        IF::Log => F::Log,
         #[cfg(feature = "log")]
         IF::Log1p => F::Log1p,
         #[cfg(feature = "log")]

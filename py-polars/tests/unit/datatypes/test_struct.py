@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import operator
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any, Callable
@@ -15,7 +16,7 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, SerializationFormat
 
 
 def test_struct_to_list() -> None:
@@ -840,6 +841,49 @@ def test_struct_arithmetic_schema() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [10], "b": [20], "c": [30]}),
+        pl.DataFrame({"a": [10.0], "b": [20.0], "c": [30.0]}),
+    ],
+)
+@pytest.mark.parametrize(
+    "rhs",
+    [
+        pl.struct("c"),
+        pl.lit(7),
+        pl.lit(7.0),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.sub,
+        operator.floordiv,
+        operator.truediv,
+        operator.mod,
+        operator.mul,
+    ],
+)
+def test_struct_arithmetic_schema_match(
+    df: pl.DataFrame,
+    rhs: pl.Expr,
+    op: Any,
+) -> None:
+    # 1 field on the LHS struct
+    lhs = pl.struct("a")
+    q = df.lazy().select(op(lhs, rhs))
+    assert q.collect_schema() == q.collect().schema
+
+    # 2 fields on the LHS struct
+    df = df.with_columns(pl.struct(pl.all()).alias("ab"))
+    lhs = pl.col("ab")
+    q = df.lazy().select(op(lhs, rhs))
+    assert q.collect_schema() == q.collect().schema
+
+
 def test_struct_field() -> None:
     df = pl.DataFrame(
         {
@@ -1108,7 +1152,7 @@ def test_zfs_struct_fns() -> None:
 
 @pytest.mark.parametrize("format", ["binary", "json"])
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
-def test_zfs_serialization_roundtrip(format: pl.SerializationFormat, size: int) -> None:
+def test_zfs_serialization_roundtrip(format: SerializationFormat, size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
 
     f = io.BytesIO()
@@ -1302,3 +1346,14 @@ def test_struct_nulls_in_equality_23527() -> None:
     )
     expected = pl.DataFrame({"a": [False, True, True, False, False, True]})
     assert_frame_equal(out, expected)
+
+
+def test_struct_null_propagation_23955() -> None:
+    df = pl.DataFrame({"a": [{"b": None}, None]})
+    df = df.with_columns(
+        c=pl.col("a").struct.with_fields(
+            pl.field("b").fill_null(pl.lit(10, dtype=pl.Int32))
+        )
+    )
+    df = df.with_columns(d=pl.col("c").struct.field("b")).select(pl.col("d"))
+    assert_frame_equal(df, pl.DataFrame({"d": [10, None]}, schema={"d": pl.Int32}))

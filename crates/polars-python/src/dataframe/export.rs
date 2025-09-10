@@ -1,5 +1,6 @@
 use arrow::datatypes::IntegerType;
 use arrow::record_batch::RecordBatch;
+use parking_lot::RwLockWriteGuard;
 use polars::prelude::*;
 use polars_compute::cast::CastOptionsImpl;
 use pyo3::IntoPyObjectExt;
@@ -18,17 +19,18 @@ use crate::utils::EnterPolarsExt;
 impl PyDataFrame {
     #[cfg(feature = "object")]
     pub fn row_tuple<'py>(&self, idx: i64, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        let df = self.df.read();
         let idx = if idx < 0 {
-            (self.df.height() as i64 + idx) as usize
+            (df.height() as i64 + idx) as usize
         } else {
             idx as usize
         };
-        if idx >= self.df.height() {
-            return Err(PyPolarsErr::from(polars_err!(oob = idx, self.df.height())).into());
+        if idx >= df.height() {
+            return Err(PyPolarsErr::from(polars_err!(oob = idx, df.height())).into());
         }
         PyTuple::new(
             py,
-            self.df.get_columns().iter().map(|s| match s.dtype() {
+            df.get_columns().iter().map(|s| match s.dtype() {
                 DataType::Object(_) => {
                     let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                     obj.into_py_any(py).unwrap()
@@ -40,15 +42,16 @@ impl PyDataFrame {
 
     #[cfg(feature = "object")]
     pub fn row_tuples<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let df = self.df.read();
         let mut rechunked;
         // Rechunk if random access would become rather expensive.
         // TODO: iterate over the chunks directly instead of using random access.
-        let df = if self.df.max_n_chunks() > 16 {
-            rechunked = self.df.clone();
+        let df = if df.max_n_chunks() > 16 {
+            rechunked = df.clone();
             rechunked.as_single_chunk_par();
             &rechunked
         } else {
-            &self.df
+            &df
         };
         PyList::new(
             py,
@@ -74,19 +77,22 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(
-        &mut self,
-        py: Python<'_>,
-        compat_level: PyCompatLevel,
-    ) -> PyResult<Vec<PyObject>> {
-        py.enter_polars_ok(|| self.df.align_chunks_par())?;
+    pub fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
+        let mut df = self.df.write();
+        let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
+        py.enter_polars_ok(|| dfr.align_chunks_par())?;
+        let df = RwLockWriteGuard::downgrade(df);
+
         let pyarrow = py.import("pyarrow")?;
 
-        let rbs = self
-            .df
-            .iter_chunks(compat_level.0, true)
-            .map(|rb| interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow))
-            .collect::<PyResult<_>>()?;
+        let mut chunks = df.iter_chunks(compat_level.0, true);
+        let mut rbs = Vec::with_capacity(chunks.size_hint().0);
+        // df.iter_chunks() iteration could internally try to acquire the GIL on another thread,
+        // so we make sure to run chunks.next() within enter_polars().
+        while let Some(rb) = py.enter_polars_ok(|| chunks.next())? {
+            let rb = interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow)?;
+            rbs.push(rb);
+        }
         Ok(rbs)
     }
 
@@ -96,12 +102,14 @@ impl PyDataFrame {
     /// since those can't be converted correctly via PyArrow. The calling Python
     /// code should make sure these are not included.
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_pandas(&mut self, py: Python) -> PyResult<Vec<PyObject>> {
-        py.enter_polars_ok(|| self.df.as_single_chunk_par())?;
+    pub fn to_pandas(&self, py: Python) -> PyResult<Vec<PyObject>> {
+        let mut df = self.df.write();
+        let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
+        py.enter_polars_ok(|| dfr.as_single_chunk_par())?;
+        let df = RwLockWriteGuard::downgrade(df);
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
-            let cat_columns = self
-                .df
+            let cat_columns = df
                 .get_columns()
                 .iter()
                 .enumerate()
@@ -121,8 +129,7 @@ impl PyDataFrame {
             );
 
             let mut replaced_schema = None;
-            let rbs = self
-                .df
+            let rbs = df
                 .iter_chunks(CompatLevel::oldest(), true)
                 .map(|rb| {
                     let length = rb.len();
@@ -164,11 +171,14 @@ impl PyDataFrame {
     #[allow(unused_variables)]
     #[pyo3(signature = (requested_schema))]
     fn __arrow_c_stream__<'py>(
-        &mut self,
+        &self,
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        py.enter_polars_ok(|| self.df.align_chunks_par())?;
-        dataframe_to_stream(&self.df, py)
+        let mut df = self.df.write();
+        let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
+        py.enter_polars_ok(|| dfr.as_single_chunk_par())?;
+        let df = RwLockWriteGuard::downgrade(df);
+        dataframe_to_stream(&df, py)
     }
 }

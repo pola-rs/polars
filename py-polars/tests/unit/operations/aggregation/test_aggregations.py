@@ -429,6 +429,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: output order is defined for this in cloud
 @pytest.mark.slow
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (
@@ -776,3 +777,41 @@ def test_empty_agg_22005() -> None:
         .select(pl.col("a").sum())
     )
     assert_frame_equal(out.collect(), pl.DataFrame({"a": 0}))
+
+
+@pytest.mark.parametrize("wrap_numerical", [True, False])
+@pytest.mark.parametrize("strict_cast", [True, False])
+def test_agg_with_filter_then_cast_23682(
+    strict_cast: bool, wrap_numerical: bool
+) -> None:
+    assert_frame_equal(
+        pl.DataFrame([{"a": 123, "b": 12}, {"a": 123, "b": 257}])
+        .group_by("a")
+        .agg(
+            pl.col("b")
+            .filter(pl.col("b") < 256)
+            .cast(pl.UInt8, strict=strict_cast, wrap_numerical=wrap_numerical)
+        ),
+        pl.DataFrame(
+            [{"a": 123, "b": [12]}], schema={"a": pl.Int64, "b": pl.List(pl.UInt8)}
+        ),
+    )
+
+
+@pytest.mark.parametrize("wrap_numerical", [True, False])
+@pytest.mark.parametrize("strict_cast", [True, False])
+def test_agg_with_slice_then_cast_23682(
+    strict_cast: bool, wrap_numerical: bool
+) -> None:
+    assert_frame_equal(
+        pl.DataFrame([{"a": 123, "b": 12}, {"a": 123, "b": 257}])
+        .group_by("a")
+        .agg(
+            pl.col("b")
+            .slice(0, 1)
+            .cast(pl.UInt8, strict=strict_cast, wrap_numerical=wrap_numerical)
+        ),
+        pl.DataFrame(
+            [{"a": 123, "b": [12]}], schema={"a": pl.Int64, "b": pl.List(pl.UInt8)}
+        ),
+    )

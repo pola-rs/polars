@@ -2151,7 +2151,7 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().head(n).explode()])
+        self.agg([all().as_expr().head(n)])
             .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }
 
@@ -2163,7 +2163,7 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().tail(n).explode()])
+        self.agg([all().as_expr().tail(n)])
             .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }
 

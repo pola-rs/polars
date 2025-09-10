@@ -3,15 +3,15 @@ use std::borrow::Cow;
 use arrow::array::Array;
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
-use numpy::{Element, PyArray1, PyArrayMethods};
+use numpy::{Element, PyArray1, PyArrayMethods, PyUntypedArrayMethods};
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::PySeries;
+use crate::conversion::Wrap;
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{Wrap, reinterpret_vec};
 use crate::error::PyPolarsErr;
 use crate::interop::arrow::to_rust::array_to_rust;
 use crate::prelude::ObjectValue;
@@ -58,8 +58,13 @@ impl PySeries {
         _strict: bool,
     ) -> PyResult<Self> {
         let array = array.readonly();
-        let vals = array.as_slice().unwrap();
-        py.enter_polars_series(|| Ok(Series::new(name.into(), vals)))
+
+        // We use raw ptr methods to read this as a u8 slice to work around PyO3/rust-numpy#509.
+        assert!(array.is_contiguous());
+        let data_ptr = array.data().cast::<u8>();
+        let data_len = array.len();
+        let vals = unsafe { core::slice::from_raw_parts(data_ptr, data_len) };
+        py.enter_polars_series(|| Series::new(name.into(), vals).cast(&DataType::Boolean))
     }
 
     #[staticmethod]
@@ -289,7 +294,10 @@ impl PySeries {
 
     #[staticmethod]
     fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> PyResult<Self> {
-        let series = reinterpret_vec(values);
+        let series: Vec<_> = values
+            .into_iter()
+            .map(|ops| ops.map(|ps| ps.series.into_inner()))
+            .collect();
         if let Some(s) = series.iter().flatten().next() {
             if s.dtype().is_object() {
                 return Err(PyValueError::new_err(

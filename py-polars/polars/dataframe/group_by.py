@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
@@ -117,7 +117,7 @@ class GroupBy:
 
         return self
 
-    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[Any, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 

@@ -75,17 +75,23 @@ def test_predicate_null_block_asof_join() -> None:
         .set_sorted("timestamp")
     )
 
-    assert left.join_asof(right, by="id", on="timestamp").filter(
-        pl.col("value").is_not_null()
-    ).collect().to_dict(as_series=False) == {
-        "id": [1, 2, 3],
-        "timestamp": [
-            datetime(2022, 1, 1, 10, 0),
-            datetime(2022, 1, 1, 10, 1),
-            datetime(2022, 1, 1, 10, 2),
-        ],
-        "value": ["a", "b", "c"],
-    }
+    assert_frame_equal(
+        left.join_asof(right, by="id", on="timestamp")
+        .filter(pl.col("value").is_not_null())
+        .collect(),
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "timestamp": [
+                    datetime(2022, 1, 1, 10, 0),
+                    datetime(2022, 1, 1, 10, 1),
+                    datetime(2022, 1, 1, 10, 2),
+                ],
+                "value": ["a", "b", "c"],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_predicate_strptime_6558() -> None:
@@ -1213,3 +1219,17 @@ def test_no_caching_scan(tmp_path: Path) -> None:
 
     result = pl.concat([expr1, expr2])
     assert "CACHE[id:" not in result.explain()
+
+
+def test_duplicate_filter_removal_23243() -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
+
+    q = lf.filter(pl.col("x") == 2, pl.col("x") == 2)
+
+    expect = pl.DataFrame({"x": [2]})
+
+    plan = q.explain()
+
+    assert plan.split("\n", 1)[0] == 'FILTER [(col("x")) == (2)]'
+
+    assert_frame_equal(q.collect(), expect)

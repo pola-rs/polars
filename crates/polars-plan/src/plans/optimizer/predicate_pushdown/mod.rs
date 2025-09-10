@@ -172,11 +172,7 @@ impl PredicatePushDown<'_> {
                     for (_, predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate.node(), &input_schema, expr_arena) {
-                            insert_and_combine_predicate(
-                                &mut pushdown_predicates,
-                                predicate,
-                                expr_arena,
-                            )
+                            insert_predicate_dedup(&mut pushdown_predicates, predicate, expr_arena)
                         }
                         // we cannot pushdown the predicate we do it here
                         else {
@@ -310,7 +306,7 @@ impl PredicatePushDown<'_> {
                 };
 
                 if let Some(predicate) = acc_predicates.remove(&tmp_key) {
-                    insert_and_combine_predicate(&mut acc_predicates, &predicate, expr_arena);
+                    insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
                 }
 
                 let alp = lp_arena.take(input);

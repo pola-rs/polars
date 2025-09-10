@@ -585,3 +585,12 @@ def test_sort_head_maintain_order() -> None:
     expected = pl.DataFrame({"x": [0, 0, 0, 0], "y": [1, 3, 4, 5]})
     q = df.lazy().sort(by="x", maintain_order=True).head(4)
     assert_frame_equal(q.collect(), expected)
+
+
+def test_top_k_non_elementwise_by_24163() -> None:
+    query = pl.LazyFrame({"a": [1, 2, 3, 4, 5, 6, 7, 8]}).top_k(
+        2, by=(pl.when(pl.len() == 8).then(pl.col.a).otherwise(-pl.col.a))
+    )
+
+    expected = pl.DataFrame({"a": [7, 8]})
+    assert_frame_equal(expected, query.collect(), check_row_order=False)

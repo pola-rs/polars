@@ -3220,7 +3220,7 @@ class DataFrame:
         workbook : {str, Workbook}
             String name or path of the workbook to create, BytesIO object, file opened
             in binary-mode, or an `xlsxwriter.Workbook` object that has not been closed.
-            If None, writes to a `dataframe.xlsx` workbook in the working directory.
+            If None, writes to `dataframe.xlsx` in the working directory.
         worksheet : {str, Worksheet}
             Name of target worksheet or an `xlsxwriter.Worksheet` object (in which
             case `workbook` must be the parent `xlsxwriter.Workbook` object); if None,
@@ -3371,6 +3371,10 @@ class DataFrame:
           syntax to ensure the formula is applied correctly and is table-relative.
           https://support.microsoft.com/en-us/office/using-structured-references-with-excel-tables-f5ed2452-2337-4f71-bed3-c8ae6d2b276e
 
+        * If you want unformatted output, you can use a selector to apply the "General"
+          format to all columns (or all *non-temporal* columns to preserve formatting
+          of date/datetime columns), eg: `column_formats={~cs.temporal(): "General"}`.
+
         Examples
         --------
         Instantiate a basic DataFrame:
@@ -3387,14 +3391,14 @@ class DataFrame:
         ... )
 
         Export to "dataframe.xlsx" (the default workbook name, if not specified) in the
-        working directory, add column totals ("sum" by default) on all numeric columns,
+        working directory, add column totals on all numeric columns ("sum" by default),
         then autofit:
 
         >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +SKIP
 
         Write frame to a specific location on the sheet, set a named table style,
-        apply US-style date formatting, increase default float precision, apply a
-        non-default total function to a single column, autofit:
+        apply US-style date formatting, increase floating point formatting precision,
+        apply a non-default column total function to a specific column, autofit:
 
         >>> df.write_excel(  # doctest: +SKIP
         ...     position="B4",
@@ -3406,8 +3410,8 @@ class DataFrame:
         ... )
 
         Write the same frame to a named worksheet twice, applying different styles
-        and conditional formatting to each table, adding table titles using explicit
-        xlsxwriter integration:
+        and conditional formatting to each table, adding custom-formatted table
+        titles using explicit `xlsxwriter` integration:
 
         >>> from xlsxwriter import Workbook
         >>> with Workbook("multi_frame.xlsx") as wb:  # doctest: +SKIP
@@ -3460,13 +3464,11 @@ class DataFrame:
         ...         }
         ...     )
         ...     ws.write(2, 1, "Basic/default conditional formatting", fmt_title)
-        ...     ws.write(
-        ...         df.height + 6, 1, "Customised conditional formatting", fmt_title
-        ...     )
+        ...     ws.write(df.height + 6, 1, "Custom conditional formatting", fmt_title)
 
         Export a table containing two different types of sparklines. Use default
         options for the "trend" sparkline and customized options (and positioning)
-        for the "+/-" win_loss sparkline, with non-default integer dtype formatting,
+        for the "+/-" `win_loss` sparkline, with non-default integer formatting,
         column totals, a subtle two-tone heatmap and hidden worksheet gridlines:
 
         >>> df = pl.DataFrame(
@@ -3540,7 +3542,7 @@ class DataFrame:
 
         Create and reference a Worksheet object directly, adding a basic chart.
         Taking advantage of structured references to set chart series values and
-        categories is strongly recommended so that you do not have to calculate
+        categories is *strongly* recommended so you do not have to calculate
         cell positions with respect to the frame data and worksheet:
 
         >>> with Workbook("basic_chart.xlsx") as wb:  # doctest: +SKIP
@@ -3568,6 +3570,21 @@ class DataFrame:
         ...     )
         ...     # add chart to the worksheet
         ...     ws.insert_chart("D1", chart)
+
+        Export almost entirely unformatted data (no numeric styling or standardised
+        floating point precision), omit autofilter, but keep date/datetime formatting:
+
+        >>> import polars.selectors as cs
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "n1": [-100, None, 200, 555],
+        ...         "n2": [987.4321, -200, 44.444, 555.5],
+        ...     }
+        ... )
+        >>> df.write_excel(  # doctest: +SKIP
+        ...     column_formats={~cs.temporal(): "General"},
+        ...     autofilter=False,
+        ... )
         """  # noqa: W505
         from polars.io.spreadsheet._write_utils import (
             _unpack_multi_column_dict,
@@ -3954,6 +3971,7 @@ class DataFrame:
         ) = "auto",
         retries: int = 2,
         metadata: ParquetMetadata | None = None,
+        mkdir: bool = False,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -4046,6 +4064,12 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+        mkdir: bool
+            Recursively create all the directories in the path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
 
         Examples
         --------
@@ -4091,6 +4115,9 @@ class DataFrame:
             if metadata is not None:
                 msg = "write_parquet with `use_pyarrow=True` cannot be combined with `metadata`"
                 raise ValueError(msg)
+            if mkdir:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `mkdir`"
+                raise ValueError(msg)
 
             tbl = self.to_arrow()
             data = {}
@@ -4133,7 +4160,6 @@ class DataFrame:
             return
 
         target: str | Path | IO[bytes] | PartitioningScheme = file
-        mkdir: bool = False
         engine: EngineType = "in-memory"
         if partition_by is not None:
             if not isinstance(file, str):
@@ -4246,14 +4272,12 @@ class DataFrame:
             msg = f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
             raise ValueError(msg)
 
+        connection_module_root = type(connection).__module__.split(".", 1)[0]
+
         if engine is None:
-            if (
-                isinstance(connection, str)
-                or (module_root := type(connection).__module__.split(".", 1)[0])
-                == "sqlalchemy"
-            ):
+            if isinstance(connection, str) or connection_module_root == "sqlalchemy":
                 engine = "sqlalchemy"
-            elif module_root.startswith("adbc"):
+            elif connection_module_root.startswith("adbc"):
                 engine = "adbc"
 
         def unpack_table_name(name: str) -> tuple[str | None, str | None, str]:
@@ -4268,20 +4292,38 @@ class DataFrame:
             return catalog, schema, tbl  # type: ignore[return-value]
 
         if engine == "adbc":
-            adbc_driver_manager = import_optional("adbc_driver_manager")
-            adbc_version = parse_version(
-                getattr(adbc_driver_manager, "__version__", "0.0")
+            from polars.io.database._utils import (
+                _get_adbc_module_name_from_uri,
+                _import_optional_adbc_driver,
+                _open_adbc_connection,
             )
-            from polars.io.database._utils import _open_adbc_connection
+
+            conn, can_close_conn = (
+                (_open_adbc_connection(connection), True)
+                if isinstance(connection, str)
+                else (connection, False)
+            )
+
+            driver_manager = import_optional("adbc_driver_manager")
+
+            # base class for ADBC connections
+            if not isinstance(conn, driver_manager.dbapi.Connection):
+                msg = f"unrecognised connection type {connection!r}"
+                raise TypeError(msg)
+
+            driver_manager_str_version = getattr(driver_manager, "__version__", "0.0")
+            driver_manager_version = parse_version(driver_manager_str_version)
 
             if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
                 # resulting in behaviour equivalent to 'fail'
                 mode = "create"
             elif if_table_exists == "replace":
-                if adbc_version < (0, 7):
-                    adbc_str_version = ".".join(str(v) for v in adbc_version)
-                    msg = f"`if_table_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
+                if driver_manager_version < (0, 7):
+                    msg = (
+                        "`if_table_exists = 'replace'` requires ADBC version >= 0.7, "
+                        f"found {driver_manager_str_version}"
+                    )
                     raise ModuleUpgradeRequiredError(msg)
                 mode = "replace"
             elif if_table_exists == "append":
@@ -4293,36 +4335,61 @@ class DataFrame:
                 )
                 raise ValueError(msg)
 
-            conn, can_close_conn = (
-                (_open_adbc_connection(connection), True)
-                if isinstance(connection, str)
-                else (connection, False)
-            )
             with (
-                conn if can_close_conn else contextlib.nullcontext(),  # type: ignore[union-attr]
-                conn.cursor() as cursor,  # type: ignore[union-attr]
+                conn if can_close_conn else contextlib.nullcontext(),
+                conn.cursor() as cursor,
             ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
-                if adbc_version >= (0, 7):
-                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():  # type: ignore[union-attr]
-                        if if_table_exists == "replace":
-                            # note: adbc doesn't (yet) support 'replace' for sqlite
-                            cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-                            mode = "create"
-                        catalog, db_schema = db_schema, None
 
+                adbc_module_name = (
+                    _get_adbc_module_name_from_uri(connection)
+                    if isinstance(connection, str)
+                    else connection_module_root
+                )
+                adbc_driver = _import_optional_adbc_driver(
+                    adbc_module_name, dbapi_submodule=False
+                )
+                adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                adbc_driver_version = parse_version(adbc_driver_str_version)
+
+                if adbc_module_name.split("_")[-1] == "sqlite":
+                    catalog, db_schema = db_schema, None
+
+                    # note: ADBC didnt't support 'replace' until adbc-driver-sqlite
+                    # version 0.11 (it was released for other drivers in version 0.7)
+                    if (
+                        driver_manager_version >= (0, 7)
+                        and adbc_driver_version < (0, 11)
+                        and if_table_exists == "replace"
+                    ):
+                        cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+                        mode = "create"
+
+                # As of adbc_driver_manager 1.6.0, adbc_ingest can take a Polars
+                # DataFrame via the PyCapsule interface
+                data = self if driver_manager_version >= (1, 6) else self.to_arrow()
+
+                # use of schema-qualified table names was released in
+                # adbc-driver-manager 0.7.0 and is working without bugs from driver
+                # version (e.g., adbc-driver-postgresql) version 0.8.0
+                if driver_manager_version >= (0, 7) and adbc_driver_version >= (0, 8):
                     n_rows = cursor.adbc_ingest(
                         unpacked_table_name,
-                        data=self.to_arrow(),
+                        data=data,
                         mode=mode,
                         catalog_name=catalog,
                         db_schema_name=db_schema,
                         **(engine_options or {}),
                     )
                 elif db_schema is not None:
-                    adbc_str_version = ".".join(str(v) for v in adbc_version)
-                    msg = f"use of schema-qualified table names requires ADBC version >= 0.8, found {adbc_str_version}"
+                    adbc_driver_pypi_name = adbc_module_name.replace("_", "-")
+                    msg = (
+                        "use of schema-qualified table names requires "
+                        "adbc-driver-manager version >= 0.7.0, found "
+                        f"{driver_manager_str_version} and {adbc_driver_pypi_name} "
+                        f"version >= 0.8.0, found {adbc_driver_str_version}"
+                    )
                     raise ModuleUpgradeRequiredError(
                         # https://github.com/apache/arrow-adbc/issues/1000
                         # https://github.com/apache/arrow-adbc/issues/1109
@@ -4331,11 +4398,11 @@ class DataFrame:
                 else:
                     n_rows = cursor.adbc_ingest(
                         table_name=unpacked_table_name,
-                        data=self.to_arrow(),
+                        data=data,
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()  # type: ignore[union-attr]
+                conn.commit()
             return n_rows
 
         elif engine == "sqlalchemy":
@@ -4363,8 +4430,8 @@ class DataFrame:
             elif isinstance(connection, Connectable):
                 sa_object = connection
             else:
-                error_msg = f"unexpected connection type {type(connection)}"
-                raise TypeError(error_msg)
+                msg = f"unrecognised connection type {connection!r}"
+                raise TypeError(msg)
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:
@@ -8333,16 +8400,8 @@ class DataFrame:
         """
         require_same_type(self, other)
         if in_place:
-            try:
-                self._df.vstack_mut(other._df)
-            except RuntimeError as exc:
-                if str(exc) == "Already mutably borrowed":
-                    self._df.vstack_mut(other._df.clone())
-                    return self
-                else:
-                    raise
-            else:
-                return self
+            self._df.vstack_mut(other._df)
+            return self
 
         return self._from_pydf(self._df.vstack(other._df))
 
@@ -8400,13 +8459,7 @@ class DataFrame:
         └─────┴─────┘
         """
         require_same_type(self, other)
-        try:
-            self._df.extend(other._df)
-        except RuntimeError as exc:
-            if str(exc) == "Already mutably borrowed":
-                self._df.extend(other._df.clone())
-            else:
-                raise
+        self._df.extend(other._df)
         return self
 
     def drop(
@@ -9508,7 +9561,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
-    ) -> dict[tuple[object, ...], DataFrame]: ...
+    ) -> dict[tuple[Any, ...], DataFrame]: ...
 
     @overload
     def partition_by(
@@ -9518,7 +9571,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: bool,
-    ) -> list[DataFrame] | dict[tuple[object, ...], DataFrame]: ...
+    ) -> list[DataFrame] | dict[tuple[Any, ...], DataFrame]: ...
 
     def partition_by(
         self,
@@ -9527,7 +9580,7 @@ class DataFrame:
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
-    ) -> list[DataFrame] | dict[tuple[object, ...], DataFrame]:
+    ) -> list[DataFrame] | dict[tuple[Any, ...], DataFrame]:
         """
         Group by the given columns and return the groups as separate dataframes.
 
@@ -9859,7 +9912,7 @@ class DataFrame:
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> df.lazy()  # doctest: +ELLIPSIS
+        >>> df.lazy()
         <LazyFrame at ...>
         """
         return wrap_ldf(self._df.lazy())

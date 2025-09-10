@@ -265,17 +265,18 @@ fn decode_column(
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
 
-    let (array, pred_true_mask) = polars_io::prelude::_internal::to_deserializer(
+    let (arrays, pred_true_mask) = polars_io::prelude::_internal::to_deserializer(
         columns_to_deserialize,
         arrow_field.clone(),
         filter,
     )?;
 
     if !skip_num_rows_check {
-        assert_eq!(array.len(), expected_num_rows);
+        let num_rows = arrays.iter().map(|array| array.len()).sum::<usize>();
+        assert_eq!(num_rows, expected_num_rows);
     }
 
-    let mut series = Series::try_from((arrow_field, array))?;
+    let mut series = Series::try_from((arrow_field, arrays))?;
 
     if let Some(col_idxs) = row_group_data
         .row_group_metadata

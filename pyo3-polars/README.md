@@ -112,10 +112,12 @@ out = df.with_columns(
 See the full example in [example/derive_expression]:
 https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression
 
-## 2. Pyo3 extensions for Polars
+## 2. PyO3 extensions for Polars
 
-See the `example` directory for a concrete example. Here we send a polars `DataFrame` to rust and
-then compute a `jaccard similarity` in parallel using `rayon` and rust hash sets.
+See the `example` directory for a concrete example. Here we send a polars `DataFrame` to Rust and
+then compute a `jaccard similarity` in parallel using `rayon` and Rust hash sets. These PyO3
+extension types are however only provided for convenience and do not have stability guarantees
+beyond that the latest definitions should work for the latest version of Polars.
 
 ## Run example
 

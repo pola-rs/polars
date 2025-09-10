@@ -15,6 +15,7 @@ Miscellaneous
     LazyFrame.lazy
     LazyFrame.map_batches
     LazyFrame.pipe
+    LazyFrame.pipe_with_schema
     LazyFrame.profile
     LazyFrame.remote
 

@@ -22,7 +22,7 @@ pub enum SinkTarget {
     Partition(PyPartitioning),
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyPartitioning {
     #[pyo3(get)]

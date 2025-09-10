@@ -30,7 +30,7 @@ pub fn page_iter_to_array(
     field: Field,
     filter: Option<Filter>,
     init_nested: Option<Vec<InitNested>>,
-) -> ParquetResult<(Option<NestedState>, Box<dyn Array>, Bitmap)> {
+) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)> {
     use ArrowDataType::*;
 
     let physical_type = &type_.physical_type;
@@ -142,18 +142,23 @@ pub fn page_iter_to_array(
             )?
             .collect(filter)?;
 
-            let values = array
-                .values()
-                .chunks_exact(n)
-                .map(|value: &[u8]| i32::from_le_bytes(value[..4].try_into().unwrap()))
-                .collect::<Vec<_>>();
-            let validity = array.validity().cloned();
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let values = array
+                        .values()
+                        .chunks_exact(n)
+                        .map(|value: &[u8]| i32::from_le_bytes(value[..4].try_into().unwrap()))
+                        .collect::<Vec<_>>();
+                    let validity = array.validity().cloned();
+                    Ok(
+                        PrimitiveArray::<i32>::try_new(dtype.clone(), values.into(), validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 
-            (
-                nested,
-                PrimitiveArray::<i32>::try_new(dtype.clone(), values.into(), validity)?.to_boxed(),
-                ptm,
-            )
+            (nested, array, ptm)
         },
         (PhysicalType::FixedLenByteArray(12), Interval(IntervalUnit::DayTime)) => {
             // @TODO: Make a separate decoder for this
@@ -168,19 +173,23 @@ pub fn page_iter_to_array(
             )?
             .collect(filter)?;
 
-            let values = array
-                .values()
-                .chunks_exact(n)
-                .map(super::super::convert_days_ms)
-                .collect::<Vec<_>>();
-            let validity = array.validity().cloned();
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let values = array
+                        .values()
+                        .chunks_exact(n)
+                        .map(super::super::convert_days_ms)
+                        .collect::<Vec<_>>();
+                    let validity = array.validity().cloned();
+                    Ok(
+                        PrimitiveArray::<days_ms>::try_new(dtype.clone(), values.into(), validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 
-            (
-                nested,
-                PrimitiveArray::<days_ms>::try_new(dtype.clone(), values.into(), validity)?
-                    .to_boxed(),
-                ptm,
-            )
+            (nested, array, ptm)
         },
         (PhysicalType::FixedLenByteArray(16), Int128) => {
             let n = 16;
@@ -193,16 +202,21 @@ pub fn page_iter_to_array(
             )?
             .collect(filter)?;
 
-            let (_, values, validity) = array.into_inner();
-            let values = values
-                .try_transmute()
-                .expect("this should work since the parquet decoder has alignment constraints");
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let (_, values, validity) = array.into_inner();
+                    let values = values.try_transmute().expect(
+                        "this should work since the parquet decoder has alignment constraints",
+                    );
+                    Ok(
+                        PrimitiveArray::<i128>::try_new(dtype.clone(), values, validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 
-            (
-                nested,
-                PrimitiveArray::<i128>::try_new(dtype.clone(), values, validity)?.to_boxed(),
-                ptm,
-            )
+            (nested, array, ptm)
         },
         (PhysicalType::Int32, Decimal(_, _)) => PageDecoder::new(
             &field.name,
@@ -239,18 +253,23 @@ pub fn page_iter_to_array(
             )?
             .collect(filter)?;
 
-            let values = array
-                .values()
-                .chunks_exact(n)
-                .map(|value: &[u8]| super::super::convert_i128(value, n))
-                .collect::<Vec<_>>();
-            let validity = array.validity().cloned();
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let values = array
+                        .values()
+                        .chunks_exact(n)
+                        .map(|value: &[u8]| super::super::convert_i128(value, n))
+                        .collect::<Vec<_>>();
+                    let validity = array.validity().cloned();
+                    Ok(
+                        PrimitiveArray::<i128>::try_new(dtype.clone(), values.into(), validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 
-            (
-                nested,
-                PrimitiveArray::<i128>::try_new(dtype.clone(), values.into(), validity)?.to_boxed(),
-                ptm,
-            )
+            (nested, array, ptm)
         },
         (PhysicalType::Int32, Decimal256(_, _)) => PageDecoder::new(
             &field.name,
@@ -282,18 +301,23 @@ pub fn page_iter_to_array(
             )?
             .collect(filter)?;
 
-            let values = array
-                .values()
-                .chunks_exact(n)
-                .map(|value: &[u8]| i256(I256::new(super::super::convert_i128(value, n))))
-                .collect::<Vec<_>>();
-            let validity = array.validity().cloned();
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let values = array
+                        .values()
+                        .chunks_exact(n)
+                        .map(|value: &[u8]| i256(I256::new(super::super::convert_i128(value, n))))
+                        .collect::<Vec<_>>();
+                    let validity = array.validity().cloned();
+                    Ok(
+                        PrimitiveArray::<i256>::try_new(dtype.clone(), values.into(), validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 
-            (
-                nested,
-                PrimitiveArray::<i256>::try_new(dtype.clone(), values.into(), validity)?.to_boxed(),
-                ptm,
-            )
+            (nested, array, ptm)
         },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 32 => {
             // @TODO: Make a separate decoder for this
@@ -309,18 +333,23 @@ pub fn page_iter_to_array(
             )?
             .collect(filter)?;
 
-            let values = array
-                .values()
-                .chunks_exact(n)
-                .map(super::super::convert_i256)
-                .collect::<Vec<_>>();
-            let validity = array.validity().cloned();
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let values = array
+                        .values()
+                        .chunks_exact(n)
+                        .map(super::super::convert_i256)
+                        .collect::<Vec<_>>();
+                    let validity = array.validity().cloned();
+                    Ok(
+                        PrimitiveArray::<i256>::try_new(dtype.clone(), values.into(), validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 
-            (
-                nested,
-                PrimitiveArray::<i256>::try_new(dtype.clone(), values.into(), validity)?.to_boxed(),
-                ptm,
-            )
+            (nested, array, ptm)
         },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n > 32 => {
             return Err(ParquetError::not_supported(format!(
@@ -365,7 +394,7 @@ pub fn page_iter_to_array(
         (PhysicalType::FixedLenByteArray(2), Float32) => {
             // @NOTE: To reduce code bloat, we just use the FixedSizeBinary decoder.
 
-            let (nested, mut fsb_array, ptm) = PageDecoder::new(
+            let (nested, array, ptm) = PageDecoder::new(
                 &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(2),
@@ -374,24 +403,26 @@ pub fn page_iter_to_array(
             )?
             .collect(filter)?;
 
-            let validity = fsb_array.take_validity();
-            let values = fsb_array.values().as_slice();
-            assert_eq!(values.len() % 2, 0);
-            let values = values.chunks_exact(2);
-            let values = values
-                .map(|v| {
-                    // SAFETY: We know that `v` is always of size two.
-                    let le_bytes: [u8; 2] = unsafe { v.try_into().unwrap_unchecked() };
-                    let v = arrow::types::f16::from_le_bytes(le_bytes);
-                    v.to_f32()
+            let array = array
+                .into_iter()
+                .map(|mut fsb_array| {
+                    let validity = fsb_array.take_validity();
+                    let values = fsb_array.values().as_slice();
+                    assert_eq!(values.len() % 2, 0);
+                    let values = values.chunks_exact(2);
+                    let values = values
+                        .map(|v| {
+                            // SAFETY: We know that `v` is always of size two.
+                            let le_bytes: [u8; 2] = unsafe { v.try_into().unwrap_unchecked() };
+                            let v = arrow::types::f16::from_le_bytes(le_bytes);
+                            v.to_f32()
+                        })
+                        .collect();
+                    Ok(PrimitiveArray::<f32>::new(dtype.clone(), values, validity).to_boxed())
                 })
-                .collect();
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 
-            (
-                nested,
-                PrimitiveArray::<f32>::new(dtype, values, validity).to_boxed(),
-                ptm,
-            )
+            (nested, array, ptm)
         },
 
         (PhysicalType::Float, Float32) => PageDecoder::new(
@@ -417,7 +448,7 @@ pub fn page_iter_to_array(
                 &field.name,
                 pages,
                 dtype,
-                binview::BinViewDecoder { is_string },
+                binview::BinViewDecoder::new(is_string),
                 init_nested,
             )?
             .collect(filter)?
@@ -429,7 +460,7 @@ pub fn page_iter_to_array(
                 &field.name,
                 pages,
                 dtype,
-                binview::BinViewDecoder { is_string },
+                binview::BinViewDecoder::new(is_string),
                 init_nested,
             )?
             .collect(filter)?
@@ -486,12 +517,19 @@ pub fn page_iter_to_array(
                 )?
                 .collect(filter)?;
 
-                (
-                    nested,
-                    polars_compute::cast::cast(array.as_ref(), &dtype, CastOptionsImpl::default())
-                        .unwrap(),
-                    ptm,
-                )
+                let array = array
+                    .into_iter()
+                    .map(|array| {
+                        polars_compute::cast::cast(
+                            array.as_ref(),
+                            &dtype,
+                            CastOptionsImpl::default(),
+                        )
+                        .unwrap()
+                    })
+                    .collect();
+
+                (nested, array, ptm)
             }
         },
         (from, to) => {
@@ -581,7 +619,7 @@ fn timestamp(
     filter: Option<Filter>,
     time_unit: TimeUnit,
     nested: Option<Vec<InitNested>>,
-) -> ParquetResult<(Option<NestedState>, Box<dyn Array>, Bitmap)> {
+) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)> {
     if physical_type == &PhysicalType::Int96 {
         return match time_unit {
             TimeUnit::Nanosecond => PageDecoder::new(

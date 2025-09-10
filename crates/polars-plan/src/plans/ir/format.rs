@@ -200,7 +200,7 @@ impl<'a> IRDisplay<'a> {
                 let right_on = self.display_expr_slice(right_on);
 
                 // Fused cross + filter (show as nested loop join)
-                if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+                if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                     let predicate = self.display_expr(predicate);
                     let name = "NESTED LOOP";
                     write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
@@ -455,8 +455,14 @@ impl Display for ExprIRDisplay<'_> {
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
                     AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),
-                    Count(expr, false) => write!(f, "{}.count()", self.with_root(expr)),
-                    Count(expr, true) => write!(f, "{}.len()", self.with_root(expr)),
+                    Count {
+                        input,
+                        include_nulls: false,
+                    } => write!(f, "{}.count()", self.with_root(input)),
+                    Count {
+                        input,
+                        include_nulls: true,
+                    } => write!(f, "{}.len()", self.with_root(input)),
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
                     Quantile {
@@ -828,7 +834,7 @@ pub fn write_ir_non_recursive(
             };
 
             // Fused cross + filter (show as nested loop join)
-            if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+            if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                 let predicate = predicate.display(expr_arena);
                 write!(f, "{:indent$}NESTED_LOOP JOIN ON {predicate}", "")?;
             } else {

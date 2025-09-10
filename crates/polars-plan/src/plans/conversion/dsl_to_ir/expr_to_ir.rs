@@ -255,9 +255,18 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Implode(input), output_name)
                 },
-                AggExpr::Count(input, include_nulls) => {
+                AggExpr::Count {
+                    input,
+                    include_nulls,
+                } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Count(input, include_nulls), output_name)
+                    (
+                        IRAggExpr::Count {
+                            input,
+                            include_nulls,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Quantile {
                     expr,

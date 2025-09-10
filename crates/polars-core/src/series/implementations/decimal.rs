@@ -381,6 +381,11 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.apply_physical_to_s(|ca| ca.shift(periods))
     }
 
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

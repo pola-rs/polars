@@ -577,7 +577,7 @@ impl<D: utils::Decoder> PageDecoder<D> {
     pub fn collect_nested(
         mut self,
         filter: Option<Filter>,
-    ) -> ParquetResult<(NestedState, D::Output, Bitmap)> {
+    ) -> ParquetResult<(NestedState, Vec<D::Output>, Bitmap)> {
         let init = self.init_nested.as_mut().unwrap();
 
         // @TODO: We should probably count the filter so that we don't overallocate
@@ -678,7 +678,6 @@ impl<D: utils::Decoder> PageDecoder<D> {
             state.decode(
                 &mut self.decoder,
                 &mut target,
-                &mut BitmapBuilder::new(), // This will not get used or filled
                 Some(Filter::Mask(leaf_filter)),
             )?;
 
@@ -694,6 +693,6 @@ impl<D: utils::Decoder> PageDecoder<D> {
 
         let array = self.decoder.finalize(self.dtype, self.dict, target)?;
 
-        Ok((nested_state, array, Bitmap::new()))
+        Ok((nested_state, vec![array], Bitmap::new()))
     }
 }

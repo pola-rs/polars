@@ -62,6 +62,12 @@ def _scan_pyarrow_dataset_impl(
     batch_size
         The maximum row count for scanned pyarrow record batches.
 
+    Warnings
+    --------
+    Don't use this if you accept untrusted user inputs. Predicates will be evaluated
+    with python 'eval'. There is sanitation in place, but it is a possible attack
+    vector.
+
     Returns
     -------
     DataFrame

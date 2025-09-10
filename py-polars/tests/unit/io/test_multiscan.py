@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import re
+from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Callable
 
 import pyarrow.parquet as pq
@@ -15,17 +17,16 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+SCAN_AND_WRITE_FUNCS = [
+    (pl.scan_ipc, pl.DataFrame.write_ipc),
+    (pl.scan_parquet, pl.DataFrame.write_parquet),
+    (pl.scan_csv, pl.DataFrame.write_csv),
+    (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+]
+
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
     a_path = tmp_path / "a"
     b_path = tmp_path / "b"
@@ -223,32 +224,23 @@ def test_multiscan_hive_predicate(
         raise
 
 
-@pytest.mark.parametrize(
-    ("scan", "write", "ext"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
-        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
-        (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 @pytest.mark.write_disk
 def test_multiscan_row_index(
     tmp_path: Path,
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, Path], Any],
-    ext: str,
 ) -> None:
     a = pl.DataFrame({"col": [5, 10, 1996]})
     b = pl.DataFrame({"col": [42]})
     c = pl.DataFrame({"col": [13, 37]})
 
-    write(a, tmp_path / f"a.{ext}")
-    write(b, tmp_path / f"b.{ext}")
-    write(c, tmp_path / f"c.{ext}")
+    write(a, tmp_path / "a")
+    write(b, tmp_path / "b")
+    write(c, tmp_path / "c")
 
     col = pl.concat([a, b, c]).to_series()
-    g = tmp_path / f"*.{ext}"
+    g = tmp_path / "*"
 
     assert_frame_equal(
         scan(g, row_index_name="ri").collect(),
@@ -334,7 +326,10 @@ def test_schema_mismatch_type_mismatch(
 
     # NDJSON will just parse according to `projected_schema`
     cx = (
-        pytest.raises(pl.exceptions.ComputeError, match="cannot parse 'a' as Int64")
+        pytest.raises(
+            pl.exceptions.ComputeError,
+            match=re.escape("cannot parse 'a' (string) as Int64"),
+        )
         if scan is pl.scan_ndjson
         else pytest.raises(
             pl.exceptions.SchemaError,  # type: ignore[arg-type]
@@ -389,18 +384,7 @@ def test_schema_mismatch_order_mismatch(
         q.collect(engine="streaming")
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-        ),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_multiscan_head(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
@@ -445,18 +429,7 @@ def test_multiscan_tail(
     )
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-        ),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_multiscan_slice_middle(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
@@ -498,20 +471,11 @@ def test_multiscan_slice_middle(
     )
 
 
-@pytest.mark.parametrize(
-    ("scan", "write", "ext"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
-        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-        (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
 def test_multiscan_slice_parametric(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
-    ext: str,
     offset: int,
     length: int,
 ) -> None:
@@ -554,16 +518,8 @@ def test_multiscan_slice_parametric(
     )
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
-def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_many_files(scan: Any, write: Any) -> None:
     f = io.BytesIO()
     write(pl.DataFrame({"a": [5, 10, 1996]}), f)
     bs = f.getvalue()
@@ -580,7 +536,7 @@ def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
     )
 
 
-def test_deadlock_stop_requested(tmp_path: Path, monkeypatch: Any) -> None:
+def test_deadlock_stop_requested(monkeypatch: Any) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
@@ -602,15 +558,7 @@ def test_deadlock_stop_requested(tmp_path: Path, monkeypatch: Any) -> None:
     left.join(right, pl.col.a == pl.col.a).collect(engine="streaming").height
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_deadlock_linearize(scan: Any, write: Any) -> None:
     df = pl.DataFrame(
         {
@@ -633,12 +581,7 @@ def test_deadlock_linearize(scan: Any, write: Any) -> None:
 
 @pytest.mark.parametrize(
     ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
+    SCAN_AND_WRITE_FUNCS,
 )
 def test_row_index_filter_22612(scan: Any, write: Any) -> None:
     df = pl.DataFrame(
@@ -673,15 +616,7 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
         )
 
 
-@pytest.mark.parametrize(
-    ("scan", "write"),
-    [
-        (pl.scan_ipc, pl.DataFrame.write_ipc),
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-    ],
-)
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_row_index_name_in_file(scan: Any, write: Any) -> None:
     f = io.BytesIO()
     write(pl.DataFrame({"index": 1}), f)
@@ -716,4 +651,65 @@ def test_extra_columns_not_ignored_22218() -> None:
         .select(pl.all())
         .collect(),
         pl.DataFrame({"a": [1, 2], "b": [1, None]}),
+    )
+
+
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_scan_null_upcast(scan: Any, write: Any) -> None:
+    dfs = [
+        pl.DataFrame({"a": [1, 2, 3]}),
+        pl.select(a=pl.lit(None, dtype=pl.Null)),
+    ]
+
+    files = [io.BytesIO(), io.BytesIO()]
+
+    write(dfs[0], files[0])
+    write(dfs[1], files[1])
+
+    # Prevent CSV schema inference from loading as string (it looks at multiple
+    # files).
+    if scan is pl.scan_csv:
+        scan = partial(scan, schema=dfs[0].schema)
+
+    assert_frame_equal(
+        scan(files).collect(),
+        pl.DataFrame({"a": [1, 2, 3, None]}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
+    schema = {"a": pl.List(pl.Struct({"field": pl.Int64}))}
+
+    dfs = [
+        pl.DataFrame(
+            {"a": [[{"field": 1}], [{"field": 2}], []]},
+            schema=schema,
+        ),
+        pl.select(a=pl.lit(None, dtype=pl.Null)),
+    ]
+
+    files = [io.BytesIO(), io.BytesIO()]
+
+    write(dfs[0], files[0])
+    write(dfs[1], files[1])
+
+    # Prevent CSV schema inference from loading as string (it looks at multiple
+    # files).
+    if scan is pl.scan_csv:
+        scan = partial(scan, schema=schema)
+
+    assert_frame_equal(
+        scan(files).collect(),
+        pl.DataFrame(
+            {"a": [[{"field": 1}], [{"field": 2}], [], None]},
+            schema=schema,
+        ),
     )

@@ -1,4 +1,4 @@
-# Define compute context
+# Compute context introduction
 
 The compute context defines the hardware configuration used to execute your queries. This can be
 either a single node or, for distributed execution, multiple nodes. This section explains how to set

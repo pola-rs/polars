@@ -29,7 +29,7 @@ pub(crate) fn call_lambda_with_series(
     let result = lambda.call(py, (series_objects,), Some(&dict))?;
     Ok(result
         .extract::<PySeries>(py)
-        .map(|s| s.series.into_column())?)
+        .map(|s| s.series.into_inner().into_column())?)
 }
 
 pub fn map_expr(
