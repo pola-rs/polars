@@ -2,16 +2,18 @@
 
 # Public datasets
 
-Start experimenting with Polars Cloud immediately using our curated public datasets. These datasets span different scale factors, letting you test performance across various data sizes—from small exploratory queries to large-scale processing workloads.
+Start experimenting with Polars Cloud immediately using our curated public datasets. These datasets
+span different scale factors, letting you test performance across various data sizes—from small
+exploratory queries to large-scale processing workloads.
 
 ## Available datasets
 
-**PDSH** - derived from TPC-H benchmark
-Standard analytical queries for testing joins, aggregations, and filtering operations.
-Queries available in the [Polars benchmark repository](https://github.com/pola-rs/polars-benchmark/tree/main/queries/polars).
+**PDSH** - derived from TPC-H benchmark Standard analytical queries for testing joins, aggregations,
+and filtering operations. Queries available in the
+[Polars benchmark repository](https://github.com/pola-rs/polars-benchmark/tree/main/queries/polars).
 
-**PDSDS** - derived from TPC-DS benchmark
-Decision support dataset designed for complex analytical workloads.
+**PDSDS** - derived from TPC-DS benchmark Decision support dataset designed for complex analytical
+workloads.
 
 **NYC Taxi** - [source: NYC.gov](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
 Real-world transportation data with temporal patterns and geospatial dimensions.
@@ -28,7 +30,10 @@ data = pl.scan_parquet(
 query = data.select().remote(ctx).execute()
 ```
 
-**Note:** These buckets use [AWS Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html), meaning you pay only for pays the cost of the request and the data download from the bucket. The storage costs are covered.
+**Note:** These buckets use
+[AWS Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html),
+meaning you pay only for pays the cost of the request and the data download from the bucket. The
+storage costs are covered.
 
 ## Dataset URLs
 
