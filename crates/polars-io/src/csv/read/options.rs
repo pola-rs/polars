@@ -42,7 +42,8 @@ pub struct CsvReadOptions {
     pub raise_if_empty: bool,
     pub ignore_errors: bool,
     pub fields_to_cast: Vec<Field>,
-    pub include_file_paths: Option<PlSmallStr>,
+    pub include_file_paths_colname: Option<String>,
+    pub include_file_paths_pathname: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -89,7 +90,8 @@ impl Default for CsvReadOptions {
             raise_if_empty: true,
             ignore_errors: false,
             fields_to_cast: vec![],
-            include_file_paths: None,
+            include_file_paths_colname: None,
+            include_file_paths_pathname: None,
         }
     }
 }
@@ -250,8 +252,13 @@ impl CsvReadOptions {
     }
 
     /// Include the file paths in the DataFrame.
-    pub fn with_include_file_paths(mut self, include_file_paths: Option<PlSmallStr>) -> Self {
-        self.include_file_paths = include_file_paths;
+    pub fn with_include_file_paths(
+        mut self,
+        include_file_paths_colname: Option<String>,
+        include_file_paths_pathname: Option<String>,
+    ) -> Self {
+        self.include_file_paths_colname = include_file_paths_colname;
+        self.include_file_paths_pathname = include_file_paths_pathname;
         self
     }
 

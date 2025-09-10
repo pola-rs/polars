@@ -174,25 +174,20 @@ where
         let mut df = csv_reader.finish()?;
 
         // Add the include_file_paths column if specified
-        if let Some(col) = &self.options.include_file_paths {
+        if let Some(col) = &self.options.include_file_paths_colname {
             if df.get_column_index(col).is_some() {
                 polars_bail!(
-                    Duplicate: r#"column name specified by include_file_paths "{}" conflicts with column name from csv file"#,
+                    Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
                     col
                 );
             }
             unsafe {
                 df.with_column_unchecked(Column::new_scalar(
-                    col.clone(),
+                    col.clone().into(),
                     Scalar::new(
                         DataType::String,
                         AnyValue::StringOwned(
-                            self.options
-                                .path
-                                .unwrap()
-                                .to_string_lossy()
-                                .into_owned()
-                                .into(),
+                            self.options.include_file_paths_pathname.unwrap().into(),
                         ),
                     ),
                     df.height(),

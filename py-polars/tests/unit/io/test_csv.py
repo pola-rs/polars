@@ -4,10 +4,12 @@ import gzip
 import io
 import os
 import sys
+import tempfile
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
 
@@ -23,8 +25,6 @@ from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars._typing import CsvQuoteStyle, TimeUnit
     from tests.unit.conftest import MemoryUsage
 
@@ -2819,3 +2819,65 @@ def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
     )
     expected = "b\n" + "a\n" * n_rows
     assert df.write_csv() == expected
+
+
+@pytest.mark.parametrize(("number_of_files"), [1, 2])
+def test_read_csv_include_file_paths(number_of_files: int) -> None:
+    with tempfile.TemporaryDirectory() as tmp_path:
+        tmp_path = Path(tmp_path)
+        dfs: list[pl.DataFrame] = []
+
+        for x in ["1", "2"][:number_of_files]:
+            path = Path(tmp_path / f"{x}.csv").absolute()
+            dfs.append(
+                pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path)))
+            )
+            dfs[-1].drop("path").write_csv(path)
+
+        expected = pl.concat(dfs)
+        assert expected.columns == ["x", "path"]
+
+        if number_of_files == 1:
+            read_csv_path = tmp_path / "1.csv"
+        else:
+            read_csv_path = tmp_path / "*.csv"
+
+        with pytest.raises(
+            pl.exceptions.DuplicateError,
+            match=r'column name for file paths "x" conflicts with column name from file',
+        ):
+            pl.read_csv(read_csv_path, include_file_paths="x")
+
+        res = pl.read_csv(
+            read_csv_path,
+            include_file_paths="path",
+            schema=expected.drop("path").schema,
+        )
+        assert_frame_equal(res, expected)
+
+
+def test_read_csv_include_file_name_file_obj() -> None:
+    with tempfile.TemporaryDirectory() as tmp_path:
+        tmp_path = Path(tmp_path)
+        path = Path(tmp_path / "1.csv").absolute()
+        df = pl.DataFrame({"x": 10 * [1]})
+        df.write_csv(path)
+
+        expected = df.with_columns(path=pl.lit("open-file"))
+        with path.open("rb") as f:
+            res = pl.read_csv(
+                f, include_file_paths="path", schema=expected.drop("path").schema
+            )
+        assert_frame_equal(res, expected)
+
+
+def test_read_csv_include_file_name_bytes() -> None:
+    buf = io.BytesIO()
+    df = pl.DataFrame({"x": 10 * [1]})
+    df.write_csv(buf)
+    buf.seek(0)
+    expected = df.with_columns(path=pl.lit("in-mem"))
+    res = pl.read_csv(
+        buf, include_file_paths="path", schema=expected.drop("path").schema
+    )
+    assert_frame_equal(res, expected)
