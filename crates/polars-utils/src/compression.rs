@@ -68,7 +68,7 @@ impl CompressionLevel<u8> for GzipLevel {
 impl GzipLevel {
     /// Attempts to create a gzip compression level.
     ///
-    /// Compression levels must be valid (i.e. be acceptable for [`flate2::Compression`]).
+    /// Compression levels must be valid (i.e. be acceptable for `flate2::Compression`).
     pub fn try_new(level: u8) -> PolarsResult<Self> {
         Self::is_valid_level(level).map(|_| Self(level))
     }
@@ -93,7 +93,7 @@ impl CompressionLevel<i32> for ZstdLevel {
 impl ZstdLevel {
     /// Attempts to create a zstd compression level from a given compression level.
     ///
-    /// Compression levels must be valid (i.e. be acceptable for [`zstd::compression_level_range`]).
+    /// Compression levels must be valid (i.e. be acceptable for `zstd::compression_level_range`).
     pub fn try_new(level: i32) -> PolarsResult<Self> {
         Self::is_valid_level(level).map(|_| Self(level))
     }
