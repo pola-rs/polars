@@ -200,7 +200,8 @@ def lit(
 
         # handle numeric values
         if hasattr(np, "float128") and isinstance(value, np.float128):
-            raise ValueError("float128 is not supported:", value)
+            error = f"float128 is not supported: {value}"
+            raise ValueError(error)
 
         if isinstance(value, np.generic):
             dtype = DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE.get(
