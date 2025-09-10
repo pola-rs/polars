@@ -53,8 +53,15 @@ pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReducti
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
         Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
-        String | Binary | Categorical(..) => Box::new(super::NullGroupedReduction::new(dtype)),
-        _ => polars_bail!(InvalidOperation: "`sum` operation not supported for dtype `{dtype}`"),
+        Null => Box::new(super::NullGroupedReduction::new(DataType::Null)),
+        String => {
+            polars_bail!(
+                op = "`sum`",
+                DataType::String,
+                hint = "you may mean to call `str.join` or `list.join`"
+            );
+        },
+        _ => polars_bail!(op = "`sum`", dtype),
     })
 }
 

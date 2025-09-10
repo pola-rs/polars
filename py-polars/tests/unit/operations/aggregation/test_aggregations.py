@@ -817,6 +817,26 @@ def test_agg_with_slice_then_cast_23682(
     )
 
 
+# TODO: [amber] LEFT HERE
+#
+# Drafted this message in Discord chat:
+#
+# > Weird question, ehhm: How do you throw a type error?
+#
+# `to_field_impl` returns a `PolarsResult`, but this result is `.expect()`'d in
+# `expr_irs_to_schema` with `'should be resolved'`, which results in a panic.
+# However, I presume this would not be the first time somebody adds a case
+# in which type checking should fail. Am I missing something here?
+
+# A couple of type checking behaviors should change; in particular,
+# `sum` and `mean` should not be supported on String, Binary, and Categorical
+# (and Utf8?).
+# Currently, they always return Null : Dtype ∈ {String, Binary, Categorical, Utf8}
+#
+# Thereafter I think we should maybe also check for other operations that do not
+# make sense.
+
+
 @pytest.mark.parametrize(
     ("op", "agg"),
     [
@@ -824,10 +844,10 @@ def test_agg_with_slice_then_cast_23682(
         ("min", lambda df: df.min()),
         ("max", lambda df: df.max()),
         ("mean", lambda df: df.mean()),
+        ("median", lambda df: df.median()),
         ("count", lambda df: df.count()),
         ("std", lambda df: df.std()),
         ("var", lambda df: df.var()),
-        ("median", lambda df: df.median()),
         ("quantile", lambda df: df.quantile(0.5)),
         ("first", lambda df: df.first()),
         ("last", lambda df: df.last()),
@@ -836,6 +856,7 @@ def test_agg_with_slice_then_cast_23682(
         ("all", lambda df: df.cast(pl.Boolean).all()),
         ("mode", lambda df: df.mode()),
         ("cum_sum", lambda df: df.cum_sum()),
+        ("approx_n_unique", lambda df: df.approx_n_unique()),
     ],
 )
 @pytest.mark.parametrize(
@@ -848,6 +869,7 @@ def test_agg_with_slice_then_cast_23682(
         pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Int32}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Float32}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Float64}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
         pl.DataFrame({"a": [None]}, schema={"a": pl.Null}),
@@ -862,6 +884,10 @@ def test_agg_invalid_same_engines_behavior(
 ) -> None:
     # If the in-memory engine produces a good result, then the streaming engine
     # should also produce a good result, and then it should match the in-memory result.
+
+    if df.schema["a"] == pl.Duration() and op in {"std", "var"}:
+        # TODO: Remove this exception when std & var are implemented for Duration
+        pytest.skip("Duration does not support these aggregations")
 
     inmemory_result, inmemory_error = None, None
     streaming_result, streaming_error = None, None
@@ -893,3 +919,38 @@ def test_agg_invalid_same_engines_behavior(
 
     if not inmemory_error:
         assert_frame_equal(streaming_result, inmemory_result)
+
+
+@pytest.mark.parametrize(
+    ("op", "agg"),
+    [
+        ("sum", lambda df: df.sum()),
+        ("mean", lambda df: df.mean()),
+        ("median", lambda df: df.median()),
+        ("std", lambda df: df.std()),
+        ("var", lambda df: df.var()),
+    ],
+)
+@pytest.mark.parametrize(
+    "df",
+    [
+        # TODO: [amber] Maybe enable these dtypes too
+        # pl.DataFrame({"a": [[10]]}, schema={"a": pl.Array(shape=(1,), inner=pl.Int32)}),
+        # pl.DataFrame({"a": [[1]]}, schema={"a": pl.Struct(fields={"a": pl.Int32})}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Categorical}),
+        pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
+    ],
+)
+def test_invalid_agg_dtypes_should_raise(
+    op: str, agg: Callable[[pl.DataFrame], pl.DataFrame], df: pl.DataFrame
+) -> None:
+    with pytest.raises(
+        pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
+    ):
+        df.select(agg(pl.all()))
+    with pytest.raises(
+        pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
+    ):
+        df.lazy().select(agg(pl.all())).collect(engine="streaming")

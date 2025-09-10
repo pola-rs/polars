@@ -426,6 +426,9 @@ impl StringChunked {
 }
 
 impl ChunkAggSeries for StringChunked {
+    fn sum_reduce(&self) -> Scalar {
+        Scalar::null(DataType::Null)
+    }
     fn max_reduce(&self) -> Scalar {
         let av: AnyValue = self.max_str().into();
         Scalar::new(DataType::String, av.into_static())
@@ -665,6 +668,7 @@ mod test {
         assert_eq!(
             ca.into_series()
                 .mean_reduce()
+                .unwrap()
                 .value()
                 .extract::<f32>()
                 .unwrap(),
@@ -674,7 +678,11 @@ mod test {
         let ca = Float32Chunked::full_null(PlSmallStr::EMPTY, 3);
         assert_eq!(ca.mean(), None);
         assert_eq!(
-            ca.into_series().mean_reduce().value().extract::<f32>(),
+            ca.into_series()
+                .mean_reduce()
+                .unwrap()
+                .value()
+                .extract::<f32>(),
             None
         );
     }

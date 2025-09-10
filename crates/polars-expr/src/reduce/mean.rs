@@ -18,7 +18,7 @@ pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduct
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
-        String | Binary | Categorical(..) => Box::new(super::NullGroupedReduction::new(dtype)),
+        Null => Box::new(super::NullGroupedReduction::new(DataType::Null)),
         _ => polars_bail!(InvalidOperation: "`mean` operation not supported for dtype `{dtype}`"),
     })
 }

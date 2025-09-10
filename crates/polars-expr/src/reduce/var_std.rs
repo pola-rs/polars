@@ -37,6 +37,7 @@ pub fn new_var_std_reduction(
             },
         )),
         Duration(..) => todo!(),
+        Null => Box::new(super::NullGroupedReduction::new(dtype)),
         _ => {
             polars_bail!(InvalidOperation: "`{op_name}` operation not supported for dtype `{dtype}`")
         },
