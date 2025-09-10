@@ -438,6 +438,7 @@ def test_head_group_by() -> None:
         .explode(cs.all().exclude(keys))
     )
 
+    print(out.explain())
     assert out.collect().rows() == [
         ("Corn", "Chicago", "Mary", 3.0),
         ("Corn", "Chicago", "Paul", 2.4),
@@ -450,11 +451,13 @@ def test_head_group_by() -> None:
         {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
     )
     out = ldf.group_by("letters").tail(2).sort("letters")
+    print(out.explain())
     assert_frame_equal(
         out.collect(),
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]}),
     )
     out = ldf.group_by("letters").head(2).sort("letters")
+    print(out.explain())
     assert_frame_equal(
         out.collect(),
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]}),
