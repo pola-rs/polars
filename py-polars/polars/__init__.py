@@ -1,3 +1,35 @@
+"""
+Polars: Blazingly fast DataFrames
+=================================
+
+Polars is a fast, open-source library for data manipulation with an expressive, typed API.
+
+Basic usage:
+
+   >>> import polars as pl
+   >>> df = pl.DataFrame(
+   ...     {
+   ...         "name": ["Alice", "Bob", "Charlie"],
+   ...         "age": [25, 30, 35],
+   ...         "city": ["New York", "London", "Tokyo"],
+   ...     }
+   ... )
+   >>> df.filter(pl.col("age") > 28)
+   shape: (2, 3)
+   ┌─────────┬─────┬────────┐
+   │ name    ┆ age ┆ city   │
+   │ ---     ┆ --- ┆ ---    │
+   │ str     ┆ i64 ┆ str    │
+   ╞═════════╪═════╪════════╡
+   │ Bob     ┆ 30  ┆ London │
+   │ Charlie ┆ 35  ┆ Tokyo  │
+   └─────────┴─────┴────────┘
+
+User Guide: https://docs.pola.rs/
+Python API Documentation: https://docs.pola.rs/api/python/stable/
+Source Code: https://github.com/pola-rs/polars
+"""  # noqa: D400, W505, D205
+
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -25,7 +57,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
     __register_startup_deps()
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from polars import api, exceptions, plugins, selectors
 from polars._utils.polars_version import get_polars_version as _get_polars_version
@@ -455,33 +487,36 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str) -> Any:
-    # Deprecate re-export of exceptions at top-level
-    if name in dir(exceptions):
-        from polars._utils.deprecation import issue_deprecation_warning
+if not TYPE_CHECKING:
+    # This causes typechecking to resolve any Polars module attribute
+    # as Any regardless of existence so we check for TYPE_CHECKING, see #24334.
+    def __getattr__(name: str) -> Any:
+        # Deprecate re-export of exceptions at top-level
+        if name in dir(exceptions):
+            from polars._utils.deprecation import issue_deprecation_warning
 
-        issue_deprecation_warning(
-            message=(
-                f"accessing `{name}` from the top-level `polars` module was deprecated "
-                "in version 1.0.0. Import it directly from the `polars.exceptions` module "
-                f"instead, e.g.: `from polars.exceptions import {name}`"
-            ),
-        )
-        return getattr(exceptions, name)
+            issue_deprecation_warning(
+                message=(
+                    f"accessing `{name}` from the top-level `polars` module was deprecated "
+                    "in version 1.0.0. Import it directly from the `polars.exceptions` module "
+                    f"instead, e.g.: `from polars.exceptions import {name}`"
+                ),
+            )
+            return getattr(exceptions, name)
 
-    # Deprecate data type groups at top-level
-    import polars.datatypes.group as dtgroup
+        # Deprecate data type groups at top-level
+        import polars.datatypes.group as dtgroup
 
-    if name in dir(dtgroup):
-        from polars._utils.deprecation import issue_deprecation_warning
+        if name in dir(dtgroup):
+            from polars._utils.deprecation import issue_deprecation_warning
 
-        issue_deprecation_warning(
-            message=(
-                f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
-                "use the `polars.selectors` module for selecting columns of a certain data type."
-            ),
-        )
-        return getattr(dtgroup, name)
+            issue_deprecation_warning(
+                message=(
+                    f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
+                    "use the `polars.selectors` module for selecting columns of a certain data type."
+                ),
+            )
+            return getattr(dtgroup, name)
 
-    msg = f"module {__name__!r} has no attribute {name!r}"
-    raise AttributeError(msg)
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)

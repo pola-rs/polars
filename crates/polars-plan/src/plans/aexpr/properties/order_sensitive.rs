@@ -54,9 +54,9 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
         AExpr::Explode {
             expr: _,
             skip_empty: _,
-        } => false,
+        } => true,
         AExpr::Column(_) => false,
-        AExpr::Literal(_) => false,
+        AExpr::Literal(lv) => !lv.is_scalar(),
         AExpr::BinaryExpr {
             left: _,
             op: _,
@@ -67,17 +67,20 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
             dtype: _,
             options: _,
         } => false,
-        AExpr::Sort { expr: _, options } => !options.maintain_order,
+        AExpr::Sort {
+            expr: _,
+            options: _,
+        } => true,
         AExpr::Gather {
             expr: _,
             idx: _,
             returns_scalar: _,
-        } => false,
+        } => true,
         AExpr::SortBy {
             expr: _,
             by: _,
-            sort_options,
-        } => !sort_options.maintain_order,
+            sort_options: _,
+        } => true,
         AExpr::Filter { input: _, by: _ } => false,
         AExpr::Agg(agg) => is_order_sensitive_agg_top_level(agg),
         AExpr::Ternary {
@@ -96,12 +99,12 @@ pub fn is_order_sensitive_top_level(aexpr: &AExpr) -> bool {
             input: _,
             function: _,
             options,
-        } => !options.is_row_separable(),
+        } => !options.is_elementwise(),
         AExpr::Eval {
             expr: _,
             evaluation: _,
             variant,
-        } => !variant.is_row_separable(),
+        } => !variant.is_elementwise(),
         AExpr::Window {
             function: _,
             partition_by: _,

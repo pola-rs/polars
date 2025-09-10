@@ -496,7 +496,7 @@ impl utils::Decoder for BinViewDecoder {
     fn evaluate_predicate(
         &mut self,
         state: &utils::State<'_, Self>,
-        predicate: &SpecializedParquetColumnExpr,
+        predicate: Option<&SpecializedParquetColumnExpr>,
         pred_true_mask: &mut BitmapBuilder,
         dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
@@ -514,6 +514,10 @@ impl utils::Decoder for BinViewDecoder {
             )?;
             return Ok(true);
         }
+
+        let Some(predicate) = predicate else {
+            return Ok(false);
+        };
 
         use {SpecializedParquetColumnExpr as Spce, StateTranslation as St};
         match (&state.translation, predicate) {

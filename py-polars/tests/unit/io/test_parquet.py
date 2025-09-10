@@ -1903,7 +1903,7 @@ def test_empty_parquet() -> None:
 )
 @pytest.mark.write_disk
 def test_row_index_projection_pushdown_18463(
-    tmp_path: Path, strategy: pl.ParallelStrategy
+    tmp_path: Path, strategy: ParallelStrategy
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     f = tmp_path / "test.parquet"
@@ -2141,7 +2141,7 @@ def test_decimal_precision_nested_roundtrip(
 @pytest.mark.may_fail_cloud  # reason: sortedness flag
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
 def test_conserve_sortedness(
-    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: pl.ParallelStrategy
+    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: ParallelStrategy
 ) -> None:
     f = io.BytesIO()
 

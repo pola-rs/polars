@@ -46,114 +46,22 @@
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
 
-## Polars: Blazingly fast DataFrames in Rust, Python, Node.js, R, and SQL
+## Polars: Extremely fast Query Engine for DataFrames, written in Rust
 
-Polars is a DataFrame interface on top of an OLAP Query Engine implemented in Rust using
-[Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) as the memory
-model.
+Polars is an analytical query engine written for DataFrames. It is designed to be fast, easy to use
+and expressive. Key features are:
 
-- Lazy | eager execution
-- Multi-threaded
-- SIMD
+- Lazy | Eager execution
+- Streaming (larger-than-RAM datasets)
 - Query optimization
+- Multi-threaded
+- Written in Rust
+- SIMD
 - Powerful expression API
-- Hybrid Streaming (larger-than-RAM datasets)
-- Rust | Python | NodeJS | R | ...
+- Front end in Python | Rust | NodeJS | R | SQL
+- [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html)
 
 To learn more, read the [user guide](https://docs.pola.rs/).
-
-## Python
-
-```python
->>> import polars as pl
->>> df = pl.DataFrame(
-...     {
-...         "A": [1, 2, 3, 4, 5],
-...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
-...         "B": [5, 4, 3, 2, 1],
-...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-...     }
-... )
-
-# embarrassingly parallel execution & very expressive query language
->>> df.sort("fruits").select(
-...     "fruits",
-...     "cars",
-...     pl.lit("fruits").alias("literal_string_fruits"),
-...     pl.col("B").filter(pl.col("cars") == "beetle").sum(),
-...     pl.col("A").filter(pl.col("B") > 2).sum().over("cars").alias("sum_A_by_cars"),
-...     pl.col("A").sum().over("fruits").alias("sum_A_by_fruits"),
-...     pl.col("A").reverse().over("fruits").alias("rev_A_by_fruits"),
-...     pl.col("A").sort_by("B").over("fruits").alias("sort_A_by_B_by_fruits"),
-... )
-shape: (5, 8)
-┌──────────┬──────────┬──────────────┬─────┬─────────────┬─────────────┬─────────────┬─────────────┐
-│ fruits   ┆ cars     ┆ literal_stri ┆ B   ┆ sum_A_by_ca ┆ sum_A_by_fr ┆ rev_A_by_fr ┆ sort_A_by_B │
-│ ---      ┆ ---      ┆ ng_fruits    ┆ --- ┆ rs          ┆ uits        ┆ uits        ┆ _by_fruits  │
-│ str      ┆ str      ┆ ---          ┆ i64 ┆ ---         ┆ ---         ┆ ---         ┆ ---         │
-│          ┆          ┆ str          ┆     ┆ i64         ┆ i64         ┆ i64         ┆ i64         │
-╞══════════╪══════════╪══════════════╪═════╪═════════════╪═════════════╪═════════════╪═════════════╡
-│ "apple"  ┆ "beetle" ┆ "fruits"     ┆ 11  ┆ 4           ┆ 7           ┆ 4           ┆ 4           │
-│ "apple"  ┆ "beetle" ┆ "fruits"     ┆ 11  ┆ 4           ┆ 7           ┆ 3           ┆ 3           │
-│ "banana" ┆ "beetle" ┆ "fruits"     ┆ 11  ┆ 4           ┆ 8           ┆ 5           ┆ 5           │
-│ "banana" ┆ "audi"   ┆ "fruits"     ┆ 11  ┆ 2           ┆ 8           ┆ 2           ┆ 2           │
-│ "banana" ┆ "beetle" ┆ "fruits"     ┆ 11  ┆ 4           ┆ 8           ┆ 1           ┆ 1           │
-└──────────┴──────────┴──────────────┴─────┴─────────────┴─────────────┴─────────────┴─────────────┘
-```
-
-## SQL
-
-```python
->>> df = pl.scan_csv("docs/assets/data/iris.csv")
->>> ## OPTION 1
->>> # run SQL queries on frame-level
->>> df.sql("""
-...	SELECT species,
-...	  AVG(sepal_length) AS avg_sepal_length
-...	FROM self
-...	GROUP BY species
-...	""").collect()
-shape: (3, 2)
-┌────────────┬──────────────────┐
-│ species    ┆ avg_sepal_length │
-│ ---        ┆ ---              │
-│ str        ┆ f64              │
-╞════════════╪══════════════════╡
-│ Virginica  ┆ 6.588            │
-│ Versicolor ┆ 5.936            │
-│ Setosa     ┆ 5.006            │
-└────────────┴──────────────────┘
->>> ## OPTION 2
->>> # use pl.sql() to operate on the global context
->>> df2 = pl.LazyFrame({
-...    "species": ["Setosa", "Versicolor", "Virginica"],
-...    "blooming_season": ["Spring", "Summer", "Fall"]
-...})
->>> pl.sql("""
-... SELECT df.species,
-...     AVG(df.sepal_length) AS avg_sepal_length,
-...     df2.blooming_season
-... FROM df
-... LEFT JOIN df2 ON df.species = df2.species
-... GROUP BY df.species, df2.blooming_season
-... """).collect()
-```
-
-SQL commands can also be run directly from your terminal using the Polars CLI:
-
-```bash
-# run an inline SQL query
-> polars -c "SELECT species, AVG(sepal_length) AS avg_sepal_length, AVG(sepal_width) AS avg_sepal_width FROM read_csv('docs/assets/data/iris.csv') GROUP BY species;"
-
-# run interactively
-> polars
-Polars CLI v0.3.0
-Type .help for help.
-
-> SELECT species, AVG(sepal_length) AS avg_sepal_length, AVG(sepal_width) AS avg_sepal_width FROM read_csv('docs/assets/data/iris.csv') GROUP BY species;
-```
-
-Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for more information.
 
 ## Performance 🚀🚀
 
@@ -176,8 +84,7 @@ import times:
 If you have data that does not fit into memory, Polars' query engine is able to process your query
 (or parts of your query) in a streaming fashion. This drastically reduces memory requirements, so
 you might be able to process your 250GB dataset on your laptop. Collect with
-`collect(engine='streaming')` to run the query streaming. (This might be a little slower, but it is
-still very fast!)
+`collect(engine='streaming')` to run the query streaming.
 
 ## Setup
 
@@ -189,21 +96,6 @@ Install the latest Polars version with:
 pip install polars
 ```
 
-We also have a conda package (`conda install -c conda-forge polars`), however pip is the preferred
-way to install Polars.
-
-Install Polars with all optional dependencies.
-
-```sh
-pip install 'polars[all]'
-```
-
-You can also install a subset of all optional dependencies.
-
-```sh
-pip install 'polars[numpy,pandas,pyarrow]'
-```
-
 See the [User Guide](https://docs.pola.rs/user-guide/installation/#feature-flags) for more details
 on optional dependencies
 
@@ -213,23 +105,14 @@ To see the current Polars version and a full list of its optional dependencies, 
 pl.show_versions()
 ```
 
-Releases happen quite often (weekly / every few days) at the moment, so updating Polars regularly to
-get the latest bugfixes / features might not be a bad idea.
-
-### Rust
-
-You can take latest release from `crates.io`, or if you want to use the latest features /
-performance improvements point to the `main` branch of this repo.
-
-```toml
-polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
-```
-
-Requires Rust version `>=1.80`.
-
 ## Contributing
 
 Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/).
+
+## Managed/Distributed Polars
+
+Do you want a managed solution or scale out to distributed clusters? Consider our
+[offering](https://cloud.pola.rs/) and help the project!
 
 ## Python: compile Polars from source
 
@@ -274,7 +157,3 @@ less memory.
 Do you want Polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build of
 Python on Apple Silicon under Rosetta? Install `pip install polars-lts-cpu`. This version of Polars
 is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
-
-## Sponsors
-
-[<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" height="50" alt="JetBrains logo" />](https://www.jetbrains.com)
