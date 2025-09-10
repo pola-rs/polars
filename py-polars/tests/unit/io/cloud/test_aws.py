@@ -103,3 +103,9 @@ def test_lazy_count_s3(s3: str) -> None:
     assert "FAST_COUNT" in lf.explain()
     expected = pl.DataFrame({"len": [54]}, schema={"len": pl.UInt32})
     assert_frame_equal(lf.collect(), expected)
+
+
+def test_read_parquet_metadata(s3: str) -> None:
+    lf = pl.read_parquet_metadata(
+        "s3://bucket/foods1.parquet", storage_options={"endpoint_url": s3}
+    )
