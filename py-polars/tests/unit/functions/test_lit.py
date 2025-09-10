@@ -265,3 +265,8 @@ def test_lit_structs(item: Any) -> None:
 def test_numpy_lit(value: Any, expected_dtype: PolarsDataType) -> None:
     result = pl.select(pl.lit(value)).get_column("literal")
     assert result.dtype == expected_dtype
+
+
+def test_numpy_float128() -> None:
+    with pytest.raises(ValueError, match="float128 is not supported"):
+        pl.select(pl.lit(np.float128(1)))
