@@ -216,8 +216,8 @@ fn write_bytes(
             Compression::LZ4 => {
                 compression::compress_lz4(bytes, arrow_data).unwrap();
             },
-            Compression::ZSTD => {
-                compression::compress_zstd(bytes, arrow_data).unwrap();
+            Compression::ZSTD(level) => {
+                compression::compress_zstd(bytes, arrow_data, level).unwrap();
             },
         }
     } else {
@@ -318,8 +318,8 @@ fn _write_compressed_buffer_from_iter<T: NativeType, I: TrustedLen<Item = T>>(
         Compression::LZ4 => {
             compression::compress_lz4(&swapped, arrow_data).unwrap();
         },
-        Compression::ZSTD => {
-            compression::compress_zstd(&swapped, arrow_data).unwrap();
+        Compression::ZSTD(level) => {
+            compression::compress_zstd(&swapped, arrow_data, level).unwrap();
         },
     }
 }
@@ -347,8 +347,8 @@ fn _write_compressed_buffer<T: NativeType>(
             Compression::LZ4 => {
                 compression::compress_lz4(bytes, arrow_data).unwrap();
             },
-            Compression::ZSTD => {
-                compression::compress_zstd(bytes, arrow_data).unwrap();
+            Compression::ZSTD(level) => {
+                compression::compress_zstd(bytes, arrow_data, level).unwrap();
             },
         }
     } else {
