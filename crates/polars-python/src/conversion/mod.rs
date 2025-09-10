@@ -951,7 +951,7 @@ impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
-            "zstd" => Some(IpcCompression::ZSTD),
+            "zstd" => Some(IpcCompression::ZSTD(Default::default())),
             v => {
                 return Err(PyValueError::new_err(format!(
                     "ipc `compression` must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",
