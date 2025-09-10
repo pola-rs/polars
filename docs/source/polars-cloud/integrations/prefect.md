@@ -1,7 +1,10 @@
 # Prefect
 
-Putting aside any hardcoded solution in the code (!) [Prefect](https://www.prefect.io/) offers a
-few different ways to store and use the credentials from the Polars Cloud service account:
+Configure Polars Cloud authentication securely within Prefect workflows using native secret
+management patterns. This section details how to integrate Polars Cloud service account credentials
+with Prefect's configuration system.
+
+Prefect implements secure credential handling through three standard approaches:
 
 1. **Secret manager** (<ins>recommended</ins>): pull the secret secret manager of your choice and
    use it in your workflow (see official docs; here is

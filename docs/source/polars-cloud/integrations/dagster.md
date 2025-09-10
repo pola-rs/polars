@@ -1,17 +1,21 @@
 # Dagster
 
-Putting aside any hardcoded solution in the code itself (!) [Dagster](https://dagster.io/)
-recommends to define secrets as `Resource`
-([docs](https://docs.dagster.io/getting-started/concepts#resource)). To define such an object and
-store the Polars Cloud service account credentials, the solution boils down to either:
+Configure Polars Cloud authentication securely within Dagster pipelines using resource based secret
+management. This section details how to integrate Polars Cloud service account credentials with
+Dagster's resource pattern.
+
+Dagster implements secret management through
+[Resources](https://docs.dagster.io/getting-started/concepts#resource)), which provide dependency
+injection for external services. To configure Polars Cloud authentication, define credentials
+through one of these standard approaches:
 
 1. **Secret manager** (<ins>recommended</ins>): pull the secret from a metastore (see official docs
    of your secret manager; here is
    [AWS](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python.html)'
    as an example).
-2. **Environment variables**: define the values as environment variables in your Dagster
-   environment (containers or else), and pick them up from your code or Dagster configuration (via
-   the `dagster.yaml` or `workspace.yaml`).
+2. **Environment variables**: define the values as environment variables in your Dagster environment
+   (containers or else), and pick them up from your code or Dagster configuration (via the
+   `dagster.yaml` or `workspace.yaml`).
 
 Some code snippets for the solutions described above:
 

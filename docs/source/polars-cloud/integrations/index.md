@@ -1,12 +1,13 @@
 # Orchestrate your queries
 
-Until Polars Cloud provides an integrated orchestration feature, we are left to use third party tools.
+Polars Cloud can be integrated and used in popular third-party orchestration tools. This approach
+lets you focus on data logic while Polars Cloud handles query execution, eliminating infrastructure
+management.
 
-In these sections we imagine a simple scenario: two datasets that need to be ingested (with
-cleanup/transformations) and joined together as part of a report. Most of the `Polars` code will be
-omitted for clarity, and to focus on what is relevant here: the overall data flow including Polars
-Cloud, and secret management; the only secret being the
-[service account](/polars-cloud/explain/service-accounts) used to authenticate to Polars Cloud.
+Consider a typical workflow: generating a daily report by ingesting, transforming, and joining two
+datasets. We omit standard Polars code to focus on orchestration-specific steps: defining data flow
+and managing [service accounts](/polars-cloud/explain/service-accounts) credentials for Polars Cloud
+authentication.
 
 The most commonly used data orchestrators are presented in alphabetical order:
 
