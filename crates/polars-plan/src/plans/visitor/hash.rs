@@ -81,7 +81,9 @@ fn python_predicate_eq(
     match (l, r) {
         (PythonPredicate::None, PythonPredicate::None) => true,
         (PythonPredicate::PyArrow(a), PythonPredicate::PyArrow(b)) => a == b,
-        (PythonPredicate::Polars(a), PythonPredicate::Polars(b)) => expr_ir_eq(a, b, expr_arena),
+        (PythonPredicate::Polars(a), PythonPredicate::Polars(b)) => {
+            expr_ir_eq(a, b, expr_arena, expr_arena)
+        },
         _ => false,
     }
 }
