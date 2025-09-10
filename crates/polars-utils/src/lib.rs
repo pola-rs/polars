@@ -45,6 +45,7 @@ pub mod unique_id;
 pub mod with_drop;
 
 pub use functions::*;
+pub mod compression;
 pub mod file;
 
 pub mod aliases;
