@@ -105,6 +105,7 @@ pub enum JsonFormat {
     ///
     /// It is recommended to use the file extension `.jsonl` when saving as JSON Lines.
     JsonLines,
+    JsonTable,
 }
 
 /// Writes a DataFrame to JSON.
@@ -165,6 +166,10 @@ where
             JsonFormat::Json => {
                 let serializer = polars_json::json::write::Serializer::new(batches, vec![]);
                 polars_json::json::write::write(&mut self.buffer, serializer)?;
+            },
+            JsonFormat::JsonTable => {
+                let serializer = polars_json::tablejson::write::Serializer::new(batches, vec![]);
+                polars_json::tablejson::write::write(&mut self.buffer, serializer)?;
             },
         }
 
@@ -370,6 +375,87 @@ where
                     df.as_single_chunk_par();
                 }
                 Ok(df)
+            },
+            JsonFormat::JsonTable => {
+                polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
+                let mut bytes = rb.deref().to_vec();
+                let owned = &mut vec![];
+                compression::maybe_decompress_bytes(&bytes, owned)?;
+                // the easiest way to avoid ownership issues is by implicitly figuring out if
+                // decompression happened (owned is only populated on decompress), then pick which bytes to parse
+                let json_value = if owned.is_empty() {
+                    simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?
+                } else {
+                    simd_json::to_borrowed_value(owned).map_err(to_compute_err)?
+                };
+                if let BorrowedValue::Array(array) = &json_value {
+                    if array.is_empty() & self.schema.is_none() & self.schema_overwrite.is_none() {
+                        return Ok(DataFrame::empty());
+                    }
+                }
+
+                let allow_extra_fields_in_struct = self.schema.is_some();
+
+                // struct type
+                let dtype = if let Some(mut schema) = self.schema {
+                    if let Some(overwrite) = self.schema_overwrite {
+                        let mut_schema = Arc::make_mut(&mut schema);
+                        overwrite_schema(mut_schema, overwrite)?;
+                    }
+
+                    DataType::Struct(schema.iter_fields().collect()).to_arrow(CompatLevel::newest())
+                } else {
+                    // infer
+                    let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
+                        infer::json_values_to_supertype(
+                            values,
+                            self.infer_schema_len
+                                .unwrap_or(NonZeroUsize::new(usize::MAX).unwrap()),
+                        )?
+                        .to_arrow(CompatLevel::newest())
+                    } else {
+                        polars_json::json::infer(&json_value)?
+                    };
+
+                    if let Some(overwrite) = self.schema_overwrite {
+                        let ArrowDataType::Struct(fields) = inner_dtype else {
+                            polars_bail!(ComputeError: "can only deserialize json objects")
+                        };
+
+                        let mut schema = Schema::from_iter(fields.iter().map(Into::<Field>::into));
+                        overwrite_schema(&mut schema, overwrite)?;
+
+                        DataType::Struct(
+                            schema
+                                .into_iter()
+                                .map(|(name, dt)| Field::new(name, dt))
+                                .collect(),
+                        )
+                        .to_arrow(CompatLevel::newest())
+                    } else {
+                        inner_dtype
+                    }
+                };
+
+                let dtype = if let BorrowedValue::Array(_) = &json_value {
+                    ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
+                        LIST_VALUES_NAME,
+                        dtype,
+                        true,
+                    )))
+                } else {
+                    dtype
+                };
+
+                let arr = polars_json::json::deserialize(
+                    &json_value,
+                    dtype,
+                    allow_extra_fields_in_struct,
+                )?;
+                let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
+                    || polars_err!(ComputeError: "can only deserialize json objects"),
+                )?;
+                DataFrame::try_from(arr.clone())
             },
         }?;
 
