@@ -246,6 +246,18 @@ impl PyDataFrame {
         })
     }
 
+    #[cfg(feature = "json")]
+    pub fn write_table_json(&self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
+        let file = BufWriter::new(get_file_like(py_f, true)?);
+        py.enter_polars(|| {
+            // TODO: Cloud support
+
+            JsonWriter::new(file)
+                .with_json_format(JsonFormat::JsonTable)
+                .finish(&mut self.df.write())
+        })
+    }
+
     #[cfg(feature = "ipc_streaming")]
     pub fn write_ipc_stream(
         &self,

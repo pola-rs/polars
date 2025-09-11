@@ -2876,7 +2876,7 @@ class DataFrame:
 
         def write_table_json_to_string() -> str:
             with BytesIO() as buf:
-                self._df.write_json(buf)
+                self._df.write_table_json(buf)
                 json_bytes = buf.getvalue()
             return json_bytes.decode("utf8")
 
