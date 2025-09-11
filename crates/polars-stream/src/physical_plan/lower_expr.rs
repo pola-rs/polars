@@ -1552,8 +1552,6 @@ fn lower_exprs_with_ctx(
                 // Change agg mutably so we can share the codepath for all of these.
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
-                | IRAggExpr::First { .. }
-                | IRAggExpr::Last { .. }
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Var { .. }
@@ -1562,6 +1560,25 @@ fn lower_exprs_with_ctx(
                     let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
                     input_streams.insert(trans_stream);
                     transformed_exprs.push(trans_expr);
+                },
+                IRAggExpr::First {
+                    input: _,
+                    ignore_nulls,
+                }
+                | IRAggExpr::Last {
+                    input: _,
+                    ignore_nulls,
+                } => {
+                    if !ignore_nulls {
+                        let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                        input_streams.insert(trans_stream);
+                        transformed_exprs.push(trans_expr);
+                    } else {
+                        let out_name = unique_column_name();
+                        fallback_subset
+                            .push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                        transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                    }
                 },
                 IRAggExpr::NUnique(inner) => {
                     // Lower to no-aggregate group-by with unique name feeding into len aggregate.
