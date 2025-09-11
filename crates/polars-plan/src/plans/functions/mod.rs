@@ -21,6 +21,7 @@ use strum_macros::IntoStaticStr;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
 use crate::plans::ir::ScanSourcesDisplay;
+use crate::plans::set_order::OutputOrder;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -145,6 +146,32 @@ impl FunctionIR {
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
             RowIndex { .. } => false,
+        }
+    }
+
+    pub fn observes_input_order(&self) -> bool {
+        use FunctionIR::*;
+        match self {
+            Rechunk | Unnest { .. } | FastCount { .. } | RowIndex { .. } => false,
+            Explode { .. } | Opaque { .. } => true,
+            #[cfg(feature = "pivot")]
+            Unpivot { .. } => true,
+            #[cfg(feature = "python")]
+            OpaquePython(OpaquePythonUdf { .. }) => true,
+        }
+    }
+
+    pub fn output_order(&self) -> OutputOrder {
+        use FunctionIR::*;
+        use OutputOrder as O;
+        match self {
+            Rechunk | Unnest { .. } => O::PreservesInput,
+            FastCount { .. } => O::Random,
+            Explode { .. } | RowIndex { .. } | Opaque { .. } => O::Ordered,
+            #[cfg(feature = "pivot")]
+            Unpivot { .. } => O::Ordered,
+            #[cfg(feature = "python")]
+            OpaquePython(OpaquePythonUdf { .. }) => O::Ordered,
         }
     }
 
