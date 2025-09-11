@@ -3544,3 +3544,17 @@ def test_str_plain_is_in_more_than_4_values_24167() -> None:
         lf.collect(),
         lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
     )
+
+
+def test_binary_offset_roundtrip() -> None:
+    f = io.BytesIO()
+    pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    ).select(pl.col.a._row_encode()).sink_parquet(f)
+
+    f.seek(0)
+    lf = pl.scan_parquet(f)
+
+    assert "binary[offset]" in str(lf.collect())

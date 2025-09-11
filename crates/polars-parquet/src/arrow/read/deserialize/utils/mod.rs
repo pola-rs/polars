@@ -94,8 +94,9 @@ impl<'a, D: Decoder> State<'a, D> {
         decoder: &mut D,
         decoded: &mut D::DecodedState,
         filter: Option<Filter>,
+        chunks: &mut Vec<D::Output>,
     ) -> ParquetResult<()> {
-        decoder.extend_filtered_with_state(self, decoded, filter)
+        decoder.extend_filtered_with_state(self, decoded, filter, chunks)
     }
 }
 
@@ -299,8 +300,9 @@ pub(super) trait Decoder: Sized {
     type Dict: Array + Clone;
     /// The target state that this Decoder decodes into.
     type DecodedState: Decoded;
-
     type Output: IntoBoxedArray;
+
+    const CHUNKED: bool = false;
 
     fn evaluate_dict_predicate(
         &self,
@@ -342,14 +344,22 @@ pub(super) trait Decoder: Sized {
     ) -> ParquetResult<()> {
         let is_optional = state.is_optional;
 
-        let mut intermediate_array = self.with_capacity(state.translation.num_rows());
+        let mut intermediate_array = self.with_capacity(if Self::CHUNKED {
+            0
+        } else {
+            state.translation.num_rows()
+        });
         if let Some(dict) = dict.as_ref() {
             self.apply_dictionary(&mut intermediate_array, dict)?;
         }
-        self.extend_filtered_with_state(state, &mut intermediate_array, None)?;
-        let intermediate_array = self
-            .finalize(dtype.underlying_physical_type(), dict, intermediate_array)?
-            .into_boxed();
+        let mut chunks = Vec::new();
+        self.extend_filtered_with_state(state, &mut intermediate_array, None, &mut chunks)?;
+        let intermediate_array = if !chunks.is_empty() {
+            chunks.pop().unwrap()
+        } else {
+            self.finalize(dtype.underlying_physical_type(), dict, intermediate_array)?
+        }
+        .into_boxed();
 
         let mask = if let Some(validity) = intermediate_array.validity() {
             let ignore_validity_array = intermediate_array.with_validity(None);
@@ -378,6 +388,7 @@ pub(super) trait Decoder: Sized {
         state: State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
+        chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()>;
 
     /// Extend the decoded state with `length` times the same `value`.
@@ -512,7 +523,7 @@ impl<D: Decoder> PageDecoder<D> {
                     .map(|(arr, ptm)| (None, arr, ptm)),
                 filter => self
                     .collect_flat(filter)
-                    .map(|arr| (None, vec![arr], Bitmap::new())),
+                    .map(|arrays| (None, arrays, Bitmap::new())),
             }
         }
     }
@@ -662,6 +673,7 @@ impl<D: Decoder> PageDecoder<D> {
                                 &mut self.decoder,
                                 &mut target,
                                 Some(Filter::Mask(page_ptm)),
+                                &mut chunks,
                             )?;
                         }
                     }
@@ -707,11 +719,12 @@ impl<D: Decoder> PageDecoder<D> {
         Ok((chunks, pred_true_mask.freeze()))
     }
 
-    pub fn collect_flat(mut self, mut filter: Option<Filter>) -> ParquetResult<D::Output> {
+    pub fn collect_flat(mut self, mut filter: Option<Filter>) -> ParquetResult<Vec<D::Output>> {
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
-        // @TODO: Don't allocate if include_values == false
-        let mut target = self.decoder.with_capacity(num_rows_remaining);
+        let mut target =
+            self.decoder
+                .with_capacity(if D::CHUNKED { 0 } else { num_rows_remaining });
 
         if let Some(dict) = self.dict.as_ref() {
             // @Performance. If we have a predicate, we can prune stuff out of the dictionary and
@@ -728,6 +741,7 @@ impl<D: Decoder> PageDecoder<D> {
             };
         }
 
+        let mut chunks = Vec::new();
         while num_rows_remaining > 0 {
             let Some(page) = self.iter.next() else {
                 break;
@@ -766,7 +780,7 @@ impl<D: Decoder> PageDecoder<D> {
 
             let start_length = target.len();
             let (result, time) = option_time(self.metrics.is_some(), || {
-                state.decode(&mut self.decoder, &mut target, state_filter)?;
+                state.decode(&mut self.decoder, &mut target, state_filter, &mut chunks)?;
 
                 ParquetResult::Ok(())
             });
@@ -797,8 +811,11 @@ impl<D: Decoder> PageDecoder<D> {
             );
         }
 
-        let array = self.decoder.finalize(self.dtype, self.dict, target)?;
-        Ok(array)
+        if target.len() > 0 || chunks.is_empty() {
+            chunks.push(self.decoder.finalize(self.dtype, self.dict, target)?);
+        }
+
+        Ok(chunks)
     }
 
     pub fn collect_boxed(
