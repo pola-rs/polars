@@ -79,6 +79,7 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         | DataType::UInt16
         | DataType::UInt32
         | DataType::UInt64
+        | DataType::UInt128
         | DataType::Int8
         | DataType::Int16
         | DataType::Int32

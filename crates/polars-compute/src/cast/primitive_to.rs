@@ -45,6 +45,7 @@ impl_ser_primitive!(u8);
 impl_ser_primitive!(u16);
 impl_ser_primitive!(u32);
 impl_ser_primitive!(u64);
+impl_ser_primitive!(u128);
 
 impl SerPrimitive for f32 {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
