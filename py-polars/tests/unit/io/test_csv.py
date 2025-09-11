@@ -2856,6 +2856,9 @@ def test_read_csv_include_file_paths(number_of_files: int) -> None:
         assert_frame_equal(res, expected)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="`path.open('rb')` gives an `in-mem` on Windows"
+)
 def test_read_csv_include_file_name_file_obj() -> None:
     with tempfile.TemporaryDirectory() as tmp_path_str:
         tmp_path = Path(tmp_path_str)
