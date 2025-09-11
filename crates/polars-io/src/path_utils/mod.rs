@@ -414,12 +414,12 @@ pub fn expand_paths_hive(
 
                         // See https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access
                         // Path format: https://bucket-name.s3.region-code.amazonaws.com/key-name
-                        // Path format (legacy): https://bucket-name.s3.amazonaws.com/key-name
                         let p = path.as_ref().as_ref();
                         let after_scheme = p.strip_scheme();
 
                         let bucket_end = after_scheme.find(".s3.")?;
                         let offset = bucket_end + 4;
+                        // Note: `.region-code.` section may be omitted in legacy global endpoint URLs.
                         let region_end = offset + after_scheme[offset..].find(".amazonaws.com/")?;
 
                         if after_scheme[..region_end].contains('/') {
