@@ -43,9 +43,8 @@ Polars Cloud.
 
 ## Triggering rule
 
-Since we are here not using any dedicated orchestrator infrastructure (like
-[Airflow](airflow.md) for instance) we can instead generate triggering rules
-in AWS EventBridge. Rules can be defined via the AWS Console (point-and-click) or via the AWS CLI,
-as documented
+Since we are here not using any dedicated orchestrator infrastructure (like [Airflow](airflow.md)
+for instance) we can instead generate triggering rules in AWS EventBridge. Rules can be defined via
+the AWS Console (point-and-click) or via the AWS CLI, as documented
 [here](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-run-lambda-schedule.html). A
 simple CRON rule should be enough to trigger your query to run at given interval.
