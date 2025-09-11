@@ -102,7 +102,7 @@ pub trait BuildHasherTotalExt: BuildHasher {
 
 impl<T: BuildHasher> BuildHasherTotalExt for T {}
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
