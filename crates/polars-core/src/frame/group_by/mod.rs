@@ -923,8 +923,22 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         NanMax => format_pl_smallstr!("{name}_nan_max"),
         Median => format_pl_smallstr!("{name}_median"),
         Mean => format_pl_smallstr!("{name}_mean"),
-        First { ignore_nulls } => format_pl_smallstr!("{name}_first({ignore_nulls})"),
-        Last { ignore_nulls } => format_pl_smallstr!("{name}_last({ignore_nulls})"),
+        First { ignore_nulls } => {
+            let arg_str = if ignore_nulls {
+                "ignore_nulls=True"
+            } else {
+                ""
+            };
+            format_pl_smallstr!("{name}_first({arg_str})")
+        }
+        Last { ignore_nulls } => {
+            let arg_str = if ignore_nulls {
+                "ignore_nulls=True"
+            } else {
+                ""
+            };
+            format_pl_smallstr!("{name}_last({arg_str})")
+        }
         Sum => format_pl_smallstr!("{name}_sum"),
         Groups => PlSmallStr::from_static("groups"),
         NUnique => format_pl_smallstr!("{name}_n_unique"),
