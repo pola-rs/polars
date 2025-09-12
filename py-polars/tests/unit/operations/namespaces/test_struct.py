@@ -3,8 +3,9 @@ from __future__ import annotations
 import datetime
 from collections import OrderedDict
 
-import polars as pl
 import pytest
+
+import polars as pl
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
