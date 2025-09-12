@@ -870,6 +870,7 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(stream);
             },
 
+            #[cfg(feature = "mode")]
             AExpr::Function {
                 input: ref inner_exprs,
                 function: IRFunctionExpr::Mode,
