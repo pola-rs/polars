@@ -10,17 +10,10 @@ use polars_utils::python_function::PythonObject;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{format_pl_smallstr, unitvec};
 
-use super::OptimizationRule;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
-use crate::plans::{ArenaLpIter, IR};
-
-/// Note: Currently only used for iceberg. This is so that we can call iceberg to fetch the files
-/// list with a potential row limit from slice pushdown.
-///
-/// In the future this can also apply to hive path expansion with predicates.
-pub(super) struct ExpandDatasets;
+use crate::plans::IR;
 
 pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResult<()> {
     let mut stack = unitvec![root];
