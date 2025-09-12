@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
+import sys
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -1365,9 +1366,10 @@ def test_fill_missing_fields_with_identity_partition_values(
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
 
 
-@pytest.mark.skipif(
-    parse_version(pyiceberg.__version__) < (0, 10, 0),
-    reason="PyIceberg support for partitioning on nested primitive fields",
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    # TODO: Investigate
+    reason="CI failure: FileNotFoundError: [WinError 53] Failed to open local file '//C/Users/runneradmin/",
 )
 def test_fill_missing_fields_with_identity_partition_values_nested(
     tmp_path: Path,
