@@ -1357,23 +1357,9 @@ def test_fill_missing_fields_with_identity_partition_values(
 
     out = pl.DataFrame(tbl.scan().to_arrow())
 
-    exclude_from_pyiceberg_check = ["TimeType"]
-
-    # Issues with reads from PyIceberg:
-    # * Int32 / Float32 get upcast to 64-bit
-    # * Logical types load as physical. TimeType cannot pass even with cast due
-    #   to it being in microseconds, whereas polars uses nanoseconds.
-    for name in exclude_from_pyiceberg_check:
-        # xfail, these are known problematic
-        with pytest.raises(AssertionError):
-            assert_frame_equal(out.select(name), expect.select(name))
-
     assert_frame_equal(
-        out.select(
-            pl.col(c).cast(dt)
-            for c, dt in expect.drop(exclude_from_pyiceberg_check).schema.items()
-        ),
-        expect.drop(exclude_from_pyiceberg_check),
+        out.select(pl.col(c).cast(dt) for c, dt in expect.schema.items()),
+        expect,
     )
 
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
