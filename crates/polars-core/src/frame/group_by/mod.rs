@@ -930,7 +930,7 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
                 ""
             };
             format_pl_smallstr!("{name}_first({arg_str})")
-        }
+        },
         Last { ignore_nulls } => {
             let arg_str = if ignore_nulls {
                 "ignore_nulls=True"
@@ -938,7 +938,7 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
                 ""
             };
             format_pl_smallstr!("{name}_last({arg_str})")
-        }
+        },
         Sum => format_pl_smallstr!("{name}_sum"),
         Groups => PlSmallStr::from_static("groups"),
         NUnique => format_pl_smallstr!("{name}_n_unique"),
