@@ -82,7 +82,6 @@ def avg_age(gender: str) -> pl.Expr:
         compute_age()
         .filter(pl.col("gender") == gender)
         .mean()
-        .round(1)
         .alias(f"avg {gender} age")
     )
 
@@ -110,7 +109,7 @@ q = (
     .group_by("state", "gender")
     .agg(
         # The function `avg_age` is not needed:
-        compute_age().mean().round(1).alias("avg age"),
+        compute_age().mean().alias("avg age"),
         pl.len().alias("#"),
     )
     .sort("#", descending=True)
