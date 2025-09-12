@@ -120,7 +120,7 @@ impl DslFunction {
                     let dtype_opt = input_schema.get(col.as_str());
                     match dtype_opt {
                         Some(dtype) => {
-                            if !(matches!(dtype, &DataType::Struct(_))) {
+                            if !dtype.is_struct() {
                                 let dtype_str = dtype.to_string();
                                 let msg = format!(
                                     "invalid dtype: expected 'Struct', got '{}' for '{}'",
