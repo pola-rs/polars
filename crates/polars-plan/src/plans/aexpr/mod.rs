@@ -285,7 +285,7 @@ impl AExpr {
             AExpr::Agg(_) | AExpr::Len => true,
             AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Eval { expr, variant, .. } => match variant {
-                EvalVariant::List => is_scalar_ae(*expr, arena),
+                EvalVariant::List | EvalVariant::Array => is_scalar_ae(*expr, arena),
                 EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
             },
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),

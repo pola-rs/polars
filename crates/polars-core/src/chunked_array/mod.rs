@@ -595,6 +595,36 @@ impl ArrayChunked {
             ))
         }
     }
+
+    pub fn from_aligned_values(
+        name: PlSmallStr,
+        inner_dtype: &DataType,
+        width: usize,
+        chunks: Vec<ArrayRef>,
+        length: usize,
+    ) -> Self {
+        let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
+        let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
+        let field = Arc::new(Field::new(name, dtype));
+        if width == 0 {
+            use arrow::array::builder::{ArrayBuilder, make_builder};
+            let values = make_builder(&inner_dtype.to_arrow(CompatLevel::newest())).freeze();
+            return ArrayChunked::new_with_compute_len(
+                field,
+                vec![FixedSizeListArray::new(arrow_dtype, length, values, None).into_boxed()],
+            );
+        }
+
+        let chunks = chunks
+            .into_iter()
+            .map(|chunk| {
+                debug_assert_eq!(chunk.len() % width, 0);
+                FixedSizeListArray::new(arrow_dtype.clone(), length, chunk, None).into_boxed()
+            })
+            .collect();
+
+        unsafe { Self::new_with_dims(field, chunks, length, 0) }
+    }
 }
 
 impl<T> ChunkedArray<T>

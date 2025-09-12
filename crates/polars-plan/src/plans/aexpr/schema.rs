@@ -259,6 +259,12 @@ impl AExpr {
 
                 output_field.dtype = match variant {
                     EvalVariant::List => DataType::List(Box::new(output_field.dtype)),
+                    EvalVariant::Array => {
+                        let DataType::Array(_, width) = field.dtype() else {
+                            unreachable!()
+                        };
+                        DataType::Array(Box::new(output_field.dtype), *width)
+                    },
                     EvalVariant::Cumulative { .. } => output_field.dtype,
                 };
                 output_field.name = field.name;

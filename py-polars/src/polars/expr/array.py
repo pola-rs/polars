@@ -962,3 +962,31 @@ class ExprArrayNameSpace:
         """
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.arr_shift(n_pyexpr))
+
+    def eval(self, expr: Expr) -> Expr:
+        """
+        Run any polars expression against the arrays' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_columns(
+        ...     rank=pl.concat_list("a", "b").array.eval(pl.element().rank())
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ a   ┆ b   ┆ rank       │
+        │ --- ┆ --- ┆ ---        │
+        │ i64 ┆ i64 ┆ arr[f64; 2]  │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 4   ┆ [1.0, 2.0] │
+        │ 8   ┆ 5   ┆ [2.0, 1.0] │
+        │ 3   ┆ 2   ┆ [2.0, 1.0] │
+        └─────┴─────┴────────────┘
+        """
+        return wrap_expr(self._pyexpr.array_eval(expr._pyexpr))

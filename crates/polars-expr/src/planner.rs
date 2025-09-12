@@ -512,6 +512,7 @@ fn create_physical_expr_inner(
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
+            let evaluation_is_elementwise = is_elementwise_rec(*evaluation, expr_arena);
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
 
@@ -539,7 +540,17 @@ fn create_physical_expr_inner(
             let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let evaluation = create_physical_expr_inner(
                 *evaluation,
-                Context::Default,
+                // @Hack. Since EvalVariant::Array uses `evaluate_on_groups` to determine the
+                // output and that expects to be outputting a list, we need to pretend like we are
+                // aggregating here.
+                //
+                // EvalVariant::List also has this problem but that has a List datatype, so that
+                // goes wrong by pure change and some black magic.
+                if matches!(variant, EvalVariant::Array) && !evaluation_is_elementwise {
+                    Context::Aggregation
+                } else {
+                    Context::Default
+                },
                 expr_arena,
                 &Arc::new(eval_schema),
                 state,
@@ -556,6 +567,7 @@ fn create_physical_expr_inner(
                 is_scalar,
                 pd_group,
                 evaluation_is_scalar,
+                evaluation_is_elementwise,
             )))
         },
         Function {
