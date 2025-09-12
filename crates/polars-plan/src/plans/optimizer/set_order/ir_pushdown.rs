@@ -88,9 +88,9 @@ pub(super) fn pushdown_orders(
                 ..
             } => {
                 let is_order_observing = sort_options.maintain_order || {
-                    zip(by_column
+                    adjust_for_with_columns_context(zip(by_column
                         .iter()
-                        .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena)))
+                        .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena))))
                     .is_none()
                 };
                 [is_order_observing].into()
@@ -116,10 +116,10 @@ pub(super) fn pushdown_orders(
                         // and
                         // Unordered -> Unordered (if no order sensitive expressions)
 
-                        let expr_observing = zip(keys
+                        let expr_observing = adjust_for_with_columns_context(zip(keys
                             .iter()
                             .chain(aggs.iter())
-                            .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena)))
+                            .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena))))
                         .is_none();
 
                         expr_observing
@@ -207,8 +207,8 @@ pub(super) fn pushdown_orders(
                 [is_order_observing].into()
             },
             IR::MapFunction { input: _, function } => {
-                let is_order_observing = (function.has_equal_order() && all_outputs_unordered)
-                    || (function.is_input_order_agnostic());
+                let is_order_observing = !((function.has_equal_order() && all_outputs_unordered)
+                    || (function.is_input_order_agnostic()));
                 [is_order_observing].into()
             },
             IR::SimpleProjection { .. } => [!all_outputs_unordered].into(),
