@@ -70,7 +70,7 @@ impl Series {
                         .map(|(_, idx)| {
                             let mut this_idx = None;
                             for &ii in idx.iter() {
-                                // SAFETY: null_values has no no values
+                                // SAFETY: null_values has no null values
                                 if !null_values.value_unchecked(ii as usize) {
                                     this_idx = Some(ii);
                                     break;
