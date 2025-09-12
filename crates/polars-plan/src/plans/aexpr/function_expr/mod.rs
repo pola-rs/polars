@@ -1476,7 +1476,8 @@ impl IRFunctionExpr {
             F::DropNulls => FunctionOptions::row_separable()
                 .flag(FunctionFlags::ALLOW_EMPTY_INPUTS | FunctionFlags::PROPAGATES_ORDER),
             #[cfg(feature = "mode")]
-            F::Mode => FunctionOptions::groupwise().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC),
+            F::Mode => FunctionOptions::groupwise()
+                .flag(FunctionFlags::INPUT_ORDER_AGNOSTIC | FunctionFlags::OUTPUT_UNORDERED),
             #[cfg(feature = "moment")]
             F::Skew(_) => FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC),
             #[cfg(feature = "moment")]
@@ -1514,8 +1515,11 @@ impl IRFunctionExpr {
             | F::CumMax { .. } => FunctionOptions::length_preserving(),
             F::Reverse => FunctionOptions::length_preserving(),
             #[cfg(feature = "dtype-struct")]
-            F::ValueCounts { .. } => FunctionOptions::groupwise()
-                .flag(FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_ORDER_AGNOSTIC),
+            F::ValueCounts { .. } => FunctionOptions::groupwise().flag(
+                FunctionFlags::PASS_NAME_TO_APPLY
+                    | FunctionFlags::INPUT_ORDER_AGNOSTIC
+                    | FunctionFlags::OUTPUT_UNORDERED,
+            ),
             #[cfg(feature = "unique_counts")]
             F::UniqueCounts => FunctionOptions::groupwise(),
             #[cfg(feature = "approx_unique")]
@@ -1545,7 +1549,7 @@ impl IRFunctionExpr {
                 if *maintain_order {
                     f
                 } else {
-                    f | FunctionFlags::INPUT_ORDER_AGNOSTIC
+                    f | FunctionFlags::INPUT_ORDER_AGNOSTIC | FunctionFlags::OUTPUT_UNORDERED
                 }
             }),
             #[cfg(feature = "round_series")]

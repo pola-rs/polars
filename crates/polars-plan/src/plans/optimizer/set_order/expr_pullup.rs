@@ -58,10 +58,10 @@ pub fn is_output_ordered(aexpr: &AExpr, arena: &Arena<AExpr>, frame_ordered: boo
         },
         AExpr::AnonymousFunction { input, options, .. }
         | AExpr::Function { input, options, .. } => {
-            if options.is_elementwise() {
-                input.iter().any(|e| rec!(e.node()))
-            } else if options.flags.is_output_unordered() {
+            if options.flags.returns_scalar() || options.flags.is_output_unordered() {
                 false
+            } else if options.is_elementwise() {
+                input.iter().any(|e| rec!(e.node()))
             } else if options.flags.propagates_order() {
                 assert_eq!(input.len(), 1);
                 rec!(input[0].node())
