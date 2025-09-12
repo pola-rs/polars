@@ -273,6 +273,7 @@ def test_numpy_lit(
         assert result.dtype == override_dtype
 
 
+@pytest.mark.skipif(not hasattr(np, "float128"), reason="no float128")
 def test_numpy_float128() -> None:
     with pytest.raises(ValueError, match="float128 is not supported"):
         pl.select(pl.lit(np.float128(1)))
