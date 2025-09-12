@@ -1368,7 +1368,7 @@ def test_fill_missing_fields_with_identity_partition_values(
 
 @pytest.mark.xfail(
     sys.platform == "win32",
-    # TODO: Investigate
+    # TODO: Investigate - the colon in C:/ seems to be dropped
     reason="CI failure: FileNotFoundError: [WinError 53] Failed to open local file '//C/Users/runneradmin/",
 )
 def test_fill_missing_fields_with_identity_partition_values_nested(
