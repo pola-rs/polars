@@ -444,3 +444,62 @@ def test_filter_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
     q = lf.filter(expr > 0).unique()
     assert ("SORT BY" in q.explain()) is is_ordered
     assert_frame_equal(q.collect(), lf.collect(), check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("exprs", "is_ordered", "unordered_columns"),
+    [
+        ([pl.col.a], True, None),
+        ([pl.col.a, pl.col.b], True, None),
+        ([pl.col.a.unique()], True, ["a"]),
+        ([pl.col.a.min()], True, None),
+        ([pl.col.a.product()], True, None),
+        ([pl.col.a.unique(), pl.col.b], True, ["a"]),
+        ([pl.col.a.unique(), pl.col.b.unique()], False, ["a", "b"]),
+        ([pl.col.a.min(), pl.col.b.min()], False, None),
+        ([pl.col.a.product(), pl.col.b.null_count()], False, None),
+        ([pl.col.b.unique()], True, ["b"]),
+        ([pl.col.a.unique(), pl.col.b.unique(), pl.col.a.alias("c")], True, ["a", "b"]),
+        (
+            [pl.col.a.unique(), pl.col.b.unique(), (pl.col.a + 1).unique().alias("c")],
+            False,
+            ["a", "b", "c"],
+        ),
+        (
+            [pl.col.a.min(), pl.col.b.min(), (pl.col.a + 1).min().alias("c")],
+            False,
+            None,
+        ),
+        (
+            [
+                pl.col.a.product(),
+                pl.col.b.null_count(),
+                (pl.col.a + 1).product().alias("c"),
+            ],
+            False,
+            None,
+        ),
+    ],
+)
+def test_with_columns_sensitivity(
+    exprs: list[pl.Expr], is_ordered: bool, unordered_columns: list[str] | None
+) -> None:
+    lf = (
+        pl.LazyFrame({"a": [2, 4, 1, 3], "b": ["A", "C", "B", "D"]})
+        .sort("a")
+        .with_columns(*exprs)
+        .unique(maintain_order=True)
+    )
+    assert ("UNIQUE[maintain_order: true" in lf.explain()) is is_ordered
+
+    df_opt = lf.collect()
+    df_unopt = lf.collect(optimizations=pl.QueryOptFlags(check_order_observe=False))
+
+    if unordered_columns is None:
+        assert_frame_equal(df_opt, df_unopt)
+    else:
+        assert_frame_equal(
+            df_opt.drop(unordered_columns), df_unopt.drop(unordered_columns)
+        )
+        for c in unordered_columns:
+            assert_series_equal(df_opt[c], df_unopt[c], check_order=False)

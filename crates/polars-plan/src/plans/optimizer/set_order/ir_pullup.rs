@@ -176,7 +176,7 @@ pub(super) fn pullup_orders(
                 let is_output_unordered = !exprs.iter().any(|e| {
                     hits += usize::from(input_schema.contains(e.output_name()));
                     is_output_ordered(expr_arena.get(e.node()), expr_arena, inputs_ordered[0])
-                }) || hits < input_schema.len();
+                }) && hits == input_schema.len();
 
                 if is_output_unordered {
                     set_unordered_output!();
