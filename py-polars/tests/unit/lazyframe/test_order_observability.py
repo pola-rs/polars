@@ -297,7 +297,7 @@ lf6 = pl.LazyFrame({"a": [[1], [2]], "b": [[3], [4]]})
 def test_order_sensitive_paramateric(
     lf: pl.LazyFrame,
     expr: pl.Expr,
-    expected: pl.Series | list | None,
+    expected: pl.Series | list[Any] | None,
     is_order_observing: bool,
 ) -> None:
     if isinstance(expected, pl.Series):
@@ -354,17 +354,32 @@ def test_with_columns_implicit_columns() -> None:
 
 
 @pytest.mark.parametrize(
-    ("expr", "values", "groups", "is_ordered"),
+    ("expr", "values", "is_ordered", "is_output_ordered"),
     [
-        (pl.col.a, [1, 2, 3], True, False),
-        (pl.col.a.sort(), [1, 2, 3], False, True),
-        (pl.col.a.sort() + pl.col.a, None, False, True),
+        (pl.col.a, [1, 2, 3], False, False),
+        (pl.col.a.map_batches(lambda x: x), [1, 2, 3], True, False),
+        (
+            pl.col.a.map_batches(lambda x: x, is_elementwise=True),
+            [1, 2, 3],
+            False,
+            False,
+        ),
+        (
+            pl.col.a.cast(pl.List(pl.Int64))
+            .map_batches(lambda x: x, is_elementwise=True)
+            .explode(),
+            [1, 2, 3],
+            True,
+            False,
+        ),
+        (pl.col.a.sort(), [1, 2, 3], True, True),
+        (pl.col.a.sort() + pl.col.a, None, True, True),
         (pl.col.a.min() + pl.col.a, [2, 3, 4], False, False),
-        (pl.col.a.first() + pl.col.a, None, True, False),
+        (pl.col.a.first() + pl.col.a, None, False, False),
     ],
 )
 def test_group_by_key_sensitivity(
-    expr: pl.Expr, values: list[int] | None, groups: bool, is_ordered: bool
+    expr: pl.Expr, values: list[int] | None, is_ordered: bool, is_output_ordered: bool
 ) -> None:
     lf = pl.LazyFrame({"a": [2, 2, 1, 3], "b": ["A", "B", "C", "D"]}).unique()
 
@@ -372,7 +387,60 @@ def test_group_by_key_sensitivity(
     df = q.collect()
     assert ("AGGREGATE[maintain_order: true]" in q.explain()) is is_ordered
 
+    print(q.explain())
+    print(df)
+
     expected_values = pl.Series("a", values)
 
     if values is not None:
-        assert_series_equal(df["a"], expected_values, check_order=is_ordered)
+        assert_series_equal(df["a"], expected_values, check_order=is_output_ordered)
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_ordered"),
+    [
+        (pl.col.a, False),
+        (pl.col.a.map_batches(lambda x: x), True),
+        (pl.col.a.map_batches(lambda x: x, is_elementwise=True), False),
+        (
+            pl.col.a.cast(pl.List(pl.Int64))
+            .map_batches(lambda x: x, is_elementwise=True)
+            .explode(),
+            True,
+        ),
+        (pl.col.a.cum_prod(), True),
+        (pl.col.a.cum_prod() + pl.col.a, True),
+        (pl.col.a.min() + pl.col.a, False),
+        (pl.col.a.first() + pl.col.a, True),
+    ],
+)
+def test_sort_key_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
+    lf = pl.LazyFrame({"a": [2, 2, 1, 3], "b": ["A", "B", "C", "D"]}).sort(pl.all())
+    q = lf.sort(expr)
+    assert (q.explain().count("SORT BY") == 2) is is_ordered
+    assert_frame_equal(q.collect(), lf.sort("a").collect())
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_ordered"),
+    [
+        (pl.col.a, False),
+        (pl.col.a.map_batches(lambda x: x), True),
+        (pl.col.a.map_batches(lambda x: x, is_elementwise=True), False),
+        (
+            pl.col.a.cast(pl.List(pl.Int64))
+            .map_batches(lambda x: x, is_elementwise=True)
+            .explode(),
+            True,
+        ),
+        (pl.col.a.cum_prod(), True),
+        (pl.col.a.cum_prod() + pl.col.a, True),
+        (pl.col.a.min() + pl.col.a, False),
+        (pl.col.a.first() + pl.col.a, True),
+    ],
+)
+def test_filter_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
+    lf = pl.LazyFrame({"a": [2, 2, 1, 3], "b": ["A", "B", "C", "D"]}).sort(pl.all())
+    q = lf.filter(expr > 0).unique()
+    assert ("SORT BY" in q.explain()) is is_ordered
+    assert_frame_equal(q.collect(), lf.collect(), check_row_order=False)

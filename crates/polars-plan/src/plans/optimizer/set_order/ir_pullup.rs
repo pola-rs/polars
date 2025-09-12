@@ -72,10 +72,13 @@ pub(super) fn pullup_orders(
                     // and
                     // Unordered -> Unordered
 
-                    *maintain_order &= keys
+                    let keys_produce_order = keys
                         .iter()
                         .any(|k| is_output_ordered(expr_arena.get(k.node()), expr_arena, false));
-                    set_unordered_output!();
+                    if !keys_produce_order {
+                        *maintain_order = false;
+                        set_unordered_output!();
+                    }
                 }
             },
             IR::Sink { input: _, payload } => {
