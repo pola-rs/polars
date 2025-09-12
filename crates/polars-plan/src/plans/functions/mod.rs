@@ -238,6 +238,7 @@ impl FunctionIR {
             #[cfg(feature = "python")]
             FunctionIR::OpaquePython(..) => true,
             FunctionIR::Explode { .. } => true,
+            #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { .. } => true,
             FunctionIR::Opaque { .. } => true,
         }
@@ -248,11 +249,12 @@ impl FunctionIR {
             Self::Unnest { .. } => true,
             #[cfg(feature = "python")]
             Self::OpaquePython(..) => false,
+            #[cfg(feature = "pivot")]
+            Self::Unpivot { .. } => false,
             Self::RowIndex { .. }
             | Self::FastCount { .. }
             | Self::Rechunk
             | Self::Explode { .. }
-            | Self::Unpivot { .. }
             | Self::Opaque { .. } => false,
         }
     }
@@ -268,10 +270,11 @@ impl FunctionIR {
             Self::Unnest { .. } | Self::Rechunk => true,
             #[cfg(feature = "python")]
             Self::OpaquePython(..) => false,
+            #[cfg(feature = "pivot")]
+            Self::Unpivot { .. } => false,
             Self::RowIndex { .. }
             | Self::FastCount { .. }
             | Self::Explode { .. }
-            | Self::Unpivot { .. }
             | Self::Opaque { .. } => false,
         }
     }
