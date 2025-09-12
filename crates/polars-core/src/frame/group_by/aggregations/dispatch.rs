@@ -63,7 +63,8 @@ impl Series {
         let mut out = match groups {
             GroupsType::Idx(groups) => {
                 let indices = if ignore_nulls && s.null_count() != 0 {
-                    let null_values = s.is_null();
+                    let null_s = s.is_null();
+                    let null_values = null_s.downcast_as_array();
                     groups
                         .iter()
                         .map(|(_, idx)| {
@@ -93,7 +94,8 @@ impl Series {
             },
             GroupsType::Slice { groups, .. } => {
                 let indices = if ignore_nulls && s.null_count() != 0 {
-                    let null_values = s.is_null();
+                    let null_s = s.is_null();
+                    let null_values = null_s.downcast_as_array();
                     groups
                         .iter()
                         .map(|&[first, len]| {
@@ -113,7 +115,7 @@ impl Series {
                         .iter()
                         .map(|&[first, len]| if len == 0 { None } else { Some(first) })
                         .collect_ca(PlSmallStr::EMPTY)
-                    };
+                };
                 // SAFETY: groups are always in bounds.
                 s.take_unchecked(&indices)
             },
@@ -136,7 +138,8 @@ impl Series {
         let mut out = match groups {
             GroupsType::Idx(groups) => {
                 let indices = if ignore_nulls && s.null_count() != 0 {
-                    let null_values = s.is_null();
+                    let null_s = s.is_null();
+                    let null_values = null_s.downcast_as_array();
                     groups
                         .iter()
                         .map(|(_, idx)| {
@@ -162,13 +165,14 @@ impl Series {
                             }
                         })
                         .collect_ca(PlSmallStr::EMPTY)
-                    };
+                };
                 // SAFETY: groups are always in bounds.
                 s.take_unchecked(&indices)
             },
             GroupsType::Slice { groups, .. } => {
                 let indices = if ignore_nulls && s.null_count() != 0 {
-                    let null_values = s.is_null();
+                    let null_s = s.is_null();
+                    let null_values = null_s.downcast_as_array();
                     groups
                         .iter()
                         .map(|&[first, len]| {
