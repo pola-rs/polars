@@ -26,22 +26,14 @@ impl<T> UnitVec<T> {
     fn data_ptr_mut(&mut self) -> *mut T {
         let external = self.data;
         let inline = &mut self.data as *mut *mut T as *mut T;
-        if self.capacity.get() == 1 {
-            inline
-        } else {
-            external
-        }
+        if self.is_inline() { inline } else { external }
     }
 
     #[inline(always)]
     fn data_ptr(&self) -> *const T {
         let external = self.data;
         let inline = &self.data as *const *mut T as *mut T;
-        if self.capacity.get() == 1 {
-            inline
-        } else {
-            external
-        }
+        if self.is_inline() { inline } else { external }
     }
 
     #[inline]
@@ -53,6 +45,10 @@ impl<T> UnitVec<T> {
             capacity: NonZeroIdxSize::new(1).unwrap(),
             data: std::ptr::null_mut(),
         }
+    }
+
+    pub fn is_inline(&self) -> bool {
+        self.capacity.get() == 1
     }
 
     #[inline(always)]
@@ -123,7 +119,7 @@ impl<T> UnitVec<T> {
 
     fn dealloc(&mut self) {
         unsafe {
-            if self.capacity.get() > 1 {
+            if !self.is_inline() {
                 let _ = Vec::from_raw_parts(self.data, self.len as usize, self.capacity());
                 self.capacity = NonZeroIdxSize::new(1).unwrap();
             }
@@ -196,7 +192,7 @@ impl<T> Drop for UnitVec<T> {
 impl<T> Clone for UnitVec<T> {
     fn clone(&self) -> Self {
         unsafe {
-            if self.capacity.get() == 1 {
+            if self.is_inline() {
                 Self { ..*self }
             } else {
                 let mut copy = Self::with_capacity(self.len as usize);
@@ -232,6 +228,12 @@ impl<T> Deref for UnitVec<T> {
     }
 }
 
+impl<T> std::ops::DerefMut for UnitVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_slice()
+    }
+}
+
 impl<T> AsRef<[T]> for UnitVec<T> {
     fn as_ref(&self) -> &[T] {
         unsafe { std::slice::from_raw_parts(self.data_ptr(), self.len as usize) }
@@ -252,16 +254,52 @@ impl<T: PartialEq> PartialEq for UnitVec<T> {
 
 impl<T> FromIterator<T> for UnitVec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        if iter.size_hint().0 <= 1 {
-            let mut new = UnitVec::new();
-            for v in iter {
-                new.push(v)
-            }
-            new
+        let mut iter = iter.into_iter();
+
+        let Some(first) = iter.next() else {
+            return Self::new();
+        };
+
+        let Some(second) = iter.next() else {
+            let mut out = Self::new();
+            out.push(first);
+            return out;
+        };
+
+        let mut vec = Vec::with_capacity(iter.size_hint().0 + 2);
+        vec.push(first);
+        vec.push(second);
+        vec.extend(iter);
+        Self::from(vec)
+    }
+}
+
+impl<T> IntoIterator for UnitVec<T> {
+    type Item = T;
+
+    type IntoIter = IntoIter<T>;
+
+    fn into_iter(mut self) -> Self::IntoIter {
+        if self.is_inline() {
+            IntoIter::Inline(self.pop().into_iter())
         } else {
-            let v = iter.collect::<Vec<_>>();
-            v.into()
+            IntoIter::External(Vec::from(self).into_iter())
+        }
+    }
+}
+
+pub enum IntoIter<T> {
+    Inline(std::option::IntoIter<T>),
+    External(std::vec::IntoIter<T>),
+}
+
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            IntoIter::Inline(it) => it.next(),
+            IntoIter::External(it) => it.next(),
         }
     }
 }
@@ -285,6 +323,31 @@ impl<T> From<Vec<T>> for UnitVec<T> {
     }
 }
 
+impl<T, const N: usize> From<[T; N]> for UnitVec<T> {
+    fn from(value: [T; N]) -> Self {
+        value.into_iter().collect()
+    }
+}
+
+impl<T> From<UnitVec<T>> for Vec<T> {
+    fn from(mut value: UnitVec<T>) -> Self {
+        if value.is_inline() {
+            let mut out = Vec::with_capacity(value.len());
+            if let Some(item) = value.pop() {
+                out.push(item);
+            }
+            out
+        } else {
+            // SAFETY: when not inline, the data points to a buffer allocated by a Vec.
+            let out =
+                unsafe { Vec::from_raw_parts(value.data, value.len as usize, value.capacity()) };
+            // Prevent deallocating the buffer
+            std::mem::forget(value);
+            out
+        }
+    }
+}
+
 impl<T: Clone> From<&[T]> for UnitVec<T> {
     fn from(value: &[T]) -> Self {
         if value.len() <= 1 {
@@ -301,26 +364,26 @@ impl<T: Clone> From<&[T]> for UnitVec<T> {
 
 #[macro_export]
 macro_rules! unitvec {
-    () => (
+    () => {{
         $crate::idx_vec::UnitVec::new()
-    );
-    ($elem:expr; $n:expr) => (
+    }};
+    ($elem:expr; $n:expr) => {{
         let mut new = $crate::idx_vec::UnitVec::new();
         for _ in 0..$n {
             new.push($elem)
         }
         new
-    );
-    ($elem:expr) => (
-        {let mut new = $crate::idx_vec::UnitVec::new();
+    }};
+    ($elem:expr) => {{
+        let mut new = $crate::idx_vec::UnitVec::new();
         let v = $elem;
         // SAFETY: first element always fits.
         unsafe { new.push_unchecked(v) };
-        new}
-    );
-    ($($x:expr),+ $(,)?) => (
-            vec![$($x),+].into()
-    );
+        new
+    }};
+    ($($x:expr),+ $(,)?) => {{
+        vec![$($x),+].into()
+    }};
 }
 
 mod tests {
@@ -365,5 +428,10 @@ mod tests {
             let v = unitvec![n];
             assert_eq!(v, v.clone());
         }
+    }
+
+    #[test]
+    fn test_unitvec_repeat_n() {
+        assert_eq!(unitvec![5; 3].as_slice(), &[5, 5, 5])
     }
 }

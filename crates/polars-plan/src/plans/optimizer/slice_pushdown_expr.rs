@@ -35,14 +35,6 @@ impl OptimizationRule for SlicePushDown {
                     let new_input = pushdown(input, offset, length, expr_arena);
                     Some(ae.replace_inputs(&[new_input]))
                 },
-                Literal(lv) => {
-                    match lv {
-                        LiteralValue::Series(_) => None,
-                        LiteralValue::Range { .. } => None,
-                        // no need to slice a literal value of unit length
-                        lv => Some(Literal(lv.clone())),
-                    }
-                },
                 BinaryExpr { left, right, op } => {
                     let left = *left;
                     let right = *right;
@@ -74,7 +66,6 @@ impl OptimizationRule for SlicePushDown {
                     if let AnonymousFunction {
                         mut input,
                         function,
-                        output_type,
                         options,
                         fmt_str,
                     } = m.clone()
@@ -87,7 +78,6 @@ impl OptimizationRule for SlicePushDown {
                         Some(AnonymousFunction {
                             input,
                             function,
-                            output_type,
                             options,
                             fmt_str,
                         })

@@ -734,8 +734,8 @@ def test_rolling_cov_corr_nulls() -> None:
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.62204709]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.62204709]})
 
-    assert_frame_equal(val_1, df1_expected, atol=0.0000001)
-    assert_frame_equal(val_2, df2_expected, atol=0.0000001)
+    assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
+    assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
     val_1 = df1.select(
         pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
@@ -747,8 +747,8 @@ def test_rolling_cov_corr_nulls() -> None:
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.009445]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.009445]})
 
-    assert_frame_equal(val_1, df1_expected, atol=0.0000001)
-    assert_frame_equal(val_2, df2_expected, atol=0.0000001)
+    assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
+    assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
@@ -1596,6 +1596,79 @@ def test_rolling_quantile_nearest_with_nulls_23932() -> None:
     )
     expected = pl.Series("a", [None, None, 1.0, 2.0, 2.0, 3.0, 3.0])
     assert_series_equal(out["a"], expected)
+
+
+def test_wtd_min_periods_less_window() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_mean": [1.333333, 2, 3, 4, 4.666667]}
+    )
+
+    assert_frame_equal(df, expected)
+
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_sum(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_sum")
+    )
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_sum": [1.0, 2.0, 3.0, 4.0, 3.5]}
+    )
+
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.2, 0.3, 0.5], min_samples=2, center=False
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_mean": [None, 1.625, 2.3, 3.3, 4.3]}
+    )
+
+    assert_frame_equal(df, expected)
+
+    df = pl.DataFrame({"a": [1, 2]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_mean")
+    )
+
+    # Handle edge case where the window size is larger than the number of elements
+    expected = pl.DataFrame({"a": [1, 2], "kernel_mean": [1.333333, 1.666667]})
+    assert_frame_equal(df, expected)
+
+    df = pl.DataFrame({"a": [1, 2]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.25, 0.5], min_samples=1, center=False
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame({"a": [1, 2], "kernel_mean": [1.0, 2 * 2 / 3 + 1 * 1 / 3]})
+
+    df = pl.DataFrame({"a": [1]}).with_columns(
+        pl.col("a")
+        .rolling_sum(
+            6, center=True, min_samples=0, weights=[1, 10, 100, 1000, 10_000, 100_000]
+        )
+        .alias("kernel_sum")
+    )
+    expected = pl.DataFrame({"a": [1], "kernel_sum": [1000.0]})
+    assert_frame_equal(df, expected)
 
 
 def test_rolling_median_23480() -> None:

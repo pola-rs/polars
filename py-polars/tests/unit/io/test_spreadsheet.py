@@ -893,6 +893,7 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
         assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 @pytest.mark.parametrize(
     ("engine", "list_dtype"),
     [
@@ -1444,3 +1445,20 @@ def test_excel_write_select_col_dtype() -> None:
         df.write_excel(wb, hidden_columns=cs.by_dtype(pl.String))
 
     assert get_col_widths(check) == {"B": 0}
+
+
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+def test_excel_read_columns_nonlist_sequence(engine: ExcelSpreadsheetEngine) -> None:
+    df = pl.DataFrame(
+        {"colx": [1, 2, 3], "coly": ["aaa", "bbb", "ccc"], "colz": [0.5, 0.0, -1.0]}
+    )
+    xls = BytesIO()
+    df.write_excel(xls, worksheet="data")
+
+    xldf = pl.read_excel(xls, engine=engine, columns=("colx", "coly"))
+    expected = df.select("colx", "coly")
+    assert_frame_equal(xldf, expected)
+
+    xldf = pl.read_excel(xls, engine=engine, columns="colx")
+    expected = df.select("colx")
+    assert_frame_equal(xldf, expected)

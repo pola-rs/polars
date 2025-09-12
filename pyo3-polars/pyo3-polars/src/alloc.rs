@@ -70,9 +70,14 @@ impl PolarsAllocator {
             let r = (unsafe { Py_IsInitialized() } != 0)
                 .then(|| {
                     Python::with_gil(|_| unsafe {
-                        (PyCapsule_Import(ALLOCATOR_CAPSULE_NAME.as_ptr() as *const c_char, 0)
-                            as *const AllocatorCapsule)
-                            .as_ref()
+                        let capsule =
+                            (PyCapsule_Import(ALLOCATOR_CAPSULE_NAME.as_ptr() as *const c_char, 0)
+                                as *const AllocatorCapsule)
+                                .as_ref();
+                        if capsule.is_none() {
+                            pyo3::ffi::PyErr_Clear();
+                        }
+                        capsule
                     })
                 })
                 .flatten();
@@ -80,9 +85,15 @@ impl PolarsAllocator {
             if r.is_none() {
                 // Do not use eprintln; it may alloc.
                 let msg = b"failed to get allocator capsule\n";
-                // Message length type is platform-dependent.
-                let msg_len = msg.len();
-                unsafe { libc::write(2, msg.as_ptr() as *const libc::c_void, msg_len) };
+                #[allow(clippy::useless_conversion)]
+                unsafe {
+                    libc::write(
+                        2,
+                        msg.as_ptr() as *const libc::c_void,
+                        // Use try_into as types differ per OS
+                        msg.len().try_into().unwrap(),
+                    )
+                };
             }
             r.unwrap_or(&FALLBACK_ALLOCATOR_CAPSULE)
         })

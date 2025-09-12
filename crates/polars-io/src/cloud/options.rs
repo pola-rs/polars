@@ -316,10 +316,15 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+    pub async fn build_aws(
+        &self,
+        url: &str,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let opt_credential_provider = self.initialized_credential_provider()?;
+        let opt_credential_provider =
+            self.initialized_credential_provider(clear_cached_credentials)?;
 
         let mut builder = AmazonS3Builder::from_env()
             .with_client_options(get_client_options())
@@ -476,7 +481,11 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+    pub fn build_azure(
+        &self,
+        url: &str,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
         let verbose = polars_core::config::verbose();
@@ -499,17 +508,18 @@ impl CloudOptions {
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = self.initialized_credential_provider()? {
-            if verbose {
-                eprintln!(
-                    "[CloudOptions::build_azure]: Using credential provider {:?}",
-                    &v
-                );
-            }
-            builder.with_credentials(v.into_azure_provider())
-        } else {
-            builder
-        };
+        let builder =
+            if let Some(v) = self.initialized_credential_provider(clear_cached_credentials)? {
+                if verbose {
+                    eprintln!(
+                        "[CloudOptions::build_azure]: Using credential provider {:?}",
+                        &v
+                    );
+                }
+                builder.with_credentials(v.into_azure_provider())
+            } else {
+                builder
+            };
 
         let out = builder.build()?;
 
@@ -530,10 +540,14 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+    pub fn build_gcp(
+        &self,
+        url: &str,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let credential_provider = self.initialized_credential_provider()?;
+        let credential_provider = self.initialized_credential_provider(clear_cached_credentials)?;
 
         let builder = if credential_provider.is_none() {
             GoogleCloudStorageBuilder::from_env()
@@ -556,7 +570,7 @@ impl CloudOptions {
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = credential_provider.clone() {
+        let builder = if let Some(v) = credential_provider {
             builder.with_credentials(v.into_gcp_provider())
         } else {
             builder
@@ -701,9 +715,12 @@ impl CloudOptions {
     /// Python passes a credential provider builder that needs to be called to get the actual credential
     /// provider.
     #[cfg(feature = "cloud")]
-    fn initialized_credential_provider(&self) -> PolarsResult<Option<PlCredentialProvider>> {
+    fn initialized_credential_provider(
+        &self,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Option<PlCredentialProvider>> {
         if let Some(v) = self.credential_provider.clone() {
-            v.try_into_initialized()
+            v.try_into_initialized(clear_cached_credentials)
         } else {
             Ok(None)
         }

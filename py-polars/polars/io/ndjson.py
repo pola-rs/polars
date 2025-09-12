@@ -14,7 +14,7 @@ from polars.io.cloud.credential_provider._builder import (
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame
+    from polars._plr import PyLazyFrame
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame

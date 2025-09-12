@@ -84,7 +84,7 @@ _POLARS_CFG_ENV_VARS = {
 # method name paired with a callable that returns the current state of that value:
 with contextlib.suppress(ImportError, NameError):
     # note: 'plr' not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
     _POLARS_CFG_DIRECT_VARS = {
         "set_fmt_float": plr.get_float_fmt,
@@ -479,7 +479,7 @@ class Config(contextlib.ContextDecorator):
         }
         if not env_only:
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items():
-                config_state[cfg_methodname] = get_value()
+                config_state[cfg_methodname] = get_value()  # type: ignore[assignment]
 
         return config_state
 
@@ -1452,7 +1452,7 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_expr_depth_warning(cls, limit: int) -> type[Config]:
         """
-        Set the the expression depth that Polars will accept without triggering a warning.
+        Set the expression depth that Polars will accept without triggering a warning.
 
         Having too deep expressions (several 1000s) can lead to overflowing the stack and might be worth a refactor.
         """  # noqa: W505

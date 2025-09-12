@@ -1,13 +1,14 @@
 use polars_core::error::{PolarsResult, feature_gated, polars_bail};
-use polars_core::prelude::{DataType, Field, NamedFrom};
+use polars_core::prelude::{AnyValue, DataType, Field, NamedFrom};
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::ExprToIRContext;
 use crate::constants::get_literal_name;
 use crate::dsl::{DataTypeFunction, SpecialEq, StructDataTypeFunction};
-use crate::plans::{AExpr, LiteralValue};
+use crate::plans::{AExpr, ExprIR, IRFunctionExpr, LiteralValue, OutputName};
 
 pub fn datatype_fn_to_aexpr(
     f: DataTypeFunction,
@@ -33,6 +34,38 @@ pub fn datatype_fn_to_aexpr(
                 AExpr::Literal(LiteralValue::Scalar(Scalar::from(selector.matches(&dt)))),
                 get_literal_name().clone(),
             )
+        },
+        DTF::DefaultValue {
+            dt_expr,
+            n,
+            numeric_to_one,
+            num_list_values,
+        } => {
+            let dt = dt_expr.into_datatype(ctx.schema)?;
+            let value = AnyValue::default_value(&dt, numeric_to_one, num_list_values);
+
+            let mut expr = AExpr::Literal(LiteralValue::Scalar(Scalar::new(dt, value)));
+
+            if n != 1 {
+                let function = IRFunctionExpr::Repeat;
+                let options = function.function_options();
+                expr = AExpr::Function {
+                    input: vec![
+                        ExprIR::new(ctx.arena.add(expr), OutputName::Alias(Default::default())),
+                        ExprIR::new(
+                            ctx.arena
+                                .add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(
+                                    n as IdxSize,
+                                )))),
+                            OutputName::Alias(Default::default()),
+                        ),
+                    ],
+                    function,
+                    options,
+                };
+            }
+
+            (expr, get_literal_name().clone())
         },
         DTF::Array(dt_expr, f) => {
             let (inner, width): (DataType, usize) = match dt_expr.into_datatype(ctx.schema)? {

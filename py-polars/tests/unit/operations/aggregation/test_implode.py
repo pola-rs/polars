@@ -1,4 +1,7 @@
+import pytest
+
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_implode_22192_22191() -> None:
@@ -11,13 +14,11 @@ def test_implode_22192_22191() -> None:
     }
 
 
-def test_implode_agg_lit() -> None:
-    assert (
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_implode_agg_lit(maintain_order: bool) -> None:
+    assert_frame_equal(
         pl.DataFrame()
-        .group_by(1)
-        .agg(
-            pl.lit(pl.Series("x", [[3]])).list.set_union(
-                pl.lit(pl.Series([1])).implode()
-            )
-        )
-    ).to_dict(as_series=False) == {"literal": [1], "x": [[3, 1]]}
+        .group_by(pl.lit(1, pl.Int64))
+        .agg(x=pl.lit([3]).list.set_union(pl.lit(1).implode())),
+        pl.DataFrame({"literal": [1], "x": [[3, 1]]}),
+    )

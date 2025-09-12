@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_dtype::categorical::{CatSize, Categories};
 use pyo3::{pyclass, pymethods};
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyCategories {
@@ -23,6 +23,14 @@ impl PyCategories {
         Self {
             categories: Categories::new(name.into(), namespace.into(), physical.parse().unwrap()),
         }
+    }
+
+    fn __getnewargs__(&self) -> (String, String, String) {
+        (
+            self.categories.name().to_string(),
+            self.categories.namespace().to_string(),
+            self.categories.physical().as_str().to_owned(),
+        )
     }
 
     #[staticmethod]

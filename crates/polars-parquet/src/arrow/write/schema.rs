@@ -325,7 +325,7 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
         },
         ArrowDataType::Dictionary(_, value, _) => {
             assert!(!value.is_nested());
-            let dict_field = Field::new(name.clone(), value.as_ref().clone(), field.is_nullable);
+            let dict_field = Field::new(name, value.as_ref().clone(), field.is_nullable);
             return to_parquet_type(&dict_field, options);
         },
         ArrowDataType::FixedSizeBinary(size) => {

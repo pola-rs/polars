@@ -293,3 +293,77 @@ def test_struct_nested_naming_in_group_by_23701() -> None:
     agg_df = df.group_by("ID").agg(expr_outer_struct)
 
     assert agg_df.collect_schema() == agg_df.collect().schema
+
+
+# parametric tuples: (expr, is_scalar)
+agg_expressions = [
+    (pl.lit(1, pl.Int64), True),  # LiteralScalar
+    (pl.col("n"), False),  # NotAggregated
+    (pl.int_range(1, pl.len() + 1), False),  # AggregatedList
+    (pl.col("n").first(), True),  # AggregatedScalar
+]
+
+
+@pytest.mark.parametrize("lhs", agg_expressions)
+@pytest.mark.parametrize("rhs", agg_expressions)
+@pytest.mark.parametrize("n_rows", [0, 1, 2, 3])
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_struct_schema_in_group_by_apply_expr_24168(
+    lhs: tuple[pl.Expr, bool],
+    rhs: tuple[pl.Expr, bool],
+    n_rows: int,
+    maintain_order: bool,
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "n": [1, 2, 3]})
+    lf = df.head(n_rows).lazy()
+    expr = pl.struct(lhs[0].alias("lhs"), rhs[0].alias("rhs")).alias("expr")
+    q = lf.group_by("g", maintain_order=maintain_order).agg(expr)
+    out = q.collect()
+
+    # check schema
+    assert q.collect_schema() == out.schema
+
+    # check output against ground truth (single group only)
+    if n_rows in [0, 1]:
+        if lhs[1] and rhs[1]:
+            expected = pl.DataFrame({"g": [10], "expr": [{"lhs": 1, "rhs": 1}]})
+            expected = expected.head(n_rows)
+            assert_frame_equal(out, expected, check_row_order=maintain_order)
+        else:
+            expected = pl.DataFrame({"g": [10], "expr": [[{"lhs": 1, "rhs": 1}]]})
+            expected = expected.head(n_rows)
+            assert_frame_equal(out, expected, check_row_order=maintain_order)
+
+    if n_rows == 2:
+        if lhs[1] and rhs[1]:
+            expected = pl.DataFrame({"g": [10], "expr": [{"lhs": 1, "rhs": 1}]})
+            assert_frame_equal(out, expected, check_row_order=maintain_order)
+        else:
+            expected = pl.DataFrame(
+                {
+                    "g": [10],
+                    "expr": [
+                        [
+                            {"lhs": 1, "rhs": 1},
+                            {"lhs": 1 if lhs[1] else 2, "rhs": 1 if rhs[1] else 2},
+                        ]
+                    ],
+                }
+            )
+            assert_frame_equal(out, expected, check_row_order=maintain_order)
+
+    # check output against non_aggregated expression evaluation
+    if n_rows in [1, 2, 3]:
+        grouped = df.head(n_rows).group_by("g", maintain_order=maintain_order)
+
+        out_non_agg = pl.DataFrame({})
+        for df_group in grouped:
+            df = df_group[1]
+            if lhs[1] and rhs[1]:
+                df = df.head(1)
+                df = df.select(["g", expr])
+            else:
+                df = df.select(["g", expr.implode()]).head(1)
+            out_non_agg = out_non_agg.vstack(df)
+
+        assert_frame_equal(out, out_non_agg, check_row_order=maintain_order)

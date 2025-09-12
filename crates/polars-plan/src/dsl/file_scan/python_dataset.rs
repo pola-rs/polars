@@ -20,9 +20,10 @@ pub struct PythonDatasetProviderVTable {
     #[expect(clippy::type_complexity)]
     pub to_dataset_scan: fn(
         dataset_object: &PythonObject,
+        existing_resolved_version_key: Option<&str>,
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
-    ) -> PolarsResult<DslPlan>,
+    ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>>,
 }
 
 pub fn dataset_provider_vtable() -> Result<&'static PythonDatasetProviderVTable, &'static str> {
@@ -54,11 +55,13 @@ impl PythonDatasetProvider {
 
     pub fn to_dataset_scan(
         &self,
+        existing_resolved_version_key: Option<&str>,
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
-    ) -> PolarsResult<DslPlan> {
+    ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
         (dataset_provider_vtable().unwrap().to_dataset_scan)(
             &self.dataset_object,
+            existing_resolved_version_key,
             limit,
             projection,
         )

@@ -25,7 +25,7 @@ pub fn into_reduction(
     let get_dt = |node| {
         expr_arena
             .get(node)
-            .to_dtype(schema, Context::Default, expr_arena)?
+            .to_dtype(schema, expr_arena)?
             .materialize_unknown(false)
     };
     let out = match expr_arena.get(node) {
@@ -48,7 +48,10 @@ pub fn into_reduction(
             },
             IRAggExpr::First(input) => (new_first_reduction(get_dt(*input)?), *input),
             IRAggExpr::Last(input) => (new_last_reduction(get_dt(*input)?), *input),
-            IRAggExpr::Count(input, include_nulls) => {
+            IRAggExpr::Count {
+                input,
+                include_nulls,
+            } => {
                 let count = Box::new(CountReduce::new(*include_nulls)) as Box<_>;
                 (count, *input)
             },

@@ -11,7 +11,7 @@ unsafe impl IntoSeries for DecimalChunked {
 
 impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {
     fn bit_repr(&self) -> Option<BitRepr> {
-        None
+        Some(self.0.physical().to_bit_repr())
     }
 }
 
@@ -379,6 +379,11 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn shift(&self, periods: i64) -> Series {
         self.apply_physical_to_s(|ca| ca.shift(periods))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

@@ -4,10 +4,13 @@ import re
 from typing import TYPE_CHECKING
 
 import pytest
+from hypothesis import given
 
 import polars as pl
 import polars.selectors as cs
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES, TEMPORAL_DTYPES
 from polars.testing import assert_frame_equal
+from polars.testing.parametric import dtypes
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -19,8 +22,8 @@ c = pl.col
     ("e", "equiv"),
     [
         (
-            c.a.map_batches(lambda x: str(x), pl.dtype_of("b")),
-            c.a.map_batches(lambda x: str(x), pl.String),
+            c.a.map_batches(lambda x: x.cast(pl.String), pl.dtype_of("b")),
+            c.a.map_batches(lambda x: x.cast(pl.String), pl.String),
         ),
         (
             c.a.replace_strict([1, 2, 3, 4, 5], "X", return_dtype=pl.dtype_of("b")),
@@ -301,3 +304,131 @@ def test_dtype_of_with_unknown_type() -> None:
         match="DataType expression is not allowed to instantiate",
     ):
         pl.dtype_of("x").collect_dtype(pl.Schema({"x": pl.Unknown}))
+
+
+@given(dtype=dtypes())
+def test_default_value_parametric(dtype: pl.DataType) -> None:
+    assert pl.select(dtype.to_dtype_expr().default_value()).to_series().dtype == dtype
+
+
+@pytest.mark.parametrize("dtype", sorted(INTEGER_DTYPES, key=lambda v: str(v)))
+@pytest.mark.parametrize("numeric_to_one", [False, True])
+def test_default_value_int(dtype: pl.DataType, numeric_to_one: bool) -> None:
+    result = pl.select(
+        dtype.to_dtype_expr().default_value(numeric_to_one=numeric_to_one)
+    ).to_series()
+    assert result.dtype == dtype
+    assert result.item() == (1 if numeric_to_one else 0)
+
+
+@pytest.mark.parametrize("dtype", sorted(FLOAT_DTYPES, key=lambda v: str(v)))
+@pytest.mark.parametrize("numeric_to_one", [False, True])
+def test_default_value_float(dtype: pl.DataType, numeric_to_one: bool) -> None:
+    result = pl.select(
+        dtype.to_dtype_expr().default_value(numeric_to_one=numeric_to_one)
+    ).to_series()
+    assert result.dtype == dtype
+    assert result.item() == (1.0 if numeric_to_one else 0.0)
+
+
+def test_default_value_string() -> None:
+    result = pl.select(pl.String().to_dtype_expr().default_value()).to_series()
+    assert result.dtype == pl.String()
+    assert result.item() == ""
+
+
+def test_default_value_binary() -> None:
+    result = pl.select(pl.String().to_dtype_expr().default_value()).to_series()
+    assert result.dtype == pl.String()
+    assert result.item() == ""
+
+
+def test_default_value_decimal() -> None:
+    result = pl.select(pl.Decimal(scale=2).to_dtype_expr().default_value()).to_series()
+    assert result.dtype == pl.Decimal(scale=2)
+    assert result.item() == 0
+
+
+@pytest.mark.parametrize("dtype", sorted(TEMPORAL_DTYPES, key=lambda v: str(v)))
+def test_default_value_temporal(dtype: pl.DataType) -> None:
+    result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
+    assert result.dtype == dtype
+    assert result.to_physical().item() == 0
+
+
+@pytest.mark.parametrize("numeric_to_one", [False, True])
+def test_default_value_struct(numeric_to_one: bool) -> None:
+    dtype = pl.Struct({"a": pl.Int64, "b": pl.String()})
+    result = pl.select(
+        dtype.to_dtype_expr().default_value(numeric_to_one=numeric_to_one)
+    ).to_series()
+    assert result.dtype == dtype
+    assert result.to_list()[0] == {"a": (1 if numeric_to_one else 0), "b": ""}
+
+
+@pytest.mark.parametrize("numeric_to_one", [False, True])
+def test_default_value_array(numeric_to_one: bool) -> None:
+    dtype = pl.Array(pl.Int64, 3)
+    result = pl.select(
+        dtype.to_dtype_expr().default_value(numeric_to_one=numeric_to_one)
+    ).to_series()
+    assert result.dtype == dtype
+    assert result.to_list()[0] == [(1 if numeric_to_one else 0)] * 3
+
+
+@pytest.mark.parametrize("numeric_to_one", [False, True])
+@pytest.mark.parametrize("num_list_values", [0, 1, 3])
+def test_default_value_list(numeric_to_one: bool, num_list_values: int) -> None:
+    dtype = pl.List(pl.Int64)
+    result = pl.select(
+        dtype.to_dtype_expr().default_value(
+            numeric_to_one=numeric_to_one, num_list_values=num_list_values
+        )
+    ).to_series()
+    assert result.dtype == dtype
+    assert result.to_list()[0] == [(1 if numeric_to_one else 0)] * num_list_values
+
+
+def test_default_value_object() -> None:
+    dtype = pl.Object()
+    result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
+    assert result.dtype == dtype
+    assert result.item() is None
+
+
+def test_default_value_null() -> None:
+    dtype = pl.Null()
+    result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
+    assert result.dtype == dtype
+    assert result.item() is None
+
+
+def test_default_value_categorical() -> None:
+    dtype = pl.Categorical()
+    result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
+    assert result.dtype == dtype
+    assert result.item() is None
+
+
+def test_default_value_enum() -> None:
+    dtype = pl.Enum([])
+    result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
+    assert result.dtype == dtype
+    assert result.item() is None
+
+    dtype = pl.Enum(["a", "b", "c"])
+    result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
+    assert result.dtype == dtype
+    assert result.item() == "a"
+
+
+@pytest.mark.parametrize("n", [0, 1, 2, 5])
+@pytest.mark.parametrize("numeric_to_one", [False, True])
+def test_default_value_n(n: int, numeric_to_one: bool) -> None:
+    dtype = pl.Int64()
+    result = pl.select(
+        dtype.to_dtype_expr().default_value(n, numeric_to_one=numeric_to_one)
+    ).to_series()
+    assert result.dtype == dtype
+    assert result.len() == n
+    assert result.to_list() == [(1 if numeric_to_one else 0)] * n

@@ -83,7 +83,7 @@ fn map_linspace_dtype(mapper: &FieldsMapper) -> PolarsResult<DataType> {
         // A linear space of a Date produces a sequence of Datetimes
         (dt1, dt2) if dt1.is_temporal() && dt1 == dt2 => {
             if dt1 == &DataType::Date {
-                DataType::Datetime(TimeUnit::Milliseconds, None)
+                DataType::Datetime(TimeUnit::Microseconds, None)
             } else {
                 dt1.clone()
             }

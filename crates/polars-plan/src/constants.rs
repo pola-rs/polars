@@ -7,7 +7,6 @@ pub static POLARS_TMP_PREFIX: &str = "_POLARS_";
 pub static POLARS_PLACEHOLDER: &str = "_POLARS_<>";
 pub const LEN: &str = "len";
 const LITERAL_NAME: &str = "literal";
-pub const UNLIMITED_CACHE: u32 = u32::MAX;
 
 // Cache the often used LITERAL and LEN constants
 static LITERAL_NAME_INIT: OnceLock<PlSmallStr> = OnceLock::new();

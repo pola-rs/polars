@@ -118,14 +118,22 @@ impl PhysicalExpr for SliceExpr {
         let mut ac_length = results.pop().unwrap();
         let mut ac_offset = results.pop().unwrap();
 
+        // Fast path:
+        // When `input` (ac) is a LiteralValue, and both `offset` and `length` are LiteralScalar,
+        // we slice the LiteralValue and avoid calling groups().
+        // TODO: When `input` (ac) is a LiteralValue, and `offset` or `length` is not a LiteralScalar,
+        // we can simplify the groups calculation since we have a List containing one scalar for
+        // each group.
+
         use AggState::*;
         let groups = match (&ac_offset.state, &ac_length.state) {
-            (Literal(offset), Literal(length)) => {
+            (LiteralScalar(offset), LiteralScalar(length)) => {
                 let (offset, length) = extract_args(offset, length, &self.expr)?;
 
-                if let Literal(s) = ac.agg_state() {
+                if let LiteralScalar(s) = ac.agg_state() {
                     let s1 = s.slice(offset, length);
                     ac.with_literal(s1);
+                    ac.aggregated();
                     return Ok(ac);
                 }
                 let groups = ac.groups();
@@ -150,7 +158,10 @@ impl PhysicalExpr for SliceExpr {
                     },
                 }
             },
-            (Literal(offset), _) => {
+            (LiteralScalar(offset), _) => {
+                if matches!(ac.state, LiteralScalar(_)) {
+                    ac.aggregated();
+                }
                 let groups = ac.groups();
                 let offset = extract_offset(offset, &self.expr)?;
                 let length = ac_length.aggregated();
@@ -185,7 +196,10 @@ impl PhysicalExpr for SliceExpr {
                     },
                 }
             },
-            (_, Literal(length)) => {
+            (_, LiteralScalar(length)) => {
+                if matches!(ac.state, LiteralScalar(_)) {
+                    ac.aggregated();
+                }
                 let groups = ac.groups();
                 let length = extract_length(length, &self.expr)?;
                 let offset = ac_offset.aggregated();
@@ -221,6 +235,10 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             _ => {
+                if matches!(ac.state, LiteralScalar(_)) {
+                    ac.aggregated();
+                }
+
                 let groups = ac.groups();
                 let length = ac_length.aggregated();
                 let offset = ac_offset.aggregated();

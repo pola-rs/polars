@@ -8,7 +8,7 @@ from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

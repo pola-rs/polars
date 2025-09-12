@@ -6,7 +6,7 @@ use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
-use polars_plan::plans::{ExprToIRContext, node_to_expr, to_expr_ir};
+use polars_plan::plans::{ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir};
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
@@ -16,7 +16,6 @@ use super::selector::PySelector;
 use crate::PyExpr;
 use crate::conversion::{Wrap, parse_fill_null_strategy};
 use crate::error::PyPolarsErr;
-use crate::map::lazy::map_single;
 use crate::utils::EnterPolarsExt;
 
 #[pymethods]
@@ -319,7 +318,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "search_sorted")]
-    #[pyo3(signature = (element, side, descending=false))]
+    #[pyo3(signature = (element, side, descending))]
     fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>, descending: bool) -> Self {
         self.inner
             .clone()
@@ -359,7 +358,7 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (n, fill_value=None))]
+    #[pyo3(signature = (n, fill_value))]
     fn shift(&self, n: Self, fill_value: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match fill_value {
@@ -454,10 +453,7 @@ impl PyExpr {
     }
 
     fn rechunk(&self) -> Self {
-        self.inner
-            .clone()
-            .map(|s| Ok(Some(s.rechunk())), GetOutput::same_type())
-            .into()
+        self.inner.clone().rechunk().into()
     }
 
     fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
@@ -476,7 +472,7 @@ impl PyExpr {
         self.inner.clone().ceil().into()
     }
 
-    #[pyo3(signature = (min=None, max=None))]
+    #[pyo3(signature = (min, max))]
     fn clip(&self, min: Option<Self>, max: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match (min, max) {
@@ -695,28 +691,6 @@ impl PyExpr {
         self.inner.clone().product().into()
     }
 
-    fn shrink_dtype(&self) -> Self {
-        self.inner.clone().shrink_dtype().into()
-    }
-
-    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar, is_ufunc))]
-    fn map_batches(
-        &self,
-        lambda: PyObject,
-        output_type: Option<PyDataTypeExpr>,
-        is_elementwise: bool,
-        returns_scalar: bool,
-        is_ufunc: bool,
-    ) -> Self {
-        let output_type = if is_ufunc {
-            debug_assert!(output_type.is_none());
-            Some(DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc)))
-        } else {
-            output_type.map(|v| v.inner)
-        };
-        map_single(self, lambda, output_type, is_elementwise, returns_scalar)
-    }
-
     fn dot(&self, other: Self) -> Self {
         self.inner.clone().dot(other.inner).into()
     }
@@ -742,7 +716,7 @@ impl PyExpr {
         self.inner.clone().upper_bound().into()
     }
 
-    #[pyo3(signature = (method, descending, seed=None))]
+    #[pyo3(signature = (method, descending, seed))]
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
         let options = RankOptions {
             method: method.0,
@@ -870,8 +844,8 @@ impl PyExpr {
         self.inner.clone().all(ignore_nulls).into()
     }
 
-    fn log(&self, base: f64) -> Self {
-        self.inner.clone().log(base).into()
+    fn log(&self, base: PyExpr) -> Self {
+        self.inner.clone().log(base.inner).into()
     }
 
     fn log1p(&self) -> Self {
@@ -901,7 +875,7 @@ impl PyExpr {
         self.inner.clone().replace(old.inner, new.inner).into()
     }
 
-    #[pyo3(signature = (old, new, default=None, return_dtype=None))]
+    #[pyo3(signature = (old, new, default, return_dtype))]
     fn replace_strict(
         &self,
         old: PyExpr,
@@ -952,6 +926,70 @@ impl PyExpr {
                 inner: skip_batch_predicate,
             }))
         })
+    }
+
+    #[staticmethod]
+    fn row_encode_unordered(exprs: Vec<Self>) -> Self {
+        Expr::n_ary(
+            FunctionExpr::RowEncode(RowEncodingVariant::Unordered),
+            exprs.into_iter().map(|e| e.inner.clone()).collect(),
+        )
+        .into()
+    }
+
+    #[staticmethod]
+    fn row_encode_ordered(
+        exprs: Vec<Self>,
+        descending: Option<Vec<bool>>,
+        nulls_last: Option<Vec<bool>>,
+    ) -> Self {
+        Expr::n_ary(
+            FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
+                descending,
+                nulls_last,
+            }),
+            exprs.into_iter().map(|e| e.inner.clone()).collect(),
+        )
+        .into()
+    }
+
+    fn row_decode_unordered(&self, names: Vec<String>, datatypes: Vec<PyDataTypeExpr>) -> Self {
+        let fields = names
+            .into_iter()
+            .zip(datatypes)
+            .map(|(name, dtype)| (PlSmallStr::from_string(name), dtype.inner))
+            .collect();
+        self.inner
+            .clone()
+            .map_unary(FunctionExpr::RowDecode(
+                fields,
+                RowEncodingVariant::Unordered,
+            ))
+            .into()
+    }
+
+    fn row_decode_ordered(
+        &self,
+        names: Vec<String>,
+        datatypes: Vec<PyDataTypeExpr>,
+        descending: Option<Vec<bool>>,
+        nulls_last: Option<Vec<bool>>,
+    ) -> Self {
+        let fields = names
+            .into_iter()
+            .zip(datatypes)
+            .map(|(name, dtype)| (PlSmallStr::from_string(name), dtype.inner))
+            .collect::<Vec<_>>();
+        self.inner
+            .clone()
+            .map_unary(FunctionExpr::RowDecode(
+                fields,
+                RowEncodingVariant::Ordered {
+                    descending,
+                    nulls_last,
+                },
+            ))
+            .into()
     }
 
     #[allow(clippy::wrong_self_convention)]

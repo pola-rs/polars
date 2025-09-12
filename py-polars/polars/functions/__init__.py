@@ -30,6 +30,7 @@ from polars.functions.datatype import dtype_of, self_dtype, struct_with_fields
 from polars.functions.eager import align_frames, concat
 from polars.functions.escape_regex import escape_regex
 from polars.functions.lazy import (
+    _row_encode,
     approx_n_unique,
     arctan2,
     arctan2d,
@@ -125,6 +126,7 @@ __all__ = [
     "time_ranges",
     "zeros",
     # polars.functions.lazy
+    "_row_encode",
     "arange",
     "arctan2",
     "arctan2d",

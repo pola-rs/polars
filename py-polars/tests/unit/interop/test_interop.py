@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, cast
 
 import numpy as np
@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, UnstableWarning
+from polars.exceptions import ComputeError, DuplicateError, UnstableWarning
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
@@ -585,6 +585,37 @@ def test_dataframe_from_repr() -> None:
     }
 
 
+def test_dataframe_from_repr_24110() -> None:
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr("""
+            shape: (7, 1)
+            ┌──────────────┐
+            │ time_offset  │
+            │ ---          │
+            │ duration[μs] │
+            ╞══════════════╡
+            │ -2h          │
+            │ 0µs          │
+            │ 2h           │
+            │ +2h          │
+            └──────────────┘
+    """),
+    )
+    expected = pl.DataFrame(
+        {
+            "time_offset": [
+                timedelta(hours=-2),
+                timedelta(),
+                timedelta(hours=2),
+                timedelta(hours=2),
+            ]
+        },
+        schema={"time_offset": pl.Duration("us")},
+    )
+    assert_frame_equal(df, expected)
+
+
 def test_dataframe_from_duckdb_repr() -> None:
     df = cast(
         pl.DataFrame,
@@ -827,15 +858,15 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
     oldest = CompatLevel.oldest()
     assert oldest is CompatLevel.oldest()  # test singleton
-    assert oldest._version == 0  # type: ignore[attr-defined]
+    assert oldest._version == 0
     with pytest.warns(UnstableWarning):
         newest = CompatLevel.newest()
         assert newest is CompatLevel.newest()
-    assert newest._version == 1  # type: ignore[attr-defined]
+    assert newest._version == 1
 
     str_col = pl.Series(["awd"])
     bin_col = pl.Series([b"dwa"])
-    assert str_col._newest_compat_level() == newest._version  # type: ignore[attr-defined]
+    assert str_col._newest_compat_level() == newest._version
     assert isinstance(str_col.to_arrow(), pa.LargeStringArray)
     assert isinstance(str_col.to_arrow(compat_level=oldest), pa.LargeStringArray)
     assert isinstance(str_col.to_arrow(compat_level=newest), pa.StringViewArray)
@@ -1011,3 +1042,129 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
     out = pl.DataFrame(arrow_tbl)
 
     assert_frame_equal(out, expect)
+
+
+def test_schema_constructor_from_schema_capsule() -> None:
+    arrow_schema = pa.schema(
+        [pa.field("test", pa.map_(pa.int32(), pa.timestamp("ms")))]
+    )
+
+    assert pl.Schema(arrow_schema) == {
+        "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
+    }
+
+    # Test __arrow_c_schema__ implementation on `pl.Schema`
+    assert pa.schema(pl.Schema({"x": pl.Int32})) == pa.schema(
+        [pa.field("x", pa.int32())]
+    )
+
+    arrow_schema = pa.schema([pa.field("a", pa.int32()), pa.field("a", pa.int32())])
+
+    with pytest.raises(
+        DuplicateError,
+        match="arrow schema contained duplicate name: a",
+    ):
+        pl.Schema(arrow_schema)
+
+    with pytest.raises(
+        ValueError,
+        match="object passed to pl.Schema did not return struct dtype: object: pyarrow.Field<a: int32>, dtype: Int32",
+    ):
+        pl.Schema(pa.field("a", pa.int32()))
+
+    assert pl.Schema([pa.field("a", pa.int32()), pa.field("b", pa.string())]) == {
+        "a": pl.Int32,
+        "b": pl.String,
+    }
+
+    with pytest.raises(
+        DuplicateError,
+        match="iterable passed to pl.Schema contained duplicate name 'a'",
+    ):
+        pl.Schema([pa.field("a", pa.int32()), pa.field("a", pa.int64())])
+
+
+def test_to_arrow_24142() -> None:
+    df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
+    df.to_arrow(compat_level=CompatLevel.oldest())
+
+
+def test_comprehensive_pycapsule_interface() -> None:
+    """Test all data types via Arrow C Stream PyCapsule interface."""
+    from datetime import date, datetime, time, timedelta
+    from decimal import Decimal
+
+    class PyCapsuleStreamWrap:
+        def __init__(self, v: Any) -> None:
+            self.capsule = v.__arrow_c_stream__()
+
+        def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+            return self.capsule
+
+    def roundtrip_series_pycapsule(s: pl.Series) -> pl.Series:
+        return pl.Series(PyCapsuleStreamWrap(s))
+
+    df = pl.DataFrame(
+        {
+            "bool": [True, False, None],
+            "int8": pl.Series([1, 2, None], dtype=pl.Int8),
+            "int16": pl.Series([1, 2, None], dtype=pl.Int16),
+            "int32": pl.Series([1, 2, None], dtype=pl.Int32),
+            "int64": pl.Series([1, 2, None], dtype=pl.Int64),
+            "uint8": pl.Series([1, 2, None], dtype=pl.UInt8),
+            "uint16": pl.Series([1, 2, None], dtype=pl.UInt16),
+            "uint32": pl.Series([1, 2, None], dtype=pl.UInt32),
+            "uint64": pl.Series([1, 2, None], dtype=pl.UInt64),
+            "float32": pl.Series([1.1, 2.2, None], dtype=pl.Float32),
+            "float64": pl.Series([1.1, 2.2, None], dtype=pl.Float64),
+            "string": ["hello", "world", None],
+            "binary": [b"hello", b"world", None],
+            "decimal": pl.Series(
+                [Decimal("1.23"), Decimal("4.56"), None], dtype=pl.Decimal(10, 2)
+            ),
+            "date": [date(2023, 1, 1), date(2023, 1, 2), None],
+            "datetime": [
+                datetime(2023, 1, 1, 12, 0),
+                datetime(2023, 1, 2, 13, 30),
+                None,
+            ],
+            "time": [time(12, 0, 0), time(13, 30, 0), None],
+            "duration_us": pl.Series(
+                [timedelta(days=1), timedelta(hours=2), None], dtype=pl.Duration("us")
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(milliseconds=100), timedelta(microseconds=500), None],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(seconds=1), timedelta(microseconds=1000), None],
+                dtype=pl.Duration("ns"),
+            ),
+            "categorical": pl.Series(
+                ["apple", "banana", "apple"], dtype=pl.Categorical
+            ),
+            "list_duration": [
+                [timedelta(days=1), timedelta(hours=2)],
+                [timedelta(minutes=30)],
+                None,
+            ],
+            "struct_with_duration": [
+                {"x": timedelta(days=1), "y": 1},
+                {"x": timedelta(hours=2), "y": 2},
+                None,
+            ],
+        }
+    ).cast(
+        {
+            "list_duration": pl.List(pl.Duration("us")),
+            "struct_with_duration": pl.Struct({"x": pl.Duration("ns"), "y": pl.Int32}),
+        }
+    )
+
+    df_roundtrip = df.map_columns(pl.selectors.all(), roundtrip_series_pycapsule)
+
+    assert_frame_equal(df_roundtrip, df)
+
+    df_roundtrip_direct = pl.DataFrame(PyCapsuleStreamWrap(df))
+
+    assert_frame_equal(df_roundtrip_direct, df)

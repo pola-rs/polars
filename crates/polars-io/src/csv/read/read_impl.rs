@@ -345,6 +345,9 @@ impl<'a> CoreReader<'a> {
                         .collect::<Schema>(),
                 )
             };
+
+            cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
+
             if let Some(ref row_index) = self.row_index {
                 df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
             }

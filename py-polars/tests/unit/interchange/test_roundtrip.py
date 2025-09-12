@@ -60,6 +60,7 @@ def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.may_fail_cloud  # reason: not-lazy, likely environment related
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
@@ -94,6 +95,7 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.may_fail_cloud  # reason: not-lazy, likely environment related
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )

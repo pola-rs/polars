@@ -22,7 +22,7 @@ from polars.datatypes.group import (
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType

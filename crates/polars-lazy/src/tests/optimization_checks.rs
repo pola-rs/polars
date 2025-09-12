@@ -85,7 +85,6 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     // Check if we pass hstack.
     let q = df
-        .clone()
         .lazy()
         .with_columns([col("A").alias("C"), col("B")])
         .filter(col("B").gt(lit(1)));
@@ -283,8 +282,8 @@ fn test_lazy_filter_and_rename() {
         .lazy()
         .rename(["a"], ["x"], true)
         .filter(col("x").map(
-            |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
-            GetOutput::from_type(DataType::Boolean),
+            |s: Column| Ok(s.as_materialized_series().gt(3)?.into_column()),
+            |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),
         ))
         .select([col("x")]);
 
@@ -296,8 +295,8 @@ fn test_lazy_filter_and_rename() {
 
     // now we check if the column is rename or added when we don't select
     let lf = df.lazy().rename(["a"], ["x"], true).filter(col("x").map(
-        |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
-        GetOutput::from_type(DataType::Boolean),
+        |s: Column| Ok(s.as_materialized_series().gt(3)?.into_column()),
+        |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),
     ));
     // the rename function should not interfere with the predicate pushdown
     assert!(predicate_at_scan(lf.clone()));
@@ -396,8 +395,7 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let root = q.clone().optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(root);
-    let mut exprs = lp.get_exprs();
-    let e = exprs.pop().unwrap();
+    let e = lp.exprs().next().unwrap();
     if let AExpr::Function { input, .. } = expr_arena.get(e.node()) {
         // the concat_str has the 4 expressions as input
         assert_eq!(input.len(), 4);
@@ -536,7 +534,7 @@ fn test_cluster_with_columns() -> Result<(), Box<dyn std::error::Error>> {
         .with_columns([col("bar") / lit(1.5)]);
 
     let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.clone().to_alp_optimized().unwrap();
+    let optimized = df.to_alp_optimized().unwrap();
 
     let unoptimized = unoptimized.describe();
     let optimized = optimized.describe();
@@ -568,7 +566,7 @@ fn test_cluster_with_columns_dependency() -> Result<(), Box<dyn std::error::Erro
         .with_columns([col("buzz")]);
 
     let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.clone().to_alp_optimized().unwrap();
+    let optimized = df.to_alp_optimized().unwrap();
 
     let unoptimized = unoptimized.describe();
     let optimized = optimized.describe();
@@ -600,7 +598,7 @@ fn test_cluster_with_columns_partial() -> Result<(), Box<dyn std::error::Error>>
         .with_columns([col("buzz"), col("foo") * lit(2.0)]);
 
     let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.clone().to_alp_optimized().unwrap();
+    let optimized = df.to_alp_optimized().unwrap();
 
     let unoptimized = unoptimized.describe();
     let optimized = optimized.describe();
@@ -636,7 +634,7 @@ fn test_cluster_with_columns_chain() -> Result<(), Box<dyn std::error::Error>> {
         .with_columns([col("foo").alias("foo4")]);
 
     let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.clone().to_alp_optimized().unwrap();
+    let optimized = df.to_alp_optimized().unwrap();
 
     let unoptimized = unoptimized.describe();
     let optimized = optimized.describe();

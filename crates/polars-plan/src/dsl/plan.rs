@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use polars_utils::arena::Node;
 #[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -16,7 +17,7 @@ use super::*;
 // It is no longer needed to increment this. We use the schema hashes to check for compatibility.
 //
 // Only increment if you need to make a breaking change that doesn't change the schema hashes.
-pub const DSL_VERSION: (u16, u16) = (22, 0);
+pub const DSL_VERSION: (u16, u16) = (23, 0);
 const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
@@ -36,6 +37,7 @@ pub enum DslPlan {
     /// Cache the input at this point in the LP
     Cache {
         input: Arc<DslPlan>,
+        id: UniqueId,
     },
     Scan {
         sources: ScanSources,
@@ -66,8 +68,7 @@ pub enum DslPlan {
         aggs: Vec<Expr>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
+        apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
     },
     /// Join operation
     Join {
@@ -97,6 +98,10 @@ pub enum DslPlan {
         per_column: Arc<[MatchToSchemaPerColumn]>,
 
         extra_columns: ExtraColumnsPolicy,
+    },
+    PipeWithSchema {
+        input: Arc<DslPlan>,
+        callback: PlanCallback<(DslPlan, Schema), DslPlan>,
     },
     /// Remove duplicates from the table
     Distinct {
@@ -169,7 +174,7 @@ impl Clone for DslPlan {
             #[cfg(feature = "python")]
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
-            Self::Cache { input } => Self::Cache { input: input.clone() },
+            Self::Cache { input, id } => Self::Cache { input: input.clone(), id: *id },
             Self::Scan { sources,  unified_scan_args, scan_type, cached_ir } => Self::Scan { sources: sources.clone(), unified_scan_args: unified_scan_args.clone(), scan_type: scan_type.clone(), cached_ir: cached_ir.clone() },
             Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
@@ -177,6 +182,7 @@ impl Clone for DslPlan {
             Self::Join { input_left, input_right, left_on, right_on, predicates, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone(), predicates: predicates.clone() },
             Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
             Self::MatchToSchema { input, match_schema, per_column, extra_columns } => Self::MatchToSchema { input: input.clone(), match_schema: match_schema.clone(), per_column: per_column.clone(), extra_columns: *extra_columns },
+            Self::PipeWithSchema { input, callback } => Self::PipeWithSchema { input: input.clone(), callback: callback.clone() },
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
             Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
             Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
@@ -261,7 +267,7 @@ impl DslPlan {
         writer.write_all(&le_major)?;
         writer.write_all(&le_minor)?;
         writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
-        pl_serialize::SerializeOptions::default().serialize_into_writer::<_, _, true>(writer, self)
+        pl_serialize::serialize_dsl(writer, self)
     }
 
     #[cfg(feature = "serde")]
@@ -327,8 +333,7 @@ impl DslPlan {
             );
         }
 
-        pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader::<_, _, true>(reader)
+        pl_serialize::deserialize_dsl(reader)
             .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
     }
 

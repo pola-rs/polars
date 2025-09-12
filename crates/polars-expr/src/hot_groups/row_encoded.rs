@@ -42,6 +42,7 @@ impl HotGrouper for RowEncodedHashHotGrouper {
         hot_idxs: &mut Vec<IdxSize>,
         hot_group_idxs: &mut Vec<EvictIdx>,
         cold_idxs: &mut Vec<IdxSize>,
+        force_hot: bool,
     ) {
         let HashKeys::RowEncoded(keys) = keys else {
             unreachable!()
@@ -58,6 +59,7 @@ impl HotGrouper for RowEncodedHashHotGrouper {
                     let opt_g = self.table.insert_key(
                         h,
                         key,
+                        force_hot,
                         |a, b| *a == b.1,
                         |k| (h, k.to_owned()),
                         |k, ev_k| {

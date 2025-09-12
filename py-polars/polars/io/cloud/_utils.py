@@ -1,10 +1,36 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Generic, TypeVar
 
+from polars._typing import PartitioningScheme
 from polars._utils.various import is_path_or_str_sequence
-from polars.io.partition import PartitionMaxSize
+
+T = TypeVar("T")
+
+
+class NoPickleOption(Generic[T]):
+    """
+    Wrapper that does not pickle the wrapped value.
+
+    This wrapper will unpickle to contain a None. Used for cached values.
+    """
+
+    def __init__(self, opt_value: T | None = None) -> None:
+        self._opt_value = opt_value
+
+    def get(self) -> T | None:
+        return self._opt_value
+
+    def set(self, value: T | None) -> None:
+        self._opt_value = value
+
+    def __getstate__(self) -> tuple[()]:
+        # Needs to return not-None for `__setstate__()` to be called
+        return ()
+
+    def __setstate__(self, _state: tuple[()]) -> None:
+        NoPickleOption.__init__(self)
 
 
 def _first_scan_path(
@@ -14,7 +40,7 @@ def _first_scan_path(
         return source
     elif is_path_or_str_sequence(source) and source:
         return source[0]
-    elif isinstance(source, PartitionMaxSize):
+    elif isinstance(source, PartitioningScheme):
         return source._base_path
 
     return None
@@ -27,8 +53,14 @@ def _get_path_scheme(path: str | Path) -> str | None:
     return path_str[:i] if i >= 0 else None
 
 
-def _is_aws_cloud(scheme: str) -> bool:
-    return any(scheme == x for x in ["s3", "s3a"])
+def _is_aws_cloud(*, scheme: str, first_scan_path: str) -> bool:
+    return any(scheme == x for x in ["s3", "s3a"]) or (
+        (scheme == "http" or scheme == "https")
+        and 0
+        < first_scan_path.find(".s3.")
+        < first_scan_path.find(".amazonaws.com/")
+        < first_scan_path[len(scheme) + 3 :].find("/")
+    )
 
 
 def _is_azure_cloud(scheme: str) -> bool:

@@ -9,7 +9,7 @@ use pyo3::conversion::FromPyObjectBound;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
-use pyo3::{PyResult, Python, intern};
+use pyo3::{PyObject, PyResult, Python, intern};
 
 use crate::interop::arrow::to_rust::field_to_rust;
 use crate::prelude::{Wrap, get_lf};
@@ -77,14 +77,20 @@ pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
 
 pub fn to_dataset_scan(
     dataset_object: &PythonObject,
+    existing_resolved_version_key: Option<&str>,
     limit: Option<usize>,
     projection: Option<&[PlSmallStr]>,
-) -> PolarsResult<DslPlan> {
+) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
     Python::with_gil(|py| {
         let kwargs = PyDict::new(py);
 
+        kwargs.set_item(
+            intern!(py, "existing_resolved_version_key"),
+            existing_resolved_version_key,
+        )?;
+
         if let Some(limit) = limit {
-            kwargs.set_item("limit", limit)?;
+            kwargs.set_item(intern!(py, "limit"), limit)?;
         }
 
         if let Some(projection) = projection {
@@ -94,12 +100,16 @@ pub fn to_dataset_scan(
                 projection_list.append(name.as_str())?;
             }
 
-            kwargs.set_item("projection", projection_list)?;
+            kwargs.set_item(intern!(py, "projection"), projection_list)?;
         }
 
-        let scan = dataset_object
-            .getattr(py, "to_dataset_scan")?
-            .call(py, (), Some(&kwargs))?;
+        let Some((scan, version)): Option<(PyObject, Wrap<PlSmallStr>)> = dataset_object
+            .getattr(py, intern!(py, "to_dataset_scan"))?
+            .call(py, (), Some(&kwargs))?
+            .extract(py)?
+        else {
+            return Ok(None);
+        };
 
         let Ok(lf) = get_lf(scan.bind(py)) else {
             return Err(
@@ -107,6 +117,6 @@ pub fn to_dataset_scan(
             );
         };
 
-        Ok(lf.logical_plan)
+        Ok(Some((lf.logical_plan, version.0)))
     })
 }

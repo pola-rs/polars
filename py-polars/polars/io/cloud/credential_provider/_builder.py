@@ -1,23 +1,33 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Any, Literal
+import os
+import threading
+from typing import TYPE_CHECKING, Any, Callable, Literal, Union
 
 import polars._utils.logging
+from polars._utils.cache import LRUCache
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
+from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
+    CachedCredentialProvider,
+    CachingCredentialProvider,
     CredentialProvider,
     CredentialProviderAWS,
     CredentialProviderAzure,
+    CredentialProviderFunction,
     CredentialProviderGCP,
+    UserProvidedGCPToken,
 )
 
 if TYPE_CHECKING:
-    from polars.io.cloud.credential_provider._providers import (
-        CredentialProviderFunction,
-        CredentialProviderFunctionReturn,
-    )
+    import sys
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
 OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
@@ -41,6 +51,10 @@ OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
         "user_agent",
     ]
 )
+
+CredentialProviderBuilderReturn: TypeAlias = Union[
+    CredentialProvider, CredentialProviderFunction, None
+]
 
 
 class CredentialProviderBuilder:
@@ -70,14 +84,24 @@ class CredentialProviderBuilder:
     # Note: The rust-side expects this exact function name.
     def build_credential_provider(
         self,
-    ) -> CredentialProvider | CredentialProviderFunction | None:
-        """Instantiate a credential provider from configuration."""
+        clear_cached_credentials: bool = False,  # noqa: FBT001
+    ) -> CredentialProviderBuilderReturn:
+        """
+        Instantiate a credential provider from configuration.
+
+        Parameters
+        ----------
+        clear_cached_credentials
+            If the built provider is an instance of `CachingCredentialProvider`,
+            clears any cached credentials on that object.
+        """
         verbose = polars._utils.logging.verbose()
 
         if verbose:
             eprint(
                 "[CredentialProviderBuilder]: Begin initialize "
-                f"{self.credential_provider_init!r}"
+                f"{self.credential_provider_init!r} "
+                f"{clear_cached_credentials = }"
             )
 
         v = self.credential_provider_init()
@@ -92,6 +116,14 @@ class CredentialProviderBuilder:
                 eprint(
                     f"[CredentialProviderBuilder]: No provider initialized "
                     f"from {self.credential_provider_init!r}"
+                )
+
+        if clear_cached_credentials and isinstance(v, CachingCredentialProvider):
+            v.clear_cached_credentials()
+
+            if verbose:
+                eprint(
+                    f"[CredentialProviderBuilder]: Clear cached credentials for {v!r}"
                 )
 
         return v
@@ -138,20 +170,87 @@ class CredentialProviderBuilderImpl(abc.ABC):
         return f"{provider_repr} @ {builder_name}"
 
 
-# Wraps an already ininitialized credential provider into the builder interface.
+# Wraps an already initialized credential provider into the builder interface.
 # Used for e.g. user-provided credential providers.
 class InitializedCredentialProvider(CredentialProviderBuilderImpl):
     """Wraps an already initialized credential provider."""
 
-    def __init__(self, credential_provider: CredentialProviderFunction | None) -> None:
+    def __init__(self, credential_provider: CredentialProviderFunction) -> None:
         self.credential_provider = credential_provider
 
-    def __call__(self) -> CredentialProviderFunction | None:
-        return self.credential_provider
+    def __call__(self) -> CredentialProviderBuilderReturn:
+        if isinstance(self.credential_provider, CachingCredentialProvider):
+            return self.credential_provider
+
+        # We use the cache by keying the entry as the address of the object
+        # provided by the user.
+        return _build_with_cache(
+            lambda: id(self.credential_provider),
+            lambda: CachedCredentialProvider(self.credential_provider),
+        )
 
     @property
     def provider_repr(self) -> str:
         return repr(self.credential_provider)
+
+
+# The keys of this can be:
+# * int: Object address of a user-passed credential provider
+# * bytes: Hash of an AutoInit configuration
+BUILT_PROVIDERS_LRU_CACHE: (
+    LRUCache[int | bytes, CredentialProviderBuilderReturn] | None
+) = None
+BUILT_PROVIDERS_LRU_CACHE_LOCK: threading.RLock = threading.RLock()
+
+
+def _build_with_cache(
+    get_cache_key_func: Callable[[], int | bytes],
+    build_provider_func: Callable[[], CredentialProviderBuilderReturn],
+) -> CredentialProviderBuilderReturn:
+    global BUILT_PROVIDERS_LRU_CACHE
+
+    if (
+        max_items := int(
+            os.getenv(
+                "POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE",
+                8,
+            )
+        )
+    ) <= 0:
+        if BUILT_PROVIDERS_LRU_CACHE_LOCK.acquire(blocking=False):
+            BUILT_PROVIDERS_LRU_CACHE = None
+            BUILT_PROVIDERS_LRU_CACHE_LOCK.release()
+
+        return build_provider_func()
+
+    verbose = polars._utils.logging.verbose()
+
+    with BUILT_PROVIDERS_LRU_CACHE_LOCK:
+        if BUILT_PROVIDERS_LRU_CACHE is None:
+            if verbose:
+                eprint(f"Create built credential providers LRU cache ({max_items = })")
+
+            BUILT_PROVIDERS_LRU_CACHE = LRUCache(max_items)
+
+        cache_key = get_cache_key_func()
+
+        try:
+            provider = BUILT_PROVIDERS_LRU_CACHE[cache_key]
+
+            if verbose:
+                eprint(
+                    f"Loaded credential provider from cache: {provider!r} {cache_key = }"
+                )
+        except KeyError:
+            provider = build_provider_func()
+            BUILT_PROVIDERS_LRU_CACHE[cache_key] = provider
+
+            if verbose:
+                eprint(
+                    f"Added new credential provider to cache: {provider!r} {cache_key = }"
+                )
+
+        return provider
 
 
 # Represents an automatic initialization configuration. This is created for
@@ -160,32 +259,44 @@ class AutoInit(CredentialProviderBuilderImpl):
     def __init__(self, cls: Any, **kw: Any) -> None:
         self.cls = cls
         self.kw = kw
+        self._cache_key: NoPickleOption[bytes] = NoPickleOption()
 
-    def __call__(self) -> Any:
+    def __call__(self) -> CredentialProviderFunction | None:
         # This is used for credential_provider="auto", which allows for
         # ImportErrors.
         try:
-            return self.cls(**self.kw)
+            return _build_with_cache(
+                self.get_or_init_cache_key,
+                lambda: self.cls(**self.kw),
+            )
         except ImportError as e:
             if verbose():
                 eprint(f"failed to auto-initialize {self.provider_repr}: {e!r}")
 
         return None
 
+    def get_or_init_cache_key(self) -> bytes:
+        cache_key = self._cache_key.get()
+
+        if cache_key is None:
+            cache_key = self.get_cache_key_impl()
+            self._cache_key.set(cache_key)
+
+            if verbose():
+                eprint(f"{self!r}: AutoInit cache key: {cache_key.hex()}")
+
+        return cache_key
+
+    def get_cache_key_impl(self) -> bytes:
+        import hashlib
+        import pickle
+
+        hash = hashlib.sha256(pickle.dumps(self))
+        return hash.digest()[:16]
+
     @property
     def provider_repr(self) -> str:
         return self.cls.__name__
-
-
-class UserProvidedGCPToken(CredentialProvider):
-    """User-provided GCP token in storage_options."""
-
-    def __init__(self, token: str) -> None:
-        self.token = token
-
-    def __call__(self) -> CredentialProviderFunctionReturn:
-        """Fetches the credentials."""
-        return {"bearer_token": self.token}, None
 
 
 def _init_credential_provider_builder(
@@ -226,10 +337,10 @@ def _init_credential_provider_builder(
                 credential_provider
             )
 
-        if (path := _first_scan_path(source)) is None:
+        if (first_scan_path := _first_scan_path(source)) is None:
             return None
 
-        if (scheme := _get_path_scheme(path)) is None:
+        if (scheme := _get_path_scheme(first_scan_path)) is None:
             return None
 
         if _is_azure_cloud(scheme):
@@ -263,7 +374,9 @@ def _init_credential_provider_builder(
 
             storage_account = (
                 # Prefer the one embedded in the path
-                CredentialProviderAzure._extract_adls_uri_storage_account(str(path))
+                CredentialProviderAzure._extract_adls_uri_storage_account(
+                    str(first_scan_path)
+                )
                 or storage_account
             )
 
@@ -275,7 +388,7 @@ def _init_credential_provider_builder(
                 )
             )
 
-        elif _is_aws_cloud(scheme):
+        elif _is_aws_cloud(scheme=scheme, first_scan_path=str(first_scan_path)):
             region = None
             profile = None
             default_region = None

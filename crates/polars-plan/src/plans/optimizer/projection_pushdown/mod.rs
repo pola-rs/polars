@@ -11,6 +11,7 @@ mod semi_anti_join;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
+use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
@@ -233,19 +234,18 @@ impl ProjectionPushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
-        let exprs = lp.get_exprs();
 
         let new_inputs = inputs
-            .iter()
-            .map(|&node| {
+            .into_iter()
+            .map(|node| {
                 let alp = lp_arena.take(node);
                 let ctx = ProjectionContext::new(Default::default(), Default::default(), ctx.inner);
                 let alp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        let lp = lp.with_exprs_and_input(exprs, new_inputs);
+            .collect::<PolarsResult<UnitVec<_>>>()?;
+        let lp = lp.with_inputs(new_inputs);
 
         let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
         Ok(self.finish_node_simple_projection(&ctx.acc_projections, builder))

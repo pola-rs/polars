@@ -1,26 +1,9 @@
 mod attr;
 mod keywords;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, FnArg};
-
-static INIT: AtomicBool = AtomicBool::new(false);
-
-fn insert_error_function() -> proc_macro2::TokenStream {
-    let is_init = INIT.swap(true, Ordering::Relaxed);
-
-    // Only expose the error retrieval function on the first expression.
-    if !is_init {
-        quote!(
-            pub use pyo3_polars::derive::_polars_plugin_get_last_error_message;
-        )
-    } else {
-        proc_macro2::TokenStream::new()
-    }
-}
 
 fn quote_get_kwargs() -> proc_macro2::TokenStream {
     quote!(
@@ -29,7 +12,7 @@ fn quote_get_kwargs() -> proc_macro2::TokenStream {
     let kwargs = match pyo3_polars::derive::_parse_kwargs(kwargs)  {
         Ok(value) => value,
         Err(err) => {
-            let err = polars_err!(InvalidOperation: "could not parse kwargs: '{}'\n\nCheck: registration of kwargs in the plugin.", err);
+            let err = polars_error::polars_err!(InvalidOperation: "could not parse kwargs: '{}'\n\nCheck: registration of kwargs in the plugin.", err);
             pyo3_polars::derive::_update_last_error(err);
             return;
         }
@@ -48,7 +31,7 @@ fn quote_call_kwargs(ast: &syn::ItemFn, fn_name: &syn::Ident) -> proc_macro2::To
             #ast
 
             // call the function
-        let result: PolarsResult<polars_core::prelude::Series> = #fn_name(&inputs, kwargs);
+        let result: polars_error::PolarsResult<polars_core::prelude::Series> = #fn_name(&inputs, kwargs);
 
     )
 }
@@ -61,7 +44,7 @@ fn quote_call_context(ast: &syn::ItemFn, fn_name: &syn::Ident) -> proc_macro2::T
             #ast
 
             // call the function
-        let result: PolarsResult<polars_core::prelude::Series> = #fn_name(&inputs, context);
+        let result: polars_error::PolarsResult<polars_core::prelude::Series> = #fn_name(&inputs, context);
     )
 }
 
@@ -83,7 +66,7 @@ fn quote_call_context_kwargs(ast: &syn::ItemFn, fn_name: &syn::Ident) -> proc_ma
             #ast
 
             // call the function
-        let result: PolarsResult<polars_core::prelude::Series> = #fn_name(&inputs, context, kwargs);
+        let result: polars_error::PolarsResult<polars_core::prelude::Series> = #fn_name(&inputs, context, kwargs);
     )
 }
 
@@ -92,7 +75,7 @@ fn quote_call_no_kwargs(ast: &syn::ItemFn, fn_name: &syn::Ident) -> proc_macro2:
             // define the function
             #ast
             // call the function
-            let result: PolarsResult<polars_core::prelude::Series> = #fn_name(&inputs);
+            let result: polars_error::PolarsResult<polars_core::prelude::Series> = #fn_name(&inputs);
     )
 }
 
@@ -130,7 +113,6 @@ fn create_expression_function(ast: syn::ItemFn) -> proc_macro2::TokenStream {
         .collect::<Vec<_>>();
 
     let fn_name = &ast.sig.ident;
-    let error_msg_fn = insert_error_function();
 
     // Get the tokenstream of the call logic.
     let quote_call = match args.len() {
@@ -152,9 +134,7 @@ fn create_expression_function(ast: syn::ItemFn) -> proc_macro2::TokenStream {
     let fn_name = get_expression_function_name(fn_name);
 
     quote!(
-        use pyo3_polars::export::*;
-
-        #error_msg_fn
+        use ::pyo3_polars::export::*;
 
         // create the outer public function
         #[no_mangle]
@@ -176,9 +156,8 @@ fn create_expression_function(ast: syn::ItemFn) -> proc_macro2::TokenStream {
 
             if panic_result.is_err() {
                 // Set latest to panic;
-                pyo3_polars::derive::_set_panic();
+                ::pyo3_polars::derive::_set_panic();
             }
-
         }
     )
 }
@@ -195,7 +174,7 @@ fn quote_get_inputs() -> proc_macro2::TokenStream {
     quote!(
              let inputs = std::slice::from_raw_parts(field, len);
              let inputs = inputs.iter().map(|field| {
-                 let field = arrow::ffi::import_field_from_c(field).unwrap();
+                 let field = polars_arrow::ffi::import_field_from_c(field).unwrap();
                  let out = polars_core::prelude::Field::from(&field);
                  out
              }).collect::<Vec<_>>();
@@ -225,9 +204,9 @@ fn create_field_function(
     quote! (
         #[no_mangle]
         pub unsafe extern "C" fn #map_field_name(
-            field: *mut arrow::ffi::ArrowSchema,
+            field: *mut polars_arrow::ffi::ArrowSchema,
             len: usize,
-            return_value: *mut arrow::ffi::ArrowSchema,
+            return_value: *mut polars_arrow::ffi::ArrowSchema,
             kwargs_ptr: *const u8,
             kwargs_len: usize,
         ) {
@@ -238,7 +217,7 @@ fn create_field_function(
 
                 match result {
                     Ok(out) => {
-                        let out = arrow::ffi::export_field_to_c(&out.to_arrow(CompatLevel::newest()));
+                        let out = polars_arrow::ffi::export_field_to_c(&out.to_arrow(polars_core::datatypes::CompatLevel::newest()));
                         *return_value = out;
                     },
                     Err(err) => {
@@ -266,16 +245,16 @@ fn create_field_function_from_with_dtype(
     quote! (
         #[no_mangle]
         pub unsafe extern "C" fn #map_field_name(
-            field: *mut arrow::ffi::ArrowSchema,
+            field: *mut polars_arrow::ffi::ArrowSchema,
             len: usize,
-            return_value: *mut arrow::ffi::ArrowSchema
+            return_value: *mut polars_arrow::ffi::ArrowSchema
         ) {
             #inputs
 
             let mapper = polars_plan::prelude::FieldsMapper::new(&inputs);
             let dtype = polars_core::datatypes::DataType::#dtype;
             let out = mapper.with_dtype(dtype).unwrap();
-            let out = arrow::ffi::export_field_to_c(&out.to_arrow(CompatLevel::newest()));
+            let out = polars_arrow::ffi::export_field_to_c(&out.to_arrow(polars_core::datatypes::CompatLevel::newest()));
             *return_value = out;
         }
     )

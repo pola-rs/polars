@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SchemaError
+from polars.exceptions import ComputeError, SchemaError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -82,7 +82,7 @@ def test_repeat_n_non_integer(n: Any) -> None:
 
 def test_repeat_n_empty() -> None:
     df = pl.DataFrame(schema={"a": pl.Int32})
-    with pytest.raises(ComputeError, match="'n' must be scalar value"):
+    with pytest.raises(ShapeError, match="'n' must be a scalar value"):
         df.select(pl.repeat(1, n=pl.col("a")))
 
 
@@ -422,14 +422,14 @@ def test_repeat_by_literal_none_20268() -> None:
 
 @pytest.mark.parametrize("value", [pl.Series([]), pl.Series([1, 2])])
 def test_repeat_nonscalar_value(value: pl.Series) -> None:
-    with pytest.raises(ComputeError, match="'value' must be scalar value"):
+    with pytest.raises(ShapeError, match="'value' must be a scalar value"):
         pl.select(pl.repeat(pl.Series(value), n=1))
 
 
 @pytest.mark.parametrize("n", [[], [1, 2]])
 def test_repeat_nonscalar_n(n: list[int]) -> None:
     df = pl.DataFrame({"n": n})
-    with pytest.raises(ComputeError, match="'n' must be scalar value"):
+    with pytest.raises(ShapeError, match="'n' must be a scalar value"):
         df.select(pl.repeat("a", pl.col("n")))
 
 
@@ -438,3 +438,20 @@ def test_repeat_value_first() -> None:
     result = df.select(rep=pl.repeat(pl.col("a").first(), n=pl.col("n").first()))
     expected = pl.DataFrame({"rep": ["a", "a", "a", "a"]})
     assert_frame_equal(result, expected)
+
+
+def test_repeat_by_arr() -> None:
+    assert_series_equal(
+        pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.String, 2)).repeat_by(2),
+        pl.Series(
+            [[["a", "b"], ["a", "b"]], [["a", "c"], ["a", "c"]]],
+            dtype=pl.List(pl.Array(pl.String, 2)),
+        ),
+    )
+
+
+def test_repeat_by_null() -> None:
+    assert_series_equal(
+        pl.Series([None, None], dtype=pl.Null).repeat_by(2),
+        pl.Series([[None, None], [None, None]], dtype=pl.List(pl.Null)),
+    )

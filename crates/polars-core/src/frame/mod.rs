@@ -224,7 +224,7 @@ impl DataFrame {
         self.columns.iter().map(func).collect()
     }
     // Reduce monomorphization.
-    pub fn _apply_columns(&self, func: &(dyn Fn(&Column) -> Column)) -> Vec<Column> {
+    pub fn _apply_columns(&self, func: &dyn Fn(&Column) -> Column) -> Vec<Column> {
         self.columns.iter().map(func).collect()
     }
     // Reduce monomorphization.
@@ -3271,7 +3271,7 @@ impl DataFrame {
             match groups.as_ref() {
                 GroupsType::Idx(idx) => {
                     // Rechunk as the gather may rechunk for every group #17562.
-                    let mut df = df.clone();
+                    let mut df = df;
                     df.as_single_chunk();
                     Ok(idx
                         .into_iter()

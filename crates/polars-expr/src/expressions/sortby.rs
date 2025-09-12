@@ -44,7 +44,7 @@ fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
     }
 }
 
-static ERR_MSG: &str = "expressions in 'sort_by' produced a different number of groups";
+static ERR_MSG: &str = "expressions in 'sort_by' must have matching group lengths";
 
 fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
     polars_ensure!(a.iter().zip(b.iter()).all(|(a, b)| {
@@ -305,6 +305,33 @@ impl PhysicalExpr for SortByExpr {
             .iter()
             .map(|e| e.evaluate_on_groups(df, groups, state))
             .collect::<PolarsResult<Vec<_>>>()?;
+
+        assert!(
+            ac_sort_by
+                .iter()
+                .all(|ac_sort_by| ac_sort_by.groups.len() == ac_in.groups.len())
+        );
+
+        // If every input is a LiteralScalar, we return a LiteralScalar.
+        // Otherwise, we convert any LiteralScalar to AggregatedList.
+        let all_literal = matches!(ac_in.state, AggState::LiteralScalar(_))
+            || ac_sort_by
+                .iter()
+                .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
+
+        if all_literal {
+            return Ok(ac_in);
+        } else {
+            if matches!(ac_in.state, AggState::LiteralScalar(_)) {
+                ac_in.aggregated();
+            }
+            for ac in ac_sort_by.iter_mut() {
+                if matches!(ac.state, AggState::LiteralScalar(_)) {
+                    ac.aggregated();
+                }
+            }
+        }
+
         let mut sort_by_s = ac_sort_by
             .iter()
             .map(|c| {
@@ -320,14 +347,6 @@ impl PhysicalExpr for SortByExpr {
                 }
             })
             .collect::<Vec<_>>();
-
-        // A check up front to ensure the input expressions have the same number of total elements.
-        for sort_by_s in &sort_by_s {
-            polars_ensure!(
-                sort_by_s.len() == ac_in.flat_naive().len(), expr = self.expr, ComputeError:
-                "the expression in `sort_by` argument must result in the same length"
-            );
-        }
 
         let ordered_by_group_operation = matches!(
             ac_sort_by[0].update_groups,

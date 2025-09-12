@@ -39,7 +39,9 @@ def scan_iceberg(
     reader_override
         Overrides the reader used to read the data.
 
-        Warning: This parameter is considered unstable, and is subject to change.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Note that this parameter should not be necessary outside of testing, as
         polars will by default automatically select the best reader.
@@ -123,7 +125,7 @@ def scan_iceberg(
     >>> snapshot_id = 7051579356916758811
     >>> pl.scan_iceberg(table_path, snapshot_id=snapshot_id).collect()  # doctest: +SKIP
     """
-    from polars.polars import PyLazyFrame
+    from polars._plr import PyLazyFrame
 
     if reader_override is not None:
         msg = "the `reader_override` parameter of `scan_iceberg()` is considered unstable."

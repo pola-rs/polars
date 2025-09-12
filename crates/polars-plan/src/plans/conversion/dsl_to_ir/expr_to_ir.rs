@@ -255,9 +255,18 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Implode(input), output_name)
                 },
-                AggExpr::Count(input, include_nulls) => {
+                AggExpr::Count {
+                    input,
+                    include_nulls,
+                } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Count(input, include_nulls), output_name)
+                    (
+                        IRAggExpr::Count {
+                            input,
+                            include_nulls,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Quantile {
                     expr,
@@ -314,7 +323,6 @@ pub(super) fn to_aexpr_impl(
         Expr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
             fmt_str,
         } => {
@@ -327,44 +335,22 @@ pub(super) fn to_aexpr_impl(
 
             let fields = input
                 .iter()
-                .map(|e| e.field(ctx.schema, Context::Default, ctx.arena))
+                .map(|e| e.field(ctx.schema, ctx.arena))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             let function = function.materialize()?;
-            let output_type = output_type.materialize()?;
-            function
-                .as_ref()
-                .resolve_dsl(ctx.schema, fields.first().map(|f| f.dtype()))?;
-            output_type.as_ref().resolve_dsl(ctx.schema)?;
-
-            let out = output_type.get_field(ctx.schema, Context::Default, &fields)?;
+            let out = function.get_field(ctx.schema, &fields)?;
             let output_dtype = out.dtype();
 
-            #[cfg(feature = "python")]
-            {
-                if output_dtype.is_unknown()
-                    && !matches!(output_dtype, DataType::Unknown(UnknownKind::Ufunc))
-                {
-                    let msg = format!(
-                        "'return_dtype' of function {fmt_str} must be set\n\nA later expression might fail because the output type is not known. Set return_dtype=pl.self_dtype() if the type is unchanged, or set the proper output data type."
-                    );
-                    if ctx.allow_unknown {
-                        polars_warn!(MapWithoutReturnDtypeWarning, "{}", msg)
-                    } else {
-                        polars_bail!(InvalidOperation: msg)
-                    }
-                }
-            }
-            #[cfg(not(feature = "python"))]
             assert!(
                 output_dtype.is_known(),
                 "output type of anonymous functions must bet set"
             );
+
             (
                 AExpr::AnonymousFunction {
                     input,
                     function: LazySerde::Deserialized(function),
-                    output_type: LazySerde::Deserialized(output_type),
                     options,
                     fmt_str,
                 },
@@ -423,10 +409,7 @@ pub(super) fn to_aexpr_impl(
             variant,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
-            let expr_dtype =
-                ctx.arena
-                    .get(expr)
-                    .to_dtype(ctx.schema, Context::Default, ctx.arena)?;
+            let expr_dtype = ctx.arena.get(expr).to_dtype(ctx.schema, ctx.arena)?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
             // Perform this before schema resolution so that we can better error messages.

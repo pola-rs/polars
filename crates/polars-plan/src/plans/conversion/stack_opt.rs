@@ -70,7 +70,11 @@ impl ConversionOptimizer {
         });
     }
 
-    pub fn fill_scratch<N: Borrow<Node>>(&mut self, exprs: &[N], expr_arena: &Arena<AExpr>) {
+    pub fn fill_scratch<I, N>(&mut self, exprs: I, expr_arena: &Arena<AExpr>)
+    where
+        I: IntoIterator<Item = N>,
+        N: Borrow<Node>,
+    {
         for e in exprs {
             let node = *e.borrow();
             self.push_scratch(node, expr_arena);
@@ -135,9 +139,7 @@ impl ConversionOptimizer {
                 } else {
                     &self.schemas[schema_idx - 1]
                 };
-                let expr = expr_arena
-                    .get(*expr)
-                    .get_type(schema, Context::Default, expr_arena)?;
+                let expr = expr_arena.get(*expr).get_dtype(schema, expr_arena)?;
 
                 let element_dtype = variant.element_dtype(&expr)?;
                 let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);

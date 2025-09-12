@@ -32,6 +32,8 @@ impl IsSorted {
 }
 
 pub enum BitRepr {
+    U8(UInt8Chunked),
+    U16(UInt16Chunked),
     U32(UInt32Chunked),
     U64(UInt64Chunked),
     #[cfg(feature = "dtype-i128")]
@@ -612,14 +614,14 @@ pub trait SeriesTrait:
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     fn rolling_map(
         &self,
-        _f: &dyn Fn(&Series) -> Series,
+        _f: &dyn Fn(&Series) -> PolarsResult<Series>,
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series> {
         polars_bail!(opq = rolling_map, self._dtype());
     }
 }
 
-impl (dyn SeriesTrait + '_) {
+impl dyn SeriesTrait + '_ {
     pub fn unpack<T: PolarsPhysicalType>(&self) -> PolarsResult<&ChunkedArray<T>> {
         polars_ensure!(&T::get_static_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())

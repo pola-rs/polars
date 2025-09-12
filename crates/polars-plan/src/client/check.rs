@@ -18,9 +18,6 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
         match plan_node {
             #[cfg(feature = "python")]
             DslPlan::PythonScan { .. } => (),
-            DslPlan::GroupBy { apply, .. } if apply.is_some() => {
-                return ineligible_error("contains map groups");
-            },
             DslPlan::Scan {
                 sources, scan_type, ..
             } => {
@@ -50,12 +47,9 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     SinkType::Memory => {
                         return ineligible_error("contains memory sink");
                     },
-                    SinkType::File(_) => {
+                    SinkType::File(_) | SinkType::Partition(_) => {
                         // The sink destination is passed around separately, can't check the
                         // eligibility here.
-                    },
-                    SinkType::Partition(_) => {
-                        return ineligible_error("contains partition sink");
                     },
                 }
             },
@@ -87,6 +81,7 @@ impl DslPlan {
             | Slice { input, .. }
             | HStack { input, .. }
             | MatchToSchema { input, .. }
+            | PipeWithSchema { input, .. }
             | MapFunction { input, .. }
             | Sink { input, .. }
             | Cache { input, .. } => scratch.push(input),

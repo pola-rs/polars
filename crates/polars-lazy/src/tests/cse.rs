@@ -5,7 +5,7 @@ use super::*;
 fn cached_before_root(q: LazyFrame) {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    for input in lp_arena.get(lp).get_inputs_vec() {
+    for input in lp_arena.get(lp).inputs() {
         assert!(matches!(lp_arena.get(input), IR::Cache { .. }));
     }
 }
@@ -160,10 +160,7 @@ fn test_cse_union2_4925() -> PolarsResult<()> {
         .flat_map(|(_, lp)| {
             use IR::*;
             match lp {
-                Cache { id, cache_hits, .. } => {
-                    assert_eq!(*cache_hits, 1);
-                    Some(*id)
-                },
+                Cache { id, .. } => Some(*id),
                 _ => None,
             }
         })
@@ -213,13 +210,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
         .flat_map(|(_, lp)| {
             use IR::*;
             match lp {
-                Cache {
-                    id,
-                    cache_hits,
-                    input,
-                    ..
-                } => {
-                    assert_eq!(*cache_hits, 1);
+                Cache { id, input, .. } => {
                     assert!(matches!(lp_arena.get(*input), IR::SimpleProjection { .. }));
 
                     Some(*id)
@@ -341,7 +332,6 @@ fn test_cse_prune_scan_filter_difference() -> PolarsResult<()> {
     let q = lf
         .clone()
         .filter(col("fats_g").gt(2.0))
-        .clone()
         .left_join(
             lf.filter(col("fats_g").gt(1.0)),
             col("fats_g"),

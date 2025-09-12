@@ -1,6 +1,6 @@
 mod dot;
 mod format;
-mod inputs;
+pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
 
@@ -12,7 +12,6 @@ pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursiv
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -94,8 +93,6 @@ pub enum IR {
         input: Node,
         /// This holds the `Arc<DslPlan>` to guarantee uniqueness.
         id: UniqueId,
-        /// How many hits the cache must be saved in memory.
-        cache_hits: u32,
     },
     GroupBy {
         input: Node,
@@ -104,8 +101,7 @@ pub enum IR {
         schema: SchemaRef,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<PlanCallback<DataFrame, DataFrame>>,
     },
     Join {
         input_left: Node,

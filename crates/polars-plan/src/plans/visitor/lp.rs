@@ -83,11 +83,9 @@ impl TreeWalker for IRNode {
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
         let mut inputs = vec![];
-        let mut exprs = vec![];
 
         let lp = arena.0.get(self.node);
         lp.copy_inputs(&mut inputs);
-        lp.copy_exprs(&mut exprs);
 
         // rewrite the nodes
         for node in &mut inputs {
@@ -96,7 +94,7 @@ impl TreeWalker for IRNode {
             *node = op(lp_node, arena)?.node;
         }
         let lp = arena.0.get(self.node);
-        let lp = lp.with_exprs_and_input(exprs, inputs);
+        let lp = lp.clone().with_inputs(inputs);
         if self.mutate {
             arena.0.replace(self.node, lp);
             Ok(self)

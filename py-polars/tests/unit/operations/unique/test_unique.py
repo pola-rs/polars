@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -64,6 +65,23 @@ def test_unique_on_list_df() -> None:
 def test_list_unique() -> None:
     s = pl.Series("a", [[1, 2], [3], [1, 2], [4, 5], [2], [2]])
     assert s.unique(maintain_order=True).to_list() == [[1, 2], [3], [4, 5], [2]]
+    assert s.arg_unique().to_list() == [0, 1, 3, 4]
+    assert s.n_unique() == 4
+
+
+def test_array_unique() -> None:
+    s = pl.Series(
+        "a",
+        [
+            np.array([1, 2]),
+            np.array([3, 1]),
+            np.array([1, 2]),
+            np.array([4, 5]),
+            np.array([2, 2]),
+            np.array([2, 2]),
+        ],
+    )
+    assert s.unique(maintain_order=True).to_list() == [[1, 2], [3, 1], [4, 5], [2, 2]]
     assert s.arg_unique().to_list() == [0, 1, 3, 4]
     assert s.n_unique() == 4
 
@@ -295,3 +313,16 @@ def test_unique_booleans_22753() -> None:
         pl.Series([None, None, True]).head(2).unique(),
         pl.Series([None], dtype=pl.Boolean()),
     )
+
+
+def test_unique_i128_24231() -> None:
+    df = pl.Series(
+        [-(1 << 127), -(1 << 126), 1 << 125, 1 << 126], dtype=pl.Int128
+    ).to_frame("a")
+    assert_frame_equal(df, df.unique(), check_row_order=False)
+
+
+def test_unique_keep_none_24260() -> None:
+    data = pl.DataFrame({"a": [1, 3, 2], "b": [4, 4, 6]})
+    out = data.lazy().unique(subset="b", keep="none").collect()
+    assert_frame_equal(out, pl.DataFrame({"a": [2], "b": [6]}))

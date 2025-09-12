@@ -485,7 +485,7 @@ impl LazyFrame {
             .collect();
 
         if cast_cols.is_empty() {
-            self.clone()
+            self
         } else {
             self.with_columns(cast_cols)
         }
@@ -1121,7 +1121,7 @@ impl LazyFrame {
         );
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
-            payload: payload.clone(),
+            payload,
         };
         Ok(self)
     }
@@ -1294,7 +1294,7 @@ impl LazyFrame {
             options.index_column = name;
         } else {
             let output_field = index_column
-                .to_field(&self.collect_schema().unwrap(), Context::Default)
+                .to_field(&self.collect_schema().unwrap())
                 .unwrap();
             return self.with_column(index_column).rolling(
                 Expr::Column(output_field.name().clone()),
@@ -1339,7 +1339,7 @@ impl LazyFrame {
             options.index_column = name;
         } else {
             let output_field = index_column
-                .to_field(&self.collect_schema().unwrap(), Context::Default)
+                .to_field(&self.collect_schema().unwrap())
                 .unwrap();
             return self.with_column(index_column).group_by_dynamic(
                 Expr::Column(output_field.name().clone()),
@@ -1695,6 +1695,12 @@ impl LazyFrame {
             .get_plan_builder()
             .match_to_schema(schema, per_column, extra_columns)
             .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().pipe_with_schema(callback).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -2145,7 +2151,7 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().head(n).explode()])
+        self.agg([all().as_expr().head(n)])
             .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }
 
@@ -2157,7 +2163,7 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().tail(n).explode()])
+        self.agg([all().as_expr().tail(n)])
             .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }
 
@@ -2165,10 +2171,7 @@ impl LazyGroupBy {
     ///
     /// **It is not recommended that you use this as materializing the DataFrame is very
     /// expensive.**
-    pub fn apply<F>(self, f: F, schema: SchemaRef) -> LazyFrame
-    where
-        F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
-    {
+    pub fn apply(self, f: PlanCallback<DataFrame, DataFrame>, schema: SchemaRef) -> LazyFrame {
         #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
             dynamic: self.dynamic_options,
@@ -2183,7 +2186,7 @@ impl LazyGroupBy {
             input: Arc::new(self.logical_plan),
             keys: self.keys,
             aggs: vec![],
-            apply: Some((Arc::new(f), schema)),
+            apply: Some((f, schema)),
             maintain_order: self.maintain_order,
             options: Arc::new(options),
         };

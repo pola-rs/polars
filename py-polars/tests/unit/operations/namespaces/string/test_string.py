@@ -812,10 +812,8 @@ def test_json_decode_nested_struct() -> None:
         '[{"key_1": "a2", "key_2": 2}]',
         '[{"key_1": "a3", "key_2": 3, "key_3": "c"}]',
     ]
-    df = pl.DataFrame({"json_str": json})
-    df_parsed = df.with_columns(
-        pl.col("json_str").str.json_decode().alias("parsed_list_json")
-    )
+    s = pl.Series("json_str", json)
+    s_parsed = s.str.json_decode().rename("parsed_list_json")
 
     expected_dtype = pl.List(
         pl.Struct(
@@ -826,9 +824,9 @@ def test_json_decode_nested_struct() -> None:
             ]
         )
     )
-    assert df_parsed.get_column("parsed_list_json").dtype == expected_dtype
+    assert s_parsed.dtype == expected_dtype
 
-    key_1_values = df_parsed.select(
+    key_1_values = s_parsed.to_frame().select(
         pl.col("parsed_list_json")
         .list.get(0)
         .struct.field("key_1")
@@ -1463,6 +1461,18 @@ def test_extract_all_many() -> None:
     assert broad.schema == {"a": pl.List(pl.String), "null": pl.List(pl.String)}
 
 
+@pytest.mark.may_fail_cloud  # reason: zero-field struct
+def test_extract_groups_empty() -> None:
+    df = pl.DataFrame({"iso_code": ["ISO 80000-1:2009", "ISO/IEC/IEEE 29148:2018"]})
+
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
+        as_series=False
+    ) == {"iso_code": [{}, {}]}
+
+    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
+    assert q.collect_schema() == q.collect().schema
+
+
 def test_extract_groups() -> None:
     def _named_groups_builder(pattern: str, groups: dict[str, str]) -> str:
         return pattern.format(
@@ -1494,13 +1504,6 @@ def test_extract_groups() -> None:
         .to_dict(as_series=False)
         == expected
     )
-
-    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
-        as_series=False
-    ) == {"iso_code": [{}, {}]}
-
-    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
-    assert q.collect_schema() == q.collect().schema
 
     assert df.select(
         pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")

@@ -52,7 +52,6 @@ pub use sort::options::*;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::series::{BitRepr, IsSorted};
-#[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
     fn reinterpret_signed(&self) -> Series {
         unimplemented!()
@@ -102,14 +101,11 @@ pub trait ChunkBytes {
 pub trait ChunkRollApply: AsRefDataType {
     fn rolling_map(
         &self,
-        _f: &dyn Fn(&Series) -> Series,
-        _options: RollingOptionsFixedWindow,
+        f: &dyn Fn(&Series) -> PolarsResult<Series>,
+        options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series>
     where
-        Self: Sized,
-    {
-        polars_bail!(opq = rolling_map, self.as_ref_dtype());
-    }
+        Self: Sized;
 }
 
 pub trait ChunkTake<Idx: ?Sized>: ChunkTakeUnchecked<Idx> {

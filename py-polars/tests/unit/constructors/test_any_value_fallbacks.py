@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars._plr import PySeries
 from polars._utils.wrap import wrap_s
-from polars.polars import PySeries
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:

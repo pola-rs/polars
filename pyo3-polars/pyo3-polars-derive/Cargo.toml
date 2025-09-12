@@ -1,6 +1,6 @@
 [package]
 name = "pyo3-polars-derive"
-version = "0.15.0"
+version = "0.17.1"
 edition = "2021"
 license = "MIT"
 readme = "README.md"

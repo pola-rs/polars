@@ -65,7 +65,7 @@ def dtype_of(col_or_expr: str | Expr) -> pl.DataTypeExpr:
     │ Ethan   │
     └─────────┘
     """
-    from polars.polars import PyDataTypeExpr
+    from polars._plr import PyDataTypeExpr
 
     e: Expr
     if isinstance(col_or_expr, str):
@@ -85,7 +85,7 @@ def self_dtype() -> pl.DataTypeExpr:
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
     """
-    from polars.polars import PyDataTypeExpr
+    from polars._plr import PyDataTypeExpr
 
     return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.self_dtype())
 
@@ -101,7 +101,7 @@ def struct_with_fields(
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
     """
-    from polars.polars import PyDataTypeExpr
+    from polars._plr import PyDataTypeExpr
 
     def preprocess(dtype_expr: PolarsDataType | pl.DataTypeExpr) -> PyDataTypeExpr:
         if isinstance(dtype_expr, pl.DataType):

@@ -17,6 +17,9 @@ use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
 use polars::prelude::ColumnMapping;
+use polars::prelude::default_values::{
+    DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
+};
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
 use polars_core::schema::iceberg::IcebergSchema;
@@ -104,17 +107,17 @@ impl<T> From<T> for Wrap<T> {
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
 pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_df"))?;
-    Ok(pydf.extract::<PyDataFrame>()?.df)
+    Ok(pydf.extract::<PyDataFrame>()?.df.into_inner())
 }
 
 pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
-    Ok(pydf.extract::<PyLazyFrame>()?.ldf)
+    Ok(pydf.extract::<PyLazyFrame>()?.ldf.into_inner())
 }
 
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     let s = obj.getattr(intern!(obj.py(), "_s"))?;
-    Ok(s.extract::<PySeries>()?.series)
+    Ok(s.extract::<PySeries>()?.series.into_inner())
 }
 
 pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny>> {
@@ -305,7 +308,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let series = to_series(py, categories.into_series().into())?;
                 class.call1((series,))
             },
-            DataType::Time => pl.getattr(intern!(py, "Time")),
+            DataType::Time => pl.getattr(intern!(py, "Time")).and_then(|x| x.call0()),
             DataType::Struct(fields) => {
                 let field_class = pl.getattr(intern!(py, "Field"))?;
                 let iter = fields.iter().map(|fld| {
@@ -1416,6 +1419,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             datetime_nanoseconds_downcast,
             datetime_microseconds_downcast: false,
             datetime_convert_timezone,
+            null_upcast: true,
             missing_struct_fields,
             extra_struct_fields,
         }));
@@ -1705,6 +1709,47 @@ impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
                 }
 
                 DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown deletion file type: {v}"
+                )));
+            },
+        }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<DefaultFieldValues> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (default_values_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*default_values_type {
+            "iceberg" => {
+                let dict: Bound<'_, PyDict> = ob.extract()?;
+
+                let mut out = PlIndexMap::new();
+
+                for (k, v) in dict
+                    .try_iter()?
+                    .zip(dict.call_method0("values")?.try_iter()?)
+                {
+                    let k: u32 = k?.extract()?;
+                    let v = v?;
+
+                    let v: Result<Column, String> = if let Ok(s) = get_series(&v) {
+                        Ok(s.into_column())
+                    } else {
+                        let err_msg: String = v.extract()?;
+                        Err(err_msg)
+                    };
+
+                    out.insert(k, v);
+                }
+
+                DefaultFieldValues::Iceberg(Arc::new(IcebergIdentityTransformedPartitionFields(
+                    out,
+                )))
             },
 
             v => {

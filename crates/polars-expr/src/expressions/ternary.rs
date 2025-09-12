@@ -138,7 +138,7 @@ impl PhysicalExpr for TernaryExpr {
 
         for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
             match ac.agg_state() {
-                Literal(s) => {
+                LiteralScalar(s) => {
                     has_non_unit_literal = s.len() != 1;
 
                     if has_non_unit_literal {
@@ -186,7 +186,7 @@ impl PhysicalExpr for TernaryExpr {
                 }
             }
 
-            ac_truthy.with_agg_state(Literal(out));
+            ac_truthy.with_agg_state(LiteralScalar(out));
 
             return Ok(ac_truthy);
         }
@@ -207,7 +207,7 @@ impl PhysicalExpr for TernaryExpr {
         // non_literal_acs will have at least 1 item because has_aggregated was
         // true from above.
         for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
-            if !matches!(ac.agg_state(), Literal(_)) {
+            if !matches!(ac.agg_state(), LiteralScalar(_)) {
                 non_literal_acs.push(ac);
             }
         }

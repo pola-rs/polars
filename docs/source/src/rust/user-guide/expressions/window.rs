@@ -133,7 +133,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:examples]
     let result = df
-        .clone()
         .lazy()
         .select([
             col("Type 1")

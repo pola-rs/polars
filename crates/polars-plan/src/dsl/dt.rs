@@ -112,6 +112,12 @@ impl DateLikeNameSpace {
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::Month))
     }
 
+    /// Get the number of days in the month of a Date/Datetime.
+    pub fn days_in_month(self) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::DaysInMonth))
+    }
+
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
     pub fn quarter(self) -> Expr {

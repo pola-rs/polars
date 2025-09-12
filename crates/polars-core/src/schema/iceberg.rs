@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{ArrowDataType, ArrowSchema, Field as ArrowField};
 use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
+use polars_utils::aliases::InitHashMaps;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::{DataType, Field, PlIndexMap};
@@ -30,12 +31,25 @@ impl IcebergSchema {
     where
         I: IntoIterator<Item = &'a ArrowField>,
     {
-        Ok(Self(
-            iter.into_iter()
-                .map(|x| arrow_field_to_iceberg_column_rec(x, None))
-                .map(|x| x.map(|x| (x.physical_id, x)))
-                .collect::<PolarsResult<PlIndexMap<u32, IcebergColumn>>>()?,
-        ))
+        let iter = iter.into_iter();
+        let size_hint = iter.size_hint();
+
+        let mut out = PlIndexMap::with_capacity(size_hint.1.unwrap_or(size_hint.0));
+
+        for arrow_field in iter {
+            let col: IcebergColumn = arrow_field_to_iceberg_column_rec(arrow_field, None)?;
+            let existing = out.insert(col.physical_id, col);
+
+            if let Some(existing) = existing {
+                polars_bail!(
+                    Duplicate:
+                    "IcebergSchema: duplicate physical ID {:?}",
+                    existing,
+                )
+            }
+        }
+
+        Ok(Self(out))
     }
 }
 

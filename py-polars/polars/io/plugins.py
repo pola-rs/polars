@@ -24,6 +24,7 @@ def register_io_source(
     *,
     schema: Callable[[], SchemaDict] | SchemaDict,
     validate_schema: bool = False,
+    is_pure: bool = False,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -62,6 +63,10 @@ def register_io_source(
         Whether the engine should validate if the batches generated match
         the given schema. It's an implementation error if this isn't
         the case and can lead to bugs that are hard to solve.
+    is_pure
+        Whether the IO source is pure. Repeated occurrences of same IO source in
+        a LazyFrame plan can be de-duplicated during optimization if they are
+        pure.
 
     Returns
     -------
@@ -92,7 +97,11 @@ def register_io_source(
         ), parsed_predicate_success
 
     return pl.LazyFrame._scan_python_function(
-        schema=schema, scan_fn=wrap, pyarrow=False, validate_schema=validate_schema
+        schema=schema,
+        scan_fn=wrap,
+        pyarrow=False,
+        validate_schema=validate_schema,
+        is_pure=is_pure,
     )
 
 

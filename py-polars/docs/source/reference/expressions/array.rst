@@ -20,6 +20,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.get
     Expr.arr.join
     Expr.arr.last
+    Expr.arr.len
     Expr.arr.max
     Expr.arr.mean
     Expr.arr.median

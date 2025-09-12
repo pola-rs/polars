@@ -145,11 +145,11 @@
 //!     .with_column(
 //!         col("column_a")
 //!         // apply a custom closure Series => Result<Series>
-//!         .map(|_s| {
-//!             Ok(Some(Column::new("".into(), &[6.0f32, 6.0, 6.0, 6.0, 6.0])))
-//!         },
-//!         // return type of the closure
-//!         GetOutput::from_type(DataType::Float64)).alias("new_column")
+//!         .map(
+//!             |_s| Ok(Column::new("".into(), &[6.0f32, 6.0, 6.0, 6.0, 6.0])),
+//!             // return type of the closure
+//!             |_, f| Ok(Field::new(f.name().clone(), DataType::Float64))
+//!         ).alias("new_column"),
 //!     )
 //!     .collect()
 //!     .unwrap();
