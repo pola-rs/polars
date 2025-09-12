@@ -73,6 +73,9 @@ class _LazyModule(ModuleType):
         module = import_module(self.__name__)
         self._globals[self._module_name] = module
         self.__dict__.update(module.__dict__)
+        # Ensure the custom __getattr__ below is no longer used, and instead
+        # it's just the normal module:
+        self.__class__ = ModuleType
         return module
 
     def __getattr__(self, name: str) -> Any:
