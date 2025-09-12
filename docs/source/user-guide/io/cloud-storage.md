@@ -68,9 +68,9 @@ use for authentication. This can be done in a few ways:
 
 ### Set a default credential provider to use
 
-- In the case where there are many cloud I/O operations that use the same credential provider, it is
-  possible to globally configure this as the default credential provider, so that it does not need
-  to be passed on every call:
+- It is possible to globally configure a default credential provider, so that it does not need to
+  be passed to every I/O function call. This can be convenient in the case where there are many
+  cloud I/O operations that use the same credential provider.
 
 {{code_block('user-guide/io/cloud-storage','credential_provider_class_global_default',['scan_parquet',
 'CredentialProviderAWS'])}}
