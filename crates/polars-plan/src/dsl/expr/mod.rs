@@ -542,6 +542,9 @@ pub enum EvalVariant {
     /// `list.eval`
     List,
 
+    /// `array.eval`
+    Array,
+
     /// `cumulative_eval`
     Cumulative { min_samples: usize },
 }
@@ -550,6 +553,7 @@ impl EvalVariant {
     pub fn to_name(&self) -> &'static str {
         match self {
             Self::List => "list.eval",
+            Self::Array => "array.eval",
             Self::Cumulative { min_samples: _ } => "cumulative_eval",
         }
     }
@@ -558,6 +562,7 @@ impl EvalVariant {
     pub fn element_dtype<'a>(&self, dtype: &'a DataType) -> PolarsResult<&'a DataType> {
         match (self, dtype) {
             (Self::List, DataType::List(inner)) => Ok(inner.as_ref()),
+            (Self::Array, DataType::Array(inner, _)) => Ok(inner.as_ref()),
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -566,6 +571,7 @@ impl EvalVariant {
     pub fn is_elementwise(&self) -> bool {
         match self {
             EvalVariant::List => true,
+            EvalVariant::Array => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
         }
     }
@@ -573,13 +579,14 @@ impl EvalVariant {
     pub fn is_row_separable(&self) -> bool {
         match self {
             EvalVariant::List => true,
+            EvalVariant::Array => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
         }
     }
 
     pub fn is_length_preserving(&self) -> bool {
         match self {
-            EvalVariant::List | EvalVariant::Cumulative { .. } => true,
+            EvalVariant::List | EvalVariant::Array | EvalVariant::Cumulative { .. } => true,
         }
     }
 }

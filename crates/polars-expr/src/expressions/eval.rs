@@ -5,8 +5,10 @@ use arrow::array::{Array, ListArray};
 use polars_core::POOL;
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
-use polars_core::error::{PolarsResult, polars_ensure};
+use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;
+#[cfg(feature = "dtype-array")]
+use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
     AnyValue, ChunkCast, ChunkNestingUtils, Column, CompatLevel, DataType, Field, GroupPositions,
     GroupsType, IntoColumn, ListBuilderTrait, ListChunked,
@@ -38,6 +40,7 @@ pub struct EvalExpr {
     is_scalar: bool,
     pd_group: ExprPushdownGroup,
     evaluation_is_scalar: bool,
+    evaluation_is_elementwise: bool,
 }
 
 fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
@@ -78,6 +81,7 @@ impl EvalExpr {
         is_scalar: bool,
         pd_group: ExprPushdownGroup,
         evaluation_is_scalar: bool,
+        evaluation_is_elementwise: bool,
     ) -> Self {
         Self {
             input,
@@ -90,6 +94,7 @@ impl EvalExpr {
             is_scalar,
             pd_group,
             evaluation_is_scalar,
+            evaluation_is_elementwise,
         }
     }
 
@@ -277,6 +282,87 @@ impl EvalExpr {
         }
     }
 
+    #[cfg(feature = "dtype-array")]
+    fn evaluate_on_array_chunked(
+        &self,
+        ca: &ArrayChunked,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        let mut ca = Cow::Borrowed(ca);
+
+        // Filter out the nulls, we will later readd them.
+        let original_validity = if ca.has_nulls() {
+            use polars_core::prelude::{BooleanChunked, ChunkFilter};
+
+            let validity = ca.rechunk_validity().unwrap();
+            let filter = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, validity.clone());
+            ca = Cow::Owned(ca.as_ref().filter(&filter)?);
+
+            Some(validity)
+        } else {
+            None
+        };
+
+        let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
+        let column = if self.evaluation_is_elementwise {
+            self.evaluation.evaluate(&df, state)?
+        } else {
+            polars_ensure!(
+                IdxSize::try_from(ca.len() * ca.width()).is_ok(),
+                bigidx,
+                ctx = "array.eval",
+                size = ca.len() * ca.width()
+            );
+            let groups = GroupsType::Slice {
+                groups: (0..ca.len())
+                    .map(|i| [(i * ca.width()) as IdxSize, ca.width() as IdxSize])
+                    .collect(),
+                rolling: false,
+            };
+            let groups = Cow::Owned(groups.into_sliceable());
+            let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
+
+            ac.aggregated()
+                .explode(false)?
+                .with_name(self.output_field_with_ctx.name.clone())
+        };
+
+        if ca.width() == 0 {
+            assert_eq!(column.len(), 0);
+        } else {
+            assert_eq!(column.len(), ca.len() * ca.width());
+        }
+
+        let dtype = column.dtype().clone();
+        let mut out = ArrayChunked::from_aligned_values(
+            self.output_field_with_ctx.name.clone(),
+            &dtype,
+            ca.width(),
+            column.take_materialized_series().into_chunks(),
+            ca.len(),
+        );
+
+        // Initially we filtered out the nulls. Now, we need to readd them.
+        if let Some(validity) = original_validity {
+            use polars_core::prelude::ChunkTakeUnchecked;
+            let mut acc = 0;
+            let indices = validity
+                .iter()
+                .map(|valid| {
+                    let v = acc;
+                    acc += IdxSize::from(valid);
+                    v
+                })
+                .collect::<Vec<IdxSize>>();
+
+            out = unsafe { out.take_unchecked(&indices) };
+            out.rechunk_mut();
+            out.with_validities(&[Some(validity)]);
+        }
+
+        Ok(out.into_column())
+    }
+
     fn evaluate_cumulative_eval(
         &self,
         input: &Series,
@@ -356,6 +442,9 @@ impl PhysicalExpr for EvalExpr {
                 let lst = input.list()?;
                 self.evaluate_on_list_chunked(lst, state)
             },
+            EvalVariant::Array => feature_gated!("dtype-array", {
+                self.evaluate_on_array_chunked(input.array()?, state)
+            }),
             EvalVariant::Cumulative { min_samples } => self
                 .evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
                 .map(Column::from),
@@ -374,6 +463,10 @@ impl PhysicalExpr for EvalExpr {
                 let out = self.evaluate_on_list_chunked(input.get_values().list()?, state)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
+            EvalVariant::Array => feature_gated!("dtype-array", {
+                let out = self.evaluate_on_array_chunked(input.aggregated().array()?, state)?;
+                input.with_values(out, true, Some(&self.expr))?;
+            }),
             EvalVariant::Cumulative { min_samples } => {
                 let mut builder = AnonymousOwnedListBuilder::new(
                     self.output_field_with_ctx.name().clone(),
