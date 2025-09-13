@@ -46,13 +46,6 @@ impl BlockingCloudWriter {
     /// Wrapper around `BlockingCloudWriter::new_with_object_store` that is useful if you only have a single write task.
     /// TODO: Naming?
     pub async fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        if let Some(local_path) = uri.strip_prefix("file://") {
-            // Local paths must be created first, otherwise object store will not write anything.
-            if !matches!(std::fs::exists(local_path), Ok(true)) {
-                panic!("[BlockingCloudWriter] Expected local file to be created: {local_path}");
-            }
-        }
-
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options, false).await?;
         Self::new_with_object_store(

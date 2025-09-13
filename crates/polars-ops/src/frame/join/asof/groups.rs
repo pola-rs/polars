@@ -276,6 +276,16 @@ where
 
                 use BitRepr as B;
                 match (left_by, right_by) {
+                    (B::U8(left_by), B::U8(right_by)) => {
+                        asof_join_by_numeric::<T, UInt8Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
+                    (B::U16(left_by), B::U16(right_by)) => {
+                        asof_join_by_numeric::<T, UInt16Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
                     (B::U32(left_by), B::U32(right_by)) => {
                         asof_join_by_numeric::<T, UInt32Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
