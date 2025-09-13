@@ -65,7 +65,10 @@ pub trait GroupedReduction: Any + Send + Sync {
         seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.len() < (1 << (IdxSize::BITS - 1)));
-        let evict_group_idxs = core::mem::transmute::<&[IdxSize], &[EvictIdx]>(group_idxs);
+        // SAFETY: EvictIdx is a wrapper for IdxSize and has same alignment.
+        let evict_group_idxs = unsafe {
+            std::slice::from_raw_parts(group_idxs.as_ptr() as *const EvictIdx, subset.len())
+        };
         self.update_groups_while_evicting(values, subset, evict_group_idxs, seq_id)
     }
 
