@@ -196,22 +196,27 @@ impl<W: Write> BatchedWriter<W> {
 }
 
 /// Compression codec
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IpcCompression {
     /// LZ4 (framed)
     LZ4,
     /// ZSTD
-    #[default]
-    ZSTD,
+    ZSTD(polars_utils::compression::ZstdLevel),
+}
+
+impl Default for IpcCompression {
+    fn default() -> Self {
+        Self::ZSTD(Default::default())
+    }
 }
 
 impl From<IpcCompression> for write::Compression {
     fn from(value: IpcCompression) -> Self {
         match value {
             IpcCompression::LZ4 => write::Compression::LZ4,
-            IpcCompression::ZSTD => write::Compression::ZSTD,
+            IpcCompression::ZSTD(level) => write::Compression::ZSTD(level),
         }
     }
 }
