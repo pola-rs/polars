@@ -119,6 +119,15 @@ bitflags!(
             const PRESERVES_NULL_FIRST_INPUT = 1 << 8;
             /// NULLs on any input are propagated to the output.
             const PRESERVES_NULL_ALL_INPUTS = 1 << 9;
+
+
+            /// Single-input expression is non-elementwise, but propagates the ordering the input.
+            const PROPAGATES_ORDER = 1 << 10;
+            /// The output of this expression has an undefined order.
+            const OUTPUT_UNORDERED = 1 << 11;
+            /// The expression is not sensitive to order of any of its inputs. Meaning that if any
+            /// of its inputs were individually shuffled, the output would be the same.
+            const INPUT_ORDER_AGNOSTIC = 1 << 12;
         }
 );
 
@@ -137,6 +146,18 @@ impl FunctionFlags {
 
     pub fn is_length_preserving(self) -> bool {
         self.contains(Self::LENGTH_PRESERVING)
+    }
+
+    pub fn propagates_order(self) -> bool {
+        self.contains(Self::PROPAGATES_ORDER)
+    }
+
+    pub fn is_output_unordered(self) -> bool {
+        self.contains(Self::OUTPUT_UNORDERED)
+    }
+
+    pub fn is_input_order_agnostic(self) -> bool {
+        self.contains(Self::INPUT_ORDER_AGNOSTIC)
     }
 
     pub fn returns_scalar(self) -> bool {
@@ -251,6 +272,11 @@ impl FunctionOptions {
 
     pub fn with_casting_rules(mut self, casting_rules: CastingRules) -> FunctionOptions {
         self.cast_options = Some(casting_rules);
+        self
+    }
+
+    pub fn flag(mut self, flags: FunctionFlags) -> FunctionOptions {
+        self.flags |= flags;
         self
     }
 
