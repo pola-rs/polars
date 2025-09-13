@@ -199,6 +199,10 @@ def lit(
                 return lit(item).cast(Duration(time_unit))
 
         # handle numeric values
+        if getattr(np, "float128", None) and isinstance(value, np.float128):
+            error = f"float128 is not supported: {value}"
+            raise ValueError(error)
+
         if isinstance(value, np.generic):
             dtype = DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE.get(
                 (value.dtype.kind, value.dtype.itemsize)
