@@ -568,6 +568,17 @@ where
             arr.get_unchecked(arr.len().checked_sub(1)?)
         }
     }
+
+    pub fn set_validity(&mut self, validity: &Bitmap) {
+        assert_eq!(self.len(), validity.len());
+        let mut i = 0;
+        for chunk in unsafe { self.chunks_mut() } {
+            *chunk = chunk.with_validity(Some(validity.clone().sliced(i, chunk.len())));
+            i += chunk.len();
+        }
+        self.null_count = validity.unset_bits();
+        self.set_fast_explode_list(false);
+    }
 }
 
 impl ListChunked {
@@ -624,6 +635,52 @@ impl ArrayChunked {
             .collect();
 
         unsafe { Self::new_with_dims(field, chunks, length, 0) }
+    }
+
+    /// Turn the ArrayChunked into the ListChunked with the same items.
+    ///
+    /// This will always zero copy the values into the ListChunked.
+    pub fn to_list(&self) -> ListChunked {
+        let inner_dtype = self.inner_dtype();
+        let chunks = self
+            .downcast_iter()
+            .map(|chunk| {
+                use arrow::offset::OffsetsBuffer;
+
+                let inner_dtype = chunk.dtype().inner_dtype().unwrap();
+                let dtype = inner_dtype.clone().to_large_list(true);
+
+                let offsets = (0..=chunk.len())
+                    .map(|i| (i * self.width()) as i64)
+                    .collect::<Vec<i64>>();
+
+                // SAFETY: We created our offsets in ascending manner.
+                let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
+
+                ListArray::<i64>::new(
+                    dtype,
+                    offsets,
+                    chunk.values().clone(),
+                    chunk.validity().cloned(),
+                )
+                .into_boxed()
+            })
+            .collect();
+
+        // SAFETY: All the items were mapped 1-1 with the validity staying the same.
+        let mut ca = unsafe {
+            ListChunked::new_with_dims(
+                Arc::new(Field::new(
+                    self.name().clone(),
+                    DataType::List(Box::new(inner_dtype.clone())),
+                )),
+                chunks,
+                self.len(),
+                self.null_count(),
+            )
+        };
+        ca.set_fast_explode_list(!self.has_nulls());
+        ca
     }
 }
 

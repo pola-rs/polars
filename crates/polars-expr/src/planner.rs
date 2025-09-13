@@ -546,7 +546,7 @@ fn create_physical_expr_inner(
                 //
                 // EvalVariant::List also has this problem but that has a List datatype, so that
                 // goes wrong by pure change and some black magic.
-                if matches!(variant, EvalVariant::Array) && !evaluation_is_elementwise {
+                if matches!(variant, EvalVariant::Array { .. }) && !evaluation_is_elementwise {
                     Context::Aggregation
                 } else {
                     Context::Default

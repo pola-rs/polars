@@ -257,16 +257,7 @@ impl AExpr {
                 let mut output_field = ctx.arena.get(*evaluation).to_field_impl(&ctx)?;
                 output_field.dtype = output_field.dtype.materialize_unknown(false)?;
 
-                output_field.dtype = match variant {
-                    EvalVariant::List => DataType::List(Box::new(output_field.dtype)),
-                    EvalVariant::Array => {
-                        let DataType::Array(_, width) = field.dtype() else {
-                            unreachable!()
-                        };
-                        DataType::Array(Box::new(output_field.dtype), *width)
-                    },
-                    EvalVariant::Cumulative { .. } => output_field.dtype,
-                };
+                output_field.dtype = variant.output_dtype(field.dtype(), output_field.dtype)?;
                 output_field.name = field.name;
 
                 Ok(output_field)
