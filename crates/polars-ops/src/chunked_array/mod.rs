@@ -8,6 +8,7 @@ pub mod list;
 pub mod nan_propagating_aggregate;
 #[cfg(feature = "peaks")]
 pub mod peaks;
+mod product;
 mod scatter;
 pub mod strings;
 mod sum;
