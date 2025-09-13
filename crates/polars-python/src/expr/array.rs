@@ -156,7 +156,7 @@ impl PyExpr {
         self.inner.clone().arr().explode().into()
     }
 
-    fn array_eval(&self, expr: PyExpr, as_list: bool) -> Self {
+    fn arr_eval(&self, expr: PyExpr, as_list: bool) -> Self {
         self.inner.clone().arr().eval(expr.inner, as_list).into()
     }
 }
