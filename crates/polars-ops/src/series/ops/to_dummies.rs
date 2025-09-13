@@ -33,7 +33,7 @@ impl ToDummies for Series {
         let groups = self.group_tuples(true, drop_first)?;
 
         // SAFETY: groups are in bounds
-        let columns = unsafe { self.agg_first(&groups) };
+        let columns = unsafe { self.agg_first(&groups, false) };
         let columns = columns.iter().zip(groups.iter()).skip(drop_first as usize);
         let columns = columns
             .filter_map(|(av, group)| {

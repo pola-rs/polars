@@ -648,6 +648,30 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     assert_series_equal(res_expr.to_series(), expected)
 
 
+def test_first_last() -> None:
+    # Ensure multiple chunks.
+    s1 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
+    s3 = pl.Series("a", [None, None], dtype=pl.Int32)
+    df = s1.append(s2).append(s3).to_frame()
+
+    result = df.select(pl.col("a").first())
+    expected = pl.Series("a", [None], dtype=pl.Int32).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("a").first(ignore_nulls=True))
+    expected = pl.Series("a", [3], dtype=pl.Int32).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("a").last())
+    expected = pl.Series("a", [None], dtype=pl.Int32).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("a").last(ignore_nulls=True))
+    expected = pl.Series("a", [4], dtype=pl.Int32).to_frame()
+    assert_frame_equal(result, expected)
+
+
 def test_escape_regex() -> None:
     result = pl.escape_regex("abc(\\w+)")
     expected = "abc\\(\\\\w\\+\\)"

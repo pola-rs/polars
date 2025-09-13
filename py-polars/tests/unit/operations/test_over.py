@@ -99,3 +99,32 @@ def test_over_replace_strict_22870() -> None:
     assert_series_equal(
         out.get_column("val"), out.get_column("val_over"), check_names=False
     )
+
+
+def test_first_last_over() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2],
+            "b": pl.Series([1, 2, 3, None, None, 4, 5, 6], dtype=pl.Int32),
+        }
+    )
+
+    result = df.select(pl.col("b").first().over("a"))
+    expected = pl.DataFrame(
+        {"b": pl.Series([1, 1, 1, 1, None, None, None, None], dtype=pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").first(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame({"b": pl.Series([1, 1, 1, 1, 4, 4, 4, 4], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").last().over("a"))
+    expected = pl.DataFrame(
+        {"b": pl.Series([None, None, None, None, 6, 6, 6, 6], dtype=pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").last(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame({"b": pl.Series([3, 3, 3, 3, 6, 6, 6, 6], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
