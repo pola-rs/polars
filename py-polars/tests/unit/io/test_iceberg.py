@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
-import sys
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
