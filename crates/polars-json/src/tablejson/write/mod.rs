@@ -3,6 +3,7 @@ mod serialize;
 mod utf8;
 
 use std::io::Write;
+use polars_core::schema::SchemaRef;
 
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
@@ -139,12 +140,35 @@ impl FallibleStreamingIterator for RecordSerializer<'_> {
 }
 
 /// Writes valid JSON from an iterator of (assumed JSON-encoded) bytes to `writer`
-pub fn write<W, I>(writer: &mut W, mut blocks: I) -> PolarsResult<()>
+pub fn write<W, I>(writer: &mut W, mut blocks: I, schema: &SchemaRef) -> PolarsResult<()>
 where
     W: std::io::Write,
     I: FallibleStreamingIterator<Item = [u8], Error = PolarsError>,
 {
-    writer.write_all(b"{\"data\":[")?;
+    writer.write_all(b"{\"schema\":{")?;
+    writer.write_all(b"\"fields\":[")?;
+    writer.write_all(b"]")?;
+    writer.write_all(b",")?;
+    // let mut is_schema_first_row = true;
+    for a in schema.iter()
+    {
+        let name =  a.0;
+        let d = a.1;
+        let dtype = format!("{d:?}");
+        writer.write_fmt(format_args!("\"{name}\":\"{dtype}\",")).ok();
+    }
+    // while let Some(block) = schema.next()? {
+    //     if !is_schema_first_row {
+    //         writer.write_all(b",")?;
+    //     }
+    //     is_schema_first_row = false;
+    //     writer.write_all(block)?;
+    // }
+    // writer.write_all(b"\"primaryKey\":[")?;
+    // writer.write_all(b"],")?;
+    writer.write_all(b"},")?;
+
+    writer.write_all(b"\"data\":[")?;
     let mut is_first_row = true;
     while let Some(block) = blocks.next()? {
         if !is_first_row {

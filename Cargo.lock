@@ -3324,6 +3324,7 @@ dependencies = [
  "num-traits",
  "polars-arrow",
  "polars-compute",
+ "polars-core",
  "polars-error",
  "polars-utils",
  "ryu",

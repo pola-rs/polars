@@ -168,8 +168,10 @@ where
                 polars_json::json::write::write(&mut self.buffer, serializer)?;
             },
             JsonFormat::JsonTable => {
+                let batches_schema = df.schema();
+
                 let serializer = polars_json::tablejson::write::Serializer::new(batches, vec![]);
-                polars_json::tablejson::write::write(&mut self.buffer, serializer)?;
+                polars_json::tablejson::write::write(&mut self.buffer, serializer, batches_schema)?;
             },
         }
 
