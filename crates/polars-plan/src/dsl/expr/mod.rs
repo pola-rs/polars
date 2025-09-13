@@ -543,7 +543,11 @@ pub enum EvalVariant {
     List,
 
     /// `array.eval`
-    Array,
+    Array {
+        /// If set to true, evaluation can output variable amount of items and output datatype will
+        /// be `List`.
+        as_list: bool,
+    },
 
     /// `cumulative_eval`
     Cumulative { min_samples: usize },
@@ -553,7 +557,7 @@ impl EvalVariant {
     pub fn to_name(&self) -> &'static str {
         match self {
             Self::List => "list.eval",
-            Self::Array => "array.eval",
+            Self::Array { .. } => "array.eval",
             Self::Cumulative { min_samples: _ } => "cumulative_eval",
         }
     }
@@ -562,8 +566,27 @@ impl EvalVariant {
     pub fn element_dtype<'a>(&self, dtype: &'a DataType) -> PolarsResult<&'a DataType> {
         match (self, dtype) {
             (Self::List, DataType::List(inner)) => Ok(inner.as_ref()),
-            (Self::Array, DataType::Array(inner, _)) => Ok(inner.as_ref()),
+            (Self::Array { .. }, DataType::Array(inner, _)) => Ok(inner.as_ref()),
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
+            _ => polars_bail!(op = self.to_name(), dtype),
+        }
+    }
+
+    /// Get the output datatype from the output element datatype
+    pub fn output_dtype(
+        &self,
+        dtype: &'_ DataType,
+        output_element_dtype: DataType,
+    ) -> PolarsResult<DataType> {
+        match (self, dtype) {
+            (Self::List, DataType::List(_)) => Ok(DataType::List(Box::new(output_element_dtype))),
+            (Self::Array { as_list: false }, DataType::Array(_, width)) => {
+                Ok(DataType::Array(Box::new(output_element_dtype), *width))
+            },
+            (Self::Array { as_list: true }, DataType::Array(_, _)) => {
+                Ok(DataType::List(Box::new(output_element_dtype)))
+            },
+            (Self::Cumulative { min_samples: _ }, _) => Ok(output_element_dtype),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
     }
@@ -571,7 +594,7 @@ impl EvalVariant {
     pub fn is_elementwise(&self) -> bool {
         match self {
             EvalVariant::List => true,
-            EvalVariant::Array => true,
+            EvalVariant::Array { .. } => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
         }
     }
@@ -579,14 +602,14 @@ impl EvalVariant {
     pub fn is_row_separable(&self) -> bool {
         match self {
             EvalVariant::List => true,
-            EvalVariant::Array => true,
+            EvalVariant::Array { .. } => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
         }
     }
 
     pub fn is_length_preserving(&self) -> bool {
         match self {
-            EvalVariant::List | EvalVariant::Array | EvalVariant::Cumulative { .. } => true,
+            EvalVariant::List | EvalVariant::Array { .. } | EvalVariant::Cumulative { .. } => true,
         }
     }
 }

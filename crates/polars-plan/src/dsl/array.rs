@@ -198,11 +198,11 @@ impl ArrayNameSpace {
             }))
     }
 
-    pub fn eval<E: Into<Expr>>(self, other: E) -> Expr {
+    pub fn eval<E: Into<Expr>>(self, other: E, as_list: bool) -> Expr {
         Expr::Eval {
             expr: Arc::new(self.0),
             evaluation: Arc::new(other.into()),
-            variant: EvalVariant::Array,
+            variant: EvalVariant::Array { as_list },
         }
     }
 }
