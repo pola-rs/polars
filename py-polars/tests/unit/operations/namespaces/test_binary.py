@@ -449,3 +449,12 @@ def test_bin_contains_unequal_lengths_22018(func: str) -> None:
     f = getattr(s, func)
     with pytest.raises(pl.exceptions.ShapeError):
         f(pl.Series([b"x", b"y", b"z"]))
+
+
+def test_binary_compounded_literal_aggstate_24460() -> None:
+    df = pl.DataFrame({"g": [10], "n": [1]})
+    out = df.group_by("g").agg(
+        (pl.lit(1, pl.Int64) + pl.lit(2)).pow(pl.lit(3)).alias("z")
+    )
+    expected = pl.DataFrame({"g": [10], "z": [27]})
+    assert_frame_equal(out, expected)
