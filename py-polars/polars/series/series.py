@@ -5025,11 +5025,12 @@ class Series:
         │ 3       │
         └─────────┘
         """
-        f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
-        if f is None:
-            msg = f"Series of type {self.dtype} can not be set"
-            raise NotImplementedError(msg)
-        return self._from_pyseries(f(filter._s, value))
+        return F.select(F.when(filter).then(value).otherwise(self)).to_series()
+        # f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
+        # if f is None:
+        #     msg = f"Series of type {self.dtype} can not be set"
+        #     raise NotImplementedError(msg)
+        # return self._from_pyseries(f(filter._s, value))
 
     def scatter(
         self,

@@ -963,7 +963,7 @@ class ExprArrayNameSpace:
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.arr_shift(n_pyexpr))
 
-    def eval(self, expr: Expr) -> Expr:
+    def eval(self, expr: Expr, *, as_list: bool = False) -> Expr:
         """
         Run any polars expression against the arrays' elements.
 
@@ -971,6 +971,9 @@ class ExprArrayNameSpace:
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`
+        as_list
+            Collect the resulting data as a list. This allows for expressions which
+            output a variable amount of data.
 
         Examples
         --------
@@ -989,4 +992,4 @@ class ExprArrayNameSpace:
         │ 3   ┆ 2   ┆ [2.0, 1.0] │
         └─────┴─────┴────────────┘
         """
-        return wrap_expr(self._pyexpr.array_eval(expr._pyexpr))
+        return wrap_expr(self._pyexpr.array_eval(expr._pyexpr, as_list=as_list))

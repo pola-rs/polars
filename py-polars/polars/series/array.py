@@ -775,7 +775,7 @@ class ArrayNameSpace:
         ]
         """
 
-    def eval(self, expr: Expr) -> Series:
+    def eval(self, expr: Expr, *, as_list: bool = False) -> Series:
         """
         Run any polars expression against the arrays' elements.
 
@@ -783,6 +783,9 @@ class ArrayNameSpace:
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`
+        as_list
+            Collect the resulting data as a list. This allows for expressions which
+            output a variable amount of data.
 
         Examples
         --------
