@@ -397,7 +397,6 @@ def test_list_product_and_dtypes() -> None:
         product = df2.explode("a").product()
         assert product.dtypes == [dt_out]
         assert product.item() == 24
-        print(dt_in, dt_out, df2.select(pl.col("a").list.product()).dtypes)
         assert df2.select(pl.col("a").list.product()).dtypes == [dt_out]
 
     # include nulls
