@@ -115,12 +115,6 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
             out.into_series()
         },
-        #[cfg(feature = "dtype-i128")]
-        Int128 => {
-            let out: Int128Chunked =
-                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i128>().unwrap()));
-            out.into_series()
-        },
         Float32 => {
             let out: Float32Chunked =
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<f32>().unwrap()));
