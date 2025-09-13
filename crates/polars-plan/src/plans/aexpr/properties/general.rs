@@ -13,6 +13,8 @@ impl AExpr {
     }
 
     /// Checks whether this expression is elementwise. This only checks the top level expression.
+    ///
+    /// @IMPORTANT! FIX! this is incorrect for scalars.
     pub(crate) fn is_elementwise_top_level(&self) -> bool {
         use AExpr::*;
 
@@ -23,10 +25,7 @@ impl AExpr {
 
             Literal(v) => v.is_scalar(),
 
-            Eval { variant, .. } => match variant {
-                EvalVariant::List => true,
-                EvalVariant::Cumulative { min_samples: _ } => false,
-            },
+            Eval { variant, .. } => variant.is_elementwise(),
 
             BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
@@ -39,6 +38,35 @@ impl AExpr {
             | Sort { .. }
             | SortBy { .. }
             | Window { .. } => false,
+        }
+    }
+
+    /// Checks whether this expression is elementwise. This only checks the top level expression.
+    pub(crate) fn is_length_preserving_top_level(&self) -> bool {
+        use AExpr::*;
+
+        match self {
+            AnonymousFunction { options, .. } | Function { options, .. } => {
+                options.is_length_preserving()
+            },
+            Literal(lv) => lv.is_scalar(),
+
+            Eval { variant, .. } => variant.is_length_preserving(),
+
+            BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+
+            Sort { .. } | SortBy { .. } => true,
+
+            Window { .. } => true,
+
+            Agg { .. }
+            | Len
+            | Gather {
+                returns_scalar: true,
+                ..
+            } => true,
+
+            Gather { .. } | Explode { .. } | Filter { .. } | Slice { .. } => false,
         }
     }
 
@@ -164,9 +192,25 @@ where
         .all(|n| is_elementwise_rec(n.into(), expr_arena))
 }
 
+/// Checks if the top-level expression node is length preserving. If this is the case, then `stack`
+/// will be extended further with any nested expression nodes.
+pub fn is_length_preserving(
+    stack: &mut UnitVec<Node>,
+    ae: &AExpr,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    is_prop(stack, ae, expr_arena, |ae| {
+        ae.is_length_preserving_top_level()
+    })
+}
+
 /// Recursive variant of `is_elementwise`
 pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_elementwise)
+}
+
+pub fn is_length_preserving_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, is_length_preserving)
 }
 
 /// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will

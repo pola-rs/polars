@@ -1488,7 +1488,7 @@ impl IRFunctionExpr {
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
             F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
-            F::Rank { .. } => FunctionOptions::groupwise(),
+            F::Rank { .. } => FunctionOptions::length_preserving(),
             F::Repeat => {
                 FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
