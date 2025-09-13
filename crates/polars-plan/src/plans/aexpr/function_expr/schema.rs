@@ -665,6 +665,23 @@ impl<'a> FieldsMapper<'a> {
         Ok(first)
     }
 
+    pub fn nested_product_type(&self) -> PolarsResult<Field> {
+        let mut first = self.fields[0].clone();
+        use DataType::*;
+        let dt = first
+            .dtype()
+            .inner_dtype()
+            .cloned()
+            .unwrap_or_else(|| Unknown(Default::default()));
+
+        match dt {
+            Boolean => first.coerce(Int64),
+            UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
+            _ => first.coerce(dt),
+        }
+        Ok(first)
+    }
+
     pub fn nested_mean_median_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;

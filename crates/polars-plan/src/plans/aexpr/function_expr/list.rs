@@ -85,7 +85,7 @@ impl IRListFunction {
             #[cfg(feature = "list_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
-            Product => mapper.nested_sum_type(),
+            Product => mapper.nested_product_type(),
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.nested_mean_median_type(),

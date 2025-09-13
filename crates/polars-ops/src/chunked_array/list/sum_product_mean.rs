@@ -184,11 +184,11 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
     use DataType::*;
     let mut out = match inner_dtype {
         Boolean => {
-            let out: IdxCa = ca.try_apply_amortized_generic(|s| {
+            let out: Int64Chunked = ca.try_apply_amortized_generic(|s| {
                 s.map(|s| {
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
-                        AnyValue::Int64(v) => Ok(*v as IdxSize),
+                        AnyValue::Int64(v) => Ok(*v),
                         _ => unreachable!(),
                     }
                 })
@@ -196,12 +196,38 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
             })?;
             out.into_series()
         },
-        UInt32 => {
-            let out: UInt32Chunked = ca.try_apply_amortized_generic(|s| {
+        UInt8 => {
+            let out: Int64Chunked = ca.try_apply_amortized_generic(|s| {
                 s.map(|s| {
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
-                        AnyValue::UInt32(v) => Ok(*v),
+                        AnyValue::Int64(v) => Ok(*v),
+                        _ => unreachable!(),
+                    }
+                })
+                .transpose()
+            })?;
+            out.into_series()
+        },
+        UInt16 => {
+            let out: Int64Chunked = ca.try_apply_amortized_generic(|s|
+                s.map(|s| {
+                    let scalar = s.as_ref().product()?;
+                    match scalar.value() {
+                        AnyValue::Int64(v) => Ok(*v),
+                        _ => unreachable!(),
+                    }
+                })
+                .transpose()
+            )?;
+            out.into_series()
+        },
+        UInt32 => {
+            let out: Int64Chunked = ca.try_apply_amortized_generic(|s| {
+                s.map(|s| {
+                    let scalar = s.as_ref().product()?;
+                    match scalar.value() {
+                        AnyValue::Int64(v) => Ok(*v),
                         _ => unreachable!(),
                     }
                 })
@@ -249,11 +275,11 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
             out.into_series()
         },
         Int32 => {
-            let out: Int32Chunked = ca.try_apply_amortized_generic(|s| {
+            let out: Int64Chunked = ca.try_apply_amortized_generic(|s| {
                 s.map(|s| {
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
-                        AnyValue::Int32(v) => Ok(*v),
+                        AnyValue::Int64(v) => Ok(*v),
                         _ => unreachable!(),
                     }
                 })
