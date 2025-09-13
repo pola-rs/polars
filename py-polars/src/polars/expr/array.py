@@ -992,4 +992,4 @@ class ExprArrayNameSpace:
         │ 3   ┆ 2   ┆ [2.0, 1.0] │
         └─────┴─────┴────────────┘
         """
-        return wrap_expr(self._pyexpr.array_eval(expr._pyexpr, as_list=as_list))
+        return wrap_expr(self._pyexpr.arr_eval(expr._pyexpr, as_list=as_list))

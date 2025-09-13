@@ -348,7 +348,7 @@ impl EvalExpr {
 
         ac.groups(); // Update the groups.
 
-        // Fast path. Groups are pointing to the same data.
+        // Fast path. Groups are pointing to the same offsets in the data buffer.
         if ac.flat_naive().len() == ca.len() * ca.width()
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
         {
