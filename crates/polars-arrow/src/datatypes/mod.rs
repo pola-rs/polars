@@ -256,6 +256,10 @@ pub enum IntervalUnit {
     DayTime,
     /// The number of elapsed months (i32), days (i32) and nanoseconds (i64).
     MonthDayNano,
+    /// `(months: i32, days: i32, milliseconds: i32)`.
+    /// Used when loading the Parquet INTERVAL type. This is expected to be
+    /// unreachable outside of Parquet reading.
+    MonthDayMillis,
 }
 
 impl ArrowDataType {
@@ -300,6 +304,9 @@ impl ArrowDataType {
             Interval(IntervalUnit::DayTime) => PhysicalType::Primitive(PrimitiveType::DaysMs),
             Interval(IntervalUnit::MonthDayNano) => {
                 PhysicalType::Primitive(PrimitiveType::MonthDayNano)
+            },
+            Interval(IntervalUnit::MonthDayMillis) => {
+                PhysicalType::Primitive(PrimitiveType::MonthDayMillis)
             },
             Binary => PhysicalType::Binary,
             FixedSizeBinary(_) => PhysicalType::FixedSizeBinary,
@@ -516,6 +523,7 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::Float64 => ArrowDataType::Float64,
             PrimitiveType::DaysMs => ArrowDataType::Interval(IntervalUnit::DayTime),
             PrimitiveType::MonthDayNano => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
+            PrimitiveType::MonthDayMillis => ArrowDataType::Interval(IntervalUnit::MonthDayMillis),
             PrimitiveType::UInt128 => unimplemented!(),
         }
     }
