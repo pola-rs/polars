@@ -1381,8 +1381,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     )
     catalog.create_namespace("namespace")
 
-    next_field_id = partial(next, itertools.count())
-    next_field_id()
+    next_field_id = partial(next, itertools.count(1))
 
     iceberg_schema = IcebergSchema(
         NestedField(next_field_id(), "height_provider", IntegerType()),
