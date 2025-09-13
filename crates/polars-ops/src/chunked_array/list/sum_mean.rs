@@ -69,11 +69,20 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
 
 pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
-    // TODO: add fast path for smaller ints?
     let mut out = match inner_dtype {
         Boolean => {
             let out: IdxCa =
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<IdxSize>().unwrap()));
+            out.into_series()
+        },
+        UInt8 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
+            out.into_series()
+        },
+        UInt16 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
             out.into_series()
         },
         UInt32 => {
@@ -86,6 +95,16 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<u64>().unwrap()));
             out.into_series()
         },
+        Int8 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
+            out.into_series()
+        },
+        Int16 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
+            out.into_series()
+        },
         Int32 => {
             let out: Int32Chunked =
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i32>().unwrap()));
@@ -94,6 +113,12 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
         Int64 => {
             let out: Int64Chunked =
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
+            out.into_series()
+        },
+        #[cfg(feature = "dtype-i128")]
+        Int128 => {
+            let out: Int128Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i128>().unwrap()));
             out.into_series()
         },
         Float32 => {
