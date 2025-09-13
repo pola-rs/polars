@@ -210,7 +210,7 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
             out.into_series()
         },
         UInt16 => {
-            let out: Int64Chunked = ca.try_apply_amortized_generic(|s|
+            let out: Int64Chunked = ca.try_apply_amortized_generic(|s| {
                 s.map(|s| {
                     let scalar = s.as_ref().product()?;
                     match scalar.value() {
@@ -219,7 +219,7 @@ pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Po
                     }
                 })
                 .transpose()
-            )?;
+            })?;
             out.into_series()
         },
         UInt32 => {
