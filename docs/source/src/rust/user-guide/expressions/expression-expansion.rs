@@ -156,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = df
         .clone()
         .lazy()
-        .select([all().as_expr().name().map(PlanCallback::new(|name| {
+        .select([all().as_expr().name().map(PlanCallback::new(|name: PlSmallStr| {
             Ok(PlSmallStr::from_string(name.to_ascii_uppercase()))
         }))])
         .collect()?;
