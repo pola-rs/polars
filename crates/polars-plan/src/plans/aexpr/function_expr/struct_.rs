@@ -137,7 +137,6 @@ impl IRStructFunction {
             S::WithFields => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::PASS_NAME_TO_APPLY
             }),
-            #[cfg(feature = "python")]
             S::MapFieldNames(_) => FunctionOptions::elementwise(),
         }
     }
@@ -154,7 +153,6 @@ impl Display for IRStructFunction {
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
             WithFields => write!(f, "with_fields"),
-            #[cfg(feature = "python")]
             MapFieldNames(_) => write!(f, "map_field_names"),
         }
     }
