@@ -978,18 +978,16 @@ class ExprArrayNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-        >>> df.with_columns(
-        ...     rank=pl.concat_list("a", "b").array.eval(pl.element().rank())
-        ... )
+        >>> df.with_columns(rank=pl.concat_arr("a", "b").arr.eval(pl.element().rank()))
         shape: (3, 3)
-        ┌─────┬─────┬────────────┐
-        │ a   ┆ b   ┆ rank       │
-        │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ arr[f64; 2]  │
-        ╞═════╪═════╪════════════╡
-        │ 1   ┆ 4   ┆ [1.0, 2.0] │
-        │ 8   ┆ 5   ┆ [2.0, 1.0] │
-        │ 3   ┆ 2   ┆ [2.0, 1.0] │
-        └─────┴─────┴────────────┘
+        ┌─────┬─────┬───────────────┐
+        │ a   ┆ b   ┆ rank          │
+        │ --- ┆ --- ┆ ---           │
+        │ i64 ┆ i64 ┆ array[f64, 2] │
+        ╞═════╪═════╪═══════════════╡
+        │ 1   ┆ 4   ┆ [1.0, 2.0]    │
+        │ 8   ┆ 5   ┆ [2.0, 1.0]    │
+        │ 3   ┆ 2   ┆ [2.0, 1.0]    │
+        └─────┴─────┴───────────────┘
         """
         return wrap_expr(self._pyexpr.arr_eval(expr._pyexpr, as_list=as_list))
