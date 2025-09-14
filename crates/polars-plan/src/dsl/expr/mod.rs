@@ -566,6 +566,7 @@ impl EvalVariant {
     pub fn element_dtype<'a>(&self, dtype: &'a DataType) -> PolarsResult<&'a DataType> {
         match (self, dtype) {
             (Self::List, DataType::List(inner)) => Ok(inner.as_ref()),
+            #[cfg(feature = "dtype-array")]
             (Self::Array { .. }, DataType::Array(inner, _)) => Ok(inner.as_ref()),
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
@@ -580,9 +581,11 @@ impl EvalVariant {
     ) -> PolarsResult<DataType> {
         match (self, dtype) {
             (Self::List, DataType::List(_)) => Ok(DataType::List(Box::new(output_element_dtype))),
+            #[cfg(feature = "dtype-array")]
             (Self::Array { as_list: false }, DataType::Array(_, width)) => {
                 Ok(DataType::Array(Box::new(output_element_dtype), *width))
             },
+            #[cfg(feature = "dtype-array")]
             (Self::Array { as_list: true }, DataType::Array(_, _)) => {
                 Ok(DataType::List(Box::new(output_element_dtype)))
             },

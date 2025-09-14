@@ -792,7 +792,7 @@ class ArrayNameSpace:
         >>> s = pl.Series("a", [[1, 4], [8, 5], [3, 2]], pl.Array(pl.Int64, 2))
         >>> s.arr.eval(pl.element().rank())
         shape: (3,)
-        Series: 'a' [arr[f64; 2]]
+        Series: 'a' [array[f64, 2]]
         [
             [1.0, 2.0]
             [2.0, 1.0]
