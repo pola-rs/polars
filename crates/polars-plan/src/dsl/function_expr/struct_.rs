@@ -12,7 +12,6 @@ pub enum StructFunction {
     JsonEncode,
     WithFields,
     SelectFields(Selector),
-    #[cfg(feature = "python")]
     MapFieldNames(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
@@ -28,7 +27,6 @@ impl Display for StructFunction {
             JsonEncode => write!(f, "struct.to_json"),
             WithFields => write!(f, "struct.with_fields"),
             SelectFields(_) => write!(f, "struct.field"),
-            #[cfg(feature = "python")]
             MapFieldNames(_) => write!(f, "map_field_names"),
         }
     }
