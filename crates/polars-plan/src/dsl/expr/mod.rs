@@ -721,7 +721,6 @@ impl RenameAliasFn {
                     name.replace(pattern.as_str(), value.as_str()).into()
                 } else {
                     feature_gated!("regex", {
-                        use regex::Regex;
                         let rx = polars_utils::regex_cache::compile_regex(pattern)?;
                         rx.replace_all(name, value.as_str()).into()
                     })
