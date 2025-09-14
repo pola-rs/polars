@@ -22,7 +22,7 @@ ARROW_DRIVER_REGISTRY: dict[str, list[ArrowDriverProperties]] = {
     # In version 1.6.0, ADBC released `Cursor.fetch_arrow`, returning an object
     # implementing the Arrow PyCapsule interface (not requiring PyArrow). This should be
     # used if the version permits.
-    "adbc_.*": [
+    "adbc": [
         {
             "fetch_all": "fetch_arrow",
             "fetch_batches": "fetch_record_batch",
