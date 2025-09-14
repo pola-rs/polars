@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, overload
+from typing import IO, TYPE_CHECKING, Any, overload
 
 from polars import functions as F
 from polars._utils.various import qualified_type_name
@@ -66,14 +66,14 @@ class _XLFormatCache:
 
     def get(self, fmt: dict[str, Any] | Format) -> Format:
         if not isinstance(fmt, dict):
-            wbfmt = fmt
+            return fmt
         else:
             key = self._key(fmt)
-            wbfmt = self._cache.get(key)
-            if wbfmt is None:
-                wbfmt = self.wb.add_format(fmt)
-                self._cache[key] = wbfmt
-        return wbfmt
+            cached_format = self._cache.get(key)
+            if cached_format is None:
+                cached_format = self.wb.add_format(fmt)
+                self._cache[key] = cached_format
+            return cached_format
 
 
 def _adjacent_cols(df: DataFrame, cols: Iterable[str], min_max: dict[str, Any]) -> bool:
@@ -492,10 +492,11 @@ def _xl_setup_table_columns(
         if col not in column_formats:
             column_formats[col] = fmt_default
 
-    # ensure externally supplied formats are made available
+    # convert externally supplied formats to Format objects
+    column_format_objects: dict[str, Format] = {}
     for col, fmt in column_formats.items():  # type: ignore[assignment]
         if isinstance(fmt, str):
-            column_formats[col] = format_cache.get(
+            column_format_objects[col] = format_cache.get(
                 {"num_format": fmt, "valign": "vcenter"}
             )
         elif isinstance(fmt, dict):
@@ -505,7 +506,10 @@ def _xl_setup_table_columns(
                     fmt["num_format"] = dtype_formats[tp]
             if "valign" not in fmt:
                 fmt["valign"] = "vcenter"
-            column_formats[col] = format_cache.get(fmt)
+            column_format_objects[col] = format_cache.get(fmt)
+        else:
+            # fmt is already a Format object
+            column_format_objects[col] = fmt
 
     # optional custom header format
     col_header_format = format_cache.get(header_format) if header_format else None
@@ -516,7 +520,7 @@ def _xl_setup_table_columns(
             k: v
             for k, v in {
                 "header": col,
-                "format": column_formats[col],
+                "format": column_format_objects[col],
                 "header_format": col_header_format,
                 "total_function": column_total_funcs.get(col),
                 "formula": (
@@ -528,7 +532,7 @@ def _xl_setup_table_columns(
         }
         for col in df.columns
     ]
-    return table_columns, column_formats, df  # type: ignore[return-value]
+    return table_columns, column_format_objects, df  # type: ignore[return-value]
 
 
 def _xl_setup_table_options(
@@ -566,7 +570,7 @@ def _xl_worksheet_in_workbook(
 
 
 def _xl_setup_workbook(
-    workbook: Workbook | BytesIO | Path | str | None,
+    workbook: Workbook | IO[bytes] | Path | str | None,
     worksheet: str | Worksheet | None = None,
 ) -> tuple[Workbook, Worksheet, bool]:
     """Establish the target Excel workbook and worksheet."""
@@ -592,7 +596,7 @@ def _xl_setup_workbook(
             "strings_to_formulas": False,
             "default_date_format": _XL_DEFAULT_DTYPE_FORMATS_[Date],
         }
-        if isinstance(workbook, BytesIO):
+        if isinstance(workbook, (BytesIO, IO)):
             wb, ws, can_close = Workbook(workbook, workbook_options), None, True
         else:
             if workbook is None:
