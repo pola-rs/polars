@@ -409,47 +409,43 @@ pub fn expand_paths_hive(
                     let mut rewrite_aws = false;
 
                     #[cfg(feature = "aws")]
-                    {
+                    if let Some(p) = (|| {
+                        use crate::cloud::CloudConfig;
+
                         // See https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access
                         // Path format: https://bucket-name.s3.region-code.amazonaws.com/key-name
                         let p = path.as_ref().as_ref();
                         let after_scheme = p.strip_scheme();
-                        if let Some(bucket_end) = after_scheme.find(".s3.") {
-                            if let Some(region_end) = after_scheme.find(".amazonaws.com/") {
-                                if bucket_end < region_end
-                                    && region_end < after_scheme.find("/").unwrap()
-                                {
-                                    use crate::cloud::CloudConfig;
 
-                                    rewrite_aws = true;
+                        let bucket_end = after_scheme.find(".s3.")?;
+                        let offset = bucket_end + 4;
+                        // Search after offset to prevent matching `.s3.amazonaws.com` (legacy global endpoint URL without region).
+                        let region_end = offset + after_scheme[offset..].find(".amazonaws.com/")?;
 
-                                    let bucket = &after_scheme[..bucket_end];
-                                    let region = &after_scheme[bucket_end + 4..region_end];
-                                    let key = &after_scheme[region_end + 15..];
+                        if after_scheme[..region_end].contains('/') {
+                            return None;
+                        }
 
-                                    if let CloudConfig::Aws(configs) = cloud_options
-                                        .get_or_insert_default()
-                                        .config
-                                        .get_or_insert_with(|| {
-                                            CloudConfig::Aws(Vec::with_capacity(1))
-                                        })
-                                    {
-                                        use object_store::aws::AmazonS3ConfigKey;
+                        let bucket = &after_scheme[..bucket_end];
+                        let region = &after_scheme[bucket_end + 4..region_end];
+                        let key = &after_scheme[region_end + 15..];
 
-                                        if !matches!(
-                                            configs.last(),
-                                            Some((AmazonS3ConfigKey::Region, _))
-                                        ) {
-                                            configs.push((AmazonS3ConfigKey::Region, region.into()))
-                                        }
-                                    }
+                        if let CloudConfig::Aws(configs) = cloud_options
+                            .get_or_insert_default()
+                            .config
+                            .get_or_insert_with(|| CloudConfig::Aws(Vec::with_capacity(1)))
+                        {
+                            use object_store::aws::AmazonS3ConfigKey;
 
-                                    path = Cow::Owned(PlPath::from_string(format!(
-                                        "s3://{bucket}/{key}"
-                                    )))
-                                }
+                            if !matches!(configs.last(), Some((AmazonS3ConfigKey::Region, _))) {
+                                configs.push((AmazonS3ConfigKey::Region, region.into()))
                             }
                         }
+
+                        Some(format!("s3://{bucket}/{key}"))
+                    })() {
+                        path = Cow::Owned(PlPath::from_string(p));
+                        rewrite_aws = true;
                     }
 
                     if !rewrite_aws {
