@@ -13,7 +13,7 @@ pub enum StructFunction {
     WithFields,
     SelectFields(Selector),
     #[cfg(feature = "python")]
-    MapFieldNames(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
+    MapFieldNames(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
 impl Display for StructFunction {

@@ -13,8 +13,7 @@ pub enum IRStructFunction {
     #[cfg(feature = "json")]
     JsonEncode,
     WithFields,
-    #[cfg(feature = "python")]
-    MapFieldNames(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
+    MapFieldNames(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
 impl IRStructFunction {
@@ -107,21 +106,13 @@ impl IRStructFunction {
                     polars_bail!(op = "with_fields", got = dt, expected = "Struct")
                 }
             },
-            #[cfg(feature = "python")]
-            MapFieldNames(lambda) => mapper.try_map_dtype(|dt| match dt {
+            MapFieldNames(function) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
                     let fields = fields
                         .iter()
                         .map(|fld| {
-                            let name = fld.name().as_str();
-                            let new_name = pyo3::marker::Python::with_gil(|py| {
-                                let out: PlSmallStr = lambda
-                                    .call1(py, (name,))?
-                                    .extract::<std::borrow::Cow<str>>(py)?
-                                    .as_ref()
-                                    .into();
-                                pyo3::PyResult::<_>::Ok(out)
-                            }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map_fields' produced an error: {e}."))?;
+                            let name = fld.name();
+                            let new_name = function.call(name.clone()).map_err(|e| polars_err!(ComputeError: "'name.map_fields' produced an error: {e}."))?;
                             Ok(Field::new(new_name, fld.dtype().clone()))
                         })
                         .collect::<PolarsResult<_>>()?;
@@ -180,8 +171,7 @@ impl From<IRStructFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "json")]
             JsonEncode => map!(to_json),
             WithFields => map_as_slice!(with_fields),
-            #[cfg(feature = "python")]
-            MapFieldNames(lambda) => map!(map_field_names, &lambda),
+            MapFieldNames(function) => map!(map_field_names, &function),
         }
     }
 }
@@ -277,10 +267,9 @@ pub(super) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
     Ok(out.into_column())
 }
 
-#[cfg(feature = "python")]
 pub(super) fn map_field_names(
     s: &Column,
-    lambda: &polars_utils::python_function::PythonObject,
+    function: &PlanCallback<PlSmallStr, PlSmallStr>,
 ) -> PolarsResult<Column> {
     let ca = s.struct_()?;
     let fields = ca
@@ -288,15 +277,10 @@ pub(super) fn map_field_names(
         .iter()
         .map(|s| {
             let mut s = s.clone();
-            let name = s.name().as_str();
-            let new_name = pyo3::marker::Python::with_gil(|py| {
-                let out: PlSmallStr = lambda
-                    .call1(py, (name,))?
-                    .extract::<std::borrow::Cow<str>>(py)?
-                    .as_ref()
-                    .into();
-                pyo3::PyResult::<_>::Ok(out)
-            }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map_fields' produced an error: {e}."))?;
+            let name = s.name();
+            let new_name = function.call(name.clone()).map_err(
+                |e| polars_err!(ComputeError: "'name.map_fields' produced an error: {e}."),
+            )?;
             s.rename(new_name);
             Ok(s)
         })
