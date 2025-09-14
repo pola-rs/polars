@@ -338,7 +338,7 @@ class ExprNameNameSpace:
         >>> df.select(pl.all().name.replace("(a|e|i|o|u)", "@")).schema
         Schema({'n_f@@': Int64, 'n_b@r': String})
         """
-        return self._from_pyexpr(self._pyexpr.name_replace(pattern, value, literal))
+        return wrap_expr(self._pyexpr.name_replace(pattern, value, literal))
 
     def suffix_fields(self, suffix: str) -> Expr:
         """

@@ -697,6 +697,11 @@ pub enum RenameAliasFn {
     ToLowercase,
     ToUppercase,
     Map(PlanCallback<PlSmallStr, PlSmallStr>),
+    Replace {
+        pattern: PlSmallStr,
+        value: PlSmallStr,
+        literal: bool,
+    },
 }
 
 impl RenameAliasFn {
@@ -707,6 +712,21 @@ impl RenameAliasFn {
             Self::ToLowercase => PlSmallStr::from_string(name.to_lowercase()),
             Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
             Self::Map(f) => f.call(name.clone())?,
+            Self::Replace {
+                pattern,
+                value,
+                literal,
+            } => {
+                if *literal {
+                    name.replace(pattern.as_str(), value.as_str()).into()
+                } else {
+                    feature_gated!("regex", {
+                        use regex::Regex;
+                        let rx = polars_utils::regex_cache::compile_regex(pattern)?;
+                        rx.replace_all(name, value.as_str()).into()
+                    })
+                }
+            },
         };
         Ok(out)
     }
