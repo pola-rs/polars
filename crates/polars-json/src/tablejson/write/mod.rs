@@ -3,13 +3,13 @@ mod serialize;
 mod utf8;
 
 use std::io::Write;
-use polars_core::schema::SchemaRef;
 
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
 use arrow::io::iterator::StreamingIterator;
 use arrow::record_batch::RecordBatchT;
 pub use fallible_streaming_iterator::*;
+use polars_core::schema::SchemaRef;
 use polars_error::{PolarsError, PolarsResult};
 pub(crate) use serialize::new_serializer;
 use serialize::serialize;
@@ -148,20 +148,21 @@ where
     writer.write_all(b"{\"schema\":{")?;
     writer.write_all(b"\"fields\":[")?;
 
-    schema.clone().iter().map(|a|
-    {
-        let name =  a.0;
-        let d = a.1;
-        let dtype = format!("{d:?}");
+    schema
+        .clone()
+        .iter()
+        .map(|a| {
+            let name = a.0;
+            let d = a.1;
+            let dtype = format!("{d:?}");
 
-        format!("{{\"name\":\"{name}\",\"type\":\"{dtype}\"}}")
-    }).reduce(|a,b| format!("{a},{b}")).iter().for_each(
-            |a| {
-                writer.write_all(a.as_bytes()).ok();
-            }
-        );
-
-
+            format!("{{\"name\":\"{name}\",\"type\":\"{dtype}\"}}")
+        })
+        .reduce(|a, b| format!("{a},{b}"))
+        .iter()
+        .for_each(|a| {
+            writer.write_all(a.as_bytes()).ok();
+        });
 
     writer.write_all(b"]},")?;
 
