@@ -344,7 +344,6 @@ def test_concat_unsupported_type() -> None:
 
 
 def test_concat_expressions() -> None:
-    """Test concatenation of Expressions."""
     expr1 = pl.col("a")
     expr2 = pl.col("b")
     concat_expr = pl.concat([expr1, expr2])
