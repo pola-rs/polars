@@ -147,26 +147,23 @@ where
 {
     writer.write_all(b"{\"schema\":{")?;
     writer.write_all(b"\"fields\":[")?;
-    writer.write_all(b"]")?;
-    writer.write_all(b",")?;
-    // let mut is_schema_first_row = true;
-    for a in schema.iter()
+
+    schema.clone().iter().map(|a|
     {
         let name =  a.0;
         let d = a.1;
         let dtype = format!("{d:?}");
-        writer.write_fmt(format_args!("\"{name}\":\"{dtype}\",")).ok();
-    }
-    // while let Some(block) = schema.next()? {
-    //     if !is_schema_first_row {
-    //         writer.write_all(b",")?;
-    //     }
-    //     is_schema_first_row = false;
-    //     writer.write_all(block)?;
-    // }
-    // writer.write_all(b"\"primaryKey\":[")?;
-    // writer.write_all(b"],")?;
-    writer.write_all(b"},")?;
+
+        format!("{{\"name\":\"{name}\",\"type\":\"{dtype}\"}}")
+    }).reduce(|a,b| format!("{a},{b}")).iter().for_each(
+            |a| {
+                writer.write_all(a.as_bytes()).ok();
+            }
+        );
+
+
+
+    writer.write_all(b"]},")?;
 
     writer.write_all(b"\"data\":[")?;
     let mut is_first_row = true;
