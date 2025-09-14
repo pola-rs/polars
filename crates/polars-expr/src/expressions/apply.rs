@@ -8,6 +8,7 @@ use polars_core::chunked_array::from_iterator_par::{
 use polars_core::prelude::*;
 use rayon::prelude::*;
 
+use super::sortby::check_groups;
 use super::*;
 use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
@@ -349,6 +350,24 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             let acs = self.prepare_multiple_inputs(df, groups, state)?;
 
+            // Implementation dispatch:
+            // The current implementation of `apply_multiple_elementwise` requires the
+            // multiple inputs to have a compatible data layout as it invokes `flat_naive()`.
+            // Compatible means matching as-is, or matching after aggregation,
+            // or matching after an implicit broadcast by the function.
+            //
+            // The dispatch logic between the implementations depends on the combination of aggstates:
+            // - Any presence of LiteralScalar is immaterial as it gets broadcasted in the UDF.
+            // - Combination of AggregatedScalar and AggregatedList => NOT allowed for elementwise.
+            // - Combination of AggregatedScalar and NotAggregated => NOT allowed for elementwise.
+            // - Any other combination => allowed for elementwise.
+
+            // Consequently, these dfollow the elementwise path (not exhaustive):
+            // - All AggregatedScalar
+            // - Any combination of AggregatedList(s) and NotAggregated(s)
+            // - All of the above with or without LiteralScalar
+            // Groups must match
+
             match self.flags.is_elementwise() {
                 false => self.apply_multiple_group_aware(acs, df),
                 true => {
@@ -363,7 +382,8 @@ impl PhysicalExpr for ApplyExpr {
                             _ => {},
                         }
                     }
-                    if has_agg_list || (has_agg_scalar && has_not_agg) {
+
+                    if has_agg_scalar && (has_agg_list || has_not_agg) {
                         self.apply_multiple_group_aware(acs, df)
                     } else {
                         apply_multiple_elementwise(
@@ -396,6 +416,128 @@ impl PhysicalExpr for ApplyExpr {
 }
 
 fn apply_multiple_elementwise<'a>(
+    mut acs: Vec<AggregationContext<'a>>,
+    function: &dyn ColumnsUdf,
+    expr: &Expr,
+    check_lengths: bool,
+    returns_scalar: bool,
+) -> PolarsResult<AggregationContext<'a>> {
+    // Fast-path when every AggState is LiteralScalar. This path avoids calling groups()
+    // or aggregated(), and returns a LiteralScalar, on the implicit condition that the function
+    // is pure (which holds in the case of single element inputs).
+    let all_literal = acs
+        .iter()
+        .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
+
+    if all_literal {
+        let mut cols = acs
+            .iter()
+            // TODO: which is more idiomatic (get_values)?
+            // .map(|ac| ac.flat_naive().into_owned())
+            .map(|ac| ac.get_values().clone())
+            .collect::<Vec<_>>();
+        let out = function.call_udf(&mut cols)?;
+        let mut ac = acs.swap_remove(0);
+        ac.with_literal(out);
+        return Ok(ac);
+    }
+
+    // At this stage, we either have (with or without LiteralScalars):
+    // - one or more AggregatedLists or NotAggregated ACs
+    // - one or more AggregatedScalars ACs
+
+    // Collect the aggstate statistics
+    let mut has_agg_list = false;
+    let mut has_not_agg_with_len_modified = false;
+    for ac in &acs {
+        match ac.state {
+            AggState::AggregatedList(_) => {
+                has_agg_list = true;
+            },
+            AggState::NotAggregated(_) => {
+                if !ac.original_len {
+                    has_not_agg_with_len_modified = true;
+                }
+            },
+            _ => {},
+        }
+    }
+
+    // Aggregate when needed. Update and check groups when needed.
+    // This includes two fast-paths (ignoring LiteralScalars): (i) when we have one or more
+    // NotAggregated ACs, all with original_len = true, and no AggregatedList, and (ii) when we
+    // one ore more AggregatedScalars
+
+    //TODO - depending on the invariants we can rely on, we should check all groups if we want
+    // to be strict
+    let mut previous = None;
+    for ac in acs.iter_mut() {
+        if ac.is_literal() {
+            continue;
+        }
+        if has_agg_list || has_not_agg_with_len_modified {
+            ac.aggregated();
+
+            if let Some(p) = previous {
+                check_groups(ac.groups(), p)?;
+            }
+            previous = Some(ac.groups());
+        }
+    }
+
+    // The first non-LiteralScalar AC will be used as the base AC to retain the context
+    let base_ac_idx = acs.iter().position(|ac| !ac.is_literal()).unwrap();
+
+    match acs[base_ac_idx].agg_state() {
+        AggState::AggregatedList(s) => {
+            let aggregated = acs.iter().any(|ac| ac.is_aggregated());
+            debug_assert!(!returns_scalar);
+            let ca = s.list().unwrap();
+            let input_len = s.len();
+
+            let out = ca.apply_to_inner(&|_| {
+                let mut cols = acs
+                    .iter()
+                    .map(|ac| ac.flat_naive().into_owned())
+                    .collect::<Vec<_>>();
+                Ok(function
+                    .call_udf(&mut cols)?
+                    .as_materialized_series()
+                    .clone())
+            })?;
+
+            let out = out.into_column();
+            if check_lengths {
+                check_map_output_len(input_len, out.len(), expr)?;
+            }
+
+            let mut ac = acs.swap_remove(base_ac_idx);
+            ac.with_values_and_args(out, aggregated, Some(expr), false, returns_scalar)?;
+            Ok(ac)
+        },
+        _ => {
+            let aggregated = acs.iter().any(|ac| ac.is_aggregated());
+            debug_assert!(aggregated == returns_scalar);
+
+            let mut cols = acs
+                .iter()
+                .map(|ac| ac.flat_naive().into_owned())
+                .collect::<Vec<_>>();
+
+            let input_len = cols[base_ac_idx].len();
+            let out = function.call_udf(&mut cols)?;
+            if check_lengths {
+                check_map_output_len(input_len, out.len(), expr)?;
+            }
+
+            let mut ac = acs.swap_remove(base_ac_idx);
+            ac.with_values_and_args(out, aggregated, Some(expr), false, returns_scalar)?;
+            Ok(ac)
+        },
+    }
+}
+
+fn apply_multiple_elementwise_old<'a>(
     mut acs: Vec<AggregationContext<'a>>,
     function: &dyn ColumnsUdf,
     expr: &Expr,
