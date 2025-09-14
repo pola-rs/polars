@@ -741,9 +741,9 @@ fn convert_interval_bytes_to_month_day_nano_struct(
             .unwrap();
 
         unsafe {
-            *months_out.get_unchecked_mut(i) = months;
-            *days_out.get_unchecked_mut(i) = days;
-            *nanoseconds_out.get_unchecked_mut(i) = nanoseconds;
+            months_out.as_mut_ptr().add(i).write(months);
+            days_out.as_mut_ptr().add(i).write(days);
+            nanoseconds_out.as_mut_ptr().add(i).write(nanoseconds);
         }
     }
 

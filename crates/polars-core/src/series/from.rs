@@ -774,9 +774,9 @@ fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<d
         let nanoseconds: i64 = x.ns();
 
         unsafe {
-            *months_out.get_unchecked_mut(i) = months;
-            *days_out.get_unchecked_mut(i) = days;
-            *nanoseconds_out.get_unchecked_mut(i) = nanoseconds;
+            months_out.as_mut_ptr().add(i).write(months);
+            days_out.as_mut_ptr().add(i).write(days);
+            nanoseconds_out.as_mut_ptr().add(i).write(nanoseconds);
         }
     }
 
