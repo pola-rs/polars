@@ -761,13 +761,14 @@ unsafe fn import_arrow_dictionary_array(
 fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<dyn Array>> {
     let arr: &PrimitiveArray<months_days_ns> = chunk.as_any().downcast_ref().unwrap();
 
-    let mut months_out: Vec<i32> = vec![0; arr.len()];
-    let mut days_out: Vec<i32> = vec![0; arr.len()];
-    let mut nanoseconds_out: Vec<i64> = vec![0; arr.len()];
+    let values: &[months_days_ns] = arr.values();
+    let output_length = values.len();
 
-    for (i, x) in arr.iter().enumerate() {
-        let Some(x) = x else { continue };
+    let mut months_out: Vec<i32> = Vec::with_capacity(output_length);
+    let mut days_out: Vec<i32> = Vec::with_capacity(output_length);
+    let mut nanoseconds_out: Vec<i64> = Vec::with_capacity(output_length);
 
+    for (i, x) in values.iter().enumerate() {
         let months: i32 = x.months();
         let days: i32 = x.days();
         let nanoseconds: i64 = x.ns();
@@ -777,6 +778,12 @@ fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<d
             *days_out.get_unchecked_mut(i) = days;
             *nanoseconds_out.get_unchecked_mut(i) = nanoseconds;
         }
+    }
+
+    unsafe {
+        months_out.set_len(output_length);
+        days_out.set_len(output_length);
+        nanoseconds_out.set_len(output_length);
     }
 
     let out = StructArray::new(

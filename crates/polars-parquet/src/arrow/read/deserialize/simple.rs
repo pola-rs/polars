@@ -719,21 +719,20 @@ fn convert_interval_bytes_to_month_day_nano_struct(
 ) -> StructArray {
     const ROW_WIDTH: usize = 12;
 
-    let output_length = month_day_millis_bytes.len();
+    let bytes: &[u8] = month_day_millis_bytes.values();
+    let output_length = bytes.len() / ROW_WIDTH;
 
-    let mut months_out: Vec<i32> = vec![0; output_length];
-    let mut days_out: Vec<i32> = vec![0; output_length];
-    let mut nanoseconds_out: Vec<i64> = vec![0; output_length];
+    let mut months_out: Vec<i32> = Vec::with_capacity(output_length);
+    let mut days_out: Vec<i32> = Vec::with_capacity(output_length);
+    let mut nanoseconds_out: Vec<i64> = Vec::with_capacity(output_length);
 
-    let row_values_iter = month_day_millis_bytes
-        .values()
-        .chunks_exact(ROW_WIDTH)
-        .enumerate();
+    assert_eq!(bytes.len(), output_length * ROW_WIDTH);
 
-    assert_eq!(row_values_iter.len(), output_length);
-
-    for (i, x) in row_values_iter {
-        let bytes = <[u8; ROW_WIDTH]>::try_from(x).unwrap();
+    for i in 0..output_length {
+        let bytes: [u8; ROW_WIDTH] =
+            unsafe { bytes.get_unchecked(i * ROW_WIDTH..(i + 1) * ROW_WIDTH) }
+                .try_into()
+                .unwrap();
 
         let months: i32 = i32::from_le_bytes(bytes[..4].try_into().unwrap());
         let days: i32 = i32::from_le_bytes(bytes[4..8].try_into().unwrap());
@@ -746,6 +745,12 @@ fn convert_interval_bytes_to_month_day_nano_struct(
             *days_out.get_unchecked_mut(i) = days;
             *nanoseconds_out.get_unchecked_mut(i) = nanoseconds;
         }
+    }
+
+    unsafe {
+        months_out.set_len(output_length);
+        days_out.set_len(output_length);
+        nanoseconds_out.set_len(output_length);
     }
 
     let struct_fields: [Field; 3] = [
@@ -775,9 +780,9 @@ fn convert_interval_bytes_to_month_day_nano_struct(
     ];
 
     StructArray::new(
-        ArrowDataType::Struct(struct_fields.to_vec()),
+        ArrowDataType::Struct(struct_fields.into()),
         output_length,
-        struct_value_arrays.to_vec(),
+        struct_value_arrays.into(),
         month_day_millis_bytes.validity().cloned(),
     )
 }
