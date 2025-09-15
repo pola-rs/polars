@@ -762,6 +762,7 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Float32, UInt8 | Int8) => Float32,
         #[cfg(feature = "dtype-u16")]
         (Float32, UInt16 | Int16) => Float32,
+        (Float32, Unknown(UnknownKind::Int(_))) => Float32,
         (Float32, other) if other.is_integer() => Float64,
         (Float32, Float64) => Float64,
         (Float32, _) => Float32,

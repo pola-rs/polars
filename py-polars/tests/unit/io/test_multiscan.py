@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Callable
 
@@ -325,7 +326,10 @@ def test_schema_mismatch_type_mismatch(
 
     # NDJSON will just parse according to `projected_schema`
     cx = (
-        pytest.raises(pl.exceptions.ComputeError, match="cannot parse 'a' as Int64")
+        pytest.raises(
+            pl.exceptions.ComputeError,
+            match=re.escape("cannot parse 'a' (string) as Int64"),
+        )
         if scan is pl.scan_ndjson
         else pytest.raises(
             pl.exceptions.SchemaError,  # type: ignore[arg-type]

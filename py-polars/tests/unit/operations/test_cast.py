@@ -1036,14 +1036,25 @@ def test_lit_cast_arithmetic_23677() -> None:
     assert q.collect().schema == expected
 
 
-@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES)
-@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES + [pl.Unknown])
+@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES + [pl.Unknown])
 @pytest.mark.parametrize("op", [operator.mul, operator.truediv])
 def test_lit_cast_arithmetic_matrix_schema(
     col_dtype: PolarsDataType,
     lit_dtype: PolarsDataType,
     op: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:
-    df = pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
-    q = df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    # Note (hacky): simply casting to 'pl.Unknown' would create
+    # `Unknown(UnknownKind::Any())` which is not what we want: the
+    # default maps to `Unknown(UnknownKind::Int(_)))` so we adjust
+    df = (
+        pl.DataFrame({"a": [1]})
+        if col_dtype == pl.Unknown
+        else pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
+    )
+    q = (
+        df.lazy().select(op(pl.col("a"), pl.lit(1)))
+        if lit_dtype == pl.Unknown
+        else df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    )
     assert q.collect_schema() == q.collect().schema

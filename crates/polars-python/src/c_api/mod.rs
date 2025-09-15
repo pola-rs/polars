@@ -3,7 +3,7 @@ pub mod allocator;
 
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
-pub static PYPOLARS_VERSION: &str = "1.33.0";
+pub static PYPOLARS_VERSION: &str = "1.33.1";
 
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
@@ -235,6 +235,10 @@ pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     .unwrap();
     m.add_wrapped(wrap_pyfunction!(
         crate::interop::arrow::polars_schema_field_from_arrow_c_schema
+    ))
+    .unwrap();
+    m.add_wrapped(wrap_pyfunction!(
+        crate::interop::arrow::to_py::polars_schema_to_pycapsule
     ))
     .unwrap();
 

@@ -292,6 +292,7 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
         "tDn" => ArrowDataType::Duration(TimeUnit::Nanosecond),
         "tiM" => ArrowDataType::Interval(IntervalUnit::YearMonth),
         "tiD" => ArrowDataType::Interval(IntervalUnit::DayTime),
+        "tin" => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
         "vu" => ArrowDataType::Utf8View,
         "vz" => ArrowDataType::BinaryView,
         "+l" => {
@@ -487,9 +488,8 @@ fn to_format(dtype: &ArrowDataType) -> String {
         ArrowDataType::Duration(TimeUnit::Nanosecond) => "tDn".to_string(),
         ArrowDataType::Interval(IntervalUnit::YearMonth) => "tiM".to_string(),
         ArrowDataType::Interval(IntervalUnit::DayTime) => "tiD".to_string(),
-        ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
-            todo!("Spec for FFI for MonthDayNano still not defined.")
-        },
+        ArrowDataType::Interval(IntervalUnit::MonthDayNano) => "tin".to_string(),
+        ArrowDataType::Interval(IntervalUnit::MonthDayMillis) => unimplemented!(),
         ArrowDataType::Timestamp(unit, tz) => {
             let unit = match unit {
                 TimeUnit::Second => "s",

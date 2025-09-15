@@ -4,7 +4,7 @@ Proxy mode routes queries through the Polars Cloud control plane rather than dir
 connections. This approach provides enhanced security by eliminating the need to expose network
 ports on your compute cluster.
 
-![Architectural overview of proxy mode](https://github.com/pola-rs/polars-static/blob/master/polars_cloud/proxy-mode.png?raw=true)
+![Architectural overview of proxy mode](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/proxy-mode.png)
 
 In proxy mode the control plane polls the compute plane to retrieve the latest information about
 running compute and queries.

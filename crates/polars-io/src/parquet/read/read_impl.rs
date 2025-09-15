@@ -112,8 +112,8 @@ fn column_idx_to_series(
         assert_dtypes(field.dtype())
     }
     let columns = mmap_columns(store, field_md);
-    let (array, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
-    let series = Series::try_from((field, array))?;
+    let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
+    let series = Series::try_from((field, arrays))?;
 
     Ok((series, pred_true_mask))
 }

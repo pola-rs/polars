@@ -2,6 +2,7 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
+use bytemuck::Zeroable;
 
 use super::super::utils;
 use super::{
@@ -12,12 +13,13 @@ use crate::parquet::encoding::{Encoding, byte_stream_split, delta_bitpacked, hyb
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::parquet::types::{NativeType as ParquetNativeType, decode};
+use crate::read::Filter;
 use crate::read::deserialize::dictionary_encoded;
+use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, unspecialized_decode,
 };
-use crate::read::expr::SpecializedParquetColumnExpr;
-use crate::read::{Filter, PredicateFilter};
+use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -179,7 +181,6 @@ where
             &mut BitmapBuilder::new(),
             &mut self.0.intermediate,
             &mut target,
-            &mut BitmapBuilder::new(),
             self.0.decoder,
         )?;
         Ok(PrimitiveArray::new(
@@ -189,28 +190,59 @@ where
         ))
     }
 
-    fn has_predicate_specialization(
-        &self,
+    fn evaluate_predicate(
+        &mut self,
         state: &utils::State<'_, Self>,
-        predicate: &PredicateFilter,
+        predicate: Option<&SpecializedParquetColumnExpr>,
+        pred_true_mask: &mut BitmapBuilder,
+        dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
-        let mut has_predicate_specialization = false;
+        // @Performance: This should be added
+        if state.page_validity.is_some() {
+            return Ok(false);
+        }
 
-        has_predicate_specialization |=
-            matches!(state.translation, StateTranslation::Dictionary(_));
-        has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
-            && (matches!(
-                predicate.predicate.as_specialized(),
-                Some(SpecializedParquetColumnExpr::Equal(_))
-            ) || matches!(
-                predicate.predicate.as_specialized(),
-                Some(SpecializedParquetColumnExpr::EqualOneOf(n)) if (1..=8).contains(&n.len())
-            ));
+        if let StateTranslation::Dictionary(values) = &state.translation {
+            let dict_mask = dict_mask.unwrap();
+            super::super::dictionary_encoded::predicate::decode(
+                values.clone(),
+                dict_mask,
+                pred_true_mask,
+            )?;
+            return Ok(true);
+        }
 
-        // @TODO: This should be implemented
-        has_predicate_specialization &= state.page_validity.is_none();
+        if !D::CAN_TRANSMUTE || D::NEED_TO_DECODE {
+            return Ok(false);
+        }
 
-        Ok(has_predicate_specialization)
+        let Some(predicate) = predicate else {
+            return Ok(false);
+        };
+
+        use SpecializedParquetColumnExpr as S;
+        match (&state.translation, predicate) {
+            (StateTranslation::Plain(values), S::Equal(needle)) => {
+                let values = ArrayChunks::new(values).unwrap();
+                let needle = needle.to_aligned_bytes::<T::AlignedBytes>().unwrap();
+                super::plain::predicate::decode_equals(values, needle, pred_true_mask);
+            },
+            (StateTranslation::Plain(values), S::EqualOneOf(needles))
+                if (1..=8).contains(&needles.len()) =>
+            {
+                let values = ArrayChunks::new(values).unwrap();
+                let mut needles_array = [<T::AlignedBytes>::zeroed(); 8];
+                for i in 0..8 {
+                    needles_array[i] = needles[i.min(needles.len() - 1)]
+                        .to_aligned_bytes::<T::AlignedBytes>()
+                        .unwrap();
+                }
+                super::plain::predicate::decode_is_in(values, &needles_array, pred_true_mask);
+            },
+            _ => return Ok(false),
+        }
+
+        Ok(true)
     }
 
     fn finalize(
@@ -243,12 +275,21 @@ where
         Ok(())
     }
 
+    fn extend_constant(
+        &mut self,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &ParquetScalar,
+    ) -> ParquetResult<()> {
+        self.0.extend_constant(decoded, length, value)
+    }
+
     fn extend_filtered_with_state(
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(ref mut values) => super::plain::decode(
@@ -259,19 +300,16 @@ where
                 &mut decoded.1,
                 &mut self.0.intermediate,
                 &mut decoded.0,
-                pred_true_mask,
                 self.0.decoder,
             ),
             StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(
                 indexes.clone(),
                 state.dict.unwrap().values().as_slice(),
-                state.dict_mask,
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,
                 &mut decoded.1,
                 &mut decoded.0,
-                pred_true_mask,
             ),
             StateTranslation::ByteStreamSplit(mut decoder) => {
                 let num_rows = decoder.len();

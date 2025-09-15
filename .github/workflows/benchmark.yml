@@ -79,8 +79,9 @@ jobs:
           # py-polars/. This causes a binary not found error if a test tries to import polars in
           # a Python executed using `subprocess.check_output([sys.executable])`. Fix this by
           # symlinking the binary.
+          set -e
           ln -sv \
-            $(python -c "import importlib; print(importlib.util.find_spec('polars').submodule_search_locations[0] + '/polars.abi3.so')") \
+            $(python -c "from importlib import util; print(util.find_spec('polars').submodule_search_locations[0] + '/polars.abi3.so')") \
             py-polars/polars/polars.abi3.so
 
       - name: Set wheel size

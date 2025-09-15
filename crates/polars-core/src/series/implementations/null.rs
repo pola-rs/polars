@@ -352,6 +352,11 @@ impl SeriesTrait for NullChunked {
         Ok(())
     }
 
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(if self.is_empty() { 0 } else { 1 })
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(self.clone())
     }

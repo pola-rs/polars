@@ -1032,9 +1032,10 @@ def iterable_to_pydf(
         adaptive_chunk_size = None
 
     df: DataFrame = None  # type: ignore[assignment]
-    chunk_size = max(
-        (infer_schema_length or 0),
-        (adaptive_chunk_size or 1000),
+    chunk_size = (
+        None
+        if infer_schema_length is None
+        else max(infer_schema_length, adaptive_chunk_size or 1000)
     )
     while True:
         values = list(islice(data, chunk_size))

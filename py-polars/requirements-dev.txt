@@ -41,7 +41,7 @@ s3fs[boto3]
 fastexcel>=0.11.5
 openpyxl
 xlsx2csv
-xlsxwriter
+xlsxwriter<=3.2.5
 # Other I/O
 deltalake>=1.1.4
 # Csv

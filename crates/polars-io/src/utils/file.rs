@@ -1,6 +1,5 @@
 use std::io;
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
 
 #[cfg(feature = "cloud")]
 pub use async_writeable::AsyncWriteable;
@@ -9,7 +8,7 @@ use polars_error::{PolarsError, PolarsResult, feature_gated};
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;
-use polars_utils::plpath::{CloudScheme, PlPathRef};
+use polars_utils::plpath::PlPathRef;
 
 use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
@@ -69,10 +68,6 @@ impl Writeable {
 
                     if verbose {
                         eprintln!("Writeable: try_new: cloud: {p}")
-                    }
-
-                    if p.scheme() == CloudScheme::File {
-                        create_file(Path::new(p.strip_scheme()))?;
                     }
 
                     let writer = crate::pl_async::get_runtime().block_in_place_on(

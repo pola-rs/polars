@@ -1,6 +1,5 @@
 use either::Either;
 use polars_io::RowIndex;
-use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
@@ -20,9 +19,6 @@ pub(super) fn dsl_to_ir(
     let mut cached_ir = cached_ir.lock().unwrap();
 
     if cached_ir.is_none() {
-        let cloud_options = unified_scan_args_box.cloud_options.clone();
-        let cloud_options = cloud_options.as_ref();
-
         let unified_scan_args = unified_scan_args_box.as_mut();
 
         if let Some(hive_schema) = unified_scan_args.hive_options.schema.as_deref() {
@@ -45,16 +41,14 @@ pub(super) fn dsl_to_ir(
         let sources = match &*scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { .. } => {
-                sources.expand_paths_with_hive_update(unified_scan_args, cloud_options)?
+                sources.expand_paths_with_hive_update(unified_scan_args)?
             },
             #[cfg(feature = "ipc")]
-            FileScanDsl::Ipc { .. } => {
-                sources.expand_paths_with_hive_update(unified_scan_args, cloud_options)?
-            },
+            FileScanDsl::Ipc { .. } => sources.expand_paths_with_hive_update(unified_scan_args)?,
             #[cfg(feature = "csv")]
-            FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args, cloud_options)?,
+            FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args)?,
             #[cfg(feature = "json")]
-            FileScanDsl::NDJson { .. } => sources.expand_paths(unified_scan_args, cloud_options)?,
+            FileScanDsl::NDJson { .. } => sources.expand_paths(unified_scan_args)?,
             #[cfg(feature = "python")]
             FileScanDsl::PythonDataset { .. } => {
                 // There are a lot of places that short-circuit if the paths is empty,
@@ -71,7 +65,6 @@ pub(super) fn dsl_to_ir(
             &sources,
             sources_before_expansion,
             unified_scan_args,
-            cloud_options,
             ctxt.verbose,
         )?;
 
@@ -522,7 +515,6 @@ impl SourcesToFileInfo {
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
-        cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         let require_first_source = |failed_operation_name: &'static str, hint: &'static str| {
             sources.first_or_empty_expand_err(
@@ -533,12 +525,15 @@ impl SourcesToFileInfo {
             )
         };
 
+        let cloud_options = unified_scan_args.cloud_options.as_ref();
+
         Ok(match scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 if let Some(schema) = &options.schema {
                     // We were passed a schema, we don't have to call `parquet_file_info`,
                     // but this does mean we don't have `row_estimation` and `first_metadata`.
+
                     (
                         FileInfo {
                             schema: schema.clone(),
@@ -666,7 +661,6 @@ this scan to succeed with an empty DataFrame.",
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
-        cloud_options: Option<&CloudOptions>,
         verbose: bool,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         // Only cache non-empty paths. Others are directly parsed.
@@ -679,7 +673,6 @@ this scan to succeed with an empty DataFrame.",
                     sources,
                     sources_before_expansion,
                     unified_scan_args,
-                    cloud_options,
                 );
             },
         };
@@ -731,7 +724,6 @@ this scan to succeed with an empty DataFrame.",
                     sources,
                     sources_before_expansion,
                     unified_scan_args,
-                    cloud_options,
                 );
             },
         };
@@ -747,7 +739,6 @@ this scan to succeed with an empty DataFrame.",
                 sources,
                 sources_before_expansion,
                 unified_scan_args,
-                cloud_options,
             )?;
             self.inner.insert(k, v.clone());
             Ok(v)

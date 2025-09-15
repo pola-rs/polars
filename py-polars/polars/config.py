@@ -1452,7 +1452,7 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_expr_depth_warning(cls, limit: int) -> type[Config]:
         """
-        Set the the expression depth that Polars will accept without triggering a warning.
+        Set the expression depth that Polars will accept without triggering a warning.
 
         Having too deep expressions (several 1000s) can lead to overflowing the stack and might be worth a refactor.
         """  # noqa: W505
