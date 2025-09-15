@@ -7,7 +7,6 @@ mod delay_rechunk;
 
 mod cluster_with_columns;
 mod collapse_and_project;
-mod collapse_joins;
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
@@ -179,11 +178,6 @@ pub fn optimize(
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-    }
-
-    // Make sure it is after predicate pushdown
-    if opt_flags.collapse_joins() && get_or_init_members!().has_filter_with_join_input {
-        collapse_joins::optimize(lp_top, lp_arena, expr_arena, opt_flags.new_streaming());
     }
 
     // Make sure its before slice pushdown.

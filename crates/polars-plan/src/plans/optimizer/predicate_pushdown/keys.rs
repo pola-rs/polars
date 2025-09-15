@@ -1,4 +1,8 @@
 //! Keys in the `acc_predicates` hashmap.
+use std::sync::LazyLock;
+
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 // an invisible ascii token we use as delimiter
