@@ -114,26 +114,13 @@ impl DslFunction {
             },
             DslFunction::Unnest(selector) => {
                 let columns = selector.into_columns(input_schema, &Default::default())?;
-                let columns = columns.into_iter().collect();
-                let cols = Arc::clone(&columns);
-                for col in cols.iter() {
-                    let dtype_opt = input_schema.get(col.as_str());
-                    match dtype_opt {
-                        Some(dtype) => {
-                            if !dtype.is_struct() {
-                                let dtype_str = dtype.to_string();
-                                let msg = format!(
-                                    "invalid dtype: expected 'Struct', got '{}' for '{}'",
-                                    dtype_str, col
-                                );
-                                return Err(PolarsError::InvalidOperation(msg.into()));
-                            }
-                        },
-                        None => {
-                            let msg = format!("'unnest' on column: '{}' is invalid", col);
-                            return Err(PolarsError::ColumnNotFound(msg.into()));
-                        },
-                    }
+                let columns: Arc<[PlSmallStr]> = columns.into_iter().collect();
+                for col in Arc::clone(&columns).iter() {
+                    let dtype = input_schema.try_get(col.as_str())?;
+                    polars_ensure!(
+                        dtype.is_struct(),
+                        InvalidOperation: "invalid dtype: expected 'Struct', got '{:?}' for '{}'", dtype, col
+                    );
                 }
                 FunctionIR::Unnest { columns }
             },
