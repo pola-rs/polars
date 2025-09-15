@@ -365,6 +365,10 @@ impl GroupsType {
         }
     }
 
+    pub fn is_rolling(&self) -> bool {
+        matches!(self, GroupsType::Slice { rolling: true, .. })
+    }
+
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
         match self {
             GroupsType::Idx(mut groups) => std::mem::take(&mut groups.first),
