@@ -533,6 +533,7 @@ impl SourcesToFileInfo {
                 if let Some(schema) = &options.schema {
                     // We were passed a schema, we don't have to call `parquet_file_info`,
                     // but this does mean we don't have `row_estimation` and `first_metadata`.
+
                     (
                         FileInfo {
                             schema: schema.clone(),
