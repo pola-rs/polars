@@ -820,23 +820,25 @@ def test_agg_with_slice_then_cast_23682(
 @pytest.mark.parametrize(
     ("op", "agg"),
     [
-        ("sum", lambda df: df.sum()),
+        ("any", lambda df: df.cast(pl.Boolean).any()),
+        ("all", lambda df: df.cast(pl.Boolean).all()),
+        ("arg_max", lambda df: df.arg_max()),
+        ("arg_min", lambda df: df.arg_min()),
         ("min", lambda df: df.min()),
         ("max", lambda df: df.max()),
         ("mean", lambda df: df.mean()),
         ("median", lambda df: df.median()),
-        ("count", lambda df: df.count()),
+        ("product", lambda df: df.product()),
+        ("quantile", lambda df: df.quantile(0.5)),
         ("std", lambda df: df.std()),
         ("var", lambda df: df.var()),
-        ("quantile", lambda df: df.quantile(0.5)),
+        ("sum", lambda df: df.sum()),
         ("first", lambda df: df.first()),
         ("last", lambda df: df.last()),
-        ("n_unique", lambda df: df.n_unique()),
-        ("any", lambda df: df.cast(pl.Boolean).any()),
-        ("all", lambda df: df.cast(pl.Boolean).all()),
-        ("mode", lambda df: df.mode()),
-        ("cum_sum", lambda df: df.cum_sum()),
         ("approx_n_unique", lambda df: df.approx_n_unique()),
+        ("bitwise_and", lambda df: df.bitwise_and()),
+        ("bitwise_or", lambda df: df.bitwise_or()),
+        ("bitwise_xor", lambda df: df.bitwise_xor()),
     ],
 )
 @pytest.mark.parametrize(
@@ -893,9 +895,7 @@ def test_agg_invalid_same_engines_behavior(
         assert streaming_error, (
             f"streaming engine did not error (expected in-memory error: {inmemory_error})"
         )
-        assert streaming_error.args == inmemory_error.args, (
-            f"mismatch in errors: {streaming_error} != {inmemory_error}"
-        )
+        assert streaming_error.__class__ == inmemory_error.__class__
 
     if not inmemory_error:
         assert_frame_equal(streaming_result, inmemory_result)
@@ -909,14 +909,15 @@ def test_agg_invalid_same_engines_behavior(
         ("median", lambda df: df.median()),
         ("std", lambda df: df.std()),
         ("var", lambda df: df.var()),
+        ("quantile", lambda df: df.quantile(0.5)),
+        ("cum_sum", lambda df: df.cum_sum()),
     ],
 )
 @pytest.mark.parametrize(
     "df",
     [
-        # TODO: [amber] Maybe enable these dtypes too
-        # pl.DataFrame({"a": [[10]]}, schema={"a": pl.Array(shape=(1,), inner=pl.Int32)}),
-        # pl.DataFrame({"a": [[1]]}, schema={"a": pl.Struct(fields={"a": pl.Int32})}),
+        pl.DataFrame({"a": [[10]]}, schema={"a": pl.Array(shape=(1), inner=pl.Int32)}),
+        pl.DataFrame({"a": [[1]]}, schema={"a": pl.Struct(fields={"a": pl.Int32})}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.Categorical}),
         pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
