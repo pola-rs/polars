@@ -253,6 +253,7 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
                 IntervalUnit::YearMonth => ipc::IntervalUnit::YearMonth,
                 IntervalUnit::DayTime => ipc::IntervalUnit::DayTime,
                 IntervalUnit::MonthDayNano => ipc::IntervalUnit::MonthDayNano,
+                IntervalUnit::MonthDayMillis => unimplemented!(),
             },
         })),
         List(_) => ipc::Type::List(Box::new(ipc::List {})),
