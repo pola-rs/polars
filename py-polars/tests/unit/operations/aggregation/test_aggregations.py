@@ -817,26 +817,6 @@ def test_agg_with_slice_then_cast_23682(
     )
 
 
-# TODO: [amber] LEFT HERE
-#
-# Drafted this message in Discord chat:
-#
-# > Weird question, ehhm: How do you throw a type error?
-#
-# `to_field_impl` returns a `PolarsResult`, but this result is `.expect()`'d in
-# `expr_irs_to_schema` with `'should be resolved'`, which results in a panic.
-# However, I presume this would not be the first time somebody adds a case
-# in which type checking should fail. Am I missing something here?
-
-# A couple of type checking behaviors should change; in particular,
-# `sum` and `mean` should not be supported on String, Binary, and Categorical
-# (and Utf8?).
-# Currently, they always return Null : Dtype ∈ {String, Binary, Categorical, Utf8}
-#
-# Thereafter I think we should maybe also check for other operations that do not
-# make sense.
-
-
 @pytest.mark.parametrize(
     ("op", "agg"),
     [
