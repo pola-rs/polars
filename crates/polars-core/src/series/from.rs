@@ -762,7 +762,6 @@ fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<d
     let arr: &PrimitiveArray<months_days_ns> = chunk.as_any().downcast_ref().unwrap();
 
     let values: &[months_days_ns] = arr.values();
-    let output_length = values.len();
 
     let (months_out, days_out, nanoseconds_out): (Vec<i32>, Vec<i32>, Vec<i64>) = values
         .iter()
