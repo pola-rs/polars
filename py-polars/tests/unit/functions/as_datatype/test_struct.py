@@ -295,12 +295,12 @@ def test_struct_nested_naming_in_group_by_23701() -> None:
     assert agg_df.collect_schema() == agg_df.collect().schema
 
 
-# parametric tuples: (expr, is_scalar)
+# parametric tuples: (expr, is_scalar, values with broadcast)
 agg_expressions = [
-    (pl.lit(1, pl.Int64), True),  # LiteralScalar
-    (pl.col("n"), False),  # NotAggregated
-    (pl.int_range(1, pl.len() + 1), False),  # AggregatedList
-    (pl.col("n").first(), True),  # AggregatedScalar
+    (pl.lit(7, pl.Int64), True, [7, 7, 7]),  # LiteralScalar
+    (pl.col("n"), False, [1, 2, 3]),  # NotAggregated
+    (pl.int_range(pl.len()), False, [0, 1, 0]),  # AggregatedList
+    (pl.col("n").first(), True, [1, 1, 3]),  # AggregatedScalar
 ]
 
 
@@ -309,8 +309,8 @@ agg_expressions = [
 @pytest.mark.parametrize("n_rows", [0, 1, 2, 3])
 @pytest.mark.parametrize("maintain_order", [True, False])
 def test_struct_schema_in_group_by_apply_expr_24168(
-    lhs: tuple[pl.Expr, bool],
-    rhs: tuple[pl.Expr, bool],
+    lhs: tuple[pl.Expr, bool, list[int]],
+    rhs: tuple[pl.Expr, bool, list[int]],
     n_rows: int,
     maintain_order: bool,
 ) -> None:
@@ -323,34 +323,22 @@ def test_struct_schema_in_group_by_apply_expr_24168(
     # check schema
     assert q.collect_schema() == out.schema
 
-    # check output against ground truth (single group only)
-    if n_rows in [0, 1]:
-        if lhs[1] and rhs[1]:
-            expected = pl.DataFrame({"g": [10], "expr": [{"lhs": 1, "rhs": 1}]})
-            expected = expected.head(n_rows)
-            assert_frame_equal(out, expected, check_row_order=maintain_order)
-        else:
-            expected = pl.DataFrame({"g": [10], "expr": [[{"lhs": 1, "rhs": 1}]]})
-            expected = expected.head(n_rows)
-            assert_frame_equal(out, expected, check_row_order=maintain_order)
+    # check output against ground truth
+    if n_rows in [1, 2, 3]:
+        data = df.to_dict(as_series=False)
 
-    if n_rows == 2:
+        result = {}
+        for gg, ll, rr in zip(data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows]):
+            result.setdefault(gg, []).append({"lhs": ll, "rhs": rr})
+
         if lhs[1] and rhs[1]:
-            expected = pl.DataFrame({"g": [10], "expr": [{"lhs": 1, "rhs": 1}]})
-            assert_frame_equal(out, expected, check_row_order=maintain_order)
-        else:
-            expected = pl.DataFrame(
-                {
-                    "g": [10],
-                    "expr": [
-                        [
-                            {"lhs": 1, "rhs": 1},
-                            {"lhs": 1 if lhs[1] else 2, "rhs": 1 if rhs[1] else 2},
-                        ]
-                    ],
-                }
-            )
-            assert_frame_equal(out, expected, check_row_order=maintain_order)
+            # expect scalar result
+            result = {k: v[0] for k, v in result.items()}
+
+        expected = pl.DataFrame(
+            {"g": list(result.keys()), "expr": list(result.values())}
+        )
+        assert_frame_equal(out, expected, check_row_order=maintain_order)
 
     # check output against non_aggregated expression evaluation
     if n_rows in [1, 2, 3]:
