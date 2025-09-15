@@ -38,18 +38,18 @@ impl<T> UnitVec<T> {
 
     #[inline]
     pub fn new() -> Self {
-        let valid = const {
-            let valid =
+        let fits_in_pointer = const {
+            let fits_in_pointer =
                 size_of::<T>() <= size_of::<*mut T>() && align_of::<T>() <= align_of::<*mut T>();
 
             if cfg!(target_pointer_width = "64") {
-                assert!(valid)
+                assert!(fits_in_pointer)
             }
 
-            valid
+            fits_in_pointer
         };
 
-        assert!(valid);
+        assert!(fits_in_pointer);
 
         Self {
             len: 0,
