@@ -818,27 +818,27 @@ def test_agg_with_slice_then_cast_23682(
 
 
 @pytest.mark.parametrize(
-    ("op", "agg"),
+    ("op", "expr"),
     [
-        ("any", lambda df: df.cast(pl.Boolean).any()),
-        ("all", lambda df: df.cast(pl.Boolean).all()),
-        ("arg_max", lambda df: df.arg_max()),
-        ("arg_min", lambda df: df.arg_min()),
-        ("min", lambda df: df.min()),
-        ("max", lambda df: df.max()),
-        ("mean", lambda df: df.mean()),
-        ("median", lambda df: df.median()),
-        ("product", lambda df: df.product()),
-        ("quantile", lambda df: df.quantile(0.5)),
-        ("std", lambda df: df.std()),
-        ("var", lambda df: df.var()),
-        ("sum", lambda df: df.sum()),
-        ("first", lambda df: df.first()),
-        ("last", lambda df: df.last()),
-        ("approx_n_unique", lambda df: df.approx_n_unique()),
-        ("bitwise_and", lambda df: df.bitwise_and()),
-        ("bitwise_or", lambda df: df.bitwise_or()),
-        ("bitwise_xor", lambda df: df.bitwise_xor()),
+        ("any", pl.all().cast(pl.Boolean).any()),
+        ("all", pl.all().cast(pl.Boolean).all()),
+        ("arg_max", pl.all().arg_max()),
+        ("arg_min", pl.all().arg_min()),
+        ("min", pl.all().min()),
+        ("max", pl.all().max()),
+        ("mean", pl.all().mean()),
+        ("median", pl.all().median()),
+        ("product", pl.all().product()),
+        ("quantile", pl.all().quantile(0.5)),
+        ("std", pl.all().std()),
+        ("var", pl.all().var()),
+        ("sum", pl.all().sum()),
+        ("first", pl.all().first()),
+        ("last", pl.all().last()),
+        ("approx_n_unique", pl.all().approx_n_unique()),
+        ("bitwise_and", pl.all().bitwise_and()),
+        ("bitwise_or", pl.all().bitwise_or()),
+        ("bitwise_xor", pl.all().bitwise_xor()),
     ],
 )
 @pytest.mark.parametrize(
@@ -862,7 +862,7 @@ def test_agg_with_slice_then_cast_23682(
     ],
 )
 def test_agg_invalid_same_engines_behavior(
-    op: str, agg: Callable[[pl.DataFrame], pl.DataFrame], df: pl.DataFrame
+    op: str, expr: pl.Expr, df: pl.DataFrame
 ) -> None:
     # If the in-memory engine produces a good result, then the streaming engine
     # should also produce a good result, and then it should match the in-memory result.
@@ -879,12 +879,12 @@ def test_agg_invalid_same_engines_behavior(
     streaming_result, streaming_error = None, None
 
     try:
-        inmemory_result = df.select(agg(pl.all()))
+        inmemory_result = df.select(expr)
     except pl.exceptions.PolarsError as e:
         inmemory_error = e
 
     try:
-        streaming_result = df.lazy().select(agg(pl.all())).collect(engine="streaming")
+        streaming_result = df.lazy().select(expr).collect(engine="streaming")
     except pl.exceptions.PolarsError as e:
         streaming_error = e
 
@@ -898,19 +898,21 @@ def test_agg_invalid_same_engines_behavior(
         assert streaming_error.__class__ == inmemory_error.__class__
 
     if not inmemory_error:
+        assert streaming_result is not None
+        assert inmemory_result is not None
         assert_frame_equal(streaming_result, inmemory_result)
 
 
 @pytest.mark.parametrize(
-    ("op", "agg"),
+    ("op", "expr"),
     [
-        ("sum", lambda df: df.sum()),
-        ("mean", lambda df: df.mean()),
-        ("median", lambda df: df.median()),
-        ("std", lambda df: df.std()),
-        ("var", lambda df: df.var()),
-        ("quantile", lambda df: df.quantile(0.5)),
-        ("cum_sum", lambda df: df.cum_sum()),
+        ("sum", pl.all().sum()),
+        ("mean", pl.all().mean()),
+        ("median", pl.all().median()),
+        ("std", pl.all().std()),
+        ("var", pl.all().var()),
+        ("quantile", pl.all().quantile(0.5)),
+        ("cum_sum", pl.all().cum_sum()),
     ],
 )
 @pytest.mark.parametrize(
@@ -925,13 +927,13 @@ def test_agg_invalid_same_engines_behavior(
     ],
 )
 def test_invalid_agg_dtypes_should_raise(
-    op: str, agg: Callable[[pl.DataFrame], pl.DataFrame], df: pl.DataFrame
+    op: str, expr: pl.Expr, df: pl.DataFrame
 ) -> None:
     with pytest.raises(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
-        df.select(agg(pl.all()))
+        df.select(expr)
     with pytest.raises(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
-        df.lazy().select(agg(pl.all())).collect(engine="streaming")
+        df.lazy().select(expr).collect(engine="streaming")
