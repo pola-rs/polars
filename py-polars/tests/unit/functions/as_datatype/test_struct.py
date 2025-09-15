@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Any
 
 import pytest
 
@@ -327,7 +328,7 @@ def test_struct_schema_in_group_by_apply_expr_24168(
     if n_rows in [1, 2, 3]:
         data = df.to_dict(as_series=False)
 
-        result = {}
+        result: dict[int, Any] = {}
         for gg, ll, rr in zip(data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows]):
             result.setdefault(gg, []).append({"lhs": ll, "rhs": rr})
 
