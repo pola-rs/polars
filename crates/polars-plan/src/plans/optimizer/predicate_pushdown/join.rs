@@ -608,7 +608,6 @@ fn try_rewrite_join_type(
         }
     }
 
-    #[expect(clippy::question_mark)]
     let Some(new_join_type) = (match non_null_side {
         ExprOrigin::Both => Some(JoinType::Inner),
 
@@ -1087,7 +1086,7 @@ fn take_nested_loop_join_compatible_filters(
     schema_right: &Schema,
     suffix: &str,
 ) -> PolarsResult<hashbrown::hash_map::IntoValues<Node, Node>> {
-    return take_predicates_mut(acc_predicates, expr_arena, |ae, ae_node, expr_arena| {
+    take_predicates_mut(acc_predicates, expr_arena, |ae, ae_node, expr_arena| {
         Ok(
             match ExprOrigin::get_expr_origin(
                 ae_node,
