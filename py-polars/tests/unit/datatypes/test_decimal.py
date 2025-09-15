@@ -376,12 +376,14 @@ def test_decimal_cumulative_aggregations() -> None:
     df = pl.Series("a", [D("2.2"), D("1.1"), D("3.3")]).to_frame()
     result = df.select(
         pl.col("a").cum_sum().alias("cum_sum"),
+        pl.col("a").cum_prod().alias("cum_prod"),
         pl.col("a").cum_min().alias("cum_min"),
         pl.col("a").cum_max().alias("cum_max"),
     )
     expected = pl.DataFrame(
         {
             "cum_sum": [D("2.2"), D("3.3"), D("6.6")],
+            "cum_prod": [D("2.2"), D("2.42"), D("7.986")],
             "cum_min": [D("2.2"), D("1.1"), D("1.1")],
             "cum_max": [D("2.2"), D("2.2"), D("3.3")],
         }

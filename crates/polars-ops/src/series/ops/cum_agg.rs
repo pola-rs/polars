@@ -244,6 +244,13 @@ pub fn cum_prod_with_init(
         Int128 => cum_prod_numeric(s.i128()?, reverse, init.extract()).into_series(),
         Float32 => cum_prod_numeric(s.f32()?, reverse, init.extract()).into_series(),
         Float64 => cum_prod_numeric(s.f64()?, reverse, init.extract()).into_series(),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(precision, scale) => {
+            let ca = s.decimal().unwrap().physical();
+            cum_prod_numeric(ca, reverse, init.clone().to_physical().extract())
+                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_series()
+        },
         dt => polars_bail!(opq = cum_prod, dt),
     };
     Ok(out)
