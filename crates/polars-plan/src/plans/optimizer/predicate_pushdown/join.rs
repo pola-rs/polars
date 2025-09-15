@@ -1101,7 +1101,7 @@ fn take_nested_loop_join_compatible_filters(
                 _ => Some(ae_node),
             },
         )
-    });
+    })
 }
 
 /// Removes predicates from the map according to a function.
