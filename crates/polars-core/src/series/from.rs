@@ -762,29 +762,11 @@ fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<d
     let arr: &PrimitiveArray<months_days_ns> = chunk.as_any().downcast_ref().unwrap();
 
     let values: &[months_days_ns] = arr.values();
-    let output_length = values.len();
 
-    let mut months_out: Vec<i32> = Vec::with_capacity(output_length);
-    let mut days_out: Vec<i32> = Vec::with_capacity(output_length);
-    let mut nanoseconds_out: Vec<i64> = Vec::with_capacity(output_length);
-
-    for (i, x) in values.iter().enumerate() {
-        let months: i32 = x.months();
-        let days: i32 = x.days();
-        let nanoseconds: i64 = x.ns();
-
-        unsafe {
-            months_out.as_mut_ptr().add(i).write(months);
-            days_out.as_mut_ptr().add(i).write(days);
-            nanoseconds_out.as_mut_ptr().add(i).write(nanoseconds);
-        }
-    }
-
-    unsafe {
-        months_out.set_len(output_length);
-        days_out.set_len(output_length);
-        nanoseconds_out.set_len(output_length);
-    }
+    let (months_out, days_out, nanoseconds_out): (Vec<i32>, Vec<i32>, Vec<i64>) = values
+        .iter()
+        .map(|x| (x.months(), x.days(), x.ns()))
+        .collect();
 
     let out = StructArray::new(
         DataType::_month_days_ns_struct_type()
