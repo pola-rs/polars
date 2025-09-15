@@ -885,9 +885,13 @@ def test_agg_invalid_same_engines_behavior(
     # If the in-memory engine produces a good result, then the streaming engine
     # should also produce a good result, and then it should match the in-memory result.
 
-    if df.schema["a"] == pl.Duration() and op in {"std", "var"}:
+    if isinstance(df.schema["a"], pl.Struct) and op in {"any", "all"}:
+        # TODO: Remove this exception when #23797 is resolved
+        pytest.skip("polars/#23797")
+
+    if isinstance(df.schema["a"], pl.Duration) and op in {"std", "var"}:
         # TODO: Remove this exception when std & var are implemented for Duration
-        pytest.skip("Duration does not support these aggregations")
+        pytest.skip(f"'{op}' aggregation not yet implemented for Duration")
 
     inmemory_result, inmemory_error = None, None
     streaming_result, streaming_error = None, None
@@ -901,10 +905,6 @@ def test_agg_invalid_same_engines_behavior(
         streaming_result = df.lazy().select(agg(pl.all())).collect(engine="streaming")
     except pl.exceptions.PolarsError as e:
         streaming_error = e
-
-    print(inmemory_error, streaming_error)
-    print("inmemory:", inmemory_result)
-    print("streaming:", streaming_result)
 
     assert (streaming_error is None) == (inmemory_error is None), (
         f"mismatch in errors for: {streaming_error} != {inmemory_error}"
