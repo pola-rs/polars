@@ -11,8 +11,8 @@ Config options
 
     Config.set_ascii_tables
     Config.set_auto_structify
-    Config.set_credential_provider
     Config.set_decimal_separator
+    Config.set_default_credential_provider
     Config.set_engine_affinity
     Config.set_float_precision
     Config.set_fmt_float

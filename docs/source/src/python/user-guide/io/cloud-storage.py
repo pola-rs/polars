@@ -45,7 +45,7 @@ df = lf.collect()
 # --8<-- [end:credential_provider_class]
 
 # --8<-- [start:credential_provider_class_global_default]
-pl.Config.set_credential_provider(
+pl.Config.set_default_credential_provider(
     pl.CredentialProviderAWS(
         profile_name="...",
         assume_role={

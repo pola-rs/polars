@@ -829,7 +829,7 @@ def test_credential_provider_global_config(monkeypatch: pytest.MonkeyPatch) -> N
         )
     )
 
-    pl.Config.set_credential_provider(provider)
+    pl.Config.set_default_credential_provider(provider)
 
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "...")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "...")
@@ -864,7 +864,7 @@ def test_credential_provider_global_config(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert provider.call_count == 3
 
-    pl.Config.set_credential_provider("auto")
+    pl.Config.set_default_credential_provider("auto")
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
@@ -881,7 +881,7 @@ def test_credential_provider_global_config(monkeypatch: pytest.MonkeyPatch) -> N
     with pytest.raises(AssertionError, match=err_magic):
         get_q().collect()
 
-    pl.Config.set_credential_provider(None)
+    pl.Config.set_default_credential_provider(None)
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()

@@ -1527,7 +1527,7 @@ class Config(contextlib.ContextDecorator):
 
     @classmethod
     @unstable()
-    def set_credential_provider(
+    def set_default_credential_provider(
         cls, credential_provider: CredentialProviderFunction | Literal["auto"] | None
     ) -> type[Config]:
         """
@@ -1552,7 +1552,7 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>> pl.Config.set_credential_provider(
+        >>> pl.Config.set_default_credential_provider(
         ...     pl.CredentialProviderAWS(
         ...         assume_role={"RoleArn": "...", "RoleSessionName": "..."}
         ...     )
