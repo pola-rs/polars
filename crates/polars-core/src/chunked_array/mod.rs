@@ -8,7 +8,7 @@ use arrow::bitmap::Bitmap;
 use arrow::compute::concatenate::concatenate_unchecked;
 use polars_compute::filter::filter_with_bitmap;
 
-use crate::prelude::*;
+use crate::prelude::{ChunkTakeUnchecked, *};
 
 pub mod ops;
 #[macro_use]
@@ -578,6 +578,43 @@ where
         }
         self.null_count = validity.unset_bits();
         self.set_fast_explode_list(false);
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]>,
+{
+    /// Deposit values into nulls with a certain validity mask.
+    pub fn deposit(&self, validity: &Bitmap) -> Self {
+        let set_bits = validity.set_bits();
+
+        assert_eq!(self.len(), set_bits);
+
+        if set_bits == validity.len() {
+            return self.clone();
+        }
+
+        if set_bits == 0 {
+            return Self::full_null_like(self, validity.len());
+        }
+
+        let mut null_mask = validity.clone();
+
+        let mut gather_idxs = Vec::with_capacity(validity.len());
+        let leading_nulls = null_mask.take_leading_zeros();
+        gather_idxs.extend(std::iter::repeat_n(0, leading_nulls + 1));
+
+        let mut i = 0 as IdxSize;
+        gather_idxs.extend(null_mask.iter().skip(1).map(|v| {
+            i += IdxSize::from(v);
+            i
+        }));
+
+        let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
+        ca.set_validity(validity);
+        ca
     }
 }
 
