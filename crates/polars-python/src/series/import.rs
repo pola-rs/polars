@@ -200,7 +200,7 @@ impl PySeries {
                 if value > max_decimal_value {
                     return Err(PyValueError::new_err(format!(
                         "iceberg decoded value for decimal exceeded precision: \
-                    value: {}, precision: {}",
+                        value: {}, precision: {}",
                         value, precision
                     )));
                 }
