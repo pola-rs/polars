@@ -24,7 +24,6 @@ from functools import cache, singledispatch
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
-from polars._plr import PySeries
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
@@ -653,6 +652,7 @@ class LoadBooleanFromBytes(LoadFromBytesImpl):
 class LoadDecimalFromBytes(LoadFromBytesImpl):
     def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
         import polars as pl
+        from polars._plr import PySeries
 
         dtype = self.polars_dtype
         assert isinstance(dtype, pl.Decimal)
