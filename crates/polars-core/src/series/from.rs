@@ -765,8 +765,7 @@ fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<d
 
     let (months_out, days_out, nanoseconds_out): (Vec<i32>, Vec<i32>, Vec<i64>) = values
         .iter()
-        .enumerate()
-        .map(|(i, x)| (x.months(), x.days(), x.ns()))
+        .map(|x| (x.months(), x.days(), x.ns()))
         .collect();
 
     let out = StructArray::new(
