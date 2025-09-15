@@ -38,11 +38,19 @@ impl<T> UnitVec<T> {
 
     #[inline]
     pub fn new() -> Self {
-        const {
-            assert!(
-                size_of::<T>() <= size_of::<*mut T>() && align_of::<T>() <= align_of::<*mut T>()
-            )
+        let valid = const {
+            let valid =
+                size_of::<T>() <= size_of::<*mut T>() && align_of::<T>() <= align_of::<*mut T>();
+
+            if cfg!(target_pointer_width = "64") {
+                assert!(valid)
+            }
+
+            valid
         };
+
+        assert!(valid);
+
         Self {
             len: 0,
             capacity: NonZeroIdxSize::new(1).unwrap(),
