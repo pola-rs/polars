@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use arrow::datatypes::{
-    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Metadata,
+    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
+    Metadata, PL_KEY,
 };
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
@@ -14,9 +15,6 @@ use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
-
-static MAINTAIN_PL_TYPE: &str = "maintain_type";
-static PL_KEY: &str = "pl";
 
 pub trait MetaDataExt: IntoMetadata {
     fn pl_enum_metadata(&self) -> Option<&str> {
@@ -226,6 +224,19 @@ impl DataType {
             Int64 => other.extract::<i64>().is_some(),
             _ => false,
         }
+    }
+
+    /// Struct representation of the arrow `month_day_nano_interval` type.
+    #[cfg(feature = "dtype-struct")]
+    pub fn _month_days_ns_struct_type() -> Self {
+        DataType::Struct(vec![
+            Field::new(PlSmallStr::from_static("months"), DataType::Int32),
+            Field::new(PlSmallStr::from_static("days"), DataType::Int32),
+            Field::new(
+                PlSmallStr::from_static("nanoseconds"),
+                DataType::Duration(TimeUnit::Nanoseconds),
+            ),
+        ])
     }
 
     /// Check if the whole dtype is known.

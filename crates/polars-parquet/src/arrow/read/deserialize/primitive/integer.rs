@@ -289,6 +289,7 @@ where
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(ref mut values) => super::plain::decode(
