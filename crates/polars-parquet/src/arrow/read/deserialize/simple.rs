@@ -731,38 +731,27 @@ fn convert_interval_bytes_to_month_day_nano_struct(
     let bytes: &[u8] = month_day_millis_bytes.values();
     let output_length = bytes.len() / ROW_WIDTH;
 
-    let mut months_out: Vec<i32> = Vec::with_capacity(output_length);
-    let mut days_out: Vec<i32> = Vec::with_capacity(output_length);
-    let mut nanoseconds_out: Vec<i64> = Vec::with_capacity(output_length);
-
     assert_eq!(bytes.len(), output_length * ROW_WIDTH);
 
-    for i in 0..output_length {
-        let bytes: [u8; ROW_WIDTH] =
-            unsafe { bytes.get_unchecked(i * ROW_WIDTH..(i + 1) * ROW_WIDTH) }
-                .try_into()
+    let (months_out, days_out, nanoseconds_out): (Vec<i32>, Vec<i32>, Vec<i64>) = (0
+        ..output_length)
+        .map(|i| {
+            let bytes: [u8; ROW_WIDTH] =
+                unsafe { bytes.get_unchecked(i * ROW_WIDTH..(i + 1) * ROW_WIDTH) }
+                    .try_into()
+                    .unwrap();
+
+            let months: i32 = i32::from_le_bytes(bytes[..4].try_into().unwrap());
+            let days: i32 = i32::from_le_bytes(bytes[4..8].try_into().unwrap());
+            let nanoseconds: i64 = (i32::from_le_bytes(bytes[8..12].try_into().unwrap()) as i64)
+                .checked_mul(1_000_000i64) // Convert milliseconds to nanoseconds.
                 .unwrap();
 
-        let months: i32 = i32::from_le_bytes(bytes[..4].try_into().unwrap());
-        let days: i32 = i32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        let nanoseconds: i64 = (i32::from_le_bytes(bytes[8..12].try_into().unwrap()) as i64)
-            .checked_mul(1_000_000i64) // Convert milliseconds to nanoseconds.
-            .unwrap();
+            (months, days, nanoseconds)
+        })
+        .collect();
 
-        unsafe {
-            months_out.as_mut_ptr().add(i).write(months);
-            days_out.as_mut_ptr().add(i).write(days);
-            nanoseconds_out.as_mut_ptr().add(i).write(nanoseconds);
-        }
-    }
-
-    unsafe {
-        months_out.set_len(output_length);
-        days_out.set_len(output_length);
-        nanoseconds_out.set_len(output_length);
-    }
-
-    let struct_fields: [Field; 3] = [
+    let struct_fields = vec![
         Field::new(
             PlSmallStr::from_static("months"),
             ArrowDataType::Int32,
@@ -776,7 +765,7 @@ fn convert_interval_bytes_to_month_day_nano_struct(
         ),
     ];
 
-    let struct_value_arrays: [Box<dyn Array>; 3] = [
+    let struct_value_arrays = vec![
         PrimitiveArray::<i32>::from_vec(months_out).boxed(),
         PrimitiveArray::<i32>::from_vec(days_out).boxed(),
         PrimitiveArray::<i64>::try_new(
@@ -789,9 +778,9 @@ fn convert_interval_bytes_to_month_day_nano_struct(
     ];
 
     StructArray::new(
-        ArrowDataType::Struct(struct_fields.into()),
+        ArrowDataType::Struct(struct_fields),
         output_length,
-        struct_value_arrays.into(),
+        struct_value_arrays,
         month_day_millis_bytes.validity().cloned(),
     )
 }
