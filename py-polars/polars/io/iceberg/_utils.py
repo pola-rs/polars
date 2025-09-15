@@ -23,8 +23,6 @@ from dataclasses import dataclass
 from functools import cache, singledispatch
 from typing import TYPE_CHECKING, Any, Callable
 
-import pyiceberg.schema
-
 import polars._reexport as pl
 from polars._plr import PySeries
 from polars._utils.convert import to_py_date, to_py_datetime
@@ -36,6 +34,10 @@ from polars.exceptions import ComputeError
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date, datetime
+
+    import pyiceberg.schema as _pyiceberg_schema
+
+    pyiceberg.schema = _pyiceberg_schema
 
     from pyiceberg.manifest import DataFile
     from pyiceberg.table import Table
@@ -375,6 +377,7 @@ class IcebergStatisticsLoader:
         table: Table,
         projected_filter_schema: pyiceberg.schema.Schema,
     ) -> None:
+        import pyiceberg.schema
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         import polars as pl
