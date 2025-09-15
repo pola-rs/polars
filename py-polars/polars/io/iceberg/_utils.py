@@ -28,22 +28,21 @@ from polars._plr import PySeries
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
-from polars.dependencies import pyiceberg
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date, datetime
 
-    import pyiceberg.schema as _pyiceberg_schema
-
-    pyiceberg.schema = _pyiceberg_schema
-
+    import pyiceberg
+    import pyiceberg.schema
     from pyiceberg.manifest import DataFile
     from pyiceberg.table import Table
     from pyiceberg.types import IcebergType
 
     from polars import DataFrame, Series
+else:
+    from polars.dependencies import pyiceberg
 
 _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
     "to_py_date": to_py_date,
