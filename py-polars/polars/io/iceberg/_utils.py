@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import abc
 import ast
+import contextlib
 from _ast import GtE, Lt, LtE
 from ast import (
     Attribute,
@@ -17,17 +19,27 @@ from ast import (
     Name,
     UnaryOp,
 )
-from functools import singledispatch
+from dataclasses import dataclass
+from functools import cache, singledispatch
 from typing import TYPE_CHECKING, Any, Callable
 
+import pyiceberg.schema
+
 import polars._reexport as pl
+from polars._plr import PySeries
 from polars._utils.convert import to_py_date, to_py_datetime
+from polars._utils.logging import eprint
+from polars._utils.wrap import wrap_s
 from polars.dependencies import pyiceberg
+from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import date, datetime
 
+    from pyiceberg.manifest import DataFile
     from pyiceberg.table import Table
+    from pyiceberg.types import IcebergType
 
     from polars import DataFrame, Series
 
@@ -35,6 +47,8 @@ _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
     "to_py_date": to_py_date,
     "to_py_datetime": to_py_datetime,
 }
+
+ICEBERG_TIME_TO_NS: int = 1000
 
 
 def _scan_pyarrow_dataset_impl(
@@ -256,16 +270,16 @@ class IdentityTransformedPartitionValuesBuilder:
             projected_field = projected_schema.find_field(field_id)
             projected_type = projected_field.field_type
 
-            if not projected_type.is_primitive:
-                self.partition_values[field_id] = (
-                    f"non-primitive type: {projected_type}"
-                )
-
             _, output_dtype = pl.Schema(
                 schema_to_pyarrow(pyiceberg.schema.Schema(projected_field))
             ).popitem()
 
             self.partition_values_dtypes[field_id] = output_dtype
+
+            if not projected_type.is_primitive or output_dtype.is_nested():
+                self.partition_values[field_id] = (
+                    f"non-primitive type: {projected_type = } {output_dtype = }"
+                )
 
             for schema in table.schemas().values():
                 try:
@@ -338,10 +352,12 @@ class IdentityTransformedPartitionValuesBuilder:
 
                     s = pl.Series(v, dtype=constructor_dtype)
 
+                    assert not s.dtype.is_nested()
+
                     if isinstance(output_dtype, Time):
                         # Physical from PyIceberg is in microseconds, physical
                         # used by polars is in nanoseconds.
-                        s = s * 1000
+                        s = s * ICEBERG_TIME_TO_NS
 
                     s = s.cast(output_dtype)
 
@@ -351,3 +367,329 @@ class IdentityTransformedPartitionValuesBuilder:
                     out[field_id] = f"failed to load partition values: {e}"
 
         return out
+
+
+class IcebergStatisticsLoader:
+    def __init__(
+        self,
+        table: Table,
+        projected_filter_schema: pyiceberg.schema.Schema,
+    ) -> None:
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        import polars as pl
+        import polars._utils.logging
+
+        verbose = polars._utils.logging.verbose()
+
+        self.file_column_statistics: dict[int, IcebergColumnStatisticsLoader] = {}
+        self.load_as_empty_statistics: list[str] = []
+        self.file_lengths: list[int] = []
+        self.projected_filter_schema = projected_filter_schema
+
+        for field in projected_filter_schema.fields:
+            field_all_types = set()
+
+            for schema in table.schemas().values():
+                with contextlib.suppress(ValueError):
+                    field_all_types.add(schema.find_field(field.field_id).field_type)
+
+            _, field_polars_dtype = pl.Schema(
+                schema_to_pyarrow(pyiceberg.schema.Schema(field))
+            ).popitem()
+
+            load_from_bytes_impl = LoadFromBytesImpl.init_for_field_type(
+                field.field_type,
+                field_all_types,
+                field_polars_dtype,
+            )
+
+            if verbose:
+                _load_from_bytes_impl = (
+                    type(load_from_bytes_impl).__name__
+                    if load_from_bytes_impl is not None
+                    else "None"
+                )
+
+                eprint(
+                    "IcebergStatisticsLoader: "
+                    f"{field.name = }, "
+                    f"{field.field_id = }, "
+                    f"{field.field_type = }, "
+                    f"{field_all_types = }, "
+                    f"{field_polars_dtype = }, "
+                    f"{_load_from_bytes_impl = }"
+                )
+
+            self.file_column_statistics[field.field_id] = IcebergColumnStatisticsLoader(
+                field_id=field.field_id,
+                column_name=field.name,
+                column_dtype=field_polars_dtype,
+                load_from_bytes_impl=load_from_bytes_impl,
+                min_values=[],
+                max_values=[],
+                null_count=[],
+            )
+
+    def push_file_statistics(self, file: DataFile) -> None:
+        self.file_lengths.append(file.record_count)
+
+        for stats in self.file_column_statistics.values():
+            stats.push_file_statistics(file)
+
+    def finish(
+        self,
+        expected_height: int,
+        identity_transformed_values: dict[int, pl.Series | str],
+    ) -> pl.DataFrame:
+        import polars as pl
+
+        out: list[pl.DataFrame] = [
+            pl.Series("len", self.file_lengths, dtype=pl.UInt32).to_frame()
+        ]
+
+        for field_id, stat_builder in self.file_column_statistics.items():
+            if (p := identity_transformed_values.get(field_id)) is not None:
+                if isinstance(p, str):
+                    msg = f"statistics load failure for filter column: {p}"
+                    raise ComputeError(msg)
+
+            column_stats_df = stat_builder.finish(expected_height, p)
+            out.append(column_stats_df)
+
+        return pl.concat(out, how="horizontal")
+
+
+@dataclass
+class IcebergColumnStatisticsLoader:
+    column_name: str
+    column_dtype: pl.DataType
+    field_id: int
+    load_from_bytes_impl: LoadFromBytesImpl | None
+    null_count: list[int | None]
+    min_values: list[bytes | None]
+    max_values: list[bytes | None]
+
+    def push_file_statistics(self, file: DataFile) -> None:
+        self.null_count.append(file.null_value_counts.get(self.field_id))
+
+        if self.load_from_bytes_impl is not None:
+            self.min_values.append(file.lower_bounds.get(self.field_id))
+            self.max_values.append(file.upper_bounds.get(self.field_id))
+
+    def finish(
+        self,
+        expected_height: int,
+        identity_transformed_values: pl.Series | None,
+    ) -> pl.DataFrame:
+        import polars as pl
+
+        c = self.column_name
+        assert len(self.null_count) == expected_height
+
+        out = pl.Series(f"{c}_nc", self.null_count, dtype=pl.UInt32).to_frame()
+
+        if self.load_from_bytes_impl is None:
+            s = (
+                identity_transformed_values
+                if identity_transformed_values is not None
+                else pl.repeat(None, expected_height, dtype=self.column_dtype)
+            )
+
+            return out.with_columns(s.alias(f"{c}_min"), s.alias(f"{c}_max"))
+
+        assert len(self.min_values) == expected_height
+        assert len(self.max_values) == expected_height
+
+        if self.column_dtype.is_nested():
+            raise NotImplementedError
+
+        min_values = self.load_from_bytes_impl.load_from_bytes(self.min_values)
+        max_values = self.load_from_bytes_impl.load_from_bytes(self.max_values)
+
+        if identity_transformed_values is not None:
+            assert identity_transformed_values.dtype == self.column_dtype
+
+            identity_transformed_values = identity_transformed_values.extend_constant(
+                None, expected_height - identity_transformed_values.len()
+            )
+
+            min_values = identity_transformed_values.fill_null(min_values)
+            max_values = identity_transformed_values.fill_null(max_values)
+
+        return out.with_columns(
+            min_values.alias(f"{c}_min"), max_values.alias(f"{c}_max")
+        )
+
+
+# Lazy init instead of global const as PyIceberg is an optional dependency
+@cache
+def _bytes_loader_lookup() -> dict[
+    type[IcebergType],
+    tuple[type[LoadFromBytesImpl], type[IcebergType] | Sequence[type[IcebergType]]],
+]:
+    from pyiceberg.types import (
+        BinaryType,
+        BooleanType,
+        DateType,
+        DecimalType,
+        FixedType,
+        IntegerType,
+        LongType,
+        StringType,
+        TimestampType,
+        TimestamptzType,
+        TimeType,
+    )
+
+    # TODO: Float statistics
+    return {
+        BooleanType: (LoadBooleanFromBytes, BooleanType),
+        DateType: (LoadDateFromBytes, DateType),
+        TimeType: (LoadTimeFromBytes, TimeType),
+        TimestampType: (LoadTimestampFromBytes, TimestampType),
+        TimestamptzType: (LoadTimestamptzFromBytes, TimestamptzType),
+        IntegerType: (LoadInt32FromBytes, IntegerType),
+        LongType: (LoadInt64FromBytes, (LongType, IntegerType)),
+        StringType: (LoadStringFromBytes, StringType),
+        BinaryType: (LoadBinaryFromBytes, BinaryType),
+        DecimalType: (LoadDecimalFromBytes, DecimalType),
+        FixedType: (LoadFixedFromBytes, FixedType),
+    }
+
+
+class LoadFromBytesImpl(abc.ABC):
+    def __init__(self, polars_dtype: pl.DataType) -> None:
+        self.polars_dtype = polars_dtype
+
+    @staticmethod
+    def init_for_field_type(
+        current_field_type: IcebergType,
+        # All types that this field ID has been set to across schema changes.
+        all_field_types: set[IcebergType],
+        field_polars_dtype: pl.DataType,
+    ) -> LoadFromBytesImpl | None:
+        if (v := _bytes_loader_lookup().get(type(current_field_type))) is None:
+            return None
+
+        loader_impl, allowed_field_types = v
+
+        return (
+            loader_impl(field_polars_dtype)
+            if all(isinstance(x, allowed_field_types) for x in all_field_types)  # type: ignore[arg-type]
+            else None
+        )
+
+    @abc.abstractmethod
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        """`bytes_values` should be of binary type."""
+
+
+class LoadBinaryFromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        return pl.Series(byte_values, dtype=pl.Binary)
+
+
+class LoadDateFromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        return (
+            pl.Series(byte_values, dtype=pl.Binary)
+            .bin.reinterpret(dtype=pl.Int32, endianness="little")
+            .cast(pl.Date)
+        )
+
+
+class LoadTimeFromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        return (
+            pl.Series(byte_values, dtype=pl.Binary).bin.reinterpret(
+                dtype=pl.Int64, endianness="little"
+            )
+            * ICEBERG_TIME_TO_NS
+        ).cast(pl.Time)
+
+
+class LoadTimestampFromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        return (
+            pl.Series(byte_values, dtype=pl.Binary)
+            .bin.reinterpret(dtype=pl.Int64, endianness="little")
+            .cast(pl.Datetime("us"))
+        )
+
+
+class LoadTimestamptzFromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        return (
+            pl.Series(byte_values, dtype=pl.Binary)
+            .bin.reinterpret(dtype=pl.Int64, endianness="little")
+            .cast(pl.Datetime("us", time_zone="UTC"))
+        )
+
+
+class LoadBooleanFromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        return (
+            pl.Series(byte_values, dtype=pl.Binary)
+            .bin.reinterpret(dtype=pl.UInt8, endianness="little")
+            .cast(pl.Boolean)
+        )
+
+
+class LoadDecimalFromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        dtype = self.polars_dtype
+        assert isinstance(dtype, pl.Decimal)
+        assert dtype.precision is not None
+
+        return wrap_s(
+            PySeries._import_decimal_from_iceberg_binary_repr(
+                bytes_list=byte_values,
+                precision=dtype.precision,
+                scale=dtype.scale,
+            )
+        )
+
+
+class LoadFixedFromBytes(LoadBinaryFromBytes): ...
+
+
+class LoadInt32FromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        return pl.Series(byte_values, dtype=pl.Binary).bin.reinterpret(
+            dtype=pl.Int32, endianness="little"
+        )
+
+
+class LoadInt64FromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        s = pl.Series(byte_values, dtype=pl.Binary)
+
+        return s.bin.reinterpret(dtype=pl.Int64, endianness="little").fill_null(
+            s.bin.reinterpret(dtype=pl.Int32, endianness="little").cast(pl.Int64)
+        )
+
+
+class LoadStringFromBytes(LoadFromBytesImpl):
+    def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
+        import polars as pl
+
+        return pl.Series(byte_values, dtype=pl.Binary).cast(pl.String)

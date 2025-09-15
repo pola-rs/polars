@@ -1,10 +1,11 @@
-use arrow::array::Array;
+use arrow::array::{Array, PrimitiveArray};
 use arrow::ffi;
 use arrow::ffi::{ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema};
 use polars::prelude::*;
 use polars_ffi::version_0::SeriesExport;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::{PyCapsule, PyTuple, PyType};
 
 use super::PySeries;
@@ -160,5 +161,64 @@ impl PySeries {
             polars_ffi::version_0::import_series(export).map_err(PyPolarsErr::from)?
         };
         Ok(PySeries::from(series))
+    }
+
+    #[staticmethod]
+    pub fn _import_decimal_from_iceberg_binary_repr(
+        bytes_list: &Bound<PyAny>, // list[bytes | None]
+        precision: usize,
+        scale: usize,
+    ) -> PyResult<Self> {
+        // From iceberg spec:
+        // * Decimal(P, S): Stores unscaled value as two’s-complement
+        //   big-endian binary, using the minimum number of bytes for the
+        //   value.
+
+        let mut out: Vec<i128> = vec![0; bytes_list.len()?];
+        let max_decimal_value = 10_i128.pow(u32::try_from(precision).unwrap()) - 1;
+
+        for (out_idx, bytes) in bytes_list.try_iter()?.enumerate() {
+            let be_bytes: Option<PyBackedBytes> = bytes?.extract()?;
+
+            let Some(be_bytes) = be_bytes else {
+                continue;
+            };
+
+            let be_bytes: &[u8] = &*be_bytes;
+
+            let mut le_bytes: [u8; 16] = [0; _];
+
+            if be_bytes.len() > le_bytes.len() {
+                return Err(PyValueError::new_err(format!(
+                    "iceberg binary data for decimal exceeded 16 bytes: {}",
+                    be_bytes.len()
+                )));
+            }
+
+            for (i, byte) in be_bytes.iter().rev().enumerate() {
+                le_bytes[i] = *byte;
+            }
+
+            let value = i128::from_le_bytes(le_bytes);
+
+            if value > max_decimal_value {
+                return Err(PyValueError::new_err(format!(
+                    "iceberg decoded value for decimal exceeded precision: \
+                    value: {}, precision: {}",
+                    value, precision
+                )));
+            }
+
+            // Panics if iterator from `bytes_list.try_iter()` has more items than `bytes_list.len()`.
+            *out.get_mut(out_idx).unwrap() = value;
+        }
+
+        Ok(PySeries::from(unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![PrimitiveArray::<i128>::from_vec(out).boxed()],
+                &DataType::Decimal(Some(precision), Some(scale)),
+            )
+        }))
     }
 }

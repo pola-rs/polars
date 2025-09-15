@@ -48,7 +48,7 @@ from pyiceberg.types import (
 import polars as pl
 from polars._utils.various import parse_version
 from polars.io.iceberg._utils import _convert_predicate, _to_ast
-from polars.io.iceberg.dataset import IcebergDataset
+from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
 
 
@@ -1482,4 +1482,277 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     assert_frame_equal(
         pl.scan_iceberg(tbl, reader_override="native").select("struct_1").collect(),
         expect.select("struct_1"),
+    )
+
+
+def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
+    import datetime
+
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    test_decimal_and_fixed = parse_version(pyiceberg.__version__) >= (0, 10, 0)
+
+    next_field_id = partial(next, itertools.count(1))
+
+    iceberg_schema = IcebergSchema(
+        NestedField(next_field_id(), "height_provider", IntegerType()),
+        NestedField(next_field_id(), "BooleanType", BooleanType()),
+        NestedField(next_field_id(), "IntegerType", IntegerType()),
+        NestedField(next_field_id(), "LongType", LongType()),
+        NestedField(next_field_id(), "FloatType", FloatType()),
+        NestedField(next_field_id(), "DoubleType", DoubleType()),
+        NestedField(next_field_id(), "DateType", DateType()),
+        NestedField(next_field_id(), "TimeType", TimeType()),
+        NestedField(next_field_id(), "TimestampType", TimestampType()),
+        NestedField(next_field_id(), "TimestamptzType", TimestamptzType()),
+        NestedField(next_field_id(), "StringType", StringType()),
+        NestedField(next_field_id(), "BinaryType", BinaryType()),
+        *(
+            [
+                NestedField(next_field_id(), "DecimalType", DecimalType(18, 2)),
+                NestedField(
+                    next_field_id(), "DecimalTypeLargeValue", DecimalType(38, 0)
+                ),
+                NestedField(next_field_id(), "FixedType", FixedType(1)),
+            ]
+            if test_decimal_and_fixed
+            else []
+        ),
+    )
+
+    pl_schema = pl.Schema(
+        {
+            "height_provider": pl.Int32(),
+            "BooleanType": pl.Boolean(),
+            "IntegerType": pl.Int32(),
+            "LongType": pl.Int64(),
+            "FloatType": pl.Float32(),
+            "DoubleType": pl.Float64(),
+            "DateType": pl.Date(),
+            "TimeType": pl.Time(),
+            "TimestampType": pl.Datetime(time_unit="us", time_zone=None),
+            "TimestamptzType": pl.Datetime(time_unit="us", time_zone="UTC"),
+            "StringType": pl.String(),
+            "BinaryType": pl.Binary(),
+            "DecimalType": pl.Decimal(precision=18, scale=2),
+            "DecimalTypeLargeValue": pl.Decimal(precision=38, scale=0),
+            "FixedType": pl.Binary(),
+        }
+    )
+
+    df_dict = {
+        "height_provider": [1],
+        "BooleanType": [True],
+        "IntegerType": [1],
+        "LongType": [1],
+        "FloatType": [1.0],
+        "DoubleType": [1.0],
+        "DateType": [datetime.date(2025, 1, 1)],
+        "TimeType": [datetime.time(11, 30)],
+        "TimestampType": [datetime.datetime(2025, 1, 1)],
+        "TimestamptzType": [datetime.datetime(2025, 1, 1)],
+        "StringType": ["A"],
+        "BinaryType": [b"A"],
+        **(
+            {
+                "DecimalType": [D("1.00")],
+                # This helps ensure loads are done with the correct endianness.
+                "DecimalTypeLargeValue": [D("73377733337777733333377777773333333377")],
+                "FixedType": [b"A"],
+            }
+            if test_decimal_and_fixed
+            else {}
+        ),
+    }
+
+    arrow_tbl = pa.Table.from_pydict(
+        df_dict,
+        schema=schema_to_pyarrow(iceberg_schema, include_field_ids=False),
+    )
+
+    tbl = catalog.create_table(
+        "namespace.table",
+        iceberg_schema,
+        partition_spec=PartitionSpec(
+            # We have this to offset the indices
+            PartitionField(
+                iceberg_schema.fields[0].field_id, 0, BucketTransform(32), "bucket"
+            ),
+            *(
+                PartitionField(field.field_id, 0, IdentityTransform(), field.name)
+                for field in iceberg_schema.fields[1:]
+            ),
+        ),
+    )
+
+    tbl.append(arrow_tbl)
+
+    expect = pl.DataFrame(df_dict, schema=pl_schema)
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(),
+        expect,
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect(),
+        expect,
+    )
+
+    # Begin inspecting statistics
+
+    scan_data = IcebergDataset(tbl)._to_dataset_scan_impl()
+
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.statistics_loader is None
+    assert scan_data.min_max_statistics is None
+
+    scan_data = IcebergDataset(tbl)._to_dataset_scan_impl(
+        filter_columns=["height_provider"]
+    )
+
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.min_max_statistics is not None
+
+    min_max_values = scan_data.min_max_statistics.with_columns(
+        pl.all().cast(pl.String)
+    ).transpose(include_header=True)
+
+    assert_frame_equal(
+        min_max_values,
+        pl.DataFrame(
+            [
+                ("len", "1"),
+                ("height_provider_nc", "0"),
+                ("height_provider_min", "1"),
+                ("height_provider_max", "1"),
+            ],
+            orient="row",
+            schema=min_max_values.schema,
+        ),
+    )
+
+    scan_data = IcebergDataset(tbl)._to_dataset_scan_impl(
+        filter_columns=pl_schema.names()
+    )
+
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.statistics_loader is not None
+
+    non_coalesced_min_max_values = (
+        scan_data.statistics_loader.finish(len(scan_data.sources), {})
+        .with_columns(pl.all().cast(pl.String))
+        .transpose(include_header=True)
+    )
+
+    assert_frame_equal(
+        non_coalesced_min_max_values,
+        pl.DataFrame(
+            [
+                ("len", "1"),
+                ("height_provider_nc", "0"),
+                ("height_provider_min", "1"),
+                ("height_provider_max", "1"),
+                ("BooleanType_nc", "0", "1"),
+                ("BooleanType_min", "true"),
+                ("BooleanType_max", "true"),
+                ("IntegerType_nc", "0", "1"),
+                ("IntegerType_min", "1"),
+                ("IntegerType_max", "1"),
+                ("LongType_nc", "0", "1"),
+                ("LongType_min", "1"),
+                ("LongType_max", "1"),
+                ("FloatType_nc", "0", "1"),
+                ("FloatType_min", None),
+                ("FloatType_max", None),
+                ("DoubleType_nc", "0", "1"),
+                ("DoubleType_min", None),
+                ("DoubleType_max", None),
+                ("DateType_nc", "0", "1"),
+                ("DateType_min", "2025-01-01"),
+                ("DateType_max", "2025-01-01"),
+                ("TimeType_nc", "0", "1"),
+                ("TimeType_min", "11:30:00"),
+                ("TimeType_max", "11:30:00"),
+                ("TimestampType_nc", "0", "1"),
+                ("TimestampType_min", "2025-01-01 00:00:00.000000"),
+                ("TimestampType_max", "2025-01-01 00:00:00.000000"),
+                ("TimestamptzType_nc", "0", "1"),
+                ("TimestamptzType_min", "2025-01-01 00:00:00.000000+00:00"),
+                ("TimestamptzType_max", "2025-01-01 00:00:00.000000+00:00"),
+                ("StringType_nc", "0", "1"),
+                ("StringType_min", "A"),
+                ("StringType_max", "A"),
+                ("BinaryType_nc", "0", "1"),
+                ("BinaryType_min", "A"),
+                ("BinaryType_max", "A"),
+                ("DecimalType_nc", "0", "1"),
+                ("DecimalType_min", "1.00", "0.00"),
+                ("DecimalType_max", "1.00", "0.00"),
+                ("DecimalTypeLargeValue_nc", "0", "1"),
+                (
+                    "DecimalTypeLargeValue_min",
+                    "73377733337777733333377777773333333377",
+                    "0",
+                ),
+                (
+                    "DecimalTypeLargeValue_max",
+                    "73377733337777733333377777773333333377",
+                    "0",
+                ),
+                ("FixedType_nc", "0", "1"),
+                ("FixedType_min", "A"),
+                ("FixedType_max", "A"),
+            ],
+            orient="row",
+            schema=non_coalesced_min_max_values.schema,
+        ),
+    )
+
+    assert scan_data.min_max_statistics is not None
+
+    coalesced_min_max_values = scan_data.min_max_statistics.with_columns(
+        pl.all().cast(pl.String)
+    ).transpose(include_header=True)
+
+    coalesced_ne_non_coalesced = pl.concat(
+        [
+            non_coalesced_min_max_values.select(
+                pl.struct(pl.all()).alias("non_coalesced")
+            ),
+            coalesced_min_max_values.select(pl.struct(pl.all()).alias("coalesced")),
+        ],
+        how="horizontal",
+    ).filter(pl.first() != pl.last())
+
+    # Float statistics are available after coalescing from an identity partition field.
+    assert_frame_equal(
+        coalesced_ne_non_coalesced,
+        pl.DataFrame(
+            [
+                (
+                    {"column": "FloatType_min", "column_0": None},
+                    {"column": "FloatType_min", "column_0": "1.0"},
+                ),
+                (
+                    {"column": "FloatType_max", "column_0": None},
+                    {"column": "FloatType_max", "column_0": "1.0"},
+                ),
+                (
+                    {"column": "DoubleType_min", "column_0": None},
+                    {"column": "DoubleType_min", "column_0": "1.0"},
+                ),
+                (
+                    {"column": "DoubleType_max", "column_0": None},
+                    {"column": "DoubleType_max", "column_0": "1.0"},
+                ),
+            ],
+            orient="row",
+            schema=coalesced_ne_non_coalesced.schema,
+        ),
     )
