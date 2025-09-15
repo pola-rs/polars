@@ -114,7 +114,7 @@ impl DslFunction {
             },
             DslFunction::Unnest(selector) => {
                 let columns = selector.into_columns(input_schema, &Default::default())?;
-                let columns: Arc<[PlSmallStr]> = columns.into_iter().collect();
+                let columns = columns.into_iter().collect();
                 for col in Arc::clone(&columns).iter() {
                     let dtype = input_schema.try_get(col.as_str())?;
                     polars_ensure!(
