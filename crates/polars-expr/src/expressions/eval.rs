@@ -398,21 +398,7 @@ impl EvalExpr {
 
         // We didn't have any groups for the `null` values so we have to reinsert them.
         if let Some(validity) = validity {
-            use polars_core::prelude::ChunkTakeUnchecked;
-
-            let mut i = 0 as IdxSize;
-            let gather_idxs = validity
-                .iter()
-                .map(|v| {
-                    let value = i;
-                    i += IdxSize::from(v);
-                    value
-                })
-                .collect::<Vec<IdxSize>>();
-
-            let mut cca = unsafe { ca.take_unchecked(&gather_idxs) };
-            cca.set_validity(&validity);
-            ca = Cow::Owned(cca);
+            ca = Cow::Owned(ca.deposit(&validity));
         }
 
         Ok(if as_list {

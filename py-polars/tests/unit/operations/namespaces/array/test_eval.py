@@ -5,7 +5,7 @@ from polars.testing import assert_series_equal
 
 
 def set_nulls(s: pl.Series, mask: list[bool]) -> pl.Series:
-    return pl.select(pl.when(pl.Series([mask])).then(s).alias(s.name)).to_series()
+    return pl.select(pl.when(pl.Series(mask)).then(s).alias(s.name)).to_series()
 
 
 @pytest.mark.parametrize("as_list", [False, True])
