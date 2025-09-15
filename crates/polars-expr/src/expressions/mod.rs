@@ -322,7 +322,7 @@ impl<'a> AggregationContext<'a> {
         expr: Option<&Expr>,
         // if the applied function was a `map` instead of an `apply`
         // this will keep functions applied over literals as literals: F(lit) = lit
-        mapped: bool,
+        preserve_literal: bool,
         returns_scalar: bool,
     ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, column.dtype()) {
@@ -349,7 +349,7 @@ impl<'a> AggregationContext<'a> {
                     // retrieve the length before grouping, so it stays  in this state.
                     AggState::AggregatedScalar(_) => AggState::AggregatedScalar(column),
                     // applying a function on a literal, keeps the literal state
-                    AggState::LiteralScalar(_) if column.len() == 1 && mapped => {
+                    AggState::LiteralScalar(_) if column.len() == 1 && preserve_literal => {
                         AggState::LiteralScalar(column)
                     },
                     _ => AggState::NotAggregated(column.into_column()),

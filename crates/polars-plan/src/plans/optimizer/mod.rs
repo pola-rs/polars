@@ -225,9 +225,6 @@ pub fn optimize(
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
-    // Note: ExpandDatasets must run after slice and predicate pushdown.
-    rules.push(Box::new(expand_datasets::ExpandDatasets {}) as Box<dyn OptimizationRule>);
-
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
     if opt_flags.cluster_with_columns() {
@@ -297,6 +294,8 @@ pub fn optimize(
             }
         }
     }
+
+    expand_datasets::expand_datasts(lp_top, lp_arena)?;
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
