@@ -109,7 +109,7 @@ pub fn optimize(
     #[cfg(debug_assertions)]
     let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
 
-    let mut _opt_members = &mut None;
+    let mut _opt_members: &mut Option<MemberCollector> = &mut None;
 
     macro_rules! get_or_init_members {
         () => {
