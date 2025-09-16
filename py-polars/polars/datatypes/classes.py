@@ -6,7 +6,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeGuard, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
@@ -21,6 +21,8 @@ import polars.datatypes.classes as pldt
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
+
+    from typing_extensions import TypeGuard
 
     from polars import Series
     from polars._typing import (
