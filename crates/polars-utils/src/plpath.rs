@@ -275,7 +275,8 @@ impl<'a> PlPathRef<'a> {
             Self::Local(p) => p.file_name(),
             Self::Cloud(p) => {
                 let p = p.strip_scheme();
-                p.rfind('/').map(|i| p[i + 1..].as_ref())
+                let out = p.rfind('/').map_or(p, |i| &p[i + 1..]);
+                Some(out.as_ref())
             },
         }
     }
