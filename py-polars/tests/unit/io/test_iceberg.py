@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
+import sys
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -1357,31 +1358,18 @@ def test_fill_missing_fields_with_identity_partition_values(
 
     out = pl.DataFrame(tbl.scan().to_arrow())
 
-    exclude_from_pyiceberg_check = ["TimeType"]
-
-    # Issues with reads from PyIceberg:
-    # * Int32 / Float32 get upcast to 64-bit
-    # * Logical types load as physical. TimeType cannot pass even with cast due
-    #   to it being in microseconds, whereas polars uses nanoseconds.
-    for name in exclude_from_pyiceberg_check:
-        # xfail, these are known problematic
-        with pytest.raises(AssertionError):
-            assert_frame_equal(out.select(name), expect.select(name))
-
     assert_frame_equal(
-        out.select(
-            pl.col(c).cast(dt)
-            for c, dt in expect.drop(exclude_from_pyiceberg_check).schema.items()
-        ),
-        expect.drop(exclude_from_pyiceberg_check),
+        out.select(pl.col(c).cast(dt) for c, dt in expect.schema.items()),
+        expect,
     )
 
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
 
 
-@pytest.mark.skipif(
-    parse_version(pyiceberg.__version__) < (0, 10, 0),
-    reason="PyIceberg support for partitioning on nested primitive fields",
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    # TODO: Investigate - the colon in C:/ seems to be dropped.
+    reason="CI failure: FileNotFoundError: [WinError 53] Failed to open local file '//C/Users/runneradmin/",
 )
 def test_fill_missing_fields_with_identity_partition_values_nested(
     tmp_path: Path,

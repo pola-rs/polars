@@ -87,11 +87,6 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
         )
         self._has_logged_use_cache = False
 
-        if verbose():
-            eprint(
-                f"[{type(self).__name__} @ {hex(id(self))}]: CredentialProvider.__init__()"
-            )
-
     def __call__(self) -> CredentialProviderFunctionReturn:
         if os.getenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING") == "1":
             self._cached_credentials.set(None)
@@ -111,7 +106,8 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
         elif verbose() and not self._has_logged_use_cache:
             expiry = credentials[1]
             eprint(
-                f"[{type(self).__name__} @ {hex(id(self))}]: Using cached credentials ({expiry = })"
+                f"[{CachingCredentialProvider.__repr__(self)}]: "
+                f"Using cached credentials ({expiry = })"
             )
             self._has_logged_use_cache = True
 
@@ -124,6 +120,9 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
 
     def clear_cached_credentials(self) -> None:
         self._cached_credentials.set(None)
+
+    def __repr__(self) -> str:
+        return f"CachingCredentialProvider[{type(self).__name__} @ {hex(id(self))}]"
 
 
 class CachedCredentialProvider(CachingCredentialProvider):
@@ -183,8 +182,6 @@ class CredentialProviderAWS(CachingCredentialProvider):
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        super().__init__()
-
         self._ensure_module_availability()
 
         self.profile_name = profile_name
@@ -192,6 +189,8 @@ class CredentialProviderAWS(CachingCredentialProvider):
         self.assume_role = assume_role
         self._auto_init_unhandled_key = _auto_init_unhandled_key
         self._storage_options_has_endpoint_url = _storage_options_has_endpoint_url
+
+        super().__init__()
 
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
@@ -350,8 +349,6 @@ class CredentialProviderAzure(CachingCredentialProvider):
         msg = "`CredentialProviderAzure` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        super().__init__()
-
         self.account_name = _storage_account
         self.scopes = (
             scopes if scopes is not None else ["https://storage.azure.com/.default"]
@@ -381,6 +378,8 @@ class CredentialProviderAzure(CachingCredentialProvider):
                 f"{self.tenant_id = } "
                 f"{self.scopes = } "
             )
+
+        super().__init__()
 
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
@@ -533,8 +532,6 @@ class CredentialProviderGCP(CachingCredentialProvider):
         msg = "`CredentialProviderGCP` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        super().__init__()
-
         self._ensure_module_availability()
 
         import google.auth
@@ -550,6 +547,8 @@ class CredentialProviderGCP(CachingCredentialProvider):
             quota_project_id=quota_project_id,
             default_scopes=default_scopes,
         )
+
+        super().__init__()
 
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""

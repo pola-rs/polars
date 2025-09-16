@@ -208,7 +208,7 @@ range = [
   "polars-plan/range",
   "polars-stream?/range",
 ]
-mode = ["polars-plan/mode"]
+mode = ["polars-plan/mode", "polars-stream?/mode"]
 cum_agg = ["polars-plan/cum_agg", "polars-stream?/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
 interpolate_by = ["polars-plan/interpolate_by"]
@@ -220,7 +220,7 @@ rolling_window_by = [
   "polars-time/rolling_window_by",
 ]
 rank = ["polars-plan/rank"]
-diff = ["polars-plan/diff", "polars-plan/diff"]
+diff = ["polars-plan/diff", "polars-plan/diff", "polars-stream?/diff"]
 pct_change = ["polars-plan/pct_change"]
 moment = ["polars-plan/moment", "polars-ops/moment"]
 abs = ["polars-plan/abs"]

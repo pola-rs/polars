@@ -94,7 +94,7 @@ that are currently supported and not supported.
 - I/O from CSV, Parquet, ndjson, and in-memory CPU DataFrames.
 - Operations on numeric, logical, string, and datetime types
 - String processing
-- Aggregations and grouped aggregations
+- Aggregations including grouped and rolling variants
 - Joins
 - Filters
 - Missing data
@@ -104,13 +104,12 @@ that are currently supported and not supported.
 
 - Eager DataFrame API
 - Streaming API
-- Operations on categorical, struct, and list data types
-- Rolling aggregations
+- Date, Categorical, Enum, Time, Array, Binary and Object data types
+- Specific expression for Datetime with Timezone and List types
 - Time series resampling
-- Timezones
 - Folds
 - User-defined functions
-- JSON, Excel, and Database file formats
+- Excel and Database file formats
 
 #### Did my query use the GPU?
 

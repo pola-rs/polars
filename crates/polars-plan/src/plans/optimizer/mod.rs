@@ -22,7 +22,7 @@ mod expand_datasets;
 pub use expand_datasets::ExpandedPythonScan;
 mod predicate_pushdown;
 mod projection_pushdown;
-mod set_order;
+pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
@@ -42,7 +42,6 @@ use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
-use self::set_order::set_order_flags;
 pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
@@ -126,13 +125,6 @@ pub fn optimize(
     }
 
     // Run before slice pushdown
-    if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
-        let members = get_or_init_members!();
-        if members.has_group_by | members.has_sort | members.has_distinct {
-            set_order_flags(lp_top, lp_arena, expr_arena, scratch);
-        }
-    }
-
     if opt_flags.simplify_expr() {
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
@@ -233,9 +225,6 @@ pub fn optimize(
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
-    // Note: ExpandDatasets must run after slice and predicate pushdown.
-    rules.push(Box::new(expand_datasets::ExpandDatasets {}) as Box<dyn OptimizationRule>);
-
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
     if opt_flags.cluster_with_columns() {
@@ -271,6 +260,42 @@ pub fn optimize(
             Ok(rewritten.node())
         })?;
     }
+
+    if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
+        let members = get_or_init_members!();
+        if members.has_group_by
+            | members.has_sort
+            | members.has_distinct
+            | members.has_joins_or_unions
+        {
+            match lp_arena.get(lp_top) {
+                IR::SinkMultiple { inputs } => {
+                    let mut roots = inputs.clone();
+                    for root in &mut roots {
+                        if !matches!(lp_arena.get(*root), IR::Sink { .. }) {
+                            *root = lp_arena.add(IR::Sink {
+                                input: *root,
+                                payload: SinkTypeIR::Memory,
+                            });
+                        }
+                    }
+                    set_order::simplify_and_fetch_orderings(&roots, lp_arena, expr_arena);
+                },
+                ir => {
+                    let mut tmp_top = lp_top;
+                    if !matches!(ir, IR::Sink { .. }) {
+                        tmp_top = lp_arena.add(IR::Sink {
+                            input: lp_top,
+                            payload: SinkTypeIR::Memory,
+                        });
+                    }
+                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], lp_arena, expr_arena)
+                },
+            }
+        }
+    }
+
+    expand_datasets::expand_datasts(lp_top, lp_arena)?;
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

@@ -4,6 +4,8 @@ use std::sync::Arc;
 use polars_utils::arena::Arena;
 
 use super::*;
+#[cfg(feature = "python")]
+use crate::plans::PythonOptions;
 use crate::plans::{AExpr, IR};
 use crate::prelude::ExprIR;
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
@@ -51,6 +53,39 @@ fn hash_exprs<H: Hasher>(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mu
     }
 }
 
+/// Specialized Hash that dispatches to `ExprIR::traverse_and_hash` instead of just hashing
+/// the `Node`.
+#[cfg(feature = "python")]
+fn hash_python_predicate<H: Hasher>(
+    pred: &crate::prelude::PythonPredicate,
+    expr_arena: &Arena<AExpr>,
+    state: &mut H,
+) {
+    use crate::prelude::PythonPredicate;
+    std::mem::discriminant(pred).hash(state);
+    match pred {
+        PythonPredicate::None => {},
+        PythonPredicate::PyArrow(s) => s.hash(state),
+        PythonPredicate::Polars(e) => e.traverse_and_hash(expr_arena, state),
+    }
+}
+
+/// Specialized Eq that dispatches to `expr_ir_eq` rather than simply comparing `Node` equality.
+#[cfg(feature = "python")]
+fn python_predicate_eq(
+    l: &crate::prelude::PythonPredicate,
+    r: &crate::prelude::PythonPredicate,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    use crate::prelude::PythonPredicate;
+    match (l, r) {
+        (PythonPredicate::None, PythonPredicate::None) => true,
+        (PythonPredicate::PyArrow(a), PythonPredicate::PyArrow(b)) => a == b,
+        (PythonPredicate::Polars(a), PythonPredicate::Polars(b)) => expr_ir_eq(a, b, expr_arena),
+        _ => false,
+    }
+}
+
 impl Hash for HashableEqLP<'_> {
     // This hashes the variant, not the whole plan
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -58,7 +93,37 @@ impl Hash for HashableEqLP<'_> {
         std::mem::discriminant(alp).hash(state);
         match alp {
             #[cfg(feature = "python")]
-            IR::PythonScan { .. } => {},
+            IR::PythonScan {
+                options:
+                    PythonOptions {
+                        scan_fn,
+                        schema,
+                        output_schema,
+                        with_columns,
+                        python_source,
+                        n_rows,
+                        predicate,
+                        validate_schema,
+                        is_pure,
+                    },
+            } => {
+                // Hash the Python function object using the pointer to the object
+                // This should be the same as calling id() in python, but we don't need the GIL
+                if let Some(scan_fn) = scan_fn {
+                    let ptr_addr = scan_fn.0.as_ptr() as usize;
+                    ptr_addr.hash(state);
+                }
+                // Hash the stable fields
+                // We include the schema since it can be set by the user
+                schema.hash(state);
+                output_schema.hash(state);
+                with_columns.hash(state);
+                python_source.hash(state);
+                n_rows.hash(state);
+                hash_python_predicate(predicate, self.expr_arena, state);
+                validate_schema.hash(state);
+                is_pure.hash(state);
+            },
             IR::Slice {
                 offset,
                 len,
@@ -226,6 +291,60 @@ impl HashableEqLP<'_> {
             return false;
         }
         match (alp_l, alp_r) {
+            #[cfg(feature = "python")]
+            (
+                IR::PythonScan {
+                    options:
+                        PythonOptions {
+                            scan_fn: scan_fn_l,
+                            schema: schema_l,
+                            output_schema: output_schema_l,
+                            with_columns: with_columns_l,
+                            python_source: python_source_l,
+                            n_rows: n_rows_l,
+                            predicate: predicate_l,
+                            validate_schema: validate_schema_l,
+                            is_pure: is_pure_l,
+                        },
+                },
+                IR::PythonScan {
+                    options:
+                        PythonOptions {
+                            scan_fn: scan_fn_r,
+                            schema: schema_r,
+                            output_schema: output_schema_r,
+                            with_columns: with_columns_r,
+                            python_source: python_source_r,
+                            n_rows: n_rows_r,
+                            predicate: predicate_r,
+                            validate_schema: validate_schema_r,
+                            is_pure: is_pure_r,
+                        },
+                },
+            ) => {
+                // Require both to be pure to compare equal for CSE.
+                if !(*is_pure_l && *is_pure_r) {
+                    return false;
+                }
+
+                let (Some(scan_fn_l), Some(scan_fn_r)) = (scan_fn_l, scan_fn_r) else {
+                    if cfg!(debug_assertions) {
+                        // `scan_fn` should not be `None` as this point.
+                        unreachable!()
+                    }
+
+                    return false;
+                };
+
+                scan_fn_l.0.as_ptr() == scan_fn_r.0.as_ptr()
+                    && schema_l == schema_r
+                    && output_schema_l == output_schema_r
+                    && with_columns_l == with_columns_r
+                    && python_source_l == python_source_r
+                    && n_rows_l == n_rows_r
+                    && validate_schema_l == validate_schema_r
+                    && python_predicate_eq(predicate_l, predicate_r, self.expr_arena)
+            },
             (
                 IR::Slice {
                     input: _,

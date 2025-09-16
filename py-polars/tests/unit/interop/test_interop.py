@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, DuplicateError, UnstableWarning
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    PanicException,
+    UnstableWarning,
+)
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
@@ -1053,6 +1060,11 @@ def test_schema_constructor_from_schema_capsule() -> None:
         "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
     }
 
+    # Test __arrow_c_schema__ implementation on `pl.Schema`
+    assert pa.schema(pl.Schema({"x": pl.Int32})) == pa.schema(
+        [pa.field("x", pa.int32())]
+    )
+
     arrow_schema = pa.schema([pa.field("a", pa.int32()), pa.field("a", pa.int32())])
 
     with pytest.raises(
@@ -1082,3 +1094,259 @@ def test_schema_constructor_from_schema_capsule() -> None:
 def test_to_arrow_24142() -> None:
     df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
     df.to_arrow(compat_level=CompatLevel.oldest())
+
+
+def test_comprehensive_pycapsule_interface() -> None:
+    """Test all data types via Arrow C Stream PyCapsule interface."""
+    from datetime import date, datetime, time, timedelta
+    from decimal import Decimal
+
+    class PyCapsuleStreamWrap:
+        def __init__(self, v: Any) -> None:
+            self.capsule = v.__arrow_c_stream__()
+
+        def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+            return self.capsule
+
+    def roundtrip_series_pycapsule(s: pl.Series) -> pl.Series:
+        return pl.Series(PyCapsuleStreamWrap(s))
+
+    df = pl.DataFrame(
+        {
+            "bool": [True, False, None],
+            "int8": pl.Series([1, 2, None], dtype=pl.Int8),
+            "int16": pl.Series([1, 2, None], dtype=pl.Int16),
+            "int32": pl.Series([1, 2, None], dtype=pl.Int32),
+            "int64": pl.Series([1, 2, None], dtype=pl.Int64),
+            "uint8": pl.Series([1, 2, None], dtype=pl.UInt8),
+            "uint16": pl.Series([1, 2, None], dtype=pl.UInt16),
+            "uint32": pl.Series([1, 2, None], dtype=pl.UInt32),
+            "uint64": pl.Series([1, 2, None], dtype=pl.UInt64),
+            "float32": pl.Series([1.1, 2.2, None], dtype=pl.Float32),
+            "float64": pl.Series([1.1, 2.2, None], dtype=pl.Float64),
+            "string": ["hello", "world", None],
+            "binary": [b"hello", b"world", None],
+            "decimal": pl.Series(
+                [Decimal("1.23"), Decimal("4.56"), None], dtype=pl.Decimal(10, 2)
+            ),
+            "date": [date(2023, 1, 1), date(2023, 1, 2), None],
+            "datetime": [
+                datetime(2023, 1, 1, 12, 0),
+                datetime(2023, 1, 2, 13, 30),
+                None,
+            ],
+            "time": [time(12, 0, 0), time(13, 30, 0), None],
+            "duration_us": pl.Series(
+                [timedelta(days=1), timedelta(hours=2), None], dtype=pl.Duration("us")
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(milliseconds=100), timedelta(microseconds=500), None],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(seconds=1), timedelta(microseconds=1000), None],
+                dtype=pl.Duration("ns"),
+            ),
+            "categorical": pl.Series(
+                ["apple", "banana", "apple"], dtype=pl.Categorical
+            ),
+            "list_duration": [
+                [timedelta(days=1), timedelta(hours=2)],
+                [timedelta(minutes=30)],
+                None,
+            ],
+            "struct_with_duration": [
+                {"x": timedelta(days=1), "y": 1},
+                {"x": timedelta(hours=2), "y": 2},
+                None,
+            ],
+        }
+    ).cast(
+        {
+            "list_duration": pl.List(pl.Duration("us")),
+            "struct_with_duration": pl.Struct({"x": pl.Duration("ns"), "y": pl.Int32}),
+        }
+    )
+
+    df_roundtrip = df.map_columns(pl.selectors.all(), roundtrip_series_pycapsule)
+
+    assert_frame_equal(df_roundtrip, df)
+
+    df_roundtrip_direct = pl.DataFrame(PyCapsuleStreamWrap(df))
+
+    assert_frame_equal(df_roundtrip_direct, df)
+
+
+def pyarrow_table_to_ipc_bytes(tbl: pa.Table) -> bytes:
+    f = io.BytesIO()
+    batches = tbl.to_batches()
+
+    with pa.ipc.new_file(f, batches[0].schema) as writer:
+        for batch in batches:
+            writer.write_batch(batch)
+
+    return f.getvalue()
+
+
+@pytest.mark.write_disk
+def test_month_day_nano_from_ffi_15969(monkeypatch: pytest.MonkeyPatch) -> None:
+    import datetime
+
+    def new_interval_scalar(months: int, days: int, nanoseconds: int) -> pa.Scalar:
+        return pa.scalar((months, days, nanoseconds), type=pa.month_day_nano_interval())
+
+    arrow_tbl = pa.Table.from_pydict(
+        {
+            "interval": [
+                new_interval_scalar(1, 0, 0),
+                new_interval_scalar(0, 1, 0),
+                new_interval_scalar(0, 0, 1_000),
+                new_interval_scalar(1, 1, 1_000_001_000),
+                new_interval_scalar(-1, 0, 0),
+                new_interval_scalar(0, -1, 0),
+                new_interval_scalar(0, 0, -1_000),
+                new_interval_scalar(-1, -1, -1_000_001_000),
+                new_interval_scalar(3558, 0, 0),
+                new_interval_scalar(-3558, 0, 0),
+                new_interval_scalar(1, -1, 1_999_999_000),
+            ]
+        },
+        schema=pa.schema([pa.field("interval", pa.month_day_nano_interval())]),
+    )
+
+    ipc_bytes = pyarrow_table_to_ipc_bytes(arrow_tbl)
+
+    import_err_msg = (
+        "could not import from `month_day_nano_interval` type. "
+        "Hint: This can be imported by setting "
+        "POLARS_IMPORT_INTERVAL_AS_STRUCT=1 in the environment. "
+        "Note however that this is unstable functionality "
+        "that may change at any time."
+    )
+
+    with pytest.raises(PanicException, match=import_err_msg):
+        pl.scan_ipc(ipc_bytes).collect_schema()
+
+    with pytest.raises(PanicException, match=import_err_msg):
+        pl.scan_ipc(ipc_bytes).collect()
+
+    with pytest.raises(PanicException, match=import_err_msg):
+        pl.DataFrame(
+            pa.Table.from_pydict(
+                {"interval": pa.array([], type=pa.month_day_nano_interval())}
+            )
+        )
+
+    with pytest.raises(ComputeError, match=import_err_msg):
+        pl.Series(pa.array([], type=pa.month_day_nano_interval()))
+
+    monkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
+
+    expect = pl.DataFrame(
+        [
+            pl.Series(
+                "interval",
+                [
+                    {"months": 1, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": 0, "days": 1, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 0,
+                        "days": 0,
+                        "nanoseconds": datetime.timedelta(microseconds=1),
+                    },
+                    {
+                        "months": 1,
+                        "days": 1,
+                        "nanoseconds": datetime.timedelta(seconds=1, microseconds=1),
+                    },
+                    {"months": -1, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": 0, "days": -1, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 0,
+                        "days": 0,
+                        "nanoseconds": datetime.timedelta(
+                            days=-1, seconds=86399, microseconds=999999
+                        ),
+                    },
+                    {
+                        "months": -1,
+                        "days": -1,
+                        "nanoseconds": datetime.timedelta(
+                            days=-1, seconds=86398, microseconds=999999
+                        ),
+                    },
+                    {"months": 3558, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": -3558, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 1,
+                        "days": -1,
+                        "nanoseconds": datetime.timedelta(
+                            seconds=1, microseconds=999999
+                        ),
+                    },
+                ],
+                dtype=pl.Struct(
+                    {
+                        "months": pl.Int32,
+                        "days": pl.Int32,
+                        "nanoseconds": pl.Duration(time_unit="ns"),
+                    }
+                ),
+            ),
+        ]
+    )
+
+    assert_frame_equal(pl.DataFrame(arrow_tbl), expect)
+    assert_series_equal(
+        pl.Series(arrow_tbl.column(0)).alias("interval"), expect.to_series()
+    )
+
+    # Test IPC scan
+    assert pl.scan_ipc(ipc_bytes).collect_schema() == {
+        "interval": pl.Struct(
+            {
+                "months": pl.Int32,
+                "days": pl.Int32,
+                "nanoseconds": pl.Duration(time_unit="ns"),
+            }
+        )
+    }
+    assert_frame_equal(pl.scan_ipc(ipc_bytes).collect(), expect)
+
+    assert_frame_equal(
+        pl.DataFrame(
+            pa.Table.from_pydict(
+                {"interval": pa.array([], type=pa.month_day_nano_interval())}
+            )
+        ),
+        pl.DataFrame(
+            schema={
+                "interval": pl.Struct(
+                    {
+                        "months": pl.Int32,
+                        "days": pl.Int32,
+                        "nanoseconds": pl.Duration(time_unit="ns"),
+                    }
+                )
+            }
+        ),
+    )
+
+    assert_series_equal(
+        pl.Series(pa.array([], type=pa.month_day_nano_interval())),
+        pl.Series(
+            dtype=pl.Struct(
+                {
+                    "months": pl.Int32,
+                    "days": pl.Int32,
+                    "nanoseconds": pl.Duration(time_unit="ns"),
+                }
+            )
+        ),
+    )
+
+    f = io.BytesIO()
+
+    # TODO: Add Parquet round-trip test if this starts working.
+    with pytest.raises(pa.ArrowNotImplementedError):
+        pq.write_table(arrow_tbl, f)

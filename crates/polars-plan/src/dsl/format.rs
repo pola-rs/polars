@@ -190,13 +190,11 @@ impl fmt::Debug for Expr {
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
             KeepName(e) => write!(f, "{e:?}.name.keep()"),
             RenameAlias { expr, function } => match function {
-                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.prefix({s})"),
-                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.suffix({s})"),
-                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.to_lowercase()"),
-                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.to_uppercase()"),
-                #[cfg(feature = "python")]
-                RenameAliasFn::Python(_) => write!(f, "{expr:?}.rename_alias()"),
-                RenameAliasFn::Rust(_) => write!(f, "{expr:?}.rename_alias()"),
+                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.name.prefix({s})"),
+                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.name.suffix({s})"),
+                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.name.to_lowercase()"),
+                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.name.to_uppercase()"),
+                RenameAliasFn::Map(_) => write!(f, "{expr:?}.name.map()"),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]

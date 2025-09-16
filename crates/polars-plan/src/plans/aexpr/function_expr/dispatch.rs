@@ -131,6 +131,10 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     Ok(s.drop_nulls())
 }
 
+pub fn rechunk(s: &Column) -> PolarsResult<Column> {
+    Ok(s.rechunk())
+}
+
 pub fn append(s: &[Column], upcast: bool) -> PolarsResult<Column> {
     assert_eq!(s.len(), 2);
 

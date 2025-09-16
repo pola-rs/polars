@@ -2377,6 +2377,37 @@ def test_join_filter_pushdown_inner_join() -> None:
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
+    # Duplicate filter removal - https://github.com/pola-rs/polars/issues/23243
+    q = (
+        pl.LazyFrame({"x": [1, 2, 3]})
+        .join(pl.LazyFrame({"x": [1, 2, 3]}), on="x", how="inner", coalesce=False)
+        .filter(
+            pl.col("x") == 2,
+            pl.col("x_right") == 2,
+        )
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("x", [2], dtype=pl.Int64),
+            pl.Series("x_right", [2], dtype=pl.Int64),
+        ]
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("x")]',
+        'FILTER [(col("x")) == (2)]',
+        'RIGHT PLAN ON: [col("x")]',
+        'FILTER [(col("x")) == (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
 
 def test_join_filter_pushdown_left_join() -> None:
     lhs = pl.LazyFrame(
@@ -3579,6 +3610,17 @@ def test_join_rewrite_forbid_exprs(
     assert plan.startswith("FILTER")
 
     assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
+def test_join_coalesce_column_order_23177() -> None:
+    df1 = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
+    df2 = pl.DataFrame({"symbol": [5253], "time": ["09:00:21"]})
+
+    q = df1.lazy().join(df2.lazy(), on=["time", "symbol"], how="full", coalesce=True)
+
+    expect = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
+
+    assert_frame_equal(q.collect(), expect)
 
 
 def test_join_filter_pushdown_iejoin_cse_23469() -> None:

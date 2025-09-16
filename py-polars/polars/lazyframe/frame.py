@@ -438,6 +438,7 @@ class LazyFrame:
         *,
         pyarrow: bool = False,
         validate_schema: bool = False,
+        is_pure: bool = False,
     ) -> LazyFrame:
         self = cls.__new__(cls)
         if isinstance(schema, Mapping):
@@ -446,14 +447,19 @@ class LazyFrame:
                 scan_fn,
                 pyarrow=pyarrow,
                 validate_schema=validate_schema,
+                is_pure=is_pure,
             )
         elif _PYARROW_AVAILABLE and isinstance(schema, pa.Schema):
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
-                list(schema), scan_fn, pyarrow=pyarrow, validate_schema=validate_schema
+                list(schema),
+                scan_fn,
+                pyarrow=pyarrow,
+                validate_schema=validate_schema,
+                is_pure=is_pure,
             )
         else:
             self._ldf = PyLazyFrame.scan_from_python_function_schema_function(
-                schema, scan_fn, validate_schema=validate_schema
+                schema, scan_fn, validate_schema=validate_schema, is_pure=is_pure
             )
         return self
 
@@ -1541,7 +1547,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     lf.with_columns(pl.col("foo").cum_sum().alias("bar"))
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
-        ... )  # doctest: +ELLIPSIS
+        ... )
         <LazyFrame at ...>
         """
 
@@ -2883,7 +2889,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path | IO[bytes] | PartitioningScheme,
         *,
-        compression: IpcCompression | None = "zstd",
+        compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -2903,7 +2909,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path | IO[bytes] | PartitioningScheme,
         *,
-        compression: IpcCompression | None = "zstd",
+        compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3611,7 +3617,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> lf.lazy()  # doctest: +ELLIPSIS
+        >>> lf.lazy()
         <LazyFrame at ...>
         """
         return self
@@ -3795,7 +3801,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> lf.clone()  # doctest: +ELLIPSIS
+        >>> lf.clone()
         <LazyFrame at ...>
         """
         return self._from_pyldf(self._ldf.clone())

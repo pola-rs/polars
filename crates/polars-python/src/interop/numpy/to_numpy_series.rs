@@ -24,7 +24,7 @@ impl PySeries {
     /// is required. Set `writable` to make sure the resulting array is writable, possibly requiring
     /// copying the data.
     fn to_numpy(&self, py: Python<'_>, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
-        series_to_numpy(py, &self.series, writable, allow_copy)
+        series_to_numpy(py, &self.series.read(), writable, allow_copy)
     }
 
     /// Create a view of the data as a NumPy ndarray.
@@ -33,7 +33,7 @@ impl PySeries {
     /// which may be any value. The caller is responsible for handling nulls
     /// appropriately.
     fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        let (view, _) = try_series_to_numpy_view(py, &self.series, true, false)?;
+        let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, false)?;
         Some(view)
     }
 }

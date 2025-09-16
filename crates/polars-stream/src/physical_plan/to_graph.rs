@@ -12,7 +12,7 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
 use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
+use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR, IRAggExpr};
 use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
@@ -725,7 +725,12 @@ fn to_graph_rec<'a>(
 
             let mut grouped_reductions = Vec::new();
             let mut grouped_reduction_cols = Vec::new();
+            let mut has_order_sensitive_agg = false;
             for agg in aggs {
+                has_order_sensitive_agg |= matches!(
+                    ctx.expr_arena.get(agg.node()),
+                    AExpr::Agg(IRAggExpr::First(..) | IRAggExpr::Last(..))
+                );
                 let (reduction, input_node) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
                 let AExpr::Column(col) = ctx.expr_arena.get(input_node) else {
@@ -745,6 +750,7 @@ fn to_graph_rec<'a>(
                     node.output_schema.clone(),
                     PlRandomState::default(),
                     ctx.num_pipelines,
+                    has_order_sensitive_agg,
                 ),
                 [(input_key, input.port)],
             )

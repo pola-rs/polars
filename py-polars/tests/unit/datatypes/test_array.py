@@ -373,6 +373,7 @@ def test_array_invalid_physical_type_18920() -> None:
     assert_frame_equal(df, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: zero-width array
 @pytest.mark.parametrize(
     "fn",
     [

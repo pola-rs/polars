@@ -371,7 +371,12 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     return scan_parquet(source).collect_schema()
 
 
-def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, str]:
+def read_parquet_metadata(
+    source: str | Path | IO[bytes] | bytes,
+    storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
+    retries: int = 2,
+) -> dict[str, str]:
     """
     Get file-level custom metadata of a Parquet file without reading data.
 
@@ -386,6 +391,30 @@ def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, s
         that have a `read()` method, such as a file handler like the builtin `open`
         function, or a `BytesIO` instance). For file-like objects, the stream position
         may not be updated accordingly after reading.
+    storage_options
+        Options that indicate how to connect to a cloud provider.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+        * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+          `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+    retries
+        Number of retries if accessing a cloud instance fails.
 
     Returns
     -------
@@ -395,7 +424,19 @@ def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, s
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
 
-    return _read_parquet_metadata(source)
+    credential_provider_builder = _init_credential_provider_builder(
+        credential_provider, source, storage_options, "scan_parquet"
+    )
+    del credential_provider
+
+    return _read_parquet_metadata(
+        source,
+        storage_options=(
+            list(storage_options.items()) if storage_options is not None else None
+        ),
+        credential_provider=credential_provider_builder,
+        retries=retries,
+    )
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")

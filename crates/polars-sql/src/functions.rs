@@ -968,6 +968,8 @@ impl PolarsSQLFunctions {
 impl SQLFunctionVisitor<'_> {
     pub(crate) fn visit_function(&mut self) -> PolarsResult<Expr> {
         use PolarsSQLFunctions::*;
+        use polars_lazy::prelude::Literal;
+
         let function_name = PolarsSQLFunctions::try_from_sql(self.func, self.ctx)?;
         let function = self.func;
 
@@ -982,6 +984,8 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLInterface: "'IGNORE|RESPECT NULLS' is not currently supported")
         }
 
+        let log_with_base =
+            |e: Expr, base: f64| e.log(LiteralValue::Dyn(DynLiteralValue::Float(base)).lit());
         match function_name {
             // ----
             // Bitwise functions
@@ -1001,11 +1005,11 @@ impl SQLFunctionVisitor<'_> {
             Div => self.visit_binary(|e, d| e.floor_div(d).cast(DataType::Int64)),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
-            Ln => self.visit_unary(|e| e.log(std::f64::consts::E)),
+            Ln => self.visit_unary(|e| log_with_base(e, std::f64::consts::E)),
             Log => self.visit_binary(Expr::log),
-            Log10 => self.visit_unary(|e| e.log(10.0)),
+            Log10 => self.visit_unary(|e| log_with_base(e, 10.0)),
             Log1p => self.visit_unary(Expr::log1p),
-            Log2 => self.visit_unary(|e| e.log(2.0)),
+            Log2 => self.visit_unary(|e| log_with_base(e, 2.0)),
             Pi => self.visit_nullary(Expr::pi),
             Mod => self.visit_binary(|e1, e2| e1 % e2),
             Pow => self.visit_binary::<Expr>(Expr::pow),

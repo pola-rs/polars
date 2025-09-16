@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use arrow::datatypes::{
-    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Metadata,
+    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
+    Metadata, PL_KEY,
 };
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
@@ -14,9 +15,6 @@ use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
-
-static MAINTAIN_PL_TYPE: &str = "maintain_type";
-static PL_KEY: &str = "pl";
 
 pub trait MetaDataExt: IntoMetadata {
     fn pl_enum_metadata(&self) -> Option<&str> {
@@ -226,6 +224,19 @@ impl DataType {
             Int64 => other.extract::<i64>().is_some(),
             _ => false,
         }
+    }
+
+    /// Struct representation of the arrow `month_day_nano_interval` type.
+    #[cfg(feature = "dtype-struct")]
+    pub fn _month_days_ns_struct_type() -> Self {
+        DataType::Struct(vec![
+            Field::new(PlSmallStr::from_static("months"), DataType::Int32),
+            Field::new(PlSmallStr::from_static("days"), DataType::Int32),
+            Field::new(
+                PlSmallStr::from_static("nanoseconds"),
+                DataType::Duration(TimeUnit::Nanoseconds),
+            ),
+        ])
     }
 
     /// Check if the whole dtype is known.
@@ -930,39 +941,6 @@ impl DataType {
             Array(field, _) => field.is_nested_null(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
-            _ => false,
-        }
-    }
-
-    pub fn does_match_schema_type(&self, schema_type: &DataType) -> bool {
-        if self == schema_type {
-            return true;
-        }
-
-        match (self, schema_type) {
-            (DataType::List(l), DataType::List(r)) => l.does_match_schema_type(r),
-            #[cfg(feature = "dtype-array")]
-            (DataType::Array(l, sl), DataType::Array(r, sr)) => {
-                sl == sr && l.does_match_schema_type(r)
-            },
-            #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(l), DataType::Struct(r)) => {
-                if l.len() != r.len() {
-                    return false;
-                }
-                let mut matches = true;
-                for (l, r) in l.iter().zip(r.iter()) {
-                    matches &= l.dtype.does_match_schema_type(&r.dtype);
-                }
-                matches
-            },
-            (DataType::Null, DataType::Null) => true,
-            #[cfg(feature = "dtype-decimal")]
-            (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => s1 == s2,
-            // We don't allow the other way around, only if our current type is
-            // null and the schema isn't we allow it.
-            (DataType::Null, _) => true,
-
             _ => false,
         }
     }
