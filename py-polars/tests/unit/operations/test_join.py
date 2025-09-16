@@ -3613,28 +3613,15 @@ def test_join_rewrite_forbid_exprs(
     assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
 
 
-def test_join_coalesce_23177() -> None:
-    df1 = pl.DataFrame(
-        {
-            "time": ["09:00:21"],
-            "symbol": [5253],
-        }
-    )
-    df2 = pl.DataFrame(
-        {
-            "symbol": [5253],
-            "time": ["09:00:21"],  # note the switched column order, identical values.
-        }
-    )
-    df = df1.lazy().join(df2.lazy(), on=["time", "symbol"], how="full", coalesce=True)
+def test_join_coalesce_column_order_23177() -> None:
+    df1 = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
+    df2 = pl.DataFrame({"symbol": [5253], "time": ["09:00:21"]})
 
-    buf = io.BytesIO()
-    df.sink_csv(buf)
+    q = df1.lazy().join(df2.lazy(), on=["time", "symbol"], how="full", coalesce=True)
 
-    expected = """time,symbol
-09:00:21,5253
-"""
-    assert buf.getvalue().decode("utf-8") == expected
+    expect = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
+
+    assert_frame_equal(q.collect(), expect)
 
 def test_join_filter_pushdown_iejoin_cse_23469() -> None:
     lf_x = pl.LazyFrame({"x": [1, 2, 3]})
