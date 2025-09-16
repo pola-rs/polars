@@ -34,6 +34,7 @@ class ScanOptions:
 
     # For path expansion
     glob: bool = True
+    hidden_file_prefix: list[str] | None = None
 
     # Hive
     # Note: `None` means auto.

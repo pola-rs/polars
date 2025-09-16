@@ -1,4 +1,5 @@
 use core::fmt;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -267,6 +268,16 @@ impl<'a> PlPathRef<'a> {
                 })
             },
         })
+    }
+
+    pub fn file_name(&self) -> Option<&OsStr> {
+        match self {
+            Self::Local(p) => p.file_name(),
+            Self::Cloud(p) => {
+                let p = p.strip_scheme();
+                p.rfind('/').map(|i| p[i + 1..].as_ref())
+            },
+        }
     }
 
     pub fn extension(&self) -> Option<&str> {

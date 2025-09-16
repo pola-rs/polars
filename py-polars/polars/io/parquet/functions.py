@@ -451,6 +451,7 @@ def scan_parquet(
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,
     glob: bool = True,
+    hidden_file_prefix: str | list[str] | None = None,
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
@@ -522,6 +523,12 @@ def scan_parquet(
         to prune reads.
     glob
         Expand path given via globbing rules.
+    hidden_file_prefix
+        Skip reading files whose names begin with the specified prefixes.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     schema
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
@@ -638,6 +645,10 @@ def scan_parquet(
         msg = "The `cast_options` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
+    if hidden_file_prefix is not None:
+        msg = "The `hidden_file_prefix` parameter of `scan_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     if allow_missing_columns is not None:
         issue_deprecation_warning(
             "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
@@ -685,6 +696,11 @@ def scan_parquet(
             missing_columns=missing_columns,
             include_file_paths=include_file_paths,
             glob=glob,
+            hidden_file_prefix=(
+                [hidden_file_prefix]
+                if isinstance(hidden_file_prefix, str)
+                else hidden_file_prefix
+            ),
             hive_partitioning=hive_partitioning,
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,

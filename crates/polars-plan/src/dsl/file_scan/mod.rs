@@ -240,6 +240,7 @@ pub struct UnifiedScanArgs {
     pub rechunk: bool,
     pub cache: bool,
     pub glob: bool,
+    pub hidden_file_prefix: Option<Arc<[PlSmallStr]>>,
 
     pub projection: Option<Arc<[PlSmallStr]>>,
     pub column_mapping: Option<ColumnMapping>,
@@ -266,6 +267,7 @@ impl Default for UnifiedScanArgs {
             rechunk: false,
             cache: false,
             glob: true,
+            hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
             default_values: None,

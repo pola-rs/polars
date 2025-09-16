@@ -71,6 +71,7 @@ impl LazyFileListReader for LazyIpcReader {
                 rechunk,
                 cache,
                 glob: true,
+                hidden_file_prefix: None,
                 projection: None,
                 column_mapping: None,
                 default_values: None,

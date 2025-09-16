@@ -78,6 +78,7 @@ impl LazyFileListReader for LazyParquetReader {
             rechunk: self.args.rechunk,
             cache: self.args.cache,
             glob: self.args.glob,
+            hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
             default_values: None,
