@@ -82,3 +82,32 @@ df = pl.DataFrame(
 
 print(df)
 # --8<-- [end:schema_overrides]
+
+
+# --8<-- [start:typeguard-def]
+df = pl.DataFrame(
+    {
+        "name": ["Alice", "Ben", "Chloe", "Daniel"],
+        "other": [
+            {"height": 100},
+            {"height": 90},
+            {"height": 110},
+            {"height": 120},
+        ],
+    }
+)
+# --8<-- [end:typeguard-def]
+
+# --8<-- [start:typeguard-no]
+for d in df.dtypes:
+    if d == pl.Struct:
+        print(d.fields)
+# --8<-- [end:typeguard-no]
+
+# --8<-- [start:typeguard-yes]
+from polars.datatypes import is_struct
+
+for d in df.dtypes:
+    if is_struct(d):
+        print(d.fields)
+# --8<-- [end:typeguard-yes]

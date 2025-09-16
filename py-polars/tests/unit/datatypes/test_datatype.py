@@ -40,7 +40,7 @@ def test_typeguards() -> None:
 
     for d in df.dtypes:
         if is_array(d):
-            _ = d.width
+            _ = d.size
         if is_categorical(d):
             _ = d.ordering
         if is_datetime(d):
