@@ -6,7 +6,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeGuard, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
@@ -186,7 +186,7 @@ class DataType(metaclass=DataTypeClass):
         return issubclass(cls, NumericType)
 
     @classmethod
-    def is_decimal(cls) -> bool:
+    def is_decimal(cls) -> TypeGuard[Decimal]:
         """Check whether the data type is a decimal type."""
         return issubclass(cls, Decimal)
 
@@ -281,6 +281,46 @@ class DataType(metaclass=DataTypeClass):
         from polars._plr import PyDataTypeExpr
 
         return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.from_dtype(self))
+
+    @classmethod
+    def is_struct(cls) -> TypeGuard[Struct]:
+        """Check whether the data type is a Struct."""
+        return issubclass(cls, Struct)
+
+    @classmethod
+    def is_list(cls) -> TypeGuard[List]:
+        """Check whether the data type is a List."""
+        return issubclass(cls, List)
+
+    @classmethod
+    def is_array(cls) -> TypeGuard[Array]:
+        """Check whether the data type is a List."""
+        return issubclass(cls, Array)
+
+    @classmethod
+    def is_categorical(cls) -> TypeGuard[Categorical]:
+        """Check whether the data type is a Categorical."""
+        return issubclass(cls, Categorical)
+
+    @classmethod
+    def is_enum(cls) -> TypeGuard[Enum]:
+        """Check whether the data type is a Enum."""
+        return issubclass(cls, Enum)
+
+    @classmethod
+    def is_time(cls) -> TypeGuard[Time]:
+        """Check whether the data type is a Enum."""
+        return issubclass(cls, Time)
+
+    @classmethod
+    def is_datetime(cls) -> TypeGuard[Datetime]:
+        """Check whether the data type is a Enum."""
+        return issubclass(cls, Datetime)
+
+    @classmethod
+    def is_duration(cls) -> TypeGuard[Duration]:
+        """Check whether the data type is a Enum."""
+        return issubclass(cls, Duration)
 
 
 class NumericType(DataType):
