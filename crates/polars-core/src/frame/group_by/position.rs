@@ -495,6 +495,13 @@ impl GroupsType {
         let len = self.len();
         slice_groups(Arc::new(self), 0, len)
     }
+
+    pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
+        polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
+            a.len() == b.len()
+        }), ComputeError: "expressions must have matching group lengths");
+        Ok(())
+    }
 }
 
 impl From<GroupsIdx> for GroupsType {

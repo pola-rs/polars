@@ -44,9 +44,9 @@ fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
     }
 }
 
-static ERR_MSG: &str = "expressions must have matching group lengths";
+static ERR_MSG: &str = "expressions in 'sort_by' must have matching group lengths";
 
-pub(super) fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
+fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
     polars_ensure!(a.iter().zip(b.iter()).all(|(a, b)| {
         a.len() == b.len()
     }), ComputeError: ERR_MSG);
