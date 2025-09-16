@@ -272,8 +272,20 @@ impl<'a> PlPathRef<'a> {
 
     pub fn file_name(&self) -> Option<&OsStr> {
         match self {
-            Self::Local(p) => p.file_name(),
+            Self::Local(p) => {
+                if p.is_dir() {
+                    None
+                } else {
+                    p.file_name()
+                }
+            },
             Self::Cloud(p) => {
+                if p.scheme() == CloudScheme::File
+                    && std::fs::metadata(p.strip_scheme()).is_ok_and(|x| x.is_dir())
+                {
+                    return None;
+                }
+
                 let p = p.strip_scheme();
                 let out = p.rfind('/').map_or(p, |i| &p[i + 1..]);
                 (!out.is_empty()).then_some(out.as_ref())
