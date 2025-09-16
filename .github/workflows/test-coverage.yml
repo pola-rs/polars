@@ -38,7 +38,7 @@ jobs:
     # https://github.com/pola-rs/polars/issues/14255
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -87,7 +87,7 @@ jobs:
     # https://github.com/pola-rs/polars/issues/14255
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -184,10 +184,10 @@ jobs:
 
     steps:
       # Needed to fetch the Codecov config file
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download coverage reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           merge-multiple: true
 
