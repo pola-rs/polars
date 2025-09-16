@@ -10,7 +10,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 
 use super::expr_pushdown::{adjust_for_with_columns_context, get_frame_observing, zip};
-use crate::dsl::UnionOptions;
+use crate::dsl::{PartitionVariantIR, SinkTypeIR, UnionOptions};
 use crate::plans::{AExpr, IR, is_scalar_ae};
 
 pub(super) fn pushdown_orders(
@@ -276,7 +276,25 @@ pub(super) fn pushdown_orders(
             #[cfg(feature = "python")]
             IR::PythonScan { .. } => UnitVec::new(),
 
-            IR::Sink { payload, .. } => [payload.maintain_order()].into(),
+            IR::Sink { payload, .. } => {
+                let is_order_observing = payload.maintain_order()
+                    || match payload {
+                        SinkTypeIR::Memory => false,
+                        SinkTypeIR::File(_) => false,
+                        SinkTypeIR::Partition(p) => match &p.variant {
+                            PartitionVariantIR::MaxSize(_) => false,
+                            PartitionVariantIR::Parted { .. } => true,
+                            PartitionVariantIR::ByKey { key_exprs, .. } => {
+                                adjust_for_with_columns_context(zip(key_exprs.iter().map(|e| {
+                                    get_frame_observing(expr_arena.get(e.node()), expr_arena)
+                                })))
+                                .is_none()
+                            },
+                        },
+                    };
+
+                [is_order_observing].into()
+            },
             IR::Scan { .. } | IR::DataFrameScan { .. } => UnitVec::new(),
 
             IR::ExtContext { contexts, .. } => {

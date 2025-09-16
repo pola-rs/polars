@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from typing import Any
 
 import pytest
@@ -503,3 +504,31 @@ def test_with_columns_sensitivity(
         )
         for c in unordered_columns:
             assert_series_equal(df_opt[c], df_unopt[c], check_order=False)
+
+
+def test_partition_sink_sensitivity() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .unique(maintain_order=True)
+        .sink_csv(
+            pl.PartitionByKey(".", file_path=lambda _: io.BytesIO(), by=pl.col.a),
+            lazy=True,
+            maintain_order=False,
+        )
+    )
+
+    assert "UNIQUE[maintain_order: false" in q.explain()
+
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .unique(maintain_order=True)
+        .sink_csv(
+            pl.PartitionByKey(
+                ".", file_path=lambda _: io.BytesIO(), by=pl.col.a.cum_sum()
+            ),
+            lazy=True,
+            maintain_order=False,
+        )
+    )
+
+    assert "UNIQUE[maintain_order: true" in q.explain()
