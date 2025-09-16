@@ -304,15 +304,15 @@ class DataType(metaclass=DataTypeClass):
         return self == Enum
 
     def is_time(self) -> TypeGuard[Time]:
-        """Check whether the data type is a Enum."""
+        """Check whether the data type is a Time."""
         return self == Time
 
     def is_datetime(self) -> TypeGuard[Datetime]:
-        """Check whether the data type is a Enum."""
+        """Check whether the data type is a Datetime."""
         return self == Datetime
 
     def is_duration(self) -> TypeGuard[Duration]:
-        """Check whether the data type is a Enum."""
+        """Check whether the data type is a Duration."""
         return self == Duration
 
 
