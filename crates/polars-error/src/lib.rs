@@ -390,6 +390,11 @@ macro_rules! polars_err {
             InvalidOperation: "{} operation not supported for dtypes `{}`, `{}` and `{}`", $op, $arg1, $arg2, $arg3
         )
     };
+    (opidx = $op:expr, idx = $idx:expr, $arg:expr) => {
+        $crate::polars_err!(
+            InvalidOperation: "`{}` operation not supported for dtype `{}` as argument {}", $op, $arg, $idx
+        )
+    };
     (oos = $($tt:tt)+) => {
         $crate::polars_err!(ComputeError: "out-of-spec: {}", $($tt)+)
     };
@@ -489,6 +494,11 @@ on startup."#.trim_start())
         $crate::polars_err!(
             AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",
             $objects, $detail, $lhs, $rhs
+        )
+    };
+    (to_datetime_tz_mismatch) => {
+        $crate::polars_err!(
+            ComputeError: "`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data.\n\nThis was previously allowed but led to unpredictable and erroneous results. Give a format string, set a time zone or perform the operation eagerly on a Series instead of on an Expr."
         )
     };
 }

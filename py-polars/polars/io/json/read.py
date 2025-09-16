@@ -10,7 +10,7 @@ from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
     from io import IOBase

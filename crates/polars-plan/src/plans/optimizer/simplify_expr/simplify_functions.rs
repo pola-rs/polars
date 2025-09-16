@@ -1,9 +1,9 @@
 use super::*;
 
 pub(super) fn optimize_functions(
-    input: &[ExprIR],
-    function: &IRFunctionExpr,
-    options: &FunctionOptions,
+    input: Vec<ExprIR>,
+    function: IRFunctionExpr,
+    options: FunctionOptions,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
@@ -35,10 +35,10 @@ pub(super) fn optimize_functions(
                             AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                 op: Operator::Lt,
                                 left: expr_arena.add(new_null_count(input)),
-                                right: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
-                                    is_not_null_input_node,
-                                    true,
-                                ))),
+                                right: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                    input: is_not_null_input_node,
+                                    include_nulls: true,
+                                })),
                             }),
                             _ => None,
                         }
@@ -67,8 +67,10 @@ pub(super) fn optimize_functions(
                             AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                 op: Operator::Eq,
                                 right: expr_arena.add(new_null_count(input)),
-                                left: expr_arena
-                                    .add(AExpr::Agg(IRAggExpr::Count(is_null_input_node, true))),
+                                left: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                                    input: is_null_input_node,
+                                    include_nulls: true,
+                                })),
                             }),
                             _ => None,
                         }
@@ -121,18 +123,18 @@ pub(super) fn optimize_functions(
         },
         // flatten nested concat_str calls
         #[cfg(all(feature = "strings", feature = "concat_str"))]
-        function @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
-            delimiter: sep,
+        ref function @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
+            delimiter: ref sep,
             ignore_nulls,
         }) if sep.is_empty() => {
             if input
                 .iter()
-                .any(|e| is_string_concat(expr_arena.get(e.node()), *ignore_nulls))
+                .any(|e| is_string_concat(expr_arena.get(e.node()), ignore_nulls))
             {
                 let mut new_inputs = Vec::with_capacity(input.len() * 2);
 
                 for e in input {
-                    match get_string_concat_input(e.node(), expr_arena, *ignore_nulls) {
+                    match get_string_concat_input(e.node(), expr_arena, ignore_nulls) {
                         Some(inp) => new_inputs.extend_from_slice(inp),
                         None => new_inputs.push(e.clone()),
                     }
@@ -140,7 +142,7 @@ pub(super) fn optimize_functions(
                 Some(AExpr::Function {
                     input: new_inputs,
                     function: function.clone(),
-                    options: *options,
+                    options,
                 })
             } else {
                 None
@@ -162,13 +164,13 @@ pub(super) fn optimize_functions(
                         left: expr_arena.add(AExpr::Function {
                             input: vec![ExprIR::from_node(left, expr_arena)],
                             function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
-                            options: *options,
+                            options,
                         }),
                         op: Operator::Or,
                         right: expr_arena.add(AExpr::Function {
                             input: vec![ExprIR::from_node(right, expr_arena)],
                             function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
-                            options: *options,
+                            options,
                         }),
                     })
                 },
@@ -184,13 +186,13 @@ pub(super) fn optimize_functions(
                         left: expr_arena.add(AExpr::Function {
                             input: vec![ExprIR::from_node(left, expr_arena)],
                             function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
-                            options: *options,
+                            options,
                         }),
                         op: Operator::And,
                         right: expr_arena.add(AExpr::Function {
                             input: vec![ExprIR::from_node(right, expr_arena)],
                             function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
-                            options: *options,
+                            options,
                         }),
                     })
                 },

@@ -101,6 +101,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 .into()
             },
 
+            IRAggExpr::Mean(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::Mean(Arc::new(exp)).into()
+            },
             IRAggExpr::Median(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Median(Arc::new(exp)).into()
@@ -116,10 +120,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Last(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
-            },
-            IRAggExpr::Mean(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Mean(Arc::new(exp)).into()
             },
             IRAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -155,9 +155,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Arc::new(exp)).into()
             },
-            IRAggExpr::Count(expr, include_nulls) => {
-                let expr = node_to_expr(expr, expr_arena);
-                AggExpr::Count(Arc::new(expr), include_nulls).into()
+            IRAggExpr::Count {
+                input,
+                include_nulls,
+            } => {
+                let input = node_to_expr(input, expr_arena);
+                AggExpr::Count {
+                    input: Arc::new(input),
+                    include_nulls,
+                }
+                .into()
             },
         },
         AExpr::Ternary {
@@ -178,13 +185,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
             fmt_str,
         } => Expr::AnonymousFunction {
             input: expr_irs_to_exprs(input, expr_arena),
             function,
-            output_type,
             options,
             fmt_str,
         },
@@ -239,36 +244,6 @@ fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()
 }
 
-pub fn node_to_lp_cloned(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    mut lp_arena: &Arena<IR>,
-) -> DslPlan {
-    // we borrow again mutably only to make the types happy
-    // we want to initialize `to_lp` from a mutable and a immutable lp_arena
-    // by borrowing an immutable mutably, we still are immutable down the line.
-    let alp = lp_arena.get(node).clone();
-    alp.into_lp(
-        &|node, lp_arena: &mut &Arena<IR>| lp_arena.get(node).clone(),
-        &mut lp_arena,
-        expr_arena,
-    )
-}
-
-/// converts a node from the IR arena to a LogicalPlan
-pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR>) -> DslPlan {
-    let alp = lp_arena.get_mut(node);
-    let alp = std::mem::take(alp);
-    alp.into_lp(
-        &|node, lp_arena: &mut Arena<IR>| {
-            let lp = lp_arena.get_mut(node);
-            std::mem::take(lp)
-        },
-        lp_arena,
-        expr_arena,
-    )
-}
-
 pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
     use {FunctionExpr as F, IRFunctionExpr as IF};
 
@@ -287,6 +262,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::NUnique => A::NUnique,
                 IA::Std(v) => A::Std(v),
                 IA::Var(v) => A::Var(v),
+                IA::Mean => A::Mean,
                 IA::Median => A::Median,
                 #[cfg(feature = "array_any_all")]
                 IA::Any => A::Any,
@@ -305,6 +281,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Shift => A::Shift,
                 IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode { skip_empty } => A::Explode { skip_empty },
+                #[cfg(feature = "array_to_struct")]
+                IA::ToStruct(ng) => A::ToStruct(ng),
             })
         },
         IF::BinaryExpr(f) => {
@@ -323,7 +301,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Base64Encode => B::Base64Encode,
                 IB::Size => B::Size,
                 #[cfg(feature = "binary_encoding")]
-                IB::FromBuffer(data_type, v) => B::FromBuffer(data_type.into(), v),
+                IB::Reinterpret(data_type, v) => B::Reinterpret(data_type.into(), v),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -437,13 +415,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::LenChars => B::LenChars,
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
-                IB::JsonDecode {
-                    dtype,
-                    infer_schema_len,
-                } => B::JsonDecode {
-                    dtype: dtype.map(Into::into),
-                    infer_schema_len,
-                },
+                IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonPathMatch => B::JsonPathMatch,
                 #[cfg(feature = "regex")]
@@ -483,7 +455,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 },
                 IB::Split(v) => B::Split(v),
                 #[cfg(feature = "dtype-decimal")]
-                IB::ToDecimal(v) => B::ToDecimal(v),
+                IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
                 IB::Titlecase => B::Titlecase,
                 IB::Uppercase => B::Uppercase,
@@ -525,7 +497,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::StructExpr(f) => {
             use {IRStructFunction as IB, StructFunction as B};
             F::StructExpr(match f {
-                IB::FieldByIndex(i) => B::FieldByIndex(i),
                 IB::FieldByName(pl_small_str) => B::FieldByName(pl_small_str),
                 IB::RenameFields(pl_small_strs) => B::RenameFields(pl_small_strs),
                 IB::PrefixFields(pl_small_str) => B::PrefixFields(pl_small_str),
@@ -533,9 +504,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "json")]
                 IB::JsonEncode => B::JsonEncode,
                 IB::WithFields => B::WithFields,
-                IB::MultipleFields(pl_small_strs) => B::MultipleFields(pl_small_strs),
-                #[cfg(feature = "python")]
-                IB::MapFieldNames(special_eq) => B::MapFieldNames(special_eq),
+                IB::MapFieldNames(f) => B::MapFieldNames(f),
             })
         },
         #[cfg(feature = "temporal")]
@@ -549,6 +518,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::IsoYear => B::IsoYear,
                 IB::Quarter => B::Quarter,
                 IB::Month => B::Month,
+                IB::DaysInMonth => B::DaysInMonth,
                 IB::Week => B::Week,
                 IB::WeekDay => B::WeekDay,
                 IB::Day => B::Day,
@@ -804,63 +774,55 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::FillNull => F::FillNull,
         IF::FillNullWithStrategy(strategy) => F::FillNullWithStrategy(strategy),
         #[cfg(feature = "rolling_window")]
-        IF::RollingExpr(f) => {
+        IF::RollingExpr { function, options } => {
             use {IRRollingFunction as IR, RollingFunction as R};
-            F::RollingExpr(match f {
-                IR::Min(rolling_options_fixed_window) => R::Min(rolling_options_fixed_window),
-                IR::Max(rolling_options_fixed_window) => R::Max(rolling_options_fixed_window),
-                IR::Mean(rolling_options_fixed_window) => R::Mean(rolling_options_fixed_window),
-                IR::Sum(rolling_options_fixed_window) => R::Sum(rolling_options_fixed_window),
-                IR::Quantile(rolling_options_fixed_window) => {
-                    R::Quantile(rolling_options_fixed_window)
+            FunctionExpr::RollingExpr {
+                function: match function {
+                    IR::Min => R::Min,
+                    IR::Max => R::Max,
+                    IR::Mean => R::Mean,
+                    IR::Sum => R::Sum,
+                    IR::Quantile => R::Quantile,
+                    IR::Var => R::Var,
+                    IR::Std => R::Std,
+                    #[cfg(feature = "moment")]
+                    IR::Skew => R::Skew,
+                    #[cfg(feature = "moment")]
+                    IR::Kurtosis => R::Kurtosis,
+                    #[cfg(feature = "cov")]
+                    IR::CorrCov {
+                        corr_cov_options,
+                        is_corr,
+                    } => R::CorrCov {
+                        corr_cov_options,
+                        is_corr,
+                    },
+                    IR::Map(f) => R::Map(f),
                 },
-                IR::Var(rolling_options_fixed_window) => R::Var(rolling_options_fixed_window),
-                IR::Std(rolling_options_fixed_window) => R::Std(rolling_options_fixed_window),
-                #[cfg(feature = "moment")]
-                IR::Skew(rolling_options_fixed_window) => R::Skew(rolling_options_fixed_window),
-                #[cfg(feature = "moment")]
-                IR::Kurtosis(rolling_options_fixed_window) => {
-                    R::Kurtosis(rolling_options_fixed_window)
-                },
-                #[cfg(feature = "cov")]
-                IR::CorrCov {
-                    rolling_options,
-                    corr_cov_options,
-                    is_corr,
-                } => R::CorrCov {
-                    rolling_options,
-                    corr_cov_options,
-                    is_corr,
-                },
-            })
+                options,
+            }
         },
         #[cfg(feature = "rolling_window_by")]
-        IF::RollingExprBy(f) => {
+        IF::RollingExprBy {
+            function_by,
+            options,
+        } => {
             use {IRRollingFunctionBy as IR, RollingFunctionBy as R};
-            F::RollingExprBy(match f {
-                IR::MinBy(rolling_options_dynamic_window) => {
-                    R::MinBy(rolling_options_dynamic_window)
+            FunctionExpr::RollingExprBy {
+                function_by: match function_by {
+                    IR::MinBy => R::MinBy,
+                    IR::MaxBy => R::MaxBy,
+                    IR::MeanBy => R::MeanBy,
+                    IR::SumBy => R::SumBy,
+                    IR::QuantileBy => R::QuantileBy,
+                    IR::VarBy => R::VarBy,
+                    IR::StdBy => R::StdBy,
                 },
-                IR::MaxBy(rolling_options_dynamic_window) => {
-                    R::MaxBy(rolling_options_dynamic_window)
-                },
-                IR::MeanBy(rolling_options_dynamic_window) => {
-                    R::MeanBy(rolling_options_dynamic_window)
-                },
-                IR::SumBy(rolling_options_dynamic_window) => {
-                    R::SumBy(rolling_options_dynamic_window)
-                },
-                IR::QuantileBy(rolling_options_dynamic_window) => {
-                    R::QuantileBy(rolling_options_dynamic_window)
-                },
-                IR::VarBy(rolling_options_dynamic_window) => {
-                    R::VarBy(rolling_options_dynamic_window)
-                },
-                IR::StdBy(rolling_options_dynamic_window) => {
-                    R::StdBy(rolling_options_dynamic_window)
-                },
-            })
+                options,
+            }
         },
+        IF::Rechunk => F::Rechunk,
+        IF::Append { upcast } => F::Append { upcast },
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,
@@ -876,6 +838,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "repeat_by")]
         IF::RepeatBy => F::RepeatBy,
         IF::ArgUnique => F::ArgUnique,
+        IF::ArgMin => F::ArgMin,
+        IF::ArgMax => F::ArgMax,
+        IF::ArgSort {
+            descending,
+            nulls_last,
+        } => F::ArgSort {
+            descending,
+            nulls_last,
+        },
+        IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
         IF::Repeat => F::Repeat,
@@ -915,7 +887,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
         IF::Coalesce => F::Coalesce,
-        IF::ShrinkType => F::ShrinkType,
         #[cfg(feature = "diff")]
         IF::Diff(nb) => F::Diff(nb),
         #[cfg(feature = "pct_change")]
@@ -927,7 +898,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "log")]
         IF::Entropy { base, normalize } => F::Entropy { base, normalize },
         #[cfg(feature = "log")]
-        IF::Log { base } => F::Log { base },
+        IF::Log => F::Log,
         #[cfg(feature = "log")]
         IF::Log1p => F::Log1p,
         #[cfg(feature = "log")]
@@ -1036,6 +1007,48 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             symbol,
             kwargs,
         },
+
+        IF::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        IF::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        #[cfg(feature = "dtype-struct")]
+        IF::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        #[cfg(feature = "dtype-struct")]
+        IF::CumFoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+            include_init,
+        } => F::CumFoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+            include_init,
+        },
+
         IF::MaxHorizontal => F::MaxHorizontal,
         IF::MinHorizontal => F::MinHorizontal,
         IF::SumHorizontal { ignore_nulls } => F::SumHorizontal { ignore_nulls },
@@ -1058,6 +1071,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "reinterpret")]
         IF::Reinterpret(v) => F::Reinterpret(v),
         IF::ExtendConstant => F::ExtendConstant,
+
+        IF::RowEncode(_, v) => F::RowEncode(v),
+        #[cfg(feature = "dtype-struct")]
+        IF::RowDecode(fs, v) => F::RowDecode(
+            fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
+            v,
+        ),
     };
 
     Expr::Function { input, function }

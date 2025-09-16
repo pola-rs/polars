@@ -45,7 +45,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import dtype_str_repr as _dtype_str_repr
+    from polars._plr import dtype_str_repr as _dtype_str_repr
 
 
 OptionType = type(Optional[type])
@@ -240,7 +240,7 @@ class _DataTypeMappings:
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
         def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
             try:
-                return _dtype_str_repr(o.base_type()).split("[")[0]
+                return _dtype_str_repr(o.base_type()).split("[")[0]  # type: ignore[return-value]
             except TypeError:
                 return None
 

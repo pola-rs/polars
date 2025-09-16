@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_utils::pl_str::PlSmallStr;
@@ -200,47 +198,18 @@ impl PyExpr {
         self.inner.clone().list().to_array(width).into()
     }
 
-    #[pyo3(signature = (width_strat, name_gen, upper_bound))]
-    fn list_to_struct(
-        &self,
-        width_strat: Wrap<ListToStructWidthStrategy>,
-        name_gen: Option<PyObject>,
-        upper_bound: Option<usize>,
-    ) -> PyResult<Self> {
-        let name_gen = name_gen.map(|lambda| {
-            NameGenerator::from_func(move |idx: usize| {
-                Python::with_gil(|py| {
-                    let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: PlSmallStr = out.extract::<Cow<str>>(py).unwrap().as_ref().into();
-                    out
-                })
-            })
-        });
-
-        Ok(self
-            .inner
-            .clone()
-            .list()
-            .to_struct(ListToStructArgs::InferWidth {
-                infer_field_strategy: width_strat.0,
-                get_index_name: name_gen,
-                max_fields: upper_bound,
-            })
-            .into())
-    }
-
     #[pyo3(signature = (names))]
-    fn list_to_struct_fixed_width(&self, names: Bound<'_, PySequence>) -> PyResult<Self> {
+    fn list_to_struct(&self, names: Bound<'_, PySequence>) -> PyResult<Self> {
         Ok(self
             .inner
             .clone()
             .list()
-            .to_struct(ListToStructArgs::FixedWidth(
+            .to_struct(
                 names
                     .try_iter()?
                     .map(|x| Ok(x?.extract::<Wrap<PlSmallStr>>()?.0))
                     .collect::<PyResult<Arc<[_]>>>()?,
-            ))
+            )
             .into())
     }
 

@@ -133,8 +133,6 @@ pub trait JoinDispatch: IntoDf {
         nulls_equal: bool,
     ) -> PolarsResult<DataFrame> {
         let ca_self = self.to_df();
-        #[cfg(feature = "dtype-categorical")]
-        _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         let idx = s_left.hash_join_semi_anti(s_right, anti, nulls_equal)?;
         // SAFETY:
@@ -149,8 +147,6 @@ pub trait JoinDispatch: IntoDf {
         args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
         let df_self = self.to_df();
-        #[cfg(feature = "dtype-categorical")]
-        _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         // Get the indexes of the joined relations
         let (mut join_idx_l, mut join_idx_r) =
@@ -206,7 +202,7 @@ pub trait JoinDispatch: IntoDf {
                 out?,
                 &[s_left.name().clone()],
                 &[s_right.name().clone()],
-                args.suffix.clone(),
+                args.suffix,
                 df_self,
             ))
         } else {

@@ -24,7 +24,7 @@ impl PySeries {
     /// is required. Set `writable` to make sure the resulting array is writable, possibly requiring
     /// copying the data.
     fn to_numpy(&self, py: Python<'_>, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
-        series_to_numpy(py, &self.series, writable, allow_copy)
+        series_to_numpy(py, &self.series.read(), writable, allow_copy)
     }
 
     /// Create a view of the data as a NumPy ndarray.
@@ -33,7 +33,7 @@ impl PySeries {
     /// which may be any value. The caller is responsible for handling nulls
     /// appropriately.
     fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        let (view, _) = try_series_to_numpy_view(py, &self.series, true, false)?;
+        let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, false)?;
         Some(view)
     }
 }
@@ -247,9 +247,11 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyOb
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Categorical(_, _) | Enum(_, _) => {
-            let ca = s.categorical().unwrap();
-            let values = ca.iter_str().map(|s| s.into_py_any(py).unwrap());
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |$C| {
+                let ca = s.cat::<$C>().unwrap();
+                let values = ca.iter_str().map(|s| s.into_py_any(py).unwrap());
+                PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            })
         },
         Decimal(_, _) => {
             let ca = s.decimal().unwrap();

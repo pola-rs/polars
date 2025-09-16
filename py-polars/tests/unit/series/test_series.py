@@ -357,15 +357,12 @@ def test_date_agg() -> None:
     ("s", "min", "max"),
     [
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series(["a", "c", "b"], dtype=pl.Categorical), "a", "b"),
         (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series([None, "c", "a", "b"], dtype=pl.Categorical), "c", "b"),
         (pl.Series([], dtype=pl.Categorical("lexical")), None, None),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a"])), "c", "a"),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
     ],
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None:
     assert s.min() == min
     assert s.max() == max
@@ -554,6 +551,7 @@ def test_series_to_list() -> None:
     assert a.to_list() == [1, None, 2]
 
 
+@pytest.mark.may_fail_cloud  # reason: list.to_struct is a eager operation
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
@@ -634,25 +632,27 @@ def test_arrow() -> None:
     )
     assert s.dtype == pl.List
 
-    # categorical dtype tests (including various forms of empty pyarrow array)
-    with pl.StringCache():
-        arr0 = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
-        assert_series_equal(
-            pl.Series("arr", ["foo", "bar"], pl.Categorical), pl.Series("arr", arr0)
-        )
-        arr1 = pa.array(["xxx", "xxx", None, "yyy"]).dictionary_encode()
-        arr2 = pa.array([]).dictionary_encode()
-        arr3 = pa.chunked_array([], arr1.type)
-        arr4 = pa.array([], arr1.type)
 
+def test_arrow_cat() -> None:
+    # categorical dtype tests (including various forms of empty pyarrow array)
+    arr0 = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
+    assert_series_equal(
+        pl.Series("arr", ["foo", "bar"], pl.Categorical), pl.Series("arr", arr0)
+    )
+    arr1 = pa.array(["xxx", "xxx", None, "yyy"]).dictionary_encode()
+    arr2 = pa.chunked_array([], arr1.type)
+    arr3 = pa.array([], arr1.type)
+    arr4 = pa.array([]).dictionary_encode()
+
+    assert_series_equal(
+        pl.Series("arr", ["xxx", "xxx", None, "yyy"], dtype=pl.Categorical),
+        pl.Series("arr", arr1),
+    )
+    for arr in (arr2, arr3):
         assert_series_equal(
-            pl.Series("arr", ["xxx", "xxx", None, "yyy"], dtype=pl.Categorical),
-            pl.Series("arr", arr1),
+            pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
         )
-        for arr in (arr2, arr3, arr4):
-            assert_series_equal(
-                pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
-            )
+    assert_series_equal(pl.Series("arr", [], dtype=pl.Null), pl.Series("arr", arr4))
 
 
 def test_pycapsule_interface() -> None:
@@ -777,7 +777,6 @@ def test_init_nested_tuple() -> None:
     assert s3.dtype == pl.List(pl.Int32)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     s = pl.Series("a", [1, 2, None])
     assert_series_equal(s.fill_null(strategy="forward"), pl.Series("a", [1, 2, 2]))
@@ -1032,13 +1031,27 @@ def test_mode() -> None:
 
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    expected = pl.Series("a", [1, 1, -1, 0, 1, -3])
 
-    assert_series_equal(s.diff(null_behavior="drop"), expected)
-
-    df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").diff())["a"], pl.Series("a", [None, 1, 1, -1, 0, 1, -3])
+        s.diff(),
+        pl.Series("a", [None, 1, 1, -1, 0, 1, -3]),
+    )
+    assert_series_equal(
+        s.diff(null_behavior="drop"),
+        pl.Series("a", [1, 1, -1, 0, 1, -3]),
+    )
+
+
+def test_diff_negative() -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+
+    assert_series_equal(
+        s.diff(-1),
+        pl.Series("a", [-1, -1, 1, 0, -1, 3, None]),
+    )
+    assert_series_equal(
+        s.diff(-1, null_behavior="drop"),
+        pl.Series("a", [-1, -1, 1, 0, -1, 3]),
     )
 
 
@@ -1454,8 +1467,6 @@ def test_arg_sort() -> None:
         (pl.Series(["a", "c", "b"]), 0, 1),
         (pl.Series([None, "a", None, "b"]), 1, 3),
         # Categorical
-        (pl.Series(["c", "b", "a"], dtype=pl.Categorical), 0, 2),
-        (pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical), 1, 4),
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical")), 2, 0),
         (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical("lexical")), 4, 1),
     ],
@@ -1565,14 +1576,30 @@ def test_dot() -> None:
         s1 @ [4, 5, 6, 7, 8]
 
 
-def test_peak_max_peak_min() -> None:
-    s = pl.Series("a", [4, 1, 3, 2, 5])
+@pytest.mark.parametrize(
+    ("dtype"),
+    [pl.Int8, pl.Int16, pl.Int32, pl.Float32, pl.Float64],
+)
+def test_peak_max_peak_min(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [4, 1, 3, 2, 5], dtype=dtype)
+
     result = s.peak_min()
     expected = pl.Series("a", [False, True, False, True, False])
     assert_series_equal(result, expected)
 
     result = s.peak_max()
     expected = pl.Series("a", [True, False, True, False, True])
+    assert_series_equal(result, expected)
+
+
+def test_peak_max_peak_min_bool() -> None:
+    s = pl.Series("a", [False, True, False, True, True, False], dtype=pl.Boolean)
+    result = s.peak_min()
+    expected = pl.Series("a", [False, False, True, False, False, False])
+    assert_series_equal(result, expected)
+
+    result = s.peak_max()
+    expected = pl.Series("a", [False, True, False, False, False, False])
     assert_series_equal(result, expected)
 
 
@@ -1613,11 +1640,10 @@ def test_cast_datetime_to_time(unit: TimeUnit) -> None:
 
 
 def test_init_categorical() -> None:
-    with pl.StringCache():
-        for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
-            expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
-            a = pl.Series("a", values, dtype=pl.Categorical)
-            assert_series_equal(a, expected)
+    for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
+        expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
+        a = pl.Series("a", values, dtype=pl.Categorical)
+        assert_series_equal(a, expected)
 
 
 def test_iter_nested_list() -> None:
@@ -1659,29 +1685,6 @@ def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
         assert srs_nested.dtype == dtype
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Float64,
-        pl.Int32,
-        pl.Decimal(21, 3),
-    ],
-)
-def test_log_exp(dtype: pl.DataType) -> None:
-    a = pl.Series("a", [1, 100, 1000], dtype=dtype)
-    b = pl.Series("a", [0, 2, 3], dtype=dtype)
-    assert_series_equal(a.log10(), b.cast(pl.Float64))
-
-    expected = pl.Series("a", np.log(a.cast(pl.Float64).to_numpy()))
-    assert_series_equal(a.log(), expected)
-
-    expected = pl.Series("a", np.exp(b.cast(pl.Float64).to_numpy()))
-    assert_series_equal(b.exp(), expected)
-
-    expected = pl.Series("a", np.log1p(a.cast(pl.Float64).to_numpy()))
-    assert_series_equal(a.log1p(), expected)
-
-
 def test_to_physical() -> None:
     # casting an int result in an int
     s = pl.Series("a", [1, 2, 3])
@@ -1694,13 +1697,19 @@ def test_to_physical() -> None:
 
     # casting a categorical results in a UInt32
     s = pl.Series(["cat1"]).cast(pl.Categorical)
-    expected = pl.Series([0], dtype=UInt32)
-    assert_series_equal(s.to_physical(), expected)
+    assert s.to_physical().dtype == pl.UInt32
+
+    # casting a small enum results in a UInt8
+    s = pl.Series(["cat1"]).cast(pl.Enum(["cat1"]))
+    assert s.to_physical().dtype == pl.UInt8
 
     # casting a List(Categorical) results in a List(UInt32)
     s = pl.Series([["cat1"]]).cast(pl.List(pl.Categorical))
-    expected = pl.Series([[0]], dtype=pl.List(UInt32))
-    assert_series_equal(s.to_physical(), expected)
+    assert s.to_physical().dtype == pl.List(pl.UInt32)
+
+    # casting a List(Enum) with a small enum results in a List(UInt8)
+    s = pl.Series(["cat1"]).cast(pl.List(pl.Enum(["cat1"])))
+    assert s.to_physical().dtype == pl.List(pl.UInt8)
 
 
 def test_to_physical_rechunked_21285() -> None:
@@ -2084,16 +2093,16 @@ def test_from_epoch_seq_input() -> None:
 def test_symmetry_for_max_in_names() -> None:
     # int
     a = pl.Series("a", [1])
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # float
     a = pl.Series("a", [1.0])
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # duration
     a = pl.Series("a", [1], dtype=pl.Duration("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # datetime
     a = pl.Series("a", [1], dtype=pl.Datetime("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
 
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
@@ -2288,7 +2297,7 @@ def test_is_close_invalid_abs_tol() -> None:
 
 def test_is_close_invalid_rel_tol() -> None:
     with pytest.raises(pl.exceptions.ComputeError):
-        pl.select(pl.lit(1.0).is_close(1, rel_tol=1.0))
+        pl.select(pl.lit(1.0).is_close(1, rel_tol=-1.0))
 
 
 def test_comparisons_structs_raise() -> None:

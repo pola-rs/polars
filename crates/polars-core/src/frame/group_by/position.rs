@@ -158,6 +158,15 @@ impl GroupsIdx {
         let all = self.all.get_unchecked(index);
         (first, all)
     }
+
+    // Create an 'empty group', containing 1 group of length 0
+    pub fn new_empty() -> Self {
+        Self {
+            sorted: false,
+            first: vec![0],
+            all: vec![vec![].into()],
+        }
+    }
 }
 
 impl FromIterator<IdxItem> for GroupsIdx {

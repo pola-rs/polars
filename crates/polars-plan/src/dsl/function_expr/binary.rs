@@ -20,7 +20,9 @@ pub enum BinaryFunction {
     Base64Encode,
     Size,
     #[cfg(feature = "binary_encoding")]
-    FromBuffer(DataTypeExpr, bool),
+    /// The parameters are destination type, and whether to use little endian
+    /// encoding.
+    Reinterpret(DataTypeExpr, bool),
 }
 
 impl Display for BinaryFunction {
@@ -40,7 +42,7 @@ impl Display for BinaryFunction {
             Base64Encode => "base64_encode",
             Size => "size_bytes",
             #[cfg(feature = "binary_encoding")]
-            FromBuffer(_, _) => "from_buffer",
+            Reinterpret(_, _) => "reinterpret",
         };
         write!(f, "bin.{s}")
     }

@@ -69,7 +69,8 @@ tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
 version_check = { workspace = true }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+old_getrandom = { version = "0.2", features = ["js"], package = "getrandom" }
 
 [features]
 default = []

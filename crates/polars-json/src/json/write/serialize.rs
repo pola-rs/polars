@@ -276,7 +276,11 @@ fn fixed_size_list_serializer<'a>(
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
-    let mut serializer = new_serializer(array.values().as_ref(), offset, take);
+    let mut serializer = new_serializer(
+        array.values().as_ref(),
+        offset * array.size(),
+        take * array.size(),
+    );
 
     Box::new(BufStreamingIterator::new(
         ZipValidity::new(0..array.len(), array.validity().map(|x| x.iter())),
@@ -491,6 +495,20 @@ pub(crate) fn new_serializer<'a>(
             list_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Dictionary(k, v, _) => match (k, &**v) {
+            (IntegerType::UInt8, ArrowDataType::Utf8View) => {
+                let array = array
+                    .as_any()
+                    .downcast_ref::<DictionaryArray<u8>>()
+                    .unwrap();
+                dictionary_utf8view_serializer::<u8>(array, offset, take)
+            },
+            (IntegerType::UInt16, ArrowDataType::Utf8View) => {
+                let array = array
+                    .as_any()
+                    .downcast_ref::<DictionaryArray<u16>>()
+                    .unwrap();
+                dictionary_utf8view_serializer::<u16>(array, offset, take)
+            },
             (IntegerType::UInt32, ArrowDataType::Utf8View) => {
                 let array = array
                     .as_any()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable
@@ -561,11 +562,6 @@ def test_strict_cast_string(
 @pytest.mark.parametrize(
     "dtype_out",
     [
-        *INTEGER_DTYPES,
-        pl.Date,
-        pl.Datetime,
-        pl.Time,
-        pl.Duration,
         pl.String,
         pl.Categorical,
         pl.Enum(["1", "2"]),
@@ -636,7 +632,7 @@ def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(
         InvalidOperationError,
-        match="casting from Time to Datetime\\(Microseconds, None\\) not supported; consider using `dt.combine`",
+        match="casting from Time to Datetime\\('μs'\\) not supported; consider using `dt.combine`",
     ):
         s.cast(pl.Datetime)
 
@@ -764,14 +760,6 @@ def test_overflowing_cast_literals_21023() -> None:
         )
 
 
-def test_invalid_empty_cast_to_empty_enum() -> None:
-    with pytest.raises(
-        InvalidOperationError,
-        match="cannot cast / initialize Enum without categories present",
-    ):
-        pl.Series([], dtype=pl.Enum)
-
-
 @pytest.mark.parametrize("value", [True, False])
 @pytest.mark.parametrize(
     "dtype",
@@ -780,7 +768,6 @@ def test_invalid_empty_cast_to_empty_enum() -> None:
         pl.Series(["a", "b"], dtype=pl.Categorical).dtype,
     ],
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_invalid_bool_to_cat(value: bool, dtype: PolarsDataType) -> None:
     # Enum
     with pytest.raises(
@@ -1019,3 +1006,55 @@ def test_not_prune_necessary_cast() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt16})
     result = lf.select(pl.col("a").cast(pl.UInt8))
     assert "strict_cast" in result.explain()
+
+
+@pytest.mark.parametrize("target_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("inner_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_cast_optimizer_in_list_eval_23924(
+    inner_dtype: PolarsDataType,
+    target_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    print(inner_dtype, target_dtype)
+    if target_dtype in INTEGER_DTYPES:
+        df = pl.Series("a", [[1]], dtype=pl.List(target_dtype)).to_frame()
+    else:
+        df = pl.Series("a", [[1.0]], dtype=pl.List(target_dtype)).to_frame()
+    q = df.lazy().select(
+        pl.col("a").list.eval(
+            (op(pl.element(), pl.element().cast(inner_dtype))).cast(target_dtype)
+        )
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+def test_lit_cast_arithmetic_23677() -> None:
+    df = pl.DataFrame({"a": [1]}, schema={"a": pl.Float32})
+    q = df.lazy().select(pl.col("a") / pl.lit(1, pl.Int32))
+    expected = pl.Schema({"a": pl.Float64})
+    assert q.collect().schema == expected
+
+
+@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES + [pl.Unknown])
+@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES + [pl.Unknown])
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_lit_cast_arithmetic_matrix_schema(
+    col_dtype: PolarsDataType,
+    lit_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    # Note (hacky): simply casting to 'pl.Unknown' would create
+    # `Unknown(UnknownKind::Any())` which is not what we want: the
+    # default maps to `Unknown(UnknownKind::Int(_)))` so we adjust
+    df = (
+        pl.DataFrame({"a": [1]})
+        if col_dtype == pl.Unknown
+        else pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
+    )
+    q = (
+        df.lazy().select(op(pl.col("a"), pl.lit(1)))
+        if lit_dtype == pl.Unknown
+        else df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    )
+    assert q.collect_schema() == q.collect().schema

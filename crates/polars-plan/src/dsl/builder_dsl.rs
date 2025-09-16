@@ -7,6 +7,7 @@ use polars_io::csv::read::CsvReadOptions;
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
+use polars_utils::unique_id::UniqueId;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
@@ -117,11 +118,15 @@ impl DslBuilder {
 
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
-        DslPlan::Cache { input }.into()
+        DslPlan::Cache {
+            input,
+            id: UniqueId::new(),
+        }
+        .into()
     }
 
-    pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
-        self.map_private(DslFunction::Drop(DropFunction { to_drop, strict }))
+    pub fn drop(self, columns: Selector) -> Self {
+        self.project(vec![Expr::Selector(!columns)], ProjectionOptions::default())
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
@@ -135,7 +140,7 @@ impl DslBuilder {
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
         self.project(
-            vec![all().fill_null(fill_value)],
+            vec![all().as_expr().fill_null(fill_value)],
             ProjectionOptions {
                 duplicate_check: false,
                 ..Default::default()
@@ -143,22 +148,17 @@ impl DslBuilder {
         )
     }
 
-    pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
-        let is_nan = match subset {
-            Some(subset) if subset.is_empty() => return self,
-            Some(subset) => subset.into_iter().map(Expr::is_nan).collect(),
-            None => vec![dtype_cols([DataType::Float32, DataType::Float64]).is_nan()],
-        };
-        self.remove(any_horizontal(is_nan).unwrap())
+    pub fn drop_nans(self, subset: Option<Selector>) -> Self {
+        let is_nan = subset
+            .unwrap_or(DataTypeSelector::Float.as_selector())
+            .as_expr()
+            .is_nan();
+        self.remove(any_horizontal([is_nan]).unwrap())
     }
 
-    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        let is_not_null = match subset {
-            Some(subset) if subset.is_empty() => return self,
-            Some(subset) => subset.into_iter().map(Expr::is_not_null).collect(),
-            None => vec![all().is_not_null()],
-        };
-        self.filter(all_horizontal(is_not_null).unwrap())
+    pub fn drop_nulls(self, subset: Option<Selector>) -> Self {
+        let is_not_null = subset.unwrap_or(Selector::Wildcard).as_expr().is_not_null();
+        self.filter(all_horizontal([is_not_null]).unwrap())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
@@ -189,6 +189,14 @@ impl DslBuilder {
             match_schema,
             per_column,
             extra_columns,
+        }
+        .into()
+    }
+
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+        DslPlan::PipeWithSchema {
+            input: Arc::new(self.0),
+            callback,
         }
         .into()
     }
@@ -224,7 +232,7 @@ impl DslBuilder {
         self,
         keys: Vec<Expr>,
         aggs: E,
-        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
+        apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
         #[cfg(feature = "dynamic_group_by")] dynamic_options: Option<DynamicGroupOptions>,
         #[cfg(feature = "dynamic_group_by")] rolling_options: Option<RollingGroupOptions>,
@@ -272,7 +280,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<Selector>, allow_empty: bool) -> Self {
+    pub fn explode(self, columns: Selector, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode {

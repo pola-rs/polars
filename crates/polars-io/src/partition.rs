@@ -134,10 +134,7 @@ pub fn write_partitioned_dataset(
         let (n_files, rows_per_file) = get_n_files_and_rows_per_file(&df);
 
         if n_files == 1 {
-            write_part(
-                df.clone(),
-                dir_path.as_ref().join(get_path_for_index(0)).as_ref(),
-            )
+            write_part(df, dir_path.as_ref().join(get_path_for_index(0)).as_ref())
         } else {
             (0..df.height())
                 .step_by(rows_per_file)
@@ -149,10 +146,7 @@ pub fn write_partitioned_dataset(
                         .into_par_iter()
                         .map(|&(idx, slice_start)| {
                             let df = df.slice(slice_start as i64, rows_per_file);
-                            write_part(
-                                df.clone(),
-                                dir_path.as_ref().join(get_path_for_index(idx)).as_ref(),
-                            )
+                            write_part(df, dir_path.as_ref().join(get_path_for_index(idx)).as_ref())
                         })
                         .reduce(
                             || PolarsResult::Ok(()),

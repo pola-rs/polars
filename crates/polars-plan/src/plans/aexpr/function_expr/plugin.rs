@@ -4,8 +4,8 @@ use std::sync::{LazyLock, RwLock};
 
 use arrow::ffi::{ArrowSchema, import_field_from_c};
 use libloading::Library;
-use pyo3::Python;
-use pyo3::types::PyAnyMethods;
+#[cfg(feature = "python")]
+use pyo3::{Python, types::PyAnyMethods};
 
 use super::*;
 
@@ -21,6 +21,7 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
     } else {
         drop(lib_map);
 
+        #[cfg(feature = "python")]
         let load_path = if !std::path::Path::new(lib).is_absolute() {
             // Get python virtual environment path
             let prefix = Python::with_gil(|py| {
@@ -33,6 +34,8 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
         } else {
             lib.to_string()
         };
+        #[cfg(not(feature = "python"))]
+        let load_path = lib.to_string();
 
         let library = unsafe {
             Library::new(&load_path).map_err(|e| {
@@ -57,11 +60,15 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
     }
 }
 
-unsafe fn retrieve_error_msg(lib: &Library) -> &CStr {
-    let symbol: libloading::Symbol<unsafe extern "C" fn() -> *mut std::os::raw::c_char> =
-        lib.get(b"_polars_plugin_get_last_error_message\0").unwrap();
-    let msg_ptr = symbol();
-    CStr::from_ptr(msg_ptr)
+fn retrieve_error_msg(lib: &Library) -> String {
+    unsafe {
+        // SAFETY: _polars_plugin_get_last_error_message returns data stored
+        // in a null-terminated thread-local so we immediately clone it.
+        let symbol: libloading::Symbol<unsafe extern "C" fn() -> *mut std::os::raw::c_char> =
+            lib.get(b"_polars_plugin_get_last_error_message\0").unwrap();
+        let msg_ptr = symbol();
+        CStr::from_ptr(msg_ptr).to_string_lossy().into_owned()
+    }
 }
 
 pub(super) unsafe fn call_plugin(
@@ -125,7 +132,6 @@ pub(super) unsafe fn call_plugin(
             import_series(return_value).map(Column::from)
         } else {
             let msg = retrieve_error_msg(lib);
-            let msg = msg.to_string_lossy();
             check_panic(msg.as_ref())?;
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }
@@ -206,7 +212,6 @@ pub(super) unsafe fn plugin_field(
             Ok(out)
         } else {
             let msg = retrieve_error_msg(lib);
-            let msg = msg.to_string_lossy();
             check_panic(msg.as_ref())?;
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }

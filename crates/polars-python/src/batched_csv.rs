@@ -13,7 +13,7 @@ use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, Wrap};
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 pub struct PyBatchedCsv {
     reader: Mutex<OwnedBatchedCsvReader>,
@@ -100,7 +100,7 @@ impl PyBatchedCsv {
             .with_has_header(has_header)
             .with_n_rows(n_rows)
             .with_skip_rows(skip_rows)
-            .with_skip_rows(skip_lines)
+            .with_skip_lines(skip_lines)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection.map(Arc::new))
             .with_rechunk(rechunk)
@@ -138,11 +138,6 @@ impl PyBatchedCsv {
     fn next_batches(&self, py: Python<'_>, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
         let reader = &self.reader;
         let batches = py.enter_polars(move || reader.lock().unwrap().next_batches(n))?;
-
-        // SAFETY: same memory layout
-        let batches = unsafe {
-            std::mem::transmute::<Option<Vec<DataFrame>>, Option<Vec<PyDataFrame>>>(batches)
-        };
-        Ok(batches)
+        Ok(batches.map(|b| b.into_iter().map(PyDataFrame::from).collect()))
     }
 }

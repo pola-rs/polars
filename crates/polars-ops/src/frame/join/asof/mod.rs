@@ -10,8 +10,6 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "dtype-categorical")]
-use super::_check_categorical_src;
 use super::{_finish_join, build_tables};
 use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
@@ -184,13 +182,13 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Clone, Debug, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     /// A tolerance in the same unit as the asof column
-    pub tolerance: Option<AnyValue<'static>>,
+    pub tolerance: Option<Scalar>,
     /// A time duration specified as a string, for example:
     /// - "5m"
     /// - "2h15m"
@@ -325,12 +323,13 @@ pub trait AsofJoin: IntoDf {
                 let right_binary = right_key.cast(&DataType::Binary).unwrap();
                 join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy, allow_eq)
             },
-            _ => {
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
                 let ca = left_key.i32().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
+            dt => polars_bail!(opq = asof_join, dt),
         }?;
         try_raise_keyboard_interrupt();
 

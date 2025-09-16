@@ -30,15 +30,21 @@ from polars.io.cloud.credential_provider._builder import (
 from polars.io.scan_options._options import ScanOptions
 
 with contextlib.suppress(ImportError):
-    from polars.polars import PyLazyFrame
-    from polars.polars import read_parquet_metadata as _read_parquet_metadata
-    from polars.polars import read_parquet_schema as _read_parquet_schema
+    from polars._plr import PyLazyFrame
+    from polars._plr import read_parquet_metadata as _read_parquet_metadata
 
 if TYPE_CHECKING:
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import DeletionFiles, FileSource, ParallelStrategy, SchemaDict
+    from polars._typing import (
+        ColumnMapping,
+        DefaultFieldValues,
+        DeletionFiles,
+        FileSource,
+        ParallelStrategy,
+        SchemaDict,
+    )
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.scan_options import ScanCastOptions
 
@@ -341,6 +347,10 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     """
     Get the schema of a Parquet file without reading data.
 
+    If you would like to read the schema of a cloud file with authentication
+    configuration, it is recommended use `scan_parquet` - e.g.
+    `scan_parquet(..., storage_options=...).collect_schema()`.
+
     Parameters
     ----------
     source
@@ -353,14 +363,20 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     -------
     dict
         Dictionary mapping column names to datatypes
+
+    See Also
+    --------
+    scan_parquet
     """
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source, check_not_directory=False)
-
-    return _read_parquet_schema(source)
+    return scan_parquet(source).collect_schema()
 
 
-def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, str]:
+def read_parquet_metadata(
+    source: str | Path | IO[bytes] | bytes,
+    storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
+    retries: int = 2,
+) -> dict[str, str]:
     """
     Get file-level custom metadata of a Parquet file without reading data.
 
@@ -375,6 +391,30 @@ def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, s
         that have a `read()` method, such as a file handler like the builtin `open`
         function, or a `BytesIO` instance). For file-like objects, the stream position
         may not be updated accordingly after reading.
+    storage_options
+        Options that indicate how to connect to a cloud provider.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+        * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+          `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+    retries
+        Number of retries if accessing a cloud instance fails.
 
     Returns
     -------
@@ -384,7 +424,19 @@ def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, s
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
 
-    return _read_parquet_metadata(source)
+    credential_provider_builder = _init_credential_provider_builder(
+        credential_provider, source, storage_options, "scan_parquet"
+    )
+    del credential_provider
+
+    return _read_parquet_metadata(
+        source,
+        storage_options=(
+            list(storage_options.items()) if storage_options is not None else None
+        ),
+        credential_provider=credential_provider_builder,
+        retries=retries,
+    )
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -413,6 +465,8 @@ def scan_parquet(
     allow_missing_columns: bool | None = None,
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
+    _column_mapping: ColumnMapping | None = None,
+    _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
 ) -> LazyFrame:
     """
@@ -641,6 +695,8 @@ def scan_parquet(
             ),
             credential_provider=credential_provider_builder,
             retries=retries,
+            column_mapping=_column_mapping,
+            default_values=_default_values,
             deletion_files=_deletion_files,
         ),
     )

@@ -37,7 +37,7 @@ impl fmt::Debug for Expr {
                     }
                 },
             },
-            Nth(i) => write!(f, "nth({i})"),
+            DataTypeFunction(dtype_fn) => fmt::Debug::fmt(dtype_fn, f),
             Len => write!(f, "len()"),
             Explode {
                 input: expr,
@@ -116,7 +116,14 @@ impl fmt::Debug for Expr {
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
-                    Count(expr, _) => write!(f, "{expr:?}.count()"),
+                    Count {
+                        input,
+                        include_nulls: false,
+                    } => write!(f, "{input:?}.count()"),
+                    Count {
+                        input,
+                        include_nulls: true,
+                    } => write!(f, "{input:?}.len()"),
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
                     Std(expr, _) => write!(f, "{expr:?}.std()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
@@ -181,16 +188,17 @@ impl fmt::Debug for Expr {
                 offset,
                 length,
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
-            Wildcard => write!(f, "*"),
-            Exclude(column, names) => write!(f, "{column:?}.exclude({names:?})"),
             KeepName(e) => write!(f, "{e:?}.name.keep()"),
-            RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
-            Columns(names) => write!(f, "cols({names:?})"),
-            DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),
-            IndexColumn(idxs) => write!(f, "index_columns({idxs:?})"),
-            Selector(_) => write!(f, "selector"),
+            RenameAlias { expr, function } => match function {
+                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.name.prefix({s})"),
+                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.name.suffix({s})"),
+                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.name.to_lowercase()"),
+                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.name.to_uppercase()"),
+                RenameAliasFn::Map(_) => write!(f, "{expr:?}.name.map()"),
+            },
+            Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]
-            Field(names) => write!(f, ".field({names:?})"),
+            Field(names) => write!(f, "pl.field({names:?})"),
         }
     }
 }

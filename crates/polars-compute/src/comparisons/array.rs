@@ -23,7 +23,7 @@ where
     if bm.len() == 1 {
         bm
     } else {
-        assert!(width > 0 && bm.len() % width == 0);
+        assert!(width > 0 && bm.len().is_multiple_of(width));
 
         let (slice, offset, _len) = bm.as_slice();
         (0..bm.len() / width)
@@ -182,6 +182,7 @@ macro_rules! compare {
             PH::Primitive(PR::MonthDayNano) => {
                 call_binary!(PrimitiveArray<months_days_ns>)
             },
+            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
             PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),

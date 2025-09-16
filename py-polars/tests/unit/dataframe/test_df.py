@@ -7,6 +7,7 @@ from collections.abc import Iterator, Mapping
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
+from itertools import chain, repeat
 from operator import floordiv, truediv
 from typing import TYPE_CHECKING, Any, Callable, cast
 from zoneinfo import ZoneInfo
@@ -17,6 +18,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars._plr import PySeries
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
@@ -27,7 +29,6 @@ from polars.exceptions import (
     OutOfBoundsError,
     ShapeError,
 )
-from polars.polars import PySeries
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -218,7 +219,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         ),
     ]
     for arrow_data in (tbl, record_batches, (rb for rb in record_batches)):
-        df = cast(pl.DataFrame, pl.from_arrow(arrow_data))
+        df = cast("pl.DataFrame", pl.from_arrow(arrow_data))
         assert df.schema == expected_schema
         assert df.rows() == expected_data
 
@@ -227,12 +228,12 @@ def test_from_arrow(monkeypatch: Any) -> None:
         (record_batches[0], 1),
         (record_batches[0][:0], 0),
     ):
-        df = cast(pl.DataFrame, pl.from_arrow(b))
+        df = cast("pl.DataFrame", pl.from_arrow(b))
         assert df.schema == expected_schema
         assert df.rows() == expected_data[:n_expected]
 
     empty_tbl = tbl[:0]  # no rows
-    df = cast(pl.DataFrame, pl.from_arrow(empty_tbl))
+    df = cast("pl.DataFrame", pl.from_arrow(empty_tbl))
     assert df.schema == expected_schema
     assert df.rows() == []
 
@@ -302,7 +303,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
     ],
 )
 def test_from_arrow_struct_column(data: pa.Table) -> None:
-    df = cast(pl.DataFrame, pl.from_arrow(data=data))
+    df = cast("pl.DataFrame", pl.from_arrow(data=data))
     expected_schema = pl.Schema({"struct": pl.Struct({"a": pl.Int32()})})
     expected_data = [({"a": 1},), ({"a": 2},)]
     assert df.schema == expected_schema
@@ -835,7 +836,7 @@ def test_from_arrow_table() -> None:
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df = cast(pl.DataFrame, pl.from_arrow(tbl))
+    df = cast("pl.DataFrame", pl.from_arrow(tbl))
     assert_frame_equal(df, pl.DataFrame(data))
 
 
@@ -876,6 +877,7 @@ def test_df_fold() -> None:
     assert_series_equal(df_width_one.fold(lambda s1, s2: s1), df["a"])
 
 
+@pytest.mark.may_fail_cloud  # TODO: make pickleable
 def test_fold_filter() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
@@ -910,7 +912,7 @@ def test_column_names() -> None:
         }
     )
     for a in (tbl, tbl[:0]):
-        df = cast(pl.DataFrame, pl.from_arrow(a))
+        df = cast("pl.DataFrame", pl.from_arrow(a))
         assert df.columns == ["a", "b"]
 
 
@@ -982,7 +984,7 @@ def test_head_group_by() -> None:
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(pl.col("*").exclude(keys))
+        .explode(cs.all().exclude(keys))
     )
 
     assert out.shape == (5, 4)
@@ -1059,7 +1061,7 @@ def test_is_nan_null_series() -> None:
 
 def test_len() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3]})
-    assert cast(int, df.select(pl.col("nrs").len()).item()) == 3
+    assert cast("int", df.select(pl.col("nrs").len()).item()) == 3
     assert len(pl.DataFrame()) == 0
 
 
@@ -1234,7 +1236,7 @@ def test_literal_series() -> None:
             orient="row",
         ),
         out,
-        atol=0.00001,
+        abs_tol=0.00001,
     )
 
 
@@ -1332,6 +1334,14 @@ def test_from_generator_or_iterable() -> None:
     )
     assert df.schema == {"col": pl.List(pl.String)}
     assert df[-2:]["col"].to_list() == [None, ["a", "b", "c"]]
+
+    # ref: issue #23404 (infer_schema_length=None should always scan all data)
+    d = iterable_to_pydf(
+        data=chain(repeat({"col": 1}, length_minus_1 := 100), repeat({"col": 1.1}, 1)),
+        infer_schema_length=None,
+        chunk_size=length_minus_1,
+    )
+    assert d.dtypes() == [pl.Float64()]
 
     # empty iterator
     assert_frame_equal(
@@ -1724,7 +1734,7 @@ def test_dot_product() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
-    assert typing.cast(int, df.select([pl.col("a").dot("b")])[0, "a"]) == 20
+    assert typing.cast("int", df.select([pl.col("a").dot("b")])[0, "a"]) == 20
 
     result = pl.Series([1, 2, 3]) @ pl.Series([4, 5, 6])
     assert isinstance(result, int)
@@ -1800,6 +1810,7 @@ def test_hash_collision_multiple_columns_equal_values_15390(e: pl.Expr) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # Python objects not yet supported in row encoding
+@pytest.mark.may_fail_cloud
 def test_hashing_on_python_objects() -> None:
     # see if we can do a group_by, drop_duplicates on a DataFrame with objects.
     # this requires that the hashing and aggregations are done on python objects
@@ -1944,14 +1955,10 @@ def test_select_by_dtype(df: pl.DataFrame) -> None:
     out = df.select(pl.col(INTEGER_DTYPES))
     assert out.columns == ["int", "int_nulls"]
 
-    with pl.Config() as cfg:
-        cfg.set_auto_structify(True)
-        out = df.select(ints=pl.col(INTEGER_DTYPES))
-        assert out.schema == {
-            "ints": pl.Struct(
-                [pl.Field("int", pl.Int64), pl.Field("int_nulls", pl.Int64)]
-            )
-        }
+    out = df.select(ints=pl.struct(pl.col(INTEGER_DTYPES)))
+    assert out.schema == {
+        "ints": pl.Struct([pl.Field("int", pl.Int64), pl.Field("int_nulls", pl.Int64)])
+    }
 
 
 def test_with_row_index() -> None:
@@ -1998,6 +2005,7 @@ def test_with_row_count_deprecated() -> None:
     assert out["row_nr"].to_list() == [0, 1, 2]
 
 
+@pytest.mark.may_fail_cloud
 def test_filter_with_all_expansion() -> None:
     df = pl.DataFrame(
         {
@@ -2012,6 +2020,7 @@ def test_filter_with_all_expansion() -> None:
 
 # TODO: investigate this discrepancy in auto streaming
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_extension() -> None:
     class Foo:
         def __init__(self, value: Any) -> None:
@@ -2123,7 +2132,6 @@ def test_empty_projection() -> None:
     assert empty_df.shape == (0, 0)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert_frame_equal(df.fill_null(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
@@ -2247,6 +2255,7 @@ def test_df_broadcast() -> None:
     assert out.rows() == [(1, [1, 2]), (2, [1, 2]), (3, [1, 2])]
 
 
+@pytest.mark.may_fail_cloud  # not a lazyframe method
 def test_product() -> None:
     df = pl.DataFrame(
         {
@@ -2445,7 +2454,11 @@ def test_asof_by_multiple_keys() -> None:
         rhs, on=pl.col("a").set_sorted(), by=["by", "by2"], strategy="backward"
     ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
-    assert_frame_equal(result, expected)
+    assert_frame_equal(
+        result.group_by("by").agg("a"),
+        expected.group_by("by").agg("a"),
+        check_row_order=False,
+    )
 
 
 def test_asof_bad_input_type() -> None:
@@ -2602,39 +2615,36 @@ def test_selection_regex_and_multicol() -> None:
         "c": [81, 100, 121, 144],
     }
 
-    # kwargs
-    with pl.Config() as cfg:
-        cfg.set_auto_structify(True)
-
-        df = test_df.select(
-            pl.col("^\\w$").alias("re"),
-            odd=(pl.col(INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
-            maxes=pl.all().max().name.suffix("_max"),
-        ).head(2)
-        # ┌───────────┬───────────┬─────────────┐
-        # │ re        ┆ odd       ┆ maxes       │
-        # │ ---       ┆ ---       ┆ ---         │
-        # │ struct[3] ┆ struct[4] ┆ struct[4]   │
-        # ╞═══════════╪═══════════╪═════════════╡
-        # │ {1,5,9}   ┆ {1,1,1,1} ┆ {4,8,12,16} │
-        # │ {2,6,10}  ┆ {0,0,0,0} ┆ {4,8,12,16} │
-        # └───────────┴───────────┴─────────────┘
-        assert df.rows() == [
-            (
-                {"a": 1, "b": 5, "c": 9},
-                {"a_is_odd": 1, "b_is_odd": 1, "c_is_odd": 1, "foo_is_odd": 1},
-                {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
-            ),
-            (
-                {"a": 2, "b": 6, "c": 10},
-                {"a_is_odd": 0, "b_is_odd": 0, "c_is_odd": 0, "foo_is_odd": 0},
-                {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
-            ),
-        ]
+    df = test_df.select(
+        re=pl.struct(pl.col("^\\w$")),
+        odd=pl.struct((pl.col(INTEGER_DTYPES) % 2).name.suffix("_is_odd")),
+        maxes=pl.struct(pl.all().max().name.suffix("_max")),
+    ).head(2)
+    # ┌───────────┬───────────┬─────────────┐
+    # │ re        ┆ odd       ┆ maxes       │
+    # │ ---       ┆ ---       ┆ ---         │
+    # │ struct[3] ┆ struct[4] ┆ struct[4]   │
+    # ╞═══════════╪═══════════╪═════════════╡
+    # │ {1,5,9}   ┆ {1,1,1,1} ┆ {4,8,12,16} │
+    # │ {2,6,10}  ┆ {0,0,0,0} ┆ {4,8,12,16} │
+    # └───────────┴───────────┴─────────────┘
+    assert df.rows() == [
+        (
+            {"a": 1, "b": 5, "c": 9},
+            {"a_is_odd": 1, "b_is_odd": 1, "c_is_odd": 1, "foo_is_odd": 1},
+            {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
+        ),
+        (
+            {"a": 2, "b": 6, "c": 10},
+            {"a_is_odd": 0, "b_is_odd": 0, "c_is_odd": 0, "foo_is_odd": 0},
+            {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
+        ),
+    ]
 
 
 @pytest.mark.parametrize("subset", ["a", cs.starts_with("x", "a")])
 @pytest.mark.may_fail_auto_streaming  # Flaky in CI, see https://github.com/pola-rs/polars/issues/20943
+@pytest.mark.may_fail_cloud
 def test_unique_on_sorted(subset: Any) -> None:
     df = pl.DataFrame(data={"a": [1, 1, 3], "b": [1, 2, 3]})
 
@@ -2882,6 +2892,7 @@ def test_init_datetimes_with_timezone() -> None:
         ),
     ],
 )
+@pytest.mark.may_fail_cloud
 def test_init_vs_strptime_consistency(
     tzinfo: timezone | None,
     offset: str,
@@ -2950,10 +2961,11 @@ def test_floordiv_truediv(divop: Callable[..., Any]) -> None:
     )
 
     # scalar
-    for n in (3, 3.0, -3, -3.0):
-        py_div = [tuple(divop(elem, n) for elem in row) for row in df1.rows()]
-        df_div = divop(df1, n).rows()
-        assert py_div == df_div
+    for df in [df1, df1.slice(0, 0)]:
+        for n in (3, 3.0, -3, -3.0):
+            py_div = [tuple(divop(elem, n) for elem in row) for row in df.rows()]
+            df_div = divop(df, n).rows()
+            assert py_div == df_div
 
     # series
     xdf, s = df1["x"].to_frame(), pl.Series([2] * 4)
@@ -2988,8 +3000,8 @@ def test_unique(
 ) -> None:
     df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
 
-    result = df.unique(maintain_order=True, subset=subset, keep=keep)
-    expected = df.filter(expected_mask)
+    result = df.unique(maintain_order=True, subset=subset, keep=keep).sort(pl.all())
+    expected = df.filter(expected_mask).sort(pl.all())
     assert_frame_equal(result, expected)
 
 

@@ -13,16 +13,17 @@ use crate::dsl::DslPlan;
 pub static DATASET_PROVIDER_VTABLE: OnceLock<PythonDatasetProviderVTable> = OnceLock::new();
 
 pub struct PythonDatasetProviderVTable {
-    pub reader_name: fn(dataset_object: &PythonObject) -> PlSmallStr,
+    pub name: fn(dataset_object: &PythonObject) -> PlSmallStr,
 
     pub schema: fn(dataset_object: &PythonObject) -> PolarsResult<SchemaRef>,
 
     #[expect(clippy::type_complexity)]
     pub to_dataset_scan: fn(
         dataset_object: &PythonObject,
+        existing_resolved_version_key: Option<&str>,
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
-    ) -> PolarsResult<DslPlan>,
+    ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>>,
 }
 
 pub fn dataset_provider_vtable() -> Result<&'static PythonDatasetProviderVTable, &'static str> {
@@ -44,8 +45,8 @@ impl PythonDatasetProvider {
         Self { dataset_object }
     }
 
-    pub fn reader_name(&self) -> PlSmallStr {
-        (dataset_provider_vtable().unwrap().reader_name)(&self.dataset_object)
+    pub fn name(&self) -> PlSmallStr {
+        (dataset_provider_vtable().unwrap().name)(&self.dataset_object)
     }
 
     pub fn schema(&self) -> PolarsResult<SchemaRef> {
@@ -54,11 +55,13 @@ impl PythonDatasetProvider {
 
     pub fn to_dataset_scan(
         &self,
+        existing_resolved_version_key: Option<&str>,
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
-    ) -> PolarsResult<DslPlan> {
+    ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
         (dataset_provider_vtable().unwrap().to_dataset_scan)(
             &self.dataset_object,
+            existing_resolved_version_key,
             limit,
             projection,
         )

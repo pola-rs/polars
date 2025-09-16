@@ -266,7 +266,7 @@ def _select_columns_by_index(df: DataFrame, key: Iterable[int]) -> DataFrame:
 
 
 def _select_columns_by_name(df: DataFrame, key: Iterable[str]) -> DataFrame:
-    return df._from_pydf(df._df.select(key))
+    return df._from_pydf(df._df.select(list(key)))
 
 
 def _select_columns_by_mask(

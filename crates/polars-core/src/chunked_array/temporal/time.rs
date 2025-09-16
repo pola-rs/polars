@@ -21,7 +21,7 @@ impl TimeChunked {
     /// Convert from Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> StringChunked {
-        let mut ca: StringChunked = self.apply_kernel_cast(&|arr| {
+        let mut ca: StringChunked = self.physical().apply_kernel_cast(&|arr| {
             let mut buf = String::new();
             let format = if format == "iso" || format == "iso:strict" {
                 "%T%.9f"
@@ -60,7 +60,8 @@ impl TimeChunked {
     pub fn as_time_iter(&self) -> impl TrustedLen<Item = Option<NaiveTime>> + '_ {
         // we know the iterators len
         unsafe {
-            self.downcast_iter()
+            self.physical()
+                .downcast_iter()
                 .flat_map(|iter| {
                     iter.into_iter()
                         .map(|opt_v| opt_v.copied().map(time64ns_to_time))

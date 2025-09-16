@@ -40,10 +40,14 @@ impl NullChunked {
     pub fn len(&self) -> usize {
         self.length as usize
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
 }
 impl PrivateSeriesNumeric for NullChunked {
     fn bit_repr(&self) -> Option<BitRepr> {
-        Some(BitRepr::Small(UInt32Chunked::full_null(
+        Some(BitRepr::U32(UInt32Chunked::full_null(
             self.name.clone(),
             self.len(),
         )))
@@ -213,7 +217,7 @@ impl SeriesTrait for NullChunked {
     }
 
     fn has_nulls(&self) -> bool {
-        self.len() > 0
+        !self.is_empty()
     }
 
     fn rechunk(&self) -> Series {
@@ -346,6 +350,11 @@ impl SeriesTrait for NullChunked {
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         *self = NullChunked::new(self.name.clone(), self.len() + other.len());
         Ok(())
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(if self.is_empty() { 0 } else { 1 })
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

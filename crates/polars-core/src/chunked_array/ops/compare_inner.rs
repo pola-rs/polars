@@ -203,44 +203,30 @@ impl<'a> IntoTotalOrdInner<'a> for &'a NullChunked {
 }
 
 #[cfg(feature = "dtype-categorical")]
-struct LocalCategorical<'a> {
-    rev_map: &'a Utf8ViewArray,
-    cats: &'a UInt32Chunked,
+struct LexicalCategorical<'a, T: PolarsCategoricalType> {
+    mapping: &'a CategoricalMapping,
+    cats: &'a ChunkedArray<T::PolarsPhysical>,
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<'a> GetInner for LocalCategorical<'a> {
+impl<'a, T: PolarsCategoricalType> GetInner for LexicalCategorical<'a, T> {
     type Item = Option<&'a str>;
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         let cat = self.cats.get_unchecked(idx)?;
-        Some(self.rev_map.value_unchecked(cat as usize))
+        Some(self.mapping.cat_to_str_unchecked(cat.as_cat()))
     }
 }
 
 #[cfg(feature = "dtype-categorical")]
-struct GlobalCategorical<'a> {
-    p1: &'a PlHashMap<u32, u32>,
-    p2: &'a Utf8ViewArray,
-    cats: &'a UInt32Chunked,
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl<'a> GetInner for GlobalCategorical<'a> {
-    type Item = Option<&'a str>;
-    unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
-        let cat = self.cats.get_unchecked(idx)?;
-        let idx = self.p1.get(&cat).unwrap();
-        Some(self.p2.value_unchecked(*idx as usize))
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl<'a> IntoTotalOrdInner<'a> for &'a CategoricalChunked {
+impl<'a, T: PolarsCategoricalType> IntoTotalOrdInner<'a> for &'a CategoricalChunked<T> {
     fn into_total_ord_inner(self) -> Box<dyn TotalOrdInner + 'a> {
-        let cats = self.physical();
-        match &**self.get_rev_map() {
-            RevMapping::Global(p1, p2, _) => Box::new(GlobalCategorical { p1, p2, cats }),
-            RevMapping::Local(rev_map, _) => Box::new(LocalCategorical { rev_map, cats }),
+        if self.uses_lexical_ordering() {
+            Box::new(LexicalCategorical::<T> {
+                mapping: self.get_mapping(),
+                cats: &self.phys,
+            })
+        } else {
+            self.phys.into_total_ord_inner()
         }
     }
 }

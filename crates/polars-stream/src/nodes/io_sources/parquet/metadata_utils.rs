@@ -36,20 +36,13 @@ pub async fn read_parquet_metadata_bytes(
     let footer_header_bytes = bytes.slice((bytes.len() - FOOTER_HEADER_SIZE)..bytes.len());
 
     let (v, remaining) = footer_header_bytes.split_at(4);
-    let footer_size = i32::from_le_bytes(v.try_into().unwrap());
+    let footer_size = u32::from_le_bytes(v.try_into().unwrap());
 
     if remaining != PARQUET_MAGIC {
         return Err(ParquetError::OutOfSpec(format!(
             r#"expected parquet magic bytes "{}" in footer, got "{}" instead"#,
             std::str::from_utf8(&PARQUET_MAGIC).unwrap(),
             String::from_utf8_lossy(remaining)
-        ))
-        .into());
-    }
-
-    if footer_size < 0 {
-        return Err(ParquetError::OutOfSpec(format!(
-            "expected positive footer size, got {footer_size} instead"
         ))
         .into());
     }
@@ -68,7 +61,7 @@ pub async fn read_parquet_metadata_bytes(
         if verbose {
             eprintln!(
                 "[ParquetFileReader]: Extra {} bytes need to be fetched for metadata \
-            (initial estimate = {}, actual size = {})",
+                (initial estimate = {}, actual size = {})",
                 footer_size - estimated_metadata_size,
                 bytes.len(),
                 footer_size,

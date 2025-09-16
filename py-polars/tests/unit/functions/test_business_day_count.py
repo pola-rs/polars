@@ -34,6 +34,7 @@ def test_business_day_count() -> None:
     )["business_day_count"]
     expected = pl.Series("business_day_count", [7, 6], pl.Int32)
     assert_series_equal(result, expected)
+
     result = df.select(
         business_day_count=pl.business_day_count("start", pl.lit(None, dtype=pl.Date)),
     )["business_day_count"]
@@ -46,6 +47,11 @@ def test_business_day_count() -> None:
     )["business_day_count"]
     expected = pl.Series("business_day_count", [1, 7], pl.Int32)
     assert_series_equal(result, expected)
+    # see GH issue #23663
+    assert df.lazy().select(
+        pl.business_day_count(date(2020, 1, 1), "end")
+    ).collect_schema() == pl.Schema({"literal": pl.Int32})
+
     result = df.select(
         business_day_count=pl.business_day_count(pl.lit(None, dtype=pl.Date), "end"),
     )["business_day_count"]

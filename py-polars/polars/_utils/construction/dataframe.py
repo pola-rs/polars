@@ -56,19 +56,19 @@ from polars.exceptions import DataOrientationWarning, ShapeError
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, MutableMapping
 
     from polars import DataFrame, Series
+    from polars._plr import PySeries
     from polars._typing import (
         Orientation,
         PolarsDataType,
         SchemaDefinition,
         SchemaDict,
     )
-    from polars.polars import PySeries
 
 _MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 
@@ -327,12 +327,12 @@ def _post_apply_columns(
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
 
     if column_casts or column_subset:
-        pydf = pydf.lazy()
+        pyldf = pydf.lazy()
         if column_casts:
-            pydf = pydf.with_columns(column_casts)
+            pyldf = pyldf.with_columns(column_casts)
         if column_subset:
-            pydf = pydf.select([F.col(col)._pyexpr for col in column_subset])
-        pydf = pydf.collect(engine="in-memory")
+            pyldf = pyldf.select([F.col(col)._pyexpr for col in column_subset])
+        pydf = pyldf.collect(engine="in-memory", lambda_post_opt=None)
 
     return pydf
 
@@ -588,7 +588,11 @@ def _sequence_of_sequence_to_pydf(
         if unpack_nested:
             dicts = [nt_unpack(d) for d in data]
             pydf = PyDataFrame.from_dicts(
-                dicts, strict=strict, infer_schema_length=infer_schema_length
+                dicts,
+                schema=None,
+                schema_overrides=None,
+                strict=strict,
+                infer_schema_length=infer_schema_length,
             )
         else:
             pydf = PyDataFrame.from_rows(
@@ -815,12 +819,18 @@ def _sequence_of_dataclasses_to_pydf(
     if unpack_nested:
         dicts = [asdict(md) for md in data]
         pydf = PyDataFrame.from_dicts(
-            dicts, strict=strict, infer_schema_length=infer_schema_length
+            dicts,
+            schema=None,
+            schema_overrides=None,
+            strict=strict,
+            infer_schema_length=infer_schema_length,
         )
     else:
         rows = [astuple(dc) for dc in data]
         pydf = PyDataFrame.from_rows(
-            rows, schema=overrides or None, infer_schema_length=infer_schema_length
+            rows,  # type: ignore[arg-type]
+            schema=overrides or None,
+            infer_schema_length=infer_schema_length,
         )
 
     if overrides:
@@ -868,7 +878,11 @@ def _sequence_of_pydantic_models_to_pydf(
             else [md.model_dump(mode="python") for md in data]
         )
         pydf = PyDataFrame.from_dicts(
-            dicts, strict=strict, infer_schema_length=infer_schema_length
+            dicts,
+            schema=None,
+            schema_overrides=None,
+            strict=strict,
+            infer_schema_length=infer_schema_length,
         )
 
     elif len(model_fields) > 50:
@@ -884,6 +898,7 @@ def _sequence_of_pydantic_models_to_pydf(
         pydf = PyDataFrame.from_dicts(
             dicts,
             schema=overrides,
+            schema_overrides=None,
             strict=strict,
             infer_schema_length=infer_schema_length,
         )
@@ -1017,9 +1032,10 @@ def iterable_to_pydf(
         adaptive_chunk_size = None
 
     df: DataFrame = None  # type: ignore[assignment]
-    chunk_size = max(
-        (infer_schema_length or 0),
-        (adaptive_chunk_size or 1000),
+    chunk_size = (
+        None
+        if infer_schema_length is None
+        else max(infer_schema_length, adaptive_chunk_size or 1000)
     )
     while True:
         values = list(islice(data, chunk_size))
@@ -1213,9 +1229,6 @@ def numpy_to_pydf(
         n_columns = len(record_names)
         for nm in record_names:
             shape = data[nm].shape
-            if len(data[nm].shape) > 2:
-                msg = f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
-                raise ValueError(msg)
         if not schema:
             schema = record_names
     else:

@@ -546,6 +546,16 @@ impl SinkTypeIR {
     }
 }
 
+impl SinkTypeIR {
+    pub fn maintain_order(&self) -> bool {
+        match self {
+            SinkTypeIR::Memory => true,
+            SinkTypeIR::File(s) => s.sink_options.maintain_order,
+            SinkTypeIR::Partition(s) => s.sink_options.maintain_order,
+        }
+    }
+}
+
 #[cfg(feature = "cse")]
 impl PartitionSinkTypeIR {
     pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {

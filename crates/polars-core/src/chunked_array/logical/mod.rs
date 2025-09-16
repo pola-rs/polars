@@ -16,13 +16,10 @@ mod duration;
 pub use duration::*;
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
-#[cfg(feature = "dtype-categorical")]
-pub mod enum_;
 #[cfg(feature = "dtype-time")]
 mod time;
 
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 
 #[cfg(feature = "dtype-categorical")]
 pub use categorical::*;
@@ -50,22 +47,10 @@ impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     }
 }
 
-impl<K: PolarsDataType, T: PolarsDataType> Deref for Logical<K, T> {
-    type Target = ChunkedArray<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.phys
-    }
-}
-
-impl<K: PolarsDataType, T: PolarsDataType> DerefMut for Logical<K, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.phys
-    }
-}
-
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
-    pub fn new_logical(phys: ChunkedArray<T>, dtype: DataType) -> Logical<K, T> {
+    /// # Safety
+    /// You must uphold the logical types' invariants.
+    pub unsafe fn new_logical(phys: ChunkedArray<T>, dtype: DataType) -> Logical<K, T> {
         Logical {
             phys,
             dtype,
@@ -100,11 +85,80 @@ impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T>
 where
     Self: LogicalType,
 {
-    pub fn physical(&self) -> &ChunkedArray<T> {
-        &self.phys
+    #[inline(always)]
+    pub fn name(&self) -> &PlSmallStr {
+        self.phys.name()
     }
+
+    #[inline(always)]
+    pub fn rename(&mut self, name: PlSmallStr) {
+        self.phys.rename(name)
+    }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.phys.len()
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    #[inline(always)]
+    pub fn null_count(&self) -> usize {
+        self.phys.null_count()
+    }
+
+    #[inline(always)]
+    pub fn has_nulls(&self) -> bool {
+        self.phys.has_nulls()
+    }
+
+    #[inline(always)]
+    pub fn is_null(&self) -> BooleanChunked {
+        self.phys.is_null()
+    }
+
+    #[inline(always)]
+    pub fn is_not_null(&self) -> BooleanChunked {
+        self.phys.is_not_null()
+    }
+
+    #[inline(always)]
+    pub fn split_at(&self, offset: i64) -> (Self, Self) {
+        let (left, right) = self.phys.split_at(offset);
+        unsafe {
+            (
+                Self::new_logical(left, self.dtype.clone()),
+                Self::new_logical(right, self.dtype.clone()),
+            )
+        }
+    }
+
+    #[inline(always)]
+    pub fn slice(&self, offset: i64, length: usize) -> Self {
+        unsafe { Self::new_logical(self.phys.slice(offset, length), self.dtype.clone()) }
+    }
+
+    #[inline(always)]
     pub fn field(&self) -> Field {
         let name = self.phys.ref_field().name();
         Field::new(name.clone(), LogicalType::dtype(self).clone())
+    }
+
+    #[inline(always)]
+    pub fn physical(&self) -> &ChunkedArray<T> {
+        &self.phys
+    }
+
+    #[inline(always)]
+    pub fn physical_mut(&mut self) -> &mut ChunkedArray<T> {
+        &mut self.phys
+    }
+
+    #[inline(always)]
+    pub fn into_physical(self) -> ChunkedArray<T> {
+        self.phys
     }
 }

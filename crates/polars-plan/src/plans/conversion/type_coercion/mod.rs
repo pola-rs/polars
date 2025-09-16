@@ -38,26 +38,20 @@ fn modify_supertype(
     match (type_left, type_right, left, right) {
         // if the we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
-        (Categorical(_, ordering), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
-        | (String | Unknown(UnknownKind::Str), Categorical(_, ordering), AExpr::Literal(_), _) => {
-            st = Categorical(None, *ordering)
-        },
-        #[cfg(feature = "dtype-categorical")]
-        (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        (dt @ Categorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        | (String | Unknown(UnknownKind::Str), dt @ Categorical(_, _), AExpr::Literal(_), _)
+        | (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
         | (String | Unknown(UnknownKind::Str), dt @ Enum(_, _), AExpr::Literal(_), _) => {
             st = dt.clone()
         },
+
         // when then expression literals can have a different list type.
         // so we cast the literal to the other hand side.
         (List(inner), List(other), _, AExpr::Literal(_))
         | (List(other), List(inner), AExpr::Literal(_), _)
             if inner != other =>
         {
-            st = match &**inner {
-                #[cfg(feature = "dtype-categorical")]
-                Categorical(_, ordering) => List(Box::new(Categorical(None, *ordering))),
-                _ => List(inner.clone()),
-            };
+            st = List(inner.clone())
         },
         // do nothing
         _ => {},
@@ -71,11 +65,7 @@ fn get_aexpr_and_type<'a>(
     input_schema: &Schema,
 ) -> Option<(&'a AExpr, DataType)> {
     let ae = expr_arena.get(e);
-    Some((
-        ae,
-        ae.get_type(input_schema, Context::Default, expr_arena)
-            .ok()?,
-    ))
+    Some((ae, ae.get_dtype(input_schema, expr_arena).ok()?))
 }
 
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
@@ -110,7 +100,7 @@ impl OptimizationRule for TypeCoercionRule {
                     if let CastOptions::Strict = options {
                         let cast_from = expr_arena
                             .get(input_expr)
-                            .to_field(schema, Context::Default, expr_arena)?
+                            .to_field(schema, expr_arena)?
                             .dtype;
                         let cast_to = &dtype;
 
@@ -121,6 +111,7 @@ impl OptimizationRule for TypeCoercionRule {
                             datetime_nanoseconds_downcast: true,
                             datetime_microseconds_downcast: true,
                             datetime_convert_timezone: true,
+                            null_upcast: true,
                             missing_struct_fields: MissingColumnsPolicy::Insert,
                             extra_struct_fields: ExtraColumnsPolicy::Ignore,
                         }
@@ -342,7 +333,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_fill_value = if type_fill_value != super_type {
                     expr_arena.add(AExpr::Cast {
                         expr: fill_value_node,
-                        dtype: super_type.clone(),
+                        dtype: super_type,
                         options: CastOptions::NonStrict,
                     })
                 } else {
@@ -410,9 +401,19 @@ impl OptimizationRule for TypeCoercionRule {
                         CastingRules::FirstArgLossless => {
                             if super_type.is_integer() {
                                 for other in &input[1..] {
-                                    let other =
-                                        other.dtype(schema, Context::Default, expr_arena)?;
+                                    let other = other.dtype(schema, expr_arena)?;
                                     if other.is_float() {
+                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
+                                    }
+                                }
+                            }
+                            if super_type.is_categorical() || super_type.is_enum() {
+                                for other in &input[1..] {
+                                    let other = other.dtype(schema, expr_arena)?;
+                                    if !(other.is_string()
+                                        || other.is_null()
+                                        || *other == super_type)
+                                    {
                                         polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
                                     }
                                 }
@@ -420,7 +421,10 @@ impl OptimizationRule for TypeCoercionRule {
                         },
                     }
 
-                    if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
+                    if matches!(
+                        super_type,
+                        DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc)
+                    ) {
                         raise_supertype(&function, &input, schema, expr_arena)?;
                         unreachable!()
                     }
@@ -434,19 +438,7 @@ impl OptimizationRule for TypeCoercionRule {
                     }
 
                     for (e, dtype) in input.iter_mut().zip(dtypes) {
-                        match super_type {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) if dtype.is_string() => {
-                                // pass
-                            },
-                            _ => cast_expr_ir(
-                                e,
-                                &dtype,
-                                &super_type,
-                                expr_arena,
-                                CastOptions::NonStrict,
-                            )?,
-                        }
+                        cast_expr_ir(e, &dtype, &super_type, expr_arena, CastOptions::NonStrict)?;
                     }
                 }
 
@@ -836,7 +828,7 @@ fn inline_or_prune_cast(
 
             match op {
                 LogicalOr | LogicalAnd => {
-                    let field = aexpr.to_field(input_schema, Context::Default, expr_arena)?;
+                    let field = aexpr.to_field(input_schema, expr_arena)?;
                     if field.dtype == *dtype {
                         return Ok(Some(aexpr.clone()));
                     }
@@ -898,11 +890,11 @@ fn try_inline_literal_cast(
                 #[cfg(feature = "dtype-duration")]
                 (AnyValue::Duration(_, _), _) => return Ok(None),
                 #[cfg(feature = "dtype-categorical")]
-                (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
+                (AnyValue::Categorical(_, _), _) | (_, DataType::Categorical(_, _)) => {
                     return Ok(None);
                 },
                 #[cfg(feature = "dtype-categorical")]
-                (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
+                (AnyValue::Enum(_, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
                 #[cfg(feature = "dtype-struct")]
                 (_, DataType::Struct(_)) => return Ok(None),
                 (av, _) => {
@@ -975,7 +967,7 @@ fn raise_supertype(
 ) -> PolarsResult<()> {
     let dtypes = inputs
         .iter()
-        .map(|e| e.dtype(input_schema, Context::Default, expr_arena).cloned())
+        .map(|e| e.dtype(input_schema, expr_arena).cloned())
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let st = dtypes
@@ -1019,60 +1011,4 @@ fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Opt
     };
 
     Ok(out)
-}
-
-#[cfg(test)]
-#[cfg(feature = "dtype-categorical")]
-mod test {
-    use polars_core::prelude::*;
-
-    use super::*;
-
-    #[test]
-    fn test_categorical_string() {
-        let mut expr_arena = Arena::new();
-        let mut lp_arena = Arena::new();
-        let optimizer = StackOptimizer {};
-        let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
-
-        let df = DataFrame::new(Vec::from([Column::new_empty(
-            PlSmallStr::from_static("fruits"),
-            &DataType::Categorical(None, Default::default()),
-        )]))
-        .unwrap();
-
-        let expr_in = vec![col("fruits").eq(lit("somestr"))];
-        let lp = DslBuilder::from_existing_df(df.clone())
-            .project(expr_in.clone(), Default::default())
-            .build();
-
-        let mut lp_top =
-            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
-        lp_top = optimizer
-            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-            .unwrap();
-        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-
-        // we test that the fruits column is not cast to string for the comparison
-        if let DslPlan::Select { expr, .. } = lp {
-            assert_eq!(expr, expr_in);
-        };
-
-        let expr_in = vec![col("fruits") + (lit("somestr"))];
-        let lp = DslBuilder::from_existing_df(df)
-            .project(expr_in, Default::default())
-            .build();
-        let mut lp_top =
-            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
-        lp_top = optimizer
-            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-            .unwrap();
-        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-
-        // we test that the fruits column is cast to string for the addition
-        let expected = vec![col("fruits").cast(DataType::String) + lit("somestr")];
-        if let DslPlan::Select { expr, .. } = lp {
-            assert_eq!(expr, expected);
-        };
-    }
 }

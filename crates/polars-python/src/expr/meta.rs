@@ -70,50 +70,6 @@ impl PyExpr {
         self.inner.clone().meta().is_literal(allow_aliasing)
     }
 
-    fn _meta_selector_add(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_add(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    fn _meta_selector_and(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_and(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    fn _meta_selector_sub(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_sub(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    fn _meta_selector_xor(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_xor(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    fn _meta_as_selector(&self) -> PyExpr {
-        self.inner.clone().meta()._into_selector().into()
-    }
-
     fn compute_tree_format(
         &self,
         display_as_dot: bool,

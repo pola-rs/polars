@@ -124,7 +124,7 @@ def test_series_from_buffers_string() -> None:
 
 def test_series_from_buffers_enum() -> None:
     dtype = pl.Enum(["a", "b", "c"])
-    data = pl.Series([0, 1, 0, 2], dtype=pl.UInt32)
+    data = pl.Series([0, 1, 0, 2], dtype=pl.UInt8)
     validity = pl.Series([True, True, False, True])
 
     result = pl.Series._from_buffers(dtype, data=data, validity=validity)

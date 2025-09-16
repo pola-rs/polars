@@ -399,7 +399,7 @@ fn test_scan_parquet_limit_9001() {
     let IRPlan {
         lp_top, lp_arena, ..
     } = q.to_alp_optimized().unwrap();
-    (&lp_arena).iter(lp_top).all(|(_, lp)| match lp {
+    lp_arena.iter(lp_top).all(|(_, lp)| match lp {
         IR::Union { options, .. } => {
             let sliced = options.slice.unwrap();
             sliced.1 == 3
@@ -439,7 +439,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
 }
 
 fn slice_at_union(lp_arena: &Arena<IR>, lp: Node) -> bool {
-    (&lp_arena).iter(lp).all(|(_, lp)| {
+    lp_arena.iter(lp).all(|(_, lp)| {
         if let IR::Union { options, .. } = lp {
             options.slice.is_some()
         } else {

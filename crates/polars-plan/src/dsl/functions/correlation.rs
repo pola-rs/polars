@@ -42,11 +42,13 @@ fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool
 
     Expr::Function {
         input: vec![x, y],
-        function: FunctionExpr::RollingExpr(RollingFunction::CorrCov {
-            rolling_options,
-            corr_cov_options: options,
-            is_corr,
-        }),
+        function: FunctionExpr::RollingExpr {
+            function: RollingFunction::CorrCov {
+                corr_cov_options: options,
+                is_corr,
+            },
+            options: rolling_options,
+        },
     }
 }
 

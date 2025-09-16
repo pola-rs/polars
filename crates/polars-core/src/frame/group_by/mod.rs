@@ -16,7 +16,6 @@ pub mod aggregations;
 pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
-mod perfect;
 mod position;
 
 pub use into_groups::*;
@@ -848,7 +847,7 @@ impl<'a> GroupBy<'a> {
         match slice {
             None => self,
             Some((offset, length)) => {
-                self.groups = (self.groups.slice(offset, length)).clone();
+                self.groups = self.groups.slice(offset, length);
                 self.selected_keys = self.keys_sliced(slice);
                 self
             },
@@ -1118,7 +1117,7 @@ mod test {
         .unwrap();
 
         df.apply("foo", |s| {
-            s.cast(&DataType::Categorical(None, Default::default()))
+            s.cast(&DataType::from_categories(Categories::global()))
                 .unwrap()
         })
         .unwrap();
@@ -1199,7 +1198,7 @@ mod test {
         ]?;
 
         df.try_apply("g", |s| {
-            s.cast(&DataType::Categorical(None, Default::default()))
+            s.cast(&DataType::from_categories(Categories::global()))
         })?;
 
         // Use of deprecated `sum()` for testing purposes

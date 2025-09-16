@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
+from polars._utils.wrap import wrap_expr
+
 if TYPE_CHECKING:
     from polars import Expr
 
@@ -12,20 +14,11 @@ class ExprNameNameSpace:
     _accessor = "name"
 
     def __init__(self, expr: Expr) -> None:
-        self._from_pyexpr = expr._from_pyexpr
         self._pyexpr = expr._pyexpr
 
     def keep(self) -> Expr:
         """
         Keep the original root name of the expression.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
 
         See Also
         --------
@@ -66,19 +59,11 @@ class ExprNameNameSpace:
         │ 18  ┆ 4   │
         └─────┴─────┘
         """
-        return self._from_pyexpr(self._pyexpr.name_keep())
+        return wrap_expr(self._pyexpr.name_keep())
 
     def map(self, function: Callable[[str], str]) -> Expr:
         """
         Rename the output of an expression by mapping a function over the root name.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-
 
         Parameters
         ----------
@@ -117,7 +102,7 @@ class ExprNameNameSpace:
         │ 1         ┆ x         ┆ 3   ┆ z   │
         └───────────┴───────────┴─────┴─────┘
         """
-        return self._from_pyexpr(self._pyexpr.name_map(function))
+        return wrap_expr(self._pyexpr.name_map(function))
 
     def prefix(self, prefix: str) -> Expr:
         """
@@ -128,18 +113,10 @@ class ExprNameNameSpace:
         prefix
             Prefix to add to the root column name.
 
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
-
         See Also
         --------
         suffix
+        map
 
         Examples
         --------
@@ -161,7 +138,7 @@ class ExprNameNameSpace:
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
         """
-        return self._from_pyexpr(self._pyexpr.name_prefix(prefix))
+        return wrap_expr(self._pyexpr.name_prefix(prefix))
 
     def suffix(self, suffix: str) -> Expr:
         """
@@ -172,17 +149,10 @@ class ExprNameNameSpace:
         suffix
             Suffix to add to the root column name.
 
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
-
         See Also
         --------
         prefix
+        map
 
         Examples
         --------
@@ -204,25 +174,18 @@ class ExprNameNameSpace:
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
         """
-        return self._from_pyexpr(self._pyexpr.name_suffix(suffix))
+        return wrap_expr(self._pyexpr.name_suffix(suffix))
 
     def to_lowercase(self) -> Expr:
         """
         Make the root column name lowercase.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
 
         See Also
         --------
         prefix
         suffix
         to_uppercase
+        map
 
         Examples
         --------
@@ -244,25 +207,18 @@ class ExprNameNameSpace:
         │ 3    ┆ z    ┆ 3    ┆ z    │
         └──────┴──────┴──────┴──────┘
         """
-        return self._from_pyexpr(self._pyexpr.name_to_lowercase())
+        return wrap_expr(self._pyexpr.name_to_lowercase())
 
     def to_uppercase(self) -> Expr:
         """
         Make the root column name uppercase.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
 
         See Also
         --------
         prefix
         suffix
         to_lowercase
+        map
 
         Examples
         --------
@@ -284,7 +240,7 @@ class ExprNameNameSpace:
         │ 3    ┆ z    ┆ 3    ┆ z    │
         └──────┴──────┴──────┴──────┘
         """
-        return self._from_pyexpr(self._pyexpr.name_to_uppercase())
+        return wrap_expr(self._pyexpr.name_to_uppercase())
 
     def map_fields(self, function: Callable[[str], str]) -> Expr:
         """
@@ -310,7 +266,7 @@ class ExprNameNameSpace:
         >>> df.select(pl.col("x").name.map_fields(lambda x: x.upper())).schema
         Schema({'x': Struct({'A': Int64, 'B': Int64})})
         """
-        return self._from_pyexpr(self._pyexpr.name_map_fields(function))
+        return wrap_expr(self._pyexpr.name_map_fields(function))
 
     def prefix_fields(self, prefix: str) -> Expr:
         """
@@ -336,7 +292,7 @@ class ExprNameNameSpace:
         >>> df.select(pl.col("x").name.prefix_fields("prefix_")).schema
         Schema({'x': Struct({'prefix_a': Int64, 'prefix_b': Int64})})
         """
-        return self._from_pyexpr(self._pyexpr.name_prefix_fields(prefix))
+        return wrap_expr(self._pyexpr.name_prefix_fields(prefix))
 
     def suffix_fields(self, suffix: str) -> Expr:
         """
@@ -362,4 +318,4 @@ class ExprNameNameSpace:
         >>> df.select(pl.col("x").name.suffix_fields("_suffix")).schema
         Schema({'x': Struct({'a_suffix': Int64, 'b_suffix': Int64})})
         """
-        return self._from_pyexpr(self._pyexpr.name_suffix_fields(suffix))
+        return wrap_expr(self._pyexpr.name_suffix_fields(suffix))

@@ -75,6 +75,13 @@ impl BitmapBuilder {
         self.bit_cap = words_available * 64;
     }
 
+    pub fn clear(&mut self) {
+        self.buf = 0;
+        self.bit_len = 0;
+        self.set_bits_in_bytes = 0;
+        self.bytes.clear();
+    }
+
     #[inline(always)]
     pub fn push(&mut self, x: bool) {
         self.reserve(1);
@@ -99,7 +106,7 @@ impl BitmapBuilder {
         debug_assert!(self.bit_len < self.bit_cap);
         self.buf |= (x as u64) << (self.bit_len % 64);
         self.bit_len += 1;
-        if self.bit_len % 64 == 0 {
+        if self.bit_len.is_multiple_of(64) {
             self.flush_word_unchecked(self.buf);
             self.set_bits_in_bytes += self.buf.count_ones() as usize;
             self.buf = 0;
@@ -423,7 +430,7 @@ impl BitmapBuilder {
     /// # Safety
     /// May only be called once at the end.
     unsafe fn finish(&mut self) {
-        if self.bit_len % 64 != 0 {
+        if !self.bit_len.is_multiple_of(64) {
             self.bytes.extend_from_slice(&self.buf.to_le_bytes());
             self.set_bits_in_bytes += self.buf.count_ones() as usize;
             self.buf = 0;

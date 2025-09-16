@@ -53,8 +53,8 @@ pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>
         return Err(ParquetError::oos("Invalid Parquet file. Corrupt footer"));
     }
 
-    let metadata_len = metadata_len(&buffer, default_end_len);
-    let metadata_len: u64 = metadata_len.try_into()?;
+    let metadata_len: u32 = metadata_len(&buffer, default_end_len);
+    let metadata_len: u64 = metadata_len as u64;
 
     let footer_len = FOOTER_SIZE + metadata_len;
     if footer_len > file_size {

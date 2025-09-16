@@ -116,15 +116,14 @@ def test_append_null_series() -> None:
     assert a.n_chunks() == 2
 
 
-def test_append_enum_with_stringcache_22764() -> None:
+def test_append_enum_22764() -> None:
     f = io.BytesIO()
     g = io.BytesIO()
-    with pl.StringCache():
-        pl.DataFrame({"someletter": ["A", "B"]}).write_csv(f)
+    pl.DataFrame({"someletter": ["A", "B"]}).write_csv(f)
 
-        schema = pl.Schema(
-            {
-                "someletter": pl.Enum(["A", "B"]),
-            }
-        )
-        pl.scan_csv(f, schema=schema).sink_parquet(g)
+    schema = pl.Schema(
+        {
+            "someletter": pl.Enum(["A", "B"]),
+        }
+    )
+    pl.scan_csv(f, schema=schema).sink_parquet(g)

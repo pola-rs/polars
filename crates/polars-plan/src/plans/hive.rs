@@ -1,3 +1,5 @@
+use std::path::{Component, Path};
+
 use polars_core::prelude::*;
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
 use polars_utils::plpath::PlPath;
@@ -77,6 +79,14 @@ pub fn hive_partitions_from_paths(
         return Ok(None);
     };
 
+    // generate an iterator for path segments
+    fn get_normal_components(path: &Path) -> Box<dyn Iterator<Item = &str> + '_> {
+        Box::new(path.components().filter_map(|c| match c {
+            Component::Normal(seg) => Some(seg.to_str().unwrap()),
+            _ => None,
+        }))
+    }
+
     fn parse_hive_string_and_decode(part: &'_ str) -> Option<(&'_ str, std::borrow::Cow<'_, str>)> {
         let (k, v) = parse_hive_string(part)?;
         let v = percent_encoding::percent_decode(v.as_bytes())
@@ -89,8 +99,8 @@ pub fn hive_partitions_from_paths(
     // generate (k,v) tuples from 'k=v' partition strings
     macro_rules! get_hive_parts_iter {
         ($e:expr) => {{
-            let file_index = $e.get_normal_components().count() - 1;
-            let path_parts = $e.get_normal_components();
+            let file_index = get_normal_components($e).count() - 1;
+            let path_parts = get_normal_components($e);
 
             path_parts.enumerate().filter_map(move |(index, part)| {
                 if index == file_index {
@@ -105,7 +115,7 @@ pub fn hive_partitions_from_paths(
     let hive_schema = if let Some(ref schema) = schema {
         let path = path.as_ref();
         let path = path.offset_bytes(hive_start_idx);
-        Arc::new(get_hive_parts_iter!(path).map(|(name, _)| {
+        Arc::new(get_hive_parts_iter!(&path.as_path()).map(|(name, _)| {
                 let Some(dtype) = schema.get(name) else {
                     polars_bail!(
                         SchemaFieldNotFound:
@@ -131,7 +141,7 @@ pub fn hive_partitions_from_paths(
         let mut schema_inference_map: PlHashMap<&str, PlHashSet<DataType>> =
             PlHashMap::with_capacity(16);
 
-        for (name, _) in get_hive_parts_iter!(path) {
+        for (name, _) in get_hive_parts_iter!(&path.as_path()) {
             // If the column is also in the file we can use the dtype stored there.
             if let Some(dtype) = reader_schema.get(name) {
                 let dtype = if !try_parse_dates && dtype.is_temporal() {
@@ -156,7 +166,7 @@ pub fn hive_partitions_from_paths(
             for path in paths {
                 let path = path.as_ref();
                 let path = path.offset_bytes(hive_start_idx);
-                for (name, value) in get_hive_parts_iter!(path) {
+                for (name, value) in get_hive_parts_iter!(&path.as_path()) {
                     let Some(entry) = schema_inference_map.get_mut(name) else {
                         continue;
                     };
@@ -189,7 +199,7 @@ pub fn hive_partitions_from_paths(
     for path in paths {
         let path = path.as_ref();
         let path = path.offset_bytes(hive_start_idx);
-        for (name, value) in get_hive_parts_iter!(path) {
+        for (name, value) in get_hive_parts_iter!(&path.as_path()) {
             let Some(index) = hive_schema.index_of(name) else {
                 polars_bail!(
                     SchemaFieldNotFound:

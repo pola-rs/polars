@@ -105,6 +105,240 @@ from polars.testing import assert_frame_equal
             ),
             None,
         ),
+        # Test logical (datetime) type under list
+        (
+            (
+                pl.lit(
+                    [
+                        {
+                            "field": datetime(
+                                2025, 1, 1, tzinfo=ZoneInfo("Europe/Amsterdam")
+                            )
+                        }
+                    ],
+                    dtype=pl.List(
+                        pl.Struct(
+                            {
+                                "field": pl.Datetime(
+                                    time_unit="ms", time_zone="Europe/Amsterdam"
+                                )
+                            }
+                        )
+                    ),
+                ),
+                pl.lit(
+                    [
+                        {
+                            "field": datetime(
+                                2025, 1, 2, tzinfo=ZoneInfo("Australia/Sydney")
+                            )
+                        }
+                    ],
+                    dtype=pl.List(
+                        pl.Struct(
+                            {
+                                "field": pl.Datetime(
+                                    time_unit="ns", time_zone="Australia/Sydney"
+                                )
+                            }
+                        )
+                    ),
+                ),
+            ),
+            pl.Series(
+                [
+                    [
+                        {
+                            "field": datetime(
+                                2025, 1, 1, tzinfo=ZoneInfo("Europe/Amsterdam")
+                            )
+                        }
+                    ],
+                    [
+                        {
+                            "field": datetime(
+                                2025, 1, 1, 14, tzinfo=ZoneInfo("Europe/Amsterdam")
+                            )
+                        }
+                    ],
+                ],
+                dtype=pl.List(
+                    pl.Struct(
+                        {
+                            "field": pl.Datetime(
+                                time_unit="ms", time_zone="Europe/Amsterdam"
+                            )
+                        }
+                    )
+                ),
+            ),
+            pl.ScanCastOptions(
+                datetime_cast=["nanosecond-downcast", "convert-timezone"]
+            ),
+        ),
+        (
+            (
+                pl.lit(
+                    [
+                        {
+                            "field": datetime(
+                                2025, 1, 1, tzinfo=ZoneInfo("Europe/Amsterdam")
+                            )
+                        }
+                    ],
+                    dtype=pl.Array(
+                        pl.Struct(
+                            {
+                                "field": pl.Datetime(
+                                    time_unit="ms", time_zone="Europe/Amsterdam"
+                                )
+                            }
+                        ),
+                        shape=1,
+                    ),
+                ),
+                pl.lit(
+                    [
+                        {
+                            "field": datetime(
+                                2025, 1, 2, tzinfo=ZoneInfo("Australia/Sydney")
+                            )
+                        }
+                    ],
+                    dtype=pl.Array(
+                        pl.Struct(
+                            {
+                                "field": pl.Datetime(
+                                    time_unit="ns", time_zone="Australia/Sydney"
+                                )
+                            }
+                        ),
+                        shape=1,
+                    ),
+                ),
+            ),
+            pl.Series(
+                [
+                    [
+                        {
+                            "field": datetime(
+                                2025, 1, 1, tzinfo=ZoneInfo("Europe/Amsterdam")
+                            )
+                        }
+                    ],
+                    [
+                        {
+                            "field": datetime(
+                                2025, 1, 1, 14, tzinfo=ZoneInfo("Europe/Amsterdam")
+                            )
+                        }
+                    ],
+                ],
+                dtype=pl.Array(
+                    pl.Struct(
+                        {
+                            "field": pl.Datetime(
+                                time_unit="ms", time_zone="Europe/Amsterdam"
+                            )
+                        }
+                    ),
+                    shape=1,
+                ),
+            ),
+            pl.ScanCastOptions(
+                datetime_cast=["nanosecond-downcast", "convert-timezone"]
+            ),
+        ),
+        # Test outer validity
+        (
+            (
+                pl.lit(
+                    None,
+                    dtype=pl.List(
+                        pl.Struct(
+                            {
+                                "field": pl.Datetime(
+                                    time_unit="ms", time_zone="Europe/Amsterdam"
+                                )
+                            }
+                        )
+                    ),
+                ),
+                pl.lit(
+                    [None],
+                    dtype=pl.List(
+                        pl.Struct(
+                            {
+                                "field": pl.Datetime(
+                                    time_unit="ns", time_zone="Australia/Sydney"
+                                )
+                            }
+                        )
+                    ),
+                ),
+            ),
+            pl.Series(
+                [None, [None]],
+                dtype=pl.List(
+                    pl.Struct(
+                        {
+                            "field": pl.Datetime(
+                                time_unit="ms", time_zone="Europe/Amsterdam"
+                            )
+                        }
+                    )
+                ),
+            ),
+            pl.ScanCastOptions(
+                datetime_cast=["nanosecond-downcast", "convert-timezone"]
+            ),
+        ),
+        (
+            (
+                pl.lit(
+                    None,
+                    dtype=pl.Array(
+                        pl.Struct(
+                            {
+                                "field": pl.Datetime(
+                                    time_unit="ms", time_zone="Europe/Amsterdam"
+                                )
+                            }
+                        ),
+                        shape=1,
+                    ),
+                ),
+                pl.lit(
+                    [None],
+                    dtype=pl.Array(
+                        pl.Struct(
+                            {
+                                "field": pl.Datetime(
+                                    time_unit="ns", time_zone="Australia/Sydney"
+                                )
+                            }
+                        ),
+                        shape=1,
+                    ),
+                ),
+            ),
+            pl.Series(
+                [None, [None]],
+                dtype=pl.Array(
+                    pl.Struct(
+                        {
+                            "field": pl.Datetime(
+                                time_unit="ms", time_zone="Europe/Amsterdam"
+                            )
+                        }
+                    ),
+                    shape=1,
+                ),
+            ),
+            pl.ScanCastOptions(
+                datetime_cast=["nanosecond-downcast", "convert-timezone"]
+            ),
+        ),
     ],
 )
 def test_scan_cast_options(

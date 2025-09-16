@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyOptFlags
+    from polars._plr import PyOptFlags
 
 import inspect
 from functools import wraps

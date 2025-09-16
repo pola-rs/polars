@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([
             col("name"),
-            (cols(["weight", "height"]) * lit(0.95))
+            (cols(["weight", "height"]).as_expr() * lit(0.95))
                 .round(2, RoundMode::default())
                 .name()
                 .suffix("-5%"),
@@ -136,11 +136,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("birthdate").dt().year() / lit(10) * lit(10)).alias("decade"),
             col("name").str().split(lit(" ")).list().first(),
         ])
-        .select([all().exclude(["birthdate"])])
+        .select([all().exclude_cols(["birthdate"]).as_expr()])
         .group_by([col("decade")])
         .agg([
             col("name"),
             cols(["weight", "height"])
+                .as_expr()
                 .mean()
                 .round(2, RoundMode::default())
                 .name()
@@ -162,7 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .join(
-            df2.clone().lazy(),
+            df2.lazy(),
             [col("name")],
             [col("name")],
             JoinArgs::new(JoinType::Left),
@@ -186,11 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
 
-    let result = concat(
-        [df.clone().lazy(), df3.clone().lazy()],
-        UnionArgs::default(),
-    )?
-    .collect()?;
+    let result = concat([df.clone().lazy(), df3.lazy()], UnionArgs::default())?.collect()?;
     println!("{result}");
     // --8<-- [end:concat]
 

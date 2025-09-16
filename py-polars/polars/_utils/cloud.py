@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import polars.polars as plr
+import polars._plr as plr
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
 
 if TYPE_CHECKING:

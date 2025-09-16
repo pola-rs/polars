@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import polars._reexport as pl
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Duration
+from polars.datatypes.convert import DataTypeMappings
 from polars.dependencies import (
     _check_for_numpy,
     _check_for_pytz,
@@ -19,7 +20,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 
 if TYPE_CHECKING:
@@ -196,6 +197,14 @@ def lit(
             if dtype_name.startswith("timedelta64["):
                 time_unit = dtype_name[len("timedelta64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Duration(time_unit))
+
+        # handle numeric values
+        if isinstance(value, np.generic):
+            dtype = DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE.get(
+                (value.dtype.kind, value.dtype.itemsize)
+            )
+            if dtype is not None:
+                return lit(value, dtype=dtype)
     else:
         item = value
 

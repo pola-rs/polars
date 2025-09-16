@@ -476,6 +476,9 @@ def from_arrow(
     This operation will be zero copy for the most part. Types that are not
     supported by Polars may be cast to the closest supported type.
 
+    Hint: You can also directly pass arrow tables to `pl.DataFrame()` / arrow
+    arrays to `pl.Series()` if the output type is known to avoid typing issues.
+
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
@@ -613,7 +616,7 @@ def from_pandas(
     schema_overrides: SchemaDict | None = ...,
     rechunk: bool = ...,
     nan_to_null: bool = ...,
-    include_index: Literal[True] = ...,
+    include_index: Literal[True],
 ) -> DataFrame: ...
 
 
@@ -628,7 +631,12 @@ def from_pandas(
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame, Series, or Index.
 
-    This operation clones data.
+    This operation may clone data. If you want to ensure that in-place modifications
+    of the output don't affect the input, you may want to consider one of the following:
+
+    - Enable `Copy-On-Write <https://pandas.pydata.org/docs/dev/user_guide/copy_on_write.html>`_
+      in pandas.
+    - Call :meth:`DataFrame.clone` on the output of `from_pandas`.
 
     This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
 

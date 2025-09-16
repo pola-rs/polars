@@ -17,6 +17,9 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "proptest")]
 pub mod proptest;
 
+/// Name used for the values array within List/FixedSizeList arrays.
+pub const LIST_VALUES_NAME: PlSmallStr = PlSmallStr::from_static("item");
+
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
 pub struct ListArray<O: Offset> {
@@ -188,7 +191,7 @@ impl<O: Offset> ListArray<O> {
 impl<O: Offset> ListArray<O> {
     /// Returns a default [`ArrowDataType`]: inner field is named "item" and is nullable
     pub fn default_datatype(dtype: ArrowDataType) -> ArrowDataType {
-        let field = Box::new(Field::new(PlSmallStr::from_static("item"), dtype, true));
+        let field = Box::new(Field::new(LIST_VALUES_NAME, dtype, true));
         if O::IS_LARGE {
             ArrowDataType::LargeList(field)
         } else {

@@ -5,7 +5,8 @@ pub type DurationChunked = Logical<DurationType, Int64Type>;
 
 impl Int64Chunked {
     pub fn into_duration(self, timeunit: TimeUnit) -> DurationChunked {
-        DurationChunked::new_logical(self, DataType::Duration(timeunit))
+        // SAFETY: no invalid states.
+        unsafe { DurationChunked::new_logical(self, DataType::Duration(timeunit)) }
     }
 }
 

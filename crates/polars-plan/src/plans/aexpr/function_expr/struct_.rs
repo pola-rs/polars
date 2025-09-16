@@ -1,4 +1,3 @@
-use polars_core::utils::slice_offsets;
 use polars_utils::format_pl_smallstr;
 
 use super::*;
@@ -7,7 +6,6 @@ use crate::{map, map_as_slice};
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRStructFunction {
-    FieldByIndex(i64),
     FieldByName(PlSmallStr),
     RenameFields(Arc<[PlSmallStr]>),
     PrefixFields(PlSmallStr),
@@ -15,9 +13,7 @@ pub enum IRStructFunction {
     #[cfg(feature = "json")]
     JsonEncode,
     WithFields,
-    MultipleFields(Arc<[PlSmallStr]>),
-    #[cfg(feature = "python")]
-    MapFieldNames(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
+    MapFieldNames(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
 impl IRStructFunction {
@@ -25,18 +21,6 @@ impl IRStructFunction {
         use IRStructFunction::*;
 
         match self {
-            FieldByIndex(index) => mapper.try_map_field(|field| {
-                let (index, _) = slice_offsets(*index, 0, mapper.get_fields_lens());
-                if let DataType::Struct(ref fields) = field.dtype {
-                    fields.get(index).cloned().ok_or_else(
-                        || polars_err!(ComputeError: "index out of bounds in `struct.field`"),
-                    )
-                } else {
-                    polars_bail!(
-                        ComputeError: "expected struct dtype, got: `{}`", &field.dtype
-                    )
-                }
-            }),
             FieldByName(name) => mapper.try_map_field(|field| {
                 if let DataType::Struct(ref fields) = field.dtype {
                     let fld = fields
@@ -122,22 +106,13 @@ impl IRStructFunction {
                     polars_bail!(op = "with_fields", got = dt, expected = "Struct")
                 }
             },
-            MultipleFields(_) => panic!("should be expanded"),
-            #[cfg(feature = "python")]
-            MapFieldNames(lambda) => mapper.try_map_dtype(|dt| match dt {
+            MapFieldNames(function) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
                     let fields = fields
                         .iter()
                         .map(|fld| {
-                            let name = fld.name().as_str();
-                            let new_name = pyo3::marker::Python::with_gil(|py| {
-                                let out: PlSmallStr = lambda
-                                    .call1(py, (name,))?
-                                    .extract::<std::borrow::Cow<str>>(py)?
-                                    .as_ref()
-                                    .into();
-                                pyo3::PyResult::<_>::Ok(out)
-                            }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map_fields' produced an error: {e}."))?;
+                            let name = fld.name();
+                            let new_name = function.call(name.clone()).map_err(|e| polars_err!(ComputeError: "'name.map_fields' produced an error: {e}."))?;
                             Ok(Field::new(new_name, fld.dtype().clone()))
                         })
                         .collect::<PolarsResult<_>>()?;
@@ -151,7 +126,7 @@ impl IRStructFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRStructFunction as S;
         match self {
-            S::FieldByIndex(_) | S::FieldByName(_) => {
+            S::FieldByName(_) => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             S::RenameFields(_) | S::PrefixFields(_) | S::SuffixFields(_) => {
@@ -162,10 +137,6 @@ impl IRStructFunction {
             S::WithFields => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::PASS_NAME_TO_APPLY
             }),
-            S::MultipleFields(_) => {
-                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
-            #[cfg(feature = "python")]
             S::MapFieldNames(_) => FunctionOptions::elementwise(),
         }
     }
@@ -175,7 +146,6 @@ impl Display for IRStructFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use IRStructFunction::*;
         match self {
-            FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
@@ -183,8 +153,6 @@ impl Display for IRStructFunction {
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
             WithFields => write!(f, "with_fields"),
-            MultipleFields(_) => write!(f, "multiple_fields"),
-            #[cfg(feature = "python")]
             MapFieldNames(_) => write!(f, "map_field_names"),
         }
     }
@@ -194,7 +162,6 @@ impl From<IRStructFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: IRStructFunction) -> Self {
         use IRStructFunction::*;
         match func {
-            FieldByIndex(_) => panic!("should be replaced"),
             FieldByName(name) => map!(get_by_name, &name),
             RenameFields(names) => map!(rename_fields, names.clone()),
             PrefixFields(prefix) => map!(prefix_fields, prefix.as_str()),
@@ -202,9 +169,7 @@ impl From<IRStructFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "json")]
             JsonEncode => map!(to_json),
             WithFields => map_as_slice!(with_fields),
-            MultipleFields(_) => unimplemented!(),
-            #[cfg(feature = "python")]
-            MapFieldNames(lambda) => map!(map_field_names, &lambda),
+            MapFieldNames(function) => map!(map_field_names, &function),
         }
     }
 }
@@ -300,10 +265,9 @@ pub(super) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
     Ok(out.into_column())
 }
 
-#[cfg(feature = "python")]
 pub(super) fn map_field_names(
     s: &Column,
-    lambda: &polars_utils::python_function::PythonObject,
+    function: &PlanCallback<PlSmallStr, PlSmallStr>,
 ) -> PolarsResult<Column> {
     let ca = s.struct_()?;
     let fields = ca
@@ -311,15 +275,10 @@ pub(super) fn map_field_names(
         .iter()
         .map(|s| {
             let mut s = s.clone();
-            let name = s.name().as_str();
-            let new_name = pyo3::marker::Python::with_gil(|py| {
-                let out: PlSmallStr = lambda
-                    .call1(py, (name,))?
-                    .extract::<std::borrow::Cow<str>>(py)?
-                    .as_ref()
-                    .into();
-                pyo3::PyResult::<_>::Ok(out)
-            }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map_fields' produced an error: {e}."))?;
+            let name = s.name();
+            let new_name = function.call(name.clone()).map_err(
+                |e| polars_err!(ComputeError: "'name.map_fields' produced an error: {e}."),
+            )?;
             s.rename(new_name);
             Ok(s)
         })

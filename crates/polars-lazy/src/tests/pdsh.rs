@@ -79,9 +79,10 @@ fn test_q2() -> PolarsResult<()> {
             "s_address",
             "s_phone",
             "s_comment",
-        ])])
+        ])
+        .as_expr()])
         .sort_by_exprs(
-            [cols(["s_acctbal", "n_name", "s_name", "p_partkey"])],
+            [cols(["s_acctbal", "n_name", "s_name", "p_partkey"]).as_expr()],
             SortMultipleOptions::default()
                 .with_order_descending_multi([true, false, false, false])
                 .with_maintain_order(true),
@@ -93,7 +94,7 @@ fn test_q2() -> PolarsResult<()> {
         lp_top, lp_arena, ..
     } = q.clone().to_alp_optimized().unwrap();
     assert_eq!(
-        (&lp_arena)
+        lp_arena
             .iter(lp_top)
             .filter(|(_, alp)| matches!(alp, IR::Cache { .. }))
             .count(),

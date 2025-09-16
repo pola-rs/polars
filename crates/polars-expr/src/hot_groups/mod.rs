@@ -29,6 +29,7 @@ pub trait HotGrouper: Any + Send + Sync {
         hot_idxs: &mut Vec<IdxSize>,
         hot_group_idxs: &mut Vec<EvictIdx>,
         cold_idxs: &mut Vec<IdxSize>,
+        force_hot: bool,
     );
 
     /// Get all the current hot keys, in group order.
@@ -82,7 +83,11 @@ pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<d
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => Box::new(SK::<Int128Type>::new(dt, ng)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => Box::new(SK::<UInt32Type>::new(dt, ng)),
+            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    Box::new(SK::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(dt.clone(), ng))
+                })
+            },
 
             DataType::String | DataType::Binary => {
                 Box::new(binview::BinviewHashHotGrouper::new(ng))

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import contextlib
 from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import CategoricalRemappingWarning, InvalidOperationError
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -343,63 +342,46 @@ def test_replace_strict_str_to_int() -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.parametrize(
-    ("context", "dtype"),
-    [
-        (pl.StringCache(), pl.Categorical),
-        (pytest.warns(CategoricalRemappingWarning), pl.Categorical),
-        (contextlib.nullcontext(), pl.Enum(["a", "b", "OTHER"])),
-    ],
-)
-@pytest.mark.may_fail_auto_streaming
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "OTHER"])])
 def test_replace_strict_cat_str(
-    context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
     dtype: pl.DataType,
 ) -> None:
-    with context:
-        for old, new, expected in [
-            ("a", "c", pl.Series("s", ["c", None], dtype=pl.Utf8)),
-            (["a", "b"], ["c", "d"], pl.Series("s", ["c", "d"], dtype=pl.Utf8)),
-            (pl.lit("a", dtype=dtype), "c", pl.Series("s", ["c", None], dtype=pl.Utf8)),
-            (
-                pl.Series(["a", "b"], dtype=dtype),
-                ["c", "d"],
-                pl.Series("s", ["c", "d"], dtype=pl.Utf8),
-            ),
-        ]:
-            s = pl.Series("s", ["a", "b"], dtype=dtype)
-            s_replaced = s.replace_strict(old, new, default=None)  # type: ignore[arg-type]
-            assert_series_equal(s_replaced, expected)
+    for old, new, expected in [
+        ("a", "c", pl.Series("s", ["c", None], dtype=pl.Utf8)),
+        (["a", "b"], ["c", "d"], pl.Series("s", ["c", "d"], dtype=pl.Utf8)),
+        (pl.lit("a", dtype=dtype), "c", pl.Series("s", ["c", None], dtype=pl.Utf8)),
+        (
+            pl.Series(["a", "b"], dtype=dtype),
+            ["c", "d"],
+            pl.Series("s", ["c", "d"], dtype=pl.Utf8),
+        ),
+    ]:
+        s = pl.Series("s", ["a", "b"], dtype=dtype)
+        s_replaced = s.replace_strict(old, new, default=None)  # type: ignore[arg-type]
+        assert_series_equal(s_replaced, expected)
 
-            s = pl.Series("s", ["a", "b"], dtype=dtype)
-            s_replaced = s.replace_strict(old, new, default="OTHER")  # type: ignore[arg-type]
-            assert_series_equal(s_replaced, expected.fill_null("OTHER"))
+        s = pl.Series("s", ["a", "b"], dtype=dtype)
+        s_replaced = s.replace_strict(old, new, default="OTHER")  # type: ignore[arg-type]
+        assert_series_equal(s_replaced, expected.fill_null("OTHER"))
 
 
-@pytest.mark.parametrize(
-    "context", [pl.StringCache(), pytest.warns(CategoricalRemappingWarning)]
-)
-@pytest.mark.may_fail_auto_streaming
-def test_replace_strict_cat_cat(
-    context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
-) -> None:
-    with context:
-        dt = pl.Categorical
-        for old, new, expected in [
-            ("a", pl.lit("c", dtype=dt), pl.Series("s", ["c", None], dtype=dt)),
-            (
-                ["a", "b"],
-                pl.Series(["c", "d"], dtype=dt),
-                pl.Series("s", ["c", "d"], dtype=dt),
-            ),
-        ]:
-            s = pl.Series("s", ["a", "b"], dtype=dt)
-            s_replaced = s.replace_strict(old, new, default=None)  # type: ignore[arg-type]
-            assert_series_equal(s_replaced, expected)
+def test_replace_strict_cat_cat() -> None:
+    dt = pl.Categorical
+    for old, new, expected in [
+        ("a", pl.lit("c", dtype=dt), pl.Series("s", ["c", None], dtype=dt)),
+        (
+            ["a", "b"],
+            pl.Series(["c", "d"], dtype=dt),
+            pl.Series("s", ["c", "d"], dtype=dt),
+        ),
+    ]:
+        s = pl.Series("s", ["a", "b"], dtype=dt)
+        s_replaced = s.replace_strict(old, new, default=None)  # type: ignore[arg-type]
+        assert_series_equal(s_replaced, expected)
 
-            s = pl.Series("s", ["a", "b"], dtype=dt)
-            s_replaced = s.replace_strict(old, new, default=pl.lit("OTHER", dtype=dt))  # type: ignore[arg-type]
-            assert_series_equal(s_replaced, expected.fill_null("OTHER"))
+        s = pl.Series("s", ["a", "b"], dtype=dt)
+        s_replaced = s.replace_strict(old, new, default=pl.lit("OTHER", dtype=dt))  # type: ignore[arg-type]
+        assert_series_equal(s_replaced, expected.fill_null("OTHER"))
 
 
 def test_replace_strict_single_argument_not_mapping() -> None:

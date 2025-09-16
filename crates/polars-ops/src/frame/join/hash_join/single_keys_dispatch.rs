@@ -99,13 +99,21 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::Small(lhs), B::Small(rhs)) => {
-                        // Turbofish: see #17137.
-                        num_group_join_left::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
+                    (B::U8(lhs), B::U8(rhs)) => {
+                        num_group_join_left(&lhs, &rhs, validate, nulls_equal)
                     },
-                    (B::Large(lhs), B::Large(rhs)) => {
-                        // Turbofish: see #17137.
-                        num_group_join_left::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
+                    (B::U16(lhs), B::U16(rhs)) => {
+                        num_group_join_left(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::U32(lhs), B::U32(rhs)) => {
+                        num_group_join_left(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::U64(lhs), B::U64(rhs)) => {
+                        num_group_join_left(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    #[cfg(feature = "dtype-i128")]
+                    (B::I128(lhs), B::I128(rhs)) => {
+                        num_group_join_left(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -194,13 +202,21 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::Small(lhs), B::Small(rhs)) => {
-                        // Turbofish: see #17137.
-                        num_group_join_anti_semi::<UInt32Type>(&lhs, &rhs, anti, nulls_equal)
+                    (B::U8(lhs), B::U8(rhs)) => {
+                        num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
                     },
-                    (B::Large(lhs), B::Large(rhs)) => {
-                        // Turbofish: see #17137.
-                        num_group_join_anti_semi::<UInt64Type>(&lhs, &rhs, anti, nulls_equal)
+                    (B::U16(lhs), B::U16(rhs)) => {
+                        num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
+                    },
+                    (B::U32(lhs), B::U32(rhs)) => {
+                        num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
+                    },
+                    (B::U64(lhs), B::U64(rhs)) => {
+                        num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
+                    },
+                    #[cfg(feature = "dtype-i128")]
+                    (B::I128(lhs), B::I128(rhs)) => {
+                        num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -312,13 +328,19 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::Small(lhs), B::Small(rhs)) => {
-                        // Turbofish: see #17137.
-                        group_join_inner::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
+                    (B::U8(lhs), B::U8(rhs)) => group_join_inner(&lhs, &rhs, validate, nulls_equal),
+                    (B::U16(lhs), B::U16(rhs)) => {
+                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
                     },
-                    (B::Large(lhs), BitRepr::Large(rhs)) => {
-                        // Turbofish: see #17137.
-                        group_join_inner::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
+                    (B::U32(lhs), B::U32(rhs)) => {
+                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::U64(lhs), BitRepr::U64(rhs)) => {
+                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    #[cfg(feature = "dtype-i128")]
+                    (B::I128(lhs), BitRepr::I128(rhs)) => {
+                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -396,13 +418,19 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::Small(lhs), B::Small(rhs)) => {
-                        // Turbofish: see #17137.
-                        hash_join_outer::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
+                    (B::U8(lhs), B::U8(rhs)) => hash_join_outer(&lhs, &rhs, validate, nulls_equal),
+                    (B::U16(lhs), B::U16(rhs)) => {
+                        hash_join_outer(&lhs, &rhs, validate, nulls_equal)
                     },
-                    (B::Large(lhs), B::Large(rhs)) => {
-                        // Turbofish: see #17137.
-                        hash_join_outer::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
+                    (B::U32(lhs), B::U32(rhs)) => {
+                        hash_join_outer(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::U64(lhs), B::U64(rhs)) => {
+                        hash_join_outer(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    #[cfg(feature = "dtype-i128")]
+                    (B::I128(lhs), B::I128(rhs)) => {
+                        hash_join_outer(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(

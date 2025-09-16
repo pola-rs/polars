@@ -10,23 +10,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut schema = Schema::default();
     schema.with_column(
         "first_name".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "gender".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "type".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "state".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "party".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column("birthday".into(), DataType::Date);
 
@@ -211,7 +211,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:sort3]
     let df = dataset
-        .clone()
         .lazy()
         .sort(
             ["birthday"],

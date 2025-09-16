@@ -1,4 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+mod any_all;
+#[cfg(feature = "bitwise")]
+mod bitwise;
 mod convert;
 mod count;
 mod first_last;
@@ -390,7 +393,7 @@ where
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
-        let values = values.to_physical_repr();
+        let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         self.reducer
             .reduce_ca(&mut self.values[group_idx as usize], ca, seq_id);
@@ -411,7 +414,7 @@ where
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
-        let values = values.to_physical_repr();
+        let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         unsafe {

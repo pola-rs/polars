@@ -144,7 +144,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "rolling_window")]
             fn rolling_map(
                 &self,
-                _f: &dyn Fn(&Series) -> Series,
+                _f: &dyn Fn(&Series) -> PolarsResult<Series>,
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())

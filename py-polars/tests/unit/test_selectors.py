@@ -1,5 +1,6 @@
+import pickle
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal as PyDecimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -10,7 +11,7 @@ import polars as pl
 import polars.selectors as cs
 from polars._typing import SelectorType
 from polars._utils.various import qualified_type_name
-from polars.exceptions import ColumnNotFoundError, InvalidOperationError
+from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
@@ -226,10 +227,9 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
 
-    selected_cols = df.select(
-        cs.by_name("???", "fgg", "!!!", require_all=False)
-    ).columns
-    assert selected_cols == ["fgg"]
+    assert df.select(cs.by_name("???", "fgg", "!!!", require_all=False)).columns == [
+        "fgg"
+    ]
 
     for missing_column in ("missing", "???"):
         assert df.select(cs.by_name(missing_column, require_all=False)).columns == []
@@ -238,7 +238,7 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     for selector_expr, expected in (
         (cs.by_name("abc", "cde") & pl.col("ghi"), []),
         (cs.by_name("abc", "cde") & pl.col("cde"), ["cde"]),
-        (pl.col("cde") & cs.by_name("cde", "abc"), ["cde"]),
+        (cs.by_name("cde") & cs.by_name("cde", "abc"), ["cde"]),
     ):
         assert df.select(selector_expr).columns == expected
 
@@ -513,6 +513,8 @@ def test_selector_matches(df: pl.DataFrame) -> None:
     ]
 
 
+# Python objects are not supported by cloud #2410.
+@pytest.mark.may_fail_cloud
 def test_selector_miscellaneous(df: pl.DataFrame) -> None:
     assert df.select(cs.string()).columns == ["qqR"]
     assert df.select(cs.categorical()).columns == []
@@ -617,49 +619,53 @@ def test_selector_temporal_13665() -> None:
 def test_selector_expansion() -> None:
     df = pl.DataFrame({name: [] for name in "abcde"})
 
-    s1 = pl.all().meta._as_selector()
-    s2 = pl.col(["a", "b"])
-    s = s1.meta._selector_sub(s2)
+    s1 = pl.all().meta.as_selector()
+    s2 = pl.col(["a", "b"]).meta.as_selector()
+    s = s1 - s2
     assert df.select(s).columns == ["c", "d", "e"]
 
-    s1 = pl.col("^a|b$").meta._as_selector()
-    s = s1.meta._selector_add(pl.col(["d", "e"]))
+    s1 = pl.col("^a|b$").meta.as_selector()
+    s = s1 | pl.col(["d", "e"]).meta.as_selector()
     assert df.select(s).columns == ["a", "b", "d", "e"]
 
-    s = s.meta._selector_sub(pl.col("d"))
+    s = s - pl.col("d").meta.as_selector()
     assert df.select(s).columns == ["a", "b", "e"]
 
     # add a duplicate, this tests if they are pruned
-    s = s.meta._selector_add(pl.col("a"))
+    s = s | pl.col("a").meta.as_selector()
     assert df.select(s).columns == ["a", "b", "e"]
 
-    s1 = pl.col(["a", "b", "c"])
-    s2 = pl.col(["b", "c", "d"])
+    s1e = pl.col(["a", "b", "c"])
+    s2e = pl.col(["b", "c", "d"])
 
-    s = s1.meta._as_selector()
-    s = s.meta._selector_and(s2)
+    s = s1e.meta.as_selector()
+    s = s & s2e.meta.as_selector()
     assert df.select(s).columns == ["b", "c"]
 
 
 def test_selector_repr() -> None:
-    assert_repr_equals(cs.all() - cs.first(), "(cs.all() - cs.first())")
-    assert_repr_equals(~cs.starts_with("a", "b"), "~cs.starts_with('a', 'b')")
-    assert_repr_equals(cs.float() | cs.by_name("x"), "(cs.float() | cs.by_name('x'))")
+    assert_repr_equals(cs.all() - cs.first(), "[cs.all() - cs.first(require=true)]")
+    assert_repr_equals(
+        ~cs.starts_with("a", "b"), '[cs.all() - cs.matches("^(a|b).*$")]'
+    )
+    assert_repr_equals(
+        cs.float() | cs.by_name("x"), "[cs.float() | cs.by_name('x', require_all=true)]"
+    )
     assert_repr_equals(
         cs.integer() & cs.matches("z"),
-        "(cs.integer() & cs.matches(pattern='z'))",
+        '[cs.integer() & cs.matches("^.*z.*$")]',
     )
     assert_repr_equals(
         cs.by_name("baz", "moose", "foo", "bear"),
-        "cs.by_name('baz', 'moose', 'foo', 'bear')",
+        "cs.by_name('baz', 'moose', 'foo', 'bear', require_all=true)",
     )
     assert_repr_equals(
         cs.by_name("baz", "moose", "foo", "bear", require_all=False),
-        "cs.by_name('baz', 'moose', 'foo', 'bear', require_all=False)",
+        "cs.by_name('baz', 'moose', 'foo', 'bear', require_all=false)",
     )
     assert_repr_equals(
         cs.temporal() | cs.by_dtype(pl.String) & cs.string(include_categorical=False),
-        "(cs.temporal() | (cs.by_dtype(dtypes=[String]) & cs.string(include_categorical=False)))",
+        "[cs.temporal() | [cs.string() & cs.string()]]",
     )
 
 
@@ -710,12 +716,6 @@ def test_selector_sets(df: pl.DataFrame) -> None:
 
     with pytest.raises(TypeError, match=r"unsupported .* \('Expr' - 'Selector'\)"):
         df.select(pl.col("colx") - cs.matches("[yz]$"))
-
-    with pytest.raises(TypeError, match=r"unsupported .* \('Expr' \+ 'Selector'\)"):
-        df.select(pl.col("colx") + cs.numeric())
-
-    with pytest.raises(TypeError, match=r"unsupported .* \('Selector' \+ 'Selector'\)"):
-        df.select(cs.string() + cs.numeric())
 
     # complement
     assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
@@ -879,7 +879,7 @@ def test_selector_list_of_lists_18499() -> None:
         }
     )
 
-    with pytest.raises(InvalidOperationError, match="invalid selector expression"):
+    with pytest.raises(TypeError, match="cannot turn 'list' into selector"):
         lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]
 
 
@@ -896,3 +896,248 @@ def test_selector_python_dtypes() -> None:
     assert df.select(cs.by_dtype(float)).columns == ["float"]
     assert df.select(cs.by_dtype(bool)).columns == ["bool"]
     assert df.select(cs.by_dtype(str)).columns == ["str"]
+
+
+def test_list_selector() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [], pl.Int32),
+            pl.Series("b", [], pl.List(pl.Int32)),
+            pl.Series("c", [], pl.List(pl.UInt32)),
+            pl.Series("d", [], pl.Array(pl.Int32, 3)),
+            pl.Series("e", [], pl.List(pl.String)),
+            pl.Series("f", [], pl.Struct({"x": pl.Int32})),
+        ]
+    )
+
+    assert df.select(cs.list()).columns == ["b", "c", "e"]
+    assert df.select(cs.list(inner=cs.integer())).columns == ["b", "c"]
+    assert df.select(cs.list(inner=cs.string())).columns == ["e"]
+
+    with pytest.raises(TypeError):
+        df.select(cs.list(inner=cs.by_name("???")))
+
+
+def test_array_selector() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [], pl.Int32),
+            pl.Series("b", [], pl.Array(pl.Int32, 4)),
+            pl.Series("c", [], pl.Array(pl.UInt32, 4)),
+            pl.Series("d", [], pl.Array(pl.Int32, 3)),
+            pl.Series("e", [], pl.List(pl.Int32)),
+            pl.Series("f", [], pl.Array(pl.String, 4)),
+            pl.Series("g", [], pl.Struct({"x": pl.Int32})),
+        ]
+    )
+
+    assert df.select(cs.array()).columns == ["b", "c", "d", "f"]
+    assert df.select(cs.array(width=4)).columns == ["b", "c", "f"]
+    assert df.select(cs.array(inner=cs.integer())).columns == ["b", "c", "d"]
+    assert df.select(cs.array(inner=cs.string())).columns == ["f"]
+
+    with pytest.raises(TypeError):
+        df.select(cs.array(inner=cs.by_name("???")))
+
+
+def test_enum_selector() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [], pl.Int32),
+            pl.Series("b", [], pl.UInt32),
+            pl.Series("c", [], pl.Enum([])),
+            pl.Series("d", [], pl.Categorical()),
+            pl.Series("e", [], pl.String()),
+            pl.Series("f", [], pl.Enum(["a", "b"])),
+        ]
+    )
+
+    assert df.select(cs.enum()).columns == ["c", "f"]
+    assert df.select(~cs.enum()).columns == ["a", "b", "d", "e"]
+
+
+# Zero Field Structs are not supported by cloud #2410.
+@pytest.mark.may_fail_cloud
+def test_struct_selector() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [], pl.Int32),
+            pl.Series("b", [], pl.Array(pl.Int32, 4)),
+            pl.Series("c", [], pl.Struct({})),
+            pl.Series("d", [], pl.Array(pl.UInt32, 4)),
+            pl.Series("e", [], pl.Struct({"x": pl.Int32, "y": pl.String})),
+            pl.Series("f", [], pl.List(pl.Int32)),
+            pl.Series("g", [], pl.Array(pl.String, 4)),
+            pl.Series("h", [], pl.Struct({"x": pl.Int32})),
+        ]
+    )
+
+    assert df.select(cs.struct()).columns == ["c", "e", "h"]
+
+
+def test_matches_selector_22816() -> None:
+    df = pl.DataFrame(
+        {
+            "ham": [1, 2, 3],
+            "hamburger": [11, 22, 33],
+            "foo": [3, 2, 1],
+            "bar": ["a", "b", "c"],
+        }
+    )
+
+    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
+    assert df.select(cs.matches(".*burger")).columns == ["hamburger"]
+
+
+def test_expand_more_than_one_22567() -> None:
+    assert (
+        pl.select(x=1, y=2)
+        .select(cs.by_name("x").as_expr() + cs.by_name("y").as_expr())
+        .item()
+        == 3
+    )
+
+
+def test_selectors_radd_21978() -> None:
+    df = pl.DataFrame(
+        [
+            {"sales": "94.71 billion"},
+            {"sales": "134.19 billion"},
+            {"sales": "76.66 billion"},
+        ]
+    )
+
+    assert_frame_equal(
+        df.select(cs.by_name("sales") + " USD"), df.select(pl.col("sales") + " USD")
+    )
+
+    assert_frame_equal(
+        df.select("$" + cs.by_name("sales")), df.select("$" + pl.col("sales"))
+    )
+
+
+def test_arithmetic_expansion_21174() -> None:
+    df = pl.DataFrame({"x": 1, "y": 2, "z": "tree"})
+    assert_frame_equal(
+        df.select(pl.col(pl.Int64).cast(pl.String) + pl.col(pl.String)),
+        pl.DataFrame({"x": "1tree", "y": "2tree"}),
+    )
+
+
+def test_selector_arith_dtypes_12850() -> None:
+    assert (
+        pl.DataFrame({"a": [2.0], "b": [1]})
+        .select(cs.float().as_expr() - cs.integer().as_expr())
+        .item()
+        == 1.0
+    )
+    assert (
+        pl.DataFrame({"a": [2.0], "b": [1]})
+        .select(cs.float().as_expr() + cs.integer().as_expr())
+        .item()
+        == 3.0
+    )
+    assert (
+        pl.DataFrame({"a": [2.0], "b": [1]})
+        .select(cs.float().as_expr() - cs.last().as_expr())
+        .item()
+        == 1.0
+    )
+    assert (
+        pl.DataFrame({"a": [2.0], "b": [1]})
+        .select(cs.float().as_expr() - cs.by_name("b").as_expr())
+        .item()
+        == 1.0
+    )
+
+
+def test_multiple_regexes_8282() -> None:
+    df = pl.DataFrame(
+        {
+            "a-col": [1, 2, 3],
+            "b-col": [3, 5, 2],
+        }
+    )
+
+    assert_frame_equal(
+        df.with_columns(
+            diff1=pl.col(r"^a-\w*$") - pl.col(r"b-col"),
+            diff2=pl.col(r"^a-\w*$") - pl.col(r"^b-\w*$"),
+        ),
+        df.with_columns(
+            diff1=pl.col("a-col") - pl.col("b-col"),
+            diff2=pl.col("a-col") - pl.col("b-col"),
+        ),
+    )
+
+
+def test_by_name_order_19384() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 4, 4],
+            "b": [4, 3, 2, 1],
+        }
+    )
+
+    df1 = df.select(cs.by_name("b", "a"))
+    df2 = df.select(cs.by_name("b", "a", require_all=False))
+    assert_frame_equal(df1, df2)
+
+
+def test_exclude_when_then_21352() -> None:
+    df = pl.DataFrame([[1], [2]], schema=["A", "B"])
+
+    assert df.select(pl.all().exclude("B")).columns == ["A"]
+    assert df.select(
+        pl.when(True).then(pl.all()).otherwise(pl.all().exclude("B"))
+    ).columns == ["A", "B"]
+
+
+def test_select_list_with_dtype_22200() -> None:
+    df = pl.from_dict({"a": [[1, 2], [3, 4]]})
+
+    assert df.select(pl.col(pl.List)).columns == ["a"]
+
+
+def test_select_struct_with_dtype_11067() -> None:
+    df = pl.DataFrame(
+        {
+            "struct_series": [
+                {"a": [1], "b": [2], "c": [3]},
+                {"a": [4], "b": [5], "c": [6]},
+            ],
+        }
+    )
+    assert df.select(pl.col(pl.Struct)).columns == ["struct_series"]
+
+
+def test_pickle_selector_11425() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    selectors = [cs.by_name("a"), cs.by_name("b")]
+    unpickled_selectors = [
+        pickle.loads(pickle.dumps(selector)) for selector in selectors
+    ]
+
+    assert df.select(selectors[0] | selectors[1]).columns == ["a", "b"]
+    assert df.select(unpickled_selectors[0] | unpickled_selectors[1]).columns == [
+        "a",
+        "b",
+    ]
+
+
+def test_list_eval_selector_23667() -> None:
+    df = pl.DataFrame({"x": [[1, 2], [3]]})
+    assert_frame_equal(df, df.select(pl.all().list.eval(pl.element())))
+
+
+def test_datetime_selectors_23767() -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 1, 1)], "b": [datetime(2020, 1, 2, tzinfo=timezone.utc)]}
+    )
+
+    assert df.select(pl.selectors.datetime("us", time_zone=None)).columns == ["a"]
+    assert df.select(pl.selectors.datetime("us", time_zone=["UTC"])).columns == ["b"]
+    assert df.select(pl.selectors.datetime("us", time_zone=[None, "UTC"])).columns == [
+        "a",
+        "b",
+    ]

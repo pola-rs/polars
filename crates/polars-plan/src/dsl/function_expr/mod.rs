@@ -126,9 +126,19 @@ pub enum FunctionExpr {
     FillNull,
     FillNullWithStrategy(FillNullStrategy),
     #[cfg(feature = "rolling_window")]
-    RollingExpr(RollingFunction),
+    RollingExpr {
+        function: RollingFunction,
+        options: RollingOptionsFixedWindow,
+    },
     #[cfg(feature = "rolling_window_by")]
-    RollingExprBy(RollingFunctionBy),
+    RollingExprBy {
+        function_by: RollingFunctionBy,
+        options: RollingOptionsDynamicWindow,
+    },
+    Rechunk,
+    Append {
+        upcast: bool,
+    },
     ShiftAndFill,
     Shift,
     DropNans,
@@ -144,6 +154,13 @@ pub enum FunctionExpr {
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
+    ArgMin,
+    ArgMax,
+    ArgSort {
+        descending: bool,
+        nulls_last: bool,
+    },
+    Product,
     #[cfg(feature = "rank")]
     Rank {
         options: RankOptions,
@@ -198,7 +215,6 @@ pub enum FunctionExpr {
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
     Coalesce,
-    ShrinkType,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
     #[cfg(feature = "pct_change")]
@@ -213,9 +229,7 @@ pub enum FunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -283,6 +297,31 @@ pub enum FunctionExpr {
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
+
+    FoldHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataTypeExpr>,
+    },
+    ReduceHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataTypeExpr>,
+    },
+    #[cfg(feature = "dtype-struct")]
+    CumReduceHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataTypeExpr>,
+    },
+    #[cfg(feature = "dtype-struct")]
+    CumFoldHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataTypeExpr>,
+        include_init: bool,
+    },
+
     MaxHorizontal,
     MinHorizontal,
     SumHorizontal {
@@ -320,6 +359,10 @@ pub enum FunctionExpr {
     #[cfg(feature = "reinterpret")]
     Reinterpret(bool),
     ExtendConstant,
+
+    RowEncode(RowEncodingVariant),
+    #[cfg(feature = "dtype-struct")]
+    RowDecode(Vec<(PlSmallStr, DataTypeExpr)>, RowEncodingVariant),
 }
 
 impl Hash for FunctionExpr {
@@ -380,16 +423,56 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            MaxHorizontal
-            | MinHorizontal
-            | SumHorizontal { .. }
-            | MeanHorizontal { .. }
-            | DropNans
-            | DropNulls
-            | Reverse
-            | ArgUnique
-            | Shift
-            | ShiftAndFill => {},
+
+            FoldHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            }
+            | ReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+            },
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+            },
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+                include_init,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+                include_init.hash(state);
+            },
+            SumHorizontal { ignore_nulls } | MeanHorizontal { ignore_nulls } => {
+                ignore_nulls.hash(state)
+            },
+            MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
+            Append { upcast } => upcast.hash(state),
+            ArgSort {
+                descending,
+                nulls_last,
+            } => {
+                descending.hash(state);
+                nulls_last.hash(state);
+            },
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -408,12 +491,17 @@ impl Hash for FunctionExpr {
             Hash(a, b, c, d) => (a, b, c, d).hash(state),
             FillNull => {},
             #[cfg(feature = "rolling_window")]
-            RollingExpr(f) => {
-                f.hash(state);
+            RollingExpr { function, options } => {
+                function.hash(state);
+                options.hash(state);
             },
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy(f) => {
-                f.hash(state);
+            RollingExprBy {
+                function_by,
+                options,
+            } => {
+                function_by.hash(state);
+                options.hash(state);
             },
             #[cfg(feature = "moment")]
             Skew(a) => a.hash(state),
@@ -462,7 +550,6 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             Coalesce => {},
-            ShrinkType => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
             #[cfg(feature = "log")]
@@ -471,7 +558,7 @@ impl Hash for FunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -562,6 +649,13 @@ impl Hash for FunctionExpr {
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
+
+            RowEncode(variants) => variants.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            RowDecode(fs, variants) => {
+                fs.hash(state);
+                variants.hash(state);
+            },
         }
     }
 }
@@ -613,9 +707,11 @@ impl Display for FunctionExpr {
             Sign => "sign",
             FillNull => "fill_null",
             #[cfg(feature = "rolling_window")]
-            RollingExpr(func, ..) => return write!(f, "{func}"),
+            RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy(func, ..) => return write!(f, "{func}"),
+            RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Rechunk => "rechunk",
+            Append { .. } => "upcast",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -626,6 +722,10 @@ impl Display for FunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
+            ArgSort { .. } => "arg_sort",
+            Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
@@ -667,7 +767,6 @@ impl Display for FunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             Coalesce => "coalesce",
-            ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
             #[cfg(feature = "pct_change")]
@@ -679,7 +778,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]
@@ -726,6 +825,12 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            FoldHorizontal { .. } => "fold",
+            ReduceHorizontal { .. } => "reduce",
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal { .. } => "cum_reduce",
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal { .. } => "cum_fold",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",
@@ -749,7 +854,14 @@ impl Display for FunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(_) => "reinterpret",
             ExtendConstant => "extend_constant",
+
+            RowEncode(..) => "row_encode",
+            #[cfg(feature = "dtype-struct")]
+            RowDecode(..) => "row_decode",
         };
         write!(f, "{s}")
     }
 }
+
+#[cfg(any(feature = "array_to_struct", feature = "list_to_struct"))]
+pub type DslNameGenerator = PlanCallback<usize, String>;

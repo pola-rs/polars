@@ -32,7 +32,7 @@ pub enum DslFunction {
     #[cfg(feature = "python")]
     OpaquePython(OpaquePythonUdf),
     Explode {
-        columns: Vec<Selector>,
+        columns: Selector,
         allow_empty: bool,
     },
     #[cfg(feature = "pivot")]
@@ -44,25 +44,13 @@ pub enum DslFunction {
         new: Arc<[PlSmallStr]>,
         strict: bool,
     },
-    Unnest(Vec<Selector>),
+    Unnest(Selector),
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
-    Drop(DropFunction),
     // Function that is already converted to IR.
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     FunctionIR(FunctionIR),
-}
-
-#[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct DropFunction {
-    /// Columns that are going to be dropped
-    pub(crate) to_drop: Vec<Selector>,
-    /// If `true`, performs a check for each item in `to_drop` against the schema. Returns an
-    /// `ColumnNotFound` error if the column does not exist in the schema.
-    pub(crate) strict: bool,
 }
 
 #[derive(Clone)]
@@ -103,16 +91,14 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
-                let on = expand_selectors(args.on, input_schema, &[])?;
-                let index = expand_selectors(args.index, input_schema, &[])?;
-                validate_columns_in_input(on.as_ref(), input_schema, "unpivot")?;
-                validate_columns_in_input(index.as_ref(), input_schema, "unpivot")?;
+                let on = args.on.into_columns(input_schema, &Default::default())?;
+                let index = args.index.into_columns(input_schema, &Default::default())?;
 
                 let args = UnpivotArgsIR {
-                    on: on.iter().cloned().collect(),
-                    index: index.iter().cloned().collect(),
+                    on: on.into_iter().collect(),
+                    index: index.into_iter().collect(),
                     variable_name: args.variable_name.clone(),
-                    value_name: args.value_name.clone(),
+                    value_name: args.value_name,
                 };
 
                 FunctionIR::Unpivot {
@@ -126,16 +112,15 @@ impl DslFunction {
                 offset,
                 schema: Default::default(),
             },
-            DslFunction::Unnest(selectors) => {
-                let columns = expand_selectors(selectors, input_schema, &[])?;
-                validate_columns_in_input(columns.as_ref(), input_schema, "unnest")?;
+            DslFunction::Unnest(selector) => {
+                let columns = selector.into_columns(input_schema, &Default::default())?;
+                let columns = columns.into_iter().collect();
                 FunctionIR::Unnest { columns }
             },
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
             DslFunction::Stats(_)
             | DslFunction::FillNan(_)
-            | DslFunction::Drop(_)
             | DslFunction::Rename { .. }
             | DslFunction::Explode { .. } => {
                 // We should not reach this.

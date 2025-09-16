@@ -1,8 +1,10 @@
+mod datatype_fn;
 mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
+pub use datatype_fn::*;
 pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
@@ -37,8 +39,10 @@ pub enum AggExpr {
     Last(Arc<Expr>),
     Mean(Arc<Expr>),
     Implode(Arc<Expr>),
-    // include_nulls
-    Count(Arc<Expr>, bool),
+    Count {
+        input: Arc<Expr>,
+        include_nulls: bool,
+    },
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
@@ -62,7 +66,7 @@ impl AsRef<Expr> for AggExpr {
             Last(e) => e,
             Mean(e) => e,
             Implode(e) => e,
-            Count(e, _) => e,
+            Count { input, .. } => input,
             Quantile { expr, .. } => expr,
             Sum(e) => e,
             AggGroups(e) => e,
@@ -84,10 +88,9 @@ impl AsRef<Expr> for AggExpr {
 pub enum Expr {
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),
-    Columns(Arc<[PlSmallStr]>),
-    DtypeColumn(Vec<DataType>),
-    IndexColumn(Arc<[i64]>),
+    Selector(Selector),
     Literal(LiteralValue),
+    DataTypeFunction(DataTypeFunction),
     BinaryExpr {
         left: Arc<Expr>,
         op: Operator,
@@ -142,21 +145,15 @@ pub enum Expr {
         order_by: Option<(Arc<Expr>, SortOptions)>,
         options: WindowType,
     },
-    Wildcard,
     Slice {
         input: Arc<Expr>,
         /// length is not yet known so we accept negative offsets
         offset: Arc<Expr>,
         length: Arc<Expr>,
     },
-    /// Can be used in a select statement to exclude a column from selection
-    /// TODO: See if we can replace `Vec<Excluded>` with `Arc<Excluded>`
-    Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Arc<Expr>),
     Len,
-    /// Take the nth column in the `DataFrame`
-    Nth(i64),
     #[cfg(feature = "dtype-struct")]
     Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
@@ -164,8 +161,6 @@ pub enum Expr {
         input: Vec<Expr>,
         /// function to apply
         function: OpaqueColumnUdf,
-        /// output dtype of the function
-        output_type: GetOutput,
 
         options: FunctionOptions,
         /// used for formatting
@@ -181,13 +176,6 @@ pub enum Expr {
         variant: EvalVariant,
     },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
-    /// Expressions in this node should only be expanding
-    /// e.g.
-    /// `Expr::Columns`
-    /// `Expr::Dtypes`
-    /// `Expr::Wildcard`
-    /// `Expr::Exclude`
-    Selector(super::selector::Selector),
     RenameAlias {
         function: RenameAliasFn,
         expr: Arc<Expr>,
@@ -198,7 +186,11 @@ pub enum Expr {
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
-    // Used by cloud
+    /// Named functions allow for serializing arbitrary Rust functions as long as both sides know
+    /// ahead of time which function it is. There is a registry of functions that both sides know
+    /// and every time we need serialize we serialize the function by name in the registry.
+    ///
+    /// Used by cloud.
     Named {
         // Name and payload are used by the NamedRegistry
         // To load the function `T` at runtime.
@@ -266,12 +258,13 @@ impl Hash for Expr {
         d.hash(state);
         match self {
             Expr::Column(name) => name.hash(state),
-            Expr::Columns(names) => names.hash(state),
-            Expr::DtypeColumn(dtypes) => dtypes.hash(state),
-            Expr::IndexColumn(indices) => indices.hash(state),
+            // Expr::Columns(names) => names.hash(state),
+            // Expr::DtypeColumn(dtypes) => dtypes.hash(state),
+            // Expr::IndexColumn(indices) => indices.hash(state),
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
-            Expr::Nth(v) => v.hash(state),
+            // Expr::Nth(v) => v.hash(state),
+            Expr::DataTypeFunction(v) => v.hash(state),
             Expr::Filter { input, by } => {
                 input.hash(state);
                 by.hash(state);
@@ -322,7 +315,7 @@ impl Hash for Expr {
                 returns_scalar.hash(state);
             },
             // already hashed by discriminant
-            Expr::Wildcard | Expr::Len => {},
+            Expr::Len => {},
             Expr::SortBy {
                 expr,
                 by,
@@ -357,10 +350,10 @@ impl Hash for Expr {
                 offset.hash(state);
                 length.hash(state);
             },
-            Expr::Exclude(input, excl) => {
-                input.hash(state);
-                excl.hash(state);
-            },
+            // Expr::Exclude(input, excl) => {
+            //     input.hash(state);
+            //     excl.hash(state);
+            // },
             Expr::RenameAlias { function, expr } => {
                 function.hash(state);
                 expr.hash(state);
@@ -368,7 +361,6 @@ impl Hash for Expr {
             Expr::AnonymousFunction {
                 input,
                 function: _,
-                output_type: _,
                 options,
                 fmt_str,
             } => {
@@ -410,21 +402,44 @@ pub enum Excluded {
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
-    pub fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
+    pub fn to_field(&self, schema: &Schema) -> PolarsResult<Field> {
         // this is not called much and the expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
-        self.to_field_amortized(schema, ctxt, &mut arena)
+        self.to_field_amortized(schema, &mut arena)
     }
     pub(crate) fn to_field_amortized(
         &self,
         schema: &Schema,
-        ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let expr = to_expr_ir(self.clone(), expr_arena, schema)?;
+        let mut ctx = ExprToIRContext::new(expr_arena, schema);
+        ctx.allow_unknown = true;
+        let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();
-        let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
+        let dtype = expr_arena.get(node).to_dtype(schema, expr_arena)?;
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
+    }
+
+    pub fn into_selector(self) -> Option<Selector> {
+        match self {
+            Expr::Column(name) => Some(Selector::ByName {
+                names: [name].into(),
+                strict: true,
+            }),
+            Expr::Selector(selector) => Some(selector),
+            _ => None,
+        }
+    }
+
+    pub fn try_into_selector(self) -> PolarsResult<Selector> {
+        match self {
+            Expr::Column(name) => Ok(Selector::ByName {
+                names: [name].into(),
+                strict: true,
+            }),
+            Expr::Selector(selector) => Ok(selector),
+            expr => Err(polars_err!(InvalidOperation: "cannot turn `{expr}` into selector")),
+        }
     }
 
     /// Extract a constant usize from an expression.
@@ -545,6 +560,26 @@ impl EvalVariant {
             _ => polars_bail!(op = self.to_name(), dtype),
         }
     }
+
+    pub fn is_elementwise(&self) -> bool {
+        match self {
+            EvalVariant::List => true,
+            EvalVariant::Cumulative { min_samples: _ } => false,
+        }
+    }
+
+    pub fn is_row_separable(&self) -> bool {
+        match self {
+            EvalVariant::List => true,
+            EvalVariant::Cumulative { min_samples: _ } => false,
+        }
+    }
+
+    pub fn is_length_preserving(&self) -> bool {
+        match self {
+            EvalVariant::List | EvalVariant::Cumulative { .. } => true,
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -659,10 +694,7 @@ pub enum RenameAliasFn {
     Suffix(PlSmallStr),
     ToLowercase,
     ToUppercase,
-    #[cfg(feature = "python")]
-    Python(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-    Rust(SpecialEq<Arc<RenameAliasRustFn>>),
+    Map(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
 impl RenameAliasFn {
@@ -672,19 +704,7 @@ impl RenameAliasFn {
             Self::Suffix(suffix) => format_pl_smallstr!("{name}{suffix}"),
             Self::ToLowercase => PlSmallStr::from_string(name.to_lowercase()),
             Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
-            #[cfg(feature = "python")]
-            Self::Python(lambda) => {
-                let name = name.as_str();
-                pyo3::marker::Python::with_gil(|py| {
-                    let out: PlSmallStr = lambda
-                        .call1(py, (name,))?
-                        .extract::<std::borrow::Cow<str>>(py)?
-                        .as_ref()
-                        .into();
-                    pyo3::PyResult::<_>::Ok(out)
-                }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map' produced an error: {e}."))?
-            },
-            Self::Rust(f) => f(name)?,
+            Self::Map(f) => f.call(name.clone())?,
         };
         Ok(out)
     }

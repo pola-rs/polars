@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
 from polars._typing import EngineType
+from polars._utils.deprecation import deprecated
+from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
 from polars.lazyframe.engine_config import GPUEngine
@@ -15,6 +17,9 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from polars._typing import FloatFmt
+    from polars.io.cloud.credential_provider._providers import (
+        CredentialProviderFunction,
+    )
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -25,6 +30,11 @@ if TYPE_CHECKING:
         from typing import Self, Unpack
     else:
         from typing_extensions import Self, Unpack
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 __all__ = ["Config"]
 
@@ -50,7 +60,6 @@ TableFormatNames: TypeAlias = Literal[
 # and/or unstable settings that should not be saved or reset with the Config vars.
 _POLARS_CFG_ENV_VARS = {
     "POLARS_WARN_UNSTABLE",
-    "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_NUM_DECIMAL",
@@ -79,7 +88,7 @@ _POLARS_CFG_ENV_VARS = {
 # method name paired with a callable that returns the current state of that value:
 with contextlib.suppress(ImportError, NameError):
     # note: 'plr' not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
     _POLARS_CFG_DIRECT_VARS = {
         "set_fmt_float": plr.get_float_fmt,
@@ -474,7 +483,7 @@ class Config(contextlib.ContextDecorator):
         }
         if not env_only:
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items():
-                config_state[cfg_methodname] = get_value()
+                config_state[cfg_methodname] = get_value()  # type: ignore[assignment]
 
         return config_state
 
@@ -513,16 +522,20 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    @deprecated("deprecated since version 1.32.0")
     def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
         """
         Allow multi-output expressions to be automatically turned into Structs.
 
+        .. note::
+            Deprecated since 1.32.0.
+
         Examples
         --------
         >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
-        >>> with pl.Config(set_auto_structify=True):
+        >>> with pl.Config(set_auto_structify=True):  # doctest: +SKIP
         ...     out = df.select(pl.all())
-        >>> out
+        >>> out  # doctest: +SKIP
         shape: (3, 1)
         ┌───────────┐
         │ v         │
@@ -1443,7 +1456,7 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_expr_depth_warning(cls, limit: int) -> type[Config]:
         """
-        Set the the expression depth that Polars will accept without triggering a warning.
+        Set the expression depth that Polars will accept without triggering a warning.
 
         Having too deep expressions (several 1000s) can lead to overflowing the stack and might be worth a refactor.
         """  # noqa: W505
@@ -1510,4 +1523,49 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
             os.environ["POLARS_ENGINE_AFFINITY"] = engine
+        return cls
+
+    @classmethod
+    @unstable()
+    def set_default_credential_provider(
+        cls, credential_provider: CredentialProviderFunction | Literal["auto"] | None
+    ) -> type[Config]:
+        """
+        Set a default credential provider.
+
+        Sets the default credential provider to be used for functions that
+        read / write to cloud storage.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            Can also be set to None, which globally disables auto-initialization
+            of credential providers, or "auto" (the default behavior).
+
+        Examples
+        --------
+        >>> pl.Config.set_default_credential_provider(
+        ...     pl.CredentialProviderAWS(
+        ...         assume_role={"RoleArn": "...", "RoleSessionName": "..."}
+        ...     )
+        ... )
+        <class 'polars.config.Config'>
+        """
+        import polars.io.cloud.credential_provider._builder
+
+        if isinstance(credential_provider, str) and credential_provider != "auto":
+            raise ValueError(credential_provider)
+
+        polars.io.cloud.credential_provider._builder.DEFAULT_CREDENTIAL_PROVIDER = (
+            credential_provider
+        )
+
         return cls

@@ -6,7 +6,7 @@ import polars._reexport as pl
 
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.polars import PyDataFrame, PyExpr, PyLazyFrame, PySeries
+    from polars._plr import PyDataFrame, PyExpr, PyLazyFrame, PySeries
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:

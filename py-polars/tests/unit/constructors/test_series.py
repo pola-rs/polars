@@ -16,11 +16,7 @@ if TYPE_CHECKING:
 
 def test_series_mixed_dtypes_list() -> None:
     values = [[0.1, 1]]
-
-    with pytest.raises(TypeError, match="unexpected value"):
-        pl.Series(values)
-
-    s = pl.Series(values, strict=False)
+    s = pl.Series(values, strict=True)
     assert s.dtype == pl.List(pl.Float64)
     assert s.to_list() == [[0.1, 1.0]]
 

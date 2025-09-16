@@ -224,7 +224,7 @@ impl DataFrame {
         self.columns.iter().map(func).collect()
     }
     // Reduce monomorphization.
-    pub fn _apply_columns(&self, func: &(dyn Fn(&Column) -> Column)) -> Vec<Column> {
+    pub fn _apply_columns(&self, func: &dyn Fn(&Column) -> Column) -> Vec<Column> {
         self.columns.iter().map(func).collect()
     }
     // Reduce monomorphization.
@@ -2463,7 +2463,8 @@ impl DataFrame {
         C: IntoColumn,
     {
         let idx = self.check_name_to_idx(name)?;
-        self.apply_at_idx(idx, f)
+        self.apply_at_idx(idx, f)?;
+        Ok(self)
     }
 
     /// Apply a closure to a column at index `idx`. This is the recommended way to do in place
@@ -2510,6 +2511,7 @@ impl DataFrame {
             )
         })?;
         let name = col.name().clone();
+        let dtype_before = col.dtype().clone();
         let new_col = f(col).into_column();
         match new_col.len() {
             1 => {
@@ -2530,6 +2532,10 @@ impl DataFrame {
         unsafe {
             let col = self.columns.get_unchecked_mut(idx);
             col.rename(name);
+
+            if col.dtype() != &dtype_before {
+                self.clear_schema();
+            }
         }
         Ok(self)
     }
@@ -3265,7 +3271,7 @@ impl DataFrame {
             match groups.as_ref() {
                 GroupsType::Idx(idx) => {
                     // Rechunk as the gather may rechunk for every group #17562.
-                    let mut df = df.clone();
+                    let mut df = df;
                     df.as_single_chunk();
                     Ok(idx
                         .into_iter()
@@ -3676,5 +3682,18 @@ mod test {
         }
         .unwrap();
         assert!(out.equals(&expected));
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-i8")]
+    fn test_apply_result_schema() {
+        let mut df = df! {
+            "x" => [1, 2, 3, 2, 1]
+        }
+        .unwrap();
+
+        let schema_before = df.schema().clone();
+        df.apply("x", |f| f.cast(&DataType::Int8).unwrap()).unwrap();
+        assert_ne!(&schema_before, df.schema());
     }
 }

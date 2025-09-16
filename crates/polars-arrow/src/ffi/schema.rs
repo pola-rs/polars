@@ -94,7 +94,7 @@ impl ArrowSchema {
 
         let metadata = if let ArrowDataType::Extension(ext) = field.dtype() {
             // append extension information.
-            let mut metadata = metadata.clone();
+            let mut metadata = metadata;
 
             // metadata
             if let Some(extension_metadata) = &ext.metadata {
@@ -292,6 +292,7 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
         "tDn" => ArrowDataType::Duration(TimeUnit::Nanosecond),
         "tiM" => ArrowDataType::Interval(IntervalUnit::YearMonth),
         "tiD" => ArrowDataType::Interval(IntervalUnit::DayTime),
+        "tin" => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
         "vu" => ArrowDataType::Utf8View,
         "vz" => ArrowDataType::BinaryView,
         "+l" => {
@@ -487,9 +488,8 @@ fn to_format(dtype: &ArrowDataType) -> String {
         ArrowDataType::Duration(TimeUnit::Nanosecond) => "tDn".to_string(),
         ArrowDataType::Interval(IntervalUnit::YearMonth) => "tiM".to_string(),
         ArrowDataType::Interval(IntervalUnit::DayTime) => "tiD".to_string(),
-        ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
-            todo!("Spec for FFI for MonthDayNano still not defined.")
-        },
+        ArrowDataType::Interval(IntervalUnit::MonthDayNano) => "tin".to_string(),
+        ArrowDataType::Interval(IntervalUnit::MonthDayMillis) => unimplemented!(),
         ArrowDataType::Timestamp(unit, tz) => {
             let unit = match unit {
                 TimeUnit::Second => "s",
@@ -609,6 +609,7 @@ unsafe fn metadata_from_bytes(data: *const ::std::os::raw::c_char) -> (Metadata,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::array::LIST_VALUES_NAME;
 
     #[test]
     fn test_all() {
@@ -660,7 +661,7 @@ mod tests {
                 Field::new(
                     PlSmallStr::from_static("b"),
                     ArrowDataType::List(Box::new(Field::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         ArrowDataType::Int32,
                         true,
                     ))),
@@ -681,7 +682,7 @@ mod tests {
                     Field::new(
                         PlSmallStr::from_static("b"),
                         ArrowDataType::List(Box::new(Field::new(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             ArrowDataType::Int32,
                             true,
                         ))),
@@ -697,7 +698,7 @@ mod tests {
                     Field::new(
                         PlSmallStr::from_static("b"),
                         ArrowDataType::List(Box::new(Field::new(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             ArrowDataType::Int32,
                             true,
                         ))),

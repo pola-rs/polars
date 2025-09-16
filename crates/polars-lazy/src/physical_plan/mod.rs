@@ -1,2 +1,2 @@
-#[cfg(any(feature = "list_eval", feature = "pivot"))]
+#[cfg(feature = "pivot")]
 pub(crate) mod exotic;

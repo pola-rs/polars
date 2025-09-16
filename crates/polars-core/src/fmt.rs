@@ -4,7 +4,6 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::str::FromStr;
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::{fmt, str};
 
 #[cfg(any(
@@ -25,6 +24,7 @@ use comfy_table::presets::*;
 use comfy_table::*;
 use num_traits::{Num, NumCast};
 use polars_error::feature_gated;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::config::*;
 use crate::prelude::*;
@@ -44,14 +44,14 @@ pub enum FloatFmt {
     Full,
 }
 static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
-static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
+static FLOAT_FMT: RelaxedCell<u8> = RelaxedCell::new_u8(FloatFmt::Mixed as u8);
 
-static THOUSANDS_SEPARATOR: AtomicU8 = AtomicU8::new(b'\0');
-static DECIMAL_SEPARATOR: AtomicU8 = AtomicU8::new(b'.');
+static THOUSANDS_SEPARATOR: RelaxedCell<u8> = RelaxedCell::new_u8(b'\0');
+static DECIMAL_SEPARATOR: RelaxedCell<u8> = RelaxedCell::new_u8(b'.');
 
 // Numeric formatting getters
 pub fn get_float_fmt() -> FloatFmt {
-    match FLOAT_FMT.load(Ordering::Relaxed) {
+    match FLOAT_FMT.load() {
         0 => FloatFmt::Mixed,
         1 => FloatFmt::Full,
         _ => panic!(),
@@ -61,10 +61,10 @@ pub fn get_float_precision() -> Option<usize> {
     *FLOAT_PRECISION.read().unwrap()
 }
 pub fn get_decimal_separator() -> char {
-    DECIMAL_SEPARATOR.load(Ordering::Relaxed) as char
+    DECIMAL_SEPARATOR.load() as char
 }
 pub fn get_thousands_separator() -> String {
-    let sep = THOUSANDS_SEPARATOR.load(Ordering::Relaxed) as char;
+    let sep = THOUSANDS_SEPARATOR.load() as char;
     if sep == '\0' {
         "".to_string()
     } else {
@@ -78,16 +78,16 @@ pub fn get_trim_decimal_zeros() -> bool {
 
 // Numeric formatting setters
 pub fn set_float_fmt(fmt: FloatFmt) {
-    FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
+    FLOAT_FMT.store(fmt as u8)
 }
 pub fn set_float_precision(precision: Option<usize>) {
     *FLOAT_PRECISION.write().unwrap() = precision;
 }
 pub fn set_decimal_separator(dec: Option<char>) {
-    DECIMAL_SEPARATOR.store(dec.unwrap_or('.') as u8, Ordering::Relaxed)
+    DECIMAL_SEPARATOR.store(dec.unwrap_or('.') as u8)
 }
 pub fn set_thousands_separator(sep: Option<char>) {
-    THOUSANDS_SEPARATOR.store(sep.unwrap_or('\0') as u8, Ordering::Relaxed)
+    THOUSANDS_SEPARATOR.store(sep.unwrap_or('\0') as u8)
 }
 #[cfg(feature = "dtype-decimal")]
 pub fn set_trim_decimal_zeros(trim: Option<bool>) {
@@ -402,18 +402,18 @@ impl Debug for Series {
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => {
-                format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
+            DataType::Categorical(cats, _) => {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    format_array!(f, self.cat::<$C>().unwrap(), "cat", self.name(), "Series")
+                })
             },
 
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => format_array!(
-                f,
-                self.categorical().unwrap(),
-                "enum",
-                self.name(),
-                "Series"
-            ),
+            DataType::Enum(fcats, _) => {
+                with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                    format_array!(f, self.cat::<$C>().unwrap(), "enum", self.name(), "Series")
+                })
+            },
             #[cfg(feature = "dtype-struct")]
             dt @ DataType::Struct(_) => format_array!(
                 f,
@@ -713,7 +713,7 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = vec![ellipsis.clone(); self.columns.len()];
+                let dots: Vec<String> = vec![ellipsis; self.columns.len()];
                 table.add_row(dots);
             }
             let tbl_fallback_width = 100;
@@ -1182,10 +1182,10 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _)
-            | AnyValue::CategoricalOwned(_, _, _)
-            | AnyValue::Enum(_, _, _)
-            | AnyValue::EnumOwned(_, _, _) => {
+            AnyValue::Categorical(_, _)
+            | AnyValue::CategoricalOwned(_, _)
+            | AnyValue::Enum(_, _)
+            | AnyValue::EnumOwned(_, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             },

@@ -18,14 +18,10 @@ impl PyDataFrame {
         let file = get_file_like(py_f, true)?;
         let mut writer = BufWriter::new(file);
 
-        let mut slf_1 = slf.try_borrow_mut();
-        let slf_1: Result<&mut PyDataFrame, _> = slf_1.as_deref_mut();
-        let mut slf_2: Option<PyDataFrame> = (slf_1.is_err()).then(|| (*slf.borrow()).clone());
-
-        let slf: &mut PyDataFrame = slf_1.unwrap_or_else(|_| slf_2.as_mut().unwrap());
-
         Ok(slf
+            .borrow()
             .df
+            .write()
             .serialize_into_writer(&mut writer)
             .map_err(PyPolarsErr::from)?)
     }
@@ -41,11 +37,11 @@ impl PyDataFrame {
 
     /// Serialize into a JSON string.
     #[cfg(feature = "json")]
-    pub fn serialize_json(&mut self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
+    pub fn serialize_json(&self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
-            serde_json::to_writer(writer, &self.df)
+            serde_json::to_writer(writer, &*self.df.read())
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
     }

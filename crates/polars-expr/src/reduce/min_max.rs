@@ -16,7 +16,7 @@ use super::*;
 pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
-    match dtype {
+    match &dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
@@ -28,14 +28,19 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         },
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float64Type>>::new())),
+        Null => Box::new(NullGroupedReduction::default()),
         String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMinReducer)),
-        _ if dtype.is_integer() || dtype.is_temporal() => {
+        _ if dtype.is_integer() || dtype.is_temporal() || dtype.is_enum() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VMGR::new(dtype, NumReducer::<Min<$T>>::new()))
             })
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Min<Int128Type>>::new())),
+        #[cfg(feature = "dtype-categorical")]
+        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
+            Box::new(VMGR::new(dtype.clone(), CatMinReducer::<$C>(map.clone(), PhantomData)))
+        }),
         _ => unimplemented!(),
     }
 }
@@ -43,7 +48,7 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
 pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
-    match dtype {
+    match &dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
@@ -55,14 +60,19 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         },
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float64Type>>::new())),
+        Null => Box::new(NullGroupedReduction::default()),
         String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMaxReducer)),
-        _ if dtype.is_integer() || dtype.is_temporal() => {
+        _ if dtype.is_integer() || dtype.is_temporal() || dtype.is_enum() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VMGR::new(dtype, NumReducer::<Max<$T>>::new()))
             })
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Max<Int128Type>>::new())),
+        #[cfg(feature = "dtype-categorical")]
+        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
+            Box::new(VMGR::new(dtype.clone(), CatMaxReducer::<$C>(map.clone(), PhantomData)))
+        }),
         _ => unimplemented!(),
     }
 }
@@ -378,16 +388,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -500,16 +502,221 @@ impl GroupedReduction for BoolMaxGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+struct CatMinReducer<T>(Arc<CategoricalMapping>, PhantomData<T>);
+
+#[cfg(feature = "dtype-categorical")]
+impl<T> Clone for CatMinReducer<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl<T: PolarsCategoricalType> Reducer for CatMinReducer<T> {
+    type Dtype = T::PolarsPhysical;
+    type Value = T::Native;
+
+    fn init(&self) -> Self::Value {
+        T::Native::max_value() // Ensures it's invalid, preferring the other value.
+    }
+
+    #[inline(always)]
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        s.to_physical_repr()
+    }
+
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        let Some(b_s) = self.0.cat_to_str(b.as_cat()) else {
+            return;
+        };
+        let Some(a_s) = self.0.cat_to_str(a.as_cat()) else {
+            *a = *b;
+            return;
+        };
+
+        if b_s < a_s {
+            *a = *b;
+        }
+    }
+
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<Self::Value>, _seq_id: u64) {
+        if let Some(b) = b {
+            self.combine(a, &b);
+        }
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T::PolarsPhysical>, _seq_id: u64) {
+        for cat in ca.iter().flatten() {
+            self.combine(v, &cat);
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        let cat_ids = PrimitiveArray::from_vec(v).with_validity(m);
+        let cat_ids = ChunkedArray::from(cat_ids);
+        unsafe {
+            Ok(
+                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cat_ids, dtype.clone())
+                    .into_series(),
             )
-        })
+        }
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+struct CatMaxReducer<T>(Arc<CategoricalMapping>, PhantomData<T>);
+
+#[cfg(feature = "dtype-categorical")]
+impl<T> Clone for CatMaxReducer<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
+    type Dtype = T::PolarsPhysical;
+    type Value = T::Native;
+
+    fn init(&self) -> Self::Value {
+        T::Native::max_value() // Ensures it's invalid, preferring the other value.
+    }
+
+    #[inline(always)]
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        s.to_physical_repr()
+    }
+
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        let Some(b_s) = self.0.cat_to_str(b.as_cat()) else {
+            return;
+        };
+        let Some(a_s) = self.0.cat_to_str(a.as_cat()) else {
+            *a = *b;
+            return;
+        };
+
+        if b_s > a_s {
+            *a = *b;
+        }
+    }
+
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<Self::Value>, _seq_id: u64) {
+        if let Some(b) = b {
+            self.combine(a, &b);
+        }
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T::PolarsPhysical>, _seq_id: u64) {
+        for cat in ca.iter().flatten() {
+            self.combine(v, &cat);
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        let cat_ids = PrimitiveArray::from_vec(v).with_validity(m);
+        let cat_ids = ChunkedArray::from(cat_ids);
+        unsafe {
+            Ok(
+                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cat_ids, dtype.clone())
+                    .into_series(),
+            )
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct NullGroupedReduction {
+    length: usize,
+    num_evictions: usize,
+}
+
+impl GroupedReduction for NullGroupedReduction {
+    fn new_empty(&self) -> Box<dyn GroupedReduction> {
+        Box::new(Self::default())
+    }
+
+    fn reserve(&mut self, _additional: usize) {}
+
+    fn resize(&mut self, num_groups: IdxSize) {
+        self.length = num_groups as usize;
+    }
+
+    fn update_group(
+        &mut self,
+        values: &Column,
+        _group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype() == &DataType::Null);
+
+        // no-op
+        Ok(())
+    }
+
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype() == &DataType::Null);
+        assert!(subset.len() == group_idxs.len());
+
+        for g in group_idxs {
+            self.num_evictions += g.should_evict() as usize;
+        }
+        Ok(())
+    }
+
+    unsafe fn combine_subset(
+        &mut self,
+        _other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        assert!(subset.len() == group_idxs.len());
+
+        // no-op
+        Ok(())
+    }
+
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        let out = Box::new(Self {
+            length: self.num_evictions,
+            num_evictions: 0,
+        });
+        self.num_evictions = 0;
+        out
+    }
+
+    fn finalize(&mut self) -> PolarsResult<Series> {
+        Ok(Series::full_null(
+            PlSmallStr::EMPTY,
+            self.length,
+            &DataType::Null,
+        ))
     }
 
     fn as_any(&self) -> &dyn Any {

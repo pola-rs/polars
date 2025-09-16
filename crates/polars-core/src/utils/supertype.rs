@@ -267,6 +267,8 @@ pub fn get_supertype_with_options(
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
 
+            (Float32, Float64) => Some(Float64),
+
             #[cfg(feature = "dtype-u8")]
             (Float64, UInt8) => Some(Float64),
             #[cfg(feature = "dtype-u16")]
@@ -333,7 +335,7 @@ pub fn get_supertype_with_options(
             (Time, Float64) => Some(Float64),
 
             // Every known type can be cast to a string except binary
-            (dt, String) if !matches!(dt, Unknown(UnknownKind::Any)) && dt != &Binary && options.allow_primitive_to_string() || !dt.to_physical().is_primitive() => Some(String),
+            (dt, String) if !matches!(dt, Unknown(UnknownKind::Any | UnknownKind::Ufunc)) && dt != &Binary && options.allow_primitive_to_string() || !dt.to_physical().is_primitive() => Some(String),
             (String, Binary) => Some(Binary),
             (dt, Null) => Some(dt.clone()),
 
@@ -413,10 +415,7 @@ pub fn get_supertype_with_options(
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
                     // Materialize str
                     #[cfg(feature = "dtype-categorical")]
-                    UnknownKind::Str if dt.is_categorical()  => {
-                        let Categorical(_, ord) = dt else { unreachable!()};
-                        Some(Categorical(None, *ord))
-                    },
+                    UnknownKind::Str if dt.is_categorical() => Some(dt.clone()),
                     // Keep unknown
                     dynam if dt.is_null() => Some(Unknown(*dynam)),
                     // Find integers sizes
@@ -601,7 +600,7 @@ fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
 pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
     into_iter: I,
 ) -> PolarsResult<DataType> {
-    let mut iter = into_iter.clone().into_iter();
+    let mut iter = into_iter.into_iter();
 
     let mut st = iter
         .next()
@@ -612,42 +611,5 @@ pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
         st = try_get_supertype(d.as_ref(), &st)?;
     }
 
-    match st {
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(Some(_), ordering) => {
-            // This merges the global rev maps with linear complexity.
-            // If we do a binary reduce, it would be quadratic.
-            let mut iter = into_iter.into_iter();
-            let first_dt = iter.next().unwrap();
-            let first_dt = first_dt.as_ref();
-            let DataType::Categorical(Some(rm), _) = first_dt else {
-                unreachable!()
-            };
-            polars_ensure!(matches!(rm.as_ref(), RevMapping::Global(_, _, _)), ComputeError: "global string cache must be set to merge categorical columns");
-
-            let mut merger = GlobalRevMapMerger::new(rm.clone());
-
-            for d in iter {
-                if let DataType::Categorical(Some(rm), _) = d.as_ref() {
-                    merger.merge_map(rm)?
-                }
-            }
-            let rev_map = merger.finish();
-
-            Ok(DataType::Categorical(Some(rev_map), ordering))
-        },
-        // This would be quadratic if we do this with the binary `merge_dtypes`.
-        DataType::List(inner) if inner.contains_categoricals() => {
-            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
-        },
-        #[cfg(feature = "dtype-array")]
-        DataType::Array(inner, _) if inner.contains_categoricals() => {
-            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
-        },
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(fields) if fields.iter().any(|f| f.dtype().contains_categoricals()) => {
-            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
-        },
-        _ => Ok(st),
-    }
+    Ok(st)
 }

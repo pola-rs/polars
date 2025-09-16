@@ -2,6 +2,7 @@ use std::hash::Hash;
 use std::sync::Mutex;
 
 use deletion::DeletionFilesList;
+use polars_core::schema::iceberg::IcebergSchemaRef;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -19,6 +20,8 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use super::*;
+use crate::dsl::default_values::DefaultFieldValues;
+pub mod default_values;
 pub mod deletion;
 
 #[cfg(feature = "python")]
@@ -91,7 +94,6 @@ pub enum FileScanIR {
     #[cfg(feature = "python")]
     PythonDataset {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip, default))]
         cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
 
@@ -179,6 +181,9 @@ pub struct CastColumnsPolicy {
     /// Allow casting to change time units.
     pub datetime_convert_timezone: bool,
 
+    /// DataType::Null to any
+    pub null_upcast: bool,
+
     pub missing_struct_fields: MissingColumnsPolicy,
     pub extra_struct_fields: ExtraColumnsPolicy,
 }
@@ -192,6 +197,7 @@ impl CastColumnsPolicy {
         datetime_nanoseconds_downcast: false,
         datetime_microseconds_downcast: false,
         datetime_convert_timezone: false,
+        null_upcast: true,
         missing_struct_fields: MissingColumnsPolicy::Raise,
         extra_struct_fields: ExtraColumnsPolicy::Raise,
     };
@@ -213,6 +219,13 @@ pub enum ExtraColumnsPolicy {
     Ignore,
 }
 
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum ColumnMapping {
+    Iceberg(IcebergSchemaRef),
+}
+
 /// Scan arguments shared across different scan types.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -229,6 +242,9 @@ pub struct UnifiedScanArgs {
     pub glob: bool,
 
     pub projection: Option<Arc<[PlSmallStr]>>,
+    pub column_mapping: Option<ColumnMapping>,
+    /// Default values for missing columns.
+    pub default_values: Option<DefaultFieldValues>,
     pub row_index: Option<RowIndex>,
     /// Slice applied before predicates
     pub pre_slice: Option<Slice>,
@@ -251,6 +267,8 @@ impl Default for UnifiedScanArgs {
             cache: false,
             glob: true,
             projection: None,
+            column_mapping: None,
+            default_values: None,
             row_index: None,
             pre_slice: None,
             cast_columns_policy: CastColumnsPolicy::default(),
@@ -397,6 +415,14 @@ impl CastColumnsPolicy {
             )
         };
 
+        if incoming_dtype.is_null() && !target_dtype.is_null() {
+            return if self.null_upcast {
+                Ok(true)
+            } else {
+                mismatch_err("unimplemented: 'null-upcast' in scan cast options")
+            };
+        }
+
         // We intercept the nested types first to prevent an expensive recursive eq - recursion
         // is instead done manually through this function.
 
@@ -507,6 +533,13 @@ impl CastColumnsPolicy {
 
         debug_assert!(!target_dtype.is_nested());
 
+        // If we were to drop cast on an `Unknown` incoming_dtype, it could eventually
+        // lead to dtype errors. The reason is that the logic used by type coercion differs
+        // from the casting logic used by `materialize_unknown`.
+        if incoming_dtype.contains_unknown() {
+            return Ok(true);
+        }
+
         // Note: Only call this with non-nested types for performance
         let materialize_unknown = |dtype: &DataType| -> std::borrow::Cow<DataType> {
             dtype
@@ -516,7 +549,7 @@ impl CastColumnsPolicy {
                 .unwrap_or(std::borrow::Cow::Borrowed(incoming_dtype))
         };
 
-        let incoming_dtype = materialize_unknown(incoming_dtype);
+        let incoming_dtype = std::borrow::Cow::Borrowed(incoming_dtype);
         let target_dtype = materialize_unknown(target_dtype);
 
         if target_dtype == incoming_dtype {

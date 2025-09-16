@@ -50,7 +50,6 @@ def assert_index_of(
         value = pl.lit(value, dtype=series.dtype)
 
     # Eager API:
-    print(series.index_of(value), expected_index, value, series)
     assert series.index_of(value) == expected_index
     # Lazy API:
     assert pl.LazyFrame({"series": series}).select(
@@ -180,6 +179,7 @@ LISTS_STRATEGY = st.lists(
 )
 # The examples are cases where this test previously caught bugs:
 @example([], [], [None])
+@pytest.mark.slow
 def test_randomized(
     list1: list[int | None], list2: list[int | None], list3: list[int | None]
 ) -> None:
@@ -326,20 +326,7 @@ def test_enum(convert_to_literal: bool) -> None:
 
 @pytest.mark.parametrize(
     "convert_to_literal",
-    [
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20318"
-            ),
-        ),
-        pytest.param(
-            False,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20171"
-            ),
-        ),
-    ],
+    [True, False],
 )
 def test_categorical(convert_to_literal: bool) -> None:
     series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
@@ -352,6 +339,17 @@ def test_categorical(convert_to_literal: bool) -> None:
     ]:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
+
+
+@pytest.mark.parametrize("value", [0, 0.1])
+def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
+    series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
+    msg = "cannot cast lossless"
+    with pytest.raises(InvalidOperationError, match=msg):
+        series.index_of(value)
+    df = pl.DataFrame({"s": series})
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(pl.col("s").index_of(value))
 
 
 @given(s=series(name="s", allow_chunks=True, max_size=10))

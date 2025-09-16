@@ -23,7 +23,7 @@ pub(super) fn process_functions(
                 .for_each(|name| add_str_to_accumulated(name.clone(), &mut ctx, expr_arena));
             proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
             Ok(IRBuilder::new(input, expr_arena, lp_arena)
-                .explode(columns.clone())
+                .explode(columns)
                 .build())
         },
         #[cfg(feature = "pivot")]

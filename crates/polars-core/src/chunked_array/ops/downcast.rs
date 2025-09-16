@@ -84,8 +84,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// # Safety
     /// The caller must ensure:
-    ///     * the length remains correct.
-    ///     * the flags (sorted, etc) remain correct.
+    /// * The length remains correct.
+    /// * The flags (sorted, etc) remain correct.
+    /// * The dtype remains the same.
     #[inline]
     pub unsafe fn downcast_iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut T::Array> {
         self.chunks.iter_mut().map(|arr| {

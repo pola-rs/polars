@@ -20,7 +20,7 @@ pub fn field_to_rust_arrow(obj: Bound<'_, PyAny>) -> PyResult<ArrowField> {
     Ok(normalize_arrow_fields(&field))
 }
 
-fn normalize_arrow_fields(field: &ArrowField) -> ArrowField {
+pub(crate) fn normalize_arrow_fields(field: &ArrowField) -> ArrowField {
     // normalize fields with extension dtypes that are otherwise standard dtypes associated
     // with (for us) irrelevant metadata; recreate the field using the inner (standard) dtype
     match field {

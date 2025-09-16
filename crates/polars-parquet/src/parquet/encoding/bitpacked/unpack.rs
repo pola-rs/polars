@@ -104,7 +104,7 @@ macro_rules! unpack {
             // This will get optimised into a jump table
             //
             // @NOTE
-            // This jumptable appoach saves around 2 - 2.5x on performance over no jumptable and no
+            // This jumptable approach saves around 2 - 2.5x on performance over no jumptable and no
             // generics.
             seq_macro!(i in 0..=$bits {
                 if i == num_bits {

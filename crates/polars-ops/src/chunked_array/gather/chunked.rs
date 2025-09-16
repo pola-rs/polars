@@ -10,7 +10,7 @@ use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::Container;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
 
 use crate::frame::IntoDf;
 
@@ -219,18 +219,15 @@ impl TakeChunked for Series {
                     .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(revmap, ord) | Enum(revmap, ord) => {
-                let ca = self.categorical().unwrap();
-                let t = ca
-                    .physical()
-                    .take_chunked_unchecked(by, sorted, avoid_sharing);
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    t,
-                    revmap.as_ref().unwrap().clone(),
-                    matches!(self.dtype(), Enum(..)),
-                    *ord,
-                )
-                .into_series()
+            Categorical(_, _) | Enum(_, _) => {
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+                    let ca = self.cat::<$C>().unwrap();
+                    CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
+                        ca.physical().take_chunked_unchecked(by, sorted, avoid_sharing),
+                        self.dtype().clone()
+                    )
+                    .into_series()
+                })
             },
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
@@ -322,16 +319,15 @@ impl TakeChunked for Series {
                     .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(revmap, ord) | Enum(revmap, ord) => {
-                let ca = self.categorical().unwrap();
-                let ret = ca.physical().take_opt_chunked_unchecked(by, avoid_sharing);
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    ret,
-                    revmap.as_ref().unwrap().clone(),
-                    matches!(self.dtype(), Enum(..)),
-                    *ord,
-                )
-                .into_series()
+            Categorical(_, _) | Enum(_, _) => {
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+                    let ca = self.cat::<$C>().unwrap();
+                    CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
+                        ca.physical().take_opt_chunked_unchecked(by, avoid_sharing),
+                        self.dtype().clone()
+                    )
+                    .into_series()
+                })
             },
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
@@ -360,7 +356,7 @@ where
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
                 let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                arr.value_unchecked(array_idx as usize).clone()
+                arr.value_unchecked(array_idx as usize)
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);

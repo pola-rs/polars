@@ -181,45 +181,53 @@ where
     }
 }
 
-impl ChunkCompareEq<&[u8]> for BinaryChunked {
-    type Item = BooleanChunked;
+macro_rules! binary_eq_ineq_impl {
+    ($($ca:ident),+) => {
+        $(
+        impl ChunkCompareEq<&[u8]> for $ca {
+            type Item = BooleanChunked;
 
-    fn equal(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
-    }
+            fn equal(&self, rhs: &[u8]) -> BooleanChunked {
+                arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
+            }
 
-    fn equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
-    }
+            fn equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
+                arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
+            }
 
-    fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
-    }
+            fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
+                arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
+            }
 
-    fn not_equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
-    }
+            fn not_equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
+                arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
+            }
+        }
+
+        impl ChunkCompareIneq<&[u8]> for $ca {
+            type Item = BooleanChunked;
+
+            fn gt(&self, rhs: &[u8]) -> BooleanChunked {
+                arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
+            }
+
+            fn gt_eq(&self, rhs: &[u8]) -> BooleanChunked {
+                arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
+            }
+
+            fn lt(&self, rhs: &[u8]) -> BooleanChunked {
+                arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
+            }
+
+            fn lt_eq(&self, rhs: &[u8]) -> BooleanChunked {
+                arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
+            }
+        }
+        )+
+    };
 }
 
-impl ChunkCompareIneq<&[u8]> for BinaryChunked {
-    type Item = BooleanChunked;
-
-    fn gt(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
-    }
-
-    fn gt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
-    }
-
-    fn lt(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
-    }
-
-    fn lt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
-    }
-}
+binary_eq_ineq_impl!(BinaryChunked, BinaryOffsetChunked);
 
 impl ChunkCompareEq<&str> for StringChunked {
     type Item = BooleanChunked;

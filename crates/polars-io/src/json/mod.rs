@@ -68,6 +68,7 @@ use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 
+use arrow::array::LIST_VALUES_NAME;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
@@ -330,7 +331,7 @@ where
 
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         dtype,
                         true,
                     )))

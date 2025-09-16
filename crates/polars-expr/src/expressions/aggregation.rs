@@ -166,7 +166,7 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.get_values().name().clone();
 
         // Literals cannot be aggregated except for implode.
-        polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
+        polars_ensure!(!matches!(ac.agg_state(), AggState::LiteralScalar(_)), ComputeError: "cannot aggregate a literal");
 
         if let AggregatedScalar(_) = ac.agg_state() {
             match self.agg_type.groupby {
@@ -267,7 +267,7 @@ impl PhysicalExpr for AggregationExpr {
                     } else {
                         // TODO: optimize this/and write somewhere else.
                         match ac.agg_state() {
-                            AggState::Literal(s) | AggState::AggregatedScalar(s) => {
+                            AggState::LiteralScalar(s) | AggState::AggregatedScalar(s) => {
                                 AggregatedScalar(Column::new(
                                     keep_name,
                                     [(s.len() as IdxSize - s.null_count() as IdxSize)],
@@ -347,20 +347,15 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Implode => {
-                    // if the aggregation is already
-                    // in an aggregate flat state for instance by
-                    // a mean aggregation, we simply convert to list
+                    // If the aggregation is already in an aggregate flat state (AggregatedScalar), for instance by
+                    // a mean() aggregation, we simply wrap into a list and maintain the AggregatedScalar state
                     //
-                    // if it is not, we traverse the groups and create
-                    // a list per group.
+                    // If it is not, we traverse the groups and create a list per group.
                     let c = match ac.agg_state() {
                         // mean agg:
                         // -> f64 -> list<f64>
                         AggregatedScalar(c) => c
-                            .reshape_list(&[
-                                ReshapeDimension::Infer,
-                                ReshapeDimension::new_dimension(1),
-                            ])
+                            .cast(&DataType::List(Box::new(c.dtype().clone())))
                             .unwrap(),
                         // Auto-imploded
                         AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
@@ -372,7 +367,11 @@ impl PhysicalExpr for AggregationExpr {
                             agg.as_list().into_column()
                         },
                     };
-                    AggState::AggregatedList(c.with_name(keep_name))
+                    match ac.agg_state() {
+                        // An imploded scalar remains a scalar
+                        AggregatedScalar(_) => AggregatedScalar(c.with_name(keep_name)),
+                        _ => AggState::AggregatedList(c.with_name(keep_name)),
+                    }
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
@@ -768,17 +767,11 @@ where
     #[cfg(not(debug_assertions))]
     let thread_boundary = 100_000;
 
-    // Temporary until categorical min/max multithreading implementation is corrected.
-    #[cfg(feature = "dtype-categorical")]
-    let is_categorical = matches!(s.dtype(), &DataType::Categorical(_, _));
-    #[cfg(not(feature = "dtype-categorical"))]
-    let is_categorical = false;
     // threading overhead/ splitting work stealing is costly..
 
     if !allow_threading
         || s.len() < thread_boundary
         || POOL.current_thread_has_pending_tasks().unwrap_or(false)
-        || is_categorical
     {
         return f(s);
     }

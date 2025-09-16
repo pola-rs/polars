@@ -112,8 +112,8 @@ fn column_idx_to_series(
         assert_dtypes(field.dtype())
     }
     let columns = mmap_columns(store, field_md);
-    let (array, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
-    let series = Series::try_from((field, array))?;
+    let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
+    let series = Series::try_from((field, arrays))?;
 
     Ok((series, pred_true_mask))
 }
@@ -426,22 +426,6 @@ pub fn read_parquet<R: MmapBytesReader>(
         .map(Ok)
         .unwrap_or_else(|| read::read_metadata(&mut reader).map(Arc::new))?;
     let n_row_groups = file_metadata.row_groups.len();
-
-    // if there are multiple row groups and categorical data
-    // we need a string cache
-    // we keep it alive until the end of the function
-    let _sc = if n_row_groups > 1 {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            Some(polars_core::StringCacheHolder::hold())
-        }
-        #[cfg(not(feature = "dtype-categorical"))]
-        {
-            Some(0u8)
-        }
-    } else {
-        None
-    };
 
     let materialized_projection = projection
         .map(Cow::Borrowed)

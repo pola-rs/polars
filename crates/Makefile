@@ -114,6 +114,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-schema
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-compute
+	cargo publish --allow-dirty -p polars-dtype
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
@@ -140,7 +141,7 @@ help:  ## Display this help screen
 
 .PHONY: check-wasm
 check-wasm:  ## Check wasm build without supported features
-	cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
+	RUSTFLAGS='--cfg getrandom_backend="wasm_js"' cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
 		--each-feature                        \
 		--exclude-features async              \
 		--exclude-features aws                \

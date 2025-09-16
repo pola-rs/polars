@@ -3,17 +3,21 @@ use std::mem::MaybeUninit;
 
 use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
-    PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
+    PrimitiveArray, StructArray, UInt8Array, UInt16Array, UInt32Array, Utf8Array, Utf8ViewArray,
 };
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
-use arrow::types::Offset;
+use arrow::types::{NativeType, Offset};
+use polars_dtype::categorical::CatNative;
 
-use crate::fixed::{boolean, decimal, numeric, packed_u32};
+use crate::fixed::numeric::FixedLengthEncoding;
+use crate::fixed::{boolean, decimal, numeric};
 use crate::row::{RowEncodingOptions, RowsEncoded};
 use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
-use crate::{ArrayRef, RowEncodingContext, with_match_arrow_primitive_type};
+use crate::{
+    ArrayRef, RowEncodingCategoricalContext, RowEncodingContext, with_match_arrow_primitive_type,
+};
 
 pub fn convert_columns(
     num_rows: usize,
@@ -255,7 +259,7 @@ fn get_encoder(
     let dtype = array.dtype();
 
     // Fast path: column has a fixed size encoding
-    if let Some(size) = fixed_size(dtype, dict) {
+    if let Some(size) = fixed_size(dtype, opt, dict) {
         row_widths.push_constant(size);
         let state = match dtype {
             D::FixedSizeList(_, width) => {
@@ -318,6 +322,64 @@ fn get_encoder(
             array: array.to_boxed(),
             state,
         };
+    }
+
+    // Non-fixed-size categorical path.
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict {
+        match dtype {
+            D::UInt8 => {
+                assert!(opt.is_ordered() && !ctx.is_enum);
+                let dc_array = array.as_any().downcast_ref::<UInt8Array>().unwrap();
+                return striter_num_column_bytes(
+                    array,
+                    dc_array.values_iter().map(|cat| {
+                        ctx.mapping
+                            .cat_to_str(cat.as_cat())
+                            .map(|s| s.len())
+                            .unwrap_or(0)
+                    }),
+                    dc_array.validity(),
+                    opt,
+                    row_widths,
+                );
+            },
+            D::UInt16 => {
+                assert!(opt.is_ordered() && !ctx.is_enum);
+                let dc_array = array.as_any().downcast_ref::<UInt16Array>().unwrap();
+                return striter_num_column_bytes(
+                    array,
+                    dc_array.values_iter().map(|cat| {
+                        ctx.mapping
+                            .cat_to_str(cat.as_cat())
+                            .map(|s| s.len())
+                            .unwrap_or(0)
+                    }),
+                    dc_array.validity(),
+                    opt,
+                    row_widths,
+                );
+            },
+            D::UInt32 => {
+                assert!(opt.is_ordered() && !ctx.is_enum);
+                let dc_array = array.as_any().downcast_ref::<UInt32Array>().unwrap();
+                return striter_num_column_bytes(
+                    array,
+                    dc_array.values_iter().map(|cat| {
+                        ctx.mapping
+                            .cat_to_str(cat.as_cat())
+                            .map(|s| s.len())
+                            .unwrap_or(0)
+                    }),
+                    dc_array.validity(),
+                    opt,
+                    row_widths,
+                );
+            },
+            _ => {
+                // Fall through to below, should be nested type containing categorical.
+                debug_assert!(dtype.is_nested())
+            },
+        }
     }
 
     match dtype {
@@ -522,6 +584,26 @@ unsafe fn encode_bins<'a>(
     }
 }
 
+unsafe fn encode_cat_array<T: NativeType + FixedLengthEncoding + CatNative>(
+    buffer: &mut [MaybeUninit<u8>],
+    keys: &PrimitiveArray<T>,
+    opt: RowEncodingOptions,
+    ctx: &RowEncodingCategoricalContext,
+    offsets: &mut [usize],
+) {
+    if ctx.is_enum || !opt.is_ordered() {
+        numeric::encode(buffer, keys, opt, offsets);
+    } else {
+        utf8::encode_str(
+            buffer,
+            keys.iter()
+                .map(|k| k.map(|&cat| ctx.mapping.cat_to_str_unchecked(cat.as_cat()))),
+            opt,
+            offsets,
+        );
+    }
+}
+
 unsafe fn encode_flat_array(
     buffer: &mut [MaybeUninit<u8>],
     array: &dyn Array,
@@ -531,6 +613,31 @@ unsafe fn encode_flat_array(
 ) {
     use ArrowDataType as D;
 
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict {
+        match array.dtype() {
+            D::UInt8 => {
+                let keys = array.as_any().downcast_ref::<PrimitiveArray<u8>>().unwrap();
+                encode_cat_array(buffer, keys, opt, ctx, offsets);
+            },
+            D::UInt16 => {
+                let keys = array
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<u16>>()
+                    .unwrap();
+                encode_cat_array(buffer, keys, opt, ctx, offsets);
+            },
+            D::UInt32 => {
+                let keys = array
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<u32>>()
+                    .unwrap();
+                encode_cat_array(buffer, keys, opt, ctx, offsets);
+            },
+            _ => unreachable!(),
+        };
+        return;
+    }
+
     match array.dtype() {
         D::Null => {},
         D::Boolean => {
@@ -539,44 +646,6 @@ unsafe fn encode_flat_array(
         },
 
         dt if dt.is_numeric() => {
-            if matches!(dt, D::UInt32) {
-                if let Some(dict) = dict {
-                    let keys = array
-                        .as_any()
-                        .downcast_ref::<PrimitiveArray<u32>>()
-                        .unwrap();
-
-                    match dict {
-                        RowEncodingContext::Categorical(ctx) => {
-                            if ctx.is_enum {
-                                packed_u32::encode(
-                                    buffer,
-                                    keys,
-                                    opt,
-                                    offsets,
-                                    ctx.needed_num_bits(),
-                                );
-                            } else {
-                                if let Some(lexical_sort_idxs) = &ctx.lexical_sort_idxs {
-                                    numeric::encode_iter(
-                                        buffer,
-                                        keys.iter()
-                                            .map(|k| k.map(|&k| lexical_sort_idxs[k as usize])),
-                                        opt,
-                                        offsets,
-                                    );
-                                }
-
-                                numeric::encode(buffer, keys, opt, offsets);
-                            }
-                        },
-
-                        _ => unreachable!(),
-                    }
-                    return;
-                }
-            }
-
             if matches!(dt, D::Int128) {
                 if let Some(RowEncodingContext::Decimal(precision)) = dict {
                     decimal::encode(
@@ -855,30 +924,28 @@ unsafe fn encode_validity(
     }
 }
 
-pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> Option<usize> {
+pub fn fixed_size(
+    dtype: &ArrowDataType,
+    opt: RowEncodingOptions,
+    dict: Option<&RowEncodingContext>,
+) -> Option<usize> {
     use ArrowDataType as D;
     use numeric::FixedLengthEncoding;
+
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict {
+        // If ordered categorical (non-enum) we encode strings, otherwise physical.
+        if !ctx.is_enum && opt.is_ordered() {
+            return None;
+        }
+    }
+
     Some(match dtype {
         D::Null => 0,
         D::Boolean => 1,
 
         D::UInt8 => u8::ENCODED_LEN,
         D::UInt16 => u16::ENCODED_LEN,
-        D::UInt32 => match dict {
-            None => u32::ENCODED_LEN,
-            Some(RowEncodingContext::Categorical(ctx)) => {
-                if ctx.is_enum {
-                    packed_u32::len_from_num_bits(ctx.needed_num_bits())
-                } else {
-                    let mut num_bytes = u32::ENCODED_LEN;
-                    if ctx.lexical_sort_idxs.is_some() {
-                        num_bytes += u32::ENCODED_LEN;
-                    }
-                    num_bytes
-                }
-            },
-            _ => return None,
-        },
+        D::UInt32 => u32::ENCODED_LEN,
         D::UInt64 => u64::ENCODED_LEN,
 
         D::Int8 => i8::ENCODED_LEN,
@@ -893,19 +960,19 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> O
 
         D::Float32 => f32::ENCODED_LEN,
         D::Float64 => f64::ENCODED_LEN,
-        D::FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), dict)?,
+        D::FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), opt, dict)?,
         D::Struct(fs) => match dict {
             None => {
                 let mut sum = 0;
                 for f in fs {
-                    sum += fixed_size(f.dtype(), None)?;
+                    sum += fixed_size(f.dtype(), opt, None)?;
                 }
                 1 + sum
             },
             Some(RowEncodingContext::Struct(dicts)) => {
                 let mut sum = 0;
                 for (f, dict) in fs.iter().zip(dicts) {
-                    sum += fixed_size(f.dtype(), dict.as_ref())?;
+                    sum += fixed_size(f.dtype(), opt, dict.as_ref())?;
                 }
                 1 + sum
             },

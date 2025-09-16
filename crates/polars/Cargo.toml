@@ -17,7 +17,7 @@ polars-error = { workspace = true }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
 polars-ops = { workspace = true, optional = true }
-polars-parquet = { workspace = true }
+polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true, optional = true }
 polars-sql = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
@@ -43,7 +43,8 @@ version_check = { workspace = true }
 
 # enable js feature for getrandom to work in wasm
 [target.'cfg(target_family = "wasm")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+old_getrandom = { version = "0.2", features = ["js"], package = "getrandom" }
 
 [features]
 sql = ["polars-sql"]
@@ -58,6 +59,7 @@ default = [
   "docs",
   "zip_with",
   "csv",
+  "polars-parquet",
   "temporal",
   "fmt",
   "dtype-slim",
@@ -73,7 +75,14 @@ serde-lazy = [
   "polars-ops?/serde",
   "polars-utils/serde",
 ]
-parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet", "new_streaming"]
+parquet = [
+  "polars-parquet",
+  "polars-io",
+  "polars-lazy?/parquet",
+  "polars-io/parquet",
+  "polars-sql?/parquet",
+  "new_streaming",
+]
 async = ["polars-lazy?/async"]
 cloud = ["polars-lazy?/cloud", "polars-io/cloud"]
 aws = ["async", "cloud", "polars-io/aws"]
@@ -380,6 +389,10 @@ docs-selection = [
   "parquet",
   "ipc",
   "ipc_streaming",
+  "array_arithmetic",
+  "binary_encoding",
+  "moment",
+  "bitwise",
   "dtype-full",
   "is_in",
   "rows",
@@ -444,8 +457,9 @@ bench = [
   "lazy",
 ]
 
-# All features expect python
+# All features except python
 full = ["docs-selection", "performant", "fmt"]
+allow_unused = ["polars-lazy?/allow_unused", "polars-core/allow_unused", "polars-time?/allow_unused"]
 
 [package.metadata.docs.rs]
 # all-features = true

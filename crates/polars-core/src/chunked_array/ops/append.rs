@@ -254,6 +254,20 @@ impl StructChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+#[doc(hidden)]
+impl<T: PolarsCategoricalType> CategoricalChunked<T> {
+    pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        assert!(self.dtype() == other.dtype());
+        self.phys.append(&other.phys)
+    }
+
+    pub fn append_owned(&mut self, other: Self) -> PolarsResult<()> {
+        assert!(self.dtype() == other.dtype());
+        self.phys.append_owned(other.phys)
+    }
+}
+
 #[cfg(feature = "object")]
 #[doc(hidden)]
 impl<T: PolarsObject> ObjectChunked<T> {

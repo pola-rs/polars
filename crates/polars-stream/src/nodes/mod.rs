@@ -1,3 +1,6 @@
+#[cfg(feature = "cum_agg")]
+pub mod cum_agg;
+pub mod dynamic_slice;
 pub mod filter;
 pub mod group_by;
 pub mod in_memory_map;
@@ -13,10 +16,16 @@ pub mod merge_sorted;
 pub mod multiplexer;
 pub mod negative_slice;
 pub mod ordered_union;
+pub mod peak_minmax;
 pub mod reduce;
+pub mod repeat;
+pub mod rle;
+pub mod rle_id;
 pub mod select;
+pub mod shift;
 pub mod simple_projection;
 pub mod streaming_slice;
+pub mod top_k;
 pub mod with_row_index;
 pub mod zip;
 

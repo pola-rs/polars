@@ -36,7 +36,7 @@ pub fn eager_int_range(
 
     if !dtype.is_integer() {
         return Err(PyPolarsErr::from(
-            polars_err!(ComputeError: "non-integer `dtype` passed to `int_range`: '{}'", dtype),
+            polars_err!(SchemaMismatch: "non-integer `dtype` passed to `int_range`: '{}'", dtype),
         )
         .into());
     }
@@ -89,7 +89,7 @@ pub fn date_ranges(
 }
 
 #[pyfunction]
-#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=Wrap(None)))]
+#[pyo3(signature = (start, end, every, closed, time_unit, time_zone))]
 pub fn datetime_range(
     start: PyExpr,
     end: PyExpr,
@@ -108,7 +108,7 @@ pub fn datetime_range(
 }
 
 #[pyfunction]
-#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=Wrap(None)))]
+#[pyo3(signature = (start, end, every, closed, time_unit, time_zone))]
 pub fn datetime_ranges(
     start: PyExpr,
     end: PyExpr,

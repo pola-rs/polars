@@ -386,12 +386,12 @@ def test_list_drop_nulls() -> None:
 def test_list_sample() -> None:
     s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
 
-    expected_sample_n = pl.Series("values", [[3, 1], [None], [2], None])
+    expected_sample_n = pl.Series("values", [[None, 3], [None], [2], None])
     assert_series_equal(
         s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1), expected_sample_n
     )
 
-    expected_sample_frac = pl.Series("values", [[3, 1], [None], [1, 2], None])
+    expected_sample_frac = pl.Series("values", [[None, 3], [None], [1, 2], None])
     assert_series_equal(
         s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1),
         expected_sample_frac,
@@ -409,7 +409,10 @@ def test_list_sample() -> None:
         sample_frac=pl.col("values").list.sample(fraction=pl.col("frac"), seed=1),
     )
     expected_df = pl.DataFrame(
-        {"sample_n": [[3, 1], [None], [3, 4]], "sample_frac": [[3, 1], [None], [3, 4]]}
+        {
+            "sample_n": [[None, 3], [None], [3, 4]],
+            "sample_frac": [[None, 3], [None], [3, 4]],
+        }
     )
     assert_frame_equal(df, expected_df)
 
@@ -643,17 +646,16 @@ def test_list_unique2() -> None:
     assert sorted(result[1]) == [1, 2]
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    assert df.select(pl.col("n").list.to_struct(_eager=True)).rows(named=True) == [
+    assert df.select(pl.col("n").list.to_struct(upper_bound=3)).rows(named=True) == [
         {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
         {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
     ]
 
     assert df.select(
-        pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", _eager=True)
+        pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=3)
     ).rows(named=True) == [
         {"n": {"n0": 0, "n1": 1, "n2": 2}},
         {"n": {"n0": 0, "n1": 1, "n2": None}},
@@ -677,16 +679,10 @@ def test_list_to_struct() -> None:
     #   retrieve the lazy schema
     # * The upper bound is respected during execution
     q = df.lazy().select(
-        pl.col("n")
-        .list.to_struct(fields=str, upper_bound=2, _eager=True)
-        .struct.unnest()
+        pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
     )
     assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
     assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
-
-    assert df.lazy().select(
-        pl.col("n").list.to_struct(_eager=True)
-    ).collect_schema() == {"n": pl.Unknown}
 
 
 def test_list_to_struct_all_null_12119() -> None:
@@ -1012,7 +1008,7 @@ def test_list_agg_all_null(
     ("inner_dtype", "expected_inner_dtype"),
     [
         (pl.Datetime("us"), pl.Duration("us")),
-        (pl.Date(), pl.Duration("ms")),
+        (pl.Date(), pl.Duration("us")),
         (pl.Time(), pl.Duration("ns")),
         (pl.UInt64(), pl.Int64()),
         (pl.UInt32(), pl.Int64()),
@@ -1123,6 +1119,7 @@ def test_list_filter_null() -> None:
     ]
 
 
+@pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:
     base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
@@ -1144,7 +1141,7 @@ def test_list_struct_field_perf() -> None:
     # Timings (Apple M3 Pro 11-core)
     # * Debug build w/ elementwise: 1x
     # * Release pypi 1.29.0: 80x
-    threshold = 3
+    threshold = 5
 
     if slowdown > threshold:
         msg = f"slowdown ({slowdown}) > {threshold}x ({t0 = }, {t1 = })"

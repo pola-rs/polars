@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Literal
@@ -8,10 +10,15 @@ from typing import TYPE_CHECKING, Any, Literal
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
-from polars.io.iceberg._utils import _scan_pyarrow_dataset_impl
+from polars.io.iceberg._utils import (
+    IdentityTransformedPartitionValuesBuilder,
+    _scan_pyarrow_dataset_impl,
+)
+from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    import pyiceberg.schema
     from pyiceberg.table import Table
 
     from polars.lazyframe.frame import LazyFrame
@@ -26,7 +33,7 @@ class IcebergDataset:
         *,
         snapshot_id: int | None = None,
         iceberg_storage_properties: dict[str, Any] | None = None,
-        reader_override: Literal["native", "pyiceberg"] | None,
+        reader_override: Literal["native", "pyiceberg"] | None = None,
     ) -> None:
         self._metadata_path = None
         self._table = None
@@ -46,12 +53,12 @@ class IcebergDataset:
     # PythonDatasetProvider interface functions
     #
 
-    def reader_name(self) -> str:
-        """Name of the reader."""
-        return "iceberg"
-
     def schema(self) -> pa.schema:
         """Fetch the schema of the table."""
+        return self.arrow_schema()
+
+    def arrow_schema(self) -> pa.schema:
+        """Fetch the arrow schema of the table."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         return schema_to_pyarrow(self.table().schema())
@@ -59,10 +66,31 @@ class IcebergDataset:
     def to_dataset_scan(
         self,
         *,
+        existing_resolved_version_key: str | None = None,
         limit: int | None = None,
         projection: list[str] | None = None,
-    ) -> LazyFrame:
+    ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
+        if (
+            scan_data := self._to_dataset_scan_impl(
+                existing_resolved_version_key=existing_resolved_version_key,
+                limit=limit,
+                projection=projection,
+            )
+        ) is None:
+            return None
+
+        return scan_data.to_lazyframe(), scan_data.snapshot_id_key
+
+    def _to_dataset_scan_impl(
+        self,
+        *,
+        existing_resolved_version_key: str | None = None,
+        limit: int | None = None,
+        projection: list[str] | None = None,
+    ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
         import polars._utils.logging
 
         verbose = polars._utils.logging.verbose()
@@ -70,20 +98,59 @@ class IcebergDataset:
         if verbose:
             eprint(
                 "IcebergDataset: to_dataset_scan(): "
+                f"snapshot ID: {self._snapshot_id}, "
                 f"limit: {limit}, "
                 f"projection: {projection}"
             )
 
         tbl = self.table()
 
-        selected_fields = ("*",) if projection is None else tuple(projection)
+        if verbose:
+            eprint(
+                "IcebergDataset: to_dataset_scan(): "
+                f"tbl.metadata.current_snapshot_id: {tbl.metadata.current_snapshot_id}"
+            )
 
         snapshot_id = self._snapshot_id
+        schema_id = None
 
         if snapshot_id is not None:
-            if tbl.snapshot_by_id(snapshot_id) is None:
+            snapshot = tbl.snapshot_by_id(snapshot_id)
+
+            if snapshot is None:
                 msg = f"iceberg snapshot ID not found: {snapshot_id}"
                 raise ValueError(msg)
+
+            schema_id = snapshot.schema_id
+
+            if schema_id is None:
+                msg = (
+                    f"IcebergDataset: requested snapshot {snapshot_id} "
+                    "did not contain a schema ID"
+                )
+                raise ValueError(msg)
+
+            iceberg_schema = tbl.schemas()[schema_id]
+            snapshot_id_key = f"{snapshot.snapshot_id}"
+        else:
+            iceberg_schema = tbl.schema()
+            schema_id = tbl.metadata.current_schema_id
+
+            snapshot_id_key = (
+                f"{v.snapshot_id}" if (v := tbl.current_snapshot()) is not None else ""
+            )
+
+        if (
+            existing_resolved_version_key is not None
+            and existing_resolved_version_key == snapshot_id_key
+        ):
+            if verbose:
+                eprint(
+                    "IcebergDataset: to_dataset_scan(): early return "
+                    f"({snapshot_id_key = })"
+                )
+
+            return None
 
         # Take from parameter first then envvar
         reader_override = self._reader_override or os.getenv(
@@ -97,18 +164,27 @@ class IcebergDataset:
             )
             raise ValueError(msg)
 
-        # Try native scan
         fallback_reason = (
             "forced reader_override='pyiceberg'"
             if reader_override == "pyiceberg"
-            # TODO: Enable native scans by default after we have type casting support,
-            # currently it may fail if the dataset has changed types.
-            else "native scans disabled by default"
-            if reader_override != "native"
+            else f"unsupported table format version: {tbl.format_version}"
+            if not tbl.format_version <= 2
             else None
         )
 
+        selected_fields = ("*",) if projection is None else tuple(projection)
+
+        projected_iceberg_schema = (
+            iceberg_schema
+            if selected_fields == ("*",)
+            else iceberg_schema.select(*selected_fields)
+        )
+
         sources = []
+        missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
+            tbl,
+            projected_iceberg_schema,
+        )
         deletion_files: dict[int, list[str]] = {}
 
         if reader_override != "pyiceberg" and not fallback_reason:
@@ -120,7 +196,9 @@ class IcebergDataset:
             start_time = perf_counter()
 
             scan = tbl.scan(
-                snapshot_id=snapshot_id, limit=limit, selected_fields=selected_fields
+                snapshot_id=snapshot_id,
+                limit=limit,
+                selected_fields=selected_fields,
             )
 
             total_deletion_files = 0
@@ -156,6 +234,12 @@ class IcebergDataset:
                 if fallback_reason:
                     break
 
+                missing_field_defaults.push_partition_values(
+                    current_index=i,
+                    partition_spec_id=file_info.file.spec_id,
+                    partition_values=file_info.file.partition,
+                )
+
                 sources.append(file_info.file.file_path)
 
             if verbose:
@@ -166,21 +250,32 @@ class IcebergDataset:
                 )
 
         if not fallback_reason:
-            from polars.io.parquet.functions import scan_parquet
-
             if verbose:
+                s = "" if len(sources) == 1 else "s"
+                s2 = "" if total_deletion_files == 1 else "s"
+
                 eprint(
                     "IcebergDataset: to_dataset_scan(): "
-                    f"native scan_parquet() ({len(sources)} sources), "
-                    f"deletion files: {total_deletion_files} files, "
-                    f"{len(deletion_files)} sources"
+                    f"native scan_parquet(): "
+                    f"{len(sources)} source{s}, "
+                    f"snapshot ID: {snapshot_id}, "
+                    f"schema ID: {schema_id}, "
+                    f"{total_deletion_files} deletion file{s2}"
                 )
 
-            return scan_parquet(
-                sources,
-                missing_columns="insert",
-                extra_columns="ignore",
-                _deletion_files=("iceberg-position-delete", deletion_files),
+            # The arrow schema returned by `schema_to_pyarrow` will contain
+            # 'PARQUET:field_id'
+            column_mapping = schema_to_pyarrow(iceberg_schema)
+
+            identity_transformed_values = missing_field_defaults.finish()
+
+            return _NativeIcebergScanData(
+                sources=sources,
+                projected_iceberg_schema=projected_iceberg_schema,
+                column_mapping=column_mapping,
+                default_values=identity_transformed_values,
+                deletion_files=deletion_files,
+                _snapshot_id_key=snapshot_id_key,
             )
 
         elif reader_override == "native":
@@ -201,13 +296,16 @@ class IcebergDataset:
             with_columns=projection,
         )
 
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
         arrow_schema = schema_to_pyarrow(tbl.schema())
 
-        lf = pl.LazyFrame._scan_python_function(arrow_schema, func, pyarrow=True)
+        lf = pl.LazyFrame._scan_python_function(
+            arrow_schema,
+            func,
+            pyarrow=True,
+            is_pure=True,
+        )
 
-        return lf
+        return _PyIcebergScanData(lf=lf, _snapshot_id_key=snapshot_id_key)
 
     #
     # Accessors
@@ -260,14 +358,14 @@ class IcebergDataset:
 
         if verbose():
             path_repr = state["metadata_path"]
-            snapshot_id = state["snapshot_id"]
+            snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
-                f"snapshot_id: '{snapshot_id}', "
+                f"snapshot_id: {snapshot_id}, "
                 f"iceberg_storage_properties: {keys_repr}, "
                 f"reader_override: {reader_override}"
             )
@@ -296,6 +394,61 @@ class IcebergDataset:
             iceberg_storage_properties=state["iceberg_storage_properties"],
             reader_override=state["reader_override"],
         )
+
+
+class _ResolvedScanDataBase(ABC):
+    @abstractmethod
+    def to_lazyframe(self) -> pl.LazyFrame: ...
+
+    @property
+    @abstractmethod
+    def snapshot_id_key(self) -> str: ...
+
+
+@dataclass
+class _NativeIcebergScanData(_ResolvedScanDataBase):
+    """Resolved parameters for a native Iceberg scan."""
+
+    sources: list[str]
+    projected_iceberg_schema: pyiceberg.schema.Schema
+    column_mapping: pa.Schema
+    default_values: dict[int, pl.Series | str]
+    deletion_files: dict[int, list[str]]
+    _snapshot_id_key: str
+
+    def to_lazyframe(self) -> pl.LazyFrame:
+        from polars.io.parquet.functions import scan_parquet
+
+        return scan_parquet(
+            self.sources,
+            cast_options=ScanCastOptions._default_iceberg(),
+            missing_columns="insert",
+            extra_columns="ignore",
+            _column_mapping=("iceberg-column-mapping", self.column_mapping),
+            _default_values=("iceberg", self.default_values),
+            _deletion_files=("iceberg-position-delete", self.deletion_files),
+        )
+
+    @property
+    def snapshot_id_key(self) -> str:
+        return self._snapshot_id_key
+
+
+@dataclass
+class _PyIcebergScanData(_ResolvedScanDataBase):
+    """Resolved parameters for reading via PyIceberg."""
+
+    # We're not interested in inspecting anything for the pyiceberg scan, so
+    # this class is just a wrapper.
+    lf: pl.LazyFrame
+    _snapshot_id_key: str
+
+    def to_lazyframe(self) -> pl.LazyFrame:
+        return self.lf
+
+    @property
+    def snapshot_id_key(self) -> str:
+        return self._snapshot_id_key
 
 
 def _redact_dict_values(obj: Any) -> Any:

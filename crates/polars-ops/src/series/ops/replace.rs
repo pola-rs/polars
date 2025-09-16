@@ -48,7 +48,7 @@ pub fn replace(s: &Series, old: &ListChunked, new: &ListChunked) -> PolarsResult
     validate_old(&old)?;
 
     let dtype = s.dtype();
-    let old = cast_old_to_series_dtype(&old, dtype)?;
+    let old = old.strict_cast(dtype)?;
     let new = new.strict_cast(dtype)?;
 
     if new.len() == 1 {
@@ -107,7 +107,7 @@ pub fn replace_or_default(
         return Ok(out);
     }
 
-    let old = cast_old_to_series_dtype(&old, s.dtype())?;
+    let old = old.strict_cast(s.dtype())?;
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
@@ -148,10 +148,10 @@ pub fn replace_strict(
     }
     validate_old(&old)?;
 
-    let old = cast_old_to_series_dtype(&old, s.dtype())?;
+    let old = old.strict_cast(s.dtype())?;
     let new = match return_dtype {
         Some(dtype) => new.strict_cast(&dtype)?,
-        None => new.clone(),
+        None => new,
     };
 
     if new.len() == 1 {
@@ -168,18 +168,6 @@ fn validate_old(old: &Series) -> PolarsResult<()> {
         InvalidOperation: "`old` input for `replace` must not contain duplicates"
     );
     Ok(())
-}
-
-/// Cast `old` input while enabling String to Categorical casts.
-fn cast_old_to_series_dtype(old: &Series, dtype: &DataType) -> PolarsResult<Series> {
-    match (old.dtype(), dtype) {
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Categorical(_, ord)) => {
-            let empty_categorical_dtype = DataType::Categorical(None, *ord);
-            old.strict_cast(&empty_categorical_dtype)
-        },
-        _ => old.strict_cast(dtype),
-    }
 }
 
 // Fast path for replacing by a single value

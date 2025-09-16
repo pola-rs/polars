@@ -44,15 +44,16 @@ fn apply_offsets_to_datetime(
                 TimeUnit::Microseconds => Duration::add_us,
                 TimeUnit::Nanoseconds => Duration::add_ns,
             };
-            broadcast_try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| match (
-                timestamp_opt,
-                offset_opt,
-            ) {
-                (Some(timestamp), Some(offset)) => {
-                    offset_fn(&Duration::try_parse(offset)?, timestamp, time_zone).map(Some)
+            broadcast_try_binary_elementwise(
+                datetime.physical(),
+                offsets,
+                |timestamp_opt, offset_opt| match (timestamp_opt, offset_opt) {
+                    (Some(timestamp), Some(offset)) => {
+                        offset_fn(&Duration::try_parse(offset)?, timestamp, time_zone).map(Some)
+                    },
+                    _ => Ok(None),
                 },
-                _ => Ok(None),
-            })
+            )
         },
     }
 }
@@ -91,11 +92,11 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
     let out = match dtype {
         DataType::Date => {
             let ts = ts
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                 .unwrap();
             let datetime = ts.datetime().unwrap();
             let out = apply_offsets_to_datetime(datetime, offsets, None)?;
-            out.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+            out.cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                 .unwrap()
                 .cast(&DataType::Date)
         },

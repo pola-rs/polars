@@ -1,5 +1,3 @@
-use std::sync::OnceLock;
-
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 
@@ -11,7 +9,6 @@ pub struct CastExpr {
     pub(crate) dtype: DataType,
     pub(crate) expr: Expr,
     pub(crate) options: CastOptions,
-    pub(crate) inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl CastExpr {
@@ -28,18 +25,6 @@ impl PhysicalExpr for CastExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let column = self.input.evaluate(df, state)?;
         self.finish(&column)
-    }
-
-    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
-        self.inlined_eval
-            .get_or_init(|| {
-                let depth_limit = depth_limit.checked_sub(1)?;
-                self.input
-                    .evaluate_inline_impl(depth_limit)
-                    .filter(|x| x.len() == 1)
-                    .and_then(|x| self.finish(&x).ok())
-            })
-            .clone()
     }
 
     #[allow(clippy::ptr_arg)]
@@ -69,18 +54,34 @@ impl PhysicalExpr for CastExpr {
                     ac.with_values(s, true, None)?;
                 }
             },
-            _ => {
-                // before we flatten, make sure that groups are updated
-                ac.groups();
+            AggState::NotAggregated(_) => {
+                if match self.options {
+                    CastOptions::NonStrict | CastOptions::Overflowing => true,
+                    CastOptions::Strict => ac.original_len,
+                } {
+                    // before we flatten, make sure that groups are updated
+                    ac.groups();
 
-                let s = ac.flat_naive();
-                let s = self.finish(&s.as_ref().clone().into_column())?;
+                    let s = ac.flat_naive();
+                    let s = self.finish(&s.as_ref().clone().into_column())?;
 
-                if ac.is_literal() {
-                    ac.with_literal(s);
-                } else {
                     ac.with_values(s, false, None)?;
+                } else {
+                    // We need to perform aggregation only for strict mode, since if this is not done,
+                    // filtered-out values may incorrectly cause a cast error.
+                    let s = ac.aggregated();
+                    let ca = s.list().unwrap();
+                    let casted = ca.apply_to_inner(&|s| {
+                        self.finish(&s.into_column())
+                            .map(|c| c.take_materialized_series())
+                    })?;
+                    ac.with_values(casted.into_column(), true, None)?;
                 }
+            },
+
+            AggState::LiteralScalar(s) => {
+                let s = self.finish(s)?;
+                ac.with_literal(s);
             },
         }
 

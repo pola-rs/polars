@@ -10,7 +10,7 @@ from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -132,7 +132,7 @@ def business_day_count(
         plr.business_day_count(
             start_pyexpr,
             end_pyexpr,
-            week_mask,
+            list(week_mask),
             [(holiday - unix_epoch).days for holiday in holidays],
         )
     )

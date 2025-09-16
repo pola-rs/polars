@@ -10,9 +10,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from polars import Series
+    from polars._plr import PySeries
     from polars._typing import IntoExpr, IntoExprColumn
     from polars.expr.expr import Expr
-    from polars.polars import PySeries
 
 
 @expr_dispatch

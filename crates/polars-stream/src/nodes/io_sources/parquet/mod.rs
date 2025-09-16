@@ -11,28 +11,30 @@ use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder, MemSliceByteSource};
 use polars_io::{RowIndex, pl_async};
 use polars_parquet::read::schema::infer_schema_with_options;
-use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
+use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::slice_enum::Slice;
 
-use super::multi_file_reader::extra_ops::cast_columns::CastColumns;
-use super::multi_file_reader::reader_interface::output::{
-    FileReaderOutputRecv, FileReaderOutputSend,
-};
-use super::multi_file_reader::reader_interface::{
+use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileReaderOutputSend};
+use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
 use crate::async_executor::{self};
 use crate::nodes::compute_node_prelude::*;
+use crate::nodes::io_sources::parquet::projection::{
+    ArrowFieldProjection, resolve_arrow_field_projections,
+};
 use crate::nodes::{TaskPriority, io_sources};
 use crate::utils::task_handles_ext;
 
 pub mod builder;
 mod init;
 mod metadata_utils;
+mod projection;
 mod row_group_data_fetch;
 mod row_group_decode;
+mod statistics;
 
 pub struct ParquetFileReader {
     scan_source: ScanSource,
@@ -124,16 +126,16 @@ impl FileReader for ParquetFileReader {
 
         let InitializedState {
             file_metadata,
-            file_schema,
+            file_schema: file_arrow_schema,
             file_schema_pl: _,
             byte_source,
         } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
-            projected_schema,
+            projection,
             row_index,
             pre_slice: pre_slice_arg,
-            mut predicate,
+            predicate,
             cast_columns_policy,
             num_pipelines,
             callbacks:
@@ -143,6 +145,15 @@ impl FileReader for ParquetFileReader {
                     row_position_on_end_tx,
                 },
         } = args;
+
+        let file_schema = self._file_schema().clone();
+
+        let projected_arrow_fields = resolve_arrow_field_projections(
+            &file_arrow_schema,
+            &file_schema,
+            projection,
+            cast_columns_policy,
+        )?;
 
         let n_rows_in_file = self._n_rows_in_file()?;
 
@@ -165,7 +176,7 @@ impl FileReader for ParquetFileReader {
         }
 
         if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(self._file_schema());
+            _ = file_schema_tx.try_send(file_schema.clone());
         }
 
         if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
@@ -174,8 +185,8 @@ impl FileReader for ParquetFileReader {
             if verbose {
                 eprintln!(
                     "[ParquetFileReader]: early return: \
-                    n_rows_in_file: {n_rows_in_file} \
-                    pre_slice: {pre_slice_arg:?} \
+                    n_rows_in_file: {n_rows_in_file}, \
+                    pre_slice: {pre_slice_arg:?}, \
                     resolved_pre_slice: {normalized_pre_slice:?} \
                     "
                 )
@@ -193,17 +204,12 @@ impl FileReader for ParquetFileReader {
         let row_group_prefetch_size = polars_core::config::get_rg_prefetch_size();
 
         // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
-        let min_values_per_thread = std::env::var("POLARS_MIN_VALUES_PER_THREAD")
-            .map(|x| x.parse::<usize>().expect("integer").max(1))
-            .unwrap_or(16_777_216);
+        let target_values_per_thread =
+            std::env::var("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD")
+                .map(|x| x.parse::<usize>().expect("integer").max(1))
+                .unwrap_or(16_777_216);
 
-        let projected_arrow_schema: ArrowSchemaRef = Arc::new(
-            projected_schema
-                .iter_names()
-                .filter(|name| file_schema.contains(name))
-                .map(|name| (name.clone(), file_schema.get(name).unwrap().clone()))
-                .collect(),
-        );
+        let is_full_projection = projected_arrow_fields.len() == file_schema.len();
 
         if verbose {
             eprintln!(
@@ -214,7 +220,7 @@ impl FileReader for ParquetFileReader {
                 row_index: {:?}, \
                 predicate: {:?} \
                 ",
-                projected_arrow_schema.len(),
+                projected_arrow_fields.len(),
                 file_schema.len(),
                 pre_slice_arg,
                 normalized_pre_slice,
@@ -223,45 +229,24 @@ impl FileReader for ParquetFileReader {
             )
         }
 
-        // If are handling predicates we apply missing / cast columns policy here as those need to
-        // happen before filtering. Otherwise we leave it to post.
-        if let Some(predicate) = predicate.as_mut() {
-            if cast_columns_policy != CastColumnsPolicy::ERROR_ON_MISMATCH {
-                unimplemented!("column casting w/ predicate in parquet")
-            }
-
-            // Note: This currently could return a Some(_) for the case where
-            // there are struct fields ordered differently, but that should not
-            // affect predicates.
-            CastColumns::try_init_from_policy_from_iter(
-                &cast_columns_policy,
-                &projected_schema,
-                &mut self
-                    ._file_schema()
-                    .iter()
-                    .filter(|(name, _)| predicate.live_columns.contains(*name))
-                    .map(|(name, dtype)| (name.as_ref(), dtype)),
-            )?;
-        }
-
         let (output_recv, handle) = ParquetReadImpl {
+            projected_arrow_fields,
+            is_full_projection,
             predicate,
             // TODO: Refactor to avoid full clone
             options: Arc::unwrap_or_clone(self.config.clone()),
-            byte_source: byte_source.clone(),
+            byte_source,
             normalized_pre_slice: normalized_pre_slice.map(|x| match x {
                 Slice::Positive { offset, len } => (offset, len),
                 Slice::Negative { .. } => unreachable!(),
             }),
-            metadata: file_metadata.clone(),
+            metadata: file_metadata,
             config: io_sources::parquet::Config {
                 num_pipelines,
                 row_group_prefetch_size,
-                min_values_per_thread,
+                target_values_per_thread,
             },
             verbose,
-            schema: file_schema.clone(),
-            projected_arrow_schema,
             memory_prefetch_func,
             row_index,
         }
@@ -274,7 +259,11 @@ impl FileReader for ParquetFileReader {
     }
 
     async fn file_schema(&mut self) -> PolarsResult<SchemaRef> {
-        Ok(self._file_schema())
+        Ok(self._file_schema().clone())
+    }
+
+    async fn file_arrow_schema(&mut self) -> PolarsResult<Option<ArrowSchemaRef>> {
+        Ok(Some(self._file_arrow_schema().clone()))
     }
 
     async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
@@ -294,7 +283,7 @@ impl FileReader for ParquetFileReader {
 }
 
 impl ParquetFileReader {
-    fn _file_schema(&mut self) -> SchemaRef {
+    fn _file_schema(&mut self) -> &SchemaRef {
         let InitializedState {
             file_schema,
             file_schema_pl,
@@ -305,7 +294,12 @@ impl ParquetFileReader {
             *file_schema_pl = Some(Arc::new(Schema::from_arrow_schema(file_schema.as_ref())))
         }
 
-        file_schema_pl.clone().unwrap()
+        file_schema_pl.as_ref().unwrap()
+    }
+
+    fn _file_arrow_schema(&mut self) -> &ArrowSchemaRef {
+        let InitializedState { file_schema, .. } = self.init_data.as_mut().unwrap();
+        file_schema
     }
 
     fn _n_rows_in_file(&self) -> PolarsResult<IdxSize> {
@@ -327,6 +321,8 @@ type AsyncTaskData = (
 );
 
 struct ParquetReadImpl {
+    projected_arrow_fields: Arc<[ArrowFieldProjection]>,
+    is_full_projection: bool,
     predicate: Option<ScanIOPredicate>,
     options: ParquetOptions,
     byte_source: Arc<DynByteSource>,
@@ -335,8 +331,6 @@ struct ParquetReadImpl {
     // Run-time vars
     config: Config,
     verbose: bool,
-    schema: Arc<ArrowSchema>,
-    projected_arrow_schema: Arc<ArrowSchema>,
     memory_prefetch_func: fn(&[u8]) -> (),
     row_index: Option<RowIndex>,
 }
@@ -348,7 +342,7 @@ struct Config {
     row_group_prefetch_size: usize,
     /// Minimum number of values for a parallel spawned task to process to amortize
     /// parallelism overhead.
-    min_values_per_thread: usize,
+    target_values_per_thread: usize,
 }
 
 impl ParquetReadImpl {

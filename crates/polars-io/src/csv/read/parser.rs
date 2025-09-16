@@ -1086,7 +1086,7 @@ pub(super) fn parse_lines(
                             Some(p) => next_projected = p,
                             None => {
                                 if bytes.get(read_sol - 1) == Some(&parse_options.eol_char) {
-                                    bytes = &bytes[read_sol..];
+                                    bytes = unsafe { bytes.get_unchecked(read_sol..) };
                                 } else {
                                     if !truncate_ragged_lines && read_sol < bytes.len() {
                                         polars_bail!(ComputeError: r#"found more fields than defined in 'Schema'

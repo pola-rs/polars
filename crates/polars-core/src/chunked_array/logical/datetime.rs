@@ -6,7 +6,8 @@ pub type DatetimeChunked = Logical<DatetimeType, Int64Type>;
 
 impl Int64Chunked {
     pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> DatetimeChunked {
-        DatetimeChunked::new_logical(self, DataType::Datetime(timeunit, tz))
+        // SAFETY: no invalid states.
+        unsafe { DatetimeChunked::new_logical(self, DataType::Datetime(timeunit, tz)) }
     }
 }
 
@@ -76,7 +77,7 @@ impl LogicalType for DatetimeChunked {
                         .unwrap()
                         .into_date()
                         .into_series();
-                    dt.set_sorted_flag(self.is_sorted_flag());
+                    dt.set_sorted_flag(self.physical().is_sorted_flag());
                     Ok(dt)
                 };
                 match self.time_unit() {
@@ -115,7 +116,7 @@ impl LogicalType for DatetimeChunked {
         out.map(|mut s| {
             // TODO!; implement the divisions/multipliers above
             // in a checked manner so that we raise on overflow
-            s.set_sorted_flag(self.is_sorted_flag());
+            s.set_sorted_flag(self.physical().is_sorted_flag());
             s
         })
     }

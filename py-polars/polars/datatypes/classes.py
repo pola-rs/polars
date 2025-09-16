@@ -6,15 +6,18 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
 import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
-    from polars.polars import dtype_str_repr as _dtype_str_repr
+    import polars._plr as plr
+    from polars._plr import PyCategories
+    from polars._plr import dtype_str_repr as _dtype_str_repr
+
+import polars.datatypes.classes as pldt
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
@@ -119,8 +122,16 @@ class DataType(metaclass=DataTypeClass):
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
 
-    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
-        if type(other) is DataTypeClass:
+    @overload  # type: ignore[override]
+    def __eq__(self, other: pl.DataTypeExpr) -> pl.Expr: ...
+
+    @overload
+    def __eq__(self, other: PolarsDataType) -> bool: ...
+
+    def __eq__(self, other: pl.DataTypeExpr | PolarsDataType) -> pl.Expr | bool:
+        if isinstance(other, pl.DataTypeExpr):
+            return self.to_dtype_expr() == other
+        elif type(other) is DataTypeClass:
             return issubclass(other, type(self))
         else:
             return isinstance(other, type(self))
@@ -267,7 +278,7 @@ class DataType(metaclass=DataTypeClass):
         >>> pl.Int16().to_dtype_expr().collect_dtype({})
         Int16
         """
-        from polars.polars import PyDataTypeExpr
+        from polars._plr import PyDataTypeExpr
 
         return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.from_dtype(self))
 
@@ -633,6 +644,123 @@ class Duration(TemporalType):
         return f"{class_name}(time_unit={self.time_unit!r})"
 
 
+class Categories:
+    """
+    A named collection of categories for `Categorical`.
+
+    Two categories are considered equal (and will use the same physical mapping of
+    categories to strings) if they have the same name, namespace and physical backing
+    type, even if they are created in separate calls to `Categories`.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+    """
+
+    _categories: PyCategories
+
+    def __init__(
+        self,
+        name: str | None = None,
+        namespace: str = "",
+        physical: PolarsDataType = pldt.UInt32,
+    ) -> None:
+        if name is None or name == "":
+            assert namespace == "", "global categories may not specify a namespace"
+            assert physical == pldt.UInt32, (
+                "global categories may not specify a physical type"
+            )
+            self._categories = PyCategories.global_categories()
+            return
+
+        if physical == pldt.UInt32:
+            internal_phys = "u32"
+        elif physical == pldt.UInt16:
+            internal_phys = "u16"
+        elif physical == pldt.UInt8:
+            internal_phys = "u8"
+        else:
+            msg = "Categorical physical must be one of pl.UInt(8|16|32)"
+            raise TypeError(msg)
+
+        self._categories = PyCategories(name, namespace, internal_phys)
+
+    @staticmethod
+    def _from_py_categories(py_categories: PyCategories) -> Categories:
+        self = Categories.__new__(Categories)
+        self._categories = py_categories
+        return self
+
+    @staticmethod
+    def random(
+        namespace: str = "", physical: PolarsDataType = pldt.UInt32
+    ) -> Categories:
+        """Creates a new Categories with a random name."""
+        if physical == pldt.UInt32:
+            internal_phys = "u32"
+        elif physical == pldt.UInt16:
+            internal_phys = "u16"
+        elif physical == pldt.UInt8:
+            internal_phys = "u8"
+        else:
+            msg = "Categorical physical must be one of pl.UInt(8|16|32)"
+            raise TypeError(msg)
+
+        return Categories._from_py_categories(
+            PyCategories.random(namespace, internal_phys)
+        )
+
+    def name(self) -> str:
+        """The name of this `Categories`."""
+        return self._categories.name()
+
+    def namespace(self) -> str:
+        """The namespace of this `Categories`."""
+        return self._categories.namespace()
+
+    def physical(self) -> PolarsDataType:
+        """The physical type used to represent the categories."""
+        phys = self._categories.physical()
+        if phys == "u8":
+            return pldt.UInt8
+        elif phys == "u16":
+            return pldt.UInt16
+        elif phys == "u32":
+            return pldt.UInt32
+        else:
+            msg = "unknown physical dtype"
+            raise RuntimeError(msg)
+
+    def is_global(self) -> bool:
+        """Returns whether this refers to the global categories."""
+        return self._categories.is_global()
+
+    def __getitem__(self, key: str | int | None) -> str | int | None:
+        if key is None:
+            return key
+        elif isinstance(key, str):
+            return self._categories.get_cat(key)
+        else:
+            return self._categories.cat_to_str(key)
+
+    def __repr__(self) -> str:
+        name = self.name()
+        namespace = self.namespace()
+        phys = self.physical()
+        if self._categories.is_global():
+            return "Categories()"
+        elif namespace == "" and phys == pldt.UInt32:
+            return f'Categories("{name}")'
+        else:
+            return f'Categories(name="{name}", namespace="{namespace}", physical=pl.{phys})'
+
+    def __hash__(self) -> int:
+        return hash(self._categories)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Categories) and self._categories == other._categories
+
+
 class Categorical(DataType):
     """
     A categorical encoding of a set of strings.
@@ -642,30 +770,59 @@ class Categorical(DataType):
     ordering : {'lexical', 'physical'}
         Ordering by order of appearance (`'physical'`, default)
         or string value (`'lexical'`).
+
+        .. deprecated:: 1.32.0
+            Parameter is now ignored. Always behaves as if `'lexical'` was passed.
     """
 
     ordering: CategoricalOrdering | None
+    categories: Categories
 
     def __init__(
         self,
-        ordering: CategoricalOrdering | None = "physical",
+        ordering: CategoricalOrdering | Categories | None = "lexical",
+        **kwargs: Any,
     ) -> None:
-        self.ordering = ordering
+        # Future API will be this, already support it for backwards compat.
+        if isinstance(ordering, Categories):
+            self.ordering = "lexical"
+            self.categories = ordering
+            assert len(kwargs) == 0
+            return
+
+        if ordering == "physical":
+            from polars._utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "the physical Categorical ordering is deprecated. The ordering is now always lexical.",
+                version="1.32.0",
+            )
+
+        self.ordering = "lexical"
+        if kwargs.get("categories") is not None:
+            assert len(kwargs) == 1
+            self.categories = kwargs["categories"]
+        else:
+            assert len(kwargs) == 0
+            self.categories = Categories()
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(ordering={self.ordering!r})"
+        if self.categories.is_global():
+            return f"{self.__class__.__name__}"
+        else:
+            return f"{self.__class__.__name__}({self.categories!r})"
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Categorical):
-            return True
+            return self.categories.is_global()
         elif isinstance(other, Categorical):
-            return self.ordering == other.ordering
+            return self.categories == other.categories
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.ordering))
+        return hash((self.__class__, self.categories))
 
 
 class Enum(DataType):

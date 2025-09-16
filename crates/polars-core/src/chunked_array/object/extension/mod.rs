@@ -3,7 +3,6 @@ pub(super) mod list;
 pub(crate) mod polars_extension;
 
 use std::mem;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::BitmapBuilder;
@@ -11,17 +10,18 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::ExtensionType;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::PROCESS_ID;
 use crate::prelude::*;
 
-static POLARS_ALLOW_EXTENSION: AtomicBool = AtomicBool::new(false);
+static POLARS_ALLOW_EXTENSION: RelaxedCell<bool> = RelaxedCell::new_bool(false);
 
 /// Control whether extension types may be created.
 ///
 /// If the environment variable POLARS_ALLOW_EXTENSION is set, this function has no effect.
 pub fn set_polars_allow_extension(toggle: bool) {
-    POLARS_ALLOW_EXTENSION.store(toggle, Ordering::Relaxed)
+    POLARS_ALLOW_EXTENSION.store(toggle)
 }
 
 /// Invariants
@@ -64,7 +64,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     iter: I,
 ) -> PolarsExtension {
     let env = "POLARS_ALLOW_EXTENSION";
-    if !(POLARS_ALLOW_EXTENSION.load(Ordering::Relaxed) || std::env::var(env).is_ok()) {
+    if !(POLARS_ALLOW_EXTENSION.load() || std::env::var(env).is_ok()) {
         panic!("creating extension types not allowed - try setting the environment variable {env}")
     }
     let t_size = size_of::<T>();

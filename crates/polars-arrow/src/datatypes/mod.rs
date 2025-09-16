@@ -8,12 +8,17 @@ mod schema;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub use field::{DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Field};
+pub use field::{
+    DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
+    DTYPE_ENUM_VALUES_NEW, Field, MAINTAIN_PL_TYPE, PL_KEY,
+};
 pub use physical_type::*;
 use polars_utils::pl_str::PlSmallStr;
 pub use schema::{ArrowSchema, ArrowSchemaRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::array::LIST_VALUES_NAME;
 
 /// typedef for [BTreeMap<PlSmallStr, PlSmallStr>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
 pub type Metadata = BTreeMap<PlSmallStr, PlSmallStr>;
@@ -251,6 +256,10 @@ pub enum IntervalUnit {
     DayTime,
     /// The number of elapsed months (i32), days (i32) and nanoseconds (i64).
     MonthDayNano,
+    /// `(months: i32, days: i32, milliseconds: i32)`.
+    /// Used when loading the Parquet INTERVAL type. This is expected to be
+    /// unreachable outside of Parquet reading.
+    MonthDayMillis,
 }
 
 impl ArrowDataType {
@@ -295,6 +304,9 @@ impl ArrowDataType {
             Interval(IntervalUnit::DayTime) => PhysicalType::Primitive(PrimitiveType::DaysMs),
             Interval(IntervalUnit::MonthDayNano) => {
                 PhysicalType::Primitive(PrimitiveType::MonthDayNano)
+            },
+            Interval(IntervalUnit::MonthDayMillis) => {
+                PhysicalType::Primitive(PrimitiveType::MonthDayMillis)
             },
             Binary => PhysicalType::Binary,
             FixedSizeBinary(_) => PhysicalType::FixedSizeBinary,
@@ -423,11 +435,7 @@ impl ArrowDataType {
 
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
         ArrowDataType::FixedSizeList(
-            Box::new(Field::new(
-                PlSmallStr::from_static("item"),
-                self,
-                is_nullable,
-            )),
+            Box::new(Field::new(LIST_VALUES_NAME, self, is_nullable)),
             size,
         )
     }
@@ -515,6 +523,7 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::Float64 => ArrowDataType::Float64,
             PrimitiveType::DaysMs => ArrowDataType::Interval(IntervalUnit::DayTime),
             PrimitiveType::MonthDayNano => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
+            PrimitiveType::MonthDayMillis => ArrowDataType::Interval(IntervalUnit::MonthDayMillis),
             PrimitiveType::UInt128 => unimplemented!(),
         }
     }

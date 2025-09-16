@@ -139,7 +139,7 @@ pub fn replace_datetime(
 
     // Ensure nulls are propagated.
     if ca.has_nulls() {
-        out.merge_validities(ca.chunks());
+        out.physical_mut().merge_validities(ca.physical().chunks());
     }
 
     Ok(out)
@@ -186,7 +186,7 @@ pub fn replace_date(
 
     // Ensure nulls are propagated.
     if ca.has_nulls() {
-        out.merge_validities(ca.chunks());
+        out.physical_mut().merge_validities(ca.physical().chunks());
     }
 
     Ok(out)

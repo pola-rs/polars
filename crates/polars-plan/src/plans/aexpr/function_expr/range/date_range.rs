@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+use polars_core::utils::arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_time::{ClosedWindow, Duration, datetime_range_impl};
 
 use super::utils::{
@@ -28,10 +28,10 @@ pub(super) fn date_range(
     let name = start.name().clone();
     let start = temporal_series_to_i64_scalar(&start)
         .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?
-        * MILLISECONDS_IN_DAY;
+        * MICROSECONDS_IN_DAY;
     let end = temporal_series_to_i64_scalar(&end)
         .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?
-        * MILLISECONDS_IN_DAY;
+        * MICROSECONDS_IN_DAY;
 
     let out = datetime_range_impl(
         name,
@@ -39,7 +39,7 @@ pub(super) fn date_range(
         end,
         interval,
         closed,
-        TimeUnit::Milliseconds,
+        TimeUnit::Microseconds,
         None,
     )?;
 
@@ -63,8 +63,8 @@ pub(super) fn date_ranges(
     let start = start.strict_cast(&DataType::Date)?.cast(&DataType::Int64)?;
     let end = end.strict_cast(&DataType::Date)?.cast(&DataType::Int64)?;
 
-    let start = start.i64().unwrap() * MILLISECONDS_IN_DAY;
-    let end = end.i64().unwrap() * MILLISECONDS_IN_DAY;
+    let start = start.i64().unwrap() * MICROSECONDS_IN_DAY;
+    let end = end.i64().unwrap() * MICROSECONDS_IN_DAY;
 
     let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
         start.name().clone(),
@@ -80,7 +80,7 @@ pub(super) fn date_ranges(
             end,
             interval,
             closed,
-            TimeUnit::Milliseconds,
+            TimeUnit::Microseconds,
             None,
         )?;
         let rng = rng.cast(&DataType::Date).unwrap();

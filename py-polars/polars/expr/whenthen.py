@@ -13,8 +13,8 @@ from polars.expr.expr import Expr
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from polars._plr import PyExpr
     from polars._typing import IntoExpr
-    from polars.polars import PyExpr
 
 
 class When:
@@ -59,7 +59,7 @@ class Then(Expr):
         return wrap_expr(pyexpr)
 
     @property
-    def _pyexpr(self) -> PyExpr:
+    def _pyexpr(self) -> PyExpr:  # type: ignore[override]
         return self._then.otherwise(F.lit(None)._pyexpr)
 
     def when(
@@ -143,7 +143,7 @@ class ChainedThen(Expr):
         return wrap_expr(pyexpr)
 
     @property
-    def _pyexpr(self) -> PyExpr:
+    def _pyexpr(self) -> PyExpr:  # type: ignore[override]
         return self._chained_then.otherwise(F.lit(None)._pyexpr)
 
     def when(

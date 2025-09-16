@@ -20,7 +20,7 @@ pub fn abs(s: &Series) -> PolarsResult<Series> {
             let precision = ca.precision();
             let scale = ca.scale();
 
-            let out = ca.as_ref().wrapping_abs();
+            let out = ca.physical().wrapping_abs();
             out.into_decimal_unchecked(precision, scale).into_series()
         },
         #[cfg(feature = "dtype-duration")]

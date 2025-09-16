@@ -33,7 +33,7 @@ df = pl.scan_parquet(source, storage_options=storage_options).collect()
 lf = pl.scan_parquet(
     "s3://.../...",
     credential_provider=pl.CredentialProviderAWS(
-        profile_name="..."
+        profile_name="...",
         assume_role={
             "RoleArn": f"...",
             "RoleSessionName": "...",
@@ -43,6 +43,18 @@ lf = pl.scan_parquet(
 
 df = lf.collect()
 # --8<-- [end:credential_provider_class]
+
+# --8<-- [start:credential_provider_class_global_default]
+pl.Config.set_default_credential_provider(
+    pl.CredentialProviderAWS(
+        profile_name="...",
+        assume_role={
+            "RoleArn": f"...",
+            "RoleSessionName": "...",
+        },
+    )
+)
+# --8<-- [end:credential_provider_class_global_default]
 
 # --8<-- [start:credential_provider_custom_func]
 def get_credentials() -> pl.CredentialProviderFunctionReturn:
@@ -101,20 +113,39 @@ dset = ds.dataset("s3://my-partitioned-folder/", format="parquet")
 # --8<-- [end:scan_pyarrow_dataset]
 
 # --8<-- [start:write_parquet]
-
 import polars as pl
-import s3fs
 
-df = pl.DataFrame({
-    "foo": ["a", "b", "c", "d", "d"],
-    "bar": [1, 2, 3, 4, 5],
-})
+df = pl.DataFrame(
+    {
+        "foo": ["a", "b", "c", "d", "d"],
+        "bar": [1, 2, 3, 4, 5],
+    }
+)
 
-fs = s3fs.S3FileSystem()
 destination = "s3://bucket/my_file.parquet"
 
-# write parquet
-with fs.open(destination, mode='wb') as f:
-    df.write_parquet(f)
+df.write_parquet(destination)
+
 # --8<-- [end:write_parquet]
+
+# --8<-- [start:write_file_object]
+import polars as pl
+import s3fs
+import gzip
+
+df = pl.DataFrame(
+    {
+        "foo": ["a", "b", "c", "d", "d"],
+        "bar": [1, 2, 3, 4, 5],
+    }
+)
+
+destination = "s3://bucket/my_file.csv.gz"
+
+fs = s3fs.S3FileSystem()
+
+with fs.open(destination, "wb") as cloud_f:
+    with gzip.open(cloud_f, "w") as f:
+        df.write_csv(f)
+# --8<-- [end:write_file_object]
 """

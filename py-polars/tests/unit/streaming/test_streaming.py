@@ -19,24 +19,23 @@ pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_categoricals_5921() -> None:
-    with pl.StringCache():
-        out_lazy = (
-            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
-            .lazy()
-            .with_columns(pl.col("X").cast(pl.Categorical))
-            .group_by("X")
-            .agg(pl.col("Y").min())
-            .sort("Y", descending=True)
-            .collect(engine="streaming")
-        )
+    out_lazy = (
+        pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+        .lazy()
+        .with_columns(pl.col("X").cast(pl.Categorical))
+        .group_by("X")
+        .agg(pl.col("Y").min())
+        .sort("Y", descending=True)
+        .collect(engine="streaming")
+    )
 
-        out_eager = (
-            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
-            .with_columns(pl.col("X").cast(pl.Categorical))
-            .group_by("X")
-            .agg(pl.col("Y").min())
-            .sort("Y", descending=True)
-        )
+    out_eager = (
+        pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+        .with_columns(pl.col("X").cast(pl.Categorical))
+        .group_by("X")
+        .agg(pl.col("Y").min())
+        .sort("Y", descending=True)
+    )
 
     for out in [out_eager, out_lazy]:
         assert out.dtypes == [pl.Categorical, pl.Int64]
@@ -53,6 +52,7 @@ def test_streaming_block_on_literals_6054() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: non-pure map_batches
 def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     calls = 0
@@ -80,6 +80,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 
 @pytest.mark.slow
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()

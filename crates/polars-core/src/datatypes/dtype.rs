@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Metadata};
+use arrow::datatypes::{
+    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
+    Metadata, PL_KEY,
+};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 pub use temporal::time_zone::TimeZone;
 
 use super::*;
@@ -14,22 +16,25 @@ use super::*;
 use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
 
-static MAINTAIN_PL_TYPE: &str = "maintain_type";
-static PL_KEY: &str = "pl";
-
 pub trait MetaDataExt: IntoMetadata {
-    fn is_enum(&self) -> bool {
-        let metadata = self.into_metadata_ref();
-        metadata.get(DTYPE_ENUM_VALUES).is_some()
+    fn pl_enum_metadata(&self) -> Option<&str> {
+        let md = self.into_metadata_ref();
+        let values = md
+            .get(DTYPE_ENUM_VALUES_NEW)
+            .or_else(|| md.get(DTYPE_ENUM_VALUES_LEGACY));
+        Some(values?.as_str())
     }
 
-    fn categorical(&self) -> Option<CategoricalOrdering> {
-        let metadata = self.into_metadata_ref();
-        match metadata.get(DTYPE_CATEGORICAL)?.as_str() {
-            "lexical" => Some(CategoricalOrdering::Lexical),
-            // Default is Physical
-            _ => Some(CategoricalOrdering::Physical),
-        }
+    fn pl_categorical_metadata(&self) -> Option<&str> {
+        // We ignore DTYPE_CATEGORICAL_LEGACY here, as we already map all
+        // string-typed arrow dictionaries to the global Categories, and the
+        // legacy metadata format only specifies the now-removed physical
+        // ordering parameter.
+        Some(
+            self.into_metadata_ref()
+                .get(DTYPE_CATEGORICAL_NEW)?
+                .as_str(),
+        )
     }
 
     fn maintain_type(&self) -> bool {
@@ -57,6 +62,7 @@ impl IntoMetadata for Metadata {
 )]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum UnknownKind {
+    Ufunc,
     // Hold the value to determine the concrete size.
     Int(i128),
     Float,
@@ -72,26 +78,13 @@ impl UnknownKind {
             UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
             UnknownKind::Float => DataType::Float64,
             UnknownKind::Str => DataType::String,
-            UnknownKind::Any => return None,
+            UnknownKind::Any | UnknownKind::Ufunc => return None,
         };
         Some(dtype)
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Default, IntoStaticStr)]
-#[cfg_attr(
-    any(feature = "serde-lazy", feature = "serde"),
-    derive(Serialize, Deserialize)
-)]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum CategoricalOrdering {
-    #[default]
-    Physical,
-    Lexical,
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -134,13 +127,11 @@ pub enum DataType {
     #[cfg(feature = "object")]
     Object(&'static str),
     Null,
-    // The RevMapping has the internal state.
-    // This is ignored with comparisons, hashing etc.
     #[cfg(feature = "dtype-categorical")]
-    Categorical(Option<Arc<RevMapping>>, CategoricalOrdering),
+    Categorical(Arc<Categories>, Arc<CategoricalMapping>),
     // It is an Option, so that matching Enum/Categoricals can take the same guards.
     #[cfg(feature = "dtype-categorical")]
-    Enum(Option<Arc<RevMapping>>, CategoricalOrdering),
+    Enum(Arc<FrozenCategories>, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
@@ -169,17 +160,9 @@ impl PartialEq for DataType {
         {
             match (self, other) {
                 #[cfg(feature = "dtype-categorical")]
-                // Don't include rev maps in comparisons
-                (Categorical(_, ordering_l), Categorical(_, ordering_r)) => {
-                    ordering_l == ordering_r
-                },
+                (Categorical(cats_l, _), Categorical(cats_r, _)) => Arc::ptr_eq(cats_l, cats_r),
                 #[cfg(feature = "dtype-categorical")]
-                // None means select all Enum dtypes. This is for operation `pl.col(pl.Enum)`
-                (Enum(None, _), Enum(_, _)) | (Enum(_, _), Enum(None, _)) => true,
-                #[cfg(feature = "dtype-categorical")]
-                (Enum(Some(cat_lhs), _), Enum(Some(cat_rhs), _)) => {
-                    cat_lhs.get_categories() == cat_rhs.get_categories()
-                },
+                (Enum(fcats_l, _), Enum(fcats_r, _)) => Arc::ptr_eq(fcats_l, fcats_r),
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
                 (List(left_inner), List(right_inner)) => left_inner == right_inner,
                 #[cfg(feature = "dtype-duration")]
@@ -241,6 +224,19 @@ impl DataType {
             Int64 => other.extract::<i64>().is_some(),
             _ => false,
         }
+    }
+
+    /// Struct representation of the arrow `month_day_nano_interval` type.
+    #[cfg(feature = "dtype-struct")]
+    pub fn _month_days_ns_struct_type() -> Self {
+        DataType::Struct(vec![
+            Field::new(PlSmallStr::from_static("months"), DataType::Int32),
+            Field::new(PlSmallStr::from_static("days"), DataType::Int32),
+            Field::new(
+                PlSmallStr::from_static("nanoseconds"),
+                DataType::Duration(TimeUnit::Nanoseconds),
+            ),
+        ])
     }
 
     /// Check if the whole dtype is known.
@@ -323,6 +319,26 @@ impl DataType {
         }
     }
 
+    /// Get the inner data type of a nested type.
+    pub fn into_inner_dtype(self) -> Option<DataType> {
+        match self {
+            DataType::List(inner) => Some(*inner),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    /// Get the inner data type of a nested type.
+    pub fn try_into_inner_dtype(self) -> PolarsResult<DataType> {
+        match self {
+            DataType::List(inner) => Ok(*inner),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => Ok(*inner),
+            dt => polars_bail!(InvalidOperation: "cannot get inner datatype of `{dt}`"),
+        }
+    }
+
     /// Get the absolute inner data type of a nested type.
     pub fn leaf_dtype(&self) -> &DataType {
         let mut prev = self;
@@ -377,7 +393,7 @@ impl DataType {
         Some(match (self, to) {
             #[cfg(feature = "dtype-categorical")]
             (D::Categorical(_, _) | D::Enum(_, _), D::Binary)
-            | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false,
+            | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false, // TODO @ cat-rework: why can we not cast to Binary?
 
             #[cfg(feature = "object")]
             (D::Object(_), D::Object(_)) => true,
@@ -437,7 +453,9 @@ impl DataType {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => Int128,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => UInt32,
+            Categorical(cats, _) => cats.physical().dtype(),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(fcats, _) => fcats.physical().dtype(),
             #[cfg(feature = "dtype-array")]
             Array(dt, width) => Array(Box::new(dt.to_physical()), *width),
             List(dt) => List(Box::new(dt.to_physical())),
@@ -532,6 +550,10 @@ impl DataType {
         matches!(self, DataType::Datetime(..))
     }
 
+    pub fn is_duration(&self) -> bool {
+        matches!(self, DataType::Duration(..))
+    }
+
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]
         {
@@ -551,8 +573,6 @@ impl DataType {
         use DataType::*;
         match self {
             Binary | String => true,
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => true,
             List(inner) => inner.contains_views(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_views(),
@@ -621,19 +641,13 @@ impl DataType {
 
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
-        #[cfg(feature = "dtype-categorical")]
-        let is_cat = matches!(self, DataType::Categorical(_, _) | DataType::Enum(_, _));
-        #[cfg(not(feature = "dtype-categorical"))]
-        let is_cat = false;
-
         let phys = self.to_physical();
-        (phys.is_primitive_numeric()
+        phys.is_primitive_numeric()
             || self.is_decimal()
             || matches!(
                 phys,
                 DataType::Binary | DataType::String | DataType::Boolean
-            ))
-            && !is_cat
+            )
     }
 
     /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
@@ -712,28 +726,44 @@ impl DataType {
         }
     }
 
-    /// Convert to an Arrow Field
+    /// Convert to an Arrow Field.
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(Some(revmap), _) => {
-                let cats = revmap.get_categories();
-                let mut encoded = String::with_capacity(cats.len() * 10);
+            DataType::Enum(fcats, _map) => {
+                let cats = fcats.categories();
+                let strings_size: usize = cats
+                    .values_iter()
+                    .map(|s| (s.len() + 1).ilog10() as usize + 1 + s.len())
+                    .sum();
+                let mut encoded = String::with_capacity(strings_size);
                 for cat in cats.values_iter() {
                     encoded.push_str(itoa::Buffer::new().format(cat.len()));
                     encoded.push(';');
                     encoded.push_str(cat);
                 }
                 Some(BTreeMap::from([(
-                    PlSmallStr::from_static(DTYPE_ENUM_VALUES),
+                    PlSmallStr::from_static(DTYPE_ENUM_VALUES_NEW),
                     PlSmallStr::from_string(encoded),
                 )]))
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, ordering) => Some(BTreeMap::from([(
-                PlSmallStr::from_static(DTYPE_CATEGORICAL),
-                PlSmallStr::from_static(ordering.into()),
-            )])),
+            DataType::Categorical(cats, _) => {
+                let mut encoded = String::new();
+                encoded.push_str(itoa::Buffer::new().format(cats.name().len()));
+                encoded.push(';');
+                encoded.push_str(cats.name());
+                encoded.push_str(itoa::Buffer::new().format(cats.namespace().len()));
+                encoded.push(';');
+                encoded.push_str(cats.namespace());
+                encoded.push_str(cats.physical().as_str());
+                encoded.push(';');
+
+                Some(BTreeMap::from([(
+                    PlSmallStr::from_static(DTYPE_CATEGORICAL_NEW),
+                    PlSmallStr::from_string(encoded),
+                )]))
+            },
             DataType::BinaryOffset => Some(BTreeMap::from([(
                 PlSmallStr::from_static(PL_KEY),
                 PlSmallStr::from_static(MAINTAIN_PL_TYPE),
@@ -854,20 +884,27 @@ impl DataType {
                 .try_to_arrow(compat_level)?
                 .to_fixed_size_list(*size, true)),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                dt.to_arrow_field(PlSmallStr::from_static("item"), compat_level),
+                dt.to_arrow_field(LIST_VALUES_NAME, compat_level),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
             Object(_) => Ok(get_object_physical_type()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
+                let arrow_phys = match self.cat_physical().unwrap() {
+                    CategoricalPhysical::U8 => IntegerType::UInt8,
+                    CategoricalPhysical::U16 => IntegerType::UInt16,
+                    CategoricalPhysical::U32 => IntegerType::UInt32,
+                };
+
                 let values = if compat_level.0 >= 1 {
                     ArrowDataType::Utf8View
                 } else {
                     ArrowDataType::LargeUtf8
                 };
+
                 Ok(ArrowDataType::Dictionary(
-                    IntegerType::UInt32,
+                    arrow_phys,
                     Box::new(values),
                     false,
                 ))
@@ -883,7 +920,7 @@ impl DataType {
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
             Unknown(kind) => {
                 let dt = match kind {
-                    UnknownKind::Any => ArrowDataType::Unknown,
+                    UnknownKind::Any | UnknownKind::Ufunc => ArrowDataType::Unknown,
                     UnknownKind::Float => ArrowDataType::Float64,
                     UnknownKind::Str => ArrowDataType::Utf8View,
                     UnknownKind::Int(v) => {
@@ -938,6 +975,17 @@ impl DataType {
             // We don't allow the other way around, only if our current type is
             // null and the schema isn't we allow it.
             (DataType::Null, _) => Ok(true),
+            #[cfg(feature = "dtype-categorical")]
+            (DataType::Categorical(l, _), DataType::Categorical(r, _)) => {
+                ensure_same_categories(l, r)?;
+                Ok(false)
+            },
+            #[cfg(feature = "dtype-categorical")]
+            (DataType::Enum(l, _), DataType::Enum(r, _)) => {
+                ensure_same_frozen_categories(l, r)?;
+                Ok(false)
+            },
+
             (l, r) if l == r => Ok(false),
             (l, r) => {
                 polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
@@ -958,6 +1006,45 @@ impl DataType {
             slf = inner_dtype;
         }
         level
+    }
+
+    /// If this dtype is a Categorical or Enum, returns the physical backing type.
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat_physical(&self) -> PolarsResult<CategoricalPhysical> {
+        match self {
+            DataType::Categorical(cats, _) => Ok(cats.physical()),
+            DataType::Enum(fcats, _) => Ok(fcats.physical()),
+            _ => {
+                polars_bail!(SchemaMismatch: "invalid dtype: expected an Enum or Categorical type, received '{:?}'", self)
+            },
+        }
+    }
+
+    /// If this dtype is a Categorical or Enum, returns the underlying mapping.
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat_mapping(&self) -> PolarsResult<&Arc<CategoricalMapping>> {
+        match self {
+            DataType::Categorical(_, mapping) | DataType::Enum(_, mapping) => Ok(mapping),
+            _ => {
+                polars_bail!(SchemaMismatch: "invalid dtype: expected an Enum or Categorical type, received '{:?}'", self)
+            },
+        }
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    pub fn from_categories(cats: Arc<Categories>) -> Self {
+        let mapping = cats.mapping();
+        Self::Categorical(cats, mapping)
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    pub fn from_frozen_categories(fcats: Arc<FrozenCategories>) -> Self {
+        let mapping = fcats.mapping().clone();
+        Self::Enum(fcats, mapping)
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_integer() || self.is_float() || self.is_decimal()
     }
 }
 
@@ -1021,6 +1108,7 @@ impl Display for DataType {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown(kind) => match kind {
+                UnknownKind::Ufunc => "unknown ufunc",
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
                 UnknownKind::Float => "dyn float",
@@ -1032,31 +1120,97 @@ impl Display for DataType {
     }
 }
 
+impl std::fmt::Debug for DataType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use DataType::*;
+        match self {
+            Boolean => write!(f, "Boolean"),
+            UInt8 => write!(f, "UInt8"),
+            UInt16 => write!(f, "UInt16"),
+            UInt32 => write!(f, "UInt32"),
+            UInt64 => write!(f, "UInt64"),
+            Int8 => write!(f, "Int8"),
+            Int16 => write!(f, "Int16"),
+            Int32 => write!(f, "Int32"),
+            Int64 => write!(f, "Int64"),
+            Int128 => write!(f, "Int128"),
+            Float32 => write!(f, "Float32"),
+            Float64 => write!(f, "Float64"),
+            String => write!(f, "String"),
+            Binary => write!(f, "Binary"),
+            BinaryOffset => write!(f, "BinaryOffset"),
+            Date => write!(f, "Date"),
+            Time => write!(f, "Time"),
+            Duration(unit) => write!(f, "Duration('{unit}')"),
+            Datetime(unit, opt_tz) => {
+                if let Some(tz) = opt_tz {
+                    write!(f, "Datetime('{unit}', '{tz}')")
+                } else {
+                    write!(f, "Datetime('{unit}')")
+                }
+            },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(opt_p, opt_s) => match (opt_p, opt_s) {
+                (None, None) => write!(f, "Decimal(None, None)"),
+                (None, Some(s)) => write!(f, "Decimal(None, {s})"),
+                (Some(p), None) => write!(f, "Decimal({p}, None)"),
+                (Some(p), Some(s)) => write!(f, "Decimal({p}, {s})"),
+            },
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
+            List(inner) => write!(f, "List({inner:?})"),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let mut first = true;
+                write!(f, "Struct({{")?;
+                for field in fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "'{}': {:?}", field.name(), field.dtype())?;
+                    first = false;
+                }
+                write!(f, "}})")
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(cats, _) => {
+                if cats.is_global() {
+                    write!(f, "Categorical")
+                } else if cats.namespace().is_empty() && cats.physical() == CategoricalPhysical::U32
+                {
+                    write!(f, "Categorical('{}')", cats.name())
+                } else {
+                    write!(
+                        f,
+                        "Categorical('{}', '{}', {:?})",
+                        cats.name(),
+                        cats.namespace(),
+                        cats.physical()
+                    )
+                }
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => write!(f, "Enum([...])"),
+            #[cfg(feature = "object")]
+            Object(_) => write!(f, "Object"),
+            Null => write!(f, "Null"),
+            Unknown(kind) => write!(f, "Unknown({kind:?})"),
+        }
+    }
+}
+
 pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType> {
     use DataType::*;
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
-        (Categorical(Some(rev_map_l), ordering), Categorical(Some(rev_map_r), _)) => {
-            match (&**rev_map_l, &**rev_map_r) {
-                (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
-                    let mut merger = GlobalRevMapMerger::new(rev_map_l.clone());
-                    merger.merge_map(rev_map_r)?;
-                    Categorical(Some(merger.finish()), *ordering)
-                },
-                (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => {
-                    left.clone()
-                },
-                _ => polars_bail!(string_cache_mismatch),
-            }
+        (Categorical(cats_l, map), Categorical(cats_r, _)) => {
+            ensure_same_categories(cats_l, cats_r)?;
+            Categorical(cats_l.clone(), map.clone())
         },
         #[cfg(feature = "dtype-categorical")]
-        (Enum(Some(rev_map_l), _), Enum(Some(rev_map_r), _)) => {
-            match (&**rev_map_l, &**rev_map_r) {
-                (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => {
-                    left.clone()
-                },
-                _ => polars_bail!(ComputeError: "can not combine with different categories"),
-            }
+        (Enum(fcats_l, map), Enum(fcats_r, _)) => {
+            ensure_same_frozen_categories(fcats_l, fcats_r)?;
+            Enum(fcats_l.clone(), map.clone())
         },
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
@@ -1123,12 +1277,6 @@ pub fn unpack_dtypes(dtype: &DataType, include_compound_types: bool) -> PlHashSe
     result
 }
 
-#[cfg(feature = "dtype-categorical")]
-pub fn create_enum_dtype(categories: Utf8ViewArray) -> DataType {
-    let rev_map = RevMapping::build_local(categories);
-    DataType::Enum(Some(Arc::new(rev_map)), Default::default())
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -1168,7 +1316,7 @@ mod tests {
     fn test_unpack_primitive_dtypes() {
         let inner_type = DataType::Float64;
         let array_type = DataType::Array(Box::new(inner_type), 10);
-        let list_type = DataType::List(Box::new(array_type.clone()));
+        let list_type = DataType::List(Box::new(array_type));
 
         let result = unpack_dtypes(&list_type, false);
 
@@ -1188,8 +1336,8 @@ mod tests {
         let result = unpack_dtypes(&list_type, true);
 
         let mut expected = PlHashSet::new();
-        expected.insert(list_type.clone());
-        expected.insert(array_type.clone());
+        expected.insert(list_type);
+        expected.insert(array_type);
         expected.insert(DataType::Float64);
 
         assert_eq!(result, expected)

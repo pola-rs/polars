@@ -5,7 +5,7 @@ use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr};
+use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, RowEncodingVariant};
 use crate::dsl::Operator;
 use crate::plans::{ExprIR, LiteralValue, OutputName};
 
@@ -23,15 +23,19 @@ impl AExprBuilder {
         Self::new_from_node(arena.add(expr))
     }
 
+    pub fn lit(lit: LiteralValue, arena: &mut Arena<AExpr>) -> Self {
+        Self::new_from_aexpr(AExpr::Literal(lit), arena)
+    }
+
     pub fn lit_scalar(scalar: Scalar, arena: &mut Arena<AExpr>) -> Self {
-        Self::new_from_aexpr(AExpr::Literal(LiteralValue::Scalar(scalar)), arena)
+        Self::lit(LiteralValue::Scalar(scalar), arena)
     }
 
     pub fn col(name: impl Into<PlSmallStr>, arena: &mut Arena<AExpr>) -> Self {
         Self::new_from_aexpr(AExpr::Column(name.into()), arena)
     }
 
-    pub fn dataframe_length(self, arena: &mut Arena<AExpr>) -> Self {
+    pub fn dataframe_length(arena: &mut Arena<AExpr>) -> Self {
         Self::new_from_aexpr(AExpr::Len, arena)
     }
 
@@ -47,6 +51,19 @@ impl AExprBuilder {
                 function,
                 options,
             },
+            arena,
+        )
+    }
+
+    pub fn row_encode_unary(
+        self,
+        variant: RowEncodingVariant,
+        dtype: DataType,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        Self::function(
+            vec![ExprIR::from_node(self.node(), arena)],
+            IRFunctionExpr::RowEncode(vec![dtype], variant),
             arena,
         )
     }
@@ -78,6 +95,14 @@ impl AExprBuilder {
 
     pub fn agg(agg: IRAggExpr, arena: &mut Arena<AExpr>) -> Self {
         Self::new_from_aexpr(AExpr::Agg(agg), arena)
+    }
+
+    pub fn first(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::First(self.node()), arena)
+    }
+
+    pub fn last(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::Last(self.node()), arena)
     }
 
     pub fn min(self, arena: &mut Arena<AExpr>) -> Self {
@@ -115,6 +140,40 @@ impl AExprBuilder {
             IRAggExpr::Max {
                 input: self.node(),
                 propagate_nans: true,
+            },
+            arena,
+        )
+    }
+
+    pub fn sum(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::Sum(self.node()), arena)
+    }
+
+    pub fn len(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls: true,
+            },
+            arena,
+        )
+    }
+
+    pub fn count(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls: false,
+            },
+            arena,
+        )
+    }
+
+    pub fn count_opt_nulls(self, include_nulls: bool, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::Count {
+                input: self.node(),
+                include_nulls,
             },
             arena,
         )
@@ -201,6 +260,17 @@ impl AExprBuilder {
         )
     }
 
+    pub fn shift(self, periods: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![
+                self.expr_ir_unnamed(),
+                periods.into_aexpr_builder().expr_ir_unnamed(),
+            ],
+            IRFunctionExpr::Shift,
+            arena,
+        )
+    }
+
     pub fn slice(
         self,
         offset: impl IntoAExprBuilder,
@@ -232,6 +302,23 @@ impl AExprBuilder {
             IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
             arena,
         )
+    }
+
+    pub fn to_physical(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_unnamed()],
+            IRFunctionExpr::ToPhysical,
+            arena,
+        )
+    }
+
+    #[cfg(feature = "abs")]
+    pub fn abs(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(vec![self.expr_ir_unnamed()], IRFunctionExpr::Abs, arena)
+    }
+
+    pub fn negate(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(vec![self.expr_ir_unnamed()], IRFunctionExpr::Negate, arena)
     }
 
     pub fn not(self, arena: &mut Arena<AExpr>) -> Self {
@@ -292,6 +379,22 @@ impl AExprBuilder {
         let nc = self.null_count(arena);
         let idx_zero = Self::lit_scalar(Scalar::from(0 as IdxSize), arena);
         nc.gt(idx_zero, arena)
+    }
+
+    pub fn drop_nulls(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_retain_name(arena)],
+            IRFunctionExpr::DropNulls,
+            arena,
+        )
+    }
+
+    pub fn drop_nans(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_retain_name(arena)],
+            IRFunctionExpr::DropNans,
+            arena,
+        )
     }
 
     pub fn eq(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
@@ -376,6 +479,10 @@ impl AExprBuilder {
 
     pub fn expr_ir(self, name: impl Into<PlSmallStr>) -> ExprIR {
         ExprIR::new(self.node(), OutputName::Alias(name.into()))
+    }
+
+    pub fn expr_ir_retain_name(self, arena: &Arena<AExpr>) -> ExprIR {
+        ExprIR::from_node(self.node(), arena)
     }
 
     pub fn expr_ir_unnamed(self) -> ExprIR {

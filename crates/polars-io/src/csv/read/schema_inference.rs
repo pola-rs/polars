@@ -508,13 +508,6 @@ fn infer_file_schema_inner(
     Ok((Schema::from_iter(fields), rows_count, end_ptr - start_ptr))
 }
 
-pub(super) fn check_decimal_comma(decimal_comma: bool, separator: u8) -> PolarsResult<()> {
-    if decimal_comma {
-        polars_ensure!(b',' != separator, InvalidOperation: "'decimal_comma' argument cannot be combined with ',' separator")
-    }
-    Ok(())
-}
-
 /// Infer the schema of a CSV file by reading through the first n rows of the file,
 /// with `max_read_rows` controlling the maximum number of rows to read.
 ///
@@ -536,8 +529,6 @@ pub fn infer_file_schema(
     skip_rows_after_header: usize,
     raise_if_empty: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
-    check_decimal_comma(parse_options.decimal_comma, parse_options.separator)?;
-
     if skip_lines > 0 {
         polars_ensure!(skip_rows == 0, InvalidOperation: "only one of 'skip_rows'/'skip_lines' may be set");
         let bytes = skip_lines_naive(reader_bytes, parse_options.eol_char, skip_lines);
