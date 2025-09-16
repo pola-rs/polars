@@ -11,6 +11,7 @@ pub fn new_var_std_reduction(
     is_std: bool,
     ddof: u8,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecGroupedReduction as VGR;
     let op_name = if is_std { "std" } else { "var" };

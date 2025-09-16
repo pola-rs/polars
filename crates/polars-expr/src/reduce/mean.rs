@@ -7,6 +7,7 @@ use polars_core::with_match_physical_numeric_polars_type;
 use super::*;
 
 pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecGroupedReduction as VGR;
     Ok(match dtype {

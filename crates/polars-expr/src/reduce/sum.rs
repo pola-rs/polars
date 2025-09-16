@@ -41,6 +41,7 @@ fn out_dtype(in_dtype: &DataType) -> DataType {
 }
 
 pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecGroupedReduction as VGR;
     Ok(match dtype {

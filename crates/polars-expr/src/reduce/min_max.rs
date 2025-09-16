@@ -17,6 +17,7 @@ pub fn new_min_reduction(
     dtype: DataType,
     propagate_nans: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
     Ok(match &dtype {
@@ -52,6 +53,7 @@ pub fn new_max_reduction(
     dtype: DataType,
     propagate_nans: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
     Ok(match &dtype {
