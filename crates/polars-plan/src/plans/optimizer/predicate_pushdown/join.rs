@@ -17,6 +17,7 @@ pub(super) fn process_join(
     mut schema: SchemaRef,
     mut options: Arc<JoinOptionsIR>,
     mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+    streaming: bool,
 ) -> PolarsResult<IR> {
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
@@ -30,6 +31,7 @@ pub(super) fn process_join(
         &mut right_on,
         &mut acc_predicates,
         expr_arena,
+        streaming,
     )?;
 
     if match &options.args.how {
@@ -383,6 +385,7 @@ fn try_rewrite_join_type(
     right_on: &mut Vec<ExprIR>,
     acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
+    streaming: bool,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
     if acc_predicates.is_empty() {
         return Ok(None);
@@ -508,6 +511,10 @@ fn try_rewrite_join_type(
         debug_assert_eq!(options.args.how, JoinType::Cross);
 
         if options.args.how != JoinType::Cross {
+            return Ok(());
+        }
+
+        if streaming {
             return Ok(());
         }
 

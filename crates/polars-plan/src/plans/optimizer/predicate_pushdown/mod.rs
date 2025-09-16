@@ -480,6 +480,7 @@ impl PredicatePushDown<'_> {
                 schema,
                 options,
                 acc_predicates,
+                self.new_streaming,
             ),
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {
