@@ -240,6 +240,7 @@ pub struct UnifiedScanArgs {
     pub rechunk: bool,
     pub cache: bool,
     pub glob: bool,
+    /// Files with these prefixes will not be read.
     pub hidden_file_prefix: Option<Arc<[PlSmallStr]>>,
 
     pub projection: Option<Arc<[PlSmallStr]>>,
