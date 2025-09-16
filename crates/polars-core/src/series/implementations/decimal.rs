@@ -465,10 +465,11 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn var(&self, ddof: u8) -> Option<f64> {
         self.0
-            .physical()
+            .cast(&DataType::Float64)
+            .expect("failed to cast from Decimal to Float64")
             .var(ddof)
-            .map(|v| v / (self.scale_factor() as f64 * self.scale_factor() as f64))
     }
+
     fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         Ok(self.apply_scale(self.0.physical().var_reduce(_ddof)))
     }

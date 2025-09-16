@@ -218,8 +218,8 @@ impl WriteMetricsColumn {
             let mut lower_bound = new_min_reduction(dtype.clone(), false);
             let mut upper_bound = new_max_reduction(dtype, false);
 
-            lower_bound.iter_mut().for_each(|b| b.resize(1));
-            upper_bound.iter_mut().for_each(|b| b.resize(1));
+            let _ = lower_bound.as_mut().map(|b| b.resize(1));
+            let _ = upper_bound.as_mut().map(|b| b.resize(1));
 
             (lower_bound.ok(), upper_bound.ok())
         };
