@@ -1095,6 +1095,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     Quantile => map!(rolling::rolling_quantile, options.clone()),
                     Var => map!(rolling::rolling_var, options.clone()),
                     Std => map!(rolling::rolling_std, options.clone()),
+                    Rank { .. } => todo!("[amber]"),
                     #[cfg(feature = "moment")]
                     Skew => map!(rolling::rolling_skew, options.clone()),
                     #[cfg(feature = "moment")]

@@ -152,7 +152,7 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
         if start >= self.last_end {
             unsafe { self.fill_and_sort_buf(start, end) };
         } else {
-            // Vemove elements that should leave the window.
+            // Remove elements that should leave the window.
             for idx in self.last_start..start {
                 // SAFETY: we are in bounds.
                 if unsafe { self.validity.get_bit_unchecked(idx) } {

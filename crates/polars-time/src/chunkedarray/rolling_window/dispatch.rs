@@ -532,6 +532,12 @@ pub trait SeriesOpsTime: AsSeries {
             s
         })
     }
+
+    /// Apply a rolling rank to a Series.
+    #[cfg(feature = "rolling_window")]
+    fn rolling_rank(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
+        todo!()
+    }
 }
 
 impl SeriesOpsTime for Series {}

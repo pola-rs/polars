@@ -3,6 +3,7 @@ pub mod moment;
 pub mod no_nulls;
 pub mod nulls;
 pub mod quantile_filter;
+pub mod rank;
 pub(super) mod window;
 use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};

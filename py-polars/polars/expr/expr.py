@@ -8397,6 +8397,37 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
+    def rolling_rank(
+        self,
+        window_size: int,
+        method: RankMethod = "average",
+        *,
+        descending: bool = False,
+        seed: int | None = None,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Expr:
+        """
+        Compute a rolling rank.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        TODO: [amber] Add docstring
+        """
+        return wrap_expr(
+            self._pyexpr.rolling_rank(
+                window_size,
+                method,
+                descending,
+                seed,
+                min_samples,
+                center,
+            )
+        )
+
+    @unstable()
     def rolling_skew(
         self,
         window_size: int,

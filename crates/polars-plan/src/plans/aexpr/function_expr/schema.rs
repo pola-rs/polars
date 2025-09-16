@@ -68,6 +68,8 @@ impl IRFunctionExpr {
                     Mean | Quantile | Std => mapper.moment_dtype(),
                     Var => mapper.var_dtype(),
                     Sum => mapper.sum_dtype(),
+                    Rank {options: RankOptions { method: RankMethod::Average, .. }} => mapper.with_dtype(DataType::Float64),
+                    Rank {..} => mapper.with_dtype(IDX_DTYPE),
                     #[cfg(feature = "cov")]
                     CorrCov { .. } => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]

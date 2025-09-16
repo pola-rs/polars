@@ -1239,6 +1239,22 @@ impl Expr {
         self.finish_rolling(options, RollingFunction::Std)
     }
 
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_rank(
+        self,
+        rank_options: RankOptions,
+        seed: Option<u64>,
+        options: RollingOptionsFixedWindow,
+    ) -> Expr {
+        self.finish_rolling(
+            options,
+            RollingFunction::Rank {
+                options: rank_options,
+                seed,
+            },
+        )
+    }
+
     /// Apply a rolling skew.
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]

@@ -7456,6 +7456,27 @@ class Series:
         """  # noqa: W505
 
     @unstable()
+    def rolling_rank(
+        self,
+        window_size: int,
+        method: RankMethod = "average",
+        *,
+        descending: bool = False,
+        seed: int | None = None,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Series:
+        """
+        Compute a rolling rank.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        TODO: [amber] Add docstring
+        """
+
+    @unstable()
     def rolling_skew(
         self,
         window_size: int,
