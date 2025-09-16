@@ -223,9 +223,8 @@ impl ApplyExpr {
         Ok(ac)
     }
 
-    // Fast-path when every AggState is a LiteralScalar. This path avoids calling aggregated()
-    // or groups(), and returns a LiteralScalar, on the implicit condition that the function
-    // is pure (which holds in the case of single element inputs).
+    // Fast-path when every AggState is a LiteralScalar. This path avoids calling aggregated() or
+    // groups(), and returns a LiteralScalar, on the implicit condition that the function is pure.
     fn apply_all_literal<'a>(
         &self,
         mut acs: Vec<AggregationContext<'a>>,
@@ -456,12 +455,13 @@ fn apply_multiple_elementwise<'a>(
     returns_scalar: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
     // At this stage, we either have (with or without LiteralScalars):
-    // - one or more AggregatedLists or NotAggregated ACs
-    // - one or more AggregatedScalars ACs
+    // - one or more AggregatedList or NotAggregated ACs
+    // - one or more AggregatedScalar ACs
 
     // Aggregate when needed. Update and check groups when needed.
     let mut previous = None;
     for ac in acs.iter_mut() {
+        // TBD: If we want to be strict, we would check all groups
         if matches!(
             ac.state,
             AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
