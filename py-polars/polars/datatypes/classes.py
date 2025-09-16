@@ -189,7 +189,7 @@ class DataType(metaclass=DataTypeClass):
 
     def is_decimal(self) -> TypeGuard[Decimal]:
         """Check whether the data type is a decimal type."""
-        return issubclass(self, Decimal)
+        return self == Decimal
 
     @classmethod
     def is_integer(cls) -> bool:
@@ -285,35 +285,35 @@ class DataType(metaclass=DataTypeClass):
 
     def is_struct(self) -> TypeGuard[Struct]:
         """Check whether the data type is a Struct."""
-        return issubclass(self, Struct)
+        return self == Struct
 
     def is_list(self) -> TypeGuard[List]:
         """Check whether the data type is a List."""
-        return issubclass(self, List)
+        return self == List
 
     def is_array(self) -> TypeGuard[Array]:
         """Check whether the data type is a List."""
-        return issubclass(self, Array)
+        return self == Array
 
     def is_categorical(self) -> TypeGuard[Categorical]:
         """Check whether the data type is a Categorical."""
-        return issubclass(self, Categorical)
+        return self == Categorical
 
     def is_enum(self) -> TypeGuard[Enum]:
         """Check whether the data type is a Enum."""
-        return issubclass(self, Enum)
+        return self == Enum
 
     def is_time(self) -> TypeGuard[Time]:
         """Check whether the data type is a Enum."""
-        return issubclass(self, Time)
+        return self == Time
 
     def is_datetime(self) -> TypeGuard[Datetime]:
         """Check whether the data type is a Enum."""
-        return issubclass(self, Datetime)
+        return self == Datetime
 
     def is_duration(self) -> TypeGuard[Duration]:
         """Check whether the data type is a Enum."""
-        return issubclass(self, Duration)
+        return self == Duration
 
 
 class NumericType(DataType):
