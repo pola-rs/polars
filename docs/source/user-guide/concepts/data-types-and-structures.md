@@ -168,8 +168,8 @@ Most datatypes can be specified entirely by their name. For instance a Float64 i
 Float64. However other datatypes, such as Arrays, Lists, and others can be unique such that one List
 isn't the same as another List. The classes for those datatypes have attributes and methods that
 distinguish them from other datatypes of the same name. If you are inspecting a DataFrame's schema,
-the type system won't know what methods the resulting datatypes should have unless you use a TypeGuard
-which is provided.
+the type system won't know what methods the resulting datatypes should have unless you use a
+TypeGuard which is provided.
 
 Suppose we have this DataFrame:
 
@@ -192,8 +192,8 @@ attribute `fields` as it is unknown. Instead we can use the TypeGuard checks:
 --8<-- "python/user-guide/concepts/data-types-and-structures.py:typeguard-yes"
 ```
 
-which will give the same result but when `is_struct` is `True` it tells the type checker that
-`d`'s type should be `Struct` and it won't complain about the unknown field.
+which will give the same result but when `is_struct` is `True` it tells the type checker that `d`'s
+type should be `Struct` and it won't complain about the unknown field.
 
 
 
