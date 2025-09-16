@@ -3702,6 +3702,17 @@ def test_join_rewrite_forbid_exprs(
     assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
 
 
+def test_join_coalesce_column_order_23177() -> None:
+    df1 = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
+    df2 = pl.DataFrame({"symbol": [5253], "time": ["09:00:21"]})
+
+    q = df1.lazy().join(df2.lazy(), on=["time", "symbol"], how="full", coalesce=True)
+
+    expect = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
+
+    assert_frame_equal(q.collect(), expect)
+
+
 def test_join_filter_pushdown_iejoin_cse_23469() -> None:
     lf_x = pl.LazyFrame({"x": [1, 2, 3]})
     lf_y = pl.LazyFrame({"y": [1, 2, 3]})
