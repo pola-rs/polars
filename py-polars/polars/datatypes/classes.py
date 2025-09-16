@@ -187,10 +187,9 @@ class DataType(metaclass=DataTypeClass):
         """Check whether the data type is a numeric type."""
         return issubclass(cls, NumericType)
 
-    @classmethod
-    def is_decimal(cls) -> TypeGuard[Decimal]:
+    def is_decimal(self) -> TypeGuard[Decimal]:
         """Check whether the data type is a decimal type."""
-        return issubclass(cls, Decimal)
+        return issubclass(self, Decimal)
 
     @classmethod
     def is_integer(cls) -> bool:
@@ -284,45 +283,37 @@ class DataType(metaclass=DataTypeClass):
 
         return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.from_dtype(self))
 
-    @classmethod
-    def is_struct(cls) -> TypeGuard[Struct]:
+    def is_struct(self) -> TypeGuard[Struct]:
         """Check whether the data type is a Struct."""
-        return issubclass(cls, Struct)
+        return issubclass(self, Struct)
 
-    @classmethod
-    def is_list(cls) -> TypeGuard[List]:
+    def is_list(self) -> TypeGuard[List]:
         """Check whether the data type is a List."""
-        return issubclass(cls, List)
+        return issubclass(self, List)
 
-    @classmethod
-    def is_array(cls) -> TypeGuard[Array]:
+    def is_array(self) -> TypeGuard[Array]:
         """Check whether the data type is a List."""
-        return issubclass(cls, Array)
+        return issubclass(self, Array)
 
-    @classmethod
-    def is_categorical(cls) -> TypeGuard[Categorical]:
+    def is_categorical(self) -> TypeGuard[Categorical]:
         """Check whether the data type is a Categorical."""
-        return issubclass(cls, Categorical)
+        return issubclass(self, Categorical)
 
-    @classmethod
-    def is_enum(cls) -> TypeGuard[Enum]:
+    def is_enum(self) -> TypeGuard[Enum]:
         """Check whether the data type is a Enum."""
-        return issubclass(cls, Enum)
+        return issubclass(self, Enum)
 
-    @classmethod
-    def is_time(cls) -> TypeGuard[Time]:
+    def is_time(self) -> TypeGuard[Time]:
         """Check whether the data type is a Enum."""
-        return issubclass(cls, Time)
+        return issubclass(self, Time)
 
-    @classmethod
-    def is_datetime(cls) -> TypeGuard[Datetime]:
+    def is_datetime(self) -> TypeGuard[Datetime]:
         """Check whether the data type is a Enum."""
-        return issubclass(cls, Datetime)
+        return issubclass(self, Datetime)
 
-    @classmethod
-    def is_duration(cls) -> TypeGuard[Duration]:
+    def is_duration(self) -> TypeGuard[Duration]:
         """Check whether the data type is a Enum."""
-        return issubclass(cls, Duration)
+        return issubclass(self, Duration)
 
 
 class NumericType(DataType):
