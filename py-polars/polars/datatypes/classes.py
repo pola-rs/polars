@@ -22,8 +22,6 @@ import polars.datatypes.classes as pldt
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
-    from typing_extensions import TypeGuard
-
     from polars import Series
     from polars._typing import (
         CategoricalOrdering,
@@ -187,9 +185,10 @@ class DataType(metaclass=DataTypeClass):
         """Check whether the data type is a numeric type."""
         return issubclass(cls, NumericType)
 
-    def is_decimal(self) -> TypeGuard[Decimal]:
+    @classmethod
+    def is_decimal(cls) -> bool:
         """Check whether the data type is a decimal type."""
-        return self == Decimal
+        return issubclass(cls, Decimal)
 
     @classmethod
     def is_integer(cls) -> bool:
@@ -282,38 +281,6 @@ class DataType(metaclass=DataTypeClass):
         from polars._plr import PyDataTypeExpr
 
         return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.from_dtype(self))
-
-    def is_struct(self) -> TypeGuard[Struct]:
-        """Check whether the data type is a Struct."""
-        return self == Struct
-
-    def is_list(self) -> TypeGuard[List]:
-        """Check whether the data type is a List."""
-        return self == List
-
-    def is_array(self) -> TypeGuard[Array]:
-        """Check whether the data type is a List."""
-        return self == Array
-
-    def is_categorical(self) -> TypeGuard[Categorical]:
-        """Check whether the data type is a Categorical."""
-        return self == Categorical
-
-    def is_enum(self) -> TypeGuard[Enum]:
-        """Check whether the data type is a Enum."""
-        return self == Enum
-
-    def is_time(self) -> TypeGuard[Time]:
-        """Check whether the data type is a Time."""
-        return self == Time
-
-    def is_datetime(self) -> TypeGuard[Datetime]:
-        """Check whether the data type is a Datetime."""
-        return self == Datetime
-
-    def is_duration(self) -> TypeGuard[Duration]:
-        """Check whether the data type is a Duration."""
-        return self == Duration
 
 
 class NumericType(DataType):
