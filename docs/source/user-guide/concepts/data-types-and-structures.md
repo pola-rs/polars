@@ -164,6 +164,7 @@ inference:
 ```
 
 ### Inspecting a Schema/DataType and TypeGuards
+
 Most datatypes can be specified entirely by their name. For instance a Float64 is always just a
 Float64. However other datatypes, such as Arrays, Lists, and others can be unique such that one List
 isn't the same as another List. The classes for those datatypes have attributes and methods that
@@ -194,8 +195,6 @@ attribute `fields` as it is unknown. Instead we can use the TypeGuard checks:
 
 which will give the same result but when `is_struct` is `True` it tells the type checker that `d`'s
 type should be `Struct` and it won't complain about the unknown field.
-
-
 
 ## Data types internals
 
