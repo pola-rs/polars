@@ -868,8 +868,8 @@ def test_agg_invalid_same_engines_behavior(
     # should also produce a good result, and then it should match the in-memory result.
 
     if isinstance(df.schema["a"], pl.Struct) and op in {"any", "all"}:
-        # TODO: Remove this exception when #23797 is resolved
-        pytest.skip("polars/#23797")
+        # TODO: Remove this exception when #24509 is resolved
+        pytest.skip("polars/#24509")
 
     if isinstance(df.schema["a"], pl.Duration) and op in {"std", "var"}:
         # TODO: Remove this exception when std & var are implemented for Duration
