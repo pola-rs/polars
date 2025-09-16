@@ -65,7 +65,6 @@ def test_nested_loop_join() -> None:
 
     actual = left.join_where(right, pl.col("a") != pl.col("c"))
     plan = actual.explain()
-    actual.show_graph(engine="streaming")
     assert "NESTED LOOP JOIN" in plan
     expected = pl.DataFrame(
         {
