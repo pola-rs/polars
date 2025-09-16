@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import typing
 import warnings
 from datetime import date, datetime
@@ -3622,6 +3621,7 @@ def test_join_coalesce_column_order_23177() -> None:
     expect = pl.DataFrame({"time": ["09:00:21"], "symbol": [5253]})
 
     assert_frame_equal(q.collect(), expect)
+
 
 def test_join_filter_pushdown_iejoin_cse_23469() -> None:
     lf_x = pl.LazyFrame({"x": [1, 2, 3]})
