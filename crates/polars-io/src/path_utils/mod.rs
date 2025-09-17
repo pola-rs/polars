@@ -217,7 +217,7 @@ pub fn expand_paths_hive(
 
     let is_hidden_file = move |path: &PlPath| {
         let p = path.to_str();
-        hidden_file_prefix.iter().any(|x| x == p)
+        hidden_file_prefix.iter().any(|x| p.starts_with(x.as_str()))
     };
 
     let mut out_paths = OutPaths {
