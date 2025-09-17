@@ -1,5 +1,5 @@
 use arrow::bitmap::BitmapBuilder;
-use arrow::types::{AlignedBytes};
+use arrow::types::AlignedBytes;
 
 use super::ArrayChunks;
 
@@ -34,7 +34,7 @@ pub fn decode_between<B: AlignedBytes>(
         let v = B::from_unaligned(v);
         let in_interval1 = (low1.unsigned_leq(v)) & (v.unsigned_leq(high1));
         let in_interval2 = (low2.unsigned_leq(v)) & (v.unsigned_leq(high2));
-        
+
         let is_pred_true = in_interval1 | in_interval2;
 
         // SAFETY: We reserved enough before the loop.
