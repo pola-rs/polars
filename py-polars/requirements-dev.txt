@@ -20,7 +20,7 @@ pip
 numpy
 numba >= 0.54; python_version < '3.14'  # Numba can lag Python releases
 pandas
-pyarrow
+#pyarrow # TODO pyarrow does not have wheels for 3.14t
 pydantic>=2.0.0
 # Datetime / time zones
 tzdata; platform_system == 'Windows'
