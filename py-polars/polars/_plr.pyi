@@ -906,7 +906,6 @@ class PyLazyFrame:
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
         cluster_with_columns: bool,
-        collapse_joins: bool,
         _eager: bool,
         _check_order: bool,
         new_streaming: bool,
@@ -1997,10 +1996,6 @@ class PyOptFlags:
     def comm_subexpr_elim(self) -> bool: ...
     @comm_subexpr_elim.setter
     def comm_subexpr_elim(self, value: bool) -> None: ...
-    @property
-    def collapse_joins(self) -> bool: ...
-    @collapse_joins.setter
-    def collapse_joins(self, value: bool) -> None: ...
     @property
     def check_order_observe(self) -> bool: ...
     @check_order_observe.setter

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 
+from polars._utils.deprecation import issue_deprecation_warning
+
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyOptFlags
 
@@ -124,7 +126,13 @@ class QueryOptFlags:
         if cluster_with_columns is not None:
             self.cluster_with_columns = cluster_with_columns
         if collapse_joins is not None:
-            self.collapse_joins = collapse_joins
+            issue_deprecation_warning(
+                "the `collapse_joins` parameter for `QueryOptFlags` is deprecated. "
+                "Use `predicate_pushdown` instead.",
+                version="1.33.1",
+            )
+            if not collapse_joins:
+                self.predicate_pushdown = False
         if check_order_observe is not None:
             self.check_order_observe = check_order_observe
         if fast_projection is not None:
