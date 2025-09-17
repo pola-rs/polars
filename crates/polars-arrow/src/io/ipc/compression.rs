@@ -1,7 +1,6 @@
 use polars_error::PolarsResult;
 #[cfg(feature = "io_ipc_compression")]
 use polars_error::to_compute_err;
-#[cfg(feature = "io_ipc_compression")]
 use polars_utils::compression::ZstdLevel;
 
 #[cfg(feature = "io_ipc_compression")]
@@ -65,7 +64,7 @@ pub fn compress_lz4(_input_buf: &[u8], _output_buf: &[u8]) -> PolarsResult<()> {
 }
 
 #[cfg(not(feature = "io_ipc_compression"))]
-pub fn compress_zstd(_input_buf: &[u8], _output_buf: &[u8]) -> PolarsResult<()> {
+pub fn compress_zstd(_input_buf: &[u8], _output_buf: &[u8], _level: ZstdLevel) -> PolarsResult<()> {
     panic!(
         "The crate was compiled without IPC compression. Use `io_ipc_compression` to write compressed IPC."
     )
