@@ -185,7 +185,7 @@ def lit(
 
     if _check_for_numpy(value) and isinstance(value, np.generic):
         # note: the item() is a py-native datetime/timedelta when units < 'ns'
-        if isinstance(item := value.item(), (datetime, timedelta)):
+        if isinstance(item := value.item(), (date, datetime, timedelta)):
             return lit(item)
 
         # handle 'ns' units
