@@ -349,8 +349,12 @@ impl DurationArgs {
         };
 
         let mut acc_i64 = Some(0);
-        let mut try_add_to_i64 =
-            |x: Option<i64>| acc_i64 = acc_i64.and_then(|acc| x.map(|v| acc + v));
+        let mut try_add_to_i64 = |rhs| {
+            acc_i64 = match (acc_i64, rhs) {
+                (Some(acc), Some(x)) => Some(acc + x),
+                _ => None,
+            }
+        };
 
         try_add_to_i64(extract_i64(&self.weeks).map(|v| v * 7 * NANOSECONDS_IN_DAY));
         try_add_to_i64(extract_i64(&self.days).map(|v| v * NANOSECONDS_IN_DAY));
@@ -362,8 +366,12 @@ impl DurationArgs {
         try_add_to_i64(extract_i64(&self.nanoseconds));
 
         let mut acc_f64 = Some(0.0);
-        let mut try_add_to_f64 =
-            |x: Option<f64>| acc_f64 = acc_f64.and_then(|acc| x.map(|v| acc + v));
+        let mut try_add_to_f64 = |rhs| {
+            acc_f64 = match (acc_f64, rhs) {
+                (Some(acc), Some(x)) => Some(acc + x),
+                _ => None,
+            }
+        };
 
         try_add_to_f64(extract_f64(&self.weeks).map(|v| v * 7.0 * NANOSECONDS_IN_DAY as f64));
         try_add_to_f64(extract_f64(&self.days).map(|v| v * NANOSECONDS_IN_DAY as f64));
