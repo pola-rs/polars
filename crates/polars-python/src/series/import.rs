@@ -173,7 +173,7 @@ impl PySeries {
         // * Decimal(P, S): Stores unscaled value as two’s-complement
         //   big-endian binary, using the minimum number of bytes for the
         //   value.
-        let max_decimal_value = 10_i128.pow(u32::try_from(precision).unwrap()) - 1;
+        let max_abs_decimal_value = 10_i128.pow(u32::try_from(precision).unwrap()) - 1;
 
         let out: Vec<i128> = bytes_list
             .try_iter()?
@@ -197,7 +197,7 @@ impl PySeries {
 
                 let value = i128::from_le_bytes(le_bytes);
 
-                if value > max_decimal_value {
+                if value.abs() > max_abs_decimal_value {
                     return Err(PyValueError::new_err(format!(
                         "iceberg decoded value for decimal exceeded precision: \
                         value: {}, precision: {}",
