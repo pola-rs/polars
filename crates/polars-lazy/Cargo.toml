@@ -99,6 +99,7 @@ dtype-full = [
   "dtype-struct",
   "dtype-time",
   "dtype-u16",
+  "dtype-u128",
   "dtype-u8",
 ]
 dtype-array = [
@@ -159,6 +160,12 @@ dtype-time = [
   "temporal",
   "polars-expr/dtype-time",
   "polars-mem-engine/dtype-time",
+]
+dtype-u128 = [
+  "polars-plan/dtype-u128",
+  "polars-ops/dtype-u128",
+  "polars-expr/dtype-u128",
+  "polars-stream?/dtype-u128",
 ]
 dtype-u16 = [
   "polars-plan/dtype-u16",

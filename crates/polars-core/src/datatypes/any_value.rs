@@ -38,6 +38,8 @@ pub enum AnyValue<'a> {
     UInt32(u32),
     /// An unsigned 64-bit integer number.
     UInt64(u64),
+    /// An unsigned 128-bit integer number.
+    UInt128(u128),
     /// An 8-bit integer number.
     Int8(i8),
     /// A 16-bit integer number.
@@ -144,6 +146,7 @@ impl AnyValue<'static> {
             DT::UInt16 => AV::UInt16(numeric_to_one.into()),
             DT::UInt32 => AV::UInt32(numeric_to_one.into()),
             DT::UInt64 => AV::UInt64(numeric_to_one.into()),
+            DT::UInt128 => AV::UInt128(numeric_to_one.into()),
             DT::Int8 => AV::Int8(numeric_to_one.into()),
             DT::Int16 => AV::Int16(numeric_to_one.into()),
             DT::Int32 => AV::Int32(numeric_to_one.into()),
@@ -228,6 +231,7 @@ impl<'a> AnyValue<'a> {
             UInt16(_) => DataType::UInt16,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,
+            UInt128(_) => DataType::UInt128,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
             String(_) | StringOwned(_) => DataType::String,
@@ -281,6 +285,7 @@ impl<'a> AnyValue<'a> {
             UInt16(v) => NumCast::from(*v),
             UInt32(v) => NumCast::from(*v),
             UInt64(v) => NumCast::from(*v),
+            UInt128(v) => NumCast::from(*v),
             Float32(v) => NumCast::from(*v),
             Float64(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-date")]
@@ -353,7 +358,11 @@ impl<'a> AnyValue<'a> {
     pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
-            AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
+            AnyValue::UInt8(_)
+                | AnyValue::UInt16(_)
+                | AnyValue::UInt32(_)
+                | AnyValue::UInt64(_)
+                | AnyValue::UInt128(_)
         )
     }
 
@@ -390,6 +399,7 @@ impl<'a> AnyValue<'a> {
             (av, DataType::UInt16) => AnyValue::UInt16(av.extract::<u16>()?),
             (av, DataType::UInt32) => AnyValue::UInt32(av.extract::<u32>()?),
             (av, DataType::UInt64) => AnyValue::UInt64(av.extract::<u64>()?),
+            (av, DataType::UInt128) => AnyValue::UInt128(av.extract::<u128>()?),
             (av, DataType::Int8) => AnyValue::Int8(av.extract::<i8>()?),
             (av, DataType::Int16) => AnyValue::Int16(av.extract::<i16>()?),
             (av, DataType::Int32) => AnyValue::Int32(av.extract::<i32>()?),
@@ -403,6 +413,7 @@ impl<'a> AnyValue<'a> {
             (AnyValue::UInt16(v), DataType::Boolean) => AnyValue::Boolean(*v != u16::default()),
             (AnyValue::UInt32(v), DataType::Boolean) => AnyValue::Boolean(*v != u32::default()),
             (AnyValue::UInt64(v), DataType::Boolean) => AnyValue::Boolean(*v != u64::default()),
+            (AnyValue::UInt128(v), DataType::Boolean) => AnyValue::Boolean(*v != u128::default()),
             (AnyValue::Int8(v), DataType::Boolean) => AnyValue::Boolean(*v != i8::default()),
             (AnyValue::Int16(v), DataType::Boolean) => AnyValue::Boolean(*v != i16::default()),
             (AnyValue::Int32(v), DataType::Boolean) => AnyValue::Boolean(*v != i32::default()),
@@ -675,6 +686,7 @@ impl<'a> AnyValue<'a> {
             | Self::UInt16(_)
             | Self::UInt32(_)
             | Self::UInt64(_)
+            | Self::UInt128(_)
             | Self::Int8(_)
             | Self::Int16(_)
             | Self::Int32(_)
@@ -781,6 +793,7 @@ impl AnyValue<'_> {
             UInt16(v) => v.hash(state),
             UInt32(v) => v.hash(state),
             UInt64(v) => v.hash(state),
+            UInt128(v) => feature_gated!("dtype-u128", v.hash(state)),
             String(v) => v.hash(state),
             StringOwned(v) => v.hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
@@ -995,6 +1008,7 @@ impl<'a> AnyValue<'a> {
             UInt16(v) => UInt16(v),
             UInt32(v) => UInt32(v),
             UInt64(v) => UInt64(v),
+            UInt128(v) => UInt128(v),
             Boolean(v) => Boolean(v),
             Float32(v) => Float32(v),
             Float64(v) => Float64(v),
@@ -1151,6 +1165,7 @@ impl AnyValue<'_> {
             (UInt16(l), UInt16(r)) => *l == *r,
             (UInt32(l), UInt32(r)) => *l == *r,
             (UInt64(l), UInt64(r)) => *l == *r,
+            (UInt128(l), UInt128(r)) => *l == *r,
             (Int8(l), Int8(r)) => *l == *r,
             (Int16(l), Int16(r)) => *l == *r,
             (Int32(l), Int32(r)) => *l == *r,
@@ -1331,6 +1346,7 @@ impl PartialOrd for AnyValue<'_> {
             (UInt16(l), UInt16(r)) => l.partial_cmp(r),
             (UInt32(l), UInt32(r)) => l.partial_cmp(r),
             (UInt64(l), UInt64(r)) => l.partial_cmp(r),
+            (UInt128(l), UInt128(r)) => l.partial_cmp(r),
             (Int8(l), Int8(r)) => l.partial_cmp(r),
             (Int16(l), Int16(r)) => l.partial_cmp(r),
             (Int32(l), Int32(r)) => l.partial_cmp(r),
@@ -1557,6 +1573,16 @@ impl GetAnyValue for ArrayRef {
                     Some(v) => AnyValue::UInt64(v),
                 }
             },
+            ArrowDataType::UInt128 => {
+                let arr = self
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<u128>>()
+                    .unwrap_unchecked();
+                match arr.get_unchecked(index) {
+                    None => AnyValue::Null,
+                    Some(v) => AnyValue::UInt128(v),
+                }
+            },
             ArrowDataType::Float32 => {
                 let arr = self
                     .as_any()
@@ -1615,6 +1641,9 @@ impl<K: NumericNative> From<K> for AnyValue<'static> {
                 PrimitiveType::UInt16 => AnyValue::UInt16(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt32 => AnyValue::UInt32(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt64 => AnyValue::UInt64(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt128 => {
+                    AnyValue::UInt128(NumCast::from(value).unwrap_unchecked())
+                },
                 PrimitiveType::Float32 => {
                     AnyValue::Float32(NumCast::from(value).unwrap_unchecked())
                 },

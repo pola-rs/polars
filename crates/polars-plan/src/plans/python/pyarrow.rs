@@ -80,10 +80,11 @@ pub fn predicate_to_pa(
                             write!(list_repr, "{av},").unwrap();
                         },
                         // Hard to sanitize
-                        AnyValue::Binary(_)
-                        | AnyValue::Struct(_, _, _)
-                        | AnyValue::List(_)
-                        | AnyValue::Array(_, _) => return None,
+                        AnyValue::Binary(_) | AnyValue::List(_) => return None,
+                        #[cfg(feature = "dtype-array")]
+                        AnyValue::Array(_, _) => return None,
+                        #[cfg(feature = "dtype-struct")]
+                        AnyValue::Struct(_, _, _) => return None,
                         _ => {
                             write!(list_repr, "{av},").unwrap();
                         },
@@ -120,10 +121,11 @@ pub fn predicate_to_pa(
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
                 // Hard to sanitize
-                AnyValue::Binary(_)
-                | AnyValue::Struct(_, _, _)
-                | AnyValue::List(_)
-                | AnyValue::Array(_, _) => None,
+                AnyValue::Binary(_) | AnyValue::List(_) => None,
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(_, _) => None,
+                #[cfg(feature = "dtype-struct")]
+                AnyValue::Struct(_, _, _) => None,
                 // Activate once pyarrow supports them
                 // #[cfg(feature = "dtype-time")]
                 // AnyValue::Time(v) => {

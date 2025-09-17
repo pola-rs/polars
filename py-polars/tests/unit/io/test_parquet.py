@@ -1608,6 +1608,8 @@ def test_predicate_filtering(
         min_size=1,
         max_size=10,
         excluded_dtypes=[
+            pl.Int128,
+            pl.UInt128,
             pl.Decimal,
             pl.Categorical,
             pl.Enum,

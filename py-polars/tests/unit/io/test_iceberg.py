@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
-import sys
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -1366,11 +1365,6 @@ def test_fill_missing_fields_with_identity_partition_values(
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
 
 
-@pytest.mark.xfail(
-    sys.platform == "win32",
-    # TODO: Investigate - the colon in C:/ seems to be dropped.
-    reason="CI failure: FileNotFoundError: [WinError 53] Failed to open local file '//C/Users/runneradmin/",
-)
 def test_fill_missing_fields_with_identity_partition_values_nested(
     tmp_path: Path,
 ) -> None:
@@ -1381,8 +1375,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     )
     catalog.create_namespace("namespace")
 
-    next_field_id = partial(next, itertools.count())
-    next_field_id()
+    next_field_id = partial(next, itertools.count(1))
 
     iceberg_schema = IcebergSchema(
         NestedField(next_field_id(), "height_provider", IntegerType()),
@@ -1452,7 +1445,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     ).write_iceberg(tbl, mode="append")
 
     for i, data_file in enumerate(tbl.scan().plan_files()):
-        p = data_file.file.file_path
+        p = data_file.file.file_path.removeprefix("file://")
 
         pq.write_table(
             pa.Table.from_pydict(
