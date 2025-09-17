@@ -5,6 +5,6 @@
 duckdb
 torch
 jax[cpu]
-pyiceberg>=0.7.1
+#pyiceberg>=0.7.1  # TODO pyroaring does not have wheels for 3.14t
 pyiceberg-core
 polars-ds==0.10.0
