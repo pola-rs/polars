@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from functools import partial
 
+from polars.io.cloud._utils import _is_aws_cloud
 import pytest
 
 import polars as pl
@@ -54,3 +55,21 @@ def test_scan_err_rebuild_store_19933() -> None:
     # Note: We get called 2 times per attempt
     if call_count != 4:
         raise AssertionError(call_count)
+
+
+def test_is_aws_cloud() -> None:
+    assert _is_aws_cloud(
+        scheme="https",
+        first_scan_path="https://bucket.s3.eu-west-1.amazonaws.com/key",
+    )
+
+    # Legacy global endpoint
+    assert not _is_aws_cloud(
+        scheme="https", first_scan_path="https://bucket.s3.amazonaws.com/key"
+    )
+
+    # Has query parameters (e.g. presigned URL).
+    assert not _is_aws_cloud(
+        scheme="https",
+        first_scan_path="https://bucket.s3.eu-west-1.amazonaws.com/key?",
+    )
