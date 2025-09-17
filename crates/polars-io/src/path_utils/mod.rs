@@ -216,10 +216,11 @@ pub fn expand_paths_hive(
     let is_cloud = first_path.as_ref().is_cloud_url();
 
     let is_hidden_file = move |path: &PlPath| {
-        let file_name = path.as_ref().file_name();
-        hidden_file_prefix
-            .iter()
-            .any(|x| file_name.starts_with(x.as_str()))
+        path.as_ref().file_name().is_some_and(|file_name| {
+            hidden_file_prefix
+                .iter()
+                .any(|x| file_name.starts_with(x.as_str()))
+        })
     };
 
     let mut out_paths = OutPaths {
