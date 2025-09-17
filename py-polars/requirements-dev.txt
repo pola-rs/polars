@@ -29,7 +29,7 @@ sqlalchemy
 adbc-driver-manager; platform_system != 'Windows'
 adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
-connectorx
+#connectorx # TODO connectorx does not have wheels for 3.14t
 kuzu
 # Cloud
 azure-identity
