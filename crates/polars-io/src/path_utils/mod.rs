@@ -215,11 +215,16 @@ pub fn expand_paths_hive(
 
     let is_cloud = first_path.as_ref().is_cloud_url();
 
+    let is_hidden_file = move |path: &PlPath| {
+        let p = path.to_str();
+        hidden_file_prefix.iter().any(|x| x == p)
+    };
+
     let mut out_paths = OutPaths {
         paths: vec![],
         exts: [None, None],
         current_idx: 0,
-        hidden_file_prefix,
+        is_hidden_file: &is_hidden_file,
     };
 
     let mut hive_idx_tracker = HiveIdxTracker {
@@ -298,7 +303,7 @@ pub fn expand_paths_hive(
 
                         let cloud_location = &cloud_location;
 
-                        let mut paths = store
+                        let paths = store
                             .try_exec_rebuild_on_err(|store| {
                                 let st = store.clone();
 
@@ -333,7 +338,6 @@ pub fn expand_paths_hive(
                             prefix.push('/')
                         };
 
-                        paths.sort_unstable();
                         (
                             format_path(
                                 &cloud_location.scheme,
@@ -408,32 +412,37 @@ pub fn expand_paths_hive(
                 }
 
                 let glob_start_idx = get_glob_start_idx(path.to_str().as_bytes());
+                let out_paths_prev_len = out_paths.paths.len();
 
-                let path = if glob && glob_start_idx.is_some() {
-                    path.clone()
+                if glob && glob_start_idx.is_some() {
+                    hive_idx_tracker.update(0, path_idx)?;
+
+                    let iter = crate::pl_async::get_runtime().block_in_place_on(
+                        crate::async_glob(path.to_str(), cloud_options.as_ref()),
+                    )?;
+
+                    if is_cloud {
+                        out_paths.extend(iter.into_iter().map(PlPath::from_string));
+                    } else {
+                        // FORCE_ASYNC, remove leading file:// as not all readers support it.
+                        out_paths.extend(
+                            iter.iter()
+                                .map(|x| &x[7..])
+                                .map(|s| PlPathRef::new(s).into_owned()),
+                        )
+                    }
                 } else {
                     let (expand_start_idx, paths) =
                         expand_path_cloud(path.to_str(), cloud_options.as_ref())?;
                     out_paths.extend_from_slice(&paths);
                     hive_idx_tracker.update(expand_start_idx, path_idx)?;
-                    continue;
                 };
 
-                hive_idx_tracker.update(0, path_idx)?;
-
-                let iter = crate::pl_async::get_runtime()
-                    .block_in_place_on(crate::async_glob(path.to_str(), cloud_options.as_ref()))?;
-
-                if is_cloud {
-                    out_paths.extend(iter.into_iter().map(PlPath::from_string));
-                } else {
-                    // FORCE_ASYNC, remove leading file:// as not all readers support it.
-                    out_paths.extend(
-                        iter.iter()
-                            .map(|x| &x[7..])
-                            .map(|s| PlPathRef::new(s).into_owned()),
-                    )
-                }
+                out_paths
+                    .paths
+                    .get_mut(out_paths_prev_len..)
+                    .unwrap()
+                    .sort_unstable();
             }
         }
         #[cfg(not(feature = "cloud"))]
@@ -446,6 +455,8 @@ pub fn expand_paths_hive(
             let path = path.as_ref();
             let path = path.as_local_path().unwrap();
             stack.clear();
+
+            let out_paths_prev_len = out_paths.paths.len();
 
             if path.is_dir() {
                 let path = path.to_path_buf();
@@ -470,8 +481,6 @@ pub fn expand_paths_hive(
 
                     last_err?;
 
-                    paths_scratch.sort_unstable();
-
                     for path in paths_scratch.drain(..) {
                         if path.is_dir() {
                             stack.push_back(path);
@@ -480,35 +489,39 @@ pub fn expand_paths_hive(
                         }
                     }
                 }
-
-                continue;
-            }
-
-            let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
-
-            if glob && i.is_some() {
-                hive_idx_tracker.update(0, path_idx)?;
-
-                let pattern = path.to_str().unwrap();
-
-                let Ok(paths) = glob::glob(pattern) else {
-                    polars_bail!(
-                        ComputeError:
-                        "invalid glob pattern given: {}",
-                        pattern,
-                    )
-                };
-
-                for path in paths {
-                    let path = path.map_err(to_compute_err)?;
-                    if !path.is_dir() && path.metadata()?.len() > 0 {
-                        out_paths.push(PlPath::Local(path.into()));
-                    }
-                }
             } else {
-                hive_idx_tracker.update(0, path_idx)?;
-                out_paths.push(PlPath::Local(path.into()));
+                let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
+
+                if glob && i.is_some() {
+                    hive_idx_tracker.update(0, path_idx)?;
+
+                    let pattern = path.to_str().unwrap();
+
+                    let Ok(paths) = glob::glob(pattern) else {
+                        polars_bail!(
+                            ComputeError:
+                            "invalid glob pattern given: {}",
+                            pattern,
+                        )
+                    };
+
+                    for path in paths {
+                        let path = path.map_err(to_compute_err)?;
+                        if !path.is_dir() && path.metadata()?.len() > 0 {
+                            out_paths.push(PlPath::Local(path.into()));
+                        }
+                    }
+                } else {
+                    hive_idx_tracker.update(0, path_idx)?;
+                    out_paths.push(PlPath::Local(path.into()));
+                }
             }
+
+            out_paths
+                .paths
+                .get_mut(out_paths_prev_len..)
+                .unwrap()
+                .sort();
         }
     }
 
@@ -529,16 +542,19 @@ pub fn expand_paths_hive(
 
     /// Wrapper around `Vec<PathBuf>` that also tracks file extensions, so that
     /// we don't have to traverse the entire list again to validate extensions.
-    struct OutPaths<'a> {
+    struct OutPaths<'a, F: Fn(&PlPath) -> bool> {
         paths: Vec<PlPath>,
         exts: [Option<(PlSmallStr, usize)>; 2],
         current_idx: usize,
-        hidden_file_prefix: &'a [PlSmallStr],
+        is_hidden_file: &'a F,
     }
 
-    impl OutPaths<'_> {
+    impl<F> OutPaths<'_, F>
+    where
+        F: Fn(&PlPath) -> bool,
+    {
         fn push(&mut self, value: PlPath) {
-            if self.is_hidden_file(&value) {
+            if (self.is_hidden_file)(&value) {
                 return;
             }
 
@@ -552,12 +568,11 @@ pub fn expand_paths_hive(
         fn extend(&mut self, values: impl IntoIterator<Item = PlPath>) {
             let current_idx = &mut self.current_idx;
             let exts = &mut self.exts;
-            let hidden_file_prefix = self.hidden_file_prefix;
 
             self.paths.extend(
                 values
                     .into_iter()
-                    .filter(|x| !Self::is_hidden_file_impl(hidden_file_prefix, x))
+                    .filter(|x| !(self.is_hidden_file)(x))
                     .inspect(|x| {
                         Self::update_ext_status(current_idx, exts, x.as_ref());
                     }),
@@ -566,19 +581,6 @@ pub fn expand_paths_hive(
 
         fn extend_from_slice(&mut self, values: &[PlPath]) {
             self.extend(values.iter().cloned())
-        }
-
-        fn is_hidden_file(&self, value: &PlPath) -> bool {
-            Self::is_hidden_file_impl(self.hidden_file_prefix, value)
-        }
-
-        fn is_hidden_file_impl(hidden_file_prefix: &[PlSmallStr], value: &PlPath) -> bool {
-            hidden_file_prefix.iter().any(|prefix| {
-                value
-                    .as_ref()
-                    .file_name()
-                    .is_some_and(|name| name.to_string_lossy().starts_with(prefix.as_str()))
-            })
         }
 
         fn update_ext_status(

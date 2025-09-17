@@ -749,7 +749,7 @@ def test_scan_ignore_hidden_files_21762(
     root = f"{tmp_path}/**/*.ext" if use_glob else tmp_path
 
     assert_frame_equal(
-        scan(root).sort("*"),
+        scan(root),
         pl.LazyFrame(
             {
                 "rel_path": [
@@ -771,7 +771,7 @@ def test_scan_ignore_hidden_files_21762(
     )
 
     assert_frame_equal(
-        scan(root, hidden_file_prefix=".").sort("*"),
+        scan(root, hidden_file_prefix="."),
         pl.LazyFrame(
             {
                 "rel_path": [
@@ -790,7 +790,7 @@ def test_scan_ignore_hidden_files_21762(
     )
 
     assert_frame_equal(
-        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        scan(root, hidden_file_prefix=[".", "_"]),
         pl.LazyFrame(
             {
                 "rel_path": [
@@ -809,7 +809,7 @@ def test_scan_ignore_hidden_files_21762(
     root = tmp_path / "*.ext"
 
     assert_frame_equal(
-        scan(root).sort("*"),
+        scan(root),
         pl.LazyFrame(
             {
                 "rel_path": [
@@ -823,7 +823,7 @@ def test_scan_ignore_hidden_files_21762(
     )
 
     assert_frame_equal(
-        scan(root, hidden_file_prefix=".").sort("*"),
+        scan(root, hidden_file_prefix="."),
         pl.LazyFrame(
             {
                 "rel_path": [
@@ -836,7 +836,7 @@ def test_scan_ignore_hidden_files_21762(
     )
 
     assert_frame_equal(
-        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        scan(root, hidden_file_prefix=[".", "_"]),
         pl.LazyFrame(
             {
                 "rel_path": [
