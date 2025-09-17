@@ -198,13 +198,12 @@ def lit(
                 time_unit = dtype_name[len("timedelta64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Duration(time_unit))
 
-        # handle numeric values
-        if isinstance(value, np.generic):
-            dtype = DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE.get(
-                (value.dtype.kind, value.dtype.itemsize)
-            )
-            if dtype is not None:
-                return lit(value, dtype=dtype)
+        # handle known mappable values
+        dtype = DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE.get(
+            (value.dtype.kind, value.dtype.itemsize)
+        )
+        if dtype is not None:
+            return lit(value, dtype=dtype)
     else:
         item = value
 
