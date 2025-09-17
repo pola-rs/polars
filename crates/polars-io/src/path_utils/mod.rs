@@ -216,8 +216,10 @@ pub fn expand_paths_hive(
     let is_cloud = first_path.as_ref().is_cloud_url();
 
     let is_hidden_file = move |path: &PlPath| {
-        let p = path.to_str();
-        hidden_file_prefix.iter().any(|x| p.starts_with(x.as_str()))
+        let file_name = path.as_ref().file_name();
+        hidden_file_prefix
+            .iter()
+            .any(|x| file_name.starts_with(x.as_str()))
     };
 
     let mut out_paths = OutPaths {
@@ -303,7 +305,7 @@ pub fn expand_paths_hive(
 
                         let cloud_location = &cloud_location;
 
-                        let paths = store
+                        let mut paths = store
                             .try_exec_rebuild_on_err(|store| {
                                 let st = store.clone();
 
@@ -338,6 +340,7 @@ pub fn expand_paths_hive(
                             prefix.push('/')
                         };
 
+                        paths.sort_unstable();
                         (
                             format_path(
                                 &cloud_location.scheme,
@@ -412,37 +415,32 @@ pub fn expand_paths_hive(
                 }
 
                 let glob_start_idx = get_glob_start_idx(path.to_str().as_bytes());
-                let out_paths_prev_len = out_paths.paths.len();
 
-                if glob && glob_start_idx.is_some() {
-                    hive_idx_tracker.update(0, path_idx)?;
-
-                    let iter = crate::pl_async::get_runtime().block_in_place_on(
-                        crate::async_glob(path.to_str(), cloud_options.as_ref()),
-                    )?;
-
-                    if is_cloud {
-                        out_paths.extend(iter.into_iter().map(PlPath::from_string));
-                    } else {
-                        // FORCE_ASYNC, remove leading file:// as not all readers support it.
-                        out_paths.extend(
-                            iter.iter()
-                                .map(|x| &x[7..])
-                                .map(|s| PlPathRef::new(s).into_owned()),
-                        )
-                    }
+                let path = if glob && glob_start_idx.is_some() {
+                    path.clone()
                 } else {
                     let (expand_start_idx, paths) =
                         expand_path_cloud(path.to_str(), cloud_options.as_ref())?;
                     out_paths.extend_from_slice(&paths);
                     hive_idx_tracker.update(expand_start_idx, path_idx)?;
+                    continue;
                 };
 
-                out_paths
-                    .paths
-                    .get_mut(out_paths_prev_len..)
-                    .unwrap()
-                    .sort_unstable();
+                hive_idx_tracker.update(0, path_idx)?;
+
+                let iter = crate::pl_async::get_runtime()
+                    .block_in_place_on(crate::async_glob(path.to_str(), cloud_options.as_ref()))?;
+
+                if is_cloud {
+                    out_paths.extend(iter.into_iter().map(PlPath::from_string));
+                } else {
+                    // FORCE_ASYNC, remove leading file:// as not all readers support it.
+                    out_paths.extend(
+                        iter.iter()
+                            .map(|x| &x[7..])
+                            .map(|s| PlPathRef::new(s).into_owned()),
+                    )
+                }
             }
         }
         #[cfg(not(feature = "cloud"))]
@@ -455,8 +453,6 @@ pub fn expand_paths_hive(
             let path = path.as_ref();
             let path = path.as_local_path().unwrap();
             stack.clear();
-
-            let out_paths_prev_len = out_paths.paths.len();
 
             if path.is_dir() {
                 let path = path.to_path_buf();
@@ -481,6 +477,8 @@ pub fn expand_paths_hive(
 
                     last_err?;
 
+                    paths_scratch.sort_unstable();
+
                     for path in paths_scratch.drain(..) {
                         if path.is_dir() {
                             stack.push_back(path);
@@ -489,39 +487,29 @@ pub fn expand_paths_hive(
                         }
                     }
                 }
-            } else {
-                let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
-                if glob && i.is_some() {
-                    hive_idx_tracker.update(0, path_idx)?;
-
-                    let pattern = path.to_str().unwrap();
-
-                    let Ok(paths) = glob::glob(pattern) else {
-                        polars_bail!(
-                            ComputeError:
-                            "invalid glob pattern given: {}",
-                            pattern,
-                        )
-                    };
-
-                    for path in paths {
-                        let path = path.map_err(to_compute_err)?;
-                        if !path.is_dir() && path.metadata()?.len() > 0 {
-                            out_paths.push(PlPath::Local(path.into()));
-                        }
-                    }
-                } else {
-                    hive_idx_tracker.update(0, path_idx)?;
-                    out_paths.push(PlPath::Local(path.into()));
-                }
+                continue;
             }
 
-            out_paths
-                .paths
-                .get_mut(out_paths_prev_len..)
-                .unwrap()
-                .sort();
+            let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
+
+            if glob && i.is_some() {
+                hive_idx_tracker.update(0, path_idx)?;
+
+                let Ok(paths) = glob::glob(path.to_str().unwrap()) else {
+                    polars_bail!(ComputeError: "invalid glob pattern given")
+                };
+
+                for path in paths {
+                    let path = path.map_err(to_compute_err)?;
+                    if !path.is_dir() && path.metadata()?.len() > 0 {
+                        out_paths.push(PlPath::Local(path.into()));
+                    }
+                }
+            } else {
+                hive_idx_tracker.update(0, path_idx)?;
+                out_paths.push(PlPath::Local(path.into()));
+            }
         }
     }
 
