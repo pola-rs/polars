@@ -1560,4 +1560,5 @@ def test_group_by_first_nondet_24278() -> None:
 def test_group_by_cum_sum_key_24489() -> None:
     df = pl.LazyFrame({"x": [1, 2]})
     out = df.group_by((pl.col.x > 1).cum_sum()).agg().collect()
-    assert_frame_equal(out, pl.DataFrame({"x": [0, 1]}), check_row_order=False)
+    expected = pl.DataFrame({"x": [0, 1]}, schema={"x": pl.UInt32})
+    assert_frame_equal(out, expected, check_row_order=False)
