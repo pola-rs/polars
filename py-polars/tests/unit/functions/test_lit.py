@@ -202,7 +202,7 @@ def test_datetime_ms(value: datetime) -> None:
     assert result == value.replace(microsecond=expected_microsecond)
 
 
-def test_np_datetime64() -> None:
+def test_np_datetime64_as_date_24521() -> None:
     result = pl.select(pl.lit(np.datetime64("2020-12-27")))
     series = result.get_column("literal")
     assert series.dtype == pl.Date
