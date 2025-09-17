@@ -422,7 +422,9 @@ pub fn expand_paths_hive(
                         // Search after offset to prevent matching `.s3.amazonaws.com` (legacy global endpoint URL without region).
                         let region_end = offset + after_scheme[offset..].find(".amazonaws.com/")?;
 
-                        if after_scheme[..region_end].contains('/') {
+                        if after_scheme[..region_end].contains('/')
+                            || after_scheme[region_end + 15..].contains('?')
+                        {
                             return None;
                         }
 

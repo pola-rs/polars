@@ -60,6 +60,7 @@ def _is_aws_cloud(*, scheme: str, first_scan_path: str) -> bool:
         < first_scan_path.find(".s3.")
         < first_scan_path.find(".amazonaws.com/")
         < first_scan_path[len(scheme) + 3 :].find("/")
+        and "?" not in first_scan_path
     )
 
 
