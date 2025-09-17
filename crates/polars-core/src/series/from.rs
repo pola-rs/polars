@@ -72,6 +72,8 @@ impl Series {
             UInt64 => UInt64Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-i128")]
             Int128 => Int128Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => UInt128Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-date")]
             Date => Int32Chunked::from_chunks(name, chunks)
                 .into_date()
@@ -218,6 +220,10 @@ impl Series {
             ArrowDataType::UInt16 => Ok(UInt16Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt32 => Ok(UInt32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt64 => Ok(UInt64Chunked::from_chunks(name, chunks).into_series()),
+            ArrowDataType::UInt128 => feature_gated!(
+                "dtype-u128",
+                Ok(UInt128Chunked::from_chunks(name, chunks).into_series())
+            ),
             #[cfg(feature = "dtype-i8")]
             ArrowDataType::Int8 => Ok(Int8Chunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-i16")]

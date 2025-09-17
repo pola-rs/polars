@@ -164,6 +164,8 @@ impl DataType {
             ArrowDataType::UInt16 => DataType::UInt16,
             ArrowDataType::UInt32 => DataType::UInt32,
             ArrowDataType::UInt64 => DataType::UInt64,
+            #[cfg(feature = "dtype-u128")]
+            ArrowDataType::UInt128 => DataType::UInt128,
             ArrowDataType::Int8 => DataType::Int8,
             ArrowDataType::Int16 => DataType::Int16,
             ArrowDataType::Int32 => DataType::Int32,

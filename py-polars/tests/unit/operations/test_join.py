@@ -1446,6 +1446,15 @@ def test_join_preserve_order_full() -> None:
         ["Int16", "UInt8", "Int16"],
         ["Int16", "UInt8", "Int8"],
 
+        ["UInt128", "UInt128", "UInt64"],
+        ["UInt128", "UInt128", "UInt32"],
+        ["UInt128", "UInt128", "UInt16"],
+        ["UInt128", "UInt128", "UInt8"],
+        ["UInt128", "UInt64", "UInt128"],
+        ["UInt128", "UInt32", "UInt128"],
+        ["UInt128", "UInt16", "UInt128"],
+        ["UInt128", "UInt8", "UInt128"],
+
         ["UInt64", "UInt64", "UInt32"],
         ["UInt64", "UInt64", "UInt16"],
         ["UInt64", "UInt64", "UInt8"],

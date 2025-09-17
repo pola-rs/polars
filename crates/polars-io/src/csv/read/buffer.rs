@@ -58,6 +58,13 @@ impl PrimitiveParser for UInt64Type {
         atoi_simd::parse_skipped(bytes).ok()
     }
 }
+#[cfg(feature = "dtype-u128")]
+impl PrimitiveParser for UInt128Type {
+    #[inline]
+    fn parse(bytes: &[u8]) -> Option<u128> {
+        atoi_simd::parse_skipped(bytes).ok()
+    }
+}
 #[cfg(feature = "dtype-i8")]
 impl PrimitiveParser for Int8Type {
     #[inline]
@@ -516,6 +523,8 @@ pub fn init_buffers(
                 &DataType::UInt16 => Buffer::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
+                #[cfg(feature = "dtype-u128")]
+                &DataType::UInt128 => Buffer::UInt128(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => {
                     if decimal_comma {
                         Buffer::DecimalFloat32(
@@ -602,6 +611,8 @@ pub enum Buffer {
     UInt16(PrimitiveChunkedBuilder<UInt16Type>),
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
+    #[cfg(feature = "dtype-u128")]
+    UInt128(PrimitiveChunkedBuilder<UInt128Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     /// Stores the Utf8 fields and the total string length seen for that column
@@ -642,6 +653,8 @@ impl Buffer {
             Buffer::UInt16(v) => v.finish().into_series(),
             Buffer::UInt32(v) => v.finish().into_series(),
             Buffer::UInt64(v) => v.finish().into_series(),
+            #[cfg(feature = "dtype-u128")]
+            Buffer::UInt128(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
             Buffer::DecimalFloat32(v, _) => v.finish().into_series(),
@@ -697,6 +710,8 @@ impl Buffer {
             Buffer::UInt16(v) => v.append_null(),
             Buffer::UInt32(v) => v.append_null(),
             Buffer::UInt64(v) => v.append_null(),
+            #[cfg(feature = "dtype-u128")]
+            Buffer::UInt128(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
             Buffer::DecimalFloat32(v, _) => v.append_null(),
@@ -738,6 +753,8 @@ impl Buffer {
             Buffer::UInt16(_) => DataType::UInt16,
             Buffer::UInt32(_) => DataType::UInt32,
             Buffer::UInt64(_) => DataType::UInt64,
+            #[cfg(feature = "dtype-u128")]
+            Buffer::UInt128(_) => DataType::UInt128,
             Buffer::Float32(_) | Buffer::DecimalFloat32(_, _) => DataType::Float32,
             Buffer::Float64(_) | Buffer::DecimalFloat64(_, _) => DataType::Float64,
             Buffer::Utf8(_) => DataType::String,
@@ -842,6 +859,15 @@ impl Buffer {
                 None,
             ),
             UInt64(buf) => <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
+            #[cfg(feature = "dtype-u128")]
+            UInt128(buf) => <PrimitiveChunkedBuilder<UInt128Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
