@@ -223,15 +223,6 @@ class QueryOptFlags:
         self._pyoptflags.comm_subexpr_elim = value
 
     @property
-    def collapse_joins(self) -> bool:
-        """Collapse slower joins with filters into faster joins."""
-        return self._pyoptflags.collapse_joins
-
-    @collapse_joins.setter
-    def collapse_joins(self, value: bool) -> None:
-        self._pyoptflags.collapse_joins = value
-
-    @property
     def check_order_observe(self) -> bool:
         """Do not maintain order if the order would not be observed."""
         return self._pyoptflags.check_order_observe
