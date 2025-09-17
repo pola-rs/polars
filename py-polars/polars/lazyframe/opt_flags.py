@@ -253,7 +253,6 @@ QueryOptFlags {{
     comm_subplan_elim: {self.comm_subplan_elim}
     comm_subexpr_elim: {self.comm_subexpr_elim}
     cluster_with_columns: {self.cluster_with_columns}
-    collapse_joins: {self.collapse_joins}
     check_order_observe: {self.check_order_observe}
     fast_projection: {self.fast_projection}
 
