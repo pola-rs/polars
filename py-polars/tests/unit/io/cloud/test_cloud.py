@@ -3,10 +3,10 @@ from __future__ import annotations
 import contextlib
 from functools import partial
 
-from polars.io.cloud._utils import _is_aws_cloud
 import pytest
 
 import polars as pl
+from polars.io.cloud._utils import _is_aws_cloud
 
 
 @pytest.mark.slow
