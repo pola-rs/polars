@@ -1203,6 +1203,7 @@ def test_from_dicts_infer_integer_types() -> None:
             "c": 2**31 - 1,
             "d": 2**63 - 1,
             "e": 2**127 - 1,
+            "f": 2**128 - 1,
         }
     ]
     result = pl.from_dicts(data).schema
@@ -1213,11 +1214,12 @@ def test_from_dicts_infer_integer_types() -> None:
         "c": pl.Int64,
         "d": pl.Int64,
         "e": pl.Int128,
+        "f": pl.UInt128,
     }
     assert result == expected
 
     with pytest.raises(OverflowError):
-        pl.from_dicts([{"too_big": 2**127}])
+        pl.from_dicts([{"too_big": 2**128}])
 
 
 def test_from_dicts_list_large_int_17006() -> None:

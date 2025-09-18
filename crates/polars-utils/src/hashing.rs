@@ -150,6 +150,14 @@ impl_hash_partition_as_u64!(i16);
 impl_hash_partition_as_u64!(i32);
 impl_hash_partition_as_u64!(i64);
 
+impl DirtyHash for u128 {
+    fn dirty_hash(&self) -> u64 {
+        (*self as u64)
+            .wrapping_mul(RANDOM_ODD)
+            .wrapping_add((*self >> 64) as u64)
+    }
+}
+
 impl DirtyHash for i128 {
     fn dirty_hash(&self) -> u64 {
         (*self as u64)

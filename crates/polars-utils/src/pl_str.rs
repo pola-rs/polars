@@ -161,6 +161,13 @@ impl From<String> for PlSmallStr {
     }
 }
 
+impl From<PlSmallStr> for String {
+    #[inline(always)]
+    fn from(value: PlSmallStr) -> Self {
+        value.to_string()
+    }
+}
+
 impl From<Cow<'_, str>> for PlSmallStr {
     #[inline(always)]
     fn from(value: Cow<str>) -> Self {

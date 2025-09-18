@@ -81,7 +81,6 @@ fn compute_payload_selector(
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let should_coalesce = args.should_coalesce();
 
-    let mut coalesce_idx = 0;
     this.iter_names()
         .map(|c| {
             #[expect(clippy::never_loop)]
@@ -105,8 +104,8 @@ fn compute_payload_selector(
                     } else if args.how == JoinType::Full {
                         // We must keep the right-hand side keycols around for
                         // coalescing.
-                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{coalesce_idx}");
-                        coalesce_idx += 1;
+                        let key_idx = this_key_schema.index_of(c).unwrap();
+                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
                         Some(name)
                     } else {
                         None
@@ -137,17 +136,13 @@ fn compute_payload_selector(
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
         // TODO: don't do string-based column lookups for each dataframe, pre-compute coalesce indices.
-        let mut coalesce_idx = 0;
         df.get_columns()
             .iter()
             .filter_map(|c| {
-                if params.left_key_schema.contains(c.name()) {
+                if let Some(key_idx) = params.left_key_schema.index_of(c.name()) {
                     let other = df
-                        .column(&format_pl_smallstr!(
-                            "__POLARS_COALESCE_KEYCOL{coalesce_idx}"
-                        ))
+                        .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}"))
                         .unwrap();
-                    coalesce_idx += 1;
                     return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
                 }
 

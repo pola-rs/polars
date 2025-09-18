@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import enum
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -200,6 +200,13 @@ def test_datetime_ms(value: datetime) -> None:
     result = pl.select(pl.lit(value, dtype=pl.Datetime("ms")))["literal"][0]
     expected_microsecond = value.microsecond // 1000 * 1000
     assert result == value.replace(microsecond=expected_microsecond)
+
+
+def test_np_datetime64_as_date_24521() -> None:
+    result = pl.select(pl.lit(np.datetime64("2020-12-27")))
+    series = result.get_column("literal")
+    assert series.dtype == pl.Date
+    assert series[0] == date(2020, 12, 27)
 
 
 @pytest.mark.may_fail_cloud  # @cloud-decimal

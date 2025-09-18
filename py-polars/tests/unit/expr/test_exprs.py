@@ -680,7 +680,7 @@ def test_repr_short_expression() -> None:
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
-    expected = "<Expr ['cs.all().len().prefix(length-l…'] at "
+    expected = "<Expr ['cs.all().len().name.prefix(len…'] at "
     assert result == expected
 
 

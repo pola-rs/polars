@@ -212,6 +212,33 @@ pub fn page_iter_to_array(
 
             (nested, out, ptm)
         },
+        (PhysicalType::FixedLenByteArray(16), UInt128) => {
+            let n = 16;
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::FixedSizeBinary(n),
+                fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let (_, values, validity) = array.into_inner();
+                    let values = values.try_transmute().expect(
+                        "this should work since the parquet decoder has alignment constraints",
+                    );
+                    Ok(
+                        PrimitiveArray::<u128>::try_new(dtype.clone(), values, validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
+
+            (nested, array, ptm)
+        },
         (PhysicalType::FixedLenByteArray(16), Int128) => {
             let n = 16;
             let (nested, array, ptm) = PageDecoder::new(

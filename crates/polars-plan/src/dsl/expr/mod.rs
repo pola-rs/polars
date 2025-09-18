@@ -694,10 +694,7 @@ pub enum RenameAliasFn {
     Suffix(PlSmallStr),
     ToLowercase,
     ToUppercase,
-    #[cfg(feature = "python")]
-    Python(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-    Rust(SpecialEq<Arc<RenameAliasRustFn>>),
+    Map(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
 impl RenameAliasFn {
@@ -707,19 +704,7 @@ impl RenameAliasFn {
             Self::Suffix(suffix) => format_pl_smallstr!("{name}{suffix}"),
             Self::ToLowercase => PlSmallStr::from_string(name.to_lowercase()),
             Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
-            #[cfg(feature = "python")]
-            Self::Python(lambda) => {
-                let name = name.as_str();
-                pyo3::marker::Python::with_gil(|py| {
-                    let out: PlSmallStr = lambda
-                        .call1(py, (name,))?
-                        .extract::<std::borrow::Cow<str>>(py)?
-                        .as_ref()
-                        .into();
-                    pyo3::PyResult::<_>::Ok(out)
-                }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map' produced an error: {e}."))?
-            },
-            Self::Rust(f) => f(name)?,
+            Self::Map(f) => f.call(name.clone())?,
         };
         Ok(out)
     }

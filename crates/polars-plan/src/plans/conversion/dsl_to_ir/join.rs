@@ -312,7 +312,7 @@ pub fn resolve_join(
         } else {
             polars_ensure!(
                 ltype == rtype,
-                SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right (and no other type was available to cast to)",
                 lnode.output_name(), ltype, rnode.output_name(), rtype
             )
         }
@@ -421,7 +421,6 @@ fn resolve_join_where(
     if ctxt.opt_flags.eager() {
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
     }
-    ctxt.opt_flags.set(OptFlags::COLLAPSE_JOINS, true);
     check_join_keys(&predicates)?;
     let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
         .map_err(|e| e.context(failed_here!(join left)))?;

@@ -142,12 +142,6 @@ impl LazyFrame {
         self
     }
 
-    /// Toggle collapse joins optimization.
-    pub fn with_collapse_joins(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptFlags::COLLAPSE_JOINS, toggle);
-        self
-    }
-
     /// Check if operations are order dependent and unset maintaining_order if
     /// the order would not be observed.
     pub fn with_check_order(mut self, toggle: bool) -> Self {

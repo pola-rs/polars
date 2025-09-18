@@ -98,6 +98,12 @@ impl Series {
         try_unpack_chunked!(self, DataType::UInt64 => UInt64Chunked)
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::UInt128`]
+    #[cfg(feature = "dtype-u128")]
+    pub fn try_u128(&self) -> Option<&UInt128Chunked> {
+        try_unpack_chunked!(self, DataType::UInt128 => UInt128Chunked)
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Boolean`]
     pub fn try_bool(&self) -> Option<&BooleanChunked> {
         try_unpack_chunked!(self, DataType::Boolean => BooleanChunked)
@@ -276,6 +282,13 @@ impl Series {
     pub fn u64(&self) -> PolarsResult<&UInt64Chunked> {
         self.try_u64()
             .ok_or_else(|| unpack_chunked_err!(self => "UInt64"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::UInt128`]
+    #[cfg(feature = "dtype-u128")]
+    pub fn u128(&self) -> PolarsResult<&UInt128Chunked> {
+        self.try_u128()
+            .ok_or_else(|| unpack_chunked_err!(self => "UInt128"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Boolean`]

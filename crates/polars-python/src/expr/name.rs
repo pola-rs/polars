@@ -1,3 +1,4 @@
+use polars::prelude::PlanCallback;
 use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 
@@ -13,7 +14,7 @@ impl PyExpr {
         self.inner
             .clone()
             .name()
-            .map_udf(PythonObject(lambda))
+            .map(PlanCallback::new_python(PythonObject(lambda)))
             .into()
     }
 
@@ -37,7 +38,7 @@ impl PyExpr {
         self.inner
             .clone()
             .name()
-            .map_fields_udf(PythonObject(name_mapper))
+            .map_fields(PlanCallback::new_python(PythonObject(name_mapper)))
             .into()
     }
 

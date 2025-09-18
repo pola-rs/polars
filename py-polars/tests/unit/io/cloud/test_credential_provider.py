@@ -809,3 +809,79 @@ def test_cache_user_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None
         get_q().collect()
 
     assert user_provider.call_count == 5
+
+
+@pytest.mark.slow
+def test_credential_provider_global_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    import polars as pl
+    import polars.io.cloud.credential_provider._builder
+
+    monkeypatch.setattr(
+        polars.io.cloud.credential_provider._builder,
+        "DEFAULT_CREDENTIAL_PROVIDER",
+        None,
+    )
+
+    provider = Mock(
+        return_value=(
+            {"aws_access_key_id": "...", "aws_secret_access_key": "..."},
+            None,
+        )
+    )
+
+    pl.Config.set_default_credential_provider(provider)
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "...")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "...")
+
+    def get_q() -> pl.LazyFrame:
+        return pl.scan_parquet(
+            "s3://.../...",
+            storage_options={"aws_endpoint_url": "http://localhost:333"},
+        )
+
+    def get_q_disable_cred_provider() -> pl.LazyFrame:
+        return pl.scan_parquet(
+            "s3://.../...",
+            credential_provider=None,
+            storage_options={"aws_endpoint_url": "http://localhost:333"},
+        )
+
+    assert provider.call_count == 0
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert provider.call_count == 2
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q_disable_cred_provider().collect()
+
+    assert provider.call_count == 2
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert provider.call_count == 3
+
+    pl.Config.set_default_credential_provider("auto")
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert provider.call_count == 3
+
+    err_magic = "err_magic_3"
+
+    def raises(*_: None, **__: None) -> None:
+        raise AssertionError(err_magic)
+
+    monkeypatch.setattr(CredentialProviderBuilder, "__init__", raises)
+
+    with pytest.raises(AssertionError, match=err_magic):
+        get_q().collect()
+
+    pl.Config.set_default_credential_provider(None)
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()

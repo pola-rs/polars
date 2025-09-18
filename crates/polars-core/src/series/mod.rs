@@ -790,6 +790,8 @@ impl Series {
                 UInt64 => Ok(self.u64().unwrap().prod_reduce()),
                 #[cfg(feature = "dtype-i128")]
                 Int128 => Ok(self.i128().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-u128")]
+                UInt128 => Ok(self.u128().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {

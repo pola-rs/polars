@@ -91,6 +91,7 @@ pub enum DataType {
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
@@ -216,12 +217,16 @@ impl DataType {
             UInt16 => other.extract::<u16>().is_some(),
             UInt32 => other.extract::<u32>().is_some(),
             UInt64 => other.extract::<u64>().is_some(),
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => other.extract::<u128>().is_some(),
             #[cfg(feature = "dtype-i8")]
             Int8 => other.extract::<i8>().is_some(),
             #[cfg(feature = "dtype-i16")]
             Int16 => other.extract::<i16>().is_some(),
             Int32 => other.extract::<i32>().is_some(),
             Int64 => other.extract::<i64>().is_some(),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => other.extract::<i128>().is_some(),
             _ => false,
         }
     }
@@ -681,6 +686,7 @@ impl DataType {
                 | DataType::UInt16
                 | DataType::UInt32
                 | DataType::UInt64
+                | DataType::UInt128
                 | DataType::Unknown(UnknownKind::Int(_))
         )
     }
@@ -696,7 +702,11 @@ impl DataType {
     pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
-            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
+            DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::UInt128,
         )
     }
 
@@ -793,6 +803,7 @@ impl DataType {
             UInt16 => Scalar::from(u16::MAX),
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
+            UInt128 => Scalar::from(u128::MAX),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -815,6 +826,7 @@ impl DataType {
             UInt16 => Scalar::from(u16::MIN),
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
+            UInt128 => Scalar::from(u128::MIN),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -839,6 +851,7 @@ impl DataType {
             UInt16 => Ok(ArrowDataType::UInt16),
             UInt32 => Ok(ArrowDataType::UInt32),
             UInt64 => Ok(ArrowDataType::UInt64),
+            UInt128 => Ok(ArrowDataType::UInt128),
             Int8 => Ok(ArrowDataType::Int8),
             Int16 => Ok(ArrowDataType::Int16),
             Int32 => Ok(ArrowDataType::Int32),
@@ -1057,6 +1070,7 @@ impl Display for DataType {
             DataType::UInt16 => "u16",
             DataType::UInt32 => "u32",
             DataType::UInt64 => "u64",
+            DataType::UInt128 => "u128",
             DataType::Int8 => "i8",
             DataType::Int16 => "i16",
             DataType::Int32 => "i32",
@@ -1129,6 +1143,7 @@ impl std::fmt::Debug for DataType {
             UInt16 => write!(f, "UInt16"),
             UInt32 => write!(f, "UInt32"),
             UInt64 => write!(f, "UInt64"),
+            UInt128 => write!(f, "UInt128"),
             Int8 => write!(f, "Int8"),
             Int16 => write!(f, "Int16"),
             Int32 => write!(f, "Int32"),

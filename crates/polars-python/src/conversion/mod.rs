@@ -232,6 +232,10 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "UInt64"))?;
                 class.call0()
             },
+            DataType::UInt128 => {
+                let class = pl.getattr(intern!(py, "UInt128"))?;
+                class.call0()
+            },
             DataType::Int128 => {
                 let class = pl.getattr(intern!(py, "Int128"))?;
                 class.call0()
@@ -374,6 +378,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,
                     "UInt64" => DataType::UInt64,
+                    "UInt128" => DataType::UInt128,
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     "Boolean" => DataType::Boolean,
@@ -409,6 +414,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
+            "UInt128" => DataType::UInt128,
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Boolean" => DataType::Boolean,
@@ -945,7 +951,7 @@ impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
-            "zstd" => Some(IpcCompression::ZSTD),
+            "zstd" => Some(IpcCompression::ZSTD(Default::default())),
             v => {
                 return Err(PyValueError::new_err(format!(
                     "ipc `compression` must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",

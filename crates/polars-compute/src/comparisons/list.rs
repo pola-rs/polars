@@ -105,6 +105,7 @@ macro_rules! compare {
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
             PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
+            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
         }
     }};
 }
@@ -204,6 +205,7 @@ macro_rules! compare_broadcast {
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
             PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
+            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
         }
     }};
 }
