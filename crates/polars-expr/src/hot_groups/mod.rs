@@ -83,7 +83,7 @@ pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<d
             DataType::Time => Box::new(SK::<Int64Type>::new(dt, ng)),
 
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(_, _) => Box::new(SK::<Int128Type>::new(dt, ng)),
+            DataType::Decimal(_, _) => Box::new(SK::<Int128Type>::new(dt, ng)),
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
                 with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {

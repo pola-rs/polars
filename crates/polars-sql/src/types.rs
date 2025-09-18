@@ -132,10 +132,10 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         | SQLDataType::BigDecimal(info)
         | SQLDataType::Numeric(info) => match *info {
             ExactNumberInfo::PrecisionAndScale(p, s) => {
-                DataType::NewDecimal(p as usize, s as usize)
+                DataType::Decimal(p as usize, s as usize)
             },
-            ExactNumberInfo::Precision(p) => DataType::NewDecimal(p as usize, 0),
-            ExactNumberInfo::None => DataType::NewDecimal(38, 9),
+            ExactNumberInfo::Precision(p) => DataType::Decimal(p as usize, 0),
+            ExactNumberInfo::None => DataType::Decimal(38, 9),
         },
 
         // ---------------------------------

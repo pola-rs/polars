@@ -311,7 +311,7 @@ pub fn cum_sum_with_init(
         Float32 => cum_sum_numeric(s.f32()?, reverse, init.extract()).into_series(),
         Float64 => cum_sum_numeric(s.f64()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-decimal")]
-        NewDecimal(_precision, scale) => {
+        Decimal(_precision, scale) => {
             use polars_compute::decimal::DEC128_MAX_PREC;
             let ca = s.decimal().unwrap().physical();
             cum_sum_decimal(ca, reverse, init.clone().to_physical().extract())?
@@ -347,7 +347,7 @@ pub fn cum_min_with_init(
             Ok(cum_min_bool(s.bool()?, reverse, init.extract_bool()).into_series())
         },
         #[cfg(feature = "dtype-decimal")]
-        DataType::NewDecimal(precision, scale) => {
+        DataType::Decimal(precision, scale) => {
             let ca = s.decimal().unwrap().physical();
             let out = cum_min_numeric(ca, reverse, init.clone().to_physical().extract())
                 .into_decimal_unchecked(*precision, *scale)
@@ -385,7 +385,7 @@ pub fn cum_max_with_init(
             Ok(cum_max_bool(s.bool()?, reverse, init.extract_bool()).into_series())
         },
         #[cfg(feature = "dtype-decimal")]
-        DataType::NewDecimal(precision, scale) => {
+        DataType::Decimal(precision, scale) => {
             let ca = s.decimal().unwrap().physical();
             let out = cum_max_numeric(ca, reverse, init.clone().to_physical().extract())
                 .into_decimal_unchecked(*precision, *scale)

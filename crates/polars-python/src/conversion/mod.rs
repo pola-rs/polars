@@ -226,7 +226,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Float64"))?;
                 class.call0()
             },
-            DataType::NewDecimal(precision, scale) => {
+            DataType::Decimal(precision, scale) => {
                 let class = pl.getattr(intern!(py, "Decimal"))?;
                 let args = (*precision, *scale);
                 class.call1(args)
@@ -439,7 +439,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
                 let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
                 dec128_verify_prec_scale(precision, scale).map_err(to_py_err)?;
-                DataType::NewDecimal(precision, scale)
+                DataType::Decimal(precision, scale)
             },
             "List" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();

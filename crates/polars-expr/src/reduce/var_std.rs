@@ -22,7 +22,7 @@ pub fn new_var_std_reduction(dtype: DataType, is_std: bool, ddof: u8) -> Box<dyn
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        NewDecimal(_, _) => Box::new(VGR::new(
+        Decimal(_, _) => Box::new(VGR::new(
             dtype,
             VarStdReducer::<Float64Type> {
                 is_std,

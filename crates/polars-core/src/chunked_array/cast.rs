@@ -79,7 +79,7 @@ fn cast_impl_inner(
 ) -> PolarsResult<Series> {
     let chunks = match dtype {
         #[cfg(feature = "dtype-decimal")]
-        DataType::NewDecimal(_, _) => {
+        DataType::Decimal(_, _) => {
             let mut chunks = cast_chunks(chunks, dtype, options)?;
             // @NOTE: We cannot cast here as that will lower the scale.
             for chunk in chunks.iter_mut() {
@@ -113,7 +113,7 @@ fn cast_impl_inner(
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
         #[cfg(feature = "dtype-decimal")]
-        NewDecimal(precision, scale) => out.into_decimal(*precision, *scale)?,
+        Decimal(precision, scale) => out.into_decimal(*precision, *scale)?,
         _ => out,
     };
 
@@ -295,7 +295,7 @@ impl ChunkCast for StringChunked {
                 cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(precision, scale) => {
+            DataType::Decimal(precision, scale) => {
                 let chunks = self.downcast_iter().map(|arr| {
                     polars_compute::cast::binview_to_decimal(&arr.to_binview(), *precision, *scale)
                         .to(ArrowDataType::Int128)

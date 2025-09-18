@@ -103,7 +103,7 @@ pub enum DataType {
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
     /// Meaning max precision is 38.
     #[cfg(feature = "dtype-decimal")]
-    NewDecimal(usize, usize), // (precision, scale), invariant: 1 <= precision <= 38.
+    Decimal(usize, usize), // (precision, scale), invariant: 1 <= precision <= 38.
     /// String data
     String,
     Binary,
@@ -169,7 +169,7 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-duration")]
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
                 #[cfg(feature = "dtype-decimal")]
-                (NewDecimal(p1, s1), NewDecimal(p2, s2)) => (p1, s1) == (p2, s2),
+                (Decimal(p1, s1), Decimal(p2, s2)) => (p1, s1) == (p2, s2),
                 #[cfg(feature = "object")]
                 (Object(lhs), Object(rhs)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
@@ -403,7 +403,7 @@ impl DataType {
             (D::Boolean, dt) | (dt, D::Boolean) => match dt {
                 dt if dt.is_primitive_numeric() => true,
                 #[cfg(feature = "dtype-decimal")]
-                D::NewDecimal(_, _) => true,
+                D::Decimal(_, _) => true,
                 D::String | D::Binary => true,
                 _ => false,
             },
@@ -451,7 +451,7 @@ impl DataType {
             Duration(_) => Int64,
             Time => Int64,
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(_, _) => Int128,
+            Decimal(_, _) => Int128,
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => cats.physical().dtype(),
             #[cfg(feature = "dtype-categorical")]
@@ -654,7 +654,7 @@ impl DataType {
     pub fn is_decimal(&self) -> bool {
         match self {
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(_, _) => true,
+            DataType::Decimal(_, _) => true,
             _ => false,
         }
     }
@@ -855,7 +855,7 @@ impl DataType {
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(precision, scale) => {
+            Decimal(precision, scale) => {
                 assert!(*precision >= 1 && *precision <= 38);
                 Ok(ArrowDataType::Decimal(*precision, *scale))
             },
@@ -974,7 +974,7 @@ impl DataType {
             },
             (DataType::Null, DataType::Null) => Ok(false),
             #[cfg(feature = "dtype-decimal")]
-            (DataType::NewDecimal(p1, s1), DataType::NewDecimal(p2, s2)) => {
+            (DataType::Decimal(p1, s1), DataType::Decimal(p2, s2)) => {
                 Ok((p1, s1) != (p2, s2))
             },
             // We don't allow the other way around, only if our current type is
@@ -1071,7 +1071,7 @@ impl Display for DataType {
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(p, s) => return write!(f, "decimal[{p},{s}]"),
+            DataType::Decimal(p, s) => return write!(f, "decimal[{p},{s}]"),
             DataType::String => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
@@ -1144,7 +1144,7 @@ impl std::fmt::Debug for DataType {
                 }
             },
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(p, s) => write!(f, "Decimal({p}, {s})"),
+            Decimal(p, s) => write!(f, "Decimal({p}, {s})"),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
             List(inner) => write!(f, "List({inner:?})"),

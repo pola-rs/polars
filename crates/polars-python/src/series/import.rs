@@ -213,7 +213,7 @@ impl PySeries {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
                 vec![PrimitiveArray::<i128>::from_vec(out).boxed()],
-                &DataType::Decimal(Some(precision), Some(scale)),
+                &DataType::NewDecimal(precision, scale),
             )
         }))
     }

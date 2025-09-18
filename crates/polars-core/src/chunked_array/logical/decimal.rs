@@ -14,7 +14,7 @@ impl Int128Chunked {
     #[inline]
     pub fn into_decimal_unchecked(self, precision: usize, scale: usize) -> DecimalChunked {
         // SAFETY: no invalid states (from a safety perspective).
-        unsafe { DecimalChunked::new_logical(self, DataType::NewDecimal(precision, scale)) }
+        unsafe { DecimalChunked::new_logical(self, DataType::Decimal(precision, scale)) }
     }
 
     pub fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<DecimalChunked> {
@@ -46,7 +46,7 @@ impl LogicalType for DecimalChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         match self.phys.get_unchecked(i) {
-            Some(v) => AnyValue::NewDecimal(v, self.precision(), self.scale()),
+            Some(v) => AnyValue::Decimal(v, self.precision(), self.scale()),
             None => AnyValue::Null,
         }
     }
@@ -56,7 +56,7 @@ impl LogicalType for DecimalChunked {
         dtype: &DataType,
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
-        if let DataType::NewDecimal(to_prec, to_scale) = dtype {
+        if let DataType::Decimal(to_prec, to_scale) = dtype {
             return Ok(self
                 .with_prec_scale(*to_prec, *to_scale, cast_options.is_strict())?
                 .into_owned()
@@ -64,7 +64,7 @@ impl LogicalType for DecimalChunked {
         }
 
         match dtype {
-            DataType::NewDecimal(to_prec, to_scale) => {
+            DataType::Decimal(to_prec, to_scale) => {
                 return Ok(self
                     .with_prec_scale(*to_prec, *to_scale, cast_options.is_strict())?
                     .into_owned()
@@ -108,14 +108,14 @@ impl LogicalType for DecimalChunked {
 impl DecimalChunked {
     pub fn precision(&self) -> usize {
         match &self.dtype {
-            DataType::NewDecimal(precision, _) => *precision,
+            DataType::Decimal(precision, _) => *precision,
             _ => unreachable!(),
         }
     }
 
     pub fn scale(&self) -> usize {
         match &self.dtype {
-            DataType::NewDecimal(_, scale) => *scale,
+            DataType::Decimal(_, scale) => *scale,
             _ => unreachable!(),
         }
     }
@@ -166,7 +166,7 @@ impl DecimalChunked {
             unary_elementwise(&self.phys, |x| dec128_rescale(x?, old_s, prec, scale))
         };
 
-        let ca = unsafe { DecimalChunked::new_logical(phys, DataType::NewDecimal(prec, scale)) };
+        let ca = unsafe { DecimalChunked::new_logical(phys, DataType::Decimal(prec, scale)) };
         Ok(Cow::Owned(ca))
     }
 

@@ -257,7 +257,7 @@ impl TryFrom<Scalar> for SerializableScalar {
             },
 
             #[cfg(feature = "dtype-decimal")]
-            AnyValue::NewDecimal(v, prec, scale) => Self::Decimal(v, prec, scale),
+            AnyValue::Decimal(v, prec, scale) => Self::Decimal(v, prec, scale),
         };
         Ok(out)
     }

@@ -219,7 +219,7 @@ pub fn prepare_csv_schema(
                     PolarsResult::Ok(fld)
                 },
                 #[cfg(feature = "dtype-decimal")]
-                NewDecimal(_, _) => {
+                Decimal(_, _) => {
                     fields_to_cast.push(fld.clone());
                     fld.coerce(String);
                     PolarsResult::Ok(fld)

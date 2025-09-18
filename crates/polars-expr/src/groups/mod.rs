@@ -83,7 +83,7 @@ pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
             },
 
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(_, _) => {
+            DataType::Decimal(_, _) => {
                 Box::new(single_key::SingleKeyHashGrouper::<Int128Type>::new())
             },
             #[cfg(feature = "dtype-categorical")]

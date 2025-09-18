@@ -17,7 +17,7 @@ pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        NewDecimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
+        Decimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
 
         // For compatibility with the current engine, should probably be an error.
         String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),
@@ -43,7 +43,7 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
             ca.into_series()
         },
         #[cfg(feature = "dtype-decimal")]
-        DataType::NewDecimal(_prec, scale) => {
+        DataType::Decimal(_prec, scale) => {
             let inv_scale_factor = 1.0 / 10u128.pow(*scale as u32) as f64;
             let ca: Float64Chunked = values
                 .into_iter()

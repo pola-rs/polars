@@ -60,7 +60,7 @@ pub fn aexpr_to_column_predicates(
                 continue;
             },
             #[cfg(feature = "dtype-decimal")]
-            D::NewDecimal(_, _) => {
+            D::Decimal(_, _) => {
                 is_sumwise_complete = false;
                 continue;
             },

@@ -193,7 +193,7 @@ impl IRStringFunction {
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal { scale } => mapper.with_dtype(DataType::NewDecimal(DEC128_MAX_PREC, *scale)),
+            ToDecimal { scale } => mapper.with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
             #[cfg(feature = "string_encoding")]
             HexEncode => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]

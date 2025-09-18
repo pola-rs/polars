@@ -906,7 +906,7 @@ pub(super) fn serializer_for<'a>(
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        DataType::NewDecimal(_, scale) => {
+        DataType::Decimal(_, scale) => {
             quote_wrapper!(decimal_serializer, *scale)
         },
         _ => {

@@ -36,7 +36,7 @@ impl StringChunked {
     }
 
     pub fn to_decimal(&self, prec: usize, scale: usize) -> PolarsResult<Series> {
-        self.cast_with_options(&DataType::NewDecimal(prec, scale), CastOptions::NonStrict)
+        self.cast_with_options(&DataType::Decimal(prec, scale), CastOptions::NonStrict)
     }
 }
 
@@ -56,12 +56,12 @@ mod test {
         ];
         let s = StringChunked::from_slice(PlSmallStr::from_str("test"), &vals);
         let s = s.to_decimal_infer(6).unwrap();
-        assert_eq!(s.dtype(), &DataType::NewDecimal(12, 5));
+        assert_eq!(s.dtype(), &DataType::Decimal(12, 5));
         assert_eq!(s.len(), 7);
-        assert_eq!(s.get(0).unwrap(), AnyValue::NewDecimal(100000, 12, 5));
+        assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 12, 5));
         assert_eq!(s.get(1).unwrap(), AnyValue::Null);
-        assert_eq!(s.get(3).unwrap(), AnyValue::NewDecimal(300045, 12, 5));
-        assert_eq!(s.get(4).unwrap(), AnyValue::NewDecimal(-400000, 12, 5));
-        assert_eq!(s.get(6).unwrap(), AnyValue::NewDecimal(525251, 12, 5));
+        assert_eq!(s.get(3).unwrap(), AnyValue::Decimal(300045, 12, 5));
+        assert_eq!(s.get(4).unwrap(), AnyValue::Decimal(-400000, 12, 5));
+        assert_eq!(s.get(6).unwrap(), AnyValue::Decimal(525251, 12, 5));
     }
 }

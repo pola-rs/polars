@@ -506,7 +506,7 @@ impl Series {
         use DataType as D;
         match (self.dtype(), dtype) {
             #[cfg(feature = "dtype-decimal")]
-            (D::Int128, D::NewDecimal(precision, scale)) => {
+            (D::Int128, D::Decimal(precision, scale)) => {
                 let ca = self.i128().unwrap();
                 Ok(ca
                     .clone()
@@ -730,7 +730,7 @@ impl Series {
                 })
             },
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(_, _) => Cow::Owned(self.decimal().unwrap().phys.clone().into_series()),
+            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().phys.clone().into_series()),
             List(_) => match self.list().unwrap().to_physical_repr() {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
@@ -824,7 +824,7 @@ impl Series {
                 .clone()
                 .into_decimal(precision, scale)?
                 .into_series()),
-            DataType::NewDecimal(cur_prec, cur_scale)
+            DataType::Decimal(cur_prec, cur_scale)
                 if scale == *cur_scale && precision >= *cur_prec =>
             {
                 Ok(self)
@@ -1171,23 +1171,23 @@ mod test {
     #[cfg(feature = "dtype-decimal")]
     fn series_append_decimal() {
         let s1 = Series::new("a".into(), &[1.1, 2.3])
-            .cast(&DataType::NewDecimal(38, 2))
+            .cast(&DataType::Decimal(38, 2))
             .unwrap();
         let s2 = Series::new("b".into(), &[3])
-            .cast(&DataType::NewDecimal(38, 0))
+            .cast(&DataType::Decimal(38, 0))
             .unwrap();
 
         {
             let mut s1 = s1.clone();
             s1.append(&s2).unwrap();
             assert_eq!(s1.len(), 3);
-            assert_eq!(s1.get(2).unwrap(), AnyValue::NewDecimal(300, 38, 2));
+            assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 38, 2));
         }
 
         {
             let mut s2 = s2;
             s2.extend(&s1).unwrap();
-            assert_eq!(s2.get(2).unwrap(), AnyValue::NewDecimal(2, 38, 0));
+            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 38, 0));
         }
     }
 

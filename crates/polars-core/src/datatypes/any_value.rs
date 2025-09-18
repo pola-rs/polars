@@ -109,7 +109,7 @@ pub enum AnyValue<'a> {
     BinaryOwned(Vec<u8>),
     /// A 128-bit fixed point decimal number with a precision and scale.
     #[cfg(feature = "dtype-decimal")]
-    NewDecimal(i128, usize, usize),
+    Decimal(i128, usize, usize),
 }
 
 impl AnyValue<'static> {
@@ -127,7 +127,7 @@ impl AnyValue<'static> {
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(unit) => AnyValue::Duration(0, *unit),
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(p, s) => AnyValue::NewDecimal(0, *p, *s),
+            DataType::Decimal(p, s) => AnyValue::Decimal(0, *p, *s),
             _ => AnyValue::Null,
         }
     }
@@ -159,7 +159,7 @@ impl AnyValue<'static> {
             DT::Float32 => AV::Float32(numeric_to_one.into()),
             DT::Float64 => AV::Float64(numeric_to_one.into()),
             #[cfg(feature = "dtype-decimal")]
-            DT::NewDecimal(p, s) => AV::NewDecimal(0, *p, *s),
+            DT::Decimal(p, s) => AV::Decimal(0, *p, *s),
             DT::String => AV::String(""),
             DT::Binary => AV::Binary(&[]),
             DT::BinaryOffset => AV::Binary(&[]),
@@ -266,7 +266,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(_, p, s) => DataType::NewDecimal(*p, *s),
+            Decimal(_, p, s) => DataType::Decimal(*p, *s),
             #[cfg(feature = "object")]
             Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]
@@ -301,7 +301,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(v, _p, s) => {
+            Decimal(v, _p, s) => {
                 if T::is_float() {
                     NumCast::from(dec128_to_f64(*v, *s))
                 } else {
@@ -599,23 +599,23 @@ impl<'a> AnyValue<'a> {
             ),
 
             #[cfg(feature = "dtype-decimal")]
-            (av, DataType::NewDecimal(p, s)) if av.is_integer() => {
+            (av, DataType::Decimal(p, s)) if av.is_integer() => {
                 let int = av.try_extract::<i128>().ok()?;
                 let dec = i128_to_dec128(int, *p, *s)?;
-                AnyValue::NewDecimal(dec, *p, *s)
+                AnyValue::Decimal(dec, *p, *s)
             },
 
             #[cfg(feature = "dtype-decimal")]
-            (av, DataType::NewDecimal(p, s)) if av.is_float() => {
+            (av, DataType::Decimal(p, s)) if av.is_float() => {
                 let f = av.try_extract::<f64>().unwrap();
                 let dec = f64_to_dec128(f, *p, *s)?;
-                AnyValue::NewDecimal(dec, *p, *s)
+                AnyValue::Decimal(dec, *p, *s)
             },
 
             #[cfg(feature = "dtype-decimal")]
-            (AnyValue::NewDecimal(value, _old_p, old_s), DataType::NewDecimal(p, s)) => {
+            (AnyValue::Decimal(value, _old_p, old_s), DataType::Decimal(p, s)) => {
                 let converted = dec128_rescale(*value, *old_s, *p, *s)?;
-                AnyValue::NewDecimal(converted, *p, *s)
+                AnyValue::Decimal(converted, *p, *s)
             },
 
             // to self
@@ -730,7 +730,7 @@ impl<'a> AnyValue<'a> {
             ))),
 
             #[cfg(feature = "dtype-decimal")]
-            Self::NewDecimal(v, _, _) => Self::Int128(v),
+            Self::Decimal(v, _, _) => Self::Int128(v),
         }
     }
 
@@ -847,7 +847,7 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-struct")]
             StructOwned(v) => v.0.hash(state),
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(v, s, p) => {
+            Decimal(v, s, p) => {
                 v.hash(state);
                 s.hash(state);
                 p.hash(state);
@@ -959,14 +959,14 @@ impl<'a> AnyValue<'a> {
                 Duration(l + r, *lu)
             },
             #[cfg(feature = "dtype-decimal")]
-            (NewDecimal(l, lp, ls), NewDecimal(r, rp, rs)) => {
+            (Decimal(l, lp, ls), Decimal(r, rp, rs)) => {
                 if (lp, ls) != (rp, rs) {
                     unimplemented!(
                         "adding decimals with different precisions/scales is not supported here"
                     );
                 }
 
-                NewDecimal(l + r, *lp, *ls)
+                Decimal(l + r, *lp, *ls)
             },
             _ => unimplemented!(),
         }
@@ -1046,7 +1046,7 @@ impl<'a> AnyValue<'a> {
                 unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
             },
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(val, s, p) => NewDecimal(val, s, p),
+            Decimal(val, s, p) => Decimal(val, s, p),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cat, map) => CategoricalOwned(cat, map.clone()),
             #[cfg(feature = "dtype-categorical")]
@@ -1233,7 +1233,7 @@ impl AnyValue<'_> {
                 null_equal,
             ),
             #[cfg(feature = "dtype-decimal")]
-            (NewDecimal(lv, _lp, ls), NewDecimal(rv, _rp, rs)) => dec128_eq(*lv, *ls, *rv, *rs),
+            (Decimal(lv, _lp, ls), Decimal(rv, _rp, rs)) => dec128_eq(*lv, *ls, *rv, *rs),
             #[cfg(feature = "object")]
             (Object(l), Object(r)) => l == r,
             #[cfg(feature = "dtype-array")]
@@ -1382,7 +1382,7 @@ impl PartialOrd for AnyValue<'_> {
                 unimplemented!("ordering for Struct dtype is not supported")
             },
             #[cfg(feature = "dtype-decimal")]
-            (NewDecimal(lv, _lp, ls), NewDecimal(rv, _rp, rs)) => {
+            (Decimal(lv, _lp, ls), Decimal(rv, _rp, rs)) => {
                 Some(dec128_cmp(*lv, *ls, *rv, *rs))
             },
 

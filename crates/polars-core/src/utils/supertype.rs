@@ -468,13 +468,13 @@ pub fn get_supertype_with_options(
                 Some(Struct(new_fields))
             }
             #[cfg(feature = "dtype-decimal")]
-            (NewDecimal(p1, s1), NewDecimal(p2, s2)) => {
-                Some(NewDecimal((*p1).max(*p2), (*s1).max(*s2)))
+            (Decimal(p1, s1), Decimal(p2, s2)) => {
+                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
             },
             #[cfg(feature = "dtype-decimal")]
-            (NewDecimal(_, _), Float32 | Float64) => Some(Float64),
+            (Decimal(_, _), Float32 | Float64) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]
-            (NewDecimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
+            (Decimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
                 use polars_compute::decimal::{i128_to_dec128, DEC128_MAX_PREC};
                 let fits = |v| { i128_to_dec128(v, *prec, *scale).is_some() };
                 let fits_orig_prec_scale = match dt {
@@ -491,9 +491,9 @@ pub fn get_supertype_with_options(
                     _ => unreachable!(),
                 };
                 if fits_orig_prec_scale {
-                    Some(NewDecimal(*prec, *scale))
+                    Some(Decimal(*prec, *scale))
                 } else {
-                    Some(NewDecimal(DEC128_MAX_PREC, *scale))
+                    Some(Decimal(DEC128_MAX_PREC, *scale))
                 }
             }
             _ => None,

@@ -74,7 +74,7 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
         Operator::Divide => left / right,
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(_, _) => left / right,
+            Decimal(_, _) => left / right,
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
             Array(..) => left / right,

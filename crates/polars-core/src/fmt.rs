@@ -392,7 +392,7 @@ impl Debug for Series {
                 format_array!(f, self.duration().unwrap(), &dt, self.name(), "Series")
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(_, _) => {
+            DataType::Decimal(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.decimal().unwrap(), &dt, self.name(), "Series")
             },
@@ -1212,7 +1212,7 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
             #[cfg(feature = "dtype-decimal")]
-            AnyValue::NewDecimal(v, _prec, scale) => fmt_decimal(f, *v, *scale),
+            AnyValue::Decimal(v, _prec, scale) => fmt_decimal(f, *v, *scale),
         }
     }
 }

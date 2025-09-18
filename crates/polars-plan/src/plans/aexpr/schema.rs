@@ -490,8 +490,8 @@ fn get_arithmetic_field(
                     )?)
                 },
                 #[cfg(feature = "dtype-decimal")]
-                (NewDecimal(_, scale_left), NewDecimal(_, scale_right)) => {
-                    NewDecimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
                 (left, right) => try_get_supertype(left, right)?,
             }
@@ -552,8 +552,8 @@ fn get_arithmetic_field(
                     )?)
                 },
                 #[cfg(feature = "dtype-decimal")]
-                (NewDecimal(_, scale_left), NewDecimal(_, scale_right)) => {
-                    NewDecimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
                 (left, right) => try_get_supertype(left, right)?,
             }
@@ -601,8 +601,8 @@ fn get_arithmetic_field(
                     },
                 },
                 #[cfg(feature = "dtype-decimal")]
-                (NewDecimal(_, scale_left), NewDecimal(_, scale_right)) => {
-                    let dtype = NewDecimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
                     left_field.coerce(dtype);
                     return Ok(left_field);
                 },
@@ -756,8 +756,8 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             InvalidOperation: "division with 'String' datatypes is not allowed"
         ),
         #[cfg(feature = "dtype-decimal")]
-        (NewDecimal(_, scale_left), NewDecimal(_, scale_right)) => {
-            NewDecimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+        (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+            Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
         },
         #[cfg(feature = "dtype-u8")]
         (UInt8 | Int8, Float32) => Float32,

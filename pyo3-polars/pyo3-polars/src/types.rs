@@ -465,7 +465,7 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 class.call0()
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(precision, scale) => {
+            DataType::Decimal(precision, scale) => {
                 let class = pl.getattr(intern!(py, "Decimal")).unwrap();
                 let args = (*precision, *scale);
                 class.call1(args)
@@ -683,7 +683,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
                 let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
-                DataType::NewDecimal(precision, scale)
+                DataType::Decimal(precision, scale)
             },
             "List" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();

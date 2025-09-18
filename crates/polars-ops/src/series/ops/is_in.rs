@@ -509,7 +509,7 @@ fn is_in_decimal(
     other: &Series,
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked> {
-    let Some(DataType::NewDecimal(other_precision, other_scale)) = other.dtype().inner_dtype()
+    let Some(DataType::Decimal(other_precision, other_scale)) = other.dtype().inner_dtype()
     else {
         polars_bail!(opq = is_in, ca_in.dtype(), other.dtype());
     };
@@ -651,7 +651,7 @@ pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Bool
         },
         DataType::Null => is_in_null(s, other, nulls_equal),
         #[cfg(feature = "dtype-decimal")]
-        DataType::NewDecimal(_, _) => {
+        DataType::Decimal(_, _) => {
             let ca_in = s.decimal()?;
             is_in_decimal(ca_in, other, nulls_equal)
         },

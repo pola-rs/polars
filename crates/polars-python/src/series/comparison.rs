@@ -173,7 +173,7 @@ macro_rules! impl_decimal {
             fn $name(&self, py: Python<'_>, rhs: PyDecimal) -> PyResult<Self> {
                 let rhs = Series::new(
                     PlSmallStr::from_static("decimal"),
-                    &[AnyValue::NewDecimal(rhs.0, rhs.1, rhs.2)],
+                    &[AnyValue::Decimal(rhs.0, rhs.1, rhs.2)],
                 );
                 py.enter_polars_series(|| self.series.read().$method(&rhs))
             }

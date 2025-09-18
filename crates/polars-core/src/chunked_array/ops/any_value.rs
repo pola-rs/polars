@@ -128,10 +128,10 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             AnyValue::Time(v)
         },
         #[cfg(feature = "dtype-decimal")]
-        DataType::NewDecimal(precision, scale) => {
+        DataType::Decimal(precision, scale) => {
             let arr = &*(arr as *const dyn Array as *const Int128Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::NewDecimal(v, *precision, *scale)
+            AnyValue::Decimal(v, *precision, *scale)
         },
         #[cfg(feature = "object")]
         DataType::Object(_) => {

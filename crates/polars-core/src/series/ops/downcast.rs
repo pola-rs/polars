@@ -151,7 +151,7 @@ impl Series {
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Decimal`]
     #[cfg(feature = "dtype-decimal")]
     pub fn try_decimal(&self) -> Option<&DecimalChunked> {
-        try_unpack_chunked!(self, DataType::NewDecimal(_, _) => DecimalChunked)
+        try_unpack_chunked!(self, DataType::Decimal(_, _) => DecimalChunked)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype list

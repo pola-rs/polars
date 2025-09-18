@@ -121,7 +121,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         },
         AnyValue::Binary(v) => PyBytes::new(py, v).into_bound_py_any(py),
         AnyValue::BinaryOwned(v) => PyBytes::new(py, &v).into_bound_py_any(py),
-        AnyValue::NewDecimal(v, prec, scale) => {
+        AnyValue::Decimal(v, prec, scale) => {
             let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
             let mut buf = DecimalFmtBuffer::new();
             let s = buf.format_dec128(v, scale, false);
@@ -351,7 +351,7 @@ pub(crate) fn py_object_to_any_value(
         if sign > 0 {
             v = -v; // Won't overflow since -i128::MAX > i128::MIN
         }
-        Ok(AnyValue::NewDecimal(v, DEC128_MAX_PREC, scale))
+        Ok(AnyValue::Decimal(v, DEC128_MAX_PREC, scale))
     }
 
     fn get_list(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {

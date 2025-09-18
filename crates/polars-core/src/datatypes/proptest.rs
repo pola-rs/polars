@@ -156,7 +156,7 @@ fn decimal_strategy(
             let scale_strategy = (0_usize..=precision);
             (Just(precision), scale_strategy)
         })
-        .prop_map(|(precision, scale)| DataType::NewDecimal(precision, scale))
+        .prop_map(|(precision, scale)| DataType::Decimal(precision, scale))
 }
 
 fn datetime_strategy() -> impl Strategy<Value = DataType> {

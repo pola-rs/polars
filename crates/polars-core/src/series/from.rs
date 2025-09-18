@@ -92,7 +92,7 @@ impl Series {
                 .into_datetime(*tu, tz.clone())
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
-            NewDecimal(precision, scale) => Int128Chunked::from_chunks(name, chunks)
+            Decimal(precision, scale) => Int128Chunked::from_chunks(name, chunks)
                 .into_decimal_unchecked(*precision, *scale)
                 .into_series(),
             #[cfg(feature = "dtype-array")]

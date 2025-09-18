@@ -65,14 +65,14 @@ impl Series {
         }
         let dtype = if strict {
             match get_first_non_null_dtype(values) {
-                DataType::NewDecimal(mut prec, mut scale) => {
+                DataType::Decimal(mut prec, mut scale) => {
                     for v in values {
-                        if let DataType::NewDecimal(p, s) = v.dtype() {
+                        if let DataType::Decimal(p, s) = v.dtype() {
                             prec = prec.max(p);
                             scale = scale.max(s);
                         }
                     }
-                    DataType::NewDecimal(prec, scale)
+                    DataType::Decimal(prec, scale)
                 },
                 dt => dt,
             }
@@ -138,7 +138,7 @@ impl Series {
                 any_values_to_categorical(values, dt, strict)?
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::NewDecimal(precision, scale) => {
+            DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
             },
             DataType::List(inner) => any_values_to_list(values, inner, strict)?.into_series(),
@@ -515,18 +515,18 @@ fn any_values_to_decimal(
     scale: usize,
     strict: bool,
 ) -> PolarsResult<DecimalChunked> {
-    let target_dtype = DataType::NewDecimal(precision, scale);
+    let target_dtype = DataType::Decimal(precision, scale);
 
     let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new(PlSmallStr::EMPTY, values.len());
     for av in values {
         match av {
             // Allow equal or less scale. We do want to support different scales even in 'strict' mode.
-            AnyValue::NewDecimal(v, p, s) if *s <= scale => {
+            AnyValue::Decimal(v, p, s) if *s <= scale => {
                 if *p <= precision && *s == scale {
                     builder.append_value(*v)
                 } else {
                     match av.strict_cast(&target_dtype) {
-                        Some(AnyValue::NewDecimal(i, _, _)) => builder.append_value(i),
+                        Some(AnyValue::Decimal(i, _, _)) => builder.append_value(i),
                         _ => builder.append_null(),
                     }
                 }
@@ -537,7 +537,7 @@ fn any_values_to_decimal(
                     return Err(invalid_value_error(&target_dtype, av));
                 }
                 match av.strict_cast(&target_dtype) {
-                    Some(AnyValue::NewDecimal(i, _, _)) => builder.append_value(i),
+                    Some(AnyValue::Decimal(i, _, _)) => builder.append_value(i),
                     _ => builder.append_null(),
                 }
             },
