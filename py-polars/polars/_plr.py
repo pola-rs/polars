@@ -6,7 +6,11 @@ import importlib
 import os
 import sys
 
-pkg_version = importlib.metadata.version("polars")
+try:
+    pkg_version = importlib.metadata.version("polars")
+except Exception as _:
+    msg = "could not find Polars' module"
+    raise ImportError(msg) from None
 
 
 def pllts() -> None:
