@@ -36,6 +36,9 @@ async fn main() {
 // --8<-- [start:credential_provider_class]
 // --8<-- [end:credential_provider_class]
 
+// --8<-- [start:credential_provider_class_global_default]
+// --8<-- [end:credential_provider_class_global_default]
+
 // --8<-- [start:credential_provider_custom_func]
 // --8<-- [end:credential_provider_custom_func]
 

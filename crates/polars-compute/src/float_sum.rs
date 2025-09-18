@@ -120,6 +120,24 @@ where
     }
 }
 
+#[cfg(feature = "simd")]
+impl<F> SumBlock<F> for [u128; PAIRWISE_RECURSION_LIMIT]
+where
+    u128: AsPrimitive<F>,
+    F: Float + std::iter::Sum + 'static,
+{
+    fn sum_block_vectorized(&self) -> F {
+        self.iter().map(|x| x.as_()).sum()
+    }
+
+    fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
+        self.iter()
+            .enumerate()
+            .map(|(idx, x)| if mask.get(idx) { x.as_() } else { F::zero() })
+            .sum()
+    }
+}
+
 #[cfg(not(feature = "simd"))]
 impl<T, F> SumBlock<F> for [T; PAIRWISE_RECURSION_LIMIT]
 where

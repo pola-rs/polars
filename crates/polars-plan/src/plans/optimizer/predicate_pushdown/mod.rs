@@ -34,7 +34,6 @@ mod inner {
         pub(super) verbose: bool,
         pub(super) block_at_cache: bool,
         nodes_scratch: UnitVec<Node>,
-        #[expect(unused)]
         pub(super) new_streaming: bool,
         // Controls pushing filters past fallible projections
         pub(super) maintain_errors: bool,
@@ -480,6 +479,7 @@ impl PredicatePushDown<'_> {
                 schema,
                 options,
                 acc_predicates,
+                self.new_streaming,
             ),
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {

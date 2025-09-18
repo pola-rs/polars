@@ -396,6 +396,16 @@ class UInt64(UnsignedIntegerType):
     """64-bit unsigned integer type."""
 
 
+class UInt128(UnsignedIntegerType):
+    """128-bit unsigned integer type.
+
+    .. warning::
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
+    """
+
+
 class Float32(FloatType):
     """32-bit floating point type."""
 

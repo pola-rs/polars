@@ -27,7 +27,13 @@ load_profile(
 
 # Data type groups
 SIGNED_INTEGER_DTYPES = [pl.Int8(), pl.Int16(), pl.Int32(), pl.Int64(), pl.Int128()]
-UNSIGNED_INTEGER_DTYPES = [pl.UInt8(), pl.UInt16(), pl.UInt32(), pl.UInt64()]
+UNSIGNED_INTEGER_DTYPES = [
+    pl.UInt8(),
+    pl.UInt16(),
+    pl.UInt32(),
+    pl.UInt64(),
+    pl.UInt128(),
+]
 INTEGER_DTYPES = SIGNED_INTEGER_DTYPES + UNSIGNED_INTEGER_DTYPES
 FLOAT_DTYPES = [pl.Float32(), pl.Float64()]
 NUMERIC_DTYPES = INTEGER_DTYPES + FLOAT_DTYPES
