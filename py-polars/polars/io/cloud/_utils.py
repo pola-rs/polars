@@ -63,7 +63,7 @@ def _is_aws_cloud(*, scheme: str, first_scan_path: str) -> bool:
 
         if (
             first_scan_path.find("/", len(scheme) + 3, region_end) > 0
-            or first_scan_path.find("?", region_end + 15) > 0
+            or "?" in first_scan_path
         ):
             return False
 

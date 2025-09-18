@@ -423,9 +423,7 @@ pub fn expand_paths_hive(
                         let region_end = offset + after_scheme[offset..].find(".amazonaws.com/")?;
 
                         // Do not convert if '?' (this can be query parameters for AWS presigned URLs).
-                        if after_scheme[..region_end].contains('/')
-                            || after_scheme[region_end + 15..].contains('?')
-                        {
+                        if after_scheme[..region_end].contains('/') || after_scheme.contains('?') {
                             return None;
                         }
 
