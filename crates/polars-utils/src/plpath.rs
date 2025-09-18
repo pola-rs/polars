@@ -411,9 +411,15 @@ mod tests {
             (
                 p.cloud_scheme(),
                 p.cloud_scheme().map(|x| x.as_str()),
-                p.to_str()
+                p.to_str(),
+                p.as_ref().strip_scheme(),
             ),
-            (Some(CloudScheme::File), Some("file"), "file:///home/user")
+            (
+                Some(CloudScheme::File),
+                Some("file"),
+                "file:///home/user",
+                "/home/user"
+            )
         );
 
         let p = PlPath::new("file:/home/user");
@@ -421,12 +427,14 @@ mod tests {
             (
                 p.cloud_scheme(),
                 p.cloud_scheme().map(|x| x.as_str()),
-                p.to_str()
+                p.to_str(),
+                p.as_ref().strip_scheme(),
             ),
             (
                 Some(CloudScheme::FileNoHostname),
                 Some("file"),
-                "file:/home/user"
+                "file:/home/user",
+                "/home/user"
             )
         );
     }
