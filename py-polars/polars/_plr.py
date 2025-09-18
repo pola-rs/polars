@@ -9,19 +9,19 @@ import sys
 pkg_version = importlib.metadata.version("polars")
 
 
-def pllts(*, force: bool) -> None:
+def pllts() -> None:
     import _polars_lts_cpu._polars_lts_cpu as plr
 
     sys.modules[__name__] = plr
 
 
-def pl64(*, force: bool) -> None:
+def pl64() -> None:
     import _polars64._polars64 as plr
 
     sys.modules[__name__] = plr
 
 
-def pl32(*, force: bool) -> None:
+def pl32() -> None:
     import _polars32._polars32 as plr
 
     sys.modules[__name__] = plr
