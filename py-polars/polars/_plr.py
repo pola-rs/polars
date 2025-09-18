@@ -33,11 +33,7 @@ else:
     _force = os.environ.get("POLARS_FORCE_PKG")
     _prefer = os.environ.get("POLARS_PREFER_PKG")
 
-    pkgs = {
-        "lts": pllts,
-        "64": pl64,
-        "32": pl32
-    }
+    pkgs = {"lts": pllts, "64": pl64, "32": pl32}
 
     if _force is not None:
         try:
