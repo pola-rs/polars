@@ -63,11 +63,7 @@ impl PlCloudPath {
 
 impl PlCloudPathRef<'_> {
     pub fn new<'a>(uri: &'a str) -> Option<PlCloudPathRef<'a>> {
-        if let Some(scheme) = CloudScheme::from_uri(uri) {
-            return Some(PlCloudPathRef { scheme, uri });
-        }
-
-        None
+        CloudScheme::from_uri(uri).map(|scheme| PlCloudPathRef { scheme, uri })
     }
 
     pub fn into_owned(self) -> PlCloudPath {
@@ -259,10 +255,10 @@ impl<'a> PlPathRef<'a> {
 
     pub fn new(uri: &'a str) -> Self {
         if let Some(scheme) = CloudScheme::from_uri(uri) {
-            return Self::Cloud(PlCloudPathRef { scheme, uri });
+            Self::Cloud(PlCloudPathRef { scheme, uri })
+        } else {
+            Self::from_local_path(Path::new(uri))
         }
-
-        Self::from_local_path(Path::new(uri))
     }
 
     pub fn into_owned(self) -> PlPath {
