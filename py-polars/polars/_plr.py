@@ -2,23 +2,26 @@
 # bit of trickery here to allow overwriting it with other function pointers.
 
 import builtins
+import importlib
 import os
 import sys
 
+pkg_version = importlib.metadata.version("polars")
 
-def pllts() -> None:
+
+def pllts(*, force: bool) -> None:
     import _polars_lts_cpu._polars_lts_cpu as plr
 
     sys.modules[__name__] = plr
 
 
-def pl64() -> None:
+def pl64(*, force: bool) -> None:
     import _polars64._polars64 as plr
 
     sys.modules[__name__] = plr
 
 
-def pl32() -> None:
+def pl32(*, force: bool) -> None:
     import _polars32._polars32 as plr
 
     sys.modules[__name__] = plr
@@ -38,6 +41,10 @@ else:
     if _force is not None:
         try:
             pkgs[_force]()
+
+            if sys.modules[__name__].__version__ != pkg_version:
+                msg = f"Polars Rust module for '{_force}' ({sys.modules[__name__].__version__}) did not match version of Python package '{pkg_version}'"
+                raise ImportError(msg)
         except KeyError:
             msg = f"Invalid value for `POLARS_FORCE_PKG` variable: '{_force}'"
             raise ValueError(msg) from None
@@ -50,10 +57,23 @@ else:
                 msg = f"Invalid value for `POLARS_PREFER_PKG` variable: '{_prefer}'"
                 raise ValueError(msg) from None
 
-        for i, pkg in enumerate(preference):
+        for pkg in preference:
             try:
                 pkg()
+
+                if sys.modules[__name__].__version__ != pkg_version:
+                    import warnings
+
+                    warnings.warn(
+                        f"Polars' Rust module version '{sys.modules[__name__].__version__}' did not match version of Python package '{pkg_version}'",
+                        ImportWarning,
+                        stacklevel=2,
+                    )
+                    continue
+
                 break
             except ImportError:
-                if i == len(preference) - 1:
-                    raise
+                pass
+        else:
+            msg = "could not find Polars' Rust module"
+            raise ImportError(msg)
