@@ -224,7 +224,7 @@ impl ApplyExpr {
 
     // Fast-path when every AggState is a LiteralScalar. This path avoids calling aggregated() or
     // groups(), and returns a LiteralScalar, on the implicit condition that the function is pure.
-    fn apply_all_literal<'a>(
+    fn apply_all_literal_elementwise<'a>(
         &self,
         mut acs: Vec<AggregationContext<'a>>,
     ) -> PolarsResult<AggregationContext<'a>> {
@@ -266,14 +266,14 @@ impl ApplyExpr {
             }
 
             if matches!(ac.state, AggState::AggregatedList(_)) {
-                debug_assert!(must_aggregate);
-
                 if let Some(p) = previous {
                     ac.groups().check_lengths(p)?;
                 }
                 previous = Some(ac.groups());
             }
         }
+
+        // At this stage, we do not have both AggregatedList and NotAggregated ACs
 
         // The first non-LiteralScalar AC will be used as the base AC to retain the context
         let base_ac_idx = acs.iter().position(|ac| !ac.is_literal()).unwrap();
@@ -467,32 +467,59 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             let acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            // Implementation dispatch:
-            // The current implementation of `apply_multiple_elementwise` requires the
-            // multiple inputs to have a compatible data layout as it invokes `flat_naive()`.
-            // Compatible means matching as-is, or matching after aggregation,
-            // or matching after an implicit broadcast by the function.
-
-            // The dispatch logic between the implementations depends on the combination of aggstates:
-            // - Any presence of LiteralScalar is immaterial as it gets broadcasted in the UDF.
-            // - Combination of AggregatedScalar and AggregatedList => NOT allowed for elementwise.
-            // - Combination of AggregatedScalar and NotAggregated => NOT allowed for elementwise.
-            // - Any other combination => allowed for elementwise, but aggregated() on NotAggregated
-            //   is to be avoided when we are dealing with overlapping (e.g., rolling) groups.
-
-            // Consequently, these may follow the elementwise path (not exhaustive):
-            // - All AggregatedScalar
-            // - A combination of AggregatedList(s) and NotAggregated(s)
-            // - Either of the above with or without LiteralScalar
-
-            // The strategy for NotAggregated is layered, in order of preference:
-            // - Elementwise without calling aggregated()
-            // - Elementwise with calling aggregated(), as long as there are no overlapping groups
-            // - Group_aware otherwise
-
             match self.flags.is_elementwise() {
                 false => self.apply_multiple_group_aware(acs, df),
                 true => {
+                    // Implementation dispatch:
+                    // The current implementation of `apply_multiple_elementwise` requires the
+                    // multiple inputs to have a compatible data layout as it invokes `flat_naive()`.
+                    // Compatible means matching as-is, or possibly matching after aggregation,
+                    // or matching after an implicit broadcast by the function.
+
+                    // The dispatch logic between the implementations depends on the combination of aggstates:
+                    // - Any presence of LiteralScalar is immaterial as it gets broadcasted in the UDF.
+                    // - Combination of AggregatedScalar and AggregatedList => NOT compatible.
+                    // - Combination of AggregatedScalar and NotAggregated => NOT compatible.
+                    // - Any other combination => comptable, and thereforee allowed for elementwise.
+                    //   In this case, aggregated() on NotAggregated may be required; however, it can be
+                    //   prohibitively memory expensive when dealing with overlapping (e.g., rolling) groups,
+                    //   in which case we fall-back to group_aware.
+
+                    // Consequently, these may follow the elementwise path (not exhaustive):
+                    // - All AggregatedScalar
+                    // - A combination of AggregatedList(s) and NotAggregated(s) without expensive aggregation.
+                    // - Either of the above with or without LiteralScalar
+
+                    // Visually, in the case of 2 aggstates:
+                    // Legend:
+                    // - el = elementwise, no need to aggregate() NotAgg
+                    // - el + agg = elementwise, but must aggregate() NotAgg
+                    // - ga = group_aware
+                    // - alit = all_literal
+                    // - ~ = same a smirror pair (symmetric)
+                    //
+                    //              | AggList | NotAgg  | AggScalar | LitScalar
+                    //   --------------------------------------------------------
+                    //    AggList   |    el   | depends |    ga     |     el
+                    //    NotAgg    |    ~    | depends |    ga     |     el
+                    //    AggScalar |    ~    |    ~    |    el     |     el
+                    //    LitScalar |    ~    |    ~    |     ~     |    alit
+
+                    // In case it depends, extending to any combination of multiple aggstates
+                    // (a) Multiple NotAggs, w/o AggList
+                    //
+                    //                   | !has_rolling | has_rolling
+                    //   -------------------------------------------------
+                    //    groups match   |      el      |     el
+                    //    groups_diverge |    el+agg    |     ga
+                    //
+                    // (b) Multiple NotAggs, with at least 1 AggList
+                    //
+                    //                   | !has_rolling | has_rolling
+                    //   -------------------------------------------------
+                    //    groups match   |    el+agg    |     ga
+                    //    groups diverge |    el+agg    |     ga
+
                     // Collect statistics on input aggstates
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
@@ -523,20 +550,20 @@ impl PhysicalExpr for ApplyExpr {
                     }
 
                     let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
-                    let only_not_agg = has_not_agg && !has_agg_list && !has_agg_scalar;
+                    let elementwise_must_aggregate =
+                        has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
 
                     if all_literal {
-                        self.apply_all_literal(acs)
-                    } else if only_not_agg && !not_agg_groups_may_diverge {
-                        self.apply_multiple_elementwise(acs, false)
+                        // Fast path
+                        self.apply_all_literal_elementwise(acs)
                     } else if has_agg_scalar && (has_agg_list || has_not_agg) {
                         // Not compatible
                         self.apply_multiple_group_aware(acs, df)
-                    } else if has_not_agg_with_rolling_groups {
+                    } else if elementwise_must_aggregate && has_not_agg_with_rolling_groups {
                         // Compatible but calling aggregated() is too expensive
                         self.apply_multiple_group_aware(acs, df)
                     } else {
-                        self.apply_multiple_elementwise(acs, true)
+                        self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
                     }
                 },
             }

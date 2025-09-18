@@ -497,6 +497,9 @@ impl GroupsType {
     }
 
     pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
+        if std::ptr::eq(self, other) {
+            return Ok(());
+        }
         polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
             a.len() == b.len()
         }), ComputeError: "expressions must have matching group lengths");
