@@ -1382,9 +1382,7 @@ impl PartialOrd for AnyValue<'_> {
                 unimplemented!("ordering for Struct dtype is not supported")
             },
             #[cfg(feature = "dtype-decimal")]
-            (Decimal(lv, _lp, ls), Decimal(rv, _rp, rs)) => {
-                Some(dec128_cmp(*lv, *ls, *rv, *rs))
-            },
+            (Decimal(lv, _lp, ls), Decimal(rv, _rp, rs)) => Some(dec128_cmp(*lv, *ls, *rv, *rs)),
 
             (_, _) => {
                 unimplemented!(

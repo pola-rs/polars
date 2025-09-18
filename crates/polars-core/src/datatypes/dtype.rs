@@ -974,9 +974,7 @@ impl DataType {
             },
             (DataType::Null, DataType::Null) => Ok(false),
             #[cfg(feature = "dtype-decimal")]
-            (DataType::Decimal(p1, s1), DataType::Decimal(p2, s2)) => {
-                Ok((p1, s1) != (p2, s2))
-            },
+            (DataType::Decimal(p1, s1), DataType::Decimal(p2, s2)) => Ok((p1, s1) != (p2, s2)),
             // We don't allow the other way around, only if our current type is
             // null and the schema isn't we allow it.
             (DataType::Null, _) => Ok(true),

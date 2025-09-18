@@ -509,8 +509,7 @@ fn is_in_decimal(
     other: &Series,
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked> {
-    let Some(DataType::Decimal(other_precision, other_scale)) = other.dtype().inner_dtype()
-    else {
+    let Some(DataType::Decimal(other_precision, other_scale)) = other.dtype().inner_dtype() else {
         polars_bail!(opq = is_in, ca_in.dtype(), other.dtype());
     };
     let prec = ca_in.precision().max(*other_precision);
