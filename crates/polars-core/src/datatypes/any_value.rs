@@ -210,6 +210,92 @@ impl AnyValue<'static> {
             DT::Unknown(_) => unreachable!(),
         }
     }
+
+    pub fn lossless_cast(&self, dtype: &DataType) -> Option<Self> {
+        Some(match self {
+            Self::Null => Self::Null,
+            Self::Int8(v) => match dtype {
+                DataType::Int8 => Self::Int8(*v),
+                DataType::Int16 => Self::Int16(*v as i16),
+                DataType::Int32 => Self::Int32(*v as i32),
+                DataType::Int64 => Self::Int64(*v as i64),
+                DataType::Int128 => Self::Int128(*v as i128),
+                DataType::UInt8 if *v > 0 => Self::UInt8(*v as u8),
+                DataType::UInt16 if *v > 0 => Self::UInt16(*v as u16),
+                DataType::UInt32 if *v > 0 => Self::UInt32(*v as u32),
+                DataType::UInt64 if *v > 0 => Self::UInt64(*v as u64),
+                DataType::UInt128 if *v > 0 => Self::UInt128(*v as u128),
+
+                _ => return None,
+            },
+
+            Self::Date(v) => match dtype {
+                DataType::Date => Self::Date(*v),
+                DataType::Datetime(tu, None) => {
+                    let conversion = match tu {
+                        TimeUnit::Nanoseconds => NS_IN_DAY,
+                        TimeUnit::Microseconds => US_IN_DAY,
+                        TimeUnit::Milliseconds => MS_IN_DAY,
+                    };
+
+                    Self::DatetimeOwned((*v as i64).checked_mul(conversion)?, *tu, None)
+                },
+
+                _ => return None,
+            },
+
+            Self::DatetimeOwned(v, from_tu, None) | Self::Datetime(v, from_tu, None) => match dtype
+            {
+                DataType::Datetime(to_tu, None) => {
+                    use TimeUnit as TU;
+                    let value = match (from_tu, to_tu) {
+                        (TU::Nanoseconds, TU::Nanoseconds)
+                        | (TU::Microseconds, TU::Microseconds)
+                        | (TU::Milliseconds, TU::Milliseconds) => *v,
+
+                        (TU::Microseconds, TU::Milliseconds)
+                        | (TU::Nanoseconds, TU::Microseconds) => {
+                            if *v % 1_000 != 0 {
+                                return None;
+                            }
+
+                            *v / 1_000
+                        },
+                        (TU::Nanoseconds, TU::Milliseconds) => {
+                            if *v % 1_000_000 != 0 {
+                                return None;
+                            }
+
+                            *v / 1_000_000
+                        },
+
+                        (TU::Microseconds, TU::Nanoseconds)
+                        | (TU::Milliseconds, TU::Microseconds) => v.checked_mul(1_000)?,
+                        (TU::Milliseconds, TU::Nanoseconds) => v.checked_mul(1_000_000)?,
+                    };
+
+                    Self::DatetimeOwned(value, *to_tu, None)
+                },
+
+                DataType::Date => {
+                    let conversion = match from_tu {
+                        TimeUnit::Nanoseconds => NS_IN_DAY,
+                        TimeUnit::Microseconds => US_IN_DAY,
+                        TimeUnit::Milliseconds => MS_IN_DAY,
+                    };
+
+                    if *v % conversion != 0 {
+                        return None;
+                    }
+
+                    Self::Date((*v / conversion).try_into().ok()?)
+                },
+
+                _ => return None,
+            },
+            _ => return None,
+        })
+    }
 }
 
 impl<'a> AnyValue<'a> {

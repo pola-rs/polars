@@ -10,9 +10,9 @@ use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
 use crate::plans::aexpr::evaluate::{constant_evaluate, into_column};
+use crate::plans::predicates::get_binary_expr_col_and_lv_casted;
 use crate::plans::{
     AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
 };
@@ -122,15 +122,23 @@ pub fn aexpr_to_column_predicates(
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
                                 options: _,
                             } => {
+                                let casted_dtype = match expr_arena.get(input[0].node()) {
+                                    AExpr::Column(_) => None,
+                                    AExpr::Cast { expr, dtype, options: _ } if matches!(expr_arena.get(*expr), AExpr::Column(_)) => {
+                                        Some(dtype)
+                                    },
+                                    _ => return None,
+                                };
+
                                 let (Some(l), Some(r)) = (
                                     constant_evaluate(
-                                        input[0].node(),
+                                        input[1].node(),
                                         expr_arena,
                                         schema,
                                         0,
                                     )?,
                                     constant_evaluate(
-                                        input[1].node(),
+                                        input[2].node(),
                                         expr_arena,
                                         schema,
                                         0,
@@ -139,8 +147,17 @@ pub fn aexpr_to_column_predicates(
                                     return None;
                                 };
 
-                                let l = l.to_any_value()?;
-                                let r = r.to_any_value()?;
+                                let mut l = l.to_any_value()?.into_static();
+                                let mut r = r.to_any_value()?.into_static();
+
+                                if let Some(casted_dtype) = casted_dtype {
+                                    if casted_dtype != &l.dtype() || casted_dtype != &r.dtype() {
+                                        return None;
+                                    }
+                                    l = l.lossless_cast(&dtype)?;
+                                    r = r.lossless_cast(&dtype)?;
+                                }
+
                                 if l.dtype() != dtype || r.dtype() != dtype {
                                     return None;
                                 }
@@ -154,8 +171,8 @@ pub fn aexpr_to_column_predicates(
 
                                 is_between(
                                     &dtype,
-                                    Some(Scalar::new(dtype.clone(), l.into_static())),
-                                    Some(Scalar::new(dtype.clone(), r.into_static())),
+                                    Some(Scalar::new(dtype.clone(), l)),
+                                    Some(Scalar::new(dtype.clone(), r)),
                                     low_closed,
                                     high_closed,
                                 )
@@ -218,14 +235,17 @@ pub fn aexpr_to_column_predicates(
                                 }
                             },
                             AExpr::BinaryExpr { left, op, right } => {
-                                let ((_, _), (lv, lv_node)) =
-                                    get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
+                                let ((_, _, casted_dtype), (lv, lv_node)) = get_binary_expr_col_and_lv_casted(*left, *right, expr_arena, schema)?;
                                 let lv = lv?;
-                                let av = lv.to_any_value()?;
-                                if av.dtype() != dtype {
-                                    return None;
+                                let mut av = lv.to_any_value()?.into_static();
+                                if let Some(casted_dtype) = casted_dtype {
+                                    if casted_dtype != &av.dtype() {
+                                        return None;
+                                    }
+                                    av = av.lossless_cast(&dtype)?;
                                 }
-                                let scalar = Scalar::new(dtype.clone(), av.into_static());
+
+                                let scalar = Scalar::new(dtype.clone(), av);
                                 use Operator as O;
                                 match (op, lv_node == *right) {
                                     (O::Eq, _) if scalar.is_null() => None,
