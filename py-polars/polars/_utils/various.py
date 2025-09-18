@@ -211,6 +211,15 @@ def _in_notebook() -> bool:
         return False
     return True
 
+def _in_marimo_notebook() -> bool:
+    try:
+        import marimo as mo
+        if mo.running_in_notebook():
+            return True
+        else:
+            return False
+    except ImportError:
+        return False
 
 def arrlen(obj: Any) -> int | None:
     """Return length of (non-string/dict) sequence; returns None for non-sequences."""
@@ -689,6 +698,10 @@ def display_dot_graph(
         from IPython.display import SVG, display
 
         return display(SVG(graph))
+    elif _in_marimo_notebook():
+        import marimo as mo
+
+        return mo.Html(f"{graph.decode()}")
     else:
         if (cmd := os.environ.get("POLARS_DOT_SVG_VIEWER", None)) is not None:
             import tempfile
