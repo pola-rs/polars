@@ -119,7 +119,7 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                             rechunk,
                             cache,
                             glob: _,
-                            hidden_file_prefix: _,
+                            hidden_file_prefix: _hidden_file_prefix @ None,
                             projection: _projection @ None,
                             column_mapping,
                             default_values,
