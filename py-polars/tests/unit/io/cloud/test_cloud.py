@@ -63,6 +63,12 @@ def test_is_aws_cloud() -> None:
         first_scan_path="https://bucket.s3.eu-west-1.amazonaws.com/key",
     )
 
+    # Slash in front of amazonaws.com
+    assert not _is_aws_cloud(
+        scheme="https",
+        first_scan_path="https://bucket/.s3.eu-west-1.amazonaws.com/key",
+    )
+
     # Legacy global endpoint
     assert not _is_aws_cloud(
         scheme="https", first_scan_path="https://bucket.s3.amazonaws.com/key"
