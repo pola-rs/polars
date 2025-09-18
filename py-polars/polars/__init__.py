@@ -490,7 +490,8 @@ __all__ = [
 
 
 if not TYPE_CHECKING:
-    import polars._plr as plr
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        import polars._plr as plr
 
     # This causes typechecking to resolve any Polars module attribute
     # as Any regardless of existence so we check for TYPE_CHECKING, see #24334.
