@@ -230,6 +230,23 @@ class ExceptionTestParams(NamedTuple):
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
+                connect_using=lambda path: sqlite3.connect(
+                    path, detect_types=True
+                ).cursor(),
+                expected_dtypes={
+                    "id": pl.UInt8,
+                    "name": pl.String,
+                    "value": pl.Float32,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.UInt8, "value": pl.Float32},
+            ),
+            id="cursor: sqlite3",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
                 connect_using=lambda path: create_engine(
                     f"sqlite:///{path}",
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
@@ -243,6 +260,25 @@ class ExceptionTestParams(NamedTuple):
                 expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
             ),
             id="conn: sqlalchemy",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: create_engine(
+                    f"sqlite:///{path}",
+                    connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
+                )
+                .raw_connection()
+                .cursor(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+            ),
+            id="cursor: sqlalchemy",
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -281,6 +317,24 @@ class ExceptionTestParams(NamedTuple):
             ),
             id="conn: adbc (batched)",
         ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: adbc_sqlite_connect(path).cursor(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="cursor: adbc (fetchall)",
+        ),
     ],
 )
 def test_read_database(
@@ -308,7 +362,7 @@ def test_read_database(
             schema_overrides=schema_overrides,
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
-        # externally instantiated adbc connections
+        # externally instantiated ADBC connections
         with connect_using(tmp_sqlite_db) as conn:
             df = pl.read_database(
                 connection=conn,
@@ -322,6 +376,9 @@ def test_read_database(
                 schema_overrides=schema_overrides,
                 batch_size=batch_size,
             )
+        # if we passed an ADBC cursor, we must also close the parent connection
+        if "cursor" in os.environ["PYTEST_CURRENT_TEST"]:
+            conn.connection.close()
     else:
         # other user-supplied connections
         df = pl.read_database(
@@ -347,6 +404,61 @@ def test_read_database(
     assert df_empty.columns == ["id", "name", "value", "date"]
     assert df_empty.shape == (0, 4)
     assert df_empty["date"].to_list() == []
+
+
+@pytest.mark.parametrize(
+    "connection_func",
+    [
+        pytest.param(lambda: sqlite3.connect(":memory:"), id="conn: sqlite3"),
+        pytest.param(
+            lambda: sqlite3.connect(":memory:").cursor(), id="cursor: sqlite3"
+        ),
+        pytest.param(
+            lambda: create_engine("sqlite:///:memory:").connect(), id="conn: sqlalchemy"
+        ),
+        pytest.param(
+            lambda: create_engine("sqlite:///:memory:").raw_connection().cursor(),
+            id="cursor: sqlalchemy",
+        ),
+        pytest.param(
+            lambda: adbc_sqlite_connect(),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="conn: adbc",
+        ),
+        pytest.param(
+            lambda: adbc_sqlite_connect().cursor(),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="cursor: adbc",
+        ),
+    ],
+)
+def test_read_database_respect_open_connection(connection_func: Any) -> None:
+    # Polars claims it will not close a connection or cursor it did not open
+    connection_or_cursor = connection_func()
+    pl.read_database("SELECT 1", connection_or_cursor)
+
+    if "conn:" in os.environ["PYTEST_CURRENT_TEST"]:
+        if "sqlalchemy" in os.environ["PYTEST_CURRENT_TEST"]:
+            assert not connection_or_cursor.closed
+        else:
+            # for ADBC and sqlite, create a cursor to prove the connection is open
+            cursor = connection_or_cursor.cursor()
+            # clean up open resources so pytest doesn't complain
+            cursor.close()
+            connection_or_cursor.close()
+    # for cursors, prove they are still open by executing another statement
+    elif "cursor:" in os.environ["PYTEST_CURRENT_TEST"]:
+        connection_or_cursor.execute("SELECT 1")
+        # ADBC requires the cursor and the parent connection to be closed in pytest
+        if "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
+            connection_or_cursor.close()
+            connection_or_cursor.connection.close()
 
 
 def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
