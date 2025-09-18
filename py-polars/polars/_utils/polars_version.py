@@ -5,7 +5,6 @@ try:
 except ImportError:
     # This is only useful for documentation
     import warnings
-    raise
 
     warnings.warn("Polars binary is missing!", stacklevel=2)
     _POLARS_VERSION = ""
