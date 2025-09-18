@@ -561,3 +561,17 @@ def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
     pl.LazyFrame({"a": [1, 2]}).sink_csv(
         pl.PartitionMaxSize("s3://bucket-x", file_path=new_path, max_size=1)
     )
+
+
+@pytest.mark.write_disk
+def test_partition_empty_string_24545(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["", None, "abc", "xyz"],
+            "b": [1, 2, 3, 4],
+        }
+    )
+
+    df.write_parquet(tmp_path, partition_by="a")
+
+    assert_frame_equal(pl.read_parquet(tmp_path), df)
