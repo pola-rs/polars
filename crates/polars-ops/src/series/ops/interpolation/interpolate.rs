@@ -127,7 +127,9 @@ fn interpolate_nearest(s: &Series) -> Series {
             let out = downcast_as_macro_arg_physical!(s, dispatch);
             match logical {
                 #[cfg(feature = "dtype-decimal")]
-                DataType::Decimal(_, _) => unsafe { out.from_physical_unchecked(logical).unwrap() },
+                DataType::NewDecimal(_, _) => unsafe {
+                    out.from_physical_unchecked(logical).unwrap()
+                },
                 _ => out.cast(logical).unwrap(),
             }
         },
@@ -149,7 +151,7 @@ fn interpolate_linear(s: &Series) -> Series {
 
             #[cfg(feature = "dtype-decimal")]
             {
-                if matches!(logical, DataType::Decimal(_, _)) {
+                if matches!(logical, DataType::NewDecimal(_, _)) {
                     let out = linear_interp_signed(s.i128().unwrap());
                     return unsafe { out.from_physical_unchecked(logical).unwrap() };
                 }

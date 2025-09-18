@@ -104,7 +104,7 @@ pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
             DataType::Time => Box::new(SKIT::<Int64Type>::new()),
 
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
+            DataType::NewDecimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
                 with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {

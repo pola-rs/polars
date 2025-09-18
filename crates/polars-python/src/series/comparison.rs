@@ -1,3 +1,4 @@
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
 use pyo3::prelude::*;
 
 use crate::PySeries;
@@ -121,13 +122,17 @@ impl_op!(lt_eq, lt_eq_f32, f32);
 impl_op!(lt_eq, lt_eq_f64, f64);
 impl_op!(lt_eq, lt_eq_str, &str);
 
-struct PyDecimal(i128, usize);
+struct PyDecimal(i128, usize, usize);
 
 impl<'source> FromPyObject<'source> for PyDecimal {
     fn extract_bound(obj: &Bound<'source, PyAny>) -> PyResult<Self> {
         if let Ok(val) = obj.extract() {
-            return Ok(PyDecimal(val, 0));
+            return Ok(PyDecimal(val, DEC128_MAX_PREC, 0));
         }
+
+        let err = || {
+            Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow in Python Decimal to Polars Decimal conversion")).into())
+        };
 
         let (sign, digits, exponent) = obj
             .call_method0("as_tuple")?
@@ -137,23 +142,27 @@ impl<'source> FromPyObject<'source> for PyDecimal {
             if let Some(v) = val.checked_mul(10).and_then(|val| val.checked_add(d as _)) {
                 val = v;
             } else {
-                return Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow")).into());
+                return err();
             }
         }
-        let exponent = if exponent > 0 {
+        let scale = if exponent > 0 {
             if let Some(v) = val.checked_mul(10_i128.pow((-exponent) as u32)) {
                 val = v;
             } else {
-                return Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow")).into());
+                return err();
             };
             0_usize
         } else {
-            -exponent as _
+            (-exponent) as usize
         };
         if sign == 1 {
             val = -val
         };
-        Ok(PyDecimal(val, exponent))
+        if dec128_fits(val, DEC128_MAX_PREC) {
+            Ok(PyDecimal(val, DEC128_MAX_PREC, scale))
+        } else {
+            err()
+        }
     }
 }
 
@@ -164,7 +173,7 @@ macro_rules! impl_decimal {
             fn $name(&self, py: Python<'_>, rhs: PyDecimal) -> PyResult<Self> {
                 let rhs = Series::new(
                     PlSmallStr::from_static("decimal"),
-                    &[AnyValue::Decimal(rhs.0, rhs.1)],
+                    &[AnyValue::NewDecimal(rhs.0, rhs.1, rhs.2)],
                 );
                 py.enter_polars_series(|| self.series.read().$method(&rhs))
             }

@@ -84,7 +84,7 @@ impl SeriesWrap<DecimalChunked> {
                     ListChunked::from_chunks_and_dtype_unchecked(
                         agg_s.name().clone(),
                         vec![Box::new(new_arr)],
-                        DataType::List(Box::new(DataType::Decimal(precision, Some(scale)))),
+                        DataType::List(Box::new(DataType::NewDecimal(precision, scale))),
                     )
                     .into_series()
                 }
@@ -393,21 +393,21 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn sum_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let sum = ca.sum();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+            let DataType::NewDecimal(prec, scale) = self.dtype() else {
                 unreachable!()
             };
-            let av = AnyValue::Decimal(sum.unwrap(), *scale);
+            let av = AnyValue::NewDecimal(sum.unwrap(), *prec, *scale);
             Scalar::new(self.dtype().clone(), av)
         }))
     }
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let min = ca.min();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+            let DataType::NewDecimal(prec, scale) = self.dtype() else {
                 unreachable!()
             };
             let av = if let Some(min) = min {
-                AnyValue::Decimal(min, *scale)
+                AnyValue::NewDecimal(min, *prec, *scale)
             } else {
                 AnyValue::Null
             };
@@ -417,11 +417,11 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let max = ca.max();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+            let DataType::NewDecimal(prec, scale) = self.dtype() else {
                 unreachable!()
             };
             let av = if let Some(m) = max {
-                AnyValue::Decimal(m, *scale)
+                AnyValue::NewDecimal(m, *prec, *scale)
             } else {
                 AnyValue::Null
             };

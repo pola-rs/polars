@@ -30,7 +30,8 @@ impl Series {
     /// and the `strict` parameter:
     /// - If `strict` is `true`, the data type is equal to the data type of the
     ///   first non-null value. If any other non-null values do not match this
-    ///   data type, an error is raised.
+    ///   data type, an error is raised. If the first non-null value is a
+    ///   decimal the slice is scanned for the maximum precision and scale possible.
     /// - If `strict` is `false`, the data type is the supertype of the `values`.
     ///   An error is returned if no supertype can be determined.
     ///   **WARNING**: A full pass over the values is required to determine the supertype.
@@ -63,18 +64,21 @@ impl Series {
             }
         }
         let dtype = if strict {
-            get_first_non_null_dtype(values)
+            match get_first_non_null_dtype(values) {
+                DataType::NewDecimal(mut prec, mut scale) => {
+                    for v in values {
+                        if let DataType::NewDecimal(p, s) = v.dtype() {
+                            prec = prec.max(p);
+                            scale = scale.max(s);
+                        }
+                    }
+                    DataType::NewDecimal(prec, scale)
+                },
+                dt => dt,
+            }
         } else {
-            // Currently does not work correctly for Decimal because equality is not implemented.
             any_values_to_supertype(values)?
         };
-
-        // TODO: Remove this when Decimal data type equality is implemented.
-        #[cfg(feature = "dtype-decimal")]
-        if dtype.is_decimal() {
-            let dtype = DataType::Decimal(None, None);
-            return Self::from_any_values_and_dtype(name, values, &dtype, strict);
-        }
 
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
@@ -134,7 +138,7 @@ impl Series {
                 any_values_to_categorical(values, dt, strict)?
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(precision, scale) => {
+            DataType::NewDecimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
             },
             DataType::List(inner) => any_values_to_list(values, inner, strict)?.into_series(),
@@ -507,49 +511,22 @@ fn any_values_to_categorical(
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
     values: &[AnyValue],
-    precision: Option<usize>,
-    scale: Option<usize>, // If None, we're inferring the scale.
+    precision: usize,
+    scale: usize,
     strict: bool,
 ) -> PolarsResult<DecimalChunked> {
-    /// Get the maximum scale among AnyValues
-    fn infer_scale(
-        values: &[AnyValue],
-        precision: Option<usize>,
-        strict: bool,
-    ) -> PolarsResult<usize> {
-        let mut max_scale = 0;
-        for av in values {
-            let av_scale = match av {
-                AnyValue::Decimal(_, scale) => *scale,
-                AnyValue::Null => continue,
-                av => {
-                    if strict {
-                        let target_dtype = DataType::Decimal(precision, None);
-                        return Err(invalid_value_error(&target_dtype, av));
-                    }
-                    continue;
-                },
-            };
-            max_scale = max_scale.max(av_scale);
-        }
-        Ok(max_scale)
-    }
-    let scale = match scale {
-        Some(s) => s,
-        None => infer_scale(values, precision, strict)?,
-    };
-    let target_dtype = DataType::Decimal(precision, Some(scale));
+    let target_dtype = DataType::NewDecimal(precision, scale);
 
     let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new(PlSmallStr::EMPTY, values.len());
     for av in values {
         match av {
             // Allow equal or less scale. We do want to support different scales even in 'strict' mode.
-            AnyValue::Decimal(v, s) if *s <= scale => {
-                if *s == scale {
+            AnyValue::NewDecimal(v, p, s) if *s <= scale => {
+                if *p <= precision && *s == scale {
                     builder.append_value(*v)
                 } else {
                     match av.strict_cast(&target_dtype) {
-                        Some(AnyValue::Decimal(i, _)) => builder.append_value(i),
+                        Some(AnyValue::NewDecimal(i, _, _)) => builder.append_value(i),
                         _ => builder.append_null(),
                     }
                 }
@@ -559,9 +536,8 @@ fn any_values_to_decimal(
                 if strict {
                     return Err(invalid_value_error(&target_dtype, av));
                 }
-                // TODO: Precision check, else set to null
                 match av.strict_cast(&target_dtype) {
-                    Some(AnyValue::Decimal(i, _)) => builder.append_value(i),
+                    Some(AnyValue::NewDecimal(i, _, _)) => builder.append_value(i),
                     _ => builder.append_null(),
                 }
             },

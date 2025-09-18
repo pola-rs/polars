@@ -465,7 +465,7 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 class.call0()
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(precision, scale) => {
+            DataType::NewDecimal(precision, scale) => {
                 let class = pl.getattr(intern!(py, "Decimal")).unwrap();
                 let args = (*precision, *scale);
                 class.call1(args)
@@ -618,7 +618,9 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
                     #[cfg(feature = "dtype-decimal")]
-                    "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
+                    "Decimal" => {
+                        return Err(PyTypeError::new_err("Decimal without specifying precision and scale is not a valid Polars data type".to_string()));
+                    },
                     "List" => DataType::List(Box::new(DataType::Null)),
                     #[cfg(feature = "dtype-array")]
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
@@ -681,7 +683,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
                 let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
-                DataType::Decimal(precision, Some(scale))
+                DataType::NewDecimal(precision, scale)
             },
             "List" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();

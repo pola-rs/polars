@@ -150,14 +150,13 @@ pub fn dtypes(
 fn decimal_strategy(
     decimal_precision_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = DataType> {
-    prop::option::of(decimal_precision_range.clone())
+    decimal_precision_range
+        .clone()
         .prop_flat_map(move |precision| {
-            let max_scale = precision.unwrap_or(*decimal_precision_range.end());
-            let scale_strategy = prop::option::of(0_usize..=max_scale);
-
+            let scale_strategy = (0_usize..=precision);
             (Just(precision), scale_strategy)
         })
-        .prop_map(|(precision, scale)| DataType::Decimal(precision, scale))
+        .prop_map(|(precision, scale)| DataType::NewDecimal(precision, scale))
 }
 
 fn datetime_strategy() -> impl Strategy<Value = DataType> {

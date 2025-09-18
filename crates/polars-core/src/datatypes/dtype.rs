@@ -103,7 +103,7 @@ pub enum DataType {
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
     /// Meaning max precision is 38.
     #[cfg(feature = "dtype-decimal")]
-    Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
+    NewDecimal(usize, usize), // (precision, scale), invariant: 1 <= precision <= 38.
     /// String data
     String,
     Binary,
@@ -169,12 +169,7 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-duration")]
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
                 #[cfg(feature = "dtype-decimal")]
-                (Decimal(l_prec, l_scale), Decimal(r_prec, r_scale)) => {
-                    let is_prec_eq = l_prec.is_none() || r_prec.is_none() || l_prec == r_prec;
-                    let is_scale_eq = l_scale.is_none() || r_scale.is_none() || l_scale == r_scale;
-
-                    is_prec_eq && is_scale_eq
-                },
+                (NewDecimal(p1, s1), NewDecimal(p2, s2)) => (p1, s1) == (p2, s2),
                 #[cfg(feature = "object")]
                 (Object(lhs), Object(rhs)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
@@ -408,7 +403,7 @@ impl DataType {
             (D::Boolean, dt) | (dt, D::Boolean) => match dt {
                 dt if dt.is_primitive_numeric() => true,
                 #[cfg(feature = "dtype-decimal")]
-                D::Decimal(_, _) => true,
+                D::NewDecimal(_, _) => true,
                 D::String | D::Binary => true,
                 _ => false,
             },
@@ -456,7 +451,7 @@ impl DataType {
             Duration(_) => Int64,
             Time => Int64,
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => Int128,
+            NewDecimal(_, _) => Int128,
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => cats.physical().dtype(),
             #[cfg(feature = "dtype-categorical")]
@@ -659,7 +654,7 @@ impl DataType {
     pub fn is_decimal(&self) -> bool {
         match self {
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => true,
+            DataType::NewDecimal(_, _) => true,
             _ => false,
         }
     }
@@ -860,14 +855,9 @@ impl DataType {
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(precision, scale) => {
-                let precision = (*precision).unwrap_or(38);
-                polars_ensure!(precision <= 38 && precision > 0, InvalidOperation: "decimal precision should be <= 38 & >= 1");
-
-                Ok(ArrowDataType::Decimal(
-                    precision,
-                    scale.unwrap_or(0), // and what else can we do here?
-                ))
+            NewDecimal(precision, scale) => {
+                assert!(*precision >= 1 && *precision <= 38);
+                Ok(ArrowDataType::Decimal(*precision, *scale))
             },
             String => {
                 let dt = if compat_level.0 >= 1 {
@@ -984,7 +974,9 @@ impl DataType {
             },
             (DataType::Null, DataType::Null) => Ok(false),
             #[cfg(feature = "dtype-decimal")]
-            (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => Ok(s1 != s2),
+            (DataType::NewDecimal(p1, s1), DataType::NewDecimal(p2, s2)) => {
+                Ok((p1, s1) != (p2, s2))
+            },
             // We don't allow the other way around, only if our current type is
             // null and the schema isn't we allow it.
             (DataType::Null, _) => Ok(true),
@@ -1079,25 +1071,12 @@ impl Display for DataType {
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(precision, scale) => {
-                return match (precision, scale) {
-                    (Some(precision), Some(scale)) => {
-                        f.write_str(&format!("decimal[{precision},{scale}]"))
-                    },
-                    (None, Some(scale)) => f.write_str(&format!("decimal[*,{scale}]")),
-                    _ => f.write_str("decimal[?]"), // shouldn't happen
-                };
-            },
+            DataType::NewDecimal(p, s) => return write!(f, "decimal[{p},{s}]"),
             DataType::String => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
-            DataType::Datetime(tu, tz) => {
-                let s = match tz {
-                    None => format!("datetime[{tu}]"),
-                    Some(tz) => format!("datetime[{tu}, {tz}]"),
-                };
-                return f.write_str(&s);
-            },
+            DataType::Datetime(tu, None) => return write!(f, "datetime[{tu}]"),
+            DataType::Datetime(tu, Some(tz)) => return write!(f, "datetime[{tu}, {tz}]"),
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
@@ -1165,12 +1144,7 @@ impl std::fmt::Debug for DataType {
                 }
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(opt_p, opt_s) => match (opt_p, opt_s) {
-                (None, None) => write!(f, "Decimal(None, None)"),
-                (None, Some(s)) => write!(f, "Decimal(None, {s})"),
-                (Some(p), None) => write!(f, "Decimal({p}, None)"),
-                (Some(p), Some(s)) => write!(f, "Decimal({p}, {s})"),
-            },
+            NewDecimal(p, s) => write!(f, "Decimal({p}, {s})"),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
             List(inner) => write!(f, "List({inner:?})"),

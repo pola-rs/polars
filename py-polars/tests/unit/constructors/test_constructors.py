@@ -844,7 +844,7 @@ def test_init_series() -> None:
         (time, pl.Time),
         (datetime, pl.Datetime("us")),
         (timedelta, pl.Duration("us")),
-        (Decimal, pl.Decimal(precision=None, scale=0)),
+        (Decimal, pl.Decimal(scale=0)),
     ],
 )
 def test_init_py_dtype(dtype: Any, expected_dtype: PolarsDataType) -> None:

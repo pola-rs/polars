@@ -11,25 +11,32 @@ impl StringChunked {
     /// using the `cast` method.
     pub fn to_decimal_infer(&self, infer_length: usize) -> PolarsResult<Series> {
         let mut scale = 0;
+        let mut prec = 0;
         let mut iter = self.into_iter();
         let mut valid_count = 0;
         while let Some(Some(v)) = iter.next() {
-            let scale_value = arrow::compute::decimal::infer_scale(v.as_bytes());
-            scale = std::cmp::max(scale, scale_value);
+            let mut bytes = v.as_bytes();
+            if bytes.first() == Some(&b'-') {
+                bytes = &bytes[1..];
+            }
+            if let Some(separator) = bytes.iter().position(|b| *b == b'.') {
+                scale = scale.max(bytes.len() - 1 - separator);
+                prec = prec.max(bytes.len() - 1);
+            } else {
+                prec = prec.max(bytes.len());
+            }
+
             valid_count += 1;
             if valid_count == infer_length {
                 break;
             }
         }
 
-        self.to_decimal(scale as usize)
+        self.to_decimal(prec, scale)
     }
 
-    pub fn to_decimal(&self, scale: usize) -> PolarsResult<Series> {
-        self.cast_with_options(
-            &DataType::Decimal(None, Some(scale)),
-            CastOptions::NonStrict,
-        )
+    pub fn to_decimal(&self, prec: usize, scale: usize) -> PolarsResult<Series> {
+        self.cast_with_options(&DataType::NewDecimal(prec, scale), CastOptions::NonStrict)
     }
 }
 
@@ -49,12 +56,12 @@ mod test {
         ];
         let s = StringChunked::from_slice(PlSmallStr::from_str("test"), &vals);
         let s = s.to_decimal_infer(6).unwrap();
-        assert_eq!(s.dtype(), &DataType::Decimal(None, Some(5)));
+        assert_eq!(s.dtype(), &DataType::NewDecimal(12, 5));
         assert_eq!(s.len(), 7);
-        assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 5));
+        assert_eq!(s.get(0).unwrap(), AnyValue::NewDecimal(100000, 12, 5));
         assert_eq!(s.get(1).unwrap(), AnyValue::Null);
-        assert_eq!(s.get(3).unwrap(), AnyValue::Decimal(300045, 5));
-        assert_eq!(s.get(4).unwrap(), AnyValue::Decimal(-400000, 5));
-        assert_eq!(s.get(6).unwrap(), AnyValue::Decimal(525251, 5));
+        assert_eq!(s.get(3).unwrap(), AnyValue::NewDecimal(300045, 12, 5));
+        assert_eq!(s.get(4).unwrap(), AnyValue::NewDecimal(-400000, 12, 5));
+        assert_eq!(s.get(6).unwrap(), AnyValue::NewDecimal(525251, 12, 5));
     }
 }

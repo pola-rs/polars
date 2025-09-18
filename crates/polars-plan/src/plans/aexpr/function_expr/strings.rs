@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
 use arrow::legacy::utils::CustomIterTools;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
@@ -191,7 +193,7 @@ impl IRStringFunction {
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal { scale } => mapper.with_dtype(DataType::Decimal(None, Some(*scale))),
+            ToDecimal { scale } => mapper.with_dtype(DataType::NewDecimal(DEC128_MAX_PREC, *scale)),
             #[cfg(feature = "string_encoding")]
             HexEncode => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
@@ -1201,7 +1203,7 @@ pub(super) fn base64_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn to_decimal(s: &Column, scale: usize) -> PolarsResult<Column> {
     let ca = s.str()?;
-    ca.to_decimal(scale).map(Column::from)
+    ca.to_decimal(DEC128_MAX_PREC, scale).map(Column::from)
 }
 
 #[cfg(feature = "extract_jsonpath")]

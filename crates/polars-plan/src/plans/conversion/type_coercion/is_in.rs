@@ -94,14 +94,14 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         },
 
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
+        (DataType::NewDecimal(_, _), dt) if dt.is_primitive_numeric() => {
             IsInTypeCoercionResult::OtherCast {
                 dtype: cast_type,
                 strict: false,
             }
         },
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
+        (DataType::NewDecimal(_, _), _) | (_, DataType::NewDecimal(_, _)) => {
             polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data", &type_other, &type_left)
         },
         // can't check for more granular time_unit in less-granular time_unit data,

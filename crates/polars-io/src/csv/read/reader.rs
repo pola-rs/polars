@@ -219,15 +219,10 @@ pub fn prepare_csv_schema(
                     PolarsResult::Ok(fld)
                 },
                 #[cfg(feature = "dtype-decimal")]
-                Decimal(precision, scale) => match (precision, scale) {
-                    (_, Some(_)) => {
-                        fields_to_cast.push(fld.clone());
-                        fld.coerce(String);
-                        PolarsResult::Ok(fld)
-                    },
-                    _ => Err(PolarsError::ComputeError(
-                        "'scale' must be set when reading csv column as Decimal".into(),
-                    )),
+                NewDecimal(_, _) => {
+                    fields_to_cast.push(fld.clone());
+                    fld.coerce(String);
+                    PolarsResult::Ok(fld)
                 },
                 _ => {
                     matched = false;

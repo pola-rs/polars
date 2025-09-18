@@ -219,7 +219,7 @@ fn parse_type_text(type_text: &str) -> PolarsResult<DataType> {
                     let precision: usize = precision.parse().ok()?;
                     let scale: usize = scale.parse().ok()?;
 
-                    Some(DataType::Decimal(Some(precision), Some(scale)))
+                    Some(DataType::NewDecimal(precision, scale))
                 })()
                 .ok_or_else(|| {
                     polars_err!(
@@ -297,10 +297,7 @@ fn dtype_to_type_text(dtype: &DataType) -> PolarsResult<PlSmallStr> {
 
         Null => S!("null"),
 
-        Decimal(precision, scale) => {
-            let precision = precision.unwrap_or(38);
-            let scale = scale.unwrap_or(0);
-
+        NewDecimal(precision, scale) => {
             format_pl_smallstr!("decimal({},{})", precision, scale)
         },
 
@@ -376,7 +373,7 @@ fn dtype_to_type_name(dtype: &DataType) -> PolarsResult<PlSmallStr> {
 
         Null => S!("NULL"),
 
-        Decimal(..) => S!("DECIMAL"),
+        NewDecimal(..) => S!("DECIMAL"),
 
         List(inner) => {
             if get_list_map_type(inner).is_some() {
@@ -440,7 +437,7 @@ fn dtype_to_type_json(dtype: &DataType) -> PolarsResult<ColumnTypeJsonType> {
 
         Null => S!("null"),
 
-        Decimal(..) => ColumnTypeJsonType::TypeName(dtype_to_type_text(dtype)?),
+        NewDecimal(..) => ColumnTypeJsonType::TypeName(dtype_to_type_text(dtype)?),
 
         List(inner) => {
             let out = if let Some((key_type, value_type)) = get_list_map_type(inner) {

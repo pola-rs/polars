@@ -53,7 +53,7 @@ pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
+        NewDecimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
         Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
         // For compatibility with the current engine, should probably be an error.
         String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),

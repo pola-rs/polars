@@ -92,7 +92,7 @@ enum SerializableDataType {
         strings: Series,
     },
     #[cfg(feature = "dtype-decimal")]
-    Decimal(Option<usize>, Option<usize>),
+    NewDecimal(usize, usize),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -143,7 +143,7 @@ impl From<&DataType> for SerializableDataType {
                 .into_series(),
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(precision, scale) => Self::Decimal(*precision, *scale),
+            NewDecimal(precision, scale) => Self::NewDecimal(*precision, *scale),
             #[cfg(feature = "object")]
             Object(name) => Self::Object(name.to_string()),
         }
@@ -202,7 +202,7 @@ impl From<SerializableDataType> for DataType {
                 Self::Enum(fcats, mapping)
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(precision, scale) => Self::Decimal(precision, scale),
+            NewDecimal(precision, scale) => Self::NewDecimal(precision, scale),
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown"),
         }

@@ -151,7 +151,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
 
         // to_physical
         #[cfg(feature = "dtype-decimal")]
-        DT::Decimal(..) => unreachable!(),
+        DT::NewDecimal(..) => unreachable!(),
         #[cfg(feature = "dtype-categorical")]
         DT::Categorical(..) | DT::Enum(..) => unreachable!(),
         DT::Date | DT::Datetime(..) | DT::Duration(..) | DT::Time => unreachable!(),

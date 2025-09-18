@@ -552,7 +552,7 @@ pub fn cast(
                 Date32 => utf8view_to_date32_dyn(array),
                 #[cfg(feature = "dtype-decimal")]
                 Decimal(precision, scale) => {
-                    Ok(binview_to_decimal(&arr.to_binview(), Some(*precision), *scale).to_boxed())
+                    Ok(binview_to_decimal(&arr.to_binview(), *precision, *scale).to_boxed())
                 },
                 _ => polars_bail!(InvalidOperation:
                     "casting from {from_type:?} to {to_type:?} not supported",

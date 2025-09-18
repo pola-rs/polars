@@ -12,7 +12,7 @@ pub fn negate(s: &Series) -> PolarsResult<Series> {
         Float32 => s.f32().unwrap().wrapping_neg().into_series(),
         Float64 => s.f64().unwrap().wrapping_neg().into_series(),
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => {
+        NewDecimal(_, _) => {
             let ca = s.decimal().unwrap();
             let precision = ca.precision();
             let scale = ca.scale();

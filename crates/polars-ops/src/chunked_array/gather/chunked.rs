@@ -180,7 +180,7 @@ impl TakeChunked for Series {
             #[cfg(feature = "object")]
             Object(_) => take_unchecked_object(self, by, sorted),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => {
+            NewDecimal(_, _) => {
                 let ca = self.decimal().unwrap();
                 let out = ca.phys.take_chunked_unchecked(by, sorted, avoid_sharing);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
@@ -280,7 +280,7 @@ impl TakeChunked for Series {
             #[cfg(feature = "object")]
             Object(_) => take_opt_unchecked_object(self, by, avoid_sharing),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => {
+            NewDecimal(_, _) => {
                 let ca = self.decimal().unwrap();
                 let out = ca.phys.take_opt_chunked_unchecked(by, avoid_sharing);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())

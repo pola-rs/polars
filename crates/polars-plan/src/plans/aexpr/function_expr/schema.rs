@@ -502,7 +502,7 @@ impl<'a> FieldsMapper<'a> {
             #[cfg(feature = "dtype-time")]
             dt @ DataType::Time => dt.clone(),
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(..) => DataType::Float64,
+            DataType::NewDecimal(..) => DataType::Float64,
 
             // All other types get mapped to a single `null` of the same type.
             dt => dt.clone(),
@@ -530,7 +530,7 @@ impl<'a> FieldsMapper<'a> {
             let should_coerce = match dt {
                 DataType::Float32 => false,
                 #[cfg(feature = "dtype-decimal")]
-                DataType::Decimal(..) => coerce_decimal,
+                DataType::NewDecimal(..) => coerce_decimal,
                 DataType::Boolean => true,
                 dt => dt.is_primitive_numeric(),
             };

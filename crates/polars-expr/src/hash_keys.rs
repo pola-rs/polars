@@ -27,7 +27,7 @@ pub fn hash_keys_variant_for_dtype(dt: &DataType) -> HashKeysVariant {
         dt if dt.is_primitive_numeric() | dt.is_temporal() => HashKeysVariant::Single,
 
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => HashKeysVariant::Single,
+        DataType::NewDecimal(_, _) => HashKeysVariant::Single,
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(_, _) | DataType::Categorical(_, _) => HashKeysVariant::Single,
 
@@ -76,7 +76,7 @@ macro_rules! downcast_single_key_ca {
             DataType::Duration(..) => { let $ca = $self.duration().unwrap().physical(); $($body)* },
 
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(..) => { let $ca = $self.decimal().unwrap().physical(); $($body)* },
+            DataType::NewDecimal(..) => { let $ca = $self.decimal().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
                 match dt.cat_physical().unwrap() {
