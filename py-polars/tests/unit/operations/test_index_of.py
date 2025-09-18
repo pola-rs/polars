@@ -16,6 +16,7 @@ from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     from polars._typing import IntoExpr, PolarsDataType
+    from polars.datatypes import IntegerType
 
 
 def isnan(value: object) -> bool:
@@ -111,21 +112,26 @@ def test_empty() -> None:
         pl.Int16,
         pl.Int32,
         pl.Int64,
+        pl.Int128,
         pl.UInt8,
         pl.UInt16,
         pl.UInt32,
         pl.UInt64,
-        pl.Int128,
+        pl.UInt128,
     ],
 )
-def test_integer(dtype: pl.DataType) -> None:
+def test_integer(dtype: IntegerType) -> None:
+    print(dtype)
+    dtype_min = dtype.min()
+    dtype_max = pl.Int128.max() if dtype == pl.UInt128 else dtype.max()
+
     values = [
         51,
         3,
         None,
         4,
-        pl.select(dtype.max()).item(),  # type: ignore[attr-defined]
-        pl.select(dtype.min()).item(),  # type: ignore[attr-defined]
+        pl.select(dtype_max).item(),
+        pl.select(dtype_min).item(),
     ]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -134,7 +140,7 @@ def test_integer(dtype: pl.DataType) -> None:
         [pl.Series([100, 7], dtype=dtype), series], rechunk=False
     )
 
-    extra_values = [pl.select(v).item() for v in [dtype.max() - 1, dtype.min() + 1]]  # type: ignore[attr-defined]
+    extra_values = [pl.select(v).item() for v in [dtype_max - 1, dtype_min + 1]]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         value: IntoExpr
         for value in values:

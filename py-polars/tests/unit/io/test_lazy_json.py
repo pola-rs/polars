@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -241,7 +242,10 @@ def test_scan_ndjson_raises_on_parse_error(dtype: pl.DataType) -> None:
             match="got non-null value for NULL-typed column: AAAA",
         )
         if str(dtype) == "Null"
-        else pytest.raises(pl.exceptions.ComputeError, match="cannot parse 'AAAA' as ")
+        else pytest.raises(
+            pl.exceptions.ComputeError,
+            match=re.escape("cannot parse 'AAAA' (string) as "),
+        )
     )
 
     with cx:

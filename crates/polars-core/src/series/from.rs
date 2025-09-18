@@ -1,4 +1,4 @@
-use arrow::datatypes::Metadata;
+use arrow::datatypes::{IntervalUnit, Metadata};
 use arrow::offset::OffsetsBuffer;
 #[cfg(any(
     feature = "dtype-date",
@@ -7,8 +7,10 @@ use arrow::offset::OffsetsBuffer;
     feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
+use arrow::types::months_days_ns;
 use polars_compute::cast::cast_unchecked as cast;
 use polars_error::feature_gated;
+use polars_utils::check_allow_importing_interval_as_struct;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::{CastOptions, cast_chunks};
@@ -70,6 +72,8 @@ impl Series {
             UInt64 => UInt64Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-i128")]
             Int128 => Int128Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => UInt128Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-date")]
             Date => Int32Chunked::from_chunks(name, chunks)
                 .into_date()
@@ -216,6 +220,10 @@ impl Series {
             ArrowDataType::UInt16 => Ok(UInt16Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt32 => Ok(UInt32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt64 => Ok(UInt64Chunked::from_chunks(name, chunks).into_series()),
+            ArrowDataType::UInt128 => feature_gated!(
+                "dtype-u128",
+                Ok(UInt128Chunked::from_chunks(name, chunks).into_series())
+            ),
             #[cfg(feature = "dtype-i8")]
             ArrowDataType::Int8 => Ok(Int8Chunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-i16")]
@@ -477,6 +485,23 @@ impl Series {
                     Ok(out.into_series())
                 }
             },
+            ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
+                check_allow_importing_interval_as_struct("month_day_nano_interval")?;
+
+                feature_gated!("dtype-struct", {
+                    let chunks = chunks
+                        .into_iter()
+                        .map(convert_month_day_nano_to_struct)
+                        .collect::<PolarsResult<Vec<_>>>()?;
+
+                    Ok(StructChunked::from_chunks_and_dtype_unchecked(
+                        name,
+                        chunks,
+                        DataType::_month_days_ns_struct_type(),
+                    )
+                    .into_series())
+                })
+            },
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
@@ -736,6 +761,33 @@ unsafe fn import_arrow_dictionary_array(
             IDX_DTYPE,
         ))
     }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn convert_month_day_nano_to_struct(chunk: Box<dyn Array>) -> PolarsResult<Box<dyn Array>> {
+    let arr: &PrimitiveArray<months_days_ns> = chunk.as_any().downcast_ref().unwrap();
+
+    let values: &[months_days_ns] = arr.values();
+
+    let (months_out, days_out, nanoseconds_out): (Vec<i32>, Vec<i32>, Vec<i64>) = values
+        .iter()
+        .map(|x| (x.months(), x.days(), x.ns()))
+        .collect();
+
+    let out = StructArray::new(
+        DataType::_month_days_ns_struct_type()
+            .to_physical()
+            .to_arrow(CompatLevel::newest()),
+        arr.len(),
+        vec![
+            PrimitiveArray::<i32>::from_vec(months_out).boxed(),
+            PrimitiveArray::<i32>::from_vec(days_out).boxed(),
+            PrimitiveArray::<i64>::from_vec(nanoseconds_out).boxed(),
+        ],
+        arr.validity().cloned(),
+    );
+
+    Ok(out.boxed())
 }
 
 fn check_types(chunks: &[ArrayRef]) -> PolarsResult<ArrowDataType> {

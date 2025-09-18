@@ -1,5 +1,7 @@
-use arrow::datatypes::Metadata;
+use arrow::datatypes::{IntervalUnit, Metadata};
 use polars_dtype::categorical::CategoricalPhysical;
+use polars_error::feature_gated;
+use polars_utils::check_allow_importing_interval_as_struct;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
@@ -162,6 +164,8 @@ impl DataType {
             ArrowDataType::UInt16 => DataType::UInt16,
             ArrowDataType::UInt32 => DataType::UInt32,
             ArrowDataType::UInt64 => DataType::UInt64,
+            #[cfg(feature = "dtype-u128")]
+            ArrowDataType::UInt128 => DataType::UInt128,
             ArrowDataType::Int8 => DataType::Int8,
             ArrowDataType::Int16 => DataType::Int16,
             ArrowDataType::Int32 => DataType::Int32,
@@ -276,6 +280,14 @@ impl DataType {
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             ArrowDataType::Map(inner, _is_sorted) => {
                 DataType::List(Self::from_arrow_field(inner).boxed())
+            },
+            ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
+                check_allow_importing_interval_as_struct("month_day_nano_interval").unwrap();
+                feature_gated!("dtype-struct", DataType::_month_days_ns_struct_type())
+            },
+            ArrowDataType::Interval(IntervalUnit::MonthDayMillis) => {
+                check_allow_importing_interval_as_struct("month_day_millisecond_interval").unwrap();
+                feature_gated!("dtype-struct", DataType::_month_days_ns_struct_type())
             },
             dt => panic!(
                 "Arrow datatype {dt:?} not supported by Polars. \

@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use arrow::datatypes::{
-    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Metadata,
+    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
+    Metadata, PL_KEY,
 };
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
@@ -14,9 +15,6 @@ use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
-
-static MAINTAIN_PL_TYPE: &str = "maintain_type";
-static PL_KEY: &str = "pl";
 
 pub trait MetaDataExt: IntoMetadata {
     fn pl_enum_metadata(&self) -> Option<&str> {
@@ -93,6 +91,7 @@ pub enum DataType {
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
@@ -218,6 +217,8 @@ impl DataType {
             UInt16 => other.extract::<u16>().is_some(),
             UInt32 => other.extract::<u32>().is_some(),
             UInt64 => other.extract::<u64>().is_some(),
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => other.extract::<u128>().is_some(),
             #[cfg(feature = "dtype-i8")]
             Int8 => other.extract::<i8>().is_some(),
             #[cfg(feature = "dtype-i16")]
@@ -228,6 +229,19 @@ impl DataType {
             Int128 => other.extract::<i128>().is_some(),
             _ => false,
         }
+    }
+
+    /// Struct representation of the arrow `month_day_nano_interval` type.
+    #[cfg(feature = "dtype-struct")]
+    pub fn _month_days_ns_struct_type() -> Self {
+        DataType::Struct(vec![
+            Field::new(PlSmallStr::from_static("months"), DataType::Int32),
+            Field::new(PlSmallStr::from_static("days"), DataType::Int32),
+            Field::new(
+                PlSmallStr::from_static("nanoseconds"),
+                DataType::Duration(TimeUnit::Nanoseconds),
+            ),
+        ])
     }
 
     /// Check if the whole dtype is known.
@@ -672,6 +686,7 @@ impl DataType {
                 | DataType::UInt16
                 | DataType::UInt32
                 | DataType::UInt64
+                | DataType::UInt128
                 | DataType::Unknown(UnknownKind::Int(_))
         )
     }
@@ -687,7 +702,11 @@ impl DataType {
     pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
-            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
+            DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::UInt128,
         )
     }
 
@@ -784,6 +803,7 @@ impl DataType {
             UInt16 => Scalar::from(u16::MAX),
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
+            UInt128 => Scalar::from(u128::MAX),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -806,6 +826,7 @@ impl DataType {
             UInt16 => Scalar::from(u16::MIN),
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
+            UInt128 => Scalar::from(u128::MIN),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -830,6 +851,7 @@ impl DataType {
             UInt16 => Ok(ArrowDataType::UInt16),
             UInt32 => Ok(ArrowDataType::UInt32),
             UInt64 => Ok(ArrowDataType::UInt64),
+            UInt128 => Ok(ArrowDataType::UInt128),
             Int8 => Ok(ArrowDataType::Int8),
             Int16 => Ok(ArrowDataType::Int16),
             Int32 => Ok(ArrowDataType::Int32),
@@ -1048,6 +1070,7 @@ impl Display for DataType {
             DataType::UInt16 => "u16",
             DataType::UInt32 => "u32",
             DataType::UInt64 => "u64",
+            DataType::UInt128 => "u128",
             DataType::Int8 => "i8",
             DataType::Int16 => "i16",
             DataType::Int32 => "i32",
@@ -1120,6 +1143,7 @@ impl std::fmt::Debug for DataType {
             UInt16 => write!(f, "UInt16"),
             UInt32 => write!(f, "UInt32"),
             UInt64 => write!(f, "UInt64"),
+            UInt128 => write!(f, "UInt128"),
             Int8 => write!(f, "Int8"),
             Int16 => write!(f, "Int16"),
             Int32 => write!(f, "Int32"),

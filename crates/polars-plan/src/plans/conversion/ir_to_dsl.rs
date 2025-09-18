@@ -504,8 +504,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "json")]
                 IB::JsonEncode => B::JsonEncode,
                 IB::WithFields => B::WithFields,
-                #[cfg(feature = "python")]
-                IB::MapFieldNames(special_eq) => B::MapFieldNames(special_eq),
+                IB::MapFieldNames(f) => B::MapFieldNames(f),
             })
         },
         #[cfg(feature = "temporal")]

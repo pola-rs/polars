@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import ConcatMethod
@@ -538,18 +539,17 @@ def test_fill_null_unknown_output_type() -> None:
     }
 
 
-def test_approx_n_unique() -> None:
-    df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
+@pytest.mark.parametrize(("dtype"), [*NUMERIC_DTYPES, *TEMPORAL_DTYPES])
+def test_approx_n_unique(dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"a": pl.arange(100, eager=True).cast(dtype)})
+    cardinality = df.select(pl.col("a").approx_n_unique()).to_series()[0]
+    assert 95 <= cardinality <= 100
 
-    assert_frame_equal(
-        df1.select(pl.approx_n_unique("b")),
-        pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
-    )
 
-    assert_frame_equal(
-        df1.select(pl.col("b").approx_n_unique()),
-        pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
-    )
+def test_approx_n_unique_null() -> None:
+    df = pl.DataFrame({"a": 100 * [None]})
+    cardinality = df.select(pl.col("a").approx_n_unique()).to_series()[0]
+    assert cardinality == 1
 
 
 def test_lazy_functions() -> None:

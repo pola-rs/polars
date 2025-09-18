@@ -11,11 +11,10 @@ use polars_io::predicates::{
     ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicate,
 };
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
-use polars_io::prelude::_internal::calc_prefilter_cost;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, ParquetType, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::IdxSize;
-use polars_utils::enum_unit_vec::EnumUnitVec;
+use polars_utils::enum_unit_vec::EUnitVec;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::row_group_data_fetch::RowGroupData;
@@ -216,7 +215,7 @@ impl RowGroupDecoder {
 
                                     Ok((col, pred_true_mask))
                                 })
-                                .collect::<PolarsResult<EnumUnitVec<_>>>()
+                                .collect::<PolarsResult<EUnitVec<_>>>()
                         }
                     }),
             )
@@ -265,17 +264,18 @@ fn decode_column(
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
 
-    let (array, pred_true_mask) = polars_io::prelude::_internal::to_deserializer(
+    let (arrays, pred_true_mask) = polars_io::prelude::_internal::to_deserializer(
         columns_to_deserialize,
         arrow_field.clone(),
         filter,
     )?;
 
     if !skip_num_rows_check {
-        assert_eq!(array.len(), expected_num_rows);
+        let num_rows = arrays.iter().map(|array| array.len()).sum::<usize>();
+        assert_eq!(num_rows, expected_num_rows);
     }
 
-    let mut series = Series::try_from((arrow_field, array))?;
+    let mut series = Series::try_from((arrow_field, arrays))?;
 
     if let Some(col_idxs) = row_group_data
         .row_group_metadata
@@ -316,7 +316,7 @@ async fn filter_cols(
             async move {
                 (offset..offset.saturating_add(cols_per_thread).min(cols.len()))
                     .map(|i| cols[i].filter(&mask))
-                    .collect::<PolarsResult<EnumUnitVec<_>>>()
+                    .collect::<PolarsResult<EUnitVec<_>>>()
             }
         }))
     };
@@ -393,7 +393,6 @@ impl RowGroupDecoder {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
         assert!(self.predicate_field_indices.len() <= self.projected_arrow_fields.len());
 
-        let prefilter_setting = self.use_prefiltered.as_ref().unwrap();
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
 
@@ -474,7 +473,7 @@ impl RowGroupDecoder {
 
                                     Ok((col, pred_true_mask))
                                 })
-                                .collect::<PolarsResult<EnumUnitVec<_>>>()
+                                .collect::<PolarsResult<EUnitVec<_>>>()
                         }
                     }),
             )
@@ -559,7 +558,6 @@ impl RowGroupDecoder {
 
         assert_eq!(mask_bitmap.len(), projection_height);
 
-        let prefilter_cost = calc_prefilter_cost(&mask_bitmap);
         let expected_num_rows = mask_bitmap.set_bits();
 
         let cols_per_thread = (self
@@ -573,7 +571,6 @@ impl RowGroupDecoder {
             let non_predicate_len = non_predicate_field_indices.len();
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
-            let prefilter_setting = *prefilter_setting;
 
             parallelize_first_to_local((0..non_predicate_len).step_by(cols_per_thread).map(
                 move |offset| {
@@ -595,8 +592,6 @@ impl RowGroupDecoder {
                                 let col = decode_column_prefiltered(
                                     projection.arrow_field(),
                                     row_group_data.as_ref(),
-                                    prefilter_cost,
-                                    &prefilter_setting,
                                     &mask,
                                     &mask_bitmap,
                                     expected_num_rows,
@@ -604,7 +599,7 @@ impl RowGroupDecoder {
 
                                 projection.apply_transform(col)
                             })
-                            .collect::<PolarsResult<EnumUnitVec<_>>>()
+                            .collect::<PolarsResult<EUnitVec<_>>>()
                     }
                 },
             ))
@@ -627,8 +622,6 @@ impl RowGroupDecoder {
 fn decode_column_prefiltered(
     arrow_field: &ArrowField,
     row_group_data: &RowGroupData,
-    _prefilter_cost: f64,
-    _prefilter_setting: &PrefilterMaskSetting,
     mask: &BooleanChunked,
     mask_bitmap: &Bitmap,
     expected_num_rows: usize,

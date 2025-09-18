@@ -26,6 +26,7 @@ impl_from! {
     (u16, UInt16, UInt16)
     (u32, UInt32, UInt32)
     (u64, UInt64, UInt64)
+    (u128, UInt128, UInt128)
     (f32, Float32, Float32)
     (f64, Float64, Float64)
     (PlSmallStr, StringOwned, String)

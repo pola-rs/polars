@@ -13,6 +13,7 @@ use polars_utils::slice_enum::Slice;
 use pyo3::types::PyAnyMethods;
 use pyo3::{Bound, FromPyObject, PyObject, PyResult};
 
+use crate::functions::parse_cloud_options;
 use crate::prelude::Wrap;
 
 /// Interface to `class ScanOptions` on the Python side
@@ -73,35 +74,8 @@ impl PyScanOptions<'_> {
             deletion_files,
         } = self.0.extract()?;
 
-        let cloud_options = storage_options;
-
-        let cloud_options = if let Some(first_path) = first_path {
-            #[cfg(feature = "cloud")]
-            {
-                use polars_io::cloud::credential_provider::PlCredentialProvider;
-
-                use crate::prelude::parse_cloud_options;
-
-                let first_path_url = first_path.to_str();
-                let cloud_options =
-                    parse_cloud_options(first_path_url, cloud_options.unwrap_or_default())?;
-
-                Some(
-                    cloud_options
-                        .with_max_retries(retries)
-                        .with_credential_provider(
-                            credential_provider.map(PlCredentialProvider::from_python_builder),
-                        ),
-                )
-            }
-
-            #[cfg(not(feature = "cloud"))]
-            {
-                None
-            }
-        } else {
-            None
-        };
+        let cloud_options =
+            parse_cloud_options(first_path, storage_options, credential_provider, retries)?;
 
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 

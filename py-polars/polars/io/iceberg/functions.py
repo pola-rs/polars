@@ -39,7 +39,9 @@ def scan_iceberg(
     reader_override
         Overrides the reader used to read the data.
 
-        Warning: This parameter is considered unstable, and is subject to change.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Note that this parameter should not be necessary outside of testing, as
         polars will by default automatically select the best reader.

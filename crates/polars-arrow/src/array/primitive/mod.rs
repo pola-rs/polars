@@ -580,6 +580,8 @@ pub type UInt16Array = PrimitiveArray<u16>;
 pub type UInt32Array = PrimitiveArray<u32>;
 /// A type definition [`PrimitiveArray`] for `u64`
 pub type UInt64Array = PrimitiveArray<u64>;
+/// A type definition [`PrimitiveArray`] for `u128`
+pub type UInt128Array = PrimitiveArray<u128>;
 
 /// A type definition [`MutablePrimitiveArray`] for `i8`
 pub type Int8Vec = MutablePrimitiveArray<i8>;
@@ -611,6 +613,8 @@ pub type UInt16Vec = MutablePrimitiveArray<u16>;
 pub type UInt32Vec = MutablePrimitiveArray<u32>;
 /// A type definition [`MutablePrimitiveArray`] for `u64`
 pub type UInt64Vec = MutablePrimitiveArray<u64>;
+/// A type definition [`MutablePrimitiveArray`] for `u128`
+pub type UInt128Vec = MutablePrimitiveArray<u128>;
 
 impl<T: NativeType> Default for PrimitiveArray<T> {
     fn default() -> Self {

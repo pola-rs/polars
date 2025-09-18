@@ -71,6 +71,7 @@ DTYPES: list[tuple[PolarsDataType, str, str, int | None]] = [
     (pl.UInt16(), "uint", "u16", 16),
     (pl.UInt32(), "uint", "u32", 32),
     (pl.UInt64(), "uint", "u64", 64),
+    (pl.UInt128(), "uint", "u128", 128),
     (pl.Float32(), "float", "f32", 32),
     (pl.Float64(), "float", "f64", 64),
     (pl.Decimal(scale=4), "decimal", "decimal[*,4]", 128),
