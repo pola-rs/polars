@@ -228,7 +228,7 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
 
     Memory usage from PyArrow is not tracked.
     """
-    if not pl._plr._debug:  # type: ignore[attr-defined]
+    if not pl._plr._debug:
         pytest.skip("Memory usage only available in debug/dev builds.")
 
     if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
