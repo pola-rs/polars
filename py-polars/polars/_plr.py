@@ -64,7 +64,7 @@ else:
                     import warnings
 
                     warnings.warn(
-                        f"Polars' Rust module version '{sys.modules[__name__].__version__}' did not match version of Python package '{PKG_VERSION}'",
+                        f"Skipping Polars' Rust module version '{sys.modules[__name__].__version__}' did not match version of Python package '{PKG_VERSION}'.",
                         ImportWarning,
                         stacklevel=2,
                     )
