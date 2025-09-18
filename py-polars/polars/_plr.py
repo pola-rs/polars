@@ -2,15 +2,10 @@
 # bit of trickery here to allow overwriting it with other function pointers.
 
 import builtins
-import importlib
 import os
 import sys
 
-try:
-    pkg_version = importlib.metadata.version("polars")
-except Exception as _:
-    msg = "could not find Polars' module"
-    raise ImportError(msg) from None
+PKG_VERSION = "1.33.1"
 
 
 def pllts() -> None:
@@ -46,8 +41,8 @@ else:
         try:
             pkgs[_force]()
 
-            if sys.modules[__name__].__version__ != pkg_version:
-                msg = f"Polars Rust module for '{_force}' ({sys.modules[__name__].__version__}) did not match version of Python package '{pkg_version}'"
+            if sys.modules[__name__].__version__ != PKG_VERSION:
+                msg = f"Polars Rust module for '{_force}' ({sys.modules[__name__].__version__}) did not match version of Python package '{PKG_VERSION}'"
                 raise ImportError(msg)
         except KeyError:
             msg = f"Invalid value for `POLARS_FORCE_PKG` variable: '{_force}'"
@@ -65,11 +60,11 @@ else:
             try:
                 pkg()
 
-                if sys.modules[__name__].__version__ != pkg_version:
+                if sys.modules[__name__].__version__ != PKG_VERSION:
                     import warnings
 
                     warnings.warn(
-                        f"Polars' Rust module version '{sys.modules[__name__].__version__}' did not match version of Python package '{pkg_version}'",
+                        f"Polars' Rust module version '{sys.modules[__name__].__version__}' did not match version of Python package '{PKG_VERSION}'",
                         ImportWarning,
                         stacklevel=2,
                     )
@@ -81,3 +76,7 @@ else:
         else:
             msg = "could not find Polars' Rust module"
             raise ImportError(msg)
+
+
+# The version at the top here should match the version specified by the PLR.
+assert sys.modules[__name__].__version__ == PKG_VERSION
