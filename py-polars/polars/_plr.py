@@ -27,47 +27,36 @@ def pl32() -> None:
 if hasattr(builtins, "__POLARS_PLR"):
     sys.modules[__name__] = builtins.__POLARS_PLR
 else:
-    # PyO3 registers a module called `polars` in the polars namespace that contains all
-    # the functions that we want to have exposed.
+    # Each of the Polars variants registers a `_polars...` package that we can import
+    # the PLR from.
 
-    _FORCE = os.environ.get("POLARS_FORCE_PKG")
-    _PREFER = os.environ.get("POLARS_PREFER_PKG")
+    _force = os.environ.get("POLARS_FORCE_PKG")
+    _prefer = os.environ.get("POLARS_PREFER_PKG")
 
-    if (_FORCE is None and _PREFER is None) or _PREFER == "lts":
+    pkgs = {
+        "lts": pllts,
+        "64": pl64,
+        "32": pl32
+    }
+
+    if _force is not None:
         try:
-            pllts()
-        except ImportError as _:
-            try:
-                pl64()
-            except ImportError as _:
-                pl32()
-    elif _FORCE is not None:
-        if _FORCE == "lts":
-            pllts()
-        elif _FORCE == "64":
-            pl64()
-        elif _FORCE == "32":
-            pl32()
-        else:
-            msg = f"Invalid value for `POLARS_FORCE_PKG` variable: '{_FORCE}'"
-            raise ValueError(msg)
+            pkgs[_force]()
+        except KeyError:
+            msg = f"Invalid value for `POLARS_FORCE_PKG` variable: '{_force}'"
+            raise ValueError(msg) from None
     else:
-        if _PREFER == "64":
+        preference = [pllts, pl64, pl32]
+        if _prefer is not None:
             try:
-                pl64()
-            except ImportError as _:
-                try:
-                    pllts()
-                except ImportError as _:
-                    pl32()
-        elif _PREFER == "32":
+                preference.insert(0, pkgs[_prefer])
+            except KeyError:
+                msg = f"Invalid value for `POLARS_PREFER_PKG` variable: '{_prefer}'"
+                raise ValueError(msg) from None
+
+        for pkg in preference:
             try:
-                pl32()
-            except ImportError as _:
-                try:
-                    pllts()
-                except ImportError as _:
-                    pl64()
-        else:
-            msg = f"Invalid value for `POLARS_PREFER_PKG` variable: '{_PREFER}'"
-            raise ValueError(msg)
+                pkg()
+                break
+            except ImportError:
+                pass
