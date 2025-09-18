@@ -229,8 +229,11 @@ impl AnyValue<'static> {
                 _ => return None,
             },
 
+            #[cfg(feature = "dtype-date")]
             Self::Date(v) => match dtype {
                 DataType::Date => Self::Date(*v),
+
+                #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, None) => {
                     let conversion = match tu {
                         TimeUnit::Nanoseconds => NS_IN_DAY,
@@ -244,6 +247,7 @@ impl AnyValue<'static> {
                 _ => return None,
             },
 
+            #[cfg(feature = "dtype-datetime")]
             Self::DatetimeOwned(v, from_tu, None) | Self::Datetime(v, from_tu, None) => match dtype
             {
                 DataType::Datetime(to_tu, None) => {
@@ -277,6 +281,7 @@ impl AnyValue<'static> {
                     Self::DatetimeOwned(value, *to_tu, None)
                 },
 
+                #[cfg(feature = "dtype-date")]
                 DataType::Date => {
                     let conversion = match from_tu {
                         TimeUnit::Nanoseconds => NS_IN_DAY,
