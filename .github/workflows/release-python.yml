@@ -71,7 +71,7 @@ jobs:
       - name: Update U32 package
         if: matrix.package == 'polars'
         run: |
-          mv py-polars/_polars32 py-polars/_polars32
+          mv py-polars/_polars64 py-polars/_polars32
           tomlq -i -t '.lib.name = "_polars32"' py-polars/Cargo.toml
           sed -i 's/pub fn _polars64/pub fn _polars32/' crates/polars-python/src/c_api/mod.rs
 
