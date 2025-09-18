@@ -50,9 +50,10 @@ else:
                 msg = f"Invalid value for `POLARS_PREFER_PKG` variable: '{_prefer}'"
                 raise ValueError(msg) from None
 
-        for pkg in preference:
+        for i, pkg in enumerate(preference):
             try:
                 pkg()
                 break
             except ImportError:
-                pass
+                if i == len(preference) - 1:
+                    raise
