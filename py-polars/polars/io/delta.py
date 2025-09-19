@@ -356,15 +356,6 @@ def scan_delta(
 
     table_protocol = dl_tbl.protocol()
     if (
-        table_protocol.min_reader_version > MAX_SUPPORTED_READER_VERSION
-        or table_protocol.min_reader_version == NOT_SUPPORTED_READER_VERSION
-    ):
-        msg = (
-            f"The table's minimum reader version is {table_protocol.min_reader_version} "
-            f"but polars delta scanner only supports version 1 or {MAX_SUPPORTED_READER_VERSION} with these reader features: {SUPPORTED_READER_FEATURES}"
-        )
-        raise DeltaProtocolError(msg)
-    if (
         table_protocol.min_reader_version >= 3
         and table_protocol.reader_features is not None
     ):
