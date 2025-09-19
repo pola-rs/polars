@@ -30,12 +30,14 @@ avro-schema = { workspace = true, features = ["async"] }
 chrono = { workspace = true }
 either = { workspace = true }
 ethnum = "1"
+flate2 = { workspace = true }
 futures = { workspace = true }
 # used to run formal property testing
 proptest = { workspace = true }
 rand = { workspace = true }
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
+zstd = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -159,6 +161,7 @@ dataframe_arithmetic = ["polars-core/dataframe_arithmetic"]
 month_start = ["polars-lazy?/month_start"]
 month_end = ["polars-lazy?/month_end"]
 offset_by = ["polars-lazy?/offset_by"]
+compress = ["polars-io/compress"]
 decompress = ["polars-io/decompress"]
 describe = ["polars-core/describe"]
 diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy?/diagonal_concat", "polars-sql?/diagonal_concat"]
@@ -425,6 +428,7 @@ docs-selection = [
   "concat_str",
   "string_reverse",
   "string_to_integer",
+  "compress",
   "decompress",
   "mode",
   "take_opt_iter",

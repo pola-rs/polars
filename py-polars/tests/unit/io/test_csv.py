@@ -9,7 +9,7 @@ import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
 from tempfile import NamedTemporaryFile
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Callable, Literal, TypedDict
 
 import numpy as np
 import pyarrow as pa
@@ -2830,3 +2830,107 @@ def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
     )
     expected = "b\n" + "a\n" * n_rows
     assert df.write_csv() == expected
+
+
+@pytest.mark.parametrize(
+    ("compression", "level", "decompress"),
+    [
+        ("gzip", (6, 0, 9), gzip.decompress),
+        (
+            "zstd",
+            (3, 1, 22),
+            # zstandard.decompress() does not support multiple frames.
+            # so we use a stream reader instead.
+            lambda b: zstandard.ZstdDecompressor().stream_reader(b).read(),
+        ),
+    ],
+)
+def test_write_compressed_csv(
+    compression: Literal["gzip", "zstd"],
+    level: tuple[int, int, int],
+    decompress: Callable[[bytes], bytes],
+) -> None:
+    default_level, min_level, max_level = level
+
+    series = pl.arange(0, 100, eager=True)
+    expected = pl.DataFrame({"a": series, "b": series, "c": series})
+
+    # Round-trip
+    buf = io.BytesIO()
+    expected.write_csv(buf, compression=compression)
+    compressed_csv = buf.getvalue()
+    csv = decompress(compressed_csv)
+    out = pl.read_csv(csv)
+    assert_frame_equal(out, expected)
+
+    # Round-trip (sink)
+    buf = io.BytesIO()
+    expected.lazy().sink_csv(buf, compression=compression)
+    csv = decompress(buf.getvalue())
+    out = pl.read_csv(csv)
+    assert_frame_equal(out, expected)
+
+    # Default level (implicit vs explicit)
+    buf = io.BytesIO()
+    expected.write_csv(buf, compression=compression, compression_level=default_level)
+    compressed_csv_explicit = buf.getvalue()
+    assert compressed_csv_explicit == compressed_csv
+    assert_frame_equal(pl.read_csv(decompress(compressed_csv_explicit)), expected)
+
+    # Min level vs Max level
+    buf_min, buf_max = io.BytesIO(), io.BytesIO()
+    expected.write_csv(buf_min, compression=compression, compression_level=min_level)
+    expected.write_csv(buf_max, compression=compression, compression_level=max_level)
+    compressed_csv_min, compressed_csv_max = buf_min.getvalue(), buf_max.getvalue()
+    assert len(compressed_csv_min) > len(compressed_csv_max)
+    assert_frame_equal(pl.read_csv(decompress(compressed_csv_min)), expected)
+    assert_frame_equal(pl.read_csv(decompress(compressed_csv_max)), expected)
+
+
+@pytest.mark.parametrize("bom", [True, False])
+@pytest.mark.parametrize("header", [True, False])
+def test_write_compressed_csv_bom_header(bom: bool, header: bool) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]})
+    preamble = b"\xef\xbb\xbf" if bom else b""
+    preamble += b"a,b,c\n" if header else b""
+    records = b"1,a,1.0\n2,b,2.0\n3,c,3.0\n"
+
+    # standard (preabmle + records)
+    buf = io.BytesIO()
+    df.write_csv(buf, include_bom=bom, include_header=header, compression="gzip")
+    out = gzip.decompress(buf.getvalue())
+    expected = preamble + records
+    assert out == expected
+
+    # preamble only
+    buf = io.BytesIO()
+    df[:0].write_csv(buf, include_bom=bom, include_header=header, compression="gzip")
+    out = gzip.decompress(buf.getvalue())
+    expected = preamble
+    assert out == expected
+
+
+@pytest.mark.write_disk
+def test_write_compressed_csv_file(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+
+    # Write to a gzip compressed file
+    file_path = tmp_path / "data.csv.gz"
+    expected.write_csv(file_path, compression="gzip")
+    assert file_path.exists()
+
+    # Read back the gzip compressed file
+    csv = gzip.decompress(file_path.read_bytes())
+    out = pl.read_csv(csv)
+    assert_frame_equal(out, expected)
+
+    # Write to a zstd compressed file
+    file_path = tmp_path / "data.csv.zst"
+    expected.lazy().sink_csv(file_path, compression="zstd")
+    assert file_path.exists()
+
+    # Read back the zstd compressed file
+    csv = zstandard.ZstdDecompressor().stream_reader(file_path.read_bytes()).read()
+    out = pl.read_csv(csv)
+    assert_frame_equal(out, expected)
