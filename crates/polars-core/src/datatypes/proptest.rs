@@ -153,7 +153,7 @@ fn decimal_strategy(
     decimal_precision_range
         .clone()
         .prop_flat_map(move |precision| {
-            let scale_strategy = (0_usize..=precision);
+            let scale_strategy = 0_usize..=precision;
             (Just(precision), scale_strategy)
         })
         .prop_map(|(precision, scale)| DataType::Decimal(precision, scale))
