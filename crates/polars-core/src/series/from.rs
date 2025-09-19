@@ -9,6 +9,7 @@ use arrow::offset::OffsetsBuffer;
 use arrow::temporal_conversions::*;
 use arrow::types::months_days_ns;
 use polars_compute::cast::cast_unchecked as cast;
+#[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::dec128_fits;
 use polars_error::feature_gated;
 use polars_utils::check_allow_importing_interval_as_struct;
@@ -379,37 +380,39 @@ impl Series {
                 })
             },
             ArrowDataType::Decimal256(precision, scale) => {
-                use arrow::types::i256;
+                feature_gated!("dtype-decimal", {
+                    use arrow::types::i256;
 
-                polars_compute::decimal::dec128_verify_prec_scale(*precision, *scale)?;
+                    polars_compute::decimal::dec128_verify_prec_scale(*precision, *scale)?;
 
-                let mut chunks = chunks;
-                for chunk in chunks.iter_mut() {
-                    let arr = std::mem::take(
-                        chunk
-                            .as_any_mut()
-                            .downcast_mut::<PrimitiveArray<i256>>()
-                            .unwrap(),
-                    );
-                    let arr_128: PrimitiveArray<i128> = arr.iter().map(|opt_v| {
-                        if let Some(v) = opt_v {
-                            let smaller: Option<i128> = (*v).try_into().ok();
-                            let smaller = smaller.filter(|v| dec128_fits(*v, *precision));
-                            smaller.ok_or_else(|| {
-                                polars_err!(ComputeError: "Decimal256 to Decimal128 conversion overflowed, Decimal256 is not (yet) supported in Polars")
-                            }).map(Some)
-                        } else {
-                            Ok(None)
-                        }
-                    }).try_collect_arr_trusted()?;
+                    let mut chunks = chunks;
+                    for chunk in chunks.iter_mut() {
+                        let arr = std::mem::take(
+                            chunk
+                                .as_any_mut()
+                                .downcast_mut::<PrimitiveArray<i256>>()
+                                .unwrap(),
+                        );
+                        let arr_128: PrimitiveArray<i128> = arr.iter().map(|opt_v| {
+                            if let Some(v) = opt_v {
+                                let smaller: Option<i128> = (*v).try_into().ok();
+                                let smaller = smaller.filter(|v| dec128_fits(*v, *precision));
+                                smaller.ok_or_else(|| {
+                                    polars_err!(ComputeError: "Decimal256 to Decimal128 conversion overflowed, Decimal256 is not (yet) supported in Polars")
+                                }).map(Some)
+                            } else {
+                                Ok(None)
+                            }
+                        }).try_collect_arr_trusted()?;
 
-                    *chunk = arr_128.to(ArrowDataType::Int128).to_boxed();
-                }
+                        *chunk = arr_128.to(ArrowDataType::Int128).to_boxed();
+                    }
 
-                let s = Int128Chunked::from_chunks(name, chunks)
-                    .into_decimal_unchecked(*precision, *scale)
-                    .into_series();
-                Ok(s)
+                    let s = Int128Chunked::from_chunks(name, chunks)
+                        .into_decimal_unchecked(*precision, *scale)
+                        .into_series();
+                    Ok(s)
+                })
             },
             ArrowDataType::Null => Ok(new_null(name, &chunks)),
             #[cfg(not(feature = "dtype-categorical"))]

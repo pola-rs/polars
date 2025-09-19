@@ -875,7 +875,7 @@ pub fn cast(
         (Int128, Float32) => primitive_to_primitive_dyn::<i128, f32>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (Int128, Float64) => primitive_to_primitive_dyn::<i128, f64>(array, to_type, as_options),
-        #[cfg(all(feature = "dtype-i128", feature="dtype-decimal"))]
+        #[cfg(all(feature = "dtype-i128", feature = "dtype-decimal"))]
         (Int128, Decimal(p, s)) => integer_to_decimal_dyn::<i128>(array, *p, *s),
 
         (Float16, Float32) => {

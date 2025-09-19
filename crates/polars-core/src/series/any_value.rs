@@ -65,6 +65,7 @@ impl Series {
         }
         let dtype = if strict {
             match get_first_non_null_dtype(values) {
+                #[cfg(feature = "dtype-decimal")]
                 DataType::Decimal(mut prec, mut scale) => {
                     for v in values {
                         if let DataType::Decimal(p, s) = v.dtype() {

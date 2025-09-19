@@ -1,3 +1,5 @@
+use polars_compute::decimal::dec128_verify_prec_scale;
+
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 
@@ -16,7 +18,7 @@ impl StringChunked {
         let mut valid_count = 0;
         while let Some(Some(v)) = iter.next() {
             let mut bytes = v.as_bytes();
-            if bytes.first() == Some(&b'-') {
+            if bytes.first() == Some(&b'-') || bytes.first() == Some(&b'+') {
                 bytes = &bytes[1..];
             }
             if let Some(separator) = bytes.iter().position(|b| *b == b'.') {
@@ -36,6 +38,7 @@ impl StringChunked {
     }
 
     pub fn to_decimal(&self, prec: usize, scale: usize) -> PolarsResult<Series> {
+        dec128_verify_prec_scale(prec, scale)?;
         self.cast_with_options(&DataType::Decimal(prec, scale), CastOptions::NonStrict)
     }
 }
@@ -47,7 +50,7 @@ mod test {
         use super::*;
         let vals = [
             "1.0",
-            "invalid",
+            "wrong",
             "225.0",
             "3.00045",
             "-4.0",
@@ -56,12 +59,12 @@ mod test {
         ];
         let s = StringChunked::from_slice(PlSmallStr::from_str("test"), &vals);
         let s = s.to_decimal_infer(6).unwrap();
-        assert_eq!(s.dtype(), &DataType::Decimal(12, 5));
+        assert_eq!(s.dtype(), &DataType::Decimal(6, 5));
         assert_eq!(s.len(), 7);
-        assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 12, 5));
+        assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 6, 5));
         assert_eq!(s.get(1).unwrap(), AnyValue::Null);
-        assert_eq!(s.get(3).unwrap(), AnyValue::Decimal(300045, 12, 5));
-        assert_eq!(s.get(4).unwrap(), AnyValue::Decimal(-400000, 12, 5));
-        assert_eq!(s.get(6).unwrap(), AnyValue::Decimal(525251, 12, 5));
+        assert_eq!(s.get(3).unwrap(), AnyValue::Decimal(300045, 6, 5));
+        assert_eq!(s.get(4).unwrap(), AnyValue::Decimal(-400000, 6, 5));
+        assert_eq!(s.get(6).unwrap(), AnyValue::Decimal(525251, 6, 5));
     }
 }
