@@ -214,10 +214,8 @@ def _in_notebook() -> bool:
 def _in_marimo_notebook() -> bool:
     try:
         import marimo as mo
-        if mo.running_in_notebook():
-            return True
-        else:
-            return False
+
+        return mo.running_in_notebook()  # pragma: no cover
     except ImportError:
         return False
 
@@ -674,7 +672,7 @@ def display_dot_graph(
         return dot
 
     output_type = (
-        "svg" if _in_notebook() or "POLARS_DOT_SVG_VIEWER" in os.environ else "png"
+        "svg" if _in_notebook() or _in_marimo_notebook() or "POLARS_DOT_SVG_VIEWER" in os.environ else "png"
     )
 
     try:
