@@ -31,7 +31,7 @@ use crate::series::PySeries;
 use crate::sql::PySQLContext;
 use crate::{datatypes, exceptions, functions, testing};
 
-#[pymodule]
+#[pymodule(gil_used = false)]
 fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visitor::nodes::*;
     m.add_class::<PythonScan>().unwrap();
@@ -57,7 +57,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)]
 fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visit::PyExprIR;
     use crate::lazyframe::visitor::expr_nodes::*;
@@ -90,7 +90,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)]
 pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
