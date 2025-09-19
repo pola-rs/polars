@@ -63,6 +63,17 @@ impl PlCloudPath {
 }
 
 impl PlCloudPathRef<'_> {
+    pub fn new<'a>(uri: &'a str) -> Option<PlCloudPathRef<'a>> {
+        if let Some(i) = uri.find([':', '/']) {
+            if uri[i..].starts_with("://") && CLOUD_SCHEME_REGEX.is_match(&uri[..i]) {
+                let scheme = CloudScheme::from_str(&uri[..i]).unwrap();
+                return Some(PlCloudPathRef { scheme, uri });
+            }
+        }
+
+        None
+    }
+
     pub fn into_owned(self) -> PlCloudPath {
         PlCloudPath {
             scheme: self.scheme,
@@ -191,6 +202,10 @@ impl<'a> PlPathRef<'a> {
         match self {
             Self::Local(p) => PlPath::Local(p.join(other).into()),
             Self::Cloud(p) => {
+                if let Some(cloud_path) = PlCloudPathRef::new(other) {
+                    return PlPath::Cloud(cloud_path.into_owned());
+                }
+
                 let needs_slash = !p.uri.ends_with('/') && !other.starts_with('/');
 
                 let mut out =
