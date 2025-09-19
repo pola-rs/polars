@@ -572,3 +572,24 @@ def test_add_aggstates_with_sort_in_binary_expr_24504(
         print(f"out_non_agg:\n{out_non_agg}")
 
     assert_frame_equal(out, out_non_agg, check_row_order=maintain_order)
+
+
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_binary_context_nested(maintain_order: bool) -> None:
+    df = pl.DataFrame({"groups": [1, 1, 2, 2, 3, 3], "vals": [1, 13, 3, 87, 1, 6]})
+    out = (
+        df.lazy()
+        .group_by(pl.col("groups"), maintain_order=maintain_order)
+        .agg(
+            [
+                pl.when(pl.col("vals").eq(pl.lit(1)))
+                .then(pl.col("vals").sum())
+                .otherwise(pl.lit(90))
+                .alias("vals")
+            ]
+        )
+    ).collect()
+    expected = pl.DataFrame(
+        {"groups": [1, 2, 3], "vals": [[14, 90], [90, 90], [7, 90]]}
+    )
+    assert_frame_equal(out, expected, check_row_order=maintain_order)

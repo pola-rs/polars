@@ -125,30 +125,64 @@ impl BinaryExpr {
     fn apply_elementwise<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
-        ac_r: AggregationContext,
+        mut ac_r: AggregationContext<'a>,
         aggregated: bool,
     ) -> PolarsResult<AggregationContext<'a>> {
-        match (ac_l.agg_state(), ac_r.agg_state()) {
-            (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {
-                ac_l.groups.check_lengths(ac_r.groups.as_ref())?;
-                let lhs = lhs.list().unwrap();
-                let rhs = rhs.list().unwrap();
-                let out = lhs.apply_to_inner(&|lhs| {
-                    apply_operator(&lhs.into_column(), &rhs.get_inner().into_column(), self.op)
+        // At this stage, we do not have both AggregatedList and NotAggregated ACs
+
+        // Check group lengths in case of all AggList
+        if [&ac_l, &ac_r]
+            .iter()
+            .all(|ac| matches!(ac.state, AggState::AggregatedList(_)))
+        {
+            ac_l.groups.check_lengths(&ac_r.groups)?;
+        }
+
+        // The first non-LiteralScalar AC will be used as the base AC to retain the context
+        let left_is_literal = ac_l.is_literal();
+
+        match if !left_is_literal {
+            ac_l.agg_state()
+        } else {
+            ac_r.agg_state()
+        } {
+            AggState::AggregatedList(s) => {
+                let ca = s.list().unwrap();
+                let cols = [&ac_l, &ac_r]
+                    .iter()
+                    .map(|ac| ac.flat_naive().into_owned())
+                    .collect::<Vec<_>>();
+
+                let out = ca.apply_to_inner(&|_| {
+                    apply_operator(&cols[0], &cols[1], self.op)
                         .map(|c| c.take_materialized_series())
                 })?;
+                let out = out.into_column();
+
+                if ac_l.is_literal() {
+                    std::mem::swap(&mut ac_l, &mut ac_r);
+                }
+
                 ac_l.with_values(out.into_column(), true, Some(&self.expr))?;
                 Ok(ac_l)
             },
+
             _ => {
                 // We want to be able to mutate in place, so we take the lhs to make sure that we drop.
                 let lhs = ac_l.get_values().clone();
                 let rhs = ac_r.get_values().clone();
 
+                let out = apply_operator_owned(lhs, rhs, self.op)?;
+
+                // Make sure ac_l is a non_literal AC so we retain correct group info, e.g.
+                // in the case of (LiteralScalar, NotAggregated with mutated groups)
+                if ac_l.is_literal() {
+                    std::mem::swap(&mut ac_l, &mut ac_r);
+                }
+
                 // Drop lhs so that we might operate in place.
                 drop(ac_l.take());
 
-                let out = apply_operator_owned(lhs, rhs, self.op)?;
                 ac_l.with_values(out, aggregated, Some(&self.expr))?;
                 Ok(ac_l)
             },
@@ -262,9 +296,6 @@ impl PhysicalExpr for BinaryExpr {
         let has_agg_list = [&ac_l, &ac_r]
             .iter()
             .any(|ac| matches!(ac.state, AggState::AggregatedList(_)));
-        let has_literal = [&ac_l, &ac_r]
-            .iter()
-            .any(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
         let not_agg_has_rolling = [&ac_l, &ac_r]
             .iter()
             .any(|ac| matches!(ac.state, AggState::NotAggregated(_)) && ac.groups.is_overlapping());
@@ -279,9 +310,7 @@ impl PhysicalExpr for BinaryExpr {
 
         for ac in [&mut ac_l, &mut ac_r] {
             if matches!(ac.state, AggState::NotAggregated(_)) {
-                if !not_agg_has_rolling
-                    && (has_agg_list || has_literal || not_agg_groups_may_diverge)
-                {
+                if !not_agg_has_rolling && (has_agg_list || not_agg_groups_may_diverge) {
                     ac.aggregated();
                 }
             }
