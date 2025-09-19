@@ -791,7 +791,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             |dt| {
                                 dt.is_primitive_numeric()
                                     || dt.is_temporal()
-                                    || dt == &DataType::Boolean
+                                    || matches!(dt, DataType::Boolean | DataType::Decimal(_, _))
                             },
                             |name| col(name.clone()).mean(),
                             &input_schema,
