@@ -701,7 +701,7 @@ def test_decimal_from_large_ints_9084() -> None:
 
 def test_cast_float_to_decimal_12775() -> None:
     s = pl.Series([1.5])
-    assert s.cast(pl.Decimal(scale=0)).to_list() == [D("1")]
+    assert s.cast(pl.Decimal(scale=0)).to_list() == [D("2")]
     assert s.cast(pl.Decimal(scale=1)).to_list() == [D("1.5")]
 
 
@@ -782,4 +782,5 @@ def test_decimal_agg() -> None:
     assert_frame_equal(
         df.group_by("g").agg(**agg_exprs).cast(pl.Float64),
         ddf.group_by("g").agg(**agg_exprs).cast(pl.Float64),
+        check_row_order=False
     )

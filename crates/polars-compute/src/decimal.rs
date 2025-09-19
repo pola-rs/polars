@@ -485,8 +485,10 @@ pub fn dec128_to_f64(x: i128, s: usize) -> f64 {
 #[inline]
 pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
     // TODO: correctly rounded result. This rounds multiple times.
-    let n = (x * POW10_F64[s]) as i128;
-    dec128_fits(n, p).then_some(n)
+    if !(x.abs() < POW10_F64[p]) {
+        return None;
+    }
+    unsafe { Some((x * POW10_F64[s]).round_ties_even().to_int_unchecked()) }
 }
 
 /// Converts between two Decimal128s, with a new precision and scale, returning
