@@ -204,16 +204,14 @@ pub(super) fn expand_datasets(
                         unified_scan_args.deletion_files = deletion_files.clone();
                         unified_scan_args.table_statistics = table_statistics.clone();
 
-                        (|| {
+                        if row_index_in_live_filter {
                             use polars_core::prelude::{Column, DataType, IdxCa, IntoColumn};
                             use polars_core::series::IntoSeries;
 
-                            if !row_index_in_live_filter {
-                                return None;
-                            }
-
-                            let row_index_name = &unified_scan_args.row_index.as_ref()?.name;
-                            let table_statistics = unified_scan_args.table_statistics.as_mut()?;
+                            let row_index_name =
+                                &unified_scan_args.row_index.as_ref().unwrap().name;
+                            let table_statistics =
+                                unified_scan_args.table_statistics.as_mut().unwrap();
 
                             let statistics_df = Arc::make_mut(&mut table_statistics.0);
                             assert!(
@@ -243,9 +241,7 @@ pub(super) fn expand_datasets(
                                     &DataType::IDX_DTYPE,
                                 ),
                             ]);
-
-                            Some(())
-                        })();
+                        }
 
                         *sources = resolved_sources.clone();
 
