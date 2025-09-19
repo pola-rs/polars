@@ -753,3 +753,32 @@ def test_decimal_cast_limit() -> None:
         too_large1.cast(pl.Decimal(38, 0))
     with pytest.raises(InvalidOperationError):
         too_large2.cast(pl.Decimal(38, 0))
+
+
+def test_decimal_agg() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2, 2],
+            "x": [1, 10, 100, 1000],
+        }
+    )
+    ddf = df.with_columns(x = pl.col.x.cast(pl.Decimal(scale=3)))
+
+    agg_exprs = {
+        "min": pl.col.x.min(),
+        "max": pl.col.x.max(),
+        "mean": pl.col.x.mean(),
+        "quantile": pl.col.x.quantile(0.4),
+        "median": pl.col.x.median(),
+        "sum": pl.col.x.sum(),
+        "var": pl.col.x.var(),
+        "std": pl.col.x.std(),
+    }
+
+    assert_frame_equal(
+        df.select(**agg_exprs).cast(pl.Float64), ddf.select(**agg_exprs).cast(pl.Float64)
+    )
+    assert_frame_equal(
+        df.group_by("g").agg(**agg_exprs).cast(pl.Float64), ddf.group_by("g").agg(**agg_exprs).cast(pl.Float64)
+    )
+
