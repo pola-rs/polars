@@ -485,7 +485,9 @@ pub fn dec128_to_f64(x: i128, s: usize) -> f64 {
 #[inline]
 pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
     // TODO: correctly rounded result. This rounds multiple times.
+    #[allow(clippy::neg_cmp_op_on_partial_ord)]
     if !(x.abs() < POW10_F64[p]) {
+        // Comparison will fail for NaN, making us return None.
         return None;
     }
     unsafe { Some((x * POW10_F64[s]).round_ties_even().to_int_unchecked()) }

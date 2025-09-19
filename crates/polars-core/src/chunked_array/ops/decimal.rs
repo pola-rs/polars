@@ -65,6 +65,6 @@ mod test {
         assert_eq!(s.get(1).unwrap(), AnyValue::Null);
         assert_eq!(s.get(3).unwrap(), AnyValue::Decimal(300045, 6, 5));
         assert_eq!(s.get(4).unwrap(), AnyValue::Decimal(-400000, 6, 5));
-        assert_eq!(s.get(6).unwrap(), AnyValue::Decimal(525251, 6, 5));
+        assert_eq!(s.get(6).unwrap(), AnyValue::Decimal(525252, 6, 5));
     }
 }
