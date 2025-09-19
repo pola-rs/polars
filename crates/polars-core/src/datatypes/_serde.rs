@@ -92,7 +92,7 @@ enum SerializableDataType {
         strings: Series,
     },
     #[cfg(feature = "dtype-decimal")]
-    Decimal(Option<usize>, Option<usize>),
+    Decimal(usize, usize),
     #[cfg(feature = "object")]
     Object(String),
 }

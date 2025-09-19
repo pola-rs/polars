@@ -449,6 +449,9 @@ class Decimal(NumericType):
             " It is a work-in-progress feature and may not always work as expected."
         )
 
+        if precision is None:
+            precision = 38
+
         self.precision = precision
         self.scale = scale
 

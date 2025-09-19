@@ -31,6 +31,7 @@ atoi_simd = "0.16"
 atomic-waker = "1"
 avro-schema = { version = "0.3" }
 base64 = "0.22.0"
+bigdecimal = "0.4.8"
 bincode = { version = "2.0", features = ["serde", "std"] }
 bitflags = "2"
 boxcar = "0.2.12"
@@ -59,6 +60,7 @@ libm = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
 ndarray = { version = "0.16", default-features = false }
+num-bigint = "0.4.6"
 num-traits = "0.2"
 numpy = "0.25"
 object_store = { version = "0.12", default-features = false, features = ["fs"] }
