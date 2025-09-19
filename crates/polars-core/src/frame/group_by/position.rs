@@ -384,6 +384,16 @@ impl GroupsType {
         }
     }
 
+    pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
+        if std::ptr::eq(self, other) {
+            return Ok(());
+        }
+        polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
+            a.len() == b.len()
+        }), ComputeError: "expressions must have matching group lengths");
+        Ok(())
+    }
+
     /// # Safety
     /// This will not do any bounds checks. The caller must ensure
     /// all groups have members.
@@ -500,16 +510,6 @@ impl GroupsType {
     pub fn into_sliceable(self) -> GroupPositions {
         let len = self.len();
         slice_groups(Arc::new(self), 0, len)
-    }
-
-    pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
-        if std::ptr::eq(self, other) {
-            return Ok(());
-        }
-        polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
-            a.len() == b.len()
-        }), ComputeError: "expressions must have matching group lengths");
-        Ok(())
     }
 }
 
@@ -640,12 +640,6 @@ impl Clone for GroupPositions {
             offset: self.offset,
             len: self.len,
         }
-    }
-}
-
-impl PartialEq for GroupPositions {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset && self.len == other.len && self.sliced == other.sliced
     }
 }
 
