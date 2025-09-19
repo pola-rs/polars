@@ -205,15 +205,15 @@ pub(super) fn expand_datasets(
                         unified_scan_args.table_statistics = table_statistics.clone();
 
                         (|| {
-                            let row_index_name = &unified_scan_args.row_index.as_ref()?.name;
-                            let table_statistics = unified_scan_args.table_statistics.as_mut()?;
+                            use polars_core::prelude::{Column, DataType, IdxCa, IntoColumn};
+                            use polars_core::series::IntoSeries;
 
                             if !row_index_in_live_filter {
                                 return None;
                             }
 
-                            use polars_core::prelude::{Column, DataType, IdxCa, IntoColumn};
-                            use polars_core::series::IntoSeries;
+                            let row_index_name = &unified_scan_args.row_index.as_ref()?.name;
+                            let table_statistics = unified_scan_args.table_statistics.as_mut()?;
 
                             let statistics_df = Arc::make_mut(&mut table_statistics.0);
                             assert!(
