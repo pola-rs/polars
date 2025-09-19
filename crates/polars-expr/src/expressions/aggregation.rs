@@ -119,7 +119,7 @@ impl PhysicalExpr for AggregationExpr {
                 panic!("activate 'propagate_nans' feature")
             },
             GroupByMethod::Median => s.median_reduce().map(|sc| sc.into_column(s.name().clone())),
-            GroupByMethod::Mean => Ok(s.mean_reduce().into_column(s.name().clone())),
+            GroupByMethod::Mean => s.mean_reduce().map(|sc| sc.into_column(s.name().clone())),
             GroupByMethod::First => Ok(if s.is_empty() {
                 Column::full_null(s.name().clone(), 1, s.dtype())
             } else {

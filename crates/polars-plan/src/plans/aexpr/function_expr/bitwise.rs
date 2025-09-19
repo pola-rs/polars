@@ -70,13 +70,7 @@ impl From<IRBitwiseFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 impl IRBitwiseFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         mapper.try_map_dtype(|dtype| {
-            let is_valid = match dtype {
-                DataType::Boolean => true,
-                dt if dt.is_integer() => true,
-                dt if dt.is_float() => true,
-                _ => false,
-            };
-
+            let is_valid = dtype.is_bool() || dtype.is_integer();
             if !is_valid {
                 polars_bail!(InvalidOperation: "dtype {} not supported in '{}' operation", dtype, self);
             }

@@ -452,9 +452,3 @@ def test_div_collect_schema_matches_23993(df: pl.DataFrame) -> None:
     expected = q.collect().schema
     actual = q.collect_schema()
     assert actual == expected
-
-
-def test_mean_on_invalid_type_24008() -> None:
-    df = pl.DataFrame({"s": ["bob", "foo"]})
-    q = df.lazy().select(pl.col("s").mean())
-    assert q.collect_schema() == q.collect().schema

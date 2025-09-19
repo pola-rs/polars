@@ -518,6 +518,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         ))
     }
 
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        Ok(Scalar::new(self.dtype().clone(), mean.into()))
+    }
+
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let v: AnyValue = self.median().map(|v| v as i64).into();
         let to = self.dtype().to_physical();

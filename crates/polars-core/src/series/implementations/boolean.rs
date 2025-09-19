@@ -273,6 +273,9 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         Ok(ChunkAggSeries::min_reduce(&self.0))
     }
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::new(DataType::Float64, self.mean().into()))
+    }
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let ca = self
             .0
