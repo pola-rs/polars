@@ -15,7 +15,7 @@ use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
 use crate::plans::{AExpr, IR};
 
-pub(super) fn expand_datasts(
+pub(super) fn expand_datasets(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
