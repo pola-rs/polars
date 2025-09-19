@@ -652,8 +652,7 @@ pub fn dec128_cmp(mut lv: i128, ls: usize, mut rv: i128, rs: usize) -> Ordering 
 /// Only b'.' is allowed as a decimal separator (issue #6698).
 #[inline]
 pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize) -> Option<i128> {
-    // TODO
-    // assert!(dec128_verify_prec_scale(p, s).is_ok());
+    assert!(dec128_verify_prec_scale(p, s).is_ok());
 
     let separator = bytes.iter().position(|b| *b == b'.').unwrap_or(bytes.len());
     let (mut int, mut frac) = bytes.split_at(separator);
@@ -663,7 +662,7 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize) -> Option<i128> {
         frac = rest;
     }
 
-    if frac.len() <= 1 || s == 0 {
+    if frac.len() <= 1 {
         // Only integer fast path.
         let n: i128 = atoi_simd::parse(int).ok()?;
         return i128_to_dec128(n, p, s);
@@ -682,21 +681,23 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize) -> Option<i128> {
     };
 
     // Round if digits extend beyond the scale.
-    let next_digit;
+    let (next_digit, all_zero_after);
     let frac_scale = if frac.len() > s {
         if !frac[s..].iter().all(|b| b.is_ascii_digit()) {
             return None;
         }
         next_digit = frac[s];
+        all_zero_after = frac[s + 1..].iter().all(|b| *b == b'0');
         frac = &frac[..s];
         0
     } else {
         next_digit = b'0';
+        all_zero_after = true;
         s - frac.len()
     };
 
     // Parse and combine parts.
-    let pint: i128 = if int.is_empty() {
+    let mut pint: i128 = if int.is_empty() {
         0
     } else {
         atoi_simd::parse_pos(int).ok()?
@@ -709,10 +710,14 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize) -> Option<i128> {
     };
 
     // Round-to-even.
-    if next_digit > b'5' {
+    if next_digit > b'5' || next_digit == b'5' && !all_zero_after {
         pfrac += 1;
     } else if next_digit == b'5' {
-        pfrac += pfrac % 2;
+        if s == 0 {
+            pint += pint % 2;
+        } else {
+            pfrac += pfrac % 2;
+        }
     }
 
     let ret = mul_128_pow10(pint, s)? + mul_128_pow10(pfrac, frac_scale)?;
