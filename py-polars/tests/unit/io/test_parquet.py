@@ -603,7 +603,7 @@ def test_decimal_parquet(tmp_path: Path) -> None:
         }
     )
 
-    df = df.with_columns(pl.col("bar").cast(pl.Decimal))
+    df = df.with_columns(pl.col("bar").cast(pl.Decimal(scale=3)))
 
     df.write_parquet(path, statistics=True)
     out = pl.scan_parquet(path).filter(foo=2).collect().to_dict(as_series=False)
