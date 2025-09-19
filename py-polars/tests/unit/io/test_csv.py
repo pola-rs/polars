@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import math
 import os
 import sys
 import textwrap
@@ -1586,6 +1587,191 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
         assert batches is not None
         assert_frame_equal(pl.concat(batches), expected)
+
+
+def test_batched_csv_reader_precise_batch_size_simple(foods_file_path: Path) -> None:
+    reader = pl.read_csv_batched(foods_file_path, batch_size_options=("rows", 2))
+    assert isinstance(reader, BatchedCsvReader)
+
+    batches = reader.next_batches(4)
+    assert batches is not None
+    out = pl.concat(batches)
+    assert_frame_equal(out, pl.read_csv(foods_file_path).head(8))
+
+    batches = reader.next_batches(2)
+    assert batches is not None
+    out = pl.concat(batches)
+    assert_frame_equal(out, pl.read_csv(foods_file_path).slice(8, 4))
+
+
+def test_batched_csv_reader_chunk_size_opts_exceptions(foods_file_path: Path) -> None:
+    reader = pl.read_csv_batched(
+        foods_file_path, batch_size_options=("bytes-strict", 15)
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        reader.next_batches(4)
+
+    reader = pl.read_csv_batched(foods_file_path, batch_size_options=("rows-total", 4))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        reader.next_batches(6)
+
+
+@pytest.mark.slow
+def test_batched_csv_reader_all_batch_sizes(foods_file_path: Path) -> None:
+    df = pl.read_csv(foods_file_path)
+
+    h = df.height
+
+    for inner_batch_len in range(1, h + 5):
+        for outer_batch_len in range(1, int(math.ceil(h / inner_batch_len)) + 4):
+            reader = pl.read_csv_batched(
+                foods_file_path, batch_size_options=("rows", inner_batch_len)
+            )
+            batches = reader.next_batches(outer_batch_len)
+            batched_dfs = []
+
+            while batches:
+                batched_dfs.extend(batches)
+                batches = reader.next_batches(outer_batch_len)
+
+            assert all(x.height > 0 for x in batched_dfs)
+            assert all(x.height <= inner_batch_len for x in batched_dfs)
+            assert (
+                sum(0 if x.height == inner_batch_len else 1 for x in batched_dfs) <= 1
+            )
+
+            batched_concat_df = pl.concat(batched_dfs, rechunk=True)
+            assert_frame_equal(df, batched_concat_df)
+
+    for inner_batch_len in range(1, h + 5):
+        for outer_batch_len in range(1, h + 4, 3):
+            if outer_batch_len > inner_batch_len:
+                continue
+            reader = pl.read_csv_batched(
+                foods_file_path, batch_size_options=("rows-total", inner_batch_len)
+            )
+            batches = reader.next_batches(outer_batch_len)
+            batched_dfs = []
+            total_batch_sizes = []
+
+            while batches:
+                batched_dfs.extend(batches)
+                total_batch_sizes.append(sum(x.height for x in batches))
+                batches = reader.next_batches(outer_batch_len)
+
+            assert all(x.height > 0 for x in batched_dfs)
+            assert all(x == inner_batch_len for x in total_batch_sizes[:-1])
+            assert total_batch_sizes[-1] <= inner_batch_len
+
+            batched_concat_df = pl.concat(batched_dfs, rechunk=True)
+            assert_frame_equal(df, batched_concat_df)
+
+    for inner_batch_len in range(1, h + 5):
+        for outer_batch_len in range(1, h + 4, 3):
+            reader = pl.read_csv_batched(
+                foods_file_path, batch_size_options=("bytes", inner_batch_len * 20)
+            )
+            batches = reader.next_batches(outer_batch_len)
+            batched_dfs = []
+
+            while batches:
+                batched_dfs.extend(batches)
+                batches = reader.next_batches(outer_batch_len)
+
+            assert all(x.height > 0 for x in batched_dfs)
+
+            batched_concat_df = pl.concat(batched_dfs, rechunk=True)
+            assert_frame_equal(df, batched_concat_df)
+
+
+@pytest.mark.write_disk
+def test_batched_csv_reader_precise_batch_size_larger() -> None:
+    n_cols = 50
+    n_rows = 200
+    with NamedTemporaryFile() as tmp:
+        tmp.write((",".join([f"c{i}" for i in range(n_cols)])).encode("utf-8"))
+        tmp.write(b"\n")
+        for j in range(n_rows):
+            if j % 2 == 0:
+                # short row
+                tmp.write((",".join(["0.0" for i in range(n_cols)])).encode("utf-8"))
+            else:
+                # long row
+                tmp.write(
+                    (",".join(["3.1415926" for i in range(n_cols)])).encode("utf-8")
+                )
+            if j + 1 < n_rows:
+                tmp.write(b"\n")
+
+        tmp.seek(0)
+        expected = pl.read_csv(tmp.name)
+
+        tmp.seek(0)
+        dfs = []
+        reader = pl.read_csv_batched(tmp.name, batch_size_options=("rows", 4))
+        for _ in range(25):
+            batches = reader.next_batches(2)
+            assert batches is not None
+            if not batches:
+                break
+            for batch in batches:
+                assert batch.height == 4
+            dfs.extend(batches)
+        assert_frame_equal(expected, pl.concat(dfs))
+
+        tmp.seek(0)
+        dfs = []
+        reader = pl.read_csv_batched(tmp.name, batch_size_options=("rows-total", 8))
+        for _ in range(25):
+            batches = reader.next_batches(2)
+            assert batches is not None
+            if not batches:
+                break
+            for batch in batches:
+                assert batch.height == 4
+            dfs.extend(batches)
+        assert_frame_equal(expected, pl.concat(dfs))
+
+        tmp.seek(0)
+        dfs = []
+        reader = pl.read_csv_batched(
+            tmp.name, batch_size_options=("bytes", 10 * n_cols + 16)
+        )
+        for _ in range(100):
+            batches = reader.next_batches(2)
+            assert batches is not None
+            if not batches:
+                break
+            for batch in batches:
+                assert batch.height == 1
+            dfs.extend(batches)
+        assert_frame_equal(expected, pl.concat(dfs))
+
+        tmp.seek(0)
+        dfs = []
+        reader = pl.read_csv_batched(
+            tmp.name, batch_size_options=("bytes", 4 * n_cols + 16)
+        )
+        batches = reader.next_batches(2)
+        assert batches is not None
+        assert batches[0].height == 1
+        assert batches[1].height == 2
+        dfs.extend(batches)
+        for _ in range(49):
+            batches = reader.next_batches(2)
+            assert batches is not None
+            for batch in batches:
+                assert batch.height == 2
+            dfs.extend(batches)
+        batches = reader.next_batches(2)
+        assert batches is not None
+        assert batches[0].height == 1
+        assert len(batches) == 1
+        dfs.extend(batches)
+
+        assert_frame_equal(expected, pl.concat(dfs))
 
 
 def test_batched_csv_reader_empty(io_files_path: Path) -> None:
