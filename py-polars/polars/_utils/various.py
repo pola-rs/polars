@@ -211,6 +211,7 @@ def _in_notebook() -> bool:
         return False
     return True
 
+
 def _in_marimo_notebook() -> bool:
     try:
         import marimo as mo
@@ -218,6 +219,7 @@ def _in_marimo_notebook() -> bool:
         return mo.running_in_notebook()  # pragma: no cover
     except ImportError:
         return False
+
 
 def arrlen(obj: Any) -> int | None:
     """Return length of (non-string/dict) sequence; returns None for non-sequences."""
