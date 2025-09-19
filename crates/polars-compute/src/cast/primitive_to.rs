@@ -13,11 +13,10 @@ use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::vec::PushUnchecked;
 
-#[cfg(feature = "dtype-decimal")]
-use crate::decimal::{dec128_verify_prec_scale, i128_to_dec128, f64_to_dec128};
-
 use super::CastOptionsImpl;
 use super::temporal::*;
+#[cfg(feature = "dtype-decimal")]
+use crate::decimal::{dec128_verify_prec_scale, f64_to_dec128, i128_to_dec128};
 
 pub trait SerPrimitive {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
@@ -237,7 +236,9 @@ pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
     assert!(dec128_verify_prec_scale(to_precision, to_scale).is_ok());
-    let values = from.iter().map(|x| i128_to_dec128(x?.as_(), to_precision, to_scale));
+    let values = from
+        .iter()
+        .map(|x| i128_to_dec128(x?.as_(), to_precision, to_scale));
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
@@ -263,7 +264,9 @@ pub fn float_to_decimal<T: NativeType + Float + AsPrimitive<f64>>(
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
     assert!(dec128_verify_prec_scale(to_precision, to_scale).is_ok());
-    let values = from.iter().map(|x| f64_to_dec128(x?.as_(), to_precision, to_scale));
+    let values = from
+        .iter()
+        .map(|x| f64_to_dec128(x?.as_(), to_precision, to_scale));
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }

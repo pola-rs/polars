@@ -782,5 +782,5 @@ def test_decimal_agg() -> None:
     assert_frame_equal(
         df.group_by("g").agg(**agg_exprs).cast(pl.Float64),
         ddf.group_by("g").agg(**agg_exprs).cast(pl.Float64),
-        check_row_order=False
+        check_row_order=False,
     )

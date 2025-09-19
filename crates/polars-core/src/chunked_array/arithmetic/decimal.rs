@@ -21,11 +21,11 @@ impl Add for &DecimalChunked {
                     return PolarsResult::Ok(None);
                 };
                 let ls = dec128_rescale(l, left_s, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in Decimal cast for {l} from scale {left_s} to {scale}")
-            })?;
+                    polars_err!(ComputeError: "overflow in Decimal cast for {l} from scale {left_s} to {scale}")
+                })?;
                 let rs = dec128_rescale(r, right_s, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in Decimal cast for {r} from scale {right_s} to {scale}")
-            })?;
+                    polars_err!(ComputeError: "overflow in Decimal cast for {r} from scale {right_s} to {scale}")
+                })?;
                 let ret = dec128_add(ls, rs, prec).ok_or_else(
                     || polars_err!(ComputeError: "overflow in decimal addition for {ls} + {rs}"),
                 )?;
@@ -52,13 +52,13 @@ impl Sub for &DecimalChunked {
                     return PolarsResult::Ok(None);
                 };
                 let ls = dec128_rescale(l, left_s, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in Decimal cast for {l} from scale {left_s} to {scale}")
-            })?;
+                    polars_err!(ComputeError: "overflow in Decimal cast for {l} from scale {left_s} to {scale}")
+                })?;
                 let rs = dec128_rescale(r, right_s, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in Decimal cast for {r} from scale {right_s} to {scale}")
-            })?;
+                    polars_err!(ComputeError: "overflow in Decimal cast for {r} from scale {right_s} to {scale}")
+                })?;
                 let ret = dec128_sub(ls, rs, prec).ok_or_else(
-                    || polars_err!(ComputeError: "overflow in decimal subtraction for {ls} + {rs}"),
+                    || polars_err!(ComputeError: "overflow in decimal subtraction for {ls} - {rs}"),
                 )?;
                 Ok(Some(ret))
             },
@@ -83,14 +83,14 @@ impl Mul for &DecimalChunked {
                     return PolarsResult::Ok(None);
                 };
                 let ls = dec128_rescale(l, left_s, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in Decimal cast for {l} from scale {left_s} to {scale}")
-            })?;
+                    polars_err!(ComputeError: "overflow in Decimal cast for {l} from scale {left_s} to {scale}")
+                })?;
                 let rs = dec128_rescale(r, right_s, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in Decimal cast for {r} from scale {right_s} to {scale}")
-            })?;
+                    polars_err!(ComputeError: "overflow in Decimal cast for {r} from scale {right_s} to {scale}")
+                })?;
                 let ret = dec128_mul(ls, rs, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in decimal multiplication for {ls} * {rs}")
-            })?;
+                    polars_err!(ComputeError: "overflow in decimal multiplication for {ls} * {rs}")
+                })?;
                 Ok(Some(ret))
             },
         );
@@ -113,14 +113,17 @@ impl Div for &DecimalChunked {
                 let (Some(l), Some(r)) = (opt_l, opt_r) else {
                     return PolarsResult::Ok(None);
                 };
+                if r == 0 {
+                    polars_bail!(ComputeError: "division by zero Decimal");
+                }
                 let ls = dec128_rescale(l, left_s, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in Decimal cast for {l} from scale {left_s} to {scale}")
-            })?;
+                    polars_err!(ComputeError: "overflow in Decimal cast for {l} from scale {left_s} to {scale}")
+                })?;
                 let rs = dec128_rescale(r, right_s, prec, scale).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow in Decimal cast for {r} from scale {right_s} to {scale}")
-            })?;
+                    polars_err!(ComputeError: "overflow in Decimal cast for {r} from scale {right_s} to {scale}")
+                })?;
                 let ret = dec128_div(ls, rs, prec, scale).ok_or_else(
-                    || polars_err!(ComputeError: "overflow in decimal division for {ls} * {rs}"),
+                    || polars_err!(ComputeError: "overflow in decimal division for {ls} / {rs}"),
                 )?;
                 Ok(Some(ret))
             },
