@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
+import sys
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -1764,7 +1765,14 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
 
     Path(dfiles[0].removeprefix("file://")).unlink()
 
-    with pytest.raises(OSError, match="No such file or directory"):
+    with pytest.raises(
+        OSError,
+        match=(
+            "The system cannot find the file specified"
+            if sys.platform == "win32"
+            else "No such file or directory"
+        ),
+    ):
         pl.scan_iceberg(tbl, reader_override="native").collect()
 
     def ensure_filter_skips_file(filter_expr: pl.Expr) -> None:
