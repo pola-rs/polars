@@ -151,7 +151,7 @@ pub(super) fn expand_datasts(
                     version: _,
                     limit: _,
                     projection: _,
-                    live_filter_columns,
+                    live_filter_columns: _,
                     expanded_dsl,
                     python_scan,
                 } = guard.as_mut().unwrap();
