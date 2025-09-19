@@ -81,6 +81,7 @@ impl LazyFileListReader for LazyIpcReader {
                 extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths,
                 deletion_files: None,
+                table_statistics: None,
             },
         )?
         .build()

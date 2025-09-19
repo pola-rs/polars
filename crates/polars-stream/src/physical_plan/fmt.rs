@@ -399,6 +399,7 @@ fn visualize_plan_rec(
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
+            table_statistics: _,
             file_schema: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());

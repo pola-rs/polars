@@ -11,6 +11,7 @@ use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
     PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
+    TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -265,6 +266,7 @@ pub enum PhysNodeKind {
         forbid_extra_columns: Option<ForbidExtraColumns>,
 
         deletion_files: Option<DeletionFilesList>,
+        table_statistics: Option<TableStatistics>,
 
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,

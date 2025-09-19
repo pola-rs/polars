@@ -80,6 +80,7 @@ pub fn to_dataset_scan(
     existing_resolved_version_key: Option<&str>,
     limit: Option<usize>,
     projection: Option<&[PlSmallStr]>,
+    filter_columns: Option<&[PlSmallStr]>,
 ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
     Python::with_gil(|py| {
         let kwargs = PyDict::new(py);
@@ -101,6 +102,16 @@ pub fn to_dataset_scan(
             }
 
             kwargs.set_item(intern!(py, "projection"), projection_list)?;
+        }
+
+        if let Some(filter_columns) = filter_columns {
+            let filter_columns_list = PyList::empty(py);
+
+            for name in filter_columns {
+                filter_columns_list.append(name.as_str())?;
+            }
+
+            kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
         }
 
         let Some((scan, version)): Option<(PyObject, Wrap<PlSmallStr>)> = dataset_object
