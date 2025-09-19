@@ -250,7 +250,10 @@ impl Series {
             Float32 => s.f32().unwrap().agg_quantile(groups, quantile, method),
             Float64 => s.f64().unwrap().agg_quantile(groups, quantile, method),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => s.cast(&DataType::Float64).unwrap().agg_quantile(groups, quantile, method),
+            Decimal(_, _) => s
+                .cast(&DataType::Float64)
+                .unwrap()
+                .agg_quantile(groups, quantile, method),
             dt if dt.is_primitive_numeric() || dt.is_temporal() => {
                 let ca = s.to_physical_repr();
                 let physical_type = ca.dtype();

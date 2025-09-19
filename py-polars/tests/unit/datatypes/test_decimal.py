@@ -762,7 +762,7 @@ def test_decimal_agg() -> None:
             "x": [1, 10, 100, 1000],
         }
     )
-    ddf = df.with_columns(x = pl.col.x.cast(pl.Decimal(scale=3)))
+    ddf = df.with_columns(x=pl.col.x.cast(pl.Decimal(scale=3)))
 
     agg_exprs = {
         "min": pl.col.x.min(),
@@ -776,9 +776,10 @@ def test_decimal_agg() -> None:
     }
 
     assert_frame_equal(
-        df.select(**agg_exprs).cast(pl.Float64), ddf.select(**agg_exprs).cast(pl.Float64)
+        df.select(**agg_exprs).cast(pl.Float64),
+        ddf.select(**agg_exprs).cast(pl.Float64),
     )
     assert_frame_equal(
-        df.group_by("g").agg(**agg_exprs).cast(pl.Float64), ddf.group_by("g").agg(**agg_exprs).cast(pl.Float64)
+        df.group_by("g").agg(**agg_exprs).cast(pl.Float64),
+        ddf.group_by("g").agg(**agg_exprs).cast(pl.Float64),
     )
-

@@ -171,12 +171,18 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
-        self.0.cast(&DataType::Float64).unwrap().agg_var(groups, ddof)
+        self.0
+            .cast(&DataType::Float64)
+            .unwrap()
+            .agg_var(groups, ddof)
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
-        self.0.cast(&DataType::Float64).unwrap().agg_std(groups, ddof)
+        self.0
+            .cast(&DataType::Float64)
+            .unwrap()
+            .agg_std(groups, ddof)
     }
 
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
