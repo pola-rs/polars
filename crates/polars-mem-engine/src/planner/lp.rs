@@ -368,6 +368,7 @@ fn create_physical_plan_impl(
                                         .with_decimal_comma(options.serialize_options.decimal_comma)
                                         .with_null_value(options.serialize_options.null.clone())
                                         .with_quote_style(options.serialize_options.quote_style)
+                                        .with_compression(options.compression)
                                         .finish(&mut df)?;
                                 },
                                 #[cfg(feature = "json")]

@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 
+use polars_utils::compression::{GzipLevel, ZstdLevel};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +12,7 @@ pub struct CsvWriterOptions {
     pub include_bom: bool,
     pub include_header: bool,
     pub batch_size: NonZeroUsize,
+    pub compression: Option<CsvCompression>,
     pub serialize_options: SerializeOptions,
 }
 
@@ -20,6 +22,7 @@ impl Default for CsvWriterOptions {
             include_bom: false,
             include_header: true,
             batch_size: NonZeroUsize::new(1024).unwrap(),
+            compression: None,
             serialize_options: SerializeOptions::default(),
         }
     }
@@ -96,4 +99,13 @@ pub enum QuoteStyle {
     NonNumeric,
     /// Never quote any fields, even if it would produce invalid CSV data.
     Never,
+}
+
+/// The compression strategy to use for writing CSV files.
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum CsvCompression {
+    Gzip(Option<GzipLevel>),
+    Zstd(Option<ZstdLevel>),
 }

@@ -52,6 +52,8 @@ impl BrotliLevel {
 
 /// Represents a valid gzip compression level.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct GzipLevel(u8);
 
 impl Default for GzipLevel {
