@@ -13,7 +13,7 @@ from collections.abc import (
     Sequence,
     Sized,
 )
-from io import BytesIO, StringIO
+from io import BytesIO, StringIO, TextIOBase
 from pathlib import Path
 from typing import (
     IO,
@@ -143,6 +143,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         ConditionalFormatDict,
         ConnectionOrCursor,
+        CsvCompression,
         CsvQuoteStyle,
         DbWriteEngine,
         EngineType,
@@ -2914,6 +2915,8 @@ class DataFrame:
         decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
+        compression: CsvCompression = ...,
+        compression_level: int | None = ...,
         storage_options: dict[str, Any] | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         retries: int = ...,
@@ -2938,6 +2941,8 @@ class DataFrame:
         decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
+        compression: CsvCompression = ...,
+        compression_level: int | None = ...,
         storage_options: dict[str, Any] | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         retries: int = ...,
@@ -2961,6 +2966,8 @@ class DataFrame:
         decimal_comma: bool = False,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
+        compression: CsvCompression = "uncompressed",
+        compression_level: int | None = None,
         storage_options: dict[str, Any] | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
@@ -3029,6 +3036,14 @@ class DataFrame:
               Namely, when writing a field that does not parse as a valid float
               or integer, then quotes will be used even if they aren`t strictly
               necessary.
+        compression : {'uncompressed', 'gzip', 'zstd'}
+            Compression method. Defaults to "uncompressed".
+        compression_level
+            The level of compression to use.
+            If set to `None` (default), use the default level.
+
+            - "gzip": min-level: 0, max-level: 9, default-level: 6
+            - "zstd": min-level: 1, max-level: 22, default-level: 3
         storage_options
             Options that indicate how to connect to a cloud provider.
 
@@ -3087,6 +3102,15 @@ class DataFrame:
 
         engine: EngineType = "in-memory"
 
+        if compression is None:
+            compression = "uncompressed"
+
+        # Disable compression for text targets to avoid encoding binary data as string.
+        if compression != "uncompressed" and (
+            should_return_buffer or isinstance(target, TextIOBase)
+        ):
+            compression = "uncompressed"
+
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         self.lazy().sink_csv(
@@ -3105,6 +3129,8 @@ class DataFrame:
             decimal_comma=decimal_comma,
             null_value=null_value,
             quote_style=quote_style,
+            compression=compression,
+            compression_level=compression_level,
             storage_options=storage_options,
             credential_provider=credential_provider,
             retries=retries,
