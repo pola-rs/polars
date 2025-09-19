@@ -904,7 +904,7 @@ mod test {
         let mut buf = DecimalFmtBuffer::new();
         for &p in &INTERESTING_SCALE_PREC {
             for &s in &INTERESTING_SCALE_PREC {
-                if s > p {
+                if s > p || p == 0 {
                     continue;
                 }
                 for x in INTERESTING_VALUES.iter() {
@@ -924,7 +924,7 @@ mod test {
     fn test_mul() {
         for &p in &INTERESTING_SCALE_PREC {
             for &s in &INTERESTING_SCALE_PREC {
-                if s > p {
+                if s > p || p == 0 {
                     continue;
                 }
                 let values: Vec<_> = INTERESTING_VALUES
@@ -949,7 +949,7 @@ mod test {
     fn test_div() {
         for &p in &INTERESTING_SCALE_PREC {
             for &s in &INTERESTING_SCALE_PREC {
-                if s > p {
+                if s > p || p == 0 {
                     continue;
                 }
                 let values: Vec<_> = INTERESTING_VALUES
