@@ -672,7 +672,11 @@ def display_dot_graph(
         return dot
 
     output_type = (
-        "svg" if _in_notebook() or _in_marimo_notebook() or "POLARS_DOT_SVG_VIEWER" in os.environ else "png"
+        "svg"
+        if _in_notebook()
+        or _in_marimo_notebook()
+        or "POLARS_DOT_SVG_VIEWER" in os.environ
+        else "png"
     )
 
     try:
