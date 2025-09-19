@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
@@ -575,3 +576,18 @@ def test_partition_empty_string_24545(tmp_path: Path) -> None:
     df.write_parquet(tmp_path, partition_by="a")
 
     assert_frame_equal(pl.read_parquet(tmp_path), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Date(), pl.Datetime()])
+def test_partition_empty_dtype_24545(tmp_path: Path, dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"b": [1, 2, 3, 4]}).with_columns(
+        a=pl.col.b.cast(dtype),
+    )
+
+    df.write_parquet(tmp_path, partition_by="a")
+    extra = pl.select(a=None, b=0)
+    extra.write_parquet(Path(tmp_path / "a=" / "000.parquet"), mkdir=True)
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_parquet(tmp_path)
