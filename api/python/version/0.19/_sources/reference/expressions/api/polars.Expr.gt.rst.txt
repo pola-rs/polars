@@ -1,0 +1,6 @@
+﻿polars.Expr.gt
+==============
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.gt

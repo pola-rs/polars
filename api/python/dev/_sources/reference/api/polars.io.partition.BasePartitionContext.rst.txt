@@ -1,0 +1,30 @@
+﻿polars.io.partition.BasePartitionContext
+========================================
+
+.. currentmodule:: polars.io.partition
+
+.. autoclass:: BasePartitionContext
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~BasePartitionContext.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~BasePartitionContext.file_idx
+      ~BasePartitionContext.file_path
+      ~BasePartitionContext.full_path
+   
+   
