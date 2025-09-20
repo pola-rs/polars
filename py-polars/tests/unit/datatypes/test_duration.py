@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import TimeUnit
 
 
 def test_duration_cum_sum() -> None:
@@ -214,3 +219,30 @@ def test_comparison_with_string_raises_9461() -> None:
 def test_duration_invalid_cast_22258() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.select(a=pl.duration(days=[1, 2, 3, 4]))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms", None])
+@pytest.mark.parametrize(
+    ("digit", "multiplier"),
+    [
+        ("weeks", 7 * 24 * 60 * 60 * 10**9),
+        ("days", 24 * 60 * 60 * 10**9),
+        ("hours", 60 * 60 * 10**9),
+        ("minutes", 60 * 10**9),
+        ("seconds", 10**9),
+        ("milliseconds", 10**6),
+        ("microseconds", 10**3),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [0.5, 0.0625, 0.00390625, 0.000244140625],
+)
+def test_duration_float_types_11625(
+    time_unit: TimeUnit, digit: str, multiplier: int, value: int | float
+) -> None:
+    s = pl.select(
+        pl.duration(**{digit: value}, time_unit=time_unit).alias("a")
+    ).to_series()
+    expected = pl.Series("a", [int(value * multiplier)], dtype=pl.Duration("ns"))
+    assert_series_equal(s, expected, check_dtypes=False)
