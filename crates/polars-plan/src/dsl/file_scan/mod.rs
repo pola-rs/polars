@@ -69,6 +69,7 @@ pub enum FileScanDsl {
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[allow(clippy::large_enum_variant)]
 // TODO: Arc<> some of the options and the cloud options.
 pub enum FileScanIR {
     #[cfg(feature = "csv")]
