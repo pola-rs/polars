@@ -1357,3 +1357,28 @@ def test_struct_null_propagation_23955() -> None:
     )
     df = df.with_columns(d=pl.col("c").struct.field("b")).select(pl.col("d"))
     assert_frame_equal(df, pl.DataFrame({"d": [10, None]}, schema={"d": pl.Int32}))
+
+
+def test_struct_notagg_partial_sort_24499() -> None:
+    df = pl.DataFrame({"g": [10, 10, 10], "a": [2, 1, 3], "b": [5, 4, 6]})
+
+    # lhs
+    out = df.group_by("g").agg(pl.struct(pl.col("a").sort(), pl.col("b")))
+    expected = pl.DataFrame(
+        {"g": [10], "a": [[{"a": 1, "b": 5}, {"a": 2, "b": 4}, {"a": 3, "b": 6}]]}
+    )
+    assert_frame_equal(out, expected)
+
+    # rhs
+    out = df.group_by("g").agg(pl.struct(pl.col("a"), pl.col("b").sort()))
+    expected = pl.DataFrame(
+        {"g": [10], "a": [[{"a": 2, "b": 4}, {"a": 1, "b": 5}, {"a": 3, "b": 6}]]}
+    )
+    assert_frame_equal(out, expected)
+
+    # both
+    out = df.group_by("g").agg(pl.struct(pl.col("a").sort(), pl.col("b").sort()))
+    expected = pl.DataFrame(
+        {"g": [10], "a": [[{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]]}
+    )
+    assert_frame_equal(out, expected)
