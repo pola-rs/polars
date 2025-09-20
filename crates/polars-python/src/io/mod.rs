@@ -4,15 +4,16 @@ use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::{
     CastColumnsPolicy, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy, PlSmallStr, Schema,
-    UnifiedScanArgs,
+    TableStatistics, UnifiedScanArgs,
 };
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
 use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, FromPyObject, PyObject, PyResult};
+use pyo3::{Bound, FromPyObject, PyObject, PyResult, intern};
 
+use crate::PyDataFrame;
 use crate::functions::parse_cloud_options;
 use crate::prelude::Wrap;
 
@@ -22,6 +23,17 @@ pub struct PyScanOptions<'py>(Bound<'py, pyo3::PyAny>);
 impl<'py> FromPyObject<'py> for PyScanOptions<'py> {
     fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         Ok(Self(ob.clone()))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<TableStatistics> {
+    fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        let py = ob.py();
+        Ok(Wrap(TableStatistics(Arc::new(
+            PyDataFrame::extract_bound(&ob.getattr(intern!(py, "_df"))?)?
+                .df
+                .into_inner(),
+        ))))
     }
 }
 
@@ -51,6 +63,7 @@ impl PyScanOptions<'_> {
             credential_provider: Option<PyObject>,
             retries: usize,
             deletion_files: Option<Wrap<DeletionFilesList>>,
+            table_statistics: Option<Wrap<TableStatistics>>,
         }
 
         let Extract {
@@ -72,6 +85,7 @@ impl PyScanOptions<'_> {
             credential_provider,
             retries,
             deletion_files,
+            table_statistics,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -112,6 +126,7 @@ impl PyScanOptions<'_> {
             extra_columns_policy: extra_columns.0,
             include_file_paths: include_file_paths.map(|x| x.0),
             deletion_files: DeletionFilesList::filter_empty(deletion_files.map(|x| x.0)),
+            table_statistics: table_statistics.map(|x| x.0),
         };
 
         Ok(unified_scan_args)

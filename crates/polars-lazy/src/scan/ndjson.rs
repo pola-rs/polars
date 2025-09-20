@@ -142,6 +142,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             extra_columns_policy: ExtraColumnsPolicy::Raise,
             include_file_paths: self.include_file_paths,
             deletion_files: None,
+            table_statistics: None,
         };
 
         let options = NDJsonReadOptions {

@@ -347,6 +347,7 @@ impl LazyFileListReader for LazyCsvReader {
                 extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths: self.include_file_paths,
                 deletion_files: None,
+                table_statistics: None,
             },
         )?
         .build()

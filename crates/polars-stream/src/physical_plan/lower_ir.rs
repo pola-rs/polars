@@ -730,6 +730,7 @@ pub fn lower_ir(
                         deletion_files: DeletionFilesList::filter_empty(
                             unified_scan_args.deletion_files,
                         ),
+                        table_statistics: unified_scan_args.table_statistics,
                         file_schema,
                     };
 

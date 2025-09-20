@@ -214,7 +214,7 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         let array = self
             .skip_batch_predicate
             .evaluate(df, &Default::default())?;
-        let array = array.bool()?;
+        let array = array.bool()?.rechunk();
         let array = array.downcast_as_array();
 
         let array = if let Some(validity) = array.validity() {
