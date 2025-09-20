@@ -31,7 +31,7 @@ lf = pl.LazyFrame(
 
 # We can then wait for the result with `await_result()`.
 # The query and compute used will also show up in the
-# portal https://cloud.pola.rs/portal/
+# portal at https://cloud.pola.rs/portal/
 
 # --8<-- [end:general]
 """
