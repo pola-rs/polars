@@ -16,6 +16,9 @@ pub static DTYPE_ENUM_VALUES_NEW: &str = "_PL_ENUM_VALUES2";
 pub static DTYPE_CATEGORICAL_LEGACY: &str = "_PL_CATEGORICAL";
 pub static DTYPE_CATEGORICAL_NEW: &str = "_PL_CATEGORICAL2";
 
+pub static MAINTAIN_PL_TYPE: &str = "maintain_type";
+pub static PL_KEY: &str = "pl";
+
 /// Represents Arrow's metadata of a "column".
 ///
 /// A [`Field`] is the closest representation of the traditional "column": a logical type

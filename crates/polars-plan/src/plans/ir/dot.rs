@@ -405,12 +405,11 @@ impl fmt::Write for EscapeLabel<'_> {
         loop {
             let mut char_indices = s.char_indices();
 
-            // This escapes quotes and new lines
-            // @NOTE: I am aware this does not work for \" and such. I am ignoring that fact as we
-            // are not really using such strings.
+            // This escapes quotes, new lines, and backslashes
             let f = char_indices.find_map(|(i, c)| match c {
                 '"' => Some((i, r#"\""#)),
                 '\n' => Some((i, r#"\n"#)),
+                '\\' => Some((i, r"\\")),
                 _ => None,
             });
 

@@ -180,10 +180,7 @@ fn from_fixed_len_byte_array(
             ArrowDataType::Decimal(precision, scale)
         },
         (None, Some(PrimitiveConvertedType::Interval)) => {
-            // There is currently no reliable way of determining which IntervalUnit
-            // to return. Thus without the original Arrow schema, the results
-            // would be incorrect if all 12 bytes of the interval are populated
-            ArrowDataType::Interval(IntervalUnit::DayTime)
+            ArrowDataType::Interval(IntervalUnit::MonthDayMillis)
         },
         _ => ArrowDataType::FixedSizeBinary(length),
     }

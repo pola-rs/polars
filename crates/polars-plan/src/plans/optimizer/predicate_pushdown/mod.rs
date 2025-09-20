@@ -34,7 +34,6 @@ mod inner {
         pub(super) verbose: bool,
         pub(super) block_at_cache: bool,
         nodes_scratch: UnitVec<Node>,
-        #[expect(unused)]
         pub(super) new_streaming: bool,
         // Controls pushing filters past fallible projections
         pub(super) maintain_errors: bool,
@@ -362,21 +361,6 @@ impl PredicatePushDown<'_> {
                     blocked_names.push(col);
                 }
 
-                match &*scan_type {
-                    #[cfg(feature = "parquet")]
-                    FileScanIR::Parquet { .. } => {},
-                    #[cfg(feature = "ipc")]
-                    FileScanIR::Ipc { .. } => {},
-                    _ => {
-                        // Disallow row index pushdown of other scans as they may
-                        // not update the row index properly before applying the
-                        // predicate (e.g. FileScan::Csv doesn't).
-                        if let Some(ref row_index) = unified_scan_args.row_index {
-                            blocked_names.push(row_index.name.as_ref());
-                        };
-                    },
-                };
-
                 let local_predicates = if blocked_names.is_empty() {
                     vec![]
                 } else {
@@ -480,6 +464,7 @@ impl PredicatePushDown<'_> {
                 schema,
                 options,
                 acc_predicates,
+                self.new_streaming,
             ),
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {

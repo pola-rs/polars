@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use either::Either;
 use polars_io::RowIndex;
 #[cfg(feature = "cloud")]
@@ -254,6 +256,20 @@ pub(super) fn parquet_file_info(
     );
 
     Ok((file_info, metadata))
+}
+
+pub fn max_metadata_scan_cached() -> usize {
+    static MAX_SCANS_METADATA_CACHED: LazyLock<usize> = LazyLock::new(|| {
+        let value = std::env::var("POLARS_MAX_CACHED_METADATA_SCANS").map_or(8, |v| {
+            v.parse::<usize>()
+                .expect("invalid `POLARS_MAX_CACHED_METADATA_SCANS` value")
+        });
+        if value == 0 {
+            return usize::MAX;
+        }
+        value
+    });
+    *MAX_SCANS_METADATA_CACHED
 }
 
 // TODO! return metadata arced
@@ -533,6 +549,7 @@ impl SourcesToFileInfo {
                 if let Some(schema) = &options.schema {
                     // We were passed a schema, we don't have to call `parquet_file_info`,
                     // but this does mean we don't have `row_estimation` and `first_metadata`.
+
                     (
                         FileInfo {
                             schema: schema.clone(),
@@ -555,11 +572,15 @@ passing a schema can allow \
 this scan to succeed with an empty DataFrame.",
                         )?;
 
-                        let (file_info, metadata) = scans::parquet_file_info(
+                        let (file_info, mut metadata) = scans::parquet_file_info(
                             first_scan_source,
                             unified_scan_args.row_index.as_ref(),
                             cloud_options,
                         )?;
+
+                        if self.inner.len() > max_metadata_scan_cached() {
+                            _ = metadata.take();
+                        }
 
                         PolarsResult::Ok((file_info, FileScanIR::Parquet { options, metadata }))
                     })()

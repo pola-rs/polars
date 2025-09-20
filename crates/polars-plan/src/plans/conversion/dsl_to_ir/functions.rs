@@ -339,8 +339,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
                 S::WithFields => unreachable!("handled before"),
-                #[cfg(feature = "python")]
-                S::MapFieldNames(special_eq) => IS::MapFieldNames(special_eq),
+                S::MapFieldNames(f) => IS::MapFieldNames(f),
             })
         },
         #[cfg(feature = "temporal")]
