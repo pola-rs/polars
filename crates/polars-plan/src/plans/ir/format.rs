@@ -930,6 +930,7 @@ pub fn write_ir_non_recursive(
         IR::Sink { input: _, payload } => {
             let name = match payload {
                 SinkTypeIR::Memory => "SINK (memory)",
+                SinkTypeIR::Callback { .. } => "SINK (callback)",
                 SinkTypeIR::File { .. } => "SINK (file)",
                 SinkTypeIR::Partition { .. } => "SINK (partition)",
             };

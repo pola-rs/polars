@@ -582,6 +582,7 @@ fn pullup_orders(
                         SinkTypeIR::Memory => {},
                         SinkTypeIR::File(s) => s.sink_options.maintain_order = false,
                         SinkTypeIR::Partition(s) => s.sink_options.maintain_order = false,
+                        SinkTypeIR::Callback(s) => s.maintain_order = false,
                     }
                 }
             },

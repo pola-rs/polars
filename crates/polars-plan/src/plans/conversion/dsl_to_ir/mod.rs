@@ -953,6 +953,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
+                SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(f) => SinkTypeIR::File(f),
                 SinkType::Partition(f) => SinkTypeIR::Partition(PartitionSinkTypeIR {
                     base_path: f.base_path,
