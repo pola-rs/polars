@@ -211,7 +211,7 @@ pub fn hive_partitions_from_paths(
 
             let buf = buffers.get_mut(index).unwrap();
 
-            if !value.is_empty() && value != "__HIVE_DEFAULT_PARTITION__" {
+            if value != "__HIVE_DEFAULT_PARTITION__" {
                 buf.add(value.as_bytes(), false, false, false)?;
             } else {
                 buf.add_null(false);
