@@ -66,6 +66,9 @@ pub enum PrimitiveType {
     DaysMs,
     /// months_days_ns(i32, i32, i64)
     MonthDayNano,
+    /// months_days_ms(i32, i32, i32)
+    /// Used when reading INTERVAL from Parquet. Should be unreachable otherwise.
+    MonthDayMillis,
 }
 
 mod private {

@@ -947,6 +947,7 @@ pub fn fixed_size(
         D::UInt16 => u16::ENCODED_LEN,
         D::UInt32 => u32::ENCODED_LEN,
         D::UInt64 => u64::ENCODED_LEN,
+        D::UInt128 => u128::ENCODED_LEN,
 
         D::Int8 => i8::ENCODED_LEN,
         D::Int16 => i16::ENCODED_LEN,

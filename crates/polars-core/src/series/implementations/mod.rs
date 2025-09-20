@@ -467,6 +467,8 @@ impl_dyn_series!(UInt8Chunked, UInt8Type);
 impl_dyn_series!(UInt16Chunked, UInt16Type);
 impl_dyn_series!(UInt32Chunked, UInt32Type);
 impl_dyn_series!(UInt64Chunked, UInt64Type);
+#[cfg(feature = "dtype-u128")]
+impl_dyn_series!(UInt128Chunked, UInt128Type);
 #[cfg(feature = "dtype-i8")]
 impl_dyn_series!(Int8Chunked, Int8Type);
 #[cfg(feature = "dtype-i16")]

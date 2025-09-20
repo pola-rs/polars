@@ -296,9 +296,9 @@ where
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(left_by), B::I128(right_by)) => {
-                        asof_join_by_numeric::<T, Int128Type, A, F>(
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(left_by), B::U128(right_by)) => {
+                        asof_join_by_numeric::<T, UInt128Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
@@ -433,6 +433,13 @@ fn dispatch_join_type(
         #[cfg(feature = "dtype-i128")]
         DataType::Int128 => {
             let ca = left_asof.i128().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => {
+            let ca = left_asof.u128().unwrap();
             dispatch_join_strategy_numeric(
                 ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
             )

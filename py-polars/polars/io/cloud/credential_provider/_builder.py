@@ -299,6 +299,11 @@ class AutoInit(CredentialProviderBuilderImpl):
         return self.cls.__name__
 
 
+DEFAULT_CREDENTIAL_PROVIDER: CredentialProviderFunction | Literal["auto"] | None = (
+    "auto"
+)
+
+
 def _init_credential_provider_builder(
     credential_provider: CredentialProviderFunction
     | CredentialProviderBuilder
@@ -337,11 +342,23 @@ def _init_credential_provider_builder(
                 credential_provider
             )
 
+        if DEFAULT_CREDENTIAL_PROVIDER is None:
+            return None
+
         if (first_scan_path := _first_scan_path(source)) is None:
             return None
 
         if (scheme := _get_path_scheme(first_scan_path)) is None:
             return None
+
+        def get_default_credential_provider() -> CredentialProviderBuilder | None:
+            return (
+                CredentialProviderBuilder.from_initialized_provider(
+                    DEFAULT_CREDENTIAL_PROVIDER
+                )
+                if DEFAULT_CREDENTIAL_PROVIDER != "auto"
+                else None
+            )
 
         if _is_azure_cloud(scheme):
             tenant_id = None
@@ -380,6 +397,9 @@ def _init_credential_provider_builder(
                 or storage_account
             )
 
+            if (default := get_default_credential_provider()) is not None:
+                return default
+
             return CredentialProviderBuilder(
                 AutoInit(
                     CredentialProviderAzure,
@@ -413,6 +433,8 @@ def _init_credential_provider_builder(
                         "endpoint_url",
                     }:
                         has_endpoint_url = True
+                    elif k in {"aws_request_payer", "request_payer"}:
+                        continue
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
                         continue
                     else:
@@ -426,6 +448,12 @@ def _init_credential_provider_builder(
                         f"{unhandled_key} in storage_options"
                     )
                     raise ValueError(msg)
+
+            if (
+                unhandled_key is None
+                and (default := get_default_credential_provider()) is not None
+            ):
+                return default
 
             return CredentialProviderBuilder(
                 AutoInit(
@@ -476,6 +504,9 @@ def _init_credential_provider_builder(
                 return CredentialProviderBuilder(
                     InitializedCredentialProvider(UserProvidedGCPToken(token))
                 )
+
+            if (default := get_default_credential_provider()) is not None:
+                return default
 
             return CredentialProviderBuilder(AutoInit(CredentialProviderGCP))
 

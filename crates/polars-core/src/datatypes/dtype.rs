@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use arrow::datatypes::{
-    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Metadata,
+    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
+    Metadata, PL_KEY,
 };
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
@@ -14,9 +15,6 @@ use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
-
-static MAINTAIN_PL_TYPE: &str = "maintain_type";
-static PL_KEY: &str = "pl";
 
 pub trait MetaDataExt: IntoMetadata {
     fn pl_enum_metadata(&self) -> Option<&str> {
@@ -93,6 +91,7 @@ pub enum DataType {
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
@@ -104,7 +103,7 @@ pub enum DataType {
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
     /// Meaning max precision is 38.
     #[cfg(feature = "dtype-decimal")]
-    Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
+    Decimal(usize, usize), // (precision, scale), invariant: 1 <= precision <= 38.
     /// String data
     String,
     Binary,
@@ -170,12 +169,7 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-duration")]
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
                 #[cfg(feature = "dtype-decimal")]
-                (Decimal(l_prec, l_scale), Decimal(r_prec, r_scale)) => {
-                    let is_prec_eq = l_prec.is_none() || r_prec.is_none() || l_prec == r_prec;
-                    let is_scale_eq = l_scale.is_none() || r_scale.is_none() || l_scale == r_scale;
-
-                    is_prec_eq && is_scale_eq
-                },
+                (Decimal(p1, s1), Decimal(p2, s2)) => (p1, s1) == (p2, s2),
                 #[cfg(feature = "object")]
                 (Object(lhs), Object(rhs)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
@@ -218,14 +212,31 @@ impl DataType {
             UInt16 => other.extract::<u16>().is_some(),
             UInt32 => other.extract::<u32>().is_some(),
             UInt64 => other.extract::<u64>().is_some(),
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => other.extract::<u128>().is_some(),
             #[cfg(feature = "dtype-i8")]
             Int8 => other.extract::<i8>().is_some(),
             #[cfg(feature = "dtype-i16")]
             Int16 => other.extract::<i16>().is_some(),
             Int32 => other.extract::<i32>().is_some(),
             Int64 => other.extract::<i64>().is_some(),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => other.extract::<i128>().is_some(),
             _ => false,
         }
+    }
+
+    /// Struct representation of the arrow `month_day_nano_interval` type.
+    #[cfg(feature = "dtype-struct")]
+    pub fn _month_days_ns_struct_type() -> Self {
+        DataType::Struct(vec![
+            Field::new(PlSmallStr::from_static("months"), DataType::Int32),
+            Field::new(PlSmallStr::from_static("days"), DataType::Int32),
+            Field::new(
+                PlSmallStr::from_static("nanoseconds"),
+                DataType::Duration(TimeUnit::Nanoseconds),
+            ),
+        ])
     }
 
     /// Check if the whole dtype is known.
@@ -670,6 +681,7 @@ impl DataType {
                 | DataType::UInt16
                 | DataType::UInt32
                 | DataType::UInt64
+                | DataType::UInt128
                 | DataType::Unknown(UnknownKind::Int(_))
         )
     }
@@ -685,7 +697,11 @@ impl DataType {
     pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
-            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
+            DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::UInt128,
         )
     }
 
@@ -782,6 +798,7 @@ impl DataType {
             UInt16 => Scalar::from(u16::MAX),
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
+            UInt128 => Scalar::from(u128::MAX),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -804,6 +821,7 @@ impl DataType {
             UInt16 => Scalar::from(u16::MIN),
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
+            UInt128 => Scalar::from(u128::MIN),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -828,6 +846,7 @@ impl DataType {
             UInt16 => Ok(ArrowDataType::UInt16),
             UInt32 => Ok(ArrowDataType::UInt32),
             UInt64 => Ok(ArrowDataType::UInt64),
+            UInt128 => Ok(ArrowDataType::UInt128),
             Int8 => Ok(ArrowDataType::Int8),
             Int16 => Ok(ArrowDataType::Int16),
             Int32 => Ok(ArrowDataType::Int32),
@@ -837,13 +856,8 @@ impl DataType {
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => {
-                let precision = (*precision).unwrap_or(38);
-                polars_ensure!(precision <= 38 && precision > 0, InvalidOperation: "decimal precision should be <= 38 & >= 1");
-
-                Ok(ArrowDataType::Decimal(
-                    precision,
-                    scale.unwrap_or(0), // and what else can we do here?
-                ))
+                assert!(*precision >= 1 && *precision <= 38);
+                Ok(ArrowDataType::Decimal(*precision, *scale))
             },
             String => {
                 let dt = if compat_level.0 >= 1 {
@@ -960,7 +974,7 @@ impl DataType {
             },
             (DataType::Null, DataType::Null) => Ok(false),
             #[cfg(feature = "dtype-decimal")]
-            (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => Ok(s1 != s2),
+            (DataType::Decimal(p1, s1), DataType::Decimal(p2, s2)) => Ok((p1, s1) != (p2, s2)),
             // We don't allow the other way around, only if our current type is
             // null and the schema isn't we allow it.
             (DataType::Null, _) => Ok(true),
@@ -1046,6 +1060,7 @@ impl Display for DataType {
             DataType::UInt16 => "u16",
             DataType::UInt32 => "u32",
             DataType::UInt64 => "u64",
+            DataType::UInt128 => "u128",
             DataType::Int8 => "i8",
             DataType::Int16 => "i16",
             DataType::Int32 => "i32",
@@ -1054,25 +1069,12 @@ impl Display for DataType {
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(precision, scale) => {
-                return match (precision, scale) {
-                    (Some(precision), Some(scale)) => {
-                        f.write_str(&format!("decimal[{precision},{scale}]"))
-                    },
-                    (None, Some(scale)) => f.write_str(&format!("decimal[*,{scale}]")),
-                    _ => f.write_str("decimal[?]"), // shouldn't happen
-                };
-            },
+            DataType::Decimal(p, s) => return write!(f, "decimal[{p},{s}]"),
             DataType::String => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
-            DataType::Datetime(tu, tz) => {
-                let s = match tz {
-                    None => format!("datetime[{tu}]"),
-                    Some(tz) => format!("datetime[{tu}, {tz}]"),
-                };
-                return f.write_str(&s);
-            },
+            DataType::Datetime(tu, None) => return write!(f, "datetime[{tu}]"),
+            DataType::Datetime(tu, Some(tz)) => return write!(f, "datetime[{tu}, {tz}]"),
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
@@ -1118,6 +1120,7 @@ impl std::fmt::Debug for DataType {
             UInt16 => write!(f, "UInt16"),
             UInt32 => write!(f, "UInt32"),
             UInt64 => write!(f, "UInt64"),
+            UInt128 => write!(f, "UInt128"),
             Int8 => write!(f, "Int8"),
             Int16 => write!(f, "Int16"),
             Int32 => write!(f, "Int32"),
@@ -1139,12 +1142,7 @@ impl std::fmt::Debug for DataType {
                 }
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(opt_p, opt_s) => match (opt_p, opt_s) {
-                (None, None) => write!(f, "Decimal(None, None)"),
-                (None, Some(s)) => write!(f, "Decimal(None, {s})"),
-                (Some(p), None) => write!(f, "Decimal({p}, None)"),
-                (Some(p), Some(s)) => write!(f, "Decimal({p}, {s})"),
-            },
+            Decimal(p, s) => write!(f, "Decimal({p}, {s})"),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
             List(inner) => write!(f, "List({inner:?})"),

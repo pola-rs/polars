@@ -360,6 +360,7 @@ impl Decoder for BooleanDecoder {
         state: utils::State<'_, Self>,
         (target, validity): &mut Self::DecodedState,
         filter: Option<super::Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(values) => {

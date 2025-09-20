@@ -85,10 +85,14 @@ impl Series {
             FillNullStrategy::Backward(Some(limit)) => fill_backward_gather_limit(self, limit),
             #[cfg(feature = "dtype-decimal")]
             FillNullStrategy::One if self.dtype().is_decimal() => {
+                use polars_compute::decimal::i128_to_dec128;
+
                 let ca = self.decimal().unwrap();
                 let precision = ca.precision();
                 let scale = ca.scale();
-                let fill_value = 10i128.pow(scale as u32);
+                let fill_value = i128_to_dec128(1, precision, scale).ok_or_else(|| {
+                    polars_err!(ComputeError: "value '1' is out of range for Decimal({precision}, {scale})")
+                })?;
                 let phys = ca.physical().fill_null_with_values(fill_value)?;
                 Ok(phys.into_decimal_unchecked(precision, scale).into_series())
             },

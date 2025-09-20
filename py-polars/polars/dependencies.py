@@ -167,6 +167,7 @@ if TYPE_CHECKING:
     import pyarrow
     import pydantic
     import pyiceberg
+    import pyiceberg.schema
     import pytz
     import torch
 
