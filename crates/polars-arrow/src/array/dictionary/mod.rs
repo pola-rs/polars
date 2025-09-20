@@ -118,6 +118,10 @@ unsafe impl DictionaryKey for u64 {
         true
     }
 }
+unsafe impl DictionaryKey for u128 {
+    const KEY_TYPE: IntegerType = IntegerType::UInt128;
+    const MAX_USIZE_VALUE: usize = u128::MAX as usize;
+}
 
 /// An [`Array`] whose values are stored as indices. This [`Array`] is useful when the cardinality of
 /// values is low compared to the length of the [`Array`].

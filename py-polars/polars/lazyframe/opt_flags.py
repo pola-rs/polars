@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 
+from polars._utils.deprecation import issue_deprecation_warning
+
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyOptFlags
 
@@ -124,7 +126,13 @@ class QueryOptFlags:
         if cluster_with_columns is not None:
             self.cluster_with_columns = cluster_with_columns
         if collapse_joins is not None:
-            self.collapse_joins = collapse_joins
+            issue_deprecation_warning(
+                "the `collapse_joins` parameter for `QueryOptFlags` is deprecated. "
+                "Use `predicate_pushdown` instead.",
+                version="1.33.1",
+            )
+            if not collapse_joins:
+                self.predicate_pushdown = False
         if check_order_observe is not None:
             self.check_order_observe = check_order_observe
         if fast_projection is not None:
@@ -215,15 +223,6 @@ class QueryOptFlags:
         self._pyoptflags.comm_subexpr_elim = value
 
     @property
-    def collapse_joins(self) -> bool:
-        """Collapse slower joins with filters into faster joins."""
-        return self._pyoptflags.collapse_joins
-
-    @collapse_joins.setter
-    def collapse_joins(self, value: bool) -> None:
-        self._pyoptflags.collapse_joins = value
-
-    @property
     def check_order_observe(self) -> bool:
         """Do not maintain order if the order would not be observed."""
         return self._pyoptflags.check_order_observe
@@ -254,7 +253,6 @@ QueryOptFlags {{
     comm_subplan_elim: {self.comm_subplan_elim}
     comm_subexpr_elim: {self.comm_subexpr_elim}
     cluster_with_columns: {self.cluster_with_columns}
-    collapse_joins: {self.collapse_joins}
     check_order_observe: {self.check_order_observe}
     fast_projection: {self.fast_projection}
 

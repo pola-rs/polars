@@ -1,7 +1,5 @@
 #[cfg(feature = "dtype-decimal")]
-use polars_core::chunked_array::arithmetic::{
-    _get_decimal_scale_add_sub, _get_decimal_scale_div, _get_decimal_scale_mul,
-};
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
@@ -492,9 +490,8 @@ fn get_arithmetic_field(
                     )?)
                 },
                 #[cfg(feature = "dtype-decimal")]
-                (Decimal(_, Some(scale_left)), Decimal(_, Some(scale_right))) => {
-                    let scale = _get_decimal_scale_add_sub(*scale_left, *scale_right);
-                    Decimal(None, Some(scale))
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
                 (left, right) => try_get_supertype(left, right)?,
             }
@@ -555,9 +552,8 @@ fn get_arithmetic_field(
                     )?)
                 },
                 #[cfg(feature = "dtype-decimal")]
-                (Decimal(_, Some(scale_left)), Decimal(_, Some(scale_right))) => {
-                    let scale = _get_decimal_scale_add_sub(*scale_left, *scale_right);
-                    Decimal(None, Some(scale))
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
                 (left, right) => try_get_supertype(left, right)?,
             }
@@ -605,18 +601,8 @@ fn get_arithmetic_field(
                     },
                 },
                 #[cfg(feature = "dtype-decimal")]
-                (Decimal(_, Some(scale_left)), Decimal(_, Some(scale_right))) => {
-                    let scale = match op {
-                        Operator::Multiply => _get_decimal_scale_mul(*scale_left, *scale_right),
-                        Operator::Divide | Operator::TrueDivide => {
-                            _get_decimal_scale_div(*scale_left)
-                        },
-                        _ => {
-                            debug_assert!(false);
-                            *scale_left
-                        },
-                    };
-                    let dtype = Decimal(None, Some(scale));
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
                     left_field.coerce(dtype);
                     return Ok(left_field);
                 },
@@ -770,9 +756,8 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             InvalidOperation: "division with 'String' datatypes is not allowed"
         ),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, Some(scale_left)), Decimal(_, _)) => {
-            let scale = _get_decimal_scale_div(*scale_left);
-            Decimal(None, Some(scale))
+        (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+            Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
         },
         #[cfg(feature = "dtype-u8")]
         (UInt8 | Int8, Float32) => Float32,

@@ -372,9 +372,9 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer<'_> {
     let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
-    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
+    let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        buf.extend_from_slice(fmt_buf.format(item, scale, trim_zeros).as_bytes());
+        buf.extend_from_slice(fmt_buf.format_dec128(item, scale, trim_zeros).as_bytes());
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -694,6 +694,7 @@ pub(super) fn serializer_for<'a>(
         DataType::Int64 => quote_wrapper!(integer_serializer::<i64>),
         DataType::UInt64 => quote_wrapper!(integer_serializer::<u64>),
         DataType::Int128 => quote_wrapper!(integer_serializer::<i128>),
+        DataType::UInt128 => quote_wrapper!(integer_serializer::<u128>),
         DataType::Float32 => {
             match (
                 options.decimal_comma,
@@ -906,7 +907,7 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
-            quote_wrapper!(decimal_serializer, scale.unwrap_or(0))
+            quote_wrapper!(decimal_serializer, *scale)
         },
         _ => {
             polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or a binary format.")

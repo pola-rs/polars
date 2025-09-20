@@ -760,7 +760,7 @@ def test_when_then_to_decimal_18375() -> None:
             "b": ["1.23", "4.56"],
             "c": ["1.23", "4.56"],
         },
-        schema={"a": pl.String, "b": pl.Decimal, "c": pl.Decimal},
+        schema={"a": pl.String, "b": pl.Decimal(scale=2), "c": pl.Decimal(scale=2)},
     )
     assert_frame_equal(result, expected)
 
