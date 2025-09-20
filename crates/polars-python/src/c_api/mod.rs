@@ -91,7 +91,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 }
 
 #[pymodule]
-pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+pub fn _polars64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();

@@ -1,1 +1,1 @@
-pub use polars_python::c_api::polars;
+pub use polars_python::c_api::*;

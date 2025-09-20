@@ -4,7 +4,7 @@ version = "1.33.1"
 edition = "2021"
 
 [lib]
-name = "polars"
+name = "_polars64"
 crate-type = ["cdylib"]
 
 [dependencies]
