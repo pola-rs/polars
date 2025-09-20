@@ -23,10 +23,7 @@ impl AExpr {
 
             Literal(v) => v.is_scalar(),
 
-            Eval { variant, .. } => match variant {
-                EvalVariant::List => true,
-                EvalVariant::Cumulative { min_samples: _ } => false,
-            },
+            Eval { variant, .. } => variant.is_elementwise(),
 
             BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
