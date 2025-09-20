@@ -60,11 +60,24 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
 
 pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
-    // TODO: add fast path for smaller ints?
     let mut out = {
         match inner_dtype {
             Boolean => {
                 let out: IdxCa = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            UInt8 => {
+                let out: Int64Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            UInt16 => {
+                let out: Int64Chunked = ca
                     .amortized_iter()
                     .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                     .collect();
@@ -87,6 +100,20 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
             #[cfg(feature = "dtype-u128")]
             UInt128 => {
                 let out: UInt128Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            Int8 => {
+                let out: Int64Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            Int16 => {
+                let out: Int64Chunked = ca
                     .amortized_iter()
                     .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                     .collect();
