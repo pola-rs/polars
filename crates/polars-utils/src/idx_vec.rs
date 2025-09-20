@@ -1,5 +1,5 @@
 use std::fmt::{Debug, Formatter};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use crate::index::{IdxSize, NonZeroIdxSize};
 
@@ -239,7 +239,7 @@ impl<T> Deref for UnitVec<T> {
     }
 }
 
-impl<T> std::ops::DerefMut for UnitVec<T> {
+impl<T> DerefMut for UnitVec<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut_slice()
     }
@@ -315,6 +315,12 @@ impl<T> Iterator for IntoIter<T> {
     }
 }
 
+impl<const N: usize, T> From<[T; N]> for UnitVec<T> {
+    fn from(value: [T; N]) -> Self {
+        UnitVec::from_iter(value)
+    }
+}
+
 impl<T> From<Vec<T>> for UnitVec<T> {
     fn from(mut value: Vec<T>) -> Self {
         if value.capacity() <= 1 {
@@ -331,12 +337,6 @@ impl<T> From<Vec<T>> for UnitVec<T> {
                 len: me.len().try_into().unwrap(),
             }
         }
-    }
-}
-
-impl<T, const N: usize> From<[T; N]> for UnitVec<T> {
-    fn from(value: [T; N]) -> Self {
-        value.into_iter().collect()
     }
 }
 
