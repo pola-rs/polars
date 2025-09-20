@@ -762,3 +762,24 @@ def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
         pl.DataFrame({"x": [None, None, None]}),
         check_dtypes=False,
     )
+
+
+def test_raies_on_mismatch_column_length_binary_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [10, 10, 10, 20, 20, 20],
+            "b": [2, 0, 99, 0, 0, 0],
+            "c": [3, 0, 0, 2, 0, 99],
+        }
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match="expressions must have matching group lengths",
+    ):
+        df.group_by("a").agg(
+            pl.Expr.add(
+                pl.col("b").head(pl.col("b").first()),
+                pl.col("c").head(pl.col("c").first()),
+            )
+        )
