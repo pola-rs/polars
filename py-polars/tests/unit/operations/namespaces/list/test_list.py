@@ -844,6 +844,7 @@ def test_list_lengths() -> None:
 def test_list_arithmetic() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.sum(), pl.Series("a", [3, 6]))
+    assert_series_equal(s.list.product(), pl.Series("a", [2, 6]))
     assert_series_equal(s.list.mean(), pl.Series("a", [1.5, 2.0]))
     assert_series_equal(s.list.max(), pl.Series("a", [2, 3]))
     assert_series_equal(s.list.min(), pl.Series("a", [1, 1]))
@@ -958,6 +959,11 @@ def test_list_get_with_null() -> None:
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
+
+
+def test_list_product_bool_schema() -> None:
+    q = pl.LazyFrame({"x": [[True, True, False]]})
+    assert q.select(pl.col("x").list.product()).collect_schema()["x"] == pl.Int64
 
 
 def test_list_concat_struct_19279() -> None:
