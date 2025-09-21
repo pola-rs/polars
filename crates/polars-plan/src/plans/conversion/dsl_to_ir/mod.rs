@@ -773,17 +773,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool() || dt.is_decimal(),
                             |name| col(name.clone()).var(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Std { ddof } => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool() || dt.is_decimal(),
                             |name| col(name.clone()).std(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Quantile { quantile, method } => stats_helper(
-                            |dt| dt.is_primitive_numeric(),
+                            |dt| dt.is_primitive_numeric() || dt.is_decimal(),
                             |name| col(name.clone()).quantile(quantile.clone(), method),
                             &input_schema,
                         ),
@@ -791,7 +791,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             |dt| {
                                 dt.is_primitive_numeric()
                                     || dt.is_temporal()
-                                    || dt == &DataType::Boolean
+                                    || dt.is_bool()
+                                    || dt.is_decimal()
                             },
                             |name| col(name.clone()).mean(),
                             &input_schema,
