@@ -31,6 +31,9 @@ ipc = ["polars-python/ipc"]
 catalog = ["polars-python/catalog"]
 
 # Features passed through to the polars-python crate
+# needed to activate bigidx in cloud
+bigidx = ["polars/bigidx"]
+
 avro = ["polars-python/avro"]
 ipc_streaming = ["polars-python/ipc_streaming"]
 is_in = ["polars-python/is_in"]
