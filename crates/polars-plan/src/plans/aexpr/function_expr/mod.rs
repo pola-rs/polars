@@ -1515,11 +1515,12 @@ impl IRFunctionExpr {
             | F::CumMax { .. } => FunctionOptions::length_preserving(),
             F::Reverse => FunctionOptions::length_preserving(),
             #[cfg(feature = "dtype-struct")]
-            F::ValueCounts { .. } => FunctionOptions::groupwise().flag(
-                FunctionFlags::PASS_NAME_TO_APPLY
-                    | FunctionFlags::INPUT_ORDER_AGNOSTIC
-                    | FunctionFlags::OUTPUT_UNORDERED,
-            ),
+            F::ValueCounts { sort, .. } => FunctionOptions::groupwise().with_flags(|mut f| {
+                if !sort {
+                    f |= FunctionFlags::OUTPUT_UNORDERED
+                }
+                f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_ORDER_AGNOSTIC
+            }),
             #[cfg(feature = "unique_counts")]
             F::UniqueCounts => FunctionOptions::groupwise(),
             #[cfg(feature = "approx_unique")]
