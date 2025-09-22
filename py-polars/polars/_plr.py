@@ -5,7 +5,7 @@ import builtins
 import os
 import sys
 
-PKG_VERSION = "1.33.1"
+PKG_VERSION = "1.34.0-beta.1"
 
 
 def pllts() -> None:
