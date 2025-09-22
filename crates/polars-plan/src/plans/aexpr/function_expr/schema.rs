@@ -232,6 +232,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "log")]
             Log => mapper.with_dtype(
                 match args_to_supertype(fields)? {
+                    // TODO: [amber] Fix here
                     DataType::Float32 => DataType::Float32,
                     _ => DataType::Float64,
                 }
