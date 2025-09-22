@@ -342,9 +342,6 @@ impl DurationArgs {
         let extract_f64 = |e: &Expr| {
             let Expr::Literal(lv) = e else { return None };
             let av = lv.to_any_value()?;
-            if !av.is_float() {
-                return None;
-            };
             av.extract::<f64>()
         };
 
