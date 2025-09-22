@@ -10,3 +10,4 @@ pub mod projection;
 pub mod reader_operation_pushdown;
 pub mod row_counter;
 pub mod row_deletions;
+pub mod skip_files;

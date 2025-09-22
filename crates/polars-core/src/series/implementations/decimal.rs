@@ -488,17 +488,6 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.cast(&DataType::Float64)?.var_reduce(ddof)
     }
 
-    fn var(&self, ddof: u8) -> Option<f64> {
-        self.0
-            .cast(&DataType::Float64)
-            .expect("failed to cast from Decimal to Float64")
-            .var(ddof)
-    }
-
-    fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
-        Ok(self.apply_scale(self.0.physical().var_reduce(_ddof)))
-    }
-
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         self.0
             .physical()
