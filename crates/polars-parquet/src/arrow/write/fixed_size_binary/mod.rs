@@ -2,7 +2,7 @@ mod basic;
 mod nested;
 
 use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::types::i256;
+use arrow::types::{NativeType, i256};
 pub use basic::array_to_page;
 pub use nested::array_to_page as nested_array_to_page;
 
@@ -60,12 +60,15 @@ pub(super) fn build_statistics(
     }
 }
 
-pub(super) fn build_statistics_decimal(
-    array: &PrimitiveArray<i128>,
+pub(super) fn build_statistics_decimal<T>(
+    array: &PrimitiveArray<T>,
     primitive_type: PrimitiveType,
     size: usize,
     options: &StatisticsOptions,
-) -> FixedLenStatistics {
+) -> FixedLenStatistics
+where
+    T: NativeType + Ord,
+{
     FixedLenStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
@@ -77,7 +80,7 @@ pub(super) fn build_statistics_decimal(
                     .iter()
                     .flatten()
                     .max()
-                    .map(|x| x.to_be_bytes()[16 - size..].to_vec())
+                    .map(|x| x.to_be_bytes().as_ref()[16 - size..].to_vec())
             })
             .flatten(),
         min_value: options
@@ -87,7 +90,7 @@ pub(super) fn build_statistics_decimal(
                     .iter()
                     .flatten()
                     .min()
-                    .map(|x| x.to_be_bytes()[16 - size..].to_vec())
+                    .map(|x| x.to_be_bytes().as_ref()[16 - size..].to_vec())
             })
             .flatten(),
     }

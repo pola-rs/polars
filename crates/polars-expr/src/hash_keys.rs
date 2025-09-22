@@ -61,6 +61,8 @@ macro_rules! downcast_single_key_ca {
             DataType::UInt64 => { let $ca = $self.u64().unwrap(); $($body)* },
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => { let $ca = $self.i128().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => { let $ca = $self.u128().unwrap(); $($body)* },
             DataType::Float32 => { let $ca = $self.f32().unwrap(); $($body)* },
             DataType::Float64 => { let $ca = $self.f64().unwrap(); $($body)* },
 

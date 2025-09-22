@@ -1,4 +1,6 @@
 use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// Defines valid compression levels.
 pub trait CompressionLevel<T: std::fmt::Display + std::cmp::PartialOrd> {
@@ -81,6 +83,8 @@ impl GzipLevel {
 
 /// Represents a valid zstd compression level.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ZstdLevel(i32);
 
 impl CompressionLevel<i32> for ZstdLevel {
