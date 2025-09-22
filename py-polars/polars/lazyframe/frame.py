@@ -3714,11 +3714,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
-
-        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")
-        >>> with lf.collect_batches() as it:
-        ...     print(next(iter(it)))  # print first batch, stop afterwards
-        ...     pass  # doctest: +SKIP
         """
         import threading
         from queue import Queue
