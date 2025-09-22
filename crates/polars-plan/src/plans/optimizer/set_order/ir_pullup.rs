@@ -168,11 +168,16 @@ pub(super) fn pullup_orders(
                     unreachable!()
                 };
 
-                let mut hits = 0;
-                let is_output_unordered = !exprs.iter().any(|e| {
-                    hits += usize::from(input_schema.contains(e.output_name()));
+                let has_any_ordered_expression = exprs.iter().any(|e| {
                     is_output_ordered(expr_arena.get(e.node()), expr_arena, inputs_ordered[0])
-                }) && hits == input_schema.len();
+                });
+                let only_overwrites_existing_columns = exprs
+                    .iter()
+                    .filter(|e| input_schema.contains(e.output_name()))
+                    .count()
+                    == input_schema.len();
+                let is_output_unordered =
+                    !has_any_ordered_expression && only_overwrites_existing_columns;
 
                 if is_output_unordered {
                     set_unordered_output!();
