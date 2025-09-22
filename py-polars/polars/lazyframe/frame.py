@@ -111,6 +111,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterator, Sequence
+    from concurrent.futures import Future
     from io import IOBase
     from typing import IO, Literal
 
@@ -3742,42 +3743,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 self._engine = engine
                 self._optimizations = optimizations
                 self._shared = SharedState()
-                self._fut = None
+                self._fut: Future[None] | None = None
 
                 if not lazy:
                     self._start()
 
             def _start(self) -> None:
-                if self._fut is None:
-                    # Make sure we don't capture self which would cause __del__
-                    # to not get called.
-                    shared = self._shared
-                    chunk_size = self._chunk_size
-                    maintain_order = self._maintain_order
-                    engine = self._engine
-                    optimizations = self._optimizations
-                    lf = self._lf
+                if self._fut is not None:
+                    return
 
-                    def task() -> None:
-                        def put_batch_in_queue(df: DataFrame) -> bool | None:
-                            if shared.stopped:
-                                return True
-                            shared.queue.put(df)
-                            return shared.stopped
+                # Make sure we don't capture self which would cause __del__
+                # to not get called.
+                shared = self._shared
+                chunk_size = self._chunk_size
+                maintain_order = self._maintain_order
+                engine = self._engine
+                optimizations = self._optimizations
+                lf = self._lf
 
-                        try:
-                            lf.sink_batches(
-                                put_batch_in_queue,
-                                chunk_size=chunk_size,
-                                maintain_order=maintain_order,
-                                engine=engine,
-                                optimizations=optimizations,
-                                lazy=False,
-                            )
-                        finally:
-                            shared.queue.put(None)  # Signal the end of batches.
+                def task() -> None:
+                    def put_batch_in_queue(df: DataFrame) -> bool | None:
+                        if shared.stopped:
+                            return True
+                        shared.queue.put(df)
+                        return shared.stopped
 
-                    self._fut = _COLLECT_BATCHES_POOL.submit(task)
+                    try:
+                        lf.sink_batches(
+                            put_batch_in_queue,
+                            chunk_size=chunk_size,
+                            maintain_order=maintain_order,
+                            engine=engine,
+                            optimizations=optimizations,
+                            lazy=False,
+                        )
+                    finally:
+                        shared.queue.put(None)  # Signal the end of batches.
+
+                self._fut = _COLLECT_BATCHES_POOL.submit(task)
 
             def __iter__(self) -> BatchCollector:
                 return self
@@ -3800,7 +3803,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     self._shared.stopped = True
                     while self._shared.queue.get() is not None:
                         pass
-                self._fut.result()
+                if self._fut is not None:
+                    self._fut.result()
 
         return BatchCollector(
             lf=self,
