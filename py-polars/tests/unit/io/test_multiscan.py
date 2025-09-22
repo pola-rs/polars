@@ -805,6 +805,22 @@ def test_scan_ignore_hidden_files_21762(
         ),
     )
 
+    assert_frame_equal(
+        scan(root, hidden_file_prefix={".", "_"}).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
     # Top-level glob only
     root = tmp_path / "*.ext"
 
