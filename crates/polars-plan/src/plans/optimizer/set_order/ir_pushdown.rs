@@ -207,8 +207,8 @@ pub(super) fn pushdown_orders(
                 [is_order_observing].into()
             },
             IR::MapFunction { input: _, function } => {
-                let is_order_observing = !((function.has_equal_order() && all_outputs_unordered)
-                    || (function.is_input_order_agnostic()));
+                let is_order_observing = (function.has_equal_order() && !all_outputs_unordered)
+                    || !function.is_input_order_agnostic();
                 [is_order_observing].into()
             },
             IR::SimpleProjection { .. } => [!all_outputs_unordered].into(),
