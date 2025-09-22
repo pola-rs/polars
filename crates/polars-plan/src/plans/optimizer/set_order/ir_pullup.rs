@@ -188,13 +188,7 @@ pub(super) fn pullup_orders(
                 input: _,
                 predicate,
             } => {
-                let is_predicate_output_ordered = is_output_ordered(
-                    expr_arena.get(predicate.node()),
-                    expr_arena,
-                    inputs_ordered[0],
-                );
-
-                if is_predicate_output_ordered != inputs_ordered[0] {
+                if !inputs_ordered[0] {
                     // @Performance:
                     // This can be optimized to IR::Slice {
                     //     input,
