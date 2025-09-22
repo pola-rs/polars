@@ -29,7 +29,7 @@ def test_sink_batches_early_stop() -> None:
         nonlocal stopped
         assert not stopped
         stopped = True
-        return False
+        return True
 
     df.lazy().sink_batches(cb)  # type: ignore[call-overload]
 
