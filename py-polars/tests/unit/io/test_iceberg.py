@@ -1765,14 +1765,16 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
 
     Path(dfiles[0].removeprefix("file://")).unlink()
 
-    with pytest.raises(
+    expect_file_not_found_err = pytest.raises(
         OSError,
         match=(
             "The system cannot find the file specified"
             if sys.platform == "win32"
             else "No such file or directory"
         ),
-    ):
+    )
+
+    with expect_file_not_found_err:
         pl.scan_iceberg(tbl, reader_override="native").collect()
 
     def ensure_filter_skips_file(filter_expr: pl.Expr) -> None:
@@ -1781,7 +1783,20 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
             pl.LazyFrame(schema=pl_schema),
         )
 
-    # Less-than, all types
+    # Check different operators
+    ensure_filter_skips_file(pl.col("IntegerType") > 1)
+    ensure_filter_skips_file(pl.col("IntegerType") != 1)
+    ensure_filter_skips_file(pl.col("IntegerType").is_in([0]))
+
+    # Ensure `use_metadata_statistics=False` does not skip based on statistics
+    with expect_file_not_found_err:
+        pl.scan_iceberg(
+            tbl,
+            reader_override="native",
+            use_metadata_statistics=False,
+        ).filter(pl.col("IntegerType") > 1).collect()
+
+    # Check different types
     ensure_filter_skips_file(pl.col("BooleanType") < True)
     ensure_filter_skips_file(pl.col("IntegerType") < 1)
     ensure_filter_skips_file(pl.col("LongType") < 1)
@@ -1806,12 +1821,7 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
     )
     ensure_filter_skips_file(pl.col("FixedType") < b"A")
 
-    # Check other operators
-    ensure_filter_skips_file(pl.col("IntegerType") > 1)
-    ensure_filter_skips_file(pl.col("IntegerType") != 1)
-    ensure_filter_skips_file(pl.col("IntegerType").is_in([0]))
-
-    # Check row index. It has a null_count statistic column of 0.
+    # Check row index. It should have a null_count statistic column of 0.
     assert_frame_equal(
         pl.scan_iceberg(tbl, reader_override="native")
         .with_row_index()
