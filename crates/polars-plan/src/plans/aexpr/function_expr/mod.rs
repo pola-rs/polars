@@ -1547,7 +1547,7 @@ impl IRFunctionExpr {
             },
             F::Unique(maintain_order) => FunctionOptions::groupwise().with_flags(|f| {
                 if *maintain_order {
-                    f
+                    f | FunctionFlags::PROPAGATES_ORDER
                 } else {
                     f | FunctionFlags::INPUT_ORDER_AGNOSTIC | FunctionFlags::OUTPUT_UNORDERED
                 }
