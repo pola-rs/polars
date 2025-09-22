@@ -17,8 +17,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies import dataframes
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars._typing import EngineType
     from polars.io.partition import BasePartitionContext, KeyedPartitionContext
 
