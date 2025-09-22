@@ -37,6 +37,7 @@ from polars.datatypes import (
     List,
     Null,
     Object,
+    String,
     Struct,
     Time,
     Unknown,
@@ -164,10 +165,27 @@ def sequence_to_pyseries(
             Boolean,
             Categorical,
             Enum,
-            Decimal,
-        ) or isinstance(dtype, Categorical):
+        ) or isinstance(dtype, (Categorical, Decimal)):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
+
+        # Uninstanced Decimal is a bit special and has various inference paths
+        if dtype == Decimal:
+            if pyseries.dtype() == String:
+                pyseries = pyseries.str_to_decimal_infer(inference_length=0)
+            elif pyseries.dtype().is_float():
+                # Go through string so we infer an appropriate scale.
+                pyseries = pyseries.cast(
+                    String, strict=strict, wrap_numerical=False
+                ).str_to_decimal_infer(inference_length=0)
+            elif pyseries.dtype().is_integer() or pyseries.dtype() == Null:
+                pyseries = pyseries.cast(
+                    Decimal(scale=0), strict=strict, wrap_numerical=False
+                )
+            elif not isinstance(pyseries.dtype(), Decimal):
+                msg = f"can't convert {pyseries.dtype()} to Decimal"
+                raise TypeError(msg)
+
         return pyseries
 
     elif dtype == Struct:
