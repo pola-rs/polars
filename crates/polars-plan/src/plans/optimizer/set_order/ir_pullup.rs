@@ -186,7 +186,7 @@ pub(super) fn pullup_orders(
 
             IR::Filter {
                 input: _,
-                predicate,
+                predicate: _,
             } => {
                 if !inputs_ordered[0] {
                     // @Performance:
