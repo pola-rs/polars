@@ -546,3 +546,18 @@ def test_parquet_preserve_order_within_partition_23376(tmp_path: Path) -> None:
     df.lazy().sink_parquet(pl.PartitionMaxSize(tmp_path, max_size=1))
     out = pl.scan_parquet(tmp_path).collect().to_series().to_list()
     assert ll == out
+
+
+@pytest.mark.write_disk
+def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
+    i = 0
+
+    def new_path(_: Any) -> str:
+        nonlocal i
+        p = f"file://{tmp_path}/pms-{i}.parquet"
+        i += 1
+        return p
+
+    pl.LazyFrame({"a": [1, 2]}).sink_csv(
+        pl.PartitionMaxSize("s3://bucket-x", file_path=new_path, max_size=1)
+    )

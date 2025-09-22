@@ -9,6 +9,7 @@ if TYPE_CHECKING:
         DeletionFiles,
         SchemaDict,
     )
+    from polars.dataframe.frame import DataFrame
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.io.scan_options.cast_options import ScanCastOptions
 
@@ -53,3 +54,4 @@ class ScanOptions:
     column_mapping: ColumnMapping | None = None
     default_values: DefaultFieldValues | None = None
     deletion_files: DeletionFiles | None = None
+    table_statistics: DataFrame | None = None

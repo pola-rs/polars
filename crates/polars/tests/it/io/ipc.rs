@@ -120,7 +120,11 @@ fn test_read_ipc_with_columns() {
 fn test_write_with_compression() {
     let mut df = create_df();
 
-    let compressions = vec![None, Some(IpcCompression::LZ4), Some(IpcCompression::ZSTD)];
+    let compressions = vec![
+        None,
+        Some(IpcCompression::LZ4),
+        Some(IpcCompression::ZSTD(Default::default())),
+    ];
 
     for compression in compressions.into_iter() {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());

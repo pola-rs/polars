@@ -3,6 +3,7 @@ use std::borrow::{Borrow, Cow};
 use arrow_format::ipc;
 use arrow_format::ipc::planus::Builder;
 use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_utils::compression::ZstdLevel;
 
 use super::super::IpcField;
 use super::{write, write_dictionary};
@@ -21,7 +22,7 @@ pub enum Compression {
     /// LZ4 (framed)
     LZ4,
     /// ZSTD
-    ZSTD,
+    ZSTD(ZstdLevel),
 }
 
 /// Options declaring the behaviour of writing to IPC
@@ -231,7 +232,7 @@ fn serialize_compression(
     if let Some(compression) = compression {
         let codec = match compression {
             Compression::LZ4 => arrow_format::ipc::CompressionType::Lz4Frame,
-            Compression::ZSTD => arrow_format::ipc::CompressionType::Zstd,
+            Compression::ZSTD(_) => arrow_format::ipc::CompressionType::Zstd,
         };
         Some(Box::new(arrow_format::ipc::BodyCompression {
             codec,

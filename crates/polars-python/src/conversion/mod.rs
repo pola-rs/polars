@@ -22,6 +22,7 @@ use polars::prelude::default_values::{
 };
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
+use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
@@ -166,29 +167,6 @@ fn struct_dict<'a, 'py>(
         dict.set_item(fld.name().as_str(), Wrap(val).into_pyobject(py)?)
     })?;
     Ok(dict)
-}
-
-// accept u128 array to ensure alignment is correct
-fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
-    const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
-    // SAFETY: transmute is safe as there are 48 bytes in 3 128bit ints
-    // and the minimal alignment of u8 fits u16
-    let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
-    let mut buffer = itoa::Buffer::new();
-    let value = buffer.format(v);
-    let len = value.len();
-    for (dst, src) in buf.iter_mut().zip(value.as_bytes().iter()) {
-        *dst = *src
-    }
-
-    let ptr = buf.as_mut_ptr() as *mut i128;
-    unsafe {
-        // this is safe because we know that the buffer is exactly 48 bytes long
-        *ptr -= ZEROS;
-        *ptr.add(1) -= ZEROS;
-        *ptr.add(2) -= ZEROS;
-    }
-    len
 }
 
 impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
@@ -390,7 +368,6 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Time" => DataType::Time,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
-                    "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "Struct" => DataType::Struct(vec![]),
@@ -398,6 +375,11 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
                     "Unknown" => DataType::Unknown(Default::default()),
+                    "Decimal" => {
+                        return Err(PyTypeError::new_err(
+                            "Decimal without precision/scale set is not a valid Polars datatype",
+                        ));
+                    },
                     dt => {
                         return Err(PyTypeError::new_err(format!(
                             "'{dt}' is not a Polars data type",
@@ -456,7 +438,8 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
                 let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
-                DataType::Decimal(precision, Some(scale))
+                dec128_verify_prec_scale(precision, scale).map_err(to_py_err)?;
+                DataType::Decimal(precision, scale)
             },
             "List" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();
@@ -951,7 +934,7 @@ impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
-            "zstd" => Some(IpcCompression::ZSTD),
+            "zstd" => Some(IpcCompression::ZSTD(Default::default())),
             v => {
                 return Err(PyValueError::new_err(format!(
                     "ipc `compression` must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",

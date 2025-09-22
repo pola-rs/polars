@@ -469,6 +469,7 @@ def scan_parquet(
     _column_mapping: ColumnMapping | None = None,
     _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
+    _table_statistics: DataFrame | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -714,6 +715,7 @@ def scan_parquet(
             column_mapping=_column_mapping,
             default_values=_default_values,
             deletion_files=_deletion_files,
+            table_statistics=_table_statistics,
         ),
     )
 

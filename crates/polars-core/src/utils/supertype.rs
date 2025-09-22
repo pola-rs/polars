@@ -469,12 +469,33 @@ pub fn get_supertype_with_options(
             }
             #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
-                Some(Decimal((*p1).zip(*p2).map(|(p1, p2)| p1.max(p2)), (*s1).max(*s2)))
+                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
+            },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(_, _), Float32 | Float64) => Some(Float64),
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
+                use polars_compute::decimal::{i128_to_dec128, DEC128_MAX_PREC};
+                let fits = |v| { i128_to_dec128(v, *prec, *scale).is_some() };
+                let fits_orig_prec_scale = match dt {
+                    UInt8 => fits(u8::MAX as i128),
+                    UInt16 => fits(u16::MAX as i128),
+                    UInt32 => fits(u32::MAX as i128),
+                    UInt64 => fits(u64::MAX as i128),
+                    UInt128 => false,
+                    Int8 => fits(i8::MAX as i128),
+                    Int16 => fits(i16::MAX as i128),
+                    Int32 => fits(i32::MAX as i128),
+                    Int64 => fits(i64::MAX as i128),
+                    Int128 => false,
+                    _ => unreachable!(),
+                };
+                if fits_orig_prec_scale {
+                    Some(Decimal(*prec, *scale))
+                } else {
+                    Some(Decimal(DEC128_MAX_PREC, *scale))
+                }
             }
-            #[cfg(feature = "dtype-decimal")]
-            (Decimal(_, _), f @ (Float32 | Float64)) => Some(f.clone()),
-            #[cfg(feature = "dtype-decimal")]
-            (d @ Decimal(_, _), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => Some(d.clone()),
             _ => None,
         }
     }

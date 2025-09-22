@@ -60,6 +60,7 @@ impl LazyFrame {
                 extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths: None,
                 deletion_files: None,
+                table_statistics: None,
             },
         )?
         .build()
