@@ -40,6 +40,9 @@ Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
+idx64 = ["polars-u64-idx == 1.33.1"]
+lts_cpu = ["polars-lts-cpu == 1.33.1"]
+
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.0.1a1"]
 # Interop
@@ -85,7 +88,7 @@ all = [
 ]
 
 [tool.maturin]
-include = [{ path = "rust-toolchain.toml", format = "sdist" }]
+include = [{ path = "rust-toolchain.toml", format = "sdist" }, { path = "polars/**/*", format = ["sdist", "wheel"] }]
 
 [tool.mypy]
 files = ["polars", "tests"]

@@ -58,9 +58,44 @@ jobs:
       - name: Update package name
         if: matrix.package != 'polars'
         run: tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-      - name: Add bigidx feature
+
+      # Update the LTS PLR to be the right name and package.
+      - name: Update LTS package
+        if: matrix.package == 'polars-lts-cpu'
+        run: |
+          # Remove the features for LTS CPU
+          tomlq -i -t 'del(.project."optional-dependencies".idx64)' py-polars/pyproject.toml
+          tomlq -i -t 'del(.project."optional-dependencies".lts_cpu)' py-polars/pyproject.toml
+
+          mv py-polars/_polars64 py-polars/_polars_lts_cpu
+          tomlq -i -t '.lib.name = "_polars_lts_cpu"' py-polars/Cargo.toml
+          sed -i 's/pub fn _polars64/pub fn _polars_lts_cpu/' crates/polars-python/src/c_api/mod.rs
+
+      # Update the u32 PLR to be the right name and package.
+      - name: Update U32 package
+        if: matrix.package == 'polars'
+        run: |
+          mv py-polars/_polars64 py-polars/_polars32
+          tomlq -i -t '.lib.name = "_polars32"' py-polars/Cargo.toml
+          sed -i 's/pub fn _polars64/pub fn _polars32/' crates/polars-python/src/c_api/mod.rs
+
+          set -e
+          VERSION=$(tomlq '.package.version' py-polars/Cargo.toml | tr -d '"')
+          U64_VERSION=($(tomlq '.project."optional-dependencies".idx64[0]' py-polars/pyproject.toml | tr -d '"'))
+          LTS_VERSION=($(tomlq '.project."optional-dependencies".lts_cpu[0]' py-polars/pyproject.toml | tr -d '"'))
+
+          [[ "$VERSION" != "${U64_VERSION[2]}" ]] && echo "Incorrect idx64 version" && exit 1
+          [[ "$VERSION" != "${LTS_VERSION[2]}" ]] && echo "Incorrect lts version" && exit 1
+
+      - name: Update U64 package
         if: matrix.package == 'polars-u64-idx'
-        run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+        run: |
+          # Remove the features for U64
+          tomlq -i -t 'del(.project."optional-dependencies".idx64)' py-polars/pyproject.toml
+          tomlq -i -t 'del(.project."optional-dependencies".lts_cpu)' py-polars/pyproject.toml
+
+          tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+
       - name: Update optional dependencies
         if: matrix.package != 'polars'
         run: sed -i 's/polars\[/${{ matrix.package }}\[/' py-polars/pyproject.toml
