@@ -1,4 +1,5 @@
 use core::fmt;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -296,6 +297,29 @@ impl<'a> PlPathRef<'a> {
         })
     }
 
+    pub fn file_name(&self) -> Option<&OsStr> {
+        match self {
+            Self::Local(p) => {
+                if p.is_dir() {
+                    None
+                } else {
+                    p.file_name()
+                }
+            },
+            Self::Cloud(p) => {
+                if p.scheme() == CloudScheme::File
+                    && std::fs::metadata(p.strip_scheme()).is_ok_and(|x| x.is_dir())
+                {
+                    return None;
+                }
+
+                let p = p.strip_scheme();
+                let out = p.rfind('/').map_or(p, |i| &p[i + 1..]);
+                (!out.is_empty()).then_some(out.as_ref())
+            },
+        }
+    }
+
     pub fn extension(&self) -> Option<&str> {
         match self {
             Self::Local(path) => path.extension().and_then(|e| e.to_str()),
@@ -510,5 +534,21 @@ mod tests {
         assert_plpath_join!("/an/even/longer" + "/path" => "/path", "/an/even/longer/path");
         assert_plpath_join!("/an/even/longer" + "path/wow" => "/an/even/longer/path/wow");
         assert_plpath_join!("/an/even/longer" + "/path/wow" => "/path/wow", "/an/even/longer/path/wow");
+    }
+
+    #[test]
+    fn test_plpath_name() {
+        assert_eq!(PlPathRef::new("s3://...").file_name(), Some("...".as_ref()));
+        assert_eq!(
+            PlPathRef::new("a/b/file.parquet").file_name(),
+            Some("file.parquet".as_ref())
+        );
+        assert_eq!(
+            PlPathRef::new("file.parquet").file_name(),
+            Some("file.parquet".as_ref())
+        );
+
+        assert_eq!(PlPathRef::new("s3://").file_name(), None);
+        assert_eq!(PlPathRef::new("").file_name(), None);
     }
 }

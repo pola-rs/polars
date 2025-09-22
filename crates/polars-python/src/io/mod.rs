@@ -10,6 +10,7 @@ use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyAnyMethods;
 use pyo3::{Bound, FromPyObject, PyObject, PyResult, intern};
 
@@ -52,6 +53,7 @@ impl PyScanOptions<'_> {
             missing_columns: Wrap<MissingColumnsPolicy>,
             include_file_paths: Option<Wrap<PlSmallStr>>,
             glob: bool,
+            hidden_file_prefix: Option<Vec<PyBackedStr>>,
             column_mapping: Option<Wrap<ColumnMapping>>,
             default_values: Option<Wrap<DefaultFieldValues>>,
             hive_partitioning: Option<bool>,
@@ -76,6 +78,7 @@ impl PyScanOptions<'_> {
             column_mapping,
             default_values,
             glob,
+            hidden_file_prefix,
             hive_partitioning,
             hive_schema,
             try_parse_hive_dates,
@@ -114,6 +117,8 @@ impl PyScanOptions<'_> {
             rechunk,
             cache,
             glob,
+            hidden_file_prefix: hidden_file_prefix
+                .map(|x| x.into_iter().map(|x| (*x).into()).collect()),
             projection: None,
             column_mapping: column_mapping.map(|x| x.0),
             default_values: default_values
