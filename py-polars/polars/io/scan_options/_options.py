@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars._typing import (
         ColumnMapping,
         DefaultFieldValues,
@@ -35,7 +37,7 @@ class ScanOptions:
 
     # For path expansion
     glob: bool = True
-    hidden_file_prefix: list[str] | None = None
+    hidden_file_prefix: Sequence[str] | None = None
 
     # Hive
     # Note: `None` means auto.
