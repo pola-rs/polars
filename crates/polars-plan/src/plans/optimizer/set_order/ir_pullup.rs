@@ -98,10 +98,8 @@ pub(super) fn pullup_orders(
 
                 let maintain_order = options.args.maintain_order;
 
-                if (left_unordered
-                    && matches!(maintain_order, MOJ::Left | MOJ::RightLeft | MOJ::LeftRight))
-                    || (right_unordered
-                        && matches!(maintain_order, MOJ::Right | MOJ::RightLeft | MOJ::LeftRight))
+                if (left_unordered && matches!(maintain_order, MOJ::Left | MOJ::RightLeft))
+                    || (right_unordered && matches!(maintain_order, MOJ::Right | MOJ::LeftRight))
                 {
                     // If we are maintaining order of a side, but that input has no guaranteed order,
                     // remove the maintain ordering from that side.
@@ -109,9 +107,9 @@ pub(super) fn pullup_orders(
                     let mut new_options = options.as_ref().clone();
                     new_options.args.maintain_order = match maintain_order {
                         _ if left_unordered && right_unordered => MOJ::None,
-                        MOJ::Left | MOJ::LeftRight if left_unordered => MOJ::None,
+                        MOJ::Left if left_unordered => MOJ::None,
                         MOJ::RightLeft if left_unordered => MOJ::Right,
-                        MOJ::Right | MOJ::RightLeft if right_unordered => MOJ::None,
+                        MOJ::Right if right_unordered => MOJ::None,
                         MOJ::LeftRight if right_unordered => MOJ::Left,
                         _ => unreachable!(),
                     };
