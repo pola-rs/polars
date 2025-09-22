@@ -229,13 +229,13 @@ def test_duration_invalid_cast_22258() -> None:
 @pytest.mark.parametrize(
     ("digit", "digit_scale"),
     [
-        ("weeks", 7 * 24 * 60 * 60 * 10**9),
-        ("days", 24 * 60 * 60 * 10**9),
-        ("hours", 60 * 60 * 10**9),
-        ("minutes", 60 * 10**9),
-        ("seconds", 10**9),
-        ("milliseconds", 10**6),
-        ("microseconds", 10**3),
+        ("weeks", 7 * 24 * 60 * 60 * 1e9),
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
     ],
 )
 @pytest.mark.parametrize(
@@ -259,13 +259,13 @@ def test_duration_float_types_11625(
 @pytest.mark.parametrize(
     ("digit", "digit_scale"),
     [
-        ("weeks", 7 * 24 * 60 * 60 * 10**9),
-        ("days", 24 * 60 * 60 * 10**9),
-        ("hours", 60 * 60 * 10**9),
-        ("minutes", 60 * 10**9),
-        ("seconds", 10**9),
-        ("milliseconds", 10**6),
-        ("microseconds", 10**3),
+        ("weeks", 7 * 24 * 60 * 60 * 1e9),
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
         ("nanoseconds", 1),
     ],
 )
@@ -282,7 +282,7 @@ def test_duration_float_types_series_11625(
 
     # Exclude cases that could potentially overflow Int64
     scaled = s.cast(pl.Float64) * digit_scale
-    assume(0.99 * I64_MIN <= scaled.min() <= scaled.max() <= 0.99 * I64_MAX)
+    assume(0.99 * I64_MIN <= scaled.min() <= scaled.max() <= 0.99 * I64_MAX)  # type: ignore[operator]
 
     # Truncate any digits below the current time unit precision
     if digit_scale < time_unit_scale:
@@ -291,7 +291,7 @@ def test_duration_float_types_series_11625(
     expected = s.cast(pl.Float64) * digit_scale
     expected_ns = (expected / time_unit_scale).cast(pl.Int64) * time_unit_scale
     actual_ns = (
-        pl.select(pl.duration(**{digit: s}, time_unit=time_unit).alias("a"))
+        pl.select(pl.duration(**{digit: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
         .to_series()
         .dt.total_nanoseconds()
     )
