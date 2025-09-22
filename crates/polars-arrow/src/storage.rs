@@ -163,7 +163,11 @@ impl<T> SharedStorage<T> {
         }
     }
 
-    pub fn from_internal_arrow_array(ptr: *const T, len: usize, arr: InternalArrowArray) -> Self {
+    /// # Safety
+    /// The range [ptr, ptr+len) needs to be valid and aligned for T.
+    /// ptr may not be null.
+    pub unsafe fn from_internal_arrow_array(ptr: *const T, len: usize, arr: InternalArrowArray) -> Self {
+        assert!(!ptr.is_null() && ptr.is_aligned());
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
             ptr: ptr.cast_mut(),
