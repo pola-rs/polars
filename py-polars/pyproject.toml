@@ -79,9 +79,6 @@ timezone = ["tzdata; platform_system == 'Windows'"]
 # GPU Engine
 gpu = ["cudf-polars-cu12"]
 
-# Hidden features (not public)
-hidden_bigidx = []
-
 # All
 all = [
   "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
@@ -89,7 +86,7 @@ all = [
 
 [tool.maturin]
 include = [{ path = "rust-toolchain.toml", format = "sdist" }]
-features = ["bigidx"]
+all-features = false
 
 [tool.mypy]
 files = ["polars", "tests"]
