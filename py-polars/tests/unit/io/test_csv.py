@@ -2921,7 +2921,8 @@ def test_write_compressed_csv_file(tmp_path: Path) -> None:
     assert file_path.exists()
 
     # Read back the gzip compressed file
-    csv = gzip.decompress(file_path.read_bytes())
+    with gzip.open(file_path, "rb") as f:
+        csv = f.read()
     out = pl.read_csv(csv)
     assert_frame_equal(out, expected)
 
@@ -2931,6 +2932,7 @@ def test_write_compressed_csv_file(tmp_path: Path) -> None:
     assert file_path.exists()
 
     # Read back the zstd compressed file
-    csv = zstandard.ZstdDecompressor().stream_reader(file_path.read_bytes()).read()
+    with zstandard.open(file_path, "rb") as f:
+        csv = f.read()
     out = pl.read_csv(csv)
     assert_frame_equal(out, expected)
