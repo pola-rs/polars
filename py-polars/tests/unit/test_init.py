@@ -1,4 +1,5 @@
 import importlib
+import re
 
 import pytest
 
@@ -47,7 +48,13 @@ def test_import_all() -> None:
 
 def test_version() -> None:
     # This has already gone wrong once (#23940), preventing future problems.
-    assert (lhs := pl.__version__) == (rhs := importlib.metadata.version("polars")), (
+    # Match something like 1.3.0 and ignore b01 part.
+    # This is needed because beta release names are changed by Python.
+    pattern = r"\d+\.\d+\.\d+"
+    lhs = re.search(pattern, pl.__version__).group()
+    rhs = re.search(pattern, importlib.metadata.version("polars")).group()
+
+    assert lhs == rhs, (
         f"`static PYPOLARS_VERSION` ({lhs}) at `crates/polars-python/src/c_api/mod.rs` "
         f"does not match importlib package metadata version ({rhs})"
     )
