@@ -58,7 +58,7 @@ pub(super) fn pushdown_orders(
                 slice,
                 sort_options: _,
                 ..
-            } if slice.is_none() && all_outputs_unordered && node_outputs.len() == 1 => {
+            } if slice.is_none() && all_outputs_unordered => {
                 // _ -> Unordered
                 //
                 // Remove sort.
