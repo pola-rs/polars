@@ -56,6 +56,7 @@ else:
                 msg = f"Invalid value for `POLARS_PREFER_PKG` variable: '{_prefer}'"
                 raise ValueError(msg) from None
 
+        version_warnings = []
         for pkg in preference:
             try:
                 pkg()
@@ -63,6 +64,7 @@ else:
                 if sys.modules[__name__].__version__ != PKG_VERSION:
                     import warnings
 
+                    version_warnings += [sys.modules[__name__].__version__]
                     warnings.warn(
                         f"Skipping Polars' Rust module version '{sys.modules[__name__].__version__}' did not match version of Python package '{PKG_VERSION}'.",
                         ImportWarning,
@@ -75,6 +77,8 @@ else:
                 pass
         else:
             msg = "could not find Polars' Rust module"
+            if len(version_warnings) > 0:
+                msg += f". Skipped versions {version_warnings} which don't match Python package version"
             raise ImportError(msg)
 
 
