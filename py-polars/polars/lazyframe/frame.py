@@ -5,6 +5,7 @@ import io
 import os
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -111,7 +112,6 @@ if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterator, Sequence
     from io import IOBase
-    from threading import Thread
     from typing import IO, Literal
 
     from polars.lazyframe.opt_flags import QueryOptFlags
@@ -173,6 +173,9 @@ if TYPE_CHECKING:
 
     T = TypeVar("T")
     P = ParamSpec("P")
+
+
+_COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 
 def _select_engine(engine: EngineType) -> EngineType:
@@ -3715,12 +3718,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
-        import threading
         from queue import Queue
 
         class BatchCollector:
-            _thread: Thread | None
-
             def __init__(
                 self,
                 *,
@@ -3742,13 +3742,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 self._engine = engine
                 self._optimizations = optimizations
                 self._shared = SharedState()
-                self._thread = None
+                self._fut = None
 
                 if not lazy:
                     self._start()
 
             def _start(self) -> None:
-                if self._thread is None:
+                if self._fut is None:
                     # Make sure we don't capture self which would cause __del__
                     # to not get called.
                     shared = self._shared
@@ -3777,8 +3777,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                         finally:
                             shared.queue.put(None)  # Signal the end of batches.
 
-                    self._thread = threading.Thread(target=task)
-                    self._thread.start()
+                    self._fut = _COLLECT_BATCHES_POOL.submit(task)
 
             def __iter__(self) -> BatchCollector:
                 return self
@@ -3797,10 +3796,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             def __del__(self) -> None:
                 if not self._shared.stopped:
+                    # Signal to stop and unblock sink_batches task.
                     self._shared.stopped = True
                     while self._shared.queue.get() is not None:
                         pass
-                self._thread.join()
+                self._fut.result()
 
         return BatchCollector(
             lf=self,
