@@ -69,7 +69,7 @@ jobs:
 
           mv py-polars/_polars64 py-polars/_polars_lts_cpu
           tomlq -i -t '.lib.name = "_polars_lts_cpu"' py-polars/Cargo.toml
-          sed -i 's/pub fn _polars64\pub fn _polars_lts_cpu/' crates/polars-python/src/c_api/mod.rs
+          sed -i 's/pub fn _polars64/pub fn _polars_lts_cpu/' crates/polars-python/src/c_api/mod.rs
 
       # Update the u32 PLR to be the right name and package.
       - name: Update U32 package
