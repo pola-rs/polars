@@ -149,9 +149,7 @@ pub(super) fn pullup_orders(
                 }
             },
             IR::MapFunction { input: _, function } => {
-                if !function.is_order_producing(inputs_ordered[0])
-                    || (function.is_elementwise() && !inputs_ordered[0])
-                {
+                if !function.is_order_producing(inputs_ordered[0]) {
                     set_unordered_output!();
                 }
             },
