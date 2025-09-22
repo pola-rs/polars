@@ -3596,6 +3596,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> pl.LazyFrame: ...
+    @unstable()
     def sink_batches(
         self,
         function: Callable[[DataFrame], bool | None],
@@ -3668,6 +3669,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return None
         return LazyFrame._from_pyldf(ldf)
 
+    @unstable()
     def collect_batches(
         self,
         *,
