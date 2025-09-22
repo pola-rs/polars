@@ -4,7 +4,7 @@ import contextlib
 import io
 import os
 import warnings
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -112,7 +112,6 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Iterator, Sequence
     from io import IOBase
     from threading import Thread
-    from types import TracebackType
     from typing import IO, Literal
 
     from polars.lazyframe.opt_flags import QueryOptFlags
@@ -3620,7 +3619,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         function
             Function to run with a batch that is ready. If the function returns
-            `False`, this signals that no more results are needed.
+            `True`, this signals that no more results are needed, allowing for
+            early stopping.
         chunk_size
             The number of rows that are buffered before the callback is called.
         maintain_order
@@ -3649,10 +3649,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         def _wrap(pydf: plr.PyDataFrame) -> bool:
             df = wrap_df(pydf)
-            rv = function(df)
-            if rv is None:
-                return True
-            return rv
+            return bool(function(df))
 
         ldf = self._ldf.sink_batches(
             function=_wrap,
@@ -3675,7 +3672,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-    ) -> Iterable[DataFrame]:
+    ) -> Iterator[DataFrame]:
         """
         Evaluate the query in streaming mode and get a generator that returns chunks.
 
@@ -3739,83 +3736,76 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 engine: EngineType,
                 optimizations: QueryOptFlags,
             ) -> None:
+                class SharedState:
+                    def __init__(self) -> None:
+                        self.queue: Queue[pl.DataFrame | None] = Queue(maxsize=1)
+                        self.stopped = False
+
                 self._lf = lf
                 self._chunk_size = chunk_size
                 self._maintain_order = maintain_order
                 self._engine = engine
                 self._optimizations = optimizations
-                self._queue: Queue[pl.DataFrame | None] = Queue(maxsize=1)
+                self._shared = SharedState()
                 self._thread = None
-                self._stopped = False
 
                 if not lazy:
                     self._start()
 
-            def _task(self) -> None:
-                """The worker thread's task to collect batches."""
-
-                def _put_batch_in_queue(df: DataFrame) -> bool | None:
-                    if self._stopped:
-                        return False
-
-                    self._queue.put(df)
-                    return True
-
-                try:
-                    self._lf.sink_batches(
-                        _put_batch_in_queue,
-                        chunk_size=self._chunk_size,
-                        maintain_order=self._maintain_order,
-                        engine=self._engine,
-                        optimizations=self._optimizations,
-                        lazy=False,
-                    )
-                finally:
-                    self._queue.put(None)  # Signal the end of batches
-
             def _start(self) -> None:
-                self._thread = threading.Thread(target=self._task)
-                self._thread.start()
+                if self._thread is None:
+                    # Make sure we don't capture self which would cause __del__
+                    # to not get called.
+                    shared = self._shared
+                    chunk_size = self._chunk_size
+                    maintain_order = self._maintain_order
+                    engine = self._engine
+                    optimizations = self._optimizations
+                    lf = self._lf
 
-            def stop(self) -> None:
-                if self._stopped or self._thread is None:
-                    return
+                    def task() -> None:
+                        def put_batch_in_queue(df: DataFrame) -> bool | None:
+                            if shared.stopped:
+                                return True
+                            shared.queue.put(df)
+                            return shared.stopped
 
-                self._stopped = True
-                while True:
-                    df = self._queue.get()
-                    if df is None:
-                        break
-                self._thread.join()
+                        try:
+                            lf.sink_batches(
+                                put_batch_in_queue,
+                                chunk_size=chunk_size,
+                                maintain_order=maintain_order,
+                                engine=engine,
+                                optimizations=optimizations,
+                                lazy=False,
+                            )
+                        finally:
+                            shared.queue.put(None)  # Signal the end of batches.
 
-            def __iter__(self) -> Iterator[DataFrame]:
-                """Returns a generator that yields batches from the queue."""
-                if self._stopped:
-                    return
+                    self._thread = threading.Thread(target=task)
+                    self._thread.start()
 
-                if lazy:
-                    self._start()
-
-                while True:
-                    df = self._queue.get()
-                    if df is None:
-                        break
-                    yield df
-
-                assert self._thread is not None
-                self._thread.join()
-
-            def __enter__(self) -> Self:
+            def __iter__(self) -> BatchCollector:
                 return self
 
-            def __exit__(
-                self,
-                exc_type: type[BaseException] | None,
-                exc_value: BaseException | None,
-                traceback: TracebackType | None,
-            ) -> Literal[False]:
-                self.stop()
-                return False
+            def __next__(self) -> DataFrame:
+                if self._shared.stopped:
+                    raise StopIteration
+
+                self._start()
+                df = self._shared.queue.get()
+                if df is None:
+                    self._shared.stopped = True
+                    raise StopIteration
+
+                return df
+
+            def __del__(self) -> None:
+                if not self._shared.stopped:
+                    self._shared.stopped = True
+                    while self._shared.queue.get() is not None:
+                        pass
+                self._thread.join()
 
         return BatchCollector(
             lf=self,

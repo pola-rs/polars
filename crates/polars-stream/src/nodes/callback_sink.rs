@@ -113,12 +113,12 @@ impl ComputeNode for CallbackSinkNode {
                         .split_at(self.buffer.height().min(chunk_size) as i64);
 
                     let function = self.function.clone();
-                    let result = polars_io::pl_async::get_runtime()
+                    let should_stop = polars_io::pl_async::get_runtime()
                         .spawn_blocking(move || function.call(df))
                         .await
                         .unwrap()?;
 
-                    if !result {
+                    if should_stop {
                         self.is_done = true;
                         break;
                     }
