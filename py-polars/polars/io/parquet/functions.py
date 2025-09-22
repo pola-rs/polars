@@ -34,7 +34,6 @@ with contextlib.suppress(ImportError):
     from polars._plr import read_parquet_metadata as _read_parquet_metadata
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
