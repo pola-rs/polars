@@ -288,6 +288,23 @@ fn to_graph_rec<'a>(
             )
         },
 
+        CallbackSink {
+            input,
+            function,
+            maintain_order,
+            chunk_size,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::callback_sink::CallbackSinkNode::new(
+                    function.clone(),
+                    *maintain_order,
+                    *chunk_size,
+                ),
+                [(input_key, input.port)],
+            )
+        },
+
         FileSink {
             target,
             sink_options,

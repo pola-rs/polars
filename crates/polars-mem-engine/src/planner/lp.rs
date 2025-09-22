@@ -276,6 +276,27 @@ fn create_physical_plan_impl(
                     name: "mem".to_string(),
                     f: Box::new(move |df, _state| Ok(Some(df))),
                 })),
+                SinkTypeIR::Callback(CallbackSinkType {
+                    function,
+                    maintain_order: _,
+                    chunk_size,
+                }) => {
+                    let chunk_size = chunk_size.map_or(usize::MAX, Into::into);
+
+                    Ok(Box::new(SinkExecutor {
+                        input,
+                        name: "batches".to_string(),
+                        f: Box::new(move |mut buffer, _state| {
+                            while !buffer.is_empty() {
+                                let df;
+                                (df, buffer) =
+                                    buffer.split_at(buffer.height().min(chunk_size) as i64);
+                                function.call(df)?;
+                            }
+                            Ok(Some(DataFrame::empty()))
+                        }),
+                    }))
+                },
                 SinkTypeIR::File(FileSinkType {
                     file_type,
                     target,
