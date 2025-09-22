@@ -3115,12 +3115,14 @@ name = "polars-compute"
 version = "0.51.0"
 dependencies = [
  "atoi_simd",
+ "bigdecimal",
  "bytemuck",
  "chrono",
  "either",
  "fast-float2",
  "hashbrown 0.15.4",
  "itoa",
+ "num-bigint",
  "num-traits",
  "polars-arrow",
  "polars-error",
@@ -3285,6 +3287,7 @@ dependencies = [
  "object_store",
  "percent-encoding",
  "polars-arrow",
+ "polars-compute",
  "polars-core",
  "polars-error",
  "polars-json",

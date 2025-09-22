@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
+polars-compute = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
