@@ -806,7 +806,7 @@ def test_scan_ignore_hidden_files_21762(
     )
 
     assert_frame_equal(
-        scan(root, hidden_file_prefix={".", "_"}).sort("*"),
+        scan(root, hidden_file_prefix=(".", "_")).sort("*"),
         pl.LazyFrame(
             {
                 "rel_path": [

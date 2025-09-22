@@ -452,7 +452,7 @@ def scan_parquet(
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,
     glob: bool = True,
-    hidden_file_prefix: str | Collection[str] | None = None,
+    hidden_file_prefix: str | Sequence[str] | None = None,
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
