@@ -4,6 +4,9 @@ use crate::dsl::EvalVariant;
 use crate::plans::{AExpr, IRAggExpr};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameOrdering;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ExprOutputOrder {
     /// The expression's output order is solely reliant on whether the input dataframe has a
     /// defined order.
@@ -46,12 +49,12 @@ impl ExprOutputOrder {
     }
 
     /// Do a elementwise zip between two output orderings.
-    pub fn zip_with(self, other: Self) -> Option<Self> {
+    pub fn zip_with(self, other: Self) -> Result<Self, FrameOrdering> {
         match (self, other) {
-            (Self::Scalar, v) | (v, Self::Scalar) => Some(v),
-            (Self::Derived, _) | (_, Self::Derived) => None,
-            (v, w) if v == w => Some(v),
-            _ => None,
+            (Self::Scalar, v) | (v, Self::Scalar) => Ok(v),
+            (Self::Derived, _) | (_, Self::Derived) => Err(FrameOrdering),
+            (v, w) if v == w => Ok(v),
+            _ => Err(FrameOrdering),
         }
     }
 
@@ -69,20 +72,24 @@ impl ExprOutputOrder {
     }
 }
 
-pub fn zip(orders: impl IntoIterator<Item = Option<ExprOutputOrder>>) -> Option<ExprOutputOrder> {
+pub fn zip(
+    orders: impl IntoIterator<Item = Result<ExprOutputOrder, FrameOrdering>>,
+) -> Result<ExprOutputOrder, FrameOrdering> {
     use ExprOutputOrder as O;
     let mut orders = orders.into_iter();
     let Some(output_order) = orders.next() else {
-        return Some(O::Independent);
+        return Ok(O::Independent);
     };
     let mut output_order = output_order?;
     for order in orders {
         output_order = output_order.zip_with(order?)?;
     }
-    Some(output_order)
+    Ok(output_order)
 }
 
-pub fn adjust_for_with_columns_context(order: Option<ExprOutputOrder>) -> Option<ExprOutputOrder> {
+pub fn adjust_for_with_columns_context(
+    order: Result<ExprOutputOrder, FrameOrdering>,
+) -> Result<ExprOutputOrder, FrameOrdering> {
     order?.zip_with(ExprOutputOrder::Frame)
 }
 
@@ -91,17 +98,20 @@ pub fn adjust_for_with_columns_context(order: Option<ExprOutputOrder>) -> Option
 /// This answers the question:
 /// > Given that my output is (un)ordered, can my input be unordered?
 #[recursive::recursive]
-pub fn get_frame_observing(aexpr: &AExpr, expr_arena: &Arena<AExpr>) -> Option<ExprOutputOrder> {
+pub fn get_frame_observing(
+    aexpr: &AExpr,
+    expr_arena: &Arena<AExpr>,
+) -> Result<ExprOutputOrder, FrameOrdering> {
     macro_rules! rec {
         ($expr:expr) => {{ get_frame_observing(expr_arena.get($expr), expr_arena)? }};
     }
 
     macro_rules! zip {
-        ($($expr:expr),*) => {{ zip([$(Some(rec!($expr))),*])? }};
+        ($($expr:expr),*) => {{ zip([$(Ok(rec!($expr))),*])? }};
     }
 
     use ExprOutputOrder as O;
-    Some(match aexpr {
+    Ok(match aexpr {
         // Explode creates local orders.
         //
         // The following observes order:
@@ -176,14 +186,14 @@ pub fn get_frame_observing(aexpr: &AExpr, expr_arena: &Arena<AExpr>) -> Option<E
             // Input order observing aggregations.
             IRAggExpr::Implode(node) | IRAggExpr::First(node) | IRAggExpr::Last(node) => {
                 if rec!(*node).observes_frame() {
-                    return None;
+                    return Err(FrameOrdering);
                 }
                 O::Scalar
             },
 
             // @NOTE: This aggregation makes very little sense. We do the most pessimistic thing
             // possible here.
-            IRAggExpr::AggGroups(_) => return None,
+            IRAggExpr::AggGroups(_) => return Err(FrameOrdering),
         },
 
         AExpr::Gather {
@@ -197,7 +207,7 @@ pub fn get_frame_observing(aexpr: &AExpr, expr_arena: &Arena<AExpr>) -> Option<E
             // We need to ensure that the values come in frame order. The order of the idxes is
             // propagated.
             if expr.observes_frame() {
-                return None;
+                return Err(FrameOrdering);
             }
 
             if *returns_scalar { O::Scalar } else { idx }
@@ -209,14 +219,14 @@ pub fn get_frame_observing(aexpr: &AExpr, expr_arena: &Arena<AExpr>) -> Option<E
                 O::independent(options.returns_scalar())
             } else if options.flags.is_elementwise() {
                 // Elementwise are regarded as a `zip + function`.
-                zip(input.iter().map(|e| Some(rec!(e.node()))))?
+                zip(input.iter().map(|e| Ok(rec!(e.node()))))?
             } else if options.flags.propagates_order() {
                 // Propagate the order of the singular input, this is for expressions like
                 // `drop_nulls` and `rechunk`.
                 assert_eq!(input.len(), 1);
                 match rec!(input[0].node()) {
                     v if !options.flags.is_row_separable() && v.observes_frame() => {
-                        return None;
+                        return Err(FrameOrdering);
                     },
                     O::Scalar if !options.flags.is_length_preserving() => O::Independent,
                     v => v,
@@ -233,7 +243,7 @@ pub fn get_frame_observing(aexpr: &AExpr, expr_arena: &Arena<AExpr>) -> Option<E
                 // observing frame order.
                 for e in input {
                     if rec!(e.node()).observes_frame() {
-                        return None;
+                        return Err(FrameOrdering);
                     }
                 }
                 O::independent(options.flags.returns_scalar())
@@ -249,7 +259,7 @@ pub fn get_frame_observing(aexpr: &AExpr, expr_arena: &Arena<AExpr>) -> Option<E
             EvalVariant::Cumulative { min_samples: _ } => {
                 let expr = rec!(*expr);
                 if expr.observes_frame() {
-                    return None;
+                    return Err(FrameOrdering);
                 }
                 expr
             },
@@ -267,17 +277,17 @@ pub fn get_frame_observing(aexpr: &AExpr, expr_arena: &Arena<AExpr>) -> Option<E
             // All of the code below might be a bit pessimistic, several window function variants
             // are length preserving and/or propagate order in specific ways.
             if input.observes_frame() {
-                return None;
+                return Err(FrameOrdering);
             }
             for e in partition_by {
                 if rec!(*e).observes_frame() {
-                    return None;
+                    return Err(FrameOrdering);
                 }
             }
             if let Some((e, _)) = &order_by
                 && rec!(*e).observes_frame()
             {
-                return None;
+                return Err(FrameOrdering);
             }
             O::Independent
         },
@@ -293,7 +303,7 @@ pub fn get_frame_observing(aexpr: &AExpr, expr_arena: &Arena<AExpr>) -> Option<E
             _ = rec!(*length);
 
             if rec!(*input).observes_frame() {
-                return None;
+                return Err(FrameOrdering);
             }
             O::Independent
         },
