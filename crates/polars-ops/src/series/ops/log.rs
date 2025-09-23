@@ -14,11 +14,8 @@ fn exp<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
 
 pub trait LogSeries: SeriesSealed {
     /// Compute the logarithm to a given base
-    fn log(&self, base: &Column) -> Series {
-        // TODO: [amber] base should become a Column? And then we can handle dynamic AnyValues
+    fn log(&self, base: &Series) -> Series {
         let s = self.as_series();
-
-        dbg!(&s, base);
 
         use DataType::*;
         match (s.dtype(), base.dtype()) {
@@ -34,7 +31,7 @@ pub trait LogSeries: SeriesSealed {
                     out.into_series()
                 })
             },
-            (Float64, _) => s.log(&base.cast(&DataType::Float64).unwrap()),
+            (dt1, _) if dt1.is_float() => s.log(&base.cast(dt1).unwrap()),
             (_, _) => s.cast(&DataType::Float64).unwrap().log(base),
         }
     }

@@ -68,7 +68,6 @@ impl Series {
             // Currently does not work correctly for Decimal because equality is not implemented.
             any_values_to_supertype(values)?
         };
-        dbg!(&dtype);
 
         // TODO: Remove this when Decimal data type equality is implemented.
         #[cfg(feature = "dtype-decimal")]
