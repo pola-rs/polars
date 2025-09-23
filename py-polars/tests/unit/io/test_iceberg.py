@@ -1866,8 +1866,6 @@ def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
     assert arrow_type.index_type == pa.uint32()
     assert arrow_type.value_type == pa.large_string()
 
-    # df.write_iceberg(tbl, mode="append")
-    # tbl.append(df.to_arrow())
     tbl.append(arrow_tbl)
 
     expect = pl.DataFrame({"values": "A"}, schema={"values": pl.String})
