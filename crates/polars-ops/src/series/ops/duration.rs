@@ -80,16 +80,16 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         duration = (duration + seconds * multiplier)?;
     }
     if !is_zero_scalar(minutes) {
-        duration = (duration + minutes * multiplier * 60)?;
+        duration = (duration + minutes * (multiplier * 60))?;
     }
     if !is_zero_scalar(hours) {
-        duration = (duration + hours * multiplier * 60 * 60)?;
+        duration = (duration + hours * (multiplier * 60 * 60))?;
     }
     if !is_zero_scalar(days) {
-        duration = (duration + days * multiplier * SECONDS_IN_DAY)?;
+        duration = (duration + days * (multiplier * SECONDS_IN_DAY))?;
     }
     if !is_zero_scalar(weeks) {
-        duration = (duration + weeks * multiplier * SECONDS_IN_DAY * 7)?;
+        duration = (duration + weeks * (multiplier * SECONDS_IN_DAY * 7))?;
     }
 
     duration.cast(&DataType::Duration(time_unit))
