@@ -12,7 +12,8 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import Label, StartBy
+    from polars._typing import ClosedInterval, Label, StartBy
+
 
 
 @pytest.mark.parametrize(
@@ -1154,7 +1155,7 @@ def test_group_by_dynamic_ternary_cum_sum_with_agg_24566() -> None:
     ],
 )
 def test_group_by_dynamic_closed_ternary_cum_sum_with_agg_24566(
-    closed: str, result: list[int]
+    closed: ClosedInterval, result: list[int]
 ) -> None:
     df = pl.DataFrame({"d": [10, 11, 12, 13, 14]}).with_row_index()
 
