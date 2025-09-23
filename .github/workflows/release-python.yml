@@ -79,12 +79,12 @@ jobs:
           sed -i 's/pub fn _polars64/pub fn _polars32/' crates/polars-python/src/c_api/mod.rs
 
           set -e
-          VERSION=$(cd py-polars && python -c 'from importlib import metadata; print(metadata.version("polars"))')
+          VERSION=$(tomlq '.package.version' py-polars/Cargo.toml | tr -d '"')
           U64_VERSION=($(tomlq '.project."optional-dependencies".idx64[0]' py-polars/pyproject.toml | tr -d '"'))
           LTS_VERSION=($(tomlq '.project."optional-dependencies".lts_cpu[0]' py-polars/pyproject.toml | tr -d '"'))
 
-          [[ "$VERSION" != "${U64_VERSION[2]}" ]] && echo "Incorrect idx64 version" && exit 1
-          [[ "$VERSION" != "${LTS_VERSION[2]}" ]] && echo "Incorrect lts version" && exit 1
+          [[ "$(echo $VERSION | sed 's/-beta\./b/')" != "${U64_VERSION[2]}" ]] && echo "Incorrect idx64 version" && exit 1
+          [[ "$(echo $VERSION | sed 's/-beta\./b/')" != "${LTS_VERSION[2]}" ]] && echo "Incorrect lts version" && exit 1
 
       - name: Update U64 package
         if: matrix.package == 'polars-u64-idx'
