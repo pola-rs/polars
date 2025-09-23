@@ -14,7 +14,8 @@ def display_shape(shape: tuple[int, ...]) -> str:
 
 
 def test_reshape() -> None:
-    s = pl.Series("a", [1, 2, 3, 4])
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+    s = df.to_series()
     out = s.reshape((-1, 2))
     expected = pl.Series("a", [[1, 2], [3, 4]], dtype=pl.Array(pl.Int64, 2))
     assert_series_equal(out, expected)
@@ -46,6 +47,12 @@ def test_reshape() -> None:
         InvalidOperationError, match="at least one dimension must be specified"
     ):
         s.reshape(())
+
+    # expr inferred dimension on non-first dimension
+    with pytest.raises(
+        InvalidOperationError, match="can only infer the first dimension"
+    ):
+        df.select(pl.col("a").reshape((2, -1)))
 
 
 @pytest.mark.parametrize("shape", [(1, 3), (5, 1), (-1, 5), (3, -1)])
