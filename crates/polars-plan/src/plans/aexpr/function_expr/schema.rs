@@ -276,12 +276,15 @@ impl IRFunctionExpr {
                     return Ok(dtype);
                 }
 
-                let num_infers = dims.iter().filter(|d| matches!(d, ReshapeDimension::Infer)).count();
+                let infers = dims.iter().enumerate().filter(|(_, d)| matches!(d, ReshapeDimension::Infer)).collect::<Vec<_>>();
 
-                polars_ensure!(num_infers <= 1, InvalidOperation: "can only specify one inferred dimension");
+                polars_ensure!(infers.len() <= 1, InvalidOperation: "can only specify one inferred dimension");
+                if infers.len() == 1 {
+                    polars_ensure!(infers[0].0 == 0, InvalidOperation: "can only infer the first dimension");
+                }
 
                 let mut inferred_size = 0;
-                if num_infers == 1 {
+                if infers.len() == 1 {
                     let mut total_size = 1u64;
                     let mut current = dt;
                     while let DataType::Array(dt, width) = current {
