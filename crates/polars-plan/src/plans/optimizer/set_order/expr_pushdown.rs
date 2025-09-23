@@ -66,10 +66,6 @@ impl ExprOutputOrder {
         matches!(self, Self::Frame | Self::Both)
     }
 
-    pub fn has_independent_ordering(self) -> bool {
-        matches!(self, Self::Independent | Self::Both)
-    }
-
     fn independent(is_unordered: bool) -> Self {
         if is_unordered {
             Self::None
