@@ -88,7 +88,7 @@ impl DataFrame {
                 };
                 Ok(GroupsType::Slice {
                     groups,
-                    rolling: false,
+                    overlapping: false,
                 })
             } else {
                 let rows = if multithreaded {
@@ -274,8 +274,11 @@ impl<'a> GroupBy<'a> {
                             };
                             out
                         },
-                        GroupsType::Slice { groups, rolling } => {
-                            if *rolling && !groups.is_empty() {
+                        GroupsType::Slice {
+                            groups,
+                            overlapping,
+                        } => {
+                            if *overlapping && !groups.is_empty() {
                                 // Groups can be sliced.
                                 let offset = groups[0][0];
                                 let [upper_offset, upper_len] = groups[groups.len() - 1];

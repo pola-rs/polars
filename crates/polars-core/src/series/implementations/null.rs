@@ -122,7 +122,7 @@ impl PrivateSeries for NullChunked {
         } else {
             GroupsType::Slice {
                 groups: vec![[0, self.length]],
-                rolling: false,
+                overlapping: false,
             }
         })
     }

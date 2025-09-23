@@ -1131,3 +1131,40 @@ def test_group_by_dynamic_null_mean_22724() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_group_by_dynamic_ternary_cum_sum_with_agg_24566() -> None:
+    df = pl.DataFrame({"d": [10, 11, 12, 13, 14]}).with_row_index()
+
+    out = df.group_by_dynamic(index_column="d", period="3i", every="1i").agg(
+        pl.when(pl.col("d") >= pl.col("d"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last()
+    )
+
+    expected = pl.DataFrame({"d": [10, 11, 12, 13, 14], "index": [3, 6, 9, 7, 4]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("closed", "result"),
+    [
+        ("left", [0, 1, 2, 3, 4]),
+        ("both", [1, 3, 5, 7, 4]),
+    ],
+)
+def test_group_by_dynamic_closed_ternary_cum_sum_with_agg_24566(
+    closed: str, result: list[int]
+) -> None:
+    df = pl.DataFrame({"d": [10, 11, 12, 13, 14]}).with_row_index()
+
+    out = df.group_by_dynamic(
+        index_column="d", period="1i", every="1i", closed=closed
+    ).agg(
+        pl.when(pl.col("d") >= pl.col("d"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last()
+    )
+
+    expected = pl.DataFrame({"d": [10, 11, 12, 13, 14], "index": result})
+    assert_frame_equal(out, expected)

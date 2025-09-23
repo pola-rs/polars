@@ -309,6 +309,12 @@ impl Wrap<&DataFrame> {
                 _ => unreachable!(),
             };
 
+        let overlapping = match options.closed_window {
+            ClosedWindow::Both => options.period >= options.every,
+            _ => options.period > options.every,
+        };
+        dbg!(&overlapping);
+
         let groups = if group_by.is_none() {
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
@@ -325,7 +331,7 @@ impl Wrap<&DataFrame> {
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
-                rolling: false,
+                overlapping,
             })
         } else {
             let vals = dt.physical().downcast_iter().next().unwrap();
@@ -376,7 +382,7 @@ impl Wrap<&DataFrame> {
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
-                rolling: false,
+                overlapping,
             })
         }?;
         // note that if 'group_by' is none we can be sure that the index column, the lower column and the
@@ -449,7 +455,7 @@ impl Wrap<&DataFrame> {
                     tu,
                     tz,
                 )?,
-                rolling: true,
+                overlapping: true,
             })
         } else {
             let dt = dt.datetime().unwrap();
@@ -486,7 +492,7 @@ impl Wrap<&DataFrame> {
             let groups = POOL.install(|| flatten_par(&groups));
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
-                rolling: true,
+                overlapping: true,
             })
         }?;
 
