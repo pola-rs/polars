@@ -203,8 +203,7 @@ def test_log(
     base = pl.Series("base", [3, 3, 9, 3, 9], dtype=dtype_base)
     lf = pl.LazyFrame([a, base])
 
-    # log
-    result = lf.select(pl.col("a").log("base"))
+    result = lf.select(pl.col("a").log(pl.col("base")))
     expected = pl.DataFrame({"a": pl.Series([0, 1, 1, 3, 2], dtype=dtype_out)})
 
     assert_frame_equal(result.collect(), expected)
