@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from polars._typing import ClosedInterval, Label, StartBy
 
 
-
 @pytest.mark.parametrize(
     ("input_df", "expected_grouped_df"),
     [
