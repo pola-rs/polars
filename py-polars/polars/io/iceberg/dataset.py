@@ -11,6 +11,7 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import (
+    IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
     _scan_pyarrow_dataset_impl,
 )
@@ -34,12 +35,14 @@ class IcebergDataset:
         snapshot_id: int | None = None,
         iceberg_storage_properties: dict[str, Any] | None = None,
         reader_override: Literal["native", "pyiceberg"] | None = None,
+        use_metadata_statistics: bool = True,
     ) -> None:
         self._metadata_path = None
         self._table = None
         self._snapshot_id = snapshot_id
         self._iceberg_storage_properties = iceberg_storage_properties
         self._reader_override: Literal["native", "pyiceberg"] | None = reader_override
+        self._use_metadata_statistics = use_metadata_statistics
 
         # Accept either a path or a table object. The one we don't have is
         # lazily initialized when needed.
@@ -69,6 +72,7 @@ class IcebergDataset:
         existing_resolved_version_key: str | None = None,
         limit: int | None = None,
         projection: list[str] | None = None,
+        filter_columns: list[str] | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
         if (
@@ -76,6 +80,7 @@ class IcebergDataset:
                 existing_resolved_version_key=existing_resolved_version_key,
                 limit=limit,
                 projection=projection,
+                filter_columns=filter_columns,
             )
         ) is None:
             return None
@@ -88,6 +93,7 @@ class IcebergDataset:
         existing_resolved_version_key: str | None = None,
         limit: int | None = None,
         projection: list[str] | None = None,
+        filter_columns: list[str] | None = None,
     ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -100,7 +106,9 @@ class IcebergDataset:
                 "IcebergDataset: to_dataset_scan(): "
                 f"snapshot ID: {self._snapshot_id}, "
                 f"limit: {limit}, "
-                f"projection: {projection}"
+                f"projection: {projection}, "
+                f"filter_columns: {filter_columns}, "
+                f"self._use_metadata_statistics: {self._use_metadata_statistics}"
             )
 
         tbl = self.table()
@@ -185,6 +193,11 @@ class IcebergDataset:
             tbl,
             projected_iceberg_schema,
         )
+        statistics_loader: IcebergStatisticsLoader | None = (
+            IcebergStatisticsLoader(tbl, iceberg_schema.select(*filter_columns))
+            if self._use_metadata_statistics and filter_columns is not None
+            else None
+        )
         deletion_files: dict[int, list[str]] = {}
 
         if reader_override != "pyiceberg" and not fallback_reason:
@@ -240,6 +253,9 @@ class IcebergDataset:
                     partition_values=file_info.file.partition,
                 )
 
+                if statistics_loader is not None:
+                    statistics_loader.push_file_statistics(file_info.file)
+
                 sources.append(file_info.file.file_path)
 
             if verbose:
@@ -269,12 +285,20 @@ class IcebergDataset:
 
             identity_transformed_values = missing_field_defaults.finish()
 
+            min_max_statistics = (
+                statistics_loader.finish(len(sources), identity_transformed_values)
+                if statistics_loader is not None
+                else None
+            )
+
             return _NativeIcebergScanData(
                 sources=sources,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
                 default_values=identity_transformed_values,
                 deletion_files=deletion_files,
+                min_max_statistics=min_max_statistics,
+                statistics_loader=statistics_loader,
                 _snapshot_id_key=snapshot_id_key,
             )
 
@@ -414,6 +438,12 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     column_mapping: pa.Schema
     default_values: dict[int, pl.Series | str]
     deletion_files: dict[int, list[str]]
+    min_max_statistics: pl.DataFrame | None
+    # This is here for test purposes, as the `min_max_statistics` on this
+    # dataclass contain coalesced values from `default_values`, a test may
+    # access the statistics loader directly to inspect the values before
+    # coalescing.
+    statistics_loader: IcebergStatisticsLoader | None
     _snapshot_id_key: str
 
     def to_lazyframe(self) -> pl.LazyFrame:
@@ -427,6 +457,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             _column_mapping=("iceberg-column-mapping", self.column_mapping),
             _default_values=("iceberg", self.default_values),
             _deletion_files=("iceberg-position-delete", self.deletion_files),
+            _table_statistics=self.min_max_statistics,
         )
 
     @property

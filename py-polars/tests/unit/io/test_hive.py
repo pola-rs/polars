@@ -999,9 +999,8 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
 
     # ensure we have a trailing "/"
     uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
-    uri = "file://" + uri
 
-    lf = pl.scan_parquet(uri, hive_schema={"a": pl.UInt8})
+    lf = pl.scan_parquet(f"file://{uri}", hive_schema={"a": pl.UInt8})
 
     assert_frame_equal(
         lf.collect(),
