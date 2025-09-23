@@ -40,8 +40,8 @@ Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
-idx64 = ["polars-u64-idx == 1.33.1"]
-lts_cpu = ["polars-lts-cpu == 1.33.1"]
+idx64 = ["polars-u64-idx == 1.34.0b1"]
+lts_cpu = ["polars-lts-cpu == 1.34.0b1"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.0.1a1"]
