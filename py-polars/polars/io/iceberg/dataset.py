@@ -514,15 +514,21 @@ def _convert_iceberg_to_object_store_storage_options(
         ) is not None:
             storage_options[translated_key] = v
         elif "." not in k:
-            # If a dot is not present in the key, it is unlikely to be an
-            # iceberg config key - it is more likely for it to be a native
-            # object-store config key, so we pass it through.
+            # Pass-through non-Iceberg config keys, as they may be native config
+            # keys. We identify Iceberg keys by checking for a dot - from
+            # observation nearly all Iceberg config keys contain dots, whereas
+            # native config keys do not contain them.
             storage_options[k] = v
+
+        # Otherwise, unknown keys are ignored / not passed. This is to avoid
+        # interfering with credential provider auto-init, which bails on
+        # unknown keys.
 
     return storage_options
 
 
 # https://py.iceberg.apache.org/configuration/#fileio
+# This does not contain all keys - some have no object-store equivalent.
 ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP: dict[str, str] = {
     # S3
     "s3.endpoint": "aws_endpoint_url",
