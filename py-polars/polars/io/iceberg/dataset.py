@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import pyiceberg.schema
     from pyiceberg.table import Table
+
     from polars.lazyframe.frame import LazyFrame
 
 
