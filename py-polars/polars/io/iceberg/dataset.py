@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Literal
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
-from polars.io.cloud.credential_provider._builder import OBJECT_STORE_CLIENT_OPTIONS
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
