@@ -259,6 +259,7 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
+        PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
         PhysNodeKind::FileSink {
             input, file_type, ..
         } => match file_type {

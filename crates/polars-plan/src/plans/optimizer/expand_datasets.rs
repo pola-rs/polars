@@ -174,6 +174,7 @@ pub(super) fn expand_datasets(
                             rechunk,
                             cache,
                             glob: _,
+                            hidden_file_prefix: _hidden_file_prefix @ None,
                             projection: _projection @ None,
                             column_mapping,
                             default_values,

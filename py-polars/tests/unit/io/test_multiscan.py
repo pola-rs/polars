@@ -713,3 +713,156 @@ def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
             schema=schema,
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+    ],
+)
+@pytest.mark.parametrize("use_glob", [True, False])
+def test_scan_ignore_hidden_files_21762(
+    tmp_path: Path, scan: Any, write: Any, use_glob: bool
+) -> None:
+    file_names: list[str] = ["a.ext", "_a.ext", ".a.ext", "a_.ext"]
+
+    for file_name in file_names:
+        write(pl.DataFrame({"rel_path": file_name}), tmp_path / file_name)
+
+    (tmp_path / "folder").mkdir()
+
+    for file_name in file_names:
+        write(
+            pl.DataFrame({"rel_path": f"folder/{file_name}"}),
+            tmp_path / "folder" / file_name,
+        )
+
+    (tmp_path / "_folder").mkdir()
+
+    for file_name in file_names:
+        write(
+            pl.DataFrame({"rel_path": f"_folder/{file_name}"}),
+            tmp_path / "_folder" / file_name,
+        )
+
+    root = f"{tmp_path}/**/*.ext" if use_glob else tmp_path
+
+    assert_frame_equal(
+        scan(root).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    ".a.ext",
+                    "_a.ext",
+                    "_folder/.a.ext",
+                    "_folder/_a.ext",
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/.a.ext",
+                    "folder/_a.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=".").sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_a.ext",
+                    "_folder/_a.ext",
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/_a.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=(".", "_")).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    # Top-level glob only
+    root = tmp_path / "*.ext"
+
+    assert_frame_equal(
+        scan(root).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    ".a.ext",
+                    "_a.ext",
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=".").sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_a.ext",
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    # Direct file passed
+    with pytest.raises(pl.exceptions.ComputeError, match="expanded paths were empty"):
+        scan(tmp_path / "_a.ext", hidden_file_prefix="_").collect()

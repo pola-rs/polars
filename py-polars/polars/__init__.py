@@ -490,9 +490,19 @@ __all__ = [
 
 
 if not TYPE_CHECKING:
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        import polars._plr as plr
+
     # This causes typechecking to resolve any Polars module attribute
     # as Any regardless of existence so we check for TYPE_CHECKING, see #24334.
     def __getattr__(name: str) -> Any:
+        # Backwards compatibility for plugins. This used to be called `polars.polars`,
+        # but is now `polars._plr`.
+        if name == "polars":
+            return plr
+        elif name == "_allocator":
+            return plr._allocator
+
         # Deprecate re-export of exceptions at top-level
         if name in dir(exceptions):
             from polars._utils.deprecation import issue_deprecation_warning
