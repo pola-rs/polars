@@ -1,3 +1,4 @@
+use arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
 use chrono::{Datelike, Timelike};
 
 use super::*;
@@ -327,73 +328,63 @@ impl DurationArgs {
     impl_unit_setter!(with_microseconds(microseconds));
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 
-    fn all_literal(&self) -> bool {
-        use Expr::*;
-        [
-            &self.weeks,
-            &self.days,
-            &self.hours,
-            &self.seconds,
-            &self.minutes,
-            &self.milliseconds,
-            &self.microseconds,
-            &self.nanoseconds,
-        ]
-        .iter()
-        .all(|e| matches!(e, Literal(_)))
-    }
-
     fn as_literal(&self) -> Option<Expr> {
-        if !self.all_literal() {
+        use time_unit::convert_time_units;
+
+        let extract_i64 = |e: &Expr| {
+            let Expr::Literal(lv) = e else { return None };
+            let av = lv.to_any_value()?;
+            if !av.is_integer() {
+                return None;
+            };
+            av.extract::<i64>()
+        };
+        let extract_f64 = |e: &Expr| {
+            let Expr::Literal(lv) = e else { return None };
+            let av = lv.to_any_value()?;
+            av.extract::<f64>()
+        };
+
+        let mut acc_i64 = Some(0);
+        let mut try_add_to_i64 = |rhs| {
+            acc_i64 = match (acc_i64, rhs) {
+                (Some(acc), Some(x)) => Some(acc + x),
+                _ => None,
+            }
+        };
+
+        try_add_to_i64(extract_i64(&self.weeks).map(|v| v * 7 * NANOSECONDS_IN_DAY));
+        try_add_to_i64(extract_i64(&self.days).map(|v| v * NANOSECONDS_IN_DAY));
+        try_add_to_i64(extract_i64(&self.hours).map(|v| v * 3600 * NANOSECONDS));
+        try_add_to_i64(extract_i64(&self.minutes).map(|v| v * 60 * NANOSECONDS));
+        try_add_to_i64(extract_i64(&self.seconds).map(|v| v * NANOSECONDS));
+        try_add_to_i64(extract_i64(&self.milliseconds).map(|v| v * 1_000_000));
+        try_add_to_i64(extract_i64(&self.microseconds).map(|v| v * 1_000));
+        try_add_to_i64(extract_i64(&self.nanoseconds));
+
+        let mut acc_f64 = Some(0.0);
+        let mut try_add_to_f64 = |rhs| {
+            acc_f64 = match (acc_f64, rhs) {
+                (Some(acc), Some(x)) => Some(acc + x),
+                _ => None,
+            }
+        };
+
+        try_add_to_f64(extract_f64(&self.weeks).map(|v| v * 7.0 * NANOSECONDS_IN_DAY as f64));
+        try_add_to_f64(extract_f64(&self.days).map(|v| v * NANOSECONDS_IN_DAY as f64));
+        try_add_to_f64(extract_f64(&self.hours).map(|v| v * 3600.0 * NANOSECONDS as f64));
+        try_add_to_f64(extract_f64(&self.minutes).map(|v| v * 60.0 * NANOSECONDS as f64));
+        try_add_to_f64(extract_f64(&self.seconds).map(|v| v * NANOSECONDS as f64));
+        try_add_to_f64(extract_f64(&self.milliseconds).map(|v| v * 1_000_000.0));
+        try_add_to_f64(extract_f64(&self.microseconds).map(|v| v * 1_000.0));
+        try_add_to_f64(extract_f64(&self.nanoseconds));
+
+        let d = if let Some(acc) = acc_i64 {
+            convert_time_units(acc, TimeUnit::Nanoseconds, self.time_unit)
+        } else if let Some(acc) = acc_f64 {
+            convert_time_units(acc, TimeUnit::Nanoseconds, self.time_unit) as i64
+        } else {
             return None;
-        };
-        let Expr::Literal(lv) = &self.weeks else {
-            unreachable!()
-        };
-        let weeks = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.days else {
-            unreachable!()
-        };
-        let days = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.hours else {
-            unreachable!()
-        };
-        let hours = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.seconds else {
-            unreachable!()
-        };
-        let seconds = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.minutes else {
-            unreachable!()
-        };
-        let minutes = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.milliseconds else {
-            unreachable!()
-        };
-        let milliseconds = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.microseconds else {
-            unreachable!()
-        };
-        let microseconds = lv.to_any_value()?.extract()?;
-        let Expr::Literal(lv) = &self.nanoseconds else {
-            unreachable!()
-        };
-        let nanoseconds = lv.to_any_value()?.extract()?;
-
-        type D = chrono::Duration;
-        let delta = D::weeks(weeks)
-            + D::days(days)
-            + D::hours(hours)
-            + D::seconds(seconds)
-            + D::minutes(minutes)
-            + D::milliseconds(milliseconds)
-            + D::microseconds(microseconds)
-            + D::nanoseconds(nanoseconds);
-
-        let d = match self.time_unit {
-            TimeUnit::Milliseconds => delta.num_milliseconds(),
-            TimeUnit::Microseconds => delta.num_microseconds()?,
-            TimeUnit::Nanoseconds => delta.num_nanoseconds()?,
         };
 
         Some(

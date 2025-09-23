@@ -172,27 +172,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &self,
         series: &'a Series,
     ) -> PolarsResult<&'a ChunkedArray<T>> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => {
-                let logical = series.decimal()?;
+        polars_ensure!(
+            self.dtype() == series.dtype(),
+            SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
+            series.dtype(),
+            self.dtype(),
+        );
 
-                let ca = logical.physical();
-                Ok(ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap())
-            },
-            dt => {
-                polars_ensure!(
-                    dt == series.dtype(),
-                    SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
-                    series.dtype(),
-                    dt,
-                );
-
-                // SAFETY:
-                // dtype will be correct.
-                Ok(unsafe { self.unpack_series_matching_physical_type(series) })
-            },
-        }
+        // SAFETY: dtype will be correct.
+        Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
 
     /// Create a new [`ChunkedArray`] and compute its `length` and `null_count`.

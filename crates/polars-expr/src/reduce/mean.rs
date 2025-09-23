@@ -44,7 +44,7 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_prec, scale) => {
-            let inv_scale_factor = 1.0 / 10u128.pow(scale.unwrap() as u32) as f64;
+            let inv_scale_factor = 1.0 / 10u128.pow(*scale as u32) as f64;
             let ca: Float64Chunked = values
                 .into_iter()
                 .map(|(s, c)| (c != 0).then(|| s / c as f64 * inv_scale_factor))

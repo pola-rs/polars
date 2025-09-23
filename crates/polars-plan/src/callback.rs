@@ -214,6 +214,7 @@ mod _python {
     }
 
     impl_pycb_type! {
+        bool,
         usize,
         String
     }

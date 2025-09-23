@@ -131,7 +131,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Decimal(precision, scale) => {
             let arr = &*(arr as *const dyn Array as *const Int128Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::Decimal(v, scale.unwrap_or_else(|| unreachable!()))
+            AnyValue::Decimal(v, *precision, *scale)
         },
         #[cfg(feature = "object")]
         DataType::Object(_) => {

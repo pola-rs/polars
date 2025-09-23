@@ -255,6 +255,8 @@ unsafe fn create_buffer_known_len<T: NativeType>(
     index: usize,
 ) -> PolarsResult<Buffer<T>> {
     if len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Buffer::new());
     }
     let ptr: *mut T = get_buffer_ptr(array, dtype, index)?;
@@ -276,6 +278,8 @@ unsafe fn create_buffer<T: NativeType>(
     let len = buffer_len(array, dtype, index)?;
 
     if len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Buffer::new());
     }
 
@@ -312,6 +316,8 @@ unsafe fn create_bitmap(
 ) -> PolarsResult<Bitmap> {
     let len: usize = array.length.try_into().expect("length to fit in `usize`");
     if len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Bitmap::new());
     }
     let ptr = get_buffer_ptr(array, dtype, index)?;

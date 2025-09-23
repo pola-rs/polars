@@ -710,6 +710,14 @@ impl i256 {
     }
 }
 
+impl TryFrom<i256> for i128 {
+    type Error = core::num::TryFromIntError;
+
+    fn try_from(value: i256) -> Result<Self, Self::Error> {
+        value.0.try_into()
+    }
+}
+
 impl IsNull for i256 {
     const HAS_NULLS: bool = false;
     type Inner = i256;

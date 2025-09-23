@@ -1,13 +1,14 @@
 use chrono::NaiveTime;
+use polars_compute::decimal::DecimalFmtBuffer;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyNone, PyTuple};
+use pyo3::types::{PyBytes, PyList, PyNone};
 use pyo3::{BoundObject, intern};
 
 use super::datetime::{
     datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
 };
-use super::{decimal_to_digits, struct_dict};
+use super::struct_dict;
 use crate::prelude::*;
 use crate::py_modules::pl_utils;
 
@@ -138,25 +139,12 @@ pub(crate) fn decimal_to_pyobject_iter<'py, 'a>(
 ) -> PyResult<impl ExactSizeIterator<Item = Option<Bound<'py, PyAny>>> + use<'py, 'a>> {
     let utils = pl_utils(py).bind(py);
     let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
-    let py_scale = (-(ca.scale() as i32)).into_pyobject(py)?;
-    // if we don't know precision, the only safe bet is to set it to 39
-    let py_precision = ca.precision().unwrap_or(39).into_pyobject(py)?;
+    let py_precision = ca.precision().into_pyobject(py)?;
+    let mut buf = DecimalFmtBuffer::new();
     Ok(ca.physical().iter().map(move |opt_v| {
         opt_v.map(|v| {
-            // TODO! use AnyValue so that we have a single impl.
-            const N: usize = 3;
-            let mut buf = [0_u128; N];
-            let n_digits = decimal_to_digits(v.abs(), &mut buf);
-            let buf = unsafe {
-                std::slice::from_raw_parts(
-                    buf.as_slice().as_ptr() as *const u8,
-                    N * size_of::<u128>(),
-                )
-            };
-            let digits = PyTuple::new(py, buf.iter().take(n_digits)).unwrap();
-            convert
-                .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
-                .unwrap()
+            let s = buf.format_dec128(v, ca.scale(), false);
+            convert.call1((&py_precision, s)).unwrap()
         })
     }))
 }

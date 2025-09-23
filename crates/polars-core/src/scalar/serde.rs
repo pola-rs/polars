@@ -114,7 +114,7 @@ pub enum SerializableScalar {
 
     /// A 128-bit fixed point decimal number with a scale.
     #[cfg(feature = "dtype-decimal")]
-    Decimal(i128, usize),
+    Decimal(i128, usize, usize),
 
     #[cfg(feature = "dtype-categorical")]
     Categorical {
@@ -257,7 +257,7 @@ impl TryFrom<Scalar> for SerializableScalar {
             },
 
             #[cfg(feature = "dtype-decimal")]
-            AnyValue::Decimal(v, scale) => Self::Decimal(v, scale),
+            AnyValue::Decimal(v, prec, scale) => Self::Decimal(v, prec, scale),
         };
         Ok(out)
     }
@@ -297,7 +297,7 @@ impl TryFrom<SerializableScalar> for Scalar {
             #[cfg(feature = "dtype-array")]
             S::Array(v, width) => Self::new_array(v, width),
             #[cfg(feature = "dtype-decimal")]
-            S::Decimal(v, scale) => Self::new_decimal(v, scale),
+            S::Decimal(v, prec, scale) => Self::new_decimal(v, prec, scale),
 
             #[cfg(feature = "dtype-categorical")]
             S::Categorical {

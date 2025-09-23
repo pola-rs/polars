@@ -623,9 +623,9 @@ def test_invalid_cast_float_to_decimal(value: float) -> None:
     s = pl.Series([value], dtype=pl.Float64)
     with pytest.raises(
         InvalidOperationError,
-        match=r"conversion from `f64` to `decimal\[\*,0\]` failed",
+        match=r"conversion from `f64` to `decimal\[10,2\]` failed",
     ):
-        s.cast(pl.Decimal)
+        s.cast(pl.Decimal(10, 2))
 
 
 def test_err_on_time_datetime_cast() -> None:

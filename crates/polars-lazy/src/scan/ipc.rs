@@ -71,6 +71,7 @@ impl LazyFileListReader for LazyIpcReader {
                 rechunk,
                 cache,
                 glob: true,
+                hidden_file_prefix: None,
                 projection: None,
                 column_mapping: None,
                 default_values: None,
@@ -81,6 +82,7 @@ impl LazyFileListReader for LazyIpcReader {
                 extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths,
                 deletion_files: None,
+                table_statistics: None,
             },
         )?
         .build()

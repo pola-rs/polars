@@ -639,7 +639,7 @@ def test_rolling_unsupported_22065() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series("a", [[]]).rolling_sum(10)
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.Series("a", ["1.0"], pl.Decimal).rolling_min(1)
+        pl.Series("a", ["1.0"], pl.Decimal(10, 2)).rolling_min(1)
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series("a", [None]).rolling_sum(10)
     with pytest.raises(pl.exceptions.InvalidOperationError):

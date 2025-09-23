@@ -204,17 +204,33 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
 
 
 def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
-    plan = (
+    q = (
         pl.scan_csv(foods_file_path)
         .with_row_index()
-        .filter(pl.col("index") == 1)
+        .filter(pl.col("index") > 13)
         .filter(pl.col("category") == pl.lit("vegetables"))
-        .explain(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     )
-    # related to row count is not pushed.
-    assert 'FILTER [(col("index")) == (1)]\nFROM' in plan
-    # unrelated to row count is pushed.
-    assert 'SELECTION: [(col("category")) == ("vegetables")]' in plan
+
+    plan = q.explain()
+
+    assert "FILTER" not in plan
+
+    assert_frame_equal(
+        q,
+        pl.LazyFrame(
+            [
+                pl.Series("index", [14, 20, 25], dtype=pl.UInt32),
+                pl.Series(
+                    "category",
+                    ["vegetables", "vegetables", "vegetables"],
+                    dtype=pl.String,
+                ),
+                pl.Series("calories", [25, 25, 30], dtype=pl.Int64),
+                pl.Series("fats_g", [0.0, 0.0, 0.0], dtype=pl.Float64),
+                pl.Series("sugars_g", [4, 3, 5], dtype=pl.Int64),
+            ]
+        ),
+    )
 
 
 @pytest.mark.write_disk

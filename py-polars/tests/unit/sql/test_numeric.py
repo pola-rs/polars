@@ -73,8 +73,8 @@ def test_modulo() -> None:
         (64.5, "numeric", "(3,1)", D("64.5"), pl.Decimal(3, 1)),
         (512.5, "decimal", "(4,1)", D("512.5"), pl.Decimal(4, 1)),
         (512.5, "numeric", "(4,0)", D("512"), pl.Decimal(4, 0)),
-        (-1024.75, "decimal", "(10,0)", D("-1024"), pl.Decimal(10, 0)),
-        (-1024.75, "numeric", "(10)", D("-1024"), pl.Decimal(10, 0)),
+        (-1024.75, "decimal", "(10,0)", D("-1025"), pl.Decimal(10, 0)),
+        (-1024.75, "numeric", "(10)", D("-1025"), pl.Decimal(10, 0)),
         (-1024.75, "dec", "", D("-1024.75"), pl.Decimal(38, 9)),
     ],
 )

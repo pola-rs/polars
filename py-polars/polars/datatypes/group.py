@@ -24,6 +24,7 @@ from polars.datatypes.classes import (
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
 )
 
 if TYPE_CHECKING:
@@ -92,6 +93,7 @@ UNSIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
         UInt16,
         UInt32,
         UInt64,
+        UInt128,
     ]
 )
 INTEGER_DTYPES: frozenset[PolarsIntegerType] = (

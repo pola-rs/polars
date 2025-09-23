@@ -375,7 +375,7 @@ def test_select_decimal(df: pl.DataFrame) -> None:
     df = pl.DataFrame(
         schema={
             "zz0": pl.Float64,
-            "zz1": pl.Decimal,
+            "zz1": pl.Decimal(38, 5),
             "zz2": pl.Decimal(10, 10),
         }
     )

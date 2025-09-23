@@ -364,7 +364,7 @@ class ExprStringNameSpace:
         ┌───────────┬─────────────────┐
         │ numbers   ┆ numbers_decimal │
         │ ---       ┆ ---             │
-        │ str       ┆ decimal[*,2]    │
+        │ str       ┆ decimal[38,2]   │
         ╞═══════════╪═════════════════╡
         │ 40.12     ┆ 40.12           │
         │ 3420.13   ┆ 3420.13         │

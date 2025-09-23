@@ -78,6 +78,7 @@ impl LazyFileListReader for LazyParquetReader {
             rechunk: self.args.rechunk,
             cache: self.args.cache,
             glob: self.args.glob,
+            hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
             default_values: None,
@@ -96,6 +97,7 @@ impl LazyFileListReader for LazyParquetReader {
             extra_columns_policy: ExtraColumnsPolicy::Raise,
             include_file_paths: self.args.include_file_paths,
             deletion_files: None,
+            table_statistics: None,
         };
 
         let mut lf: LazyFrame =

@@ -75,9 +75,6 @@ class IcebergDataset:
         filter_columns: list[str] | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
-        # Not yet enabled from Rust-side
-        assert filter_columns is None
-
         if (
             scan_data := self._to_dataset_scan_impl(
                 existing_resolved_version_key=existing_resolved_version_key,

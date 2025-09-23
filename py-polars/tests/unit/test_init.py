@@ -47,7 +47,10 @@ def test_import_all() -> None:
 
 def test_version() -> None:
     # This has already gone wrong once (#23940), preventing future problems.
-    assert (lhs := pl.__version__) == (rhs := importlib.metadata.version("polars")), (
+    lhs = pl.__version__.replace("-beta.", "b")
+    rhs = importlib.metadata.version("polars")
+
+    assert lhs == rhs, (
         f"`static PYPOLARS_VERSION` ({lhs}) at `crates/polars-python/src/c_api/mod.rs` "
         f"does not match importlib package metadata version ({rhs})"
     )

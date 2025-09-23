@@ -1393,25 +1393,25 @@ class Config(contextlib.ContextDecorator):
         >>> with pl.Config(trim_decimal_zeros=False):
         ...     print(df)
         shape: (2, 1)
-        ┌──────────────┐
-        │ d            │
-        │ ---          │
-        │ decimal[*,5] │
-        ╞══════════════╡
-        │ 1.01000      │
-        │ -5.67890     │
-        └──────────────┘
+        ┌───────────────┐
+        │ d             │
+        │ ---           │
+        │ decimal[38,5] │
+        ╞═══════════════╡
+        │ 1.01000       │
+        │ -5.67890      │
+        └───────────────┘
         >>> with pl.Config(trim_decimal_zeros=True):
         ...     print(df)
         shape: (2, 1)
-        ┌──────────────┐
-        │ d            │
-        │ ---          │
-        │ decimal[*,5] │
-        ╞══════════════╡
-        │ 1.01         │
-        │ -5.6789      │
-        └──────────────┘
+        ┌───────────────┐
+        │ d             │
+        │ ---           │
+        │ decimal[38,5] │
+        ╞═══════════════╡
+        │ 1.01          │
+        │ -5.6789       │
+        └───────────────┘
         """
         plr.set_trim_decimal_zeros(active)
         return cls

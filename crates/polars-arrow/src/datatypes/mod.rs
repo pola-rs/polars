@@ -334,14 +334,17 @@ impl ArrowDataType {
     pub fn underlying_physical_type(&self) -> ArrowDataType {
         use ArrowDataType::*;
         match self {
-            Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => Int32,
-            Date64
+            Decimal32(_, _) | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => Int32,
+            Decimal64(_, _)
+            | Date64
             | Timestamp(_, _)
             | Time64(_)
             | Duration(_)
             | Interval(IntervalUnit::DayTime) => Int64,
             Interval(IntervalUnit::MonthDayNano) => unimplemented!(),
             Binary => Binary,
+            Decimal(_, _) => Int128,
+            Decimal256(_, _) => unimplemented!(),
             List(field) => List(Box::new(Field {
                 dtype: field.dtype.underlying_physical_type(),
                 ..*field.clone()

@@ -155,9 +155,10 @@ impl EvalExpr {
                 .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?
         };
 
+        let out_inner_dt = self.non_aggregated_output_dtype.inner_dtype().unwrap();
         Ok(unsafe {
             ListChunked::from_chunks(self.output_field_with_ctx.name.clone(), chunks)
-                .cast_unchecked(&self.non_aggregated_output_dtype)
+                .from_physical_unchecked(out_inner_dt.clone())
                 .unwrap()
         }
         .into_column())

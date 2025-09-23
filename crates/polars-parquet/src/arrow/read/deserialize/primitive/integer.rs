@@ -1,7 +1,7 @@
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
+use arrow::types::{AlignedBytes, NativeType};
 use bytemuck::Zeroable;
 
 use super::super::utils;
@@ -226,6 +226,52 @@ where
                 let values = ArrayChunks::new(values).unwrap();
                 let needle = needle.to_aligned_bytes::<T::AlignedBytes>().unwrap();
                 super::plain::predicate::decode_equals(values, needle, pred_true_mask);
+            },
+            (StateTranslation::Plain(values), S::Between(low, high)) => {
+                let values = ArrayChunks::new(values).unwrap();
+                use arrow::types::PrimitiveType as PT;
+                let is_signed = match T::PRIMITIVE {
+                    PT::Int8 | PT::Int16 | PT::Int32 | PT::Int64 => true,
+                    PT::UInt8 | PT::UInt16 | PT::UInt32 | PT::UInt64 => false,
+                    PT::Int128
+                    | PT::Int256
+                    | PT::UInt128
+                    | PT::Float16
+                    | PT::Float32
+                    | PT::Float64
+                    | PT::DaysMs
+                    | PT::MonthDayNano
+                    | PT::MonthDayMillis => return Ok(false),
+                };
+
+                let Some(low) = low.to_aligned_bytes::<T::AlignedBytes>() else {
+                    return Ok(false);
+                };
+                let Some(high) = high.to_aligned_bytes::<T::AlignedBytes>() else {
+                    return Ok(false);
+                };
+
+                let mut low1 = low;
+                let mut high1 = high;
+                let mut low2 = low;
+                let mut high2 = high;
+
+                if is_signed && !low.unsigned_leq(high) {
+                    low1 = low;
+                    high1 = T::AlignedBytes::ones();
+
+                    low2 = T::AlignedBytes::zeros();
+                    high2 = high;
+                }
+
+                super::plain::predicate::decode_between(
+                    values,
+                    low1,
+                    high1,
+                    low2,
+                    high2,
+                    pred_true_mask,
+                );
             },
             (StateTranslation::Plain(values), S::EqualOneOf(needles))
                 if (1..=8).contains(&needles.len()) =>

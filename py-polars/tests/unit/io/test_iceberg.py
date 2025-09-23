@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
+import sys
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -1198,8 +1199,9 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
 
     # First file
     assert (
-        "[ParquetFileReader]: Predicate pushdown: reading 0 / 1 row groups" in capture
+        "[MultiScan]: Source filter mask initialization via table statistics" in capture
     )
+    assert "[MultiScan]: Predicate pushdown allows skipping 1 / 2 files" in capture
     # Second file
     assert (
         "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
@@ -1511,6 +1513,9 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
                 NestedField(
                     next_field_id(), "DecimalTypeLargeValue", DecimalType(38, 0)
                 ),
+                NestedField(
+                    next_field_id(), "DecimalTypeLargeNegativeValue", DecimalType(38, 0)
+                ),
                 NestedField(next_field_id(), "FixedType", FixedType(1)),
             ]
             if test_decimal_and_fixed
@@ -1534,6 +1539,7 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
             "BinaryType": pl.Binary(),
             "DecimalType": pl.Decimal(precision=18, scale=2),
             "DecimalTypeLargeValue": pl.Decimal(precision=38, scale=0),
+            "DecimalTypeLargeNegativeValue": pl.Decimal(precision=38, scale=0),
             "FixedType": pl.Binary(),
         }
     )
@@ -1556,6 +1562,9 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
                 "DecimalType": [D("1.00")],
                 # This helps ensure loads are done with the correct endianness.
                 "DecimalTypeLargeValue": [D("73377733337777733333377777773333333377")],
+                "DecimalTypeLargeNegativeValue": [
+                    D("-73377733337777733333377777773333333377")
+                ],
                 "FixedType": [b"A"],
             }
             if test_decimal_and_fixed
@@ -1678,27 +1687,28 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
                 ("TimestamptzType_nc", "0", "1"),
                 ("TimestamptzType_min", "2025-01-01 00:00:00.000000+00:00"),
                 ("TimestamptzType_max", "2025-01-01 00:00:00.000000+00:00"),
-                ("StringType_nc", "0", "1"),
+                ("StringType_nc", "0"),
                 ("StringType_min", "A"),
                 ("StringType_max", "A"),
-                ("BinaryType_nc", "0", "1"),
+                ("BinaryType_nc", "0"),
                 ("BinaryType_min", "A"),
                 ("BinaryType_max", "A"),
-                ("DecimalType_nc", "0", "1"),
-                ("DecimalType_min", "1.00", "0.00"),
-                ("DecimalType_max", "1.00", "0.00"),
+                ("DecimalType_nc", "0"),
+                ("DecimalType_min", "1.00"),
+                ("DecimalType_max", "1.00"),
                 ("DecimalTypeLargeValue_nc", "0", "1"),
+                ("DecimalTypeLargeValue_min", "73377733337777733333377777773333333377"),
+                ("DecimalTypeLargeValue_max", "73377733337777733333377777773333333377"),
+                ("DecimalTypeLargeNegativeValue_nc", "0"),
                 (
-                    "DecimalTypeLargeValue_min",
-                    "73377733337777733333377777773333333377",
-                    "0",
+                    "DecimalTypeLargeNegativeValue_min",
+                    "-73377733337777733333377777773333333377",
                 ),
                 (
-                    "DecimalTypeLargeValue_max",
-                    "73377733337777733333377777773333333377",
-                    "0",
+                    "DecimalTypeLargeNegativeValue_max",
+                    "-73377733337777733333377777773333333377",
                 ),
-                ("FixedType_nc", "0", "1"),
+                ("FixedType_nc", "0"),
                 ("FixedType_min", "A"),
                 ("FixedType_max", "A"),
             ],
@@ -1748,4 +1758,73 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
             orient="row",
             schema=coalesced_ne_non_coalesced.schema,
         ),
+    )
+
+    dfiles = [x.file.file_path for x in tbl.scan().plan_files()]
+    assert len(dfiles) == 1
+
+    Path(dfiles[0].removeprefix("file://")).unlink()
+
+    expect_file_not_found_err = pytest.raises(
+        OSError,
+        match=(
+            "The system cannot find the file specified"
+            if sys.platform == "win32"
+            else "No such file or directory"
+        ),
+    )
+
+    with expect_file_not_found_err:
+        pl.scan_iceberg(tbl, reader_override="native").collect()
+
+    def ensure_filter_skips_file(filter_expr: pl.Expr) -> None:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override="native").filter(filter_expr),
+            pl.LazyFrame(schema=pl_schema),
+        )
+
+    # Check different operators
+    ensure_filter_skips_file(pl.col("IntegerType") > 1)
+    ensure_filter_skips_file(pl.col("IntegerType") != 1)
+    ensure_filter_skips_file(pl.col("IntegerType").is_in([0]))
+
+    # Ensure `use_metadata_statistics=False` does not skip based on statistics
+    with expect_file_not_found_err:
+        pl.scan_iceberg(
+            tbl,
+            reader_override="native",
+            use_metadata_statistics=False,
+        ).filter(pl.col("IntegerType") > 1).collect()
+
+    # Check different types
+    ensure_filter_skips_file(pl.col("BooleanType") < True)
+    ensure_filter_skips_file(pl.col("IntegerType") < 1)
+    ensure_filter_skips_file(pl.col("LongType") < 1)
+    ensure_filter_skips_file(pl.col("FloatType") < 1.0)
+    ensure_filter_skips_file(pl.col("DoubleType") < 1.0)
+    ensure_filter_skips_file(pl.col("DateType") < datetime.date(2025, 1, 1))
+    ensure_filter_skips_file(pl.col("TimeType") < datetime.time(11, 30))
+    ensure_filter_skips_file(pl.col("TimestampType") < datetime.datetime(2025, 1, 1))
+    ensure_filter_skips_file(
+        pl.col("TimestamptzType")
+        < pl.lit(datetime.datetime(2025, 1, 1), dtype=pl.Datetime("ms", "UTC"))
+    )
+    ensure_filter_skips_file(pl.col("StringType") < "A")
+    ensure_filter_skips_file(pl.col("BinaryType") < b"A")
+    ensure_filter_skips_file(pl.col("DecimalType") < D("1.00"))
+    ensure_filter_skips_file(
+        pl.col("DecimalTypeLargeValue") < D("73377733337777733333377777773333333377")
+    )
+    ensure_filter_skips_file(
+        pl.col("DecimalTypeLargeNegativeValue")
+        < D("-73377733337777733333377777773333333377")
+    )
+    ensure_filter_skips_file(pl.col("FixedType") < b"A")
+
+    # Check row index. It should have a null_count statistic column of 0.
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native")
+        .with_row_index()
+        .filter(pl.col("index").is_null()),
+        pl.LazyFrame(schema={"index": pl.get_index_type(), **pl_schema}),
     )

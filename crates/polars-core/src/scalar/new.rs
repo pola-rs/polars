@@ -51,10 +51,10 @@ impl Scalar {
     }
 
     #[cfg(feature = "dtype-decimal")]
-    pub fn new_decimal(value: i128, scale: usize) -> Self {
+    pub fn new_decimal(value: i128, precision: usize, scale: usize) -> Self {
         Scalar::new(
-            DataType::Decimal(Some(38), Some(scale)),
-            AnyValue::Decimal(value, scale),
+            DataType::Decimal(precision, scale),
+            AnyValue::Decimal(value, precision, scale),
         )
     }
 

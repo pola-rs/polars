@@ -24,7 +24,6 @@ from polars._utils.constants import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
     from datetime import date, tzinfo
     from decimal import Decimal
 
@@ -207,15 +206,15 @@ def to_py_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
         _raise_invalid_time_unit(time_unit)
 
 
-def to_py_decimal(sign: int, digits: Sequence[int], prec: int, scale: int) -> Decimal:
+def to_py_decimal(prec: int, value: str) -> Decimal:
     """Convert decimal components to a Python Decimal object."""
-    return _create_decimal_with_prec(prec)((sign, digits, scale))
+    return _create_decimal_with_prec(prec)(value)
 
 
 @lru_cache(None)
 def _create_decimal_with_prec(
     precision: int,
-) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
+) -> Callable[[str], Decimal]:
     # pre-cache contexts so we don't have to spend time on recreating them every time
     return Context(prec=precision).create_decimal
 
