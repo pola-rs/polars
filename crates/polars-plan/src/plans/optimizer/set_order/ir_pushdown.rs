@@ -11,7 +11,7 @@ use polars_utils::unique_id::UniqueId;
 
 use super::expr_pushdown::{adjust_for_with_columns_context, get_frame_observing, zip};
 use crate::dsl::{PartitionVariantIR, SinkTypeIR, UnionOptions};
-use crate::plans::set_order::expr_pushdown::FrameOrdering;
+use crate::plans::set_order::expr_pushdown::FrameOrderObserved;
 use crate::plans::{AExpr, IR, is_scalar_ae};
 
 pub(super) fn pushdown_orders(
@@ -236,8 +236,8 @@ pub(super) fn pushdown_orders(
                 }
 
                 let is_order_observing = match observing {
-                    Ok(o) => o.observes_frame() && !all_outputs_unordered,
-                    Err(FrameOrdering) => true,
+                    Ok(o) => o.is_frame_order_observed() && !all_outputs_unordered,
+                    Err(FrameOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },
@@ -246,8 +246,8 @@ pub(super) fn pushdown_orders(
                     .iter()
                     .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena)));
                 let is_order_observing = match observing {
-                    Ok(o) => o.observes_frame() && !all_outputs_unordered,
-                    Err(FrameOrdering) => true,
+                    Ok(o) => o.is_frame_order_observed() && !all_outputs_unordered,
+                    Err(FrameOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },
@@ -261,8 +261,8 @@ pub(super) fn pushdown_orders(
                     expr_arena,
                 ));
                 let is_order_observing = match observing {
-                    Ok(o) => o.observes_frame() && !all_outputs_unordered,
-                    Err(FrameOrdering) => true,
+                    Ok(o) => o.is_frame_order_observed() && !all_outputs_unordered,
+                    Err(FrameOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },

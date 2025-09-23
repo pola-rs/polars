@@ -6,7 +6,7 @@ use crate::dsl::EvalVariant;
 use crate::plans::{AExpr, IRAggExpr};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FrameOrdering;
+pub struct FrameOrderObserved;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,18 +52,22 @@ impl ExprOutputOrder {
     }
 
     /// Do a elementwise zip between two output orderings.
-    pub fn zip_with(self, other: Self) -> Result<Self, FrameOrdering> {
+    pub fn zip_with(self, other: Self) -> Result<Self, FrameOrderObserved> {
         match (self, other) {
             (Self::None, v) | (v, Self::None) => Ok(v),
-            (Self::Both, _) | (_, Self::Both) => Err(FrameOrdering),
+            (Self::Both, _) | (_, Self::Both) => Err(FrameOrderObserved),
             (v, w) if v == w => Ok(v),
-            _ => Err(FrameOrdering),
+            _ => Err(FrameOrderObserved),
         }
     }
 
     /// Does the output order observe an ordering (in)directly derived from the frame ordering.
-    pub fn observes_frame(self) -> bool {
+    pub fn has_frame_ordering(self) -> bool {
         matches!(self, Self::Frame | Self::Both)
+    }
+
+    pub fn has_independent_ordering(self) -> bool {
+        matches!(self, Self::Independent | Self::Both)
     }
 
     fn independent(is_unordered: bool) -> Self {
@@ -76,8 +80,8 @@ impl ExprOutputOrder {
 }
 
 pub fn zip(
-    orders: impl IntoIterator<Item = Result<ExprOutputOrder, FrameOrdering>>,
-) -> Result<ExprOutputOrder, FrameOrdering> {
+    orders: impl IntoIterator<Item = Result<ExprOutputOrder, FrameOrderObserved>>,
+) -> Result<ExprOutputOrder, FrameOrderObserved> {
     use ExprOutputOrder as O;
     let mut orders = orders.into_iter();
     let Some(output_order) = orders.next() else {
@@ -91,8 +95,8 @@ pub fn zip(
 }
 
 pub fn adjust_for_with_columns_context(
-    order: Result<ExprOutputOrder, FrameOrdering>,
-) -> Result<ExprOutputOrder, FrameOrdering> {
+    order: Result<ExprOutputOrder, FrameOrderObserved>,
+) -> Result<ExprOutputOrder, FrameOrderObserved> {
     order?.zip_with(ExprOutputOrder::Frame)
 }
 
@@ -104,7 +108,7 @@ pub fn adjust_for_with_columns_context(
 pub fn get_frame_observing(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
-) -> Result<ExprOutputOrder, FrameOrdering> {
+) -> Result<ExprOutputOrder, FrameOrderObserved> {
     macro_rules! rec {
         ($expr:expr) => {{ get_frame_observing(expr_arena.get($expr), expr_arena)? }};
     }
@@ -188,15 +192,15 @@ pub fn get_frame_observing(
 
             // Input order observing aggregations.
             IRAggExpr::Implode(node) | IRAggExpr::First(node) | IRAggExpr::Last(node) => {
-                if rec!(*node).observes_frame() {
-                    return Err(FrameOrdering);
+                if rec!(*node).has_frame_ordering() {
+                    return Err(FrameOrderObserved);
                 }
                 O::None
             },
 
             // @NOTE: This aggregation makes very little sense. We do the most pessimistic thing
             // possible here.
-            IRAggExpr::AggGroups(_) => return Err(FrameOrdering),
+            IRAggExpr::AggGroups(_) => return Err(FrameOrderObserved),
         },
 
         AExpr::Gather {
@@ -209,8 +213,8 @@ pub fn get_frame_observing(
 
             // We need to ensure that the values come in frame order. The order of the idxes is
             // propagated.
-            if expr.observes_frame() {
-                return Err(FrameOrdering);
+            if expr.has_frame_ordering() {
+                return Err(FrameOrderObserved);
             }
 
             if *returns_scalar { O::None } else { idx }
@@ -228,8 +232,8 @@ pub fn get_frame_observing(
                 // `drop_nulls` and `rechunk`.
                 assert_eq!(input.len(), 1);
                 match rec!(input[0].node()) {
-                    v if !options.flags.is_row_separable() && v.observes_frame() => {
-                        return Err(FrameOrdering);
+                    v if !options.flags.is_row_separable() && v.has_frame_ordering() => {
+                        return Err(FrameOrderObserved);
                     },
                     v => v,
                 }
@@ -244,8 +248,8 @@ pub fn get_frame_observing(
                 // For other expressions, we are observing frame order i.f.f. any of the inputs are
                 // observing frame order.
                 for e in input {
-                    if rec!(e.node()).observes_frame() {
-                        return Err(FrameOrdering);
+                    if rec!(e.node()).has_frame_ordering() {
+                        return Err(FrameOrderObserved);
                     }
                 }
                 O::independent(options.flags.returns_scalar())
@@ -260,8 +264,8 @@ pub fn get_frame_observing(
             EvalVariant::List => rec!(*expr),
             EvalVariant::Cumulative { min_samples: _ } => {
                 let expr = rec!(*expr);
-                if expr.observes_frame() {
-                    return Err(FrameOrdering);
+                if expr.has_frame_ordering() {
+                    return Err(FrameOrderObserved);
                 }
                 expr
             },
@@ -278,18 +282,18 @@ pub fn get_frame_observing(
             // @Performance.
             // All of the code below might be a bit pessimistic, several window function variants
             // are length preserving and/or propagate order in specific ways.
-            if input.observes_frame() {
-                return Err(FrameOrdering);
+            if input.has_frame_ordering() {
+                return Err(FrameOrderObserved);
             }
             for e in partition_by {
-                if rec!(*e).observes_frame() {
-                    return Err(FrameOrdering);
+                if rec!(*e).has_frame_ordering() {
+                    return Err(FrameOrderObserved);
                 }
             }
             if let Some((e, _)) = &order_by
-                && rec!(*e).observes_frame()
+                && rec!(*e).has_frame_ordering()
             {
-                return Err(FrameOrdering);
+                return Err(FrameOrderObserved);
             }
             O::Independent
         },
@@ -304,8 +308,8 @@ pub fn get_frame_observing(
             _ = rec!(*offset);
             _ = rec!(*length);
 
-            if rec!(*input).observes_frame() {
-                return Err(FrameOrdering);
+            if rec!(*input).has_frame_ordering() {
+                return Err(FrameOrderObserved);
             }
             O::Independent
         },
