@@ -313,7 +313,6 @@ impl Wrap<&DataFrame> {
             ClosedWindow::Both => options.period >= options.every,
             _ => options.period > options.every,
         };
-        dbg!(&overlapping);
 
         let groups = if group_by.is_none() {
             let vals = dt.physical().downcast_iter().next().unwrap();
