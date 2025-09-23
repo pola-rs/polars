@@ -37,7 +37,7 @@ impl IRFunctionExpr {
             Negate => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
-                IRPowFunction::Generic => mapper.pow_dtype(),
+                IRPowFunction::Generic => mapper.pow_log_dtype(),
                 _ => mapper.map_numeric_to_float_dtype(true),
             },
             Coalesce => mapper.map_to_supertype(),
@@ -230,12 +230,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             #[cfg(feature = "log")]
-            Log => mapper.with_dtype(
-                match args_to_supertype(fields)? {
-                    DataType::Float32 => DataType::Float32,
-                    _ => DataType::Float64,
-                }
-            ),
+            Log => mapper.pow_log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),
@@ -685,7 +680,7 @@ impl<'a> FieldsMapper<'a> {
         Ok(first)
     }
 
-    pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
+    pub(super) fn pow_log_dtype(&self) -> PolarsResult<Field> {
         let base_dtype = self.fields[0].dtype();
         let exponent_dtype = self.fields[1].dtype();
         if base_dtype.is_integer() {
