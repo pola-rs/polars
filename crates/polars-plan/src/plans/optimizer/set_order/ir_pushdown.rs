@@ -236,7 +236,7 @@ pub(super) fn pushdown_orders(
                 }
 
                 let is_order_observing = match observing {
-                    Ok(o) => o.is_frame_order_observed() && !all_outputs_unordered,
+                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
                     Err(FrameOrderObserved) => true,
                 };
                 [is_order_observing].into()
@@ -246,7 +246,7 @@ pub(super) fn pushdown_orders(
                     .iter()
                     .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena)));
                 let is_order_observing = match observing {
-                    Ok(o) => o.is_frame_order_observed() && !all_outputs_unordered,
+                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
                     Err(FrameOrderObserved) => true,
                 };
                 [is_order_observing].into()
@@ -261,7 +261,7 @@ pub(super) fn pushdown_orders(
                     expr_arena,
                 ));
                 let is_order_observing = match observing {
-                    Ok(o) => o.is_frame_order_observed() && !all_outputs_unordered,
+                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
                     Err(FrameOrderObserved) => true,
                 };
                 [is_order_observing].into()
