@@ -79,7 +79,7 @@ jobs:
           sed -i 's/pub fn _polars64/pub fn _polars32/' crates/polars-python/src/c_api/mod.rs
 
           set -e
-          VERSION=$(tomlq '.package.version' py-polars/Cargo.toml | tr -d '"')
+          VERSION=$((cd py-polars && python -c 'from importlib import metadata; print(metadata.version("polars"))'))
           U64_VERSION=($(tomlq '.project."optional-dependencies".idx64[0]' py-polars/pyproject.toml | tr -d '"'))
           LTS_VERSION=($(tomlq '.project."optional-dependencies".lts_cpu[0]' py-polars/pyproject.toml | tr -d '"'))
 
