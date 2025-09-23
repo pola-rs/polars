@@ -1404,7 +1404,7 @@ def test_from_rows() -> None:
         ],
     ],
 )
-def test_from_rows_of_dicts(records: list[dict[str, Any]]) -> None:
+def test_from_rows_of_dicts(records: Sequence[Mapping[str, Any]]) -> None:
     for df_init in (pl.from_dicts, pl.DataFrame):
         df1 = df_init(records).remove(pl.col("id").is_null())
         assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
