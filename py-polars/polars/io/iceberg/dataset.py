@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from functools import cache, partial
+from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -506,12 +506,12 @@ def _redact_dict_values(obj: Any) -> Any:
 def _convert_iceberg_to_object_store_storage_options(
     iceberg_storage_properties: dict[str, str],
 ) -> dict[str, str]:
-    mapping = _iceberg_to_object_store_config_keys_map()
-
     storage_options = {}
 
     for k, v in iceberg_storage_properties.items():
-        if (translated_key := mapping.get(k)) is not None:
+        if (
+            translated_key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP.get(k)
+        ) is not None:
             storage_options[translated_key] = v
         elif "." not in k:
             # If a dot is not present in the key, it is unlikely to be an
@@ -522,31 +522,29 @@ def _convert_iceberg_to_object_store_storage_options(
     return storage_options
 
 
-@cache
-def _iceberg_to_object_store_config_keys_map() -> dict[str, str | None]:
-    # https://py.iceberg.apache.org/configuration/#fileio
-    return {
-        # S3
-        "s3.endpoint": "aws_endpoint_url",
-        "s3.access-key-id": "aws_access_key_id",
-        "s3.secret-access-key": "aws_secret_access_key",
-        "s3.session-token": "aws_session_token",
-        "s3.region": "aws_region",
-        "s3.proxy-uri": "proxy_url",
-        "s3.connect-timeout": "connect_timeout",
-        "s3.request-timeout": "timeout",
-        "s3.force-virtual-addressing": "aws_virtual_hosted_style_request",
-        # Azure
-        "adls.account-name": "azure_storage_account_name",
-        "adls.account-key": "azure_storage_account_key",
-        "adls.sas-token": "azure_storage_sas_key",
-        "adls.tenant-id": "azure_storage_tenant_id",
-        "adls.client-id": "azure_storage_client_id",
-        "adls.client-secret": "azure_storage_client_secret",
-        "adls.account-host": "azure_storage_authority_host",
-        "adls.token": "azure_storage_token",
-        # Google storage
-        "gcs.oauth2.token": "bearer_token",
-        # HuggingFace
-        "hf.token": "token",
-    }
+# https://py.iceberg.apache.org/configuration/#fileio
+ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP: dict[str, str] = {
+    # S3
+    "s3.endpoint": "aws_endpoint_url",
+    "s3.access-key-id": "aws_access_key_id",
+    "s3.secret-access-key": "aws_secret_access_key",
+    "s3.session-token": "aws_session_token",
+    "s3.region": "aws_region",
+    "s3.proxy-uri": "proxy_url",
+    "s3.connect-timeout": "connect_timeout",
+    "s3.request-timeout": "timeout",
+    "s3.force-virtual-addressing": "aws_virtual_hosted_style_request",
+    # Azure
+    "adls.account-name": "azure_storage_account_name",
+    "adls.account-key": "azure_storage_account_key",
+    "adls.sas-token": "azure_storage_sas_key",
+    "adls.tenant-id": "azure_storage_tenant_id",
+    "adls.client-id": "azure_storage_client_id",
+    "adls.client-secret": "azure_storage_client_secret",
+    "adls.account-host": "azure_storage_authority_host",
+    "adls.token": "azure_storage_token",
+    # Google storage
+    "gcs.oauth2.token": "bearer_token",
+    # HuggingFace
+    "hf.token": "token",
+}
