@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from functools import partial
+from functools import cache, partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import pyiceberg.schema
     from pyiceberg.table import Table
-
     from polars.lazyframe.frame import LazyFrame
 
 
@@ -291,6 +290,14 @@ class IcebergDataset:
                 else None
             )
 
+            storage_options = (
+                _convert_iceberg_to_object_store_storage_options(
+                    self._iceberg_storage_properties
+                )
+                if self._iceberg_storage_properties is not None
+                else None
+            )
+
             return _NativeIcebergScanData(
                 sources=sources,
                 projected_iceberg_schema=projected_iceberg_schema,
@@ -299,6 +306,7 @@ class IcebergDataset:
                 deletion_files=deletion_files,
                 min_max_statistics=min_max_statistics,
                 statistics_loader=statistics_loader,
+                storage_options=storage_options,
                 _snapshot_id_key=snapshot_id_key,
             )
 
@@ -444,6 +452,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     # access the statistics loader directly to inspect the values before
     # coalescing.
     statistics_loader: IcebergStatisticsLoader | None
+    storage_options: dict[str, str] | None
     _snapshot_id_key: str
 
     def to_lazyframe(self) -> pl.LazyFrame:
@@ -454,6 +463,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
             extra_columns="ignore",
+            storage_options=self.storage_options,
             _column_mapping=("iceberg-column-mapping", self.column_mapping),
             _default_values=("iceberg", self.default_values),
             _deletion_files=("iceberg-position-delete", self.deletion_files),
@@ -490,3 +500,47 @@ def _redact_dict_values(obj: Any) -> Any:
         if obj is not None
         else "None"
     )
+
+
+def _convert_iceberg_to_object_store_storage_options(
+    iceberg_storage_properties: dict[str, str],
+) -> dict[str, str]:
+    mapping = _iceberg_to_object_store_config_keys_map()
+
+    storage_options = {}
+
+    for k, v in iceberg_storage_properties.items():
+        if (translated_key := mapping.get(k)) is not None:
+            storage_options[translated_key] = v
+
+    return storage_options
+
+
+@cache
+def _iceberg_to_object_store_config_keys_map() -> dict[str, str | None]:
+    # https://py.iceberg.apache.org/configuration/#fileio
+    return {
+        # S3
+        "s3.endpoint": "aws_endpoint_url",
+        "s3.access-key-id": "aws_access_key_id",
+        "s3.secret-access-key": "aws_secret_access_key",
+        "s3.session-token": "aws_session_token",
+        "s3.region": "aws_region",
+        "s3.proxy-uri": "proxy_url",
+        "s3.connect-timeout": "connect_timeout",
+        "s3.request-timeout": "timeout",
+        "s3.force-virtual-addressing": "aws_virtual_hosted_style_request",
+        # Azure
+        "adls.account-name": "azure_storage_account_name",
+        "adls.account-key": "azure_storage_account_key",
+        "adls.sas-token": "azure_storage_sas_key",
+        "adls.tenant-id": "azure_storage_tenant_id",
+        "adls.client-id": "azure_storage_client_id",
+        "adls.client-secret": "azure_storage_client_secret",
+        "adls.account-host": "azure_storage_authority_host",
+        "adls.token": "azure_storage_token",
+        # Google storage
+        "gcs.oauth2.token": "bearer_token",
+        # HuggingFace
+        "hf.token": "token",
+    }
