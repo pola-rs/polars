@@ -83,8 +83,8 @@ jobs:
           U64_VERSION=($(tomlq '.project."optional-dependencies".idx64[0]' py-polars/pyproject.toml | tr -d '"'))
           LTS_VERSION=($(tomlq '.project."optional-dependencies".lts_cpu[0]' py-polars/pyproject.toml | tr -d '"'))
 
-          [[ "$(echo $VERSION | sed 's/-beta\./b/')" != "${U64_VERSION[2]}" ]] && echo "Incorrect idx64 version" && exit 1
-          [[ "$(echo $VERSION | sed 's/-beta\./b/')" != "${LTS_VERSION[2]}" ]] && echo "Incorrect lts version" && exit 1
+          [[ "$(echo $VERSION | sed 's/-beta\./b/')" == "${U64_VERSION[2]}" ]] || (echo "Incorrect idx64 version" && exit 1)
+          [[ "$(echo $VERSION | sed 's/-beta\./b/')" == "${LTS_VERSION[2]}" ]] || (echo "Incorrect lts version" && exit 1)
 
       - name: Update U64 package
         if: matrix.package == 'polars-u64-idx'
