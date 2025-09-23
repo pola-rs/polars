@@ -139,7 +139,7 @@ impl<'a> AggregationContext<'a> {
                         self.groups = Cow::Owned(
                             GroupsType::Slice {
                                 groups,
-                                rolling: false,
+                                overlapping: false,
                             }
                             .into_sliceable(),
                         )
@@ -261,7 +261,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups = Cow::Owned(
                     GroupsType::Slice {
                         groups,
-                        rolling: false,
+                        overlapping: false,
                     }
                     .into_sliceable(),
                 );
@@ -288,7 +288,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups = Cow::Owned(
                     GroupsType::Slice {
                         groups,
-                        rolling: false,
+                        overlapping: false,
                     }
                     .into_sliceable(),
                 );
@@ -518,17 +518,6 @@ impl<'a> AggregationContext<'a> {
         match &self.state {
             AggState::NotAggregated(c) => Cow::Borrowed(c),
             AggState::AggregatedList(c) => {
-                #[cfg(debug_assertions)]
-                {
-                    // panic so we find cases where we accidentally explode overlapping groups
-                    // we don't want this as this can create a lot of data
-                    if let GroupsType::Slice { rolling: true, .. } = self.groups.as_ref().as_ref() {
-                        panic!(
-                            "implementation error, polars should not hit this branch for overlapping groups"
-                        )
-                    }
-                }
-
                 // We should not insert nulls, otherwise the offsets in the groups will not be correct.
                 Cow::Owned(c.explode(true).unwrap())
             },
