@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
+from polars.io.cloud.credential_provider._builder import OBJECT_STORE_CLIENT_OPTIONS
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -512,6 +513,11 @@ def _convert_iceberg_to_object_store_storage_options(
     for k, v in iceberg_storage_properties.items():
         if (translated_key := mapping.get(k)) is not None:
             storage_options[translated_key] = v
+        elif "." not in k:
+            # If a dot is not present in the key, it is unlikely to be an
+            # iceberg config key - it is more likely for it to be a native
+            # object-store config key, so we pass it through.
+            storage_options[k] = v
 
     return storage_options
 
