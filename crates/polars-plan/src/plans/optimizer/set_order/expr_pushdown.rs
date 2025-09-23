@@ -1,3 +1,5 @@
+use std::ops::{BitOr, BitOrAssign};
+
 use polars_utils::arena::Arena;
 
 use crate::dsl::EvalVariant;
@@ -6,53 +8,54 @@ use crate::plans::{AExpr, IRAggExpr};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameOrdering;
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ExprOutputOrder {
-    /// The expression's output order is solely reliant on whether the input dataframe has a
-    /// defined order.
-    Frame,
+    /// The expression has no defined output order.
+    None = 0b00,
 
-    /// The expression's output order is derived from the input dataframe order, but not
-    /// necessarily equal to the frame order.
-    ///
-    /// Changing the order of the input dataframe might change the output order, but it cannot be
-    /// regarded as the same ordering as the frame ordering or any order derived ordering.
-    Derived,
+    /// The expression's output order is reliant on the input dataframe's order.
+    Frame = 0b01,
 
-    /// The expression's output order is completely independent from the frame order. This may mean
-    /// that the output is unordered, has a constant order or is derived from another independent order.
-    Independent,
+    /// The expression's output order is completely independent from the frame order.
+    Independent = 0b10,
 
-    /// The expression is a scalar and thus has no order.
-    ///
-    /// This is a special case of the independent output order in that it can be elementwise zipped
-    /// with any order ordering to keep that ordering.
-    Scalar,
+    /// The expression's output order is both observing the frame order and some other independent
+    /// order.
+    Both = 0b11,
+}
+
+impl BitOr for ExprOutputOrder {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self::from_u8((self as u8) | (rhs as u8)).unwrap()
+    }
+}
+
+impl BitOrAssign for ExprOutputOrder {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = Self::from_u8((*self as u8) | (rhs as u8)).unwrap();
+    }
 }
 
 impl ExprOutputOrder {
-    /// Derive from the current output order while not necessarily preserving length.
-    pub fn length_altering_derive(self) -> Self {
-        match self {
-            Self::Frame | Self::Derived => Self::Derived,
-            Self::Independent | Self::Scalar => Self::Independent,
-        }
-    }
+    pub const fn from_u8(v: u8) -> Option<Self> {
+        Some(match v {
+            0b00 => Self::None,
+            0b01 => Self::Frame,
+            0b10 => Self::Independent,
+            0b11 => Self::Both,
 
-    /// Derive from the current output order while preserving length.
-    pub fn length_preserving_derive(self) -> Self {
-        match self {
-            Self::Frame | Self::Derived => Self::Derived,
-            Self::Independent => Self::Independent,
-            Self::Scalar => Self::Scalar,
-        }
+            _ => return None,
+        })
     }
 
     /// Do a elementwise zip between two output orderings.
     pub fn zip_with(self, other: Self) -> Result<Self, FrameOrdering> {
         match (self, other) {
-            (Self::Scalar, v) | (v, Self::Scalar) => Ok(v),
-            (Self::Derived, _) | (_, Self::Derived) => Err(FrameOrdering),
+            (Self::None, v) | (v, Self::None) => Ok(v),
+            (Self::Both, _) | (_, Self::Both) => Err(FrameOrdering),
             (v, w) if v == w => Ok(v),
             _ => Err(FrameOrdering),
         }
@@ -60,12 +63,12 @@ impl ExprOutputOrder {
 
     /// Does the output order observe an ordering (in)directly derived from the frame ordering.
     pub fn observes_frame(self) -> bool {
-        matches!(self, Self::Frame | Self::Derived)
+        matches!(self, Self::Frame | Self::Both)
     }
 
-    fn independent(is_scalar: bool) -> Self {
-        if is_scalar {
-            Self::Scalar
+    fn independent(is_unordered: bool) -> Self {
+        if is_unordered {
+            Self::None
         } else {
             Self::Independent
         }
@@ -120,7 +123,7 @@ pub fn get_frame_observing(
         // b: [[3], [4, 5]]
         //
         // col(a).explode() * col(b).explode()
-        AExpr::Explode { expr, .. } => rec!(*expr).length_altering_derive(),
+        AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
         AExpr::Column(_) => O::Frame,
         AExpr::Literal(lv) => O::independent(lv.is_scalar()),
@@ -138,7 +141,7 @@ pub fn get_frame_observing(
 
         AExpr::Sort { expr, options } => {
             if options.maintain_order {
-                rec!(*expr).length_preserving_derive()
+                rec!(*expr) | O::Independent
             } else {
                 _ = rec!(*expr);
                 O::Independent
@@ -155,9 +158,9 @@ pub fn get_frame_observing(
             }
 
             if sort_options.maintain_order {
-                zipped.length_preserving_derive()
+                zipped | O::Independent
             } else {
-                O::independent(matches!(zipped, O::Scalar))
+                O::Independent
             }
         },
 
@@ -174,13 +177,13 @@ pub fn get_frame_observing(
             | IRAggExpr::Var(node, _) => {
                 // Input order is deregarded, but must not observe order.
                 _ = rec!(*node);
-                O::Scalar
+                O::None
             },
             IRAggExpr::Quantile { expr, quantile, .. } => {
                 // Input and quantile order is deregarded, but must not observe order.
                 _ = rec!(*expr);
                 _ = rec!(*quantile);
-                O::Scalar
+                O::None
             },
 
             // Input order observing aggregations.
@@ -188,7 +191,7 @@ pub fn get_frame_observing(
                 if rec!(*node).observes_frame() {
                     return Err(FrameOrdering);
                 }
-                O::Scalar
+                O::None
             },
 
             // @NOTE: This aggregation makes very little sense. We do the most pessimistic thing
@@ -210,7 +213,7 @@ pub fn get_frame_observing(
                 return Err(FrameOrdering);
             }
 
-            if *returns_scalar { O::Scalar } else { idx }
+            if *returns_scalar { O::None } else { idx }
         },
         AExpr::AnonymousFunction { input, options, .. }
         | AExpr::Function { input, options, .. } => {
@@ -228,7 +231,6 @@ pub fn get_frame_observing(
                     v if !options.flags.is_row_separable() && v.observes_frame() => {
                         return Err(FrameOrdering);
                     },
-                    O::Scalar if !options.flags.is_length_preserving() => O::Independent,
                     v => v,
                 }
             } else if options.flags.is_input_order_agnostic() {
@@ -307,6 +309,6 @@ pub fn get_frame_observing(
             }
             O::Independent
         },
-        AExpr::Len => O::Scalar,
+        AExpr::Len => O::None,
     })
 }
