@@ -288,6 +288,7 @@ pub(super) fn pushdown_orders(
                     || match payload {
                         SinkTypeIR::Memory => false,
                         SinkTypeIR::File(_) => false,
+                        SinkTypeIR::Callback(_) => false,
                         SinkTypeIR::Partition(p) => match &p.variant {
                             PartitionVariantIR::MaxSize(_) => false,
                             PartitionVariantIR::Parted { .. } => true,
