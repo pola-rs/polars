@@ -184,7 +184,7 @@ pub struct CastColumnsPolicy {
     /// DataType::Null to any
     pub null_upcast: bool,
 
-    /// DataType::Catgorical to string
+    /// DataType::Categorical to string
     pub categorical_to_string: bool,
 
     pub missing_struct_fields: MissingColumnsPolicy,
