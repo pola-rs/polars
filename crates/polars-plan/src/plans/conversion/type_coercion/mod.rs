@@ -457,40 +457,51 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                for (i, expr) in input.iter().enumerate() {
-                    let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
+                let no_cast_needed = input.iter().all(|expr| {
+                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
+                    matches!(dtype, DataType::Int64 | DataType::Float64)
+                });
+                if no_cast_needed {
+                    return Ok(None);
+                }
 
-                    if !matches!(dtype, DataType::Int64) {
-                        let function = function.clone();
-                        let mut input = input.to_vec();
-                        cast_expr_ir(
-                            &mut input[i],
-                            &dtype,
-                            &DataType::Int64,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
-                        for expr in &mut input[i + 1..] {
-                            let (_, dtype) =
-                                unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
+                let function = function.clone();
+                let input = input.clone().into_iter().enumerate().map(|(i, expr)| {
+                    let mut expr = expr.to_owned();
+                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
+                    Ok(match &dtype {
+                        DataType::Int64 | DataType::Float64 => expr,
+                        dt if dt.is_integer() => {
                             cast_expr_ir(
-                                expr,
+                                &mut expr,
                                 &dtype,
                                 &DataType::Int64,
                                 expr_arena,
                                 CastOptions::Strict,
                             )?;
-                        }
+                            expr
+                        },
+                        dt if dt.is_float() => {
+                            cast_expr_ir(
+                                &mut expr,
+                                &dtype,
+                                &DataType::Float64,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                            expr
+                        },
+                        dt => {
+                            polars_bail!(InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration")
+                        },
+                    })
+                }).try_collect()?;
 
-                        return Ok(Some(AExpr::Function {
-                            function,
-                            input,
-                            options,
-                        }));
-                    }
-                }
-
-                None
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
             },
             #[cfg(feature = "list_gather")]
             AExpr::Function {

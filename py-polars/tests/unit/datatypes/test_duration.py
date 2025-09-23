@@ -1,10 +1,19 @@
+from __future__ import annotations
+
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import assume, given
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars._utils.constants import I64_MAX, I64_MIN
+from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
+from tests.unit.conftest import NUMERIC_DTYPES
+
+if TYPE_CHECKING:
+    from polars._typing import TimeUnit
 
 
 def test_duration_cum_sum() -> None:
@@ -214,3 +223,76 @@ def test_comparison_with_string_raises_9461() -> None:
 def test_duration_invalid_cast_22258() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.select(a=pl.duration(days=[1, 2, 3, 4]))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms", None])
+@pytest.mark.parametrize(
+    ("digit", "digit_scale"),
+    [
+        ("weeks", 7 * 24 * 60 * 60 * 1e9),
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [0.5, 0.0625, 0.00390625, 0.000244140625],
+)
+def test_duration_float_types_11625(
+    time_unit: TimeUnit, digit: str, digit_scale: int, value: int | float
+) -> None:
+    s = pl.select(
+        pl.duration(**{digit: value}, time_unit=time_unit).alias("a")
+    ).to_series()
+    expected = pl.Series("a", [int(value * digit_scale)], dtype=pl.Duration("ns"))
+    assert_series_equal(s, expected, check_dtypes=False)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "time_unit_scale"),
+    [("ns", 1), ("us", 1e3), ("ms", 1e6), (None, 1e3)],
+)
+@pytest.mark.parametrize(
+    ("digit", "digit_scale"),
+    [
+        ("weeks", 7 * 24 * 60 * 60 * 1e9),
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
+        ("nanoseconds", 1),
+    ],
+)
+@given(s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, allow_null=False, min_size=1))
+def test_duration_float_types_series_11625(
+    time_unit: TimeUnit,
+    time_unit_scale: int,
+    digit: str,
+    digit_scale: int,
+    s: pl.Series,
+) -> None:
+    assume(not s.is_nan().any())
+    assume(not s.is_infinite().any())
+
+    # Exclude cases that could potentially overflow Int64
+    scaled = s.cast(pl.Float64) * digit_scale
+    assume(0.99 * I64_MIN <= scaled.min() <= scaled.max() <= 0.99 * I64_MAX)  # type: ignore[operator]
+
+    # Truncate any digits below the current time unit precision
+    if digit_scale < time_unit_scale:
+        s = (s / time_unit_scale).round() * time_unit_scale
+
+    expected = s.cast(pl.Float64) * digit_scale
+    expected_ns = (expected / time_unit_scale).cast(pl.Int64) * time_unit_scale
+    actual_ns = (
+        pl.select(pl.duration(**{digit: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt.total_nanoseconds()
+    )
+    assert_series_equal(actual_ns.cast(pl.Float64), expected_ns.cast(pl.Float64))
