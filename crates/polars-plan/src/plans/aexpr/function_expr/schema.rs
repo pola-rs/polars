@@ -468,7 +468,7 @@ impl<'a> FieldsMapper<'a> {
         if self.fields[0].dtype().leaf_dtype().is_duration() {
             let map_inner = |dt: &DataType| match dt {
                 dt if dt.is_temporal() => {
-                    polars_bail!(InvalidOperation: "variance of type {dt} is not supported")
+                    polars_bail!(InvalidOperation: "operation `var` is not supported for `{dt}`")
                 },
                 dt => Ok(dt.clone()),
             };

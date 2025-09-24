@@ -457,6 +457,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .mean()
             .map(|v| v / self.scale_factor() as f64)
     }
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::new(DataType::Float64, self.mean().into()))
+    }
 
     fn median(&self) -> Option<f64> {
         self.0

@@ -317,6 +317,12 @@ macro_rules! impl_dyn_series {
             fn min_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(ChunkAggSeries::min_reduce(&self.0))
             }
+            fn mean_reduce(&self) -> PolarsResult<Scalar> {
+                let mean = self
+                    .mean()
+                    .map(|m| m as <$pdt as PolarsDataType>::OwnedPhysical);
+                Ok(Scalar::new(self.dtype().clone(), mean.into()))
+            }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(QuantileAggSeries::median_reduce(&self.0))
             }

@@ -56,11 +56,11 @@ impl PySeries {
         let s = self.series.read();
         match s.dtype() {
             Boolean => scalar_to_py(
-                py.enter_polars_ok(|| s.cast(&DataType::UInt8).unwrap().mean_reduce()),
+                py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().mean_reduce()),
                 py,
             ),
             // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => scalar_to_py(py.enter_polars_ok(|| s.mean_reduce()), py),
+            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.mean_reduce()), py),
             _ => Ok(s.mean().into_pyobject(py)?),
         }
     }
