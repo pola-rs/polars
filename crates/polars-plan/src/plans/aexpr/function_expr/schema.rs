@@ -56,8 +56,10 @@ impl IRFunctionExpr {
             #[cfg(feature = "trigonometry")]
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
-            Sign => mapper.ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?.with_same_dtype(),
-            FillNull  => mapper.map_to_supertype(),
+            Sign => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?
+                .with_same_dtype(),
+            FillNull => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
                 use IRRollingFunction::*;
@@ -67,7 +69,7 @@ impl IRFunctionExpr {
                     Var => mapper.var_dtype(),
                     Sum => mapper.sum_dtype(),
                     #[cfg(feature = "cov")]
-                    CorrCov {..} => mapper.map_to_float_dtype(),
+                    CorrCov { .. } => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew | Kurtosis => mapper.map_to_float_dtype(),
                     Map(_) => mapper.try_map_field(|field| {
@@ -84,20 +86,22 @@ impl IRFunctionExpr {
                 }
             },
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy{function_by, ..} => {
+            RollingExprBy { function_by, .. } => {
                 use IRRollingFunctionBy::*;
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
-                    MeanBy | QuantileBy | StdBy=> mapper.moment_dtype(),
+                    MeanBy | QuantileBy | StdBy => mapper.moment_dtype(),
                     VarBy => mapper.var_dtype(),
                     SumBy => mapper.sum_dtype(),
                 }
             },
             Rechunk => mapper.with_same_dtype(),
-            Append { upcast } => if *upcast {
-                mapper.map_to_supertype()
-            } else {
-                mapper.with_same_dtype()
+            Append { upcast } => {
+                if *upcast {
+                    mapper.map_to_supertype()
+                } else {
+                    mapper.with_same_dtype()
+                }
             },
             ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
@@ -131,10 +135,16 @@ impl IRFunctionExpr {
             #[cfg(feature = "dtype-struct")]
             AsStruct => {
                 let mut field_names = PlHashSet::with_capacity(fields.len() - 1);
-                let struct_fields = fields.iter().map(|f| {
-                    polars_ensure!(field_names.insert(f.name.as_str()), duplicate_field = f.name());
-                    Ok(f.clone())
-                }).collect::<PolarsResult<Vec<_>>>()?;
+                let struct_fields = fields
+                    .iter()
+                    .map(|f| {
+                        polars_ensure!(
+                            field_names.insert(f.name.as_str()),
+                            duplicate_field = f.name()
+                        );
+                        Ok(f.clone())
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(Field::new(
                     fields[0].name().clone(),
                     DataType::Struct(struct_fields),
@@ -323,37 +333,56 @@ impl IRFunctionExpr {
                 Some(dtype) => mapper.with_dtype(dtype.clone()),
             },
             #[cfg(feature = "dtype-struct")]
-            CumReduceHorizontal {
-                return_dtype, ..
-            }=> match return_dtype {
+            CumReduceHorizontal { return_dtype, .. } => match return_dtype {
                 None => mapper.with_dtype(DataType::Struct(fields.to_vec())),
-                Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
+                Some(dtype) => mapper.with_dtype(DataType::Struct(
+                    fields
+                        .iter()
+                        .map(|f| Field::new(f.name().clone(), dtype.clone()))
+                        .collect(),
+                )),
             },
             #[cfg(feature = "dtype-struct")]
-            CumFoldHorizontal { return_dtype, include_init, .. } => match return_dtype {
-                None => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), fields[0].dtype().clone())).collect())),
-                Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
+            CumFoldHorizontal {
+                return_dtype,
+                include_init,
+                ..
+            } => match return_dtype {
+                None => mapper.with_dtype(DataType::Struct(
+                    fields
+                        .iter()
+                        .skip(usize::from(!include_init))
+                        .map(|f| Field::new(f.name().clone(), fields[0].dtype().clone()))
+                        .collect(),
+                )),
+                Some(dtype) => mapper.with_dtype(DataType::Struct(
+                    fields
+                        .iter()
+                        .skip(usize::from(!include_init))
+                        .map(|f| Field::new(f.name().clone(), dtype.clone()))
+                        .collect(),
+                )),
             },
 
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
-            SumHorizontal { .. } => {
-                mapper.map_to_supertype().map(|mut f| {
-                    if f.dtype == DataType::Boolean {
-                        f.dtype = IDX_DTYPE;
-                    }
-                    f
-                })
-            },
-            MeanHorizontal { .. } => {
-                mapper.map_to_supertype().map(|mut f| {
-                    match f.dtype {
-                        dt @ DataType::Float32 => { f.dtype = dt; },
-                        _ => { f.dtype = DataType::Float64; },
-                    };
-                    f
-                })
-            }
+            SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
+                if f.dtype == DataType::Boolean {
+                    f.dtype = IDX_DTYPE;
+                }
+                f
+            }),
+            MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
+                match f.dtype {
+                    dt @ DataType::Float32 => {
+                        f.dtype = dt;
+                    },
+                    _ => {
+                        f.dtype = DataType::Float64;
+                    },
+                };
+                f
+            }),
             #[cfg(feature = "ewma")]
             EwmMean { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma_by")]
@@ -379,7 +408,12 @@ impl IRFunctionExpr {
             },
             ExtendConstant => mapper.with_same_dtype(),
 
-            RowEncode(..) => mapper.try_map_field(|_| Ok(Field::new(PlSmallStr::from_static("row_encoded"), DataType::BinaryOffset))),
+            RowEncode(..) => mapper.try_map_field(|_| {
+                Ok(Field::new(
+                    PlSmallStr::from_static("row_encoded"),
+                    DataType::BinaryOffset,
+                ))
+            }),
             #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
         }
