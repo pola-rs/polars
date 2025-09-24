@@ -226,6 +226,30 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_sum())
 
+    def product(self) -> Expr:
+        """
+        Calculate the product of all elements in each list.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `1`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1, 2, 3], [4, 5, 6]]})
+        >>> df.with_columns(product=pl.col("values").list.product())
+        shape: (2, 2)
+        ┌───────────┬─────────┐
+        │ values    ┆ product │
+        │ ---       ┆ ---     │
+        │ list[i64] ┆ i64     │
+        ╞═══════════╪═════════╡
+        │ [1, 2, 3] ┆ 6       │
+        │ [4, 5, 6] ┆ 120     │
+        └───────────┴─────────┘
+        """
+        return wrap_expr(self._pyexpr.list_product())
+
     def max(self) -> Expr:
         """
         Compute the max value of the lists in the array.

@@ -351,6 +351,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "list_count")]
                 IL::CountMatches => L::CountMatches,
                 IL::Sum => L::Sum,
+                IL::Product => L::Product,
                 IL::Length => L::Length,
                 IL::Max => L::Max,
                 IL::Min => L::Min,
