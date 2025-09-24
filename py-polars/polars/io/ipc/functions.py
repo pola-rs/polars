@@ -7,6 +7,7 @@ from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F
+from polars._dependencies import import_optional
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
     is_path_or_str_sequence,
@@ -14,7 +15,6 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
-from polars.dependencies import import_optional
 from polars.io._utils import (
     is_glob_pattern,
     is_local_file,

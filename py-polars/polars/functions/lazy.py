@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, Callable, overload
 import polars._reexport as pl
 import polars.functions as F
 import polars.selectors as cs
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
@@ -22,8 +24,6 @@ from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.datatypes._parse import parse_into_datatype_expr
-from polars.dependencies import _check_for_numpy
-from polars.dependencies import numpy as np
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,

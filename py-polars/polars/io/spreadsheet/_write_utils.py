@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
+from polars._dependencies import json
 from polars._utils.various import qualified_type_name
 from polars.datatypes import (
     Date,
@@ -16,7 +17,6 @@ from polars.datatypes import (
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
-from polars.dependencies import json
 from polars.exceptions import DuplicateError
 from polars.selectors import _expand_selector_dicts, _expand_selectors, numeric
 
