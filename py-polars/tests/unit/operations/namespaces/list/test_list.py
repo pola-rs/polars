@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import (
     ComputeError,
+    DataTypeError,
     InvalidOperationError,
     OutOfBoundsError,
 )
@@ -255,8 +256,8 @@ def test_contains() -> None:
 def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(
-        InvalidOperationError,
-        match=r"attempted list operation on non-list dtype: array\[i8, 2\]",
+        DataTypeError,
+        match=r"expected List data type for list operation, got: array\[i8, 2\]",
     ):
         df.select(pl.col("a").list.contains(2))
 
@@ -807,7 +808,9 @@ def test_list_to_array_wrong_lengths() -> None:
 
 def test_list_to_array_wrong_dtype() -> None:
     s = pl.Series([1.0, 2.0])
-    with pytest.raises(ComputeError, match="expected List dtype"):
+    with pytest.raises(
+        DataTypeError, match="expected List data type for list operation, got: f64"
+    ):
         s.list.to_array(2)
 
 

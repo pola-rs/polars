@@ -341,6 +341,8 @@ pub fn _polars64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     .unwrap();
     m.add("ComputeError", py.get_type::<exceptions::ComputeError>())
         .unwrap();
+    m.add("DataTypeError", py.get_type::<exceptions::DataTypeError>())
+        .unwrap();
     m.add(
         "DuplicateError",
         py.get_type::<exceptions::DuplicateError>(),

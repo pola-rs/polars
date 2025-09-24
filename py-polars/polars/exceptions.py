@@ -3,6 +3,7 @@ try:
         CategoricalRemappingWarning,
         ColumnNotFoundError,
         ComputeError,
+        DataTypeError,
         DuplicateError,
         InvalidOperationError,
         MapWithoutReturnDtypeWarning,
@@ -39,6 +40,9 @@ except ImportError:
 
     class ComputeError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when Polars could not perform an underlying computation."""
+
+    class DataTypeError(PolarsError):  # type: ignore[no-redef]
+        """Exception raised when the data type is not supported by the expression."""
 
     class DuplicateError(PolarsError):  # type: ignore[no-redef]
         """
@@ -198,6 +202,7 @@ __all__ = [
     "PolarsError",
     "ColumnNotFoundError",
     "ComputeError",
+    "DataTypeError",
     "DuplicateError",
     "InvalidOperationError",
     "ModuleUpgradeRequiredError",

@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, DataTypeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -553,7 +553,7 @@ def test_explode_19049() -> None:
     assert_frame_equal(result_df, expected_df)
 
     df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
-    with pytest.raises(InvalidOperationError, match="expected Array type, got: i64"):
+    with pytest.raises(DataTypeError, match="expected Array type, got: i64"):
         df.select(pl.col.a.arr.explode())
 
 

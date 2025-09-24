@@ -67,7 +67,7 @@ impl From<PyPolarsErr> for PyErr {
                 },
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
-                PolarsError::DataTypeError(err) => DataTypeError::new_err(err.to_string()),
+                PolarsError::DataTypeMismatch(err) => DataTypeError::new_err(err.to_string()),
                 PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),
                 PolarsError::InvalidOperation(err) => {
                     InvalidOperationError::new_err(err.to_string())

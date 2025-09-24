@@ -22,7 +22,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
             match err {
                 PolarsError::AssertionError(error) => PyAssertionError::new_err(error.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
-                PolarsError::DataTypeError(err) => DataTypeError::new_err(err.to_string()),
+                PolarsError::DataTypeMismatch(err) => DataTypeMismatch::new_err(err.to_string()),
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
                 PolarsError::ShapeMismatch(err) => ShapeError::new_err(err.to_string()),
                 PolarsError::SchemaMismatch(err) => SchemaError::new_err(err.to_string()),
@@ -67,7 +67,7 @@ impl Debug for PyPolarsErr {
 
 create_exception!(exceptions, AssertionError, PyException);
 create_exception!(exceptions, ColumnNotFound, PyException);
-create_exception!(exceptions, DataTypeError, PyException);
+create_exception!(exceptions, DataTypeMismatch, PyException);
 create_exception!(exceptions, SchemaFieldNotFound, PyException);
 create_exception!(exceptions, StructFieldNotFound, PyException);
 create_exception!(exceptions, ComputeError, PyException);
