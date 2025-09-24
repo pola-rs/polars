@@ -320,10 +320,11 @@ pub fn get_frame_observing(
             _ = rec!(*offset);
             _ = rec!(*length);
 
-            if rec!(*input).has_frame_ordering() {
+            let input = rec!(*input);
+            if input.has_frame_ordering() {
                 return Err(FrameOrderObserved);
             }
-            O::Independent
+            input
         },
         AExpr::Len => O::None,
     })
