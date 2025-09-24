@@ -84,7 +84,6 @@ fn count_all_rows_csv(
         .map(|source| match source {
             ScanSourceRef::Path(addr) => polars_io::csv::read::count_rows(
                 addr,
-                parse_options.separator,
                 parse_options.quote_char,
                 parse_options.comment_prefix.as_ref(),
                 parse_options.eol_char,
@@ -98,7 +97,6 @@ fn count_all_rows_csv(
 
                 polars_io::csv::read::count_rows_from_slice_par(
                     &memslice[..],
-                    parse_options.separator,
                     parse_options.quote_char,
                     parse_options.comment_prefix.as_ref(),
                     parse_options.eol_char,

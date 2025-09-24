@@ -1185,7 +1185,7 @@ fn resolve_group_by(
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
 
-    let mut aggs_schema = expr_irs_to_schema(&aggs, input_schema, expr_arena);
+    let mut aggs_schema = expr_irs_to_schema(&aggs, input_schema, expr_arena)?;
 
     // Make sure aggregation columns do not contain duplicates
     if aggs_schema.len() < aggs.len() {
