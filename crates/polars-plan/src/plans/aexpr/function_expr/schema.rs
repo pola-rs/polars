@@ -599,7 +599,7 @@ impl<'a> FieldsMapper<'a> {
         let dt = self.fields[0].dtype();
         match dt {
             DataType::Array(_, _) => self.map_to_list_and_array_inner_dtype(),
-            _ => polars_bail!(DataTypeMismatch: "expected Array type, got: {}", dt),
+            _ => polars_bail!(InvalidOperation: "expected Array type, got: {}", dt),
         }
     }
 
@@ -653,7 +653,7 @@ impl<'a> FieldsMapper<'a> {
         use DataType::*;
         let dt = first.dtype().inner_dtype().cloned().ok_or_else(|| {
             polars_err!(
-                DataTypeMismatch:"expected List or Array type, got dtype: {}",
+                InvalidOperation:"expected List or Array type, got dtype: {}",
                 first.dtype()
             )
         })?;
@@ -671,7 +671,7 @@ impl<'a> FieldsMapper<'a> {
         use DataType::*;
         let dt = first.dtype().inner_dtype().cloned().ok_or_else(|| {
             polars_err!(
-                DataTypeMismatch:"expected List or Array type, got dtype: {}",
+                InvalidOperation:"expected List or Array type, got dtype: {}",
                 first.dtype()
             )
         })?;
@@ -758,7 +758,7 @@ impl<'a> FieldsMapper<'a> {
         let dtype = self.fields[0].dtype();
         polars_ensure!(
             dtype.is_list(),
-            DataTypeMismatch:"expected List data type for list operation, got: {dtype}"
+            InvalidOperation:"expected List data type for list operation, got: {dtype}"
         );
         Ok(self)
     }

@@ -7,7 +7,6 @@ use pyo3::exceptions::{PyException, PyWarning};
 create_exception!(polars.exceptions, PolarsError, PyException);
 create_exception!(polars.exceptions, ColumnNotFoundError, PolarsError);
 create_exception!(polars.exceptions, ComputeError, PolarsError);
-create_exception!(polars.exceptions, DataTypeError, PolarsError);
 create_exception!(polars.exceptions, DuplicateError, PolarsError);
 create_exception!(polars.exceptions, InvalidOperationError, PolarsError);
 create_exception!(polars.exceptions, NoDataError, PolarsError);
