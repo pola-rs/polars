@@ -134,10 +134,11 @@ where
         |(wssq, wsum, wtot), (&v, &w)| (wssq + v * v * w, wsum + v * w, wtot + w),
     );
     if total_weight.is_zero() {
-        panic!("Weighted variance is undefined if weights sum to 0");
+        T::zero() // Will get masked to null.
+    } else {
+        let mean = wmean / total_weight;
+        (wssq / total_weight) - (mean * mean)
     }
-    let mean = wmean / total_weight;
-    (wssq / total_weight) - (mean * mean)
 }
 
 pub(crate) fn compute_sum_weights<T>(values: &[T], weights: &[T]) -> T
@@ -164,9 +165,10 @@ where
             (wsum + v * w, wtot + w)
         });
     if total_weight.is_zero() {
-        panic!("Weighted mean is undefined if weights sum to 0");
+        T::zero() // Will get masked to null.
+    } else {
+        weighted_sum / total_weight
     }
-    weighted_sum / total_weight
 }
 
 pub(super) fn coerce_weights<T: NumCast>(weights: &[f64]) -> Vec<T>
