@@ -8,10 +8,12 @@ mod arity;
 use crate::plans::*;
 
 fn new_null_count(input: &[ExprIR]) -> AExpr {
+    let function = IRFunctionExpr::NullCount;
+    let options = function.function_options();
     AExpr::Function {
         input: input.to_vec(),
-        function: IRFunctionExpr::NullCount,
-        options: FunctionOptions::aggregation(),
+        function,
+        options,
     }
 }
 
