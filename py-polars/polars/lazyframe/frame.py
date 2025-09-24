@@ -24,6 +24,13 @@ from typing import (
 import polars._reexport as pl
 import polars.selectors as cs
 from polars import functions as F
+from polars._dependencies import (
+    _PYARROW_AVAILABLE,
+    import_optional,
+    subprocess,
+)
+from polars._dependencies import polars_cloud as pc
+from polars._dependencies import pyarrow as pa
 from polars._typing import (
     ParquetMetadata,
     PartitioningScheme,
@@ -89,13 +96,6 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
-from polars.dependencies import (
-    _PYARROW_AVAILABLE,
-    import_optional,
-    subprocess,
-)
-from polars.dependencies import polars_cloud as pc
-from polars.dependencies import pyarrow as pa
 from polars.exceptions import PerformanceWarning
 from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
@@ -124,6 +124,7 @@ if TYPE_CHECKING:
         import polars._plr as plr
 
     from polars import DataFrame, DataType, Expr
+    from polars._dependencies import numpy as np
     from polars._typing import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -153,7 +154,6 @@ if TYPE_CHECKING:
         SyncOnCloseMethod,
         UniqueKeepStrategy,
     )
-    from polars.dependencies import numpy as np
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.parquet import ParquetFieldOverwrites
 

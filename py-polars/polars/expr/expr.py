@@ -21,6 +21,8 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
@@ -47,8 +49,6 @@ from polars.datatypes import (
     Int64,
     parse_into_datatype_expr,
 )
-from polars.dependencies import _check_for_numpy
-from polars.dependencies import numpy as np
 from polars.exceptions import (
     CustomUFuncWarning,
     OutOfBoundsError,
