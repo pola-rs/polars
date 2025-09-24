@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from functools import partial
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
-from hypothesis import assume, given
+from hypothesis import given
 
 import polars as pl
 from polars._utils.constants import I64_MAX, I64_MIN
+from polars.series.datetime import DateTimeNameSpace
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 from tests.unit.conftest import NUMERIC_DTYPES
@@ -269,7 +271,16 @@ def test_duration_float_types_11625(
         ("nanoseconds", 1),
     ],
 )
-@given(s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, allow_null=False, min_size=1))
+@given(
+    s=series(
+        name="a",
+        allowed_dtypes=NUMERIC_DTYPES,
+        allow_null=False,
+        allow_nan=False,
+        allow_infinity=False,
+        min_size=1,
+    )
+)
 def test_duration_float_types_series_11625(
     time_unit: TimeUnit,
     time_unit_scale: int,
@@ -277,12 +288,8 @@ def test_duration_float_types_series_11625(
     digit_scale: int,
     s: pl.Series,
 ) -> None:
-    assume(not s.is_nan().any())
-    assume(not s.is_infinite().any())
-
     # Exclude cases that could potentially overflow Int64
-    scaled = s.cast(pl.Float64) * digit_scale
-    assume(0.99 * I64_MIN <= scaled.min() <= scaled.max() <= 0.99 * I64_MAX)  # type: ignore[operator]
+    s = s.clip(0.99 * I64_MIN, 0.99 * I64_MAX)
 
     # Truncate any digits below the current time unit precision
     if digit_scale < time_unit_scale:
@@ -296,3 +303,69 @@ def test_duration_float_types_series_11625(
         .dt.total_nanoseconds()
     )
     assert_series_equal(actual_ns.cast(pl.Float64), expected_ns.cast(pl.Float64))
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "time_unit_scale"),
+    [("ns", 1), ("us", 1e3), ("ms", 1e6), (None, 1e3)],
+)
+@pytest.mark.parametrize(
+    ("digit", "digit_scale"),
+    [
+        ("days", 24 * 60 * 60 * 1e9),
+        ("hours", 60 * 60 * 1e9),
+        ("minutes", 60 * 1e9),
+        ("seconds", 1e9),
+        ("milliseconds", 1e6),
+        ("microseconds", 1e3),
+        ("nanoseconds", 1),
+    ],
+)
+@pytest.mark.parametrize(
+    ("total_units_fn", "total_units_scale"),
+    [
+        (partial(DateTimeNameSpace.total_days, fractional=True), 24 * 60 * 60 * 1e9),
+        (partial(DateTimeNameSpace.total_hours, fractional=True), 60 * 60 * 1e9),
+        (partial(DateTimeNameSpace.total_minutes, fractional=True), 60 * 1e9),
+        (partial(DateTimeNameSpace.total_seconds, fractional=True), 1e9),
+        (partial(DateTimeNameSpace.total_milliseconds, fractional=True), 1e6),
+        (partial(DateTimeNameSpace.total_microseconds, fractional=True), 1e3),
+        (partial(DateTimeNameSpace.total_nanoseconds, fractional=True), 1),
+    ],
+)
+@given(
+    s=series(
+        name="a",
+        allowed_dtypes=[pl.Int64],
+        allow_null=False,
+        allow_nan=False,
+        allow_infinity=False,
+        min_size=1,
+    )
+)
+def test_duration_total_units_fractional(
+    time_unit: TimeUnit,
+    time_unit_scale: int,
+    digit: str,
+    digit_scale: int,
+    total_units_fn: Callable[[pl.Series], pl.Series],
+    total_units_scale: int,
+    s: pl.Series,
+) -> None:
+    # Exclude cases that could potentially overflow Int64
+    s = s.cast(pl.Float64) / (2**16 * digit_scale * time_unit_scale)
+
+    # Truncate any digits below the current time unit precision
+    if digit_scale < time_unit_scale:
+        s = (s / time_unit_scale).round() * time_unit_scale
+
+    expected = s.cast(pl.Float64) * digit_scale
+    expected_ns = (expected / time_unit_scale).cast(pl.Int64) * time_unit_scale
+    expected_fractional = expected_ns.cast(pl.Float64) / total_units_scale
+
+    actual = total_units_fn(
+        pl.select(pl.duration(**{digit: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt,
+    )
+    assert_series_equal(actual, expected_fractional, check_dtypes=False)

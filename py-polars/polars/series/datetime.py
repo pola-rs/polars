@@ -1502,7 +1502,7 @@ class DateTimeNameSpace:
         └─────────────────────┴───────────┴───────────────────────────────┘
         """
 
-    def total_days(self) -> Series:
+    def total_days(self, *, fractional: bool = False) -> Series:
         """
         Extract the total days from a Duration type.
 
@@ -1535,7 +1535,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_hours(self) -> Series:
+    def total_hours(self, *, fractional: bool = False) -> Series:
         """
         Extract the total hours from a Duration type.
 
@@ -1570,7 +1570,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_minutes(self) -> Series:
+    def total_minutes(self, *, fractional: bool = False) -> Series:
         """
         Extract the total minutes from a Duration type.
 
@@ -1605,7 +1605,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_seconds(self) -> Series:
+    def total_seconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total seconds from a Duration type.
 
@@ -1642,7 +1642,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_milliseconds(self) -> Series:
+    def total_milliseconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total milliseconds from a Duration type.
 
@@ -1678,7 +1678,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_microseconds(self) -> Series:
+    def total_microseconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total microseconds from a Duration type.
 
@@ -1714,7 +1714,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_nanoseconds(self) -> Series:
+    def total_nanoseconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total nanoseconds from a Duration type.
 
