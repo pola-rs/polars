@@ -1,0 +1,96 @@
+[project]
+name = "polars"
+description = "Blazingly fast DataFrame library"
+readme = "README.md"
+authors = [
+  { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
+]
+version = "1.34.0b1"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+
+keywords = ["dataframe", "arrow", "out-of-core"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
+]
+dependencies = ["polars-runtime-32 == 1.34.0b1"]
+
+[project.urls]
+Homepage = "https://www.pola.rs/"
+Documentation = "https://docs.pola.rs/api/python/stable/reference/index.html"
+Repository = "https://github.com/pola-rs/polars"
+Changelog = "https://github.com/pola-rs/polars/releases"
+
+[project.optional-dependencies]
+# Runtimes
+rt64 = ["polars-runtime-64 == 1.34.0b1"]
+compat = ["polars-runtime-compat == 1.34.0b1"]
+
+# NOTE: keep this list in sync with show_versions() and requirements-dev.txt
+polars_cloud = ["polars_cloud >= 0.0.1a1"]
+# Interop
+numpy = ["numpy >= 1.16.0"]
+pandas = ["pandas", "polars[pyarrow]"]
+pyarrow = ["pyarrow >= 7.0.0"]
+pydantic = ["pydantic"]
+
+# Excel
+calamine = ["fastexcel >= 0.9"]
+openpyxl = ["openpyxl >= 3.0.0"]
+xlsx2csv = ["xlsx2csv >= 0.8.0"]
+xlsxwriter = ["xlsxwriter"]
+excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
+
+# Database
+adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
+connectorx = ["connectorx >= 0.3.2"]
+sqlalchemy = ["sqlalchemy", "polars[pandas]"]
+database = ["polars[adbc,connectorx,sqlalchemy]"]
+
+# Cloud
+fsspec = ["fsspec"]
+
+# Other I/O
+deltalake = ["deltalake >= 1.0.0"]
+iceberg = ["pyiceberg >= 0.7.1"]
+
+# Other
+async = ["gevent"]
+cloudpickle = ["cloudpickle"]
+graph = ["matplotlib"]
+plot = ["altair >= 5.4.0"]
+style = ["great-tables >= 0.8.0"]
+timezone = ["tzdata; platform_system == 'Windows'"]
+
+# GPU Engine
+gpu = ["cudf-polars-cu12"]
+
+# All
+all = [
+  "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
+]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch" },
+]
