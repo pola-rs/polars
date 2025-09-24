@@ -9469,8 +9469,10 @@ Consider using {self}.implode() instead"""
         Parameters
         ----------
         dimensions
-            Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
-            dimension is inferred.
+            Tuple of the dimension sizes. If -1 is used as the value for the
+            first dimension, that dimension is inferred.
+            Because the size of the Column may not be known in advance, it is
+            only possible to use -1 for the first dimension.
 
         Returns
         -------
