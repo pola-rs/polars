@@ -65,14 +65,6 @@ impl ExprOutputOrder {
     pub fn has_frame_ordering(self) -> bool {
         matches!(self, Self::Frame | Self::Both)
     }
-
-    fn independent(is_unordered: bool) -> Self {
-        if is_unordered {
-            Self::None
-        } else {
-            Self::Independent
-        }
-    }
 }
 
 pub fn zip(
@@ -126,7 +118,8 @@ pub fn get_frame_observing(
         AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
         AExpr::Column(_) => O::Frame,
-        AExpr::Literal(lv) => O::independent(lv.is_scalar()),
+        AExpr::Literal(lv) if lv.is_scalar() => O::None,
+        AExpr::Literal(_) => O::Independent,
 
         AExpr::Cast { expr, .. } => rec!(*expr),
 
@@ -219,16 +212,29 @@ pub fn get_frame_observing(
         | AExpr::Function { input, options, .. } => {
             // By definition, does not observe any input so cannot observe any ordering.
             if input.is_empty() {
-                O::independent(options.returns_scalar())
-            } else if options.flags.is_elementwise() {
-                // Elementwise are regarded as a `zip + function`.
-                zip(input.iter().map(|e| Ok(rec!(e.node()))))?
-            } else if options.flags.propagates_order() {
+                return Ok(
+                    if options.flags.returns_scalar() || options.flags.is_output_unordered() {
+                        O::None
+                    } else {
+                        O::Independent
+                    },
+                );
+            }
+
+            // Elementwise are regarded as a `zip + function`.
+            if options.flags.is_elementwise() {
+                return zip(input.iter().map(|e| Ok(rec!(e.node()))));
+            }
+
+            if options.flags.propagates_order() {
                 // Propagate the order of the singular input, this is for expressions like
                 // `drop_nulls` and `rechunk`.
                 assert_eq!(input.len(), 1);
                 match rec!(input[0].node()) {
-                    v if !options.flags.is_row_separable() && v.has_frame_ordering() => {
+                    v if !(options.flags.is_row_separable()
+                        || options.flags.is_input_order_agnostic())
+                        && v.has_frame_ordering() =>
+                    {
                         return Err(FrameOrderObserved);
                     },
                     v => v,
@@ -239,7 +245,12 @@ pub fn get_frame_observing(
                 for e in input {
                     _ = rec!(e.node());
                 }
-                O::independent(options.flags.returns_scalar())
+
+                if options.returns_scalar() || options.flags.is_output_unordered() {
+                    O::None
+                } else {
+                    O::Independent
+                }
             } else {
                 // For other expressions, we are observing frame order i.f.f. any of the inputs are
                 // observing frame order.
@@ -248,7 +259,12 @@ pub fn get_frame_observing(
                         return Err(FrameOrderObserved);
                     }
                 }
-                O::independent(options.flags.returns_scalar())
+
+                if options.returns_scalar() || options.flags.is_output_unordered() {
+                    O::None
+                } else {
+                    O::Independent
+                }
             }
         },
 
