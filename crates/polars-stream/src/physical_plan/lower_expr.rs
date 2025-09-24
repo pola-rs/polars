@@ -1088,7 +1088,8 @@ fn lower_exprs_with_ctx(
                 let input_schema = &ctx.phys_sm[input.node].output_schema;
 
                 let value_key = unique_column_name();
-                let value_dtype = agg_expr.to_dtype(input_schema, ctx.expr_arena)?;
+                let value_dtype =
+                    agg_expr.to_dtype(&ToFieldContext::new(ctx.expr_arena, input_schema))?;
 
                 let input = build_select_stream_with_ctx(
                     input,
