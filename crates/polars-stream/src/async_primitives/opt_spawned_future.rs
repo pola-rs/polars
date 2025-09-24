@@ -1,5 +1,5 @@
 use pin_project_lite::pin_project;
-use polars_utils::enum_unit_vec::EUnitVec;
+use polars_utils::{UnitVec, unitvec};
 
 use crate::async_executor::{AbortOnDropHandle, TaskPriority, spawn};
 
@@ -74,23 +74,23 @@ where
 
 fn parallelize_first_to_local_impl<I, F, O>(
     mut futures_iter: I,
-) -> EUnitVec<LocalOrSpawnedFuture<F, O>>
+) -> UnitVec<LocalOrSpawnedFuture<F, O>>
 where
     I: Iterator<Item = F>,
     F: Future<Output = O> + Send + 'static,
     O: Send + 'static,
 {
     let Some(first_fut) = futures_iter.next() else {
-        return EUnitVec::new();
+        return UnitVec::new();
     };
 
     let first_fut = LocalOrSpawnedFuture::new_local(first_fut);
 
     let Some(second_fut) = futures_iter.next() else {
-        return EUnitVec::new_single(first_fut);
+        return unitvec![first_fut];
     };
 
-    let mut futures = EUnitVec::with_capacity(2 + futures_iter.size_hint().0);
+    let mut futures = UnitVec::with_capacity(2 + futures_iter.size_hint().0);
 
     // Note:
     // * The local future must come first to ensure we don't block polling it.
