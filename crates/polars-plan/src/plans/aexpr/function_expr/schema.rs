@@ -230,12 +230,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             #[cfg(feature = "log")]
-            Log => mapper.with_dtype(
-                match args_to_supertype(fields)? {
-                    DataType::Float32 => DataType::Float32,
-                    _ => DataType::Float64,
-                }
-            ),
+            Log => mapper.log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),
@@ -686,26 +681,27 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
-        let base_dtype = self.fields[0].dtype();
-        let exponent_dtype = self.fields[1].dtype();
-        if base_dtype.is_integer() {
-            if exponent_dtype.is_float() {
-                Ok(Field::new(
-                    self.fields[0].name().clone(),
-                    exponent_dtype.clone(),
-                ))
-            } else {
-                Ok(Field::new(
-                    self.fields[0].name().clone(),
-                    base_dtype.clone(),
-                ))
-            }
+        let dtype1 = self.fields[0].dtype();
+        let dtype2 = self.fields[1].dtype();
+        let out_dtype = if dtype1.is_integer() {
+            if dtype2.is_float() { dtype2 } else { dtype1 }
         } else {
-            Ok(Field::new(
-                self.fields[0].name().clone(),
-                base_dtype.clone(),
-            ))
-        }
+            dtype1
+        };
+        Ok(Field::new(self.fields[0].name().clone(), out_dtype.clone()))
+    }
+
+    pub(super) fn log_dtype(&self) -> PolarsResult<Field> {
+        let dtype1 = self.fields[0].dtype();
+        let dtype2 = self.fields[1].dtype();
+        let out_dtype = if dtype1.is_float() {
+            dtype1
+        } else if dtype2.is_float() {
+            dtype2
+        } else {
+            &DataType::Float64
+        };
+        Ok(Field::new(self.fields[0].name().clone(), out_dtype.clone()))
     }
 
     #[cfg(feature = "extract_jsonpath")]
