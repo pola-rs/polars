@@ -84,6 +84,7 @@ pub enum PolarsError {
     ColumnNotFound(ErrString),
     ComputeError(ErrString),
     Duplicate(ErrString),
+    DataTypeError(ErrString),
     InvalidOperation(ErrString),
     IO {
         error: Arc<io::Error>,
@@ -123,6 +124,7 @@ impl Display for PolarsError {
 
             AssertionError(msg) => write!(f, "assertion failed: {msg}"),
             ColumnNotFound(msg) => write!(f, "not found: {msg}"),
+            DataTypeError(msg) => write!(f, "data type error: {msg}"),
             Duplicate(msg) => write!(f, "duplicate: {msg}"),
             IO { error, msg } => match msg {
                 Some(m) => write!(f, "{m}"),
@@ -242,6 +244,7 @@ impl PolarsError {
             AssertionError(msg) => AssertionError(func(msg).into()),
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
             ComputeError(msg) => ComputeError(func(msg).into()),
+            DataTypeError(msg) => DataTypeError(func(msg).into()),
             Duplicate(msg) => Duplicate(func(msg).into()),
             InvalidOperation(msg) => InvalidOperation(func(msg).into()),
             IO { error, msg } => {

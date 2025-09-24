@@ -599,7 +599,7 @@ impl<'a> FieldsMapper<'a> {
         let dt = self.fields[0].dtype();
         match dt {
             DataType::Array(_, _) => self.map_to_list_and_array_inner_dtype(),
-            _ => polars_bail!(InvalidOperation: "expected Array type, got: {}", dt),
+            _ => polars_bail!(DataTypeError: "expected Array type, got: {}", dt),
         }
     }
 
@@ -651,11 +651,12 @@ impl<'a> FieldsMapper<'a> {
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
-        let dt = first
-            .dtype()
-            .inner_dtype()
-            .cloned()
-            .unwrap_or_else(|| Unknown(Default::default()));
+        let dt = first.dtype().inner_dtype().cloned().ok_or_else(|| {
+            polars_err!(
+                DataTypeError:"expected List or Array type, got dtype: {}",
+                first.dtype()
+            )
+        })?;
 
         match dt {
             Boolean => first.coerce(IDX_DTYPE),
@@ -668,11 +669,12 @@ impl<'a> FieldsMapper<'a> {
     pub fn nested_mean_median_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
-        let dt = first
-            .dtype()
-            .inner_dtype()
-            .cloned()
-            .unwrap_or_else(|| Unknown(Default::default()));
+        let dt = first.dtype().inner_dtype().cloned().ok_or_else(|| {
+            polars_err!(
+                DataTypeError:"expected List or Array type, got dtype: {}",
+                first.dtype()
+            )
+        })?;
 
         let new_dt = match dt {
             #[cfg(feature = "dtype-datetime")]
@@ -748,6 +750,16 @@ impl<'a> FieldsMapper<'a> {
             );
         }
 
+        Ok(self)
+    }
+
+    /// Validate that the dtype is a List.
+    pub fn ensure_is_list(self) -> PolarsResult<Self> {
+        let dtype = self.fields[0].dtype();
+        polars_ensure!(
+            dtype.is_list(),
+            DataTypeError:"expected List type, got: {dtype} for column: {}", self.fields[0].name()
+        );
         Ok(self)
     }
 }

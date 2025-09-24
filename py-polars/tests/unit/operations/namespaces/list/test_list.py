@@ -12,7 +12,6 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
-    SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
@@ -255,7 +254,10 @@ def test_contains() -> None:
 
 def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
-    with pytest.raises(SchemaError, match="invalid series dtype: expected `List`"):
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"attempted list operation on non-list dtype: array\[i8, 2\]",
+    ):
         df.select(pl.col("a").list.contains(2))
 
 
