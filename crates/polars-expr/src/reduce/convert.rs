@@ -30,21 +30,22 @@ pub fn into_reduction(
     };
     let out = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
-            IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?), *input),
-            IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?), *input),
+            IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
+            IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {
                 propagate_nans,
                 input,
-            } => (new_min_reduction(get_dt(*input)?, *propagate_nans), *input),
+            } => (new_min_reduction(get_dt(*input)?, *propagate_nans)?, *input),
             IRAggExpr::Max {
                 propagate_nans,
                 input,
-            } => (new_max_reduction(get_dt(*input)?, *propagate_nans), *input),
-            IRAggExpr::Var(input, ddof) => {
-                (new_var_std_reduction(get_dt(*input)?, false, *ddof), *input)
-            },
+            } => (new_max_reduction(get_dt(*input)?, *propagate_nans)?, *input),
+            IRAggExpr::Var(input, ddof) => (
+                new_var_std_reduction(get_dt(*input)?, false, *ddof)?,
+                *input,
+            ),
             IRAggExpr::Std(input, ddof) => {
-                (new_var_std_reduction(get_dt(*input)?, true, *ddof), *input)
+                (new_var_std_reduction(get_dt(*input)?, true, *ddof)?, *input)
             },
             IRAggExpr::First(input) => (new_first_reduction(get_dt(*input)?), *input),
             IRAggExpr::Last(input) => (new_last_reduction(get_dt(*input)?), *input),
@@ -74,7 +75,7 @@ pub fn into_reduction(
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).
                 // * This approach is not sound for `update_groups()`, but currently that case is
                 //   not hit (it would need group-by -> len on empty morsels).
-                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE);
+                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE)?;
                 let expr = expr_arena.add(AExpr::Len);
 
                 (out, expr)
