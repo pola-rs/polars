@@ -646,11 +646,12 @@ impl<'a> FieldsMapper<'a> {
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
-        let dt = first
-            .dtype()
-            .inner_dtype()
-            .cloned()
-            .unwrap_or_else(|| Unknown(Default::default()));
+        let dt = first.dtype().inner_dtype().cloned().ok_or_else(|| {
+            polars_err!(
+                InvalidOperation:"expected List or Array type, got dtype: {}",
+                first.dtype()
+            )
+        })?;
 
         match dt {
             Boolean => first.coerce(IDX_DTYPE),
@@ -663,11 +664,12 @@ impl<'a> FieldsMapper<'a> {
     pub fn nested_mean_median_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
-        let dt = first
-            .dtype()
-            .inner_dtype()
-            .cloned()
-            .unwrap_or_else(|| Unknown(Default::default()));
+        let dt = first.dtype().inner_dtype().cloned().ok_or_else(|| {
+            polars_err!(
+                InvalidOperation:"expected List or Array type, got dtype: {}",
+                first.dtype()
+            )
+        })?;
 
         let new_dt = match dt {
             #[cfg(feature = "dtype-datetime")]
@@ -744,6 +746,16 @@ impl<'a> FieldsMapper<'a> {
             );
         }
 
+        Ok(self)
+    }
+
+    /// Validate that the dtype is a List.
+    pub fn ensure_is_list(self) -> PolarsResult<Self> {
+        let dtype = self.fields[0].dtype();
+        polars_ensure!(
+            dtype.is_list(),
+            InvalidOperation:"expected List data type for list operation, got: {dtype}"
+        );
         Ok(self)
     }
 }
