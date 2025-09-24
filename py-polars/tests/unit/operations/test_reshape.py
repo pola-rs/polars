@@ -54,6 +54,13 @@ def test_reshape() -> None:
     ):
         df.select(pl.col("a").reshape((2, -1)))
 
+    df = pl.DataFrame({"a": list(range(2 * 3 * 5 * 7))})
+    q1 = df.lazy().select(pl.col("a").reshape((3, 5, 7, 2)))
+    q2 = df.lazy().select(pl.col("a").reshape((-1, 5, 7, 2)))
+    assert q1.collect_schema() == q1.collect().schema
+    assert q2.collect_schema() == q2.collect().schema
+    assert q1.collect_schema() == q2.collect_schema()
+
 
 @pytest.mark.parametrize("shape", [(1, 3), (5, 1), (-1, 5), (3, -1)])
 def test_reshape_invalid_dimension_size(shape: tuple[int, ...]) -> None:

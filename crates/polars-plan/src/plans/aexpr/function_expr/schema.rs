@@ -270,46 +270,14 @@ impl IRFunctionExpr {
             RepeatBy => mapper.map_dtype(|dt| DataType::List(dt.clone().into())),
             #[cfg(feature = "dtype-array")]
             Reshape(dims) => mapper.try_map_dtype(|dt: &DataType| {
-                let dtype = dt.inner_dtype().unwrap_or(dt).clone();
-
-                if dims.len() == 1 {
-                    return Ok(dtype);
+                let mut wrapped_dtype = dt.leaf_dtype().clone();
+                for dim in dims[1..].iter().rev() {
+                    let Some(array_size) = dim.get() else {
+                        polars_bail!(InvalidOperation: "can only infer the first dimension");
+                    };
+                    wrapped_dtype = DataType::Array(Box::new(wrapped_dtype), array_size as usize);
                 }
-
-                if dims[1..]
-                    .iter()
-                    .any(|d| matches!(d, ReshapeDimension::Infer))
-                {
-                    polars_bail!(InvalidOperation: "can only infer the first dimension");
-                }
-
-                let num_infers = dims.iter().filter(|d| matches!(d, ReshapeDimension::Infer)).count();
-
-                let mut inferred_size = 0;
-                if num_infers == 1 {
-                    let mut total_size = 1u64;
-                    let mut current = dt;
-                    while let DataType::Array(dt, width) = current {
-                        if *width == 0 {
-                            total_size = 0;
-                            break;
-                        }
-
-                        current = dt.as_ref();
-                        total_size *= *width as u64;
-                    }
-
-                    let current_size = dims.iter().map(|d| d.get_or_infer(1)).product::<u64>();
-                    inferred_size = total_size / current_size;
-                }
-
-                let mut prev_dtype = dtype.leaf_dtype().clone();
-
-                // We pop the outer dimension as that is the height of the series.
-                for dim in &dims[1..] {
-                    prev_dtype = DataType::Array(Box::new(prev_dtype), dim.get_or_infer(inferred_size) as usize);
-                }
-                Ok(prev_dtype)
+                Ok(wrapped_dtype)
             }),
             #[cfg(feature = "cutqcut")]
             QCut {
