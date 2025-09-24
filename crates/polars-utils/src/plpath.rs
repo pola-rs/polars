@@ -495,7 +495,7 @@ mod tests {
 
             if let Some(expect_uri) = expect_uri {
                 // URI path test
-                let uri_base = format!("file://{}", base);
+                let uri_base = format!("file://{base}");
 
                 let uri_result = format!("file://{expect_uri}");
                 assert_eq!(

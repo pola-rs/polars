@@ -7,7 +7,7 @@ from polars.io.pyarrow_dataset.anonymous_scan import _scan_pyarrow_dataset
 
 if TYPE_CHECKING:
     from polars import LazyFrame
-    from polars.dependencies import pyarrow as pa
+    from polars._dependencies import pyarrow as pa
 
 
 @unstable()

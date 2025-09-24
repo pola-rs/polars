@@ -7,6 +7,7 @@ use strum_macros::IntoStaticStr;
 use super::{ColumnsUdf, SpecialEq};
 use crate::map;
 use crate::plans::aexpr::function_expr::{FieldsMapper, FunctionOptions};
+use crate::prelude::FunctionFlags;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, IntoStaticStr)]
@@ -98,7 +99,8 @@ impl IRBitwiseFunction {
             | B::LeadingZeros
             | B::TrailingOnes
             | B::TrailingZeros => FunctionOptions::elementwise(),
-            B::And | B::Or | B::Xor => FunctionOptions::aggregation(),
+            B::And | B::Or | B::Xor => FunctionOptions::aggregation()
+                .with_flags(|f| f | FunctionFlags::INPUT_ORDER_AGNOSTIC),
         }
     }
 }

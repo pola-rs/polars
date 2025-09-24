@@ -5,11 +5,11 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
+from polars._dependencies import json
 from polars._typing import EngineType
 from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
-from polars.dependencies import json
 from polars.lazyframe.engine_config import GPUEngine
 
 if TYPE_CHECKING:
