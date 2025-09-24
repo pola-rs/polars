@@ -2075,7 +2075,7 @@ class ExprDateTimeNameSpace:
             )
         )
 
-    def total_days(self) -> Expr:
+    def total_days(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total days from a Duration type.
 
@@ -2111,9 +2111,9 @@ class ExprDateTimeNameSpace:
         │ 2020-05-01 00:00:00 ┆ 30        │
         └─────────────────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.dt_total_days())
+        return wrap_expr(self._pyexpr.dt_total_days(fractional))
 
-    def total_hours(self) -> Expr:
+    def total_hours(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total hours from a Duration type.
 
@@ -2150,9 +2150,9 @@ class ExprDateTimeNameSpace:
         │ 2020-01-04 00:00:00 ┆ 24         │
         └─────────────────────┴────────────┘
         """
-        return wrap_expr(self._pyexpr.dt_total_hours())
+        return wrap_expr(self._pyexpr.dt_total_hours(fractional))
 
-    def total_minutes(self) -> Expr:
+    def total_minutes(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total minutes from a Duration type.
 
@@ -2189,9 +2189,9 @@ class ExprDateTimeNameSpace:
         │ 2020-01-04 00:00:00 ┆ 1440         │
         └─────────────────────┴──────────────┘
         """
-        return wrap_expr(self._pyexpr.dt_total_minutes())
+        return wrap_expr(self._pyexpr.dt_total_minutes(fractional))
 
-    def total_seconds(self) -> Expr:
+    def total_seconds(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total seconds from a Duration type.
 
@@ -2230,9 +2230,9 @@ class ExprDateTimeNameSpace:
         │ 2020-01-01 00:04:00 ┆ 60           │
         └─────────────────────┴──────────────┘
         """
-        return wrap_expr(self._pyexpr.dt_total_seconds())
+        return wrap_expr(self._pyexpr.dt_total_seconds(fractional))
 
-    def total_milliseconds(self) -> Expr:
+    def total_milliseconds(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total milliseconds from a Duration type.
 
@@ -2272,9 +2272,9 @@ class ExprDateTimeNameSpace:
         │ 2020-01-01 00:00:01     ┆ 200               │
         └─────────────────────────┴───────────────────┘
         """
-        return wrap_expr(self._pyexpr.dt_total_milliseconds())
+        return wrap_expr(self._pyexpr.dt_total_milliseconds(fractional))
 
-    def total_microseconds(self) -> Expr:
+    def total_microseconds(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total microseconds from a Duration type.
 
@@ -2314,9 +2314,9 @@ class ExprDateTimeNameSpace:
         │ 2020-01-01 00:00:01     ┆ 200000            │
         └─────────────────────────┴───────────────────┘
         """
-        return wrap_expr(self._pyexpr.dt_total_microseconds())
+        return wrap_expr(self._pyexpr.dt_total_microseconds(fractional))
 
-    def total_nanoseconds(self) -> Expr:
+    def total_nanoseconds(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total nanoseconds from a Duration type.
 
@@ -2356,7 +2356,7 @@ class ExprDateTimeNameSpace:
         │ 2020-01-01 00:00:01     ┆ 200000000         │
         └─────────────────────────┴───────────────────┘
         """
-        return wrap_expr(self._pyexpr.dt_total_nanoseconds())
+        return wrap_expr(self._pyexpr.dt_total_nanoseconds(fractional))
 
     def offset_by(self, by: str | Expr) -> Expr:
         """
