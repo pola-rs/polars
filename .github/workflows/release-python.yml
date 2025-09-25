@@ -128,7 +128,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install yq
-        run: pip install yq
+        run: |
+          ls -alh dist/
+          ls -alh .
+          pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          pip install yq
 
       - name: Rename target directory
         if: matrix.package != 'polars-runtime-64'
@@ -157,7 +161,6 @@ jobs:
 
       - name: Test sdist
         run: |
-          pip install --force-reinstall --no-dependencies dist/polars-*.whl
           pip install --force-reinstall --verbose dist/*.tar.gz
           python -c 'import polars'
 
@@ -289,7 +292,11 @@ jobs:
           sed $SED_INPLACE 's/^pub static IS_RT_COMPAT: bool = false;$/^pub static IS_RT_COMPAT: bool = true;$/g' crates/polars-python/src/c_api/mod.rs
 
       - name: Install yq
-        run: pip install yq
+        run: |
+          ls -alh dist/
+          ls -alh .
+          pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          pip install yq
 
       - name: Rename target directory
         if: matrix.package != 'polars-runtime-64'
