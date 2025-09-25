@@ -252,6 +252,30 @@ def test_decimal_arithmetic() -> None:
     }
 
 
+def test_decimal_arithmetic_literal() -> None:
+    dt = pl.Decimal(20, 10)
+    df = pl.DataFrame(
+        {
+            "a": [D("0.1"), D("10.1"), D("100.01")],
+            "b": [D("20.1"), D("10.19"), D("39.21")],
+            "c": [D("412.1023"), D("2349"), D("0")],
+        },
+        strict=False,
+        schema={"a": dt, "b": dt, "c": dt},
+    )
+
+    out = df.select(i=pl.col.a * 10, f=pl.col.b + 0.25, d=pl.col.c / D("3"))
+    expected = pl.DataFrame(
+        {
+            "i": [D("1"), D("101"), D("1000.1")],
+            "f": [20.35, 10.44, 39.46],
+            "d": ["137.3674333333333333333333333", "783", "0"],
+        },
+        schema={"i": pl.Decimal(38, 10), "f": pl.Float64, "d": pl.Decimal(38, 10)},
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_decimal_series_value_arithmetic() -> None:
     s = pl.Series([D("0.10"), D("10.10"), D("100.01")])
     assert s.dtype == pl.Decimal(scale=2)
@@ -579,15 +603,28 @@ def test_decimal_arithmetic_schema() -> None:
 
 def test_decimal_arithmetic_schema_float_20369() -> None:
     s = pl.Series("x", [1.0], dtype=pl.Decimal(15, 6))
-    assert_series_equal((s - 1.0), pl.Series("x", [0.0], dtype=pl.Decimal(38, 6)))
-    assert_series_equal((3.0 - s), pl.Series("literal", [2.0], dtype=pl.Decimal(38, 6)))
-    assert_series_equal((3.0 / s), pl.Series("literal", [3.0], dtype=pl.Decimal(38, 6)))
-    assert_series_equal((s / 3.0), pl.Series("x", [0.333333], dtype=pl.Decimal(38, 6)))
+    assert_series_equal((s - 1.0), pl.Series("x", [0.0]))
+    assert_series_equal((3.0 - s), pl.Series("literal", [2.0]))
+    assert_series_equal((3.0 / s), pl.Series("literal", [3.0]))
+    assert_series_equal((s / 3.0), pl.Series("x", [0.333333]))
 
-    assert_series_equal((s + 1.0), pl.Series("x", [2.0], dtype=pl.Decimal(38, 6)))
-    assert_series_equal((1.0 + s), pl.Series("literal", [2.0], dtype=pl.Decimal(38, 6)))
-    assert_series_equal((s * 1.0), pl.Series("x", [1.0], dtype=pl.Decimal(38, 6)))
-    assert_series_equal((1.0 * s), pl.Series("literal", [1.0], dtype=pl.Decimal(38, 6)))
+    assert_series_equal((s + 1.0), pl.Series("x", [2.0]))
+    assert_series_equal((1.0 + s), pl.Series("literal", [2.0]))
+    assert_series_equal((s * 1.0), pl.Series("x", [1.0]))
+    assert_series_equal((1.0 * s), pl.Series("literal", [1.0]))
+
+
+def test_decimal_arithmetic_schema_int() -> None:
+    s = pl.Series("x", [1.0], dtype=pl.Decimal(15, 6))
+    assert_series_equal((s - 1), pl.Series("x", [0.0], dtype=pl.Decimal(38, 6)))
+    assert_series_equal((3 - s), pl.Series("literal", [2.0], dtype=pl.Decimal(38, 6)))
+    assert_series_equal((3 / s), pl.Series("literal", [3.0], dtype=pl.Decimal(38, 6)))
+    assert_series_equal((s / 3), pl.Series("x", [0.333333], dtype=pl.Decimal(38, 6)))
+
+    assert_series_equal((s + 1), pl.Series("x", [2.0], dtype=pl.Decimal(38, 6)))
+    assert_series_equal((1 + s), pl.Series("literal", [2.0], dtype=pl.Decimal(38, 6)))
+    assert_series_equal((s * 1), pl.Series("x", [1.0], dtype=pl.Decimal(38, 6)))
+    assert_series_equal((1 * s), pl.Series("literal", [1.0], dtype=pl.Decimal(38, 6)))
 
 
 def test_decimal_horizontal_20482() -> None:

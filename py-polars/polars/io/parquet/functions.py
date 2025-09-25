@@ -8,6 +8,7 @@ from typing import IO, TYPE_CHECKING, Any
 
 import polars.functions as F
 from polars import concat as plconcat
+from polars._dependencies import import_optional
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
@@ -20,7 +21,6 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow
-from polars.dependencies import import_optional
 from polars.io._utils import (
     prepare_file_arg,
 )

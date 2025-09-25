@@ -53,7 +53,7 @@ impl ComputeNode for CallbackSinkNode {
             recv[0] = PortState::Done;
 
             // Flush the last buffer
-            if !self.buffer.is_empty() {
+            if !self.buffer.is_empty() && !self.is_done {
                 let function = self.function.clone();
                 let df = std::mem::take(&mut self.buffer);
 

@@ -21,6 +21,20 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import (
+    _ALTAIR_AVAILABLE,
+    _PYARROW_AVAILABLE,
+    _check_for_numpy,
+    _check_for_pandas,
+    _check_for_pyarrow,
+    _check_for_torch,
+    altair,
+    import_optional,
+    torch,
+)
+from polars._dependencies import numpy as np
+from polars._dependencies import pandas as pd
+from polars._dependencies import pyarrow as pa
 from polars._utils.construction import (
     arrow_to_pyseries,
     dataframe_to_pyseries,
@@ -84,20 +98,6 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.datatypes._utils import dtype_to_init_repr
-from polars.dependencies import (
-    _ALTAIR_AVAILABLE,
-    _PYARROW_AVAILABLE,
-    _check_for_numpy,
-    _check_for_pandas,
-    _check_for_pyarrow,
-    _check_for_torch,
-    altair,
-    import_optional,
-    torch,
-)
-from polars.dependencies import numpy as np
-from polars.dependencies import pandas as pd
-from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ModuleUpgradeRequiredError, ShapeError
 from polars.interchange.protocol import CompatLevel
 from polars.series.array import ArrayNameSpace

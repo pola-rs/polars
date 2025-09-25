@@ -10,6 +10,9 @@ from typing import (
     overload,
 )
 
+from polars._dependencies import _check_for_pandas, _check_for_pyarrow
+from polars._dependencies import pandas as pd
+from polars._dependencies import pyarrow as pa
 from polars._typing import FrameType
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.pycapsule import is_pycapsule
@@ -18,9 +21,6 @@ from polars._utils.various import _get_stack_locals, qualified_type_name
 from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow, from_pandas
 from polars.dataframe import DataFrame
-from polars.dependencies import _check_for_pandas, _check_for_pyarrow
-from polars.dependencies import pandas as pd
-from polars.dependencies import pyarrow as pa
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 
