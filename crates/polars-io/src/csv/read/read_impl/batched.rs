@@ -118,7 +118,7 @@ impl Iterator for ChunkOffsetIter<'_> {
                     Some(offsets) => Some(Ok(offsets)),
                     // We depleted the iterator. Ensure we deplete the slice as well
                     None => {
-                        let cl = CountLines::new(self.quote_char, self.eol_char);
+                        let cl = CountLines::new(self.quote_char, self.eol_char, None);
                         let (count, _) = cl.count(&self.bytes[self.last_offset..]);
                         let out = Some(Ok((self.last_offset, self.bytes.len(), count)));
                         self.last_offset = self.bytes.len();
@@ -165,7 +165,7 @@ impl ChunkOffsetNRowsScanner<'_> {
             *batch_n_rows += 1;
         }
 
-        let cl = CountLines::new(self.quote_char, self.eol_char);
+        let cl = CountLines::new(self.quote_char, self.eol_char, None);
 
         for batch_n_rows in self.batches_n_rows.iter().copied() {
             let b = &self.bytes[self.last_offset..];

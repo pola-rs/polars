@@ -7,9 +7,8 @@ use polars_utils::plpath::PlPathRef;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
-use super::CsvParseOptions;
 use super::buffer::Buffer;
-use super::options::{CommentPrefix, NullValuesCompiled};
+use super::options::{CommentPrefix, CsvParseOptions, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use crate::prelude::_csv_read_internal::find_starting_point;
 use crate::utils::compression::maybe_decompress_bytes;

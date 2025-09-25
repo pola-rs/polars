@@ -7,9 +7,9 @@ use polars_time::chunkedarray::string::infer as date_infer;
 use polars_time::prelude::string::Pattern;
 use polars_utils::format_pl_smallstr;
 
+use super::options::{CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 use super::parser::{SplitLines, is_comment_line, skip_bom, skip_line_ending};
 use super::splitfields::SplitFields;
-use super::{CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 use crate::csv::read::parser::skip_lines_naive;
 use crate::mmap::ReaderBytes;
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};

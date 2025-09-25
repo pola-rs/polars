@@ -11,9 +11,8 @@ use polars_time::prelude::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
-use super::CsvParseOptions;
 use super::buffer::init_buffers;
-use super::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
+use super::options::{CommentPrefix, CsvEncoding, CsvParseOptions, NullValuesCompiled};
 use super::parser::{
     CountLines, SplitLines, is_comment_line, parse_lines, skip_bom, skip_line_ending,
     skip_lines_naive, skip_this_line,
