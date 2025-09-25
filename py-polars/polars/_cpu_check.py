@@ -40,7 +40,7 @@ _IS_WINDOWS = os.name == "nt"
 _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
 
 
-def get_runtime_repr() -> bool:
+def get_runtime_repr() -> str:
     import polars._plr as plr
 
     return plr.RUNTIME_REPR
