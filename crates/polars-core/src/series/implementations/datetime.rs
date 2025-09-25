@@ -372,6 +372,11 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
     }
 
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        Ok(Scalar::new(self.dtype().clone(), mean.into()))
+    }
+
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let av: AnyValue = self.median().map(|v| v as i64).into();
         Ok(Scalar::new(self.dtype().clone(), av))

@@ -285,7 +285,9 @@ fn create_physical_expr_inner(
             )))
         },
         BinaryExpr { left, op, right } => {
-            let output_field = expr_arena.get(expression).to_field(schema, expr_arena)?;
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
@@ -408,9 +410,8 @@ fn create_physical_expr_inner(
                     }
 
                     let field = expr_arena.get(expression).to_field_with_ctx(
-                        schema,
                         Context::Aggregation,
-                        expr_arena,
+                        &ToFieldContext::new(expr_arena, schema),
                     )?;
 
                     let groupby = GroupByMethod::from(agg.clone());
@@ -470,7 +471,7 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(schema, ctxt, expr_arena)?;
+                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
 
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
@@ -501,10 +502,13 @@ fn create_physical_expr_inner(
 
             let output_field_with_ctx = expr_arena
                 .get(expression)
-                .to_field_with_ctx(schema, ctxt, expr_arena)?;
-            let non_aggregated_output_field =
-                expr_arena.get(expression).to_field(schema, expr_arena)?;
-            let input_field = expr_arena.get(*expr).to_field(schema, expr_arena)?;
+                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
+            let non_aggregated_output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let input_field = expr_arena
+                .get(*expr)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let expr =
                 create_physical_expr_inner(*expr, Context::Default, expr_arena, schema, state)?;
 
@@ -539,7 +543,7 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(schema, ctxt, expr_arena)?;
+                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
 
@@ -580,7 +584,7 @@ fn create_physical_expr_inner(
 
             let field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(schema, ctxt, expr_arena)?;
+                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
 
             Ok(Arc::new(ApplyExpr::new(
                 vec![input],

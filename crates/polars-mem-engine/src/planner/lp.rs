@@ -291,7 +291,10 @@ fn create_physical_plan_impl(
                                 let df;
                                 (df, buffer) =
                                     buffer.split_at(buffer.height().min(chunk_size) as i64);
-                                function.call(df)?;
+                                let should_stop = function.call(df)?;
+                                if should_stop {
+                                    break;
+                                }
                             }
                             Ok(Some(DataFrame::empty()))
                         }),

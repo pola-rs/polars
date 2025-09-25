@@ -21,8 +21,9 @@ def test_sink_batches(engine: EngineType) -> None:
     assert_frame_equal(pl.concat(frames), df)
 
 
-def test_sink_batches_early_stop() -> None:
-    df = pl.DataFrame({"a": range(100)})
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sink_batches_early_stop(engine: EngineType) -> None:
+    df = pl.DataFrame({"a": range(1000)})
     stopped = False
 
     def cb(_: pl.DataFrame) -> bool | None:
@@ -31,7 +32,8 @@ def test_sink_batches_early_stop() -> None:
         stopped = True
         return True
 
-    df.lazy().sink_batches(cb)  # type: ignore[call-overload]
+    df.lazy().sink_batches(cb, chunk_size=100, engine=engine)  # type: ignore[call-overload]
+    assert stopped
 
 
 def test_collect_batches() -> None:

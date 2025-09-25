@@ -1,4 +1,4 @@
-from polars.dependencies import _HYPOTHESIS_AVAILABLE
+from polars._dependencies import _HYPOTHESIS_AVAILABLE
 
 if not _HYPOTHESIS_AVAILABLE:
     msg = (

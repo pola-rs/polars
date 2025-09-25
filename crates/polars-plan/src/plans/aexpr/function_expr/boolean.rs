@@ -72,7 +72,9 @@ impl IRBooleanFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRBooleanFunction as B;
         match self {
-            B::Any { .. } | B::All { .. } => FunctionOptions::aggregation(),
+            B::Any { .. } | B::All { .. } => {
+                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+            },
             B::IsNull | B::IsNotNull => FunctionOptions::elementwise(),
             B::IsFinite | B::IsInfinite | B::IsNan | B::IsNotNan => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
