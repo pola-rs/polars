@@ -92,7 +92,7 @@ pub fn adjust_for_with_columns_context(
 ///
 /// This answers the question:
 /// > Given that my output is (un)ordered, can my input be unordered?
-pub fn get_frame_observing(
+pub fn get_observable_orders(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> Result<ExprOutputOrder, FrameOrderObserved> {
