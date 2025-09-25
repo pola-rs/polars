@@ -518,8 +518,7 @@ impl<'a> AggregationContext<'a> {
         match &self.state {
             AggState::NotAggregated(c) => Cow::Borrowed(c),
             AggState::AggregatedList(c) => {
-                #[cfg(debug_assertions)]
-                {
+                if cfg!(debug_assertions) {
                     // Warning, so we find cases where we accidentally explode overlapping groups
                     // We don't want this as this can create a lot of data
                     if let GroupsType::Slice {
