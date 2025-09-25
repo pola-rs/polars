@@ -3549,6 +3549,7 @@ dependencies = [
  "recursive",
  "serde_json",
  "tikv-jemallocator",
+ "tokio",
  "version_check",
 ]
 

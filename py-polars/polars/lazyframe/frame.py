@@ -3669,6 +3669,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return None
         return LazyFrame._from_pyldf(ldf)
 
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """
+        Export a DataFrame via the Arrow PyCapsule Interface.
+
+        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+        """
+        return self._ldf.__arrow_c_stream__(requested_schema)
+
     @unstable()
     def collect_batches(
         self,

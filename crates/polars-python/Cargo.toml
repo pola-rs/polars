@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "Enable running Polars workloads in Python"
 
 [dependencies]
+tokio = { version = "*"}
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
 polars-dtype = { workspace = true }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 use either::Either;
+use parking_lot::RwLockWriteGuard;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
@@ -14,13 +15,15 @@ use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyDictMethods, PyList};
+use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList};
+use tokio::sync::mpsc;
 
 use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
+use crate::interop::arrow::to_py::lazyframe_to_stream;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::io::PyScanOptions;
 use crate::lazyframe::visit::NodeTraverser;
@@ -974,6 +977,41 @@ impl PyLazyFrame {
         })
         .map(Into::into)
         .map_err(Into::into)
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(signature = (requested_schema))]
+    fn __arrow_c_stream__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<PyObject>,
+    ) -> PyResult<Bound<'py, PyCapsule>> {
+        let mut ldf = self.ldf.read().clone();
+
+        let schema = ldf
+            .collect_schema()
+            .unwrap()
+            .to_arrow(CompatLevel::newest());
+        let schema = ArrowDataType::Struct(schema.into_iter_values().collect());
+
+        let (tx, rx) = mpsc::channel::<DataFrame>(1);
+        let tx_clone = tx.clone();
+
+        let cb = PlanCallback::new(move |df: DataFrame| -> PolarsResult<bool> {
+            let send_result = tx_clone.blocking_send(df);
+            match send_result {
+                Ok(_) => Ok(false),
+                Err(e) => Err(polars_error::PolarsError::ComputeError(
+                    format!("channel closed: {e}").into(),
+                )),
+            }
+        });
+
+        let _df = py
+            .enter_polars(|| ldf.sink_batches(cb, false, None))?
+            .collect();
+
+        lazyframe_to_stream(rx, schema, py)
     }
 
     #[pyo3(signature = (function, maintain_order, chunk_size))]

@@ -3,15 +3,17 @@ use std::ffi::CString;
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi;
 use arrow::record_batch::RecordBatch;
+use ndarray::Data;
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
-use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
+use polars::prelude::{ArrayRef, ArrowField, LazyFrame, PlSmallStr, SchemaExt};
 use polars::series::Series;
 use polars_core::utils::arrow;
 use polars_error::PolarsResult;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
+use tokio::sync::mpsc::Receiver;
 
 /// Arrow array to Python.
 pub(crate) fn to_py_array(
@@ -92,6 +94,18 @@ pub(crate) fn dataframe_to_stream<'py>(
     PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
+pub(crate) fn lazyframe_to_stream<'py>(
+    df: Receiver<DataFrame>,
+    schema: ArrowDataType,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let iter = Box::new(LazyFrameStreamIterator::new(df, schema));
+    let field = iter.field();
+    let stream = ffi::export_iterator(iter, field);
+    let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
+    PyCapsule::new(py, stream, Some(stream_capsule_name))
+}
+
 #[cfg(feature = "c_api")]
 #[pyfunction]
 pub(crate) fn polars_schema_to_pycapsule<'py>(
@@ -120,6 +134,11 @@ pub struct DataFrameStreamIterator {
     dtype: ArrowDataType,
     idx: usize,
     n_chunks: usize,
+}
+
+pub struct LazyFrameStreamIterator {
+    rx: Receiver<DataFrame>,
+    dtype: ArrowDataType,
 }
 
 impl DataFrameStreamIterator {
@@ -166,6 +185,45 @@ impl Iterator for DataFrameStreamIterator {
                 None,
             );
             Some(Ok(Box::new(array)))
+        }
+    }
+}
+
+impl LazyFrameStreamIterator {
+    fn new(rx: Receiver<DataFrame>, schema: ArrowDataType) -> Self {
+        Self { rx, dtype: schema }
+    }
+
+    fn field(&self) -> ArrowField {
+        ArrowField::new(PlSmallStr::EMPTY, self.dtype.clone(), false)
+    }
+}
+
+impl Iterator for LazyFrameStreamIterator {
+    type Item = PolarsResult<ArrayRef>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.rx.blocking_recv() {
+            None => None,
+            Some(mut df) => {
+                df.rechunk_mut();
+                let batch_cols = df
+                    .get_columns()
+                    .iter()
+                    .map(|v| v.as_materialized_series().clone())
+                    .collect::<Vec<Series>>()
+                    .iter()
+                    .map(|s| s.to_arrow(0, CompatLevel::newest()))
+                    .collect::<Vec<_>>();
+
+                let array = arrow::array::StructArray::new(
+                    self.dtype.clone(),
+                    batch_cols[0].len(),
+                    batch_cols,
+                    None,
+                );
+                Some(Ok(Box::new(array)))
+            },
         }
     }
 }
