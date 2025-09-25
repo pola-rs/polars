@@ -4,6 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 pub static PYPOLARS_VERSION: &str = "1.34.0-beta.1";
+pub static IS_RT_COMPAT: bool = false;
 
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
@@ -91,7 +92,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 }
 
 #[pymodule]
-pub fn _polars64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
@@ -424,6 +425,7 @@ pub fn _polars64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 
     // Build info
     m.add("__version__", PYPOLARS_VERSION)?;
+    m.add("IS_RT_COMPAT", IS_RT_COMPAT)?;
 
     // Plugins
     #[cfg(feature = "ffi_plugin")]

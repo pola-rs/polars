@@ -24,6 +24,14 @@ env:
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
 
+  COMPAT_TUNE_CPU: ''
+  COMPAT_FEATURES: '+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b'
+  COMPAT_CC_FEATURES: '-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16'
+
+  NONCOMPAT_TUNE_CPU: 'skylake'
+  NONCOMPAT_FEATURES: '+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe'
+  NONCOMPAT_CC_FEATURES: '-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe'
+
 defaults:
   run:
     shell: bash
@@ -66,6 +74,13 @@ jobs:
           [[ "$VERSION" == "${RT32_VERSION[2]}" ]] || (echo "Incorrect rt32 version" && exit 1)
           [[ "$VERSION" == "${RT64_VERSION[2]}" ]] || (echo "Incorrect rt64 version" && exit 1)
           [[ "$VERSION" == "${COMPAT_VERSION[2]}" ]] || (echo "Incorrect compat version" && exit 1)
+
+      - name: Update features in PLR
+        env:
+          PLR_PATH: py-polars/polars/_plr.py
+        run:
+          sed -i "s/^RT_COMPAT_FEATURE_FLAGS = \"\"\$/RT_COMPAT_FEATURE_FLAGS = \"$COMPAT_FEATURES\"/g" $PLR_PATH
+          sed -i "s/^RT_NONCOMPAT_FEATURE_FLAGS = \"\"\$/RT_NONCOMPAT_FEATURE_FLAGS = \"$NONCOMPAT_FEATURES\"/g" $PLR_PATH
 
       - name: Install uv
         run: pip install uv
@@ -113,29 +128,18 @@ jobs:
       - name: Install yq
         run: pip install yq
 
-      - name: Update package name
+      - name: Update runtime package and module names
         run: |
+          SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
+
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-
-      # Update the runtimes to be the right name and package.
-      - name: Update 32-bit runtime
-        if: matrix.package == 'polars-runtime-32'
-        run: |
-          mv py-polars/_polars64 py-polars/_polars32
-          tomlq -i -t '.lib.name = "_polars32"' py-polars/Cargo.toml
-          sed -i 's/pub fn _polars64/pub fn _polars32/' crates/polars-python/src/c_api/mod.rs
-
-      - name: Update 64-bit runtime
+          mv py-polars/_polars_runtime_64 py-polars/_$SNAKE_CASE
+          tomlq -i -t '.lib.name = "_$SNAKE_CASE"' py-polars/Cargo.toml
+          sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
+      - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
           tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
-
-      - name: Update compat runtime
-        if: matrix.package == 'polars-runtime-compat'
-        run: |
-          mv py-polars/_polars64 py-polars/_polars_compat
-          tomlq -i -t '.lib.name = "_polars_compat"' py-polars/Cargo.toml
-          sed -i 's/pub fn _polars64/pub fn _polars_compat/' crates/polars-python/src/c_api/mod.rs
 
       - name: Create source distribution
         uses: PyO3/maturin-action@v1
@@ -274,57 +278,39 @@ jobs:
         run: |
           python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $GITHUB_PATH
 
-      - name: Set variables in CPU check module
-        run: |
-          sed $SED_INPLACE 's/^_POLARS_ARCH = \"unknown\"$/_POLARS_ARCH = \"${{ matrix.architecture }}\"/g' $CPU_CHECK_MODULE
-          sed $SED_INPLACE 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"${{ steps.features.outputs.features }}\"/g' $CPU_CHECK_MODULE
       - name: Set variables in CPU check module - Compat
         if: matrix.package == 'polars-runtime-compat'
         run: |
-          sed $SED_INPLACE 's/^_POLARS_LTS_CPU = False$/_POLARS_LTS_CPU = True/g' $CPU_CHECK_MODULE
+          sed $SED_INPLACE 's/^pub static IS_RT_COMPAT: bool = false;$/^pub static IS_RT_COMPAT: bool = true;$/g' crates/polars-python/src/c_api/mod.rs
 
-      - name: Install yq
-        if: matrix.package != 'polars'
-        run: pip install yq
-
-      - name: Update package name
+      - name: Update runtime package and module names
         run: |
+          SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
+
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-
-      # Update the runtimes to be the right name and package.
-      - name: Update 32-bit runtime
-        if: matrix.package == 'polars-runtime-32'
-        run: |
-          mv py-polars/_polars64 py-polars/_polars32
-          tomlq -i -t '.lib.name = "_polars32"' py-polars/Cargo.toml
-          sed -i 's/pub fn _polars64/pub fn _polars32/' crates/polars-python/src/c_api/mod.rs
-
-      - name: Update 64-bit runtime
+          mv py-polars/_polars_runtime_64 py-polars/_$SNAKE_CASE
+          tomlq -i -t '.lib.name = "_$SNAKE_CASE"' py-polars/Cargo.toml
+          sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
+      - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
           tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
-
-      - name: Update compat runtime
-        if: matrix.package == 'polars-runtime-compat'
-        run: |
-          mv py-polars/_polars64 py-polars/_polars_compat
-          tomlq -i -t '.lib.name = "_polars_compat"' py-polars/Cargo.toml
-          sed -i 's/pub fn _polars64/pub fn _polars_compat/' crates/polars-python/src/c_api/mod.rs
 
       - name: Determine CPU features for x86-64
         id: features
         if: matrix.architecture == 'x86-64'
         env:
-          IS_LTS_CPU: ${{ matrix.package == 'polars-runtime-compat' }}
+          IS_RT_COMPAT: ${{ matrix.package == 'polars-runtime-compat' }}
         # IMPORTANT: All features enabled here should also be included in py-polars/polars/_cpu_check.py
         run: |
-          if [[ "$IS_LTS_CPU" = true ]]; then
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b
-            CC_FEATURES="-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16"
+          if [[ "$IS_RT_COMPAT" = true ]]; then
+            TUNE_CPU="$COMPAT_TUNE_CPU"
+            FEATURES="$COMPAT_FEATURES"
+            CC_FEATURES="$COMPAT_CC_FEATURES"
           else
-            TUNE_CPU=skylake
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe
-            CC_FEATURES="-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe"
+            TUNE_CPU="$NONCOMPAT_TUNE_CPU"
+            FEATURES="$NONCOMPAT_FEATURES"
+            CC_FEATURES="$NONCOMPAT_CC_FEATURES"
           fi
           echo "features=$FEATURES" >> $GITHUB_OUTPUT
           echo "tune_cpu=$TUNE_CPU" >> $GITHUB_OUTPUT

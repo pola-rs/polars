@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from polars._cpu_check import get_lts_cpu
+from polars._cpu_check import is_runtime_compat
 from polars._utils.polars_version import get_polars_version
 from polars.meta.index_type import get_index_type
 
@@ -46,7 +46,7 @@ def show_versions() -> None:
     import platform
 
     deps = _get_dependency_list()
-    core_properties = ("Polars", "Index type", "Platform", "Python", "LTS CPU")
+    core_properties = ("Polars", "Index type", "Platform", "Python", "Runtime Compat")
     keylen = max(len(x) for x in [*core_properties, "Azure CLI", *deps]) + 1
 
     print("--------Version info---------")
@@ -54,7 +54,7 @@ def show_versions() -> None:
     print(f"{'Index type:':{keylen}s} {get_index_type()}")
     print(f"{'Platform:':{keylen}s} {platform.platform()}")
     print(f"{'Python:':{keylen}s} {sys.version}")
-    print(f"{'LTS CPU:':{keylen}s} {get_lts_cpu()}")
+    print(f"{'Runtime Compat:':{keylen}s} {is_runtime_compat()}")
 
     print("\n----Optional dependencies----")
 

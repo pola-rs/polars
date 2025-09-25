@@ -5,24 +5,34 @@ import builtins
 import os
 import sys
 
+from polars._cpu_check import check_cpu_flags
+
 PKG_VERSION = "1.34.0-beta.1"
 
+# Replaced during the build process with our list of required feature flags
+# enabled at compile time.
+RT_COMPAT_FEATURE_FLAGS = ""
+RT_NONCOMPAT_FEATURE_FLAGS = ""
 
-def pllts() -> None:
-    import _polars_lts_cpu._polars_lts_cpu as plr
 
+def rt_compat() -> None:
+    check_cpu_flags(RT_COMPAT_FEATURE_FLAGS)
+
+    import _polars_runtime_compat._polars_runtime_compat as plr
     sys.modules[__name__] = plr
 
 
-def pl64() -> None:
-    import _polars64._polars64 as plr
+def rt_64() -> None:
+    check_cpu_flags(RT_NONCOMPAT_FEATURE_FLAGS)
 
+    import _polars_runtime_64._polars_runtime_64 as plr
     sys.modules[__name__] = plr
 
 
-def pl32() -> None:
-    import _polars32._polars32 as plr
+def rt_32() -> None:
+    check_cpu_flags(RT_NONCOMPAT_FEATURE_FLAGS)
 
+    import _polars_runtime_32._polars_runtime_32 as plr
     sys.modules[__name__] = plr
 
 
@@ -35,7 +45,7 @@ else:
     _force = os.environ.get("POLARS_FORCE_PKG")
     _prefer = os.environ.get("POLARS_PREFER_PKG")
 
-    pkgs = {"lts": pllts, "64": pl64, "32": pl32}
+    pkgs = {"compat": rt_compat, "64": rt_64, "32": rt_32}
 
     if _force is not None:
         try:
@@ -48,7 +58,7 @@ else:
             msg = f"Invalid value for `POLARS_FORCE_PKG` variable: '{_force}'"
             raise ValueError(msg) from None
     else:
-        preference = [pllts, pl64, pl32]
+        preference = list(pkgs.values())
         if _prefer is not None:
             try:
                 preference.insert(0, pkgs[_prefer])
