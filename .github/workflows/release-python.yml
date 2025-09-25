@@ -288,6 +288,9 @@ jobs:
         run: |
           sed $SED_INPLACE 's/^pub static IS_RT_COMPAT: bool = false;$/^pub static IS_RT_COMPAT: bool = true;$/g' crates/polars-python/src/c_api/mod.rs
 
+      - name: Install yq
+        run: pip install yq
+
       - name: Rename target directory
         if: matrix.package != 'polars-runtime-64'
         run: |
