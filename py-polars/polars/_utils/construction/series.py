@@ -13,6 +13,14 @@ from typing import (
 
 import polars._reexport as pl
 import polars._utils.construction as plc
+from polars._dependencies import (
+    _PYARROW_AVAILABLE,
+    _check_for_numpy,
+    dataclasses,
+)
+from polars._dependencies import numpy as np
+from polars._dependencies import pandas as pd
+from polars._dependencies import pyarrow as pa
 from polars._utils.construction.dataframe import _sequence_of_dict_to_pydf
 from polars._utils.construction.utils import (
     get_first_non_none,
@@ -53,14 +61,6 @@ from polars.datatypes.constructor import (
     polars_type_to_constructor,
     py_type_to_constructor,
 )
-from polars.dependencies import (
-    _PYARROW_AVAILABLE,
-    _check_for_numpy,
-    dataclasses,
-)
-from polars.dependencies import numpy as np
-from polars.dependencies import pandas as pd
-from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PySeries
@@ -69,8 +69,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     from polars import DataFrame, Series
+    from polars._dependencies import pandas as pd
     from polars._typing import PolarsDataType
-    from polars.dependencies import pandas as pd
 
 
 def sequence_to_pyseries(

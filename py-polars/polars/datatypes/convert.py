@@ -9,6 +9,8 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any, Optional, Union
 
+from polars._dependencies import numpy as np
+from polars._dependencies import pyarrow as pa
 from polars.datatypes.classes import (
     Array,
     Binary,
@@ -42,8 +44,6 @@ from polars.datatypes.classes import (
     UInt128,
     Unknown,
 )
-from polars.dependencies import numpy as np
-from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import dtype_str_repr as _dtype_str_repr

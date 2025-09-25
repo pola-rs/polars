@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from polars._dependencies import pyarrow as pa
 from polars._utils.construction.utils import get_first_non_none
-from polars.dependencies import pyarrow as pa
 
 if TYPE_CHECKING:
-    from polars.dependencies import pandas as pd
+    from polars._dependencies import pandas as pd
 
 
 def pandas_series_to_arrow(
