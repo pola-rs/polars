@@ -68,12 +68,12 @@ jobs:
 
           RT32_VERSION=($(tomlq '.project.dependencies[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
           RT64_VERSION=($(tomlq '.project."optional-dependencies".rt64[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
-          COMPAT_VERSION=($(tomlq '.project."optional-dependencies".compat[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
+          COMPAT_VERSION=($(tomlq '.project."optional-dependencies".rtcompat[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
 
           [[ "$VERSION" == "$(echo $CARGO_VERSION | sed 's/-beta\./b/')" ]] || (echo "Incorrect cargo version" && exit 1)
           [[ "$VERSION" == "${RT32_VERSION[2]}" ]] || (echo "Incorrect rt32 version" && exit 1)
           [[ "$VERSION" == "${RT64_VERSION[2]}" ]] || (echo "Incorrect rt64 version" && exit 1)
-          [[ "$VERSION" == "${COMPAT_VERSION[2]}" ]] || (echo "Incorrect compat version" && exit 1)
+          [[ "$VERSION" == "${COMPAT_VERSION[2]}" ]] || (echo "Incorrect rtcompat version" && exit 1)
 
       - name: Update features in PLR
         env:
