@@ -425,10 +425,7 @@ impl OptimizationRule for TypeCoercionRule {
                         },
                     }
 
-                    if matches!(
-                        super_type,
-                        DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc)
-                    ) {
+                    if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
                         raise_supertype(&function, &input, schema, expr_arena)?;
                         unreachable!()
                     }
