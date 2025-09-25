@@ -145,10 +145,9 @@ jobs:
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
           tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/Cargo.toml
           sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
-      - name: Set variables in CPU check module - Compat
-        if: matrix.package == 'polars-runtime-compat'
+      - name: Set runtime repr in plr
         run: |
-          sed $SED_INPLACE 's/^pub static IS_RT_COMPAT: bool = false;$/pub static IS_RT_COMPAT: bool = true;/g' crates/polars-python/src/c_api/mod.rs
+          sed -i "s/^pub static RUNTIME_REPR: &'static str = \"unknown\";$/pub static RUNTIME_REPR: &'static str = \"rt$(echo '${{ matrix.package }}' | cut -d '-' -f 3)\";/g" crates/polars-python/src/c_api/mod.rs
       - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
@@ -307,10 +306,9 @@ jobs:
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
           tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/Cargo.toml
           sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
-      - name: Set variables in CPU check module - Compat
-        if: matrix.package == 'polars-runtime-compat'
+      - name: Set runtime repr in plr
         run: |
-          sed $SED_INPLACE 's/^pub static IS_RT_COMPAT: bool = false;$/pub static IS_RT_COMPAT: bool = true;/g' crates/polars-python/src/c_api/mod.rs
+          sed -i "s/^pub static RUNTIME_REPR: &'static str = \"unknown\";$/pub static RUNTIME_REPR: &'static str = \"rt$(echo '${{ matrix.package }}' | cut -d '-' -f 3)\";/g" crates/polars-python/src/c_api/mod.rs
       - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |

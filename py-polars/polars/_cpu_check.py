@@ -40,10 +40,10 @@ _IS_WINDOWS = os.name == "nt"
 _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
 
 
-def is_runtime_compat() -> bool:
+def get_runtime_repr() -> bool:
     import polars._plr as plr
 
-    return plr.IS_RT_COMPAT
+    return plr.RUNTIME_REPR
 
 
 def _open_posix_libc() -> ctypes.CDLL:
