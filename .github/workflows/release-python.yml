@@ -111,10 +111,11 @@ jobs:
         with:
           ref: ${{ inputs.sha }}
 
-      - name: Download sdists and wheels
+      - name: Download base package
         uses: actions/download-artifact@v4
         with:
           path: dist
+          merge-multiple: true
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
@@ -129,8 +130,8 @@ jobs:
 
       - name: Install yq
         run: |
-          ls -alh dist/
           ls -alh .
+          ls -alh dist/
           pip install --force-reinstall --no-dependencies dist/polars-*.whl
           pip install yq
 
@@ -195,14 +196,8 @@ jobs:
 
     env:
       SED_INPLACE: ${{ startsWith(matrix.os, 'macos') && '-i ''''' || '-i' }}
-      CPU_CHECK_MODULE: py-polars/_polars64/__init__.py
 
     steps:
-      - name: Download base package
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-
       - name: Setup build environment (ARM64 Windows)
         if: matrix.os == 'windows-11-arm'
         shell:
@@ -263,6 +258,12 @@ jobs:
         with:
           ref: ${{ inputs.sha }}
 
+      - name: Download base package
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
         if: matrix.os == 'ubuntu-latest'
@@ -295,8 +296,8 @@ jobs:
 
       - name: Install yq
         run: |
-          ls -alh dist/
           ls -alh .
+          ls -alh dist/
           pip install --force-reinstall --no-dependencies dist/polars-*.whl
           pip install yq
 
