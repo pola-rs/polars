@@ -754,7 +754,7 @@ def read_csv_batched(
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = None,
     batch_size_options: tuple[
-        Literal["default" | "bytes" | "bytes-strict" | "rows" | "rows-total"], int
+        Literal["default", "bytes", "bytes-strict", "rows", "rows-total"], int
     ]
     | None = None,
     n_rows: int | None = None,

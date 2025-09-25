@@ -46,7 +46,6 @@ class BatchedCsvReader:
         infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int | None = None,
         batch_size_options: tuple[str, int] | None = None,
-        total_batches_size: int | None = None,
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",
         low_memory: bool = False,
