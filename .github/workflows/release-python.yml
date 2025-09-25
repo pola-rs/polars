@@ -78,7 +78,9 @@ jobs:
       - name: Update features in PLR
         env:
           PLR_PATH: py-polars/polars/_plr.py
-        run:
+        run: |
+          set -e
+
           sed -i "s/^RT_COMPAT_FEATURE_FLAGS = \"\"\$/RT_COMPAT_FEATURE_FLAGS = \"$COMPAT_FEATURES\"/g" $PLR_PATH
           sed -i "s/^RT_NONCOMPAT_FEATURE_FLAGS = \"\"\$/RT_NONCOMPAT_FEATURE_FLAGS = \"$NONCOMPAT_FEATURES\"/g" $PLR_PATH
 
