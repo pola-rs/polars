@@ -130,13 +130,15 @@ jobs:
       - name: Install yq
         run: pip install yq
 
+      - name: Rename target directory
+        if: matrix.package != 'polars-runtime-64'
+        run: |
+          SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
+          mv py-polars/_polars_runtime_64 py-polars/_$SNAKE_CASE
       - name: Update runtime package and module names
         run: |
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
-
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-          mkdir -p py-polars/_$SNAKE_CASE
-          mv py-polars/_polars_runtime_64/* py-polars/_$SNAKE_CASE
           tomlq -i -t '.lib.name = "_$SNAKE_CASE"' py-polars/Cargo.toml
           sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
       - name: Update 64-bit runtime to bigidx
