@@ -6,8 +6,7 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 version = "1.34.0b1"
-license = "MIT"
-license-files = ["LICENSE"]
+license = { file = "LICENSE" }
 requires-python = ">=3.9"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
@@ -15,6 +14,7 @@ classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
