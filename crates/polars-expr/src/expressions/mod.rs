@@ -144,7 +144,31 @@ impl<'a> AggregationContext<'a> {
                             .into_sliceable(),
                         )
                     },
-                    // sliced groups are already in correct order
+                    // sliced groups are already in correct order,
+                    // Update offsets in the case of overlapping groups
+                    // e.g. [0,2], [1,3], [2,4] becomes [0,2], [2,3], [5,4]
+                    GroupsType::Slice {
+                        overlapping: true,
+                        groups,
+                    } => {
+                        // unroll
+                        let groups = groups
+                            .iter()
+                            .map(|g| {
+                                let len = g[1];
+                                let new = [offset, g[1]];
+                                offset += len;
+                                new
+                            })
+                            .collect();
+                        self.groups = Cow::Owned(
+                            GroupsType::Slice {
+                                groups,
+                                overlapping: false,
+                            }
+                            .into_sliceable(),
+                        )
+                    },
                     GroupsType::Slice { .. } => {},
                 }
                 self.update_groups = UpdateGroups::No;
