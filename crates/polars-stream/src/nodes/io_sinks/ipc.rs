@@ -28,6 +28,7 @@ use crate::async_primitives::linearizer::Linearizer;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
+use crate::utils::task_handles_ext::AbortOnDropHandle;
 
 pub struct IpcSinkNode {
     target: SinkTarget,
@@ -38,7 +39,7 @@ pub struct IpcSinkNode {
     cloud_options: Option<CloudOptions>,
 
     io_tx: Option<Sender<(Vec<EncodedData>, EncodedData)>>,
-    io_task: Option<tokio_util::task::AbortOnDropHandle<PolarsResult<()>>>,
+    io_task: Option<AbortOnDropHandle<PolarsResult<()>>>,
 }
 
 impl IpcSinkNode {
@@ -114,7 +115,7 @@ impl SinkNode for IpcSinkNode {
         });
 
         self.io_tx = Some(io_tx);
-        self.io_task = Some(tokio_util::task::AbortOnDropHandle::new(io_task));
+        self.io_task = Some(AbortOnDropHandle(io_task));
 
         Ok(())
     }

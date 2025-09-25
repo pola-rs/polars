@@ -32,6 +32,7 @@ use crate::async_primitives::linearizer::Linearizer;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
+use crate::utils::task_handles_ext::AbortOnDropHandle;
 
 pub struct ParquetSinkNode {
     target: SinkTarget,
@@ -49,7 +50,7 @@ pub struct ParquetSinkNode {
     metrics: Arc<Mutex<Option<WriteMetrics>>>,
 
     io_tx: Option<crate::async_primitives::connector::Sender<Vec<Vec<CompressedPage>>>>,
-    io_task: Option<tokio_util::task::AbortOnDropHandle<PolarsResult<()>>>,
+    io_task: Option<AbortOnDropHandle<PolarsResult<()>>>,
 }
 
 impl ParquetSinkNode {
@@ -168,7 +169,7 @@ impl SinkNode for ParquetSinkNode {
         });
 
         self.io_tx = Some(io_tx);
-        self.io_task = Some(tokio_util::task::AbortOnDropHandle::new(io_task));
+        self.io_task = Some(AbortOnDropHandle(io_task));
 
         Ok(())
     }
