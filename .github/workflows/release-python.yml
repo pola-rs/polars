@@ -143,8 +143,12 @@ jobs:
         run: |
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-          tomlq -i -t '.lib.name = "_$SNAKE_CASE"' py-polars/Cargo.toml
+          tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/Cargo.toml
           sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
+      - name: Set variables in CPU check module - Compat
+        if: matrix.package == 'polars-runtime-compat'
+        run: |
+          sed $SED_INPLACE 's/^pub static IS_RT_COMPAT: bool = false;$/pub static IS_RT_COMPAT: bool = true;/g' crates/polars-python/src/c_api/mod.rs
       - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
@@ -288,11 +292,6 @@ jobs:
         run: |
           python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $GITHUB_PATH
 
-      - name: Set variables in CPU check module - Compat
-        if: matrix.package == 'polars-runtime-compat'
-        run: |
-          sed $SED_INPLACE 's/^pub static IS_RT_COMPAT: bool = false;$/^pub static IS_RT_COMPAT: bool = true;$/g' crates/polars-python/src/c_api/mod.rs
-
       - name: Install yq
         run: |
           pip install --force-reinstall --no-dependencies dist/polars-*.whl
@@ -308,8 +307,12 @@ jobs:
         run: |
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-          tomlq -i -t '.lib.name = "_$SNAKE_CASE"' py-polars/Cargo.toml
+          tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/Cargo.toml
           sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
+      - name: Set variables in CPU check module - Compat
+        if: matrix.package == 'polars-runtime-compat'
+        run: |
+          sed $SED_INPLACE 's/^pub static IS_RT_COMPAT: bool = false;$/pub static IS_RT_COMPAT: bool = true;/g' crates/polars-python/src/c_api/mod.rs
       - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
