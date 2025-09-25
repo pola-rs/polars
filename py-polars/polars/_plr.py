@@ -19,6 +19,7 @@ def rt_compat() -> None:
     check_cpu_flags(RT_COMPAT_FEATURE_FLAGS)
 
     import _polars_runtime_compat._polars_runtime_compat as plr
+
     sys.modules[__name__] = plr
 
 
@@ -26,6 +27,7 @@ def rt_64() -> None:
     check_cpu_flags(RT_NONCOMPAT_FEATURE_FLAGS)
 
     import _polars_runtime_64._polars_runtime_64 as plr
+
     sys.modules[__name__] = plr
 
 
@@ -33,6 +35,7 @@ def rt_32() -> None:
     check_cpu_flags(RT_NONCOMPAT_FEATURE_FLAGS)
 
     import _polars_runtime_32._polars_runtime_32 as plr
+
     sys.modules[__name__] = plr
 
 

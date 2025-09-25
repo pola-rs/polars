@@ -42,6 +42,7 @@ _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
 
 def is_runtime_compat() -> bool:
     import polars._plr as plr
+
     return plr.IS_RT_COMPAT
 
 
