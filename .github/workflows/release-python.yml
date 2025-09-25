@@ -424,6 +424,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Update runtime package and module names
+        run: |
+          mv py-polars/_polars_runtime_64 py-polars/_polars_runtime_32
+          tomlq -i -t ".project.name = \"polars-runtime-32\"" py-polars/pyproject.toml
+          tomlq -i -t ".lib.name = \"_polars_runtime_32\"" py-polars/Cargo.toml
+          sed -i "s/pub fn _polars_runtime_64/pub fn _polars_runtime_32/" crates/polars-python/src/c_api/mod.rs
+
       - name: Disable incompatible features
         env:
             FEATURES: csv|ipc|ipc_streaming|parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
