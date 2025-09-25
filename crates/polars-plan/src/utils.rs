@@ -282,7 +282,12 @@ pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
     arena: &Arena<AExpr>,
 ) -> Schema {
     expr.into_iter()
-        .map(|node| arena.get(node.into()).to_field(schema, arena).unwrap())
+        .map(|node| {
+            arena
+                .get(node.into())
+                .to_field(&ToFieldContext::new(arena, schema))
+                .unwrap()
+        })
         .collect()
 }
 

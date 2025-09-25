@@ -65,7 +65,11 @@ fn get_aexpr_and_type<'a>(
     input_schema: &Schema,
 ) -> Option<(&'a AExpr, DataType)> {
     let ae = expr_arena.get(e);
-    Some((ae, ae.get_dtype(input_schema, expr_arena).ok()?))
+    Some((
+        ae,
+        ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+            .ok()?,
+    ))
 }
 
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
@@ -100,7 +104,7 @@ impl OptimizationRule for TypeCoercionRule {
                     if let CastOptions::Strict = options {
                         let cast_from = expr_arena
                             .get(input_expr)
-                            .to_field(schema, expr_arena)?
+                            .to_field(&ToFieldContext::new(expr_arena, schema))?
                             .dtype;
                         let cast_to = &dtype;
 
@@ -839,7 +843,7 @@ fn inline_or_prune_cast(
 
             match op {
                 LogicalOr | LogicalAnd => {
-                    let field = aexpr.to_field(input_schema, expr_arena)?;
+                    let field = aexpr.to_field(&ToFieldContext::new(expr_arena, input_schema))?;
                     if field.dtype == *dtype {
                         return Ok(Some(aexpr.clone()));
                     }

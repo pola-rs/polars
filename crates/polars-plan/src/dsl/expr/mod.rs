@@ -416,7 +416,9 @@ impl Expr {
         ctx.allow_unknown = true;
         let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();
-        let dtype = expr_arena.get(node).to_dtype(schema, expr_arena)?;
+        let dtype = expr_arena
+            .get(node)
+            .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 
