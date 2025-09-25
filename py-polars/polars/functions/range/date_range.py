@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, overload
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
+from polars.exceptions import InvalidOperationError
 from polars.functions.range._utils import parse_interval_argument
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -21,9 +22,10 @@ if TYPE_CHECKING:
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    num_samples: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
@@ -32,9 +34,10 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    num_samples: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
@@ -43,9 +46,10 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    num_samples: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: bool,
@@ -53,15 +57,20 @@ def date_range(
 
 
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = "1d",
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    num_samples: int | None = None,
     *,
     closed: ClosedInterval = "both",
     eager: bool = False,
 ) -> Series | Expr:
     """
     Generate a date range.
+
+    A date range may be defined by any three of 'start', 'end', 'interval', and
+    'num_samples'. If only two of `start`, `end`, and `num_samples` are provided, the
+    interval defaults to 1 day.
 
     Parameters
     ----------
@@ -73,8 +82,12 @@ def date_range(
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
         Must consist of full days.
+    num_samples
+        Number of periods in the date range. This corresponds to the number of points in
+        the output array, and is thus one more than the number of intervals.
     closed : {'both', 'left', 'right', 'none'}
-        Define which sides of the range are closed (inclusive).
+        Define which sides of the range are closed (inclusive). Only 'closed' is
+        supported for `date_range`.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
@@ -111,9 +124,9 @@ def date_range(
     Using Polars duration string to specify the interval:
 
     >>> from datetime import date
-    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True).alias(
-    ...     "date"
-    ... )
+    >>> pl.date_range(
+    ...     start=date(2022, 1, 1), end=date(2022, 3, 1), interval="1mo", eager=True
+    ... ).alias("date")
     shape: (3,)
     Series: 'date' [date]
     [
@@ -126,9 +139,9 @@ def date_range(
 
     >>> from datetime import timedelta
     >>> pl.date_range(
-    ...     date(1985, 1, 1),
-    ...     date(1985, 1, 10),
-    ...     timedelta(days=2),
+    ...     start=date(1985, 1, 1),
+    ...     end=date(1985, 1, 10),
+    ...     interval=timedelta(days=2),
     ...     eager=True,
     ... ).alias("date")
     shape: (5,)
@@ -139,6 +152,38 @@ def date_range(
         1985-01-05
         1985-01-07
         1985-01-09
+    ]
+
+    Using 'num_samples' to specify the number of periods:
+
+    >>> pl.date_range(
+    ...     start=date(1985, 1, 1),
+    ...     end=date(1985, 1, 10),
+    ...     num_samples=5,
+    ...     eager=True,
+    ... ).alias("date")
+    shape: (5,)
+    Series: 'date' [date]
+    [
+            1985-01-01
+            1985-01-03
+            1985-01-05
+            1985-01-07
+            1985-01-10
+    ]
+    >>> pl.date_range(
+    ...     start=date(1985, 1, 1),
+    ...     interval="3d",
+    ...     num_samples=4,
+    ...     eager=True,
+    ... ).alias("date")
+    shape: (4,)
+    Series: 'date' [date]
+    [
+            1985-01-01
+            1985-01-04
+            1985-01-07
+            1985-01-10
     ]
 
     Omit `eager=True` if you want to use `date_range` as an expression:
@@ -171,11 +216,27 @@ def date_range(
     │ two ┆ [2024-01-01, 2024-01-02, 2024-01-03] │
     └─────┴──────────────────────────────────────┘
     """
-    interval = parse_interval_argument(interval)
+    if interval is None and (num_samples is None or start is None or end is None):
+        interval = "1d"
+    interval = None if interval is None else parse_interval_argument(interval)
+    start_expr = None if start is None else parse_into_expression(start)
+    end_expr = None if end is None else parse_into_expression(end)
+    samples_expr = None if num_samples is None else parse_into_expression(num_samples)
+    if (
+        start is not None
+        and end is not None
+        and num_samples is not None
+        and closed != "both"
+    ):
+        msg = (
+            "date_range does not support 'left', 'right', or 'none' for the 'closed' "
+            "parameter when 'start', 'end', and 'num_samples' is provided."
+        )
+        raise InvalidOperationError(msg)
 
-    start_pyexpr = parse_into_expression(start)
-    end_pyexpr = parse_into_expression(end)
-    result = wrap_expr(plr.date_range(start_pyexpr, end_pyexpr, interval, closed))
+    result = wrap_expr(
+        plr.date_range(start_expr, end_expr, interval, samples_expr, closed)
+    )
 
     if eager:
         return F.select(result).to_series()
@@ -185,9 +246,10 @@ def date_range(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta = ...,
+    num_samples: int | IntoExprColumn | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
@@ -196,9 +258,10 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    num_samples: int | IntoExprColumn | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
@@ -207,9 +270,10 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    num_samples: int | IntoExprColumn | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: bool,
@@ -217,15 +281,20 @@ def date_ranges(
 
 
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = "1d",
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    num_samples: int | IntoExprColumn | None = None,
     *,
     closed: ClosedInterval = "both",
     eager: bool = False,
 ) -> Series | Expr:
     """
     Create a column of date ranges.
+
+    Each date range may be defined by any three of 'start', 'end', 'interval', and
+    'num_samples'. If only two of `start`, `end`, and `num_samples` are provided, the
+    interval defaults to 1 day.
 
     Parameters
     ----------
@@ -237,6 +306,9 @@ def date_ranges(
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
         Must consist of full days.
+    num_samples
+        Number of periods in the date range. This corresponds to the number of points in
+        the output array, and is thus one more than the number of intervals.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
@@ -255,6 +327,9 @@ def date_ranges(
 
     Notes
     -----
+    When `start`, `end`, and `num_samples` are provided, the `closed` parameter must be
+    'closed'.
+
     `interval` is created according to the following string language:
 
     - 1d    (1 calendar day)
@@ -291,11 +366,27 @@ def date_ranges(
     │ 2022-01-02 ┆ 2022-01-03 ┆ [2022-01-02, 2022-01-03]             │
     └────────────┴────────────┴──────────────────────────────────────┘
     """
-    interval = parse_interval_argument(interval)
-    start_pyexpr = parse_into_expression(start)
-    end_pyexpr = parse_into_expression(end)
+    if interval is None and (num_samples is None or start is None or end is None):
+        interval = "1d"
+    interval = None if interval is None else parse_interval_argument(interval)
+    start_expr = None if start is None else parse_into_expression(start)
+    end_expr = None if end is None else parse_into_expression(end)
+    samples_expr = None if num_samples is None else parse_into_expression(num_samples)
+    if (
+        start is not None
+        and end is not None
+        and num_samples is not None
+        and closed != "both"
+    ):
+        msg = (
+            "date_ranges does not support 'left', 'right', or 'none' for the 'closed' "
+            "parameter when 'start', 'end', and 'num_samples' is provided."
+        )
+        raise InvalidOperationError(msg)
 
-    result = wrap_expr(plr.date_ranges(start_pyexpr, end_pyexpr, interval, closed))
+    result = wrap_expr(
+        plr.date_ranges(start_expr, end_expr, interval, samples_expr, closed)
+    )
 
     if eager:
         return F.select(result).to_series()

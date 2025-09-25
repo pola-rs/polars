@@ -1,6 +1,4 @@
-#[cfg(feature = "dtype-date")]
-mod date_range;
-#[cfg(feature = "dtype-datetime")]
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 mod datetime_range;
 mod int_range;
 mod linear_space;
@@ -17,6 +15,7 @@ use polars_time::{ClosedWindow, Duration};
 
 use super::{FunctionOptions, IRFunctionExpr};
 use crate::dsl::SpecialEq;
+use crate::dsl::function_expr::DateRangeArgs;
 use crate::map_as_slice;
 use crate::plans::aexpr::function_expr::FieldsMapper;
 use crate::prelude::{ColumnsUdf, FunctionFlags};
@@ -40,27 +39,31 @@ pub enum IRRangeFunction {
     },
     #[cfg(feature = "dtype-date")]
     DateRange {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-date")]
     DateRanges {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRange {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRanges {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-time")]
     TimeRange {
@@ -117,15 +120,24 @@ impl IRRangeFunction {
                 mapper.with_dtype(dt)
             },
             #[cfg(feature = "dtype-date")]
-            DateRange { .. } => mapper.with_dtype(DataType::Date),
+            DateRange {
+                interval: _,
+                closed: _,
+                arg_type: _,
+            } => mapper.with_dtype(DataType::Date),
             #[cfg(feature = "dtype-date")]
-            DateRanges { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::Date))),
+            DateRanges {
+                interval: _,
+                closed: _,
+                arg_type: _,
+            } => mapper.with_dtype(DataType::List(Box::new(DataType::Date))),
             #[cfg(feature = "dtype-datetime")]
             DatetimeRange {
                 interval: _,
                 closed: _,
                 time_unit,
                 time_zone,
+                ..
             } => {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let dtype =
@@ -138,8 +150,9 @@ impl IRRangeFunction {
                 closed: _,
                 time_unit,
                 time_zone,
+                arg_type: _,
             } => {
-                // output dtype may change based on `interval`, `time_unit`, and `time_zone`
+                // Output dtype may change based on `interval`, `time_unit`, `time_zone`.
                 let inner_dtype =
                     mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_ref())?;
                 mapper.with_dtype(DataType::List(Box::new(inner_dtype)))
@@ -164,10 +177,18 @@ impl IRRangeFunction {
             R::DateRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
+            #[cfg(feature = "dtype-date")]
+            R::DateRanges { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "dtype-datetime")]
-            R::DatetimeRange { .. } => FunctionOptions::row_separable()
-                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-                .with_supertyping(Default::default()),
+            R::DatetimeRange { .. } => {
+                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
+            #[cfg(feature = "dtype-datetime")]
+            R::DatetimeRanges { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "dtype-time")]
             R::TimeRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
@@ -178,14 +199,6 @@ impl IRRangeFunction {
             R::LinearSpaces { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            #[cfg(feature = "dtype-date")]
-            R::DateRanges { .. } => {
-                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
-            #[cfg(feature = "dtype-datetime")]
-            R::DatetimeRanges { .. } => FunctionOptions::elementwise()
-                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-                .with_supertyping(Default::default()),
             #[cfg(feature = "dtype-time")]
             R::TimeRanges { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
@@ -204,7 +217,7 @@ impl Display for IRRangeFunction {
             LinearSpaces { .. } => "linear_spaces",
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => "date_range",
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-date")]
             DateRanges { .. } => "date_ranges",
             #[cfg(feature = "dtype-datetime")]
             DatetimeRange { .. } => "datetime_range",
@@ -239,42 +252,40 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 map_as_slice!(linear_space::linear_spaces, closed, array_width)
             },
             #[cfg(feature = "dtype-date")]
-            DateRange { interval, closed } => {
-                map_as_slice!(date_range::date_range, interval, closed)
+            DateRange {
+                interval,
+                closed,
+                arg_type,
+            } => {
+                map_as_slice!(datetime_range::date_range, interval, closed, arg_type)
             },
             #[cfg(feature = "dtype-date")]
-            DateRanges { interval, closed } => {
-                map_as_slice!(date_range::date_ranges, interval, closed)
+            DateRanges {
+                interval,
+                closed,
+                arg_type,
+            } => {
+                map_as_slice!(datetime_range::date_ranges, interval, closed, arg_type)
             },
             #[cfg(feature = "dtype-datetime")]
             DatetimeRange {
                 interval,
                 closed,
-                time_unit,
-                time_zone,
+                time_unit: _,
+                time_zone: _,
+                arg_type,
             } => {
-                map_as_slice!(
-                    datetime_range::datetime_range,
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
+                map_as_slice!(datetime_range::datetime_range, interval, closed, arg_type)
             },
             #[cfg(feature = "dtype-datetime")]
             DatetimeRanges {
                 interval,
                 closed,
-                time_unit,
-                time_zone,
+                time_unit: _,
+                time_zone: _,
+                arg_type,
             } => {
-                map_as_slice!(
-                    datetime_range::datetime_ranges,
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
+                map_as_slice!(datetime_range::datetime_ranges, interval, closed, arg_type)
             },
             #[cfg(feature = "dtype-time")]
             TimeRange { interval, closed } => {

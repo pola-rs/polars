@@ -45,15 +45,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:group_by_dyn]
     let time = polars::time::date_range(
         "time".into(),
-        NaiveDate::from_ymd_opt(2021, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
-        NaiveDate::from_ymd_opt(2021, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
-        Duration::parse("1d"),
+        Some(
+            NaiveDate::from_ymd_opt(2021, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        ),
+        Some(
+            NaiveDate::from_ymd_opt(2021, 12, 31)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        ),
+        Some(Duration::parse("1d")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         None,
@@ -104,15 +109,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:group_by_roll]
     let time = polars::time::date_range(
         "time".into(),
-        NaiveDate::from_ymd_opt(2021, 12, 16)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
-        NaiveDate::from_ymd_opt(2021, 12, 16)
-            .unwrap()
-            .and_hms_opt(3, 0, 0)
-            .unwrap(),
-        Duration::parse("30m"),
+        Some(
+            NaiveDate::from_ymd_opt(2021, 12, 16)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        ),
+        Some(
+            NaiveDate::from_ymd_opt(2021, 12, 16)
+                .unwrap()
+                .and_hms_opt(3, 0, 0)
+                .unwrap(),
+        ),
+        Some(Duration::parse("30m")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         None,
