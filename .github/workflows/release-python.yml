@@ -131,6 +131,7 @@ jobs:
       - name: Install yq
         run: |
           pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          rm -rf dist/*
           pip install yq
 
       - name: Rename target directory
@@ -160,7 +161,7 @@ jobs:
 
       - name: Test sdist
         run: |
-          pip install --force-reinstall --verbose dist/${{ matrix.package }}*.tar.gz
+          pip install --force-reinstall --verbose dist/*.tar.gz
           python -c 'import polars'
 
       - name: Upload sdist
@@ -295,6 +296,7 @@ jobs:
       - name: Install yq
         run: |
           pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          rm -rf dist/*
           pip install yq
 
       - name: Rename target directory
@@ -392,7 +394,7 @@ jobs:
         # For linux; only test on x86-64 for now as this matches the runner architecture
         if: matrix.architecture == 'x86-64' || startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'windows')
         run: |
-          pip install --force-reinstall --verbose dist/${{ matrix.package }}*.whl
+          pip install --force-reinstall --verbose dist/*.whl
           python -c 'import polars; polars.show_versions()'
 
       - name: Upload wheel
