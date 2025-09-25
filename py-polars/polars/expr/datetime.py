@@ -2079,10 +2079,19 @@ class ExprDateTimeNameSpace:
         """
         Extract the total days from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the day.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the day.
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Int64`.
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -2117,10 +2126,19 @@ class ExprDateTimeNameSpace:
         """
         Extract the total hours from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the hour.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the hour.
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Int64`.
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -2156,10 +2174,19 @@ class ExprDateTimeNameSpace:
         """
         Extract the total minutes from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the minute.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the minute.
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Int64`.
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -2195,10 +2222,20 @@ class ExprDateTimeNameSpace:
         """
         Extract the total seconds from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the second.
+
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the second.
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Int64`.
+            Expression of data type :py:class:`.Int64` or :py:class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -2236,10 +2273,19 @@ class ExprDateTimeNameSpace:
         """
         Extract the total milliseconds from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the millisecond.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the millisecond.
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Int64`.
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -2278,10 +2324,19 @@ class ExprDateTimeNameSpace:
         """
         Extract the total microseconds from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the microsecond.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the microsecond.
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Int64`.
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -2320,10 +2375,18 @@ class ExprDateTimeNameSpace:
         """
         Extract the total nanoseconds from a Duration type.
 
+        Parameters
+        ----------
+        fractional
+            Whether to include return the result as a :class:`.Float64`.
+            Because the smallest :type:`.TimeUnit` is `'ns'`, the
+            fractional component will always be zero.
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Int64`.
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
