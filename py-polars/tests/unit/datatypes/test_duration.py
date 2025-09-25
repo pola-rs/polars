@@ -12,7 +12,7 @@ from polars._utils.constants import I64_MAX, I64_MIN
 from polars.series.datetime import DateTimeNameSpace
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
-from tests.unit.conftest import NUMERIC_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import TimeUnit
@@ -274,7 +274,7 @@ def test_duration_float_types_11625(
 @given(
     s=series(
         name="a",
-        allowed_dtypes=NUMERIC_DTYPES,
+        allowed_dtypes=FLOAT_DTYPES + [pl.Int64],
         allow_null=False,
         allow_nan=False,
         allow_infinity=False,
@@ -289,7 +289,10 @@ def test_duration_float_types_series_11625(
     s: pl.Series,
 ) -> None:
     # Exclude cases that could potentially overflow Int64
-    s = s.clip(0.99 * I64_MIN, 0.99 * I64_MAX)
+    s = s.clip(
+        0.95 * I64_MIN / digit_scale / time_unit_scale,
+        0.95 * I64_MAX / digit_scale / time_unit_scale,
+    )
 
     # Truncate any digits below the current time unit precision
     if digit_scale < time_unit_scale:
@@ -353,7 +356,10 @@ def test_duration_total_units_fractional(
     s: pl.Series,
 ) -> None:
     # Exclude cases that could potentially overflow Int64
-    s = s.cast(pl.Float64) / (2**16 * digit_scale * time_unit_scale)
+    s = s.clip(
+        0.99 * I64_MIN / digit_scale / time_unit_scale,
+        0.99 * I64_MAX / digit_scale / time_unit_scale,
+    )
 
     # Truncate any digits below the current time unit precision
     if digit_scale < time_unit_scale:
