@@ -518,6 +518,20 @@ impl<'a> AggregationContext<'a> {
         match &self.state {
             AggState::NotAggregated(c) => Cow::Borrowed(c),
             AggState::AggregatedList(c) => {
+                #[cfg(debug_assertions)]
+                {
+                    // Warning, so we find cases where we accidentally explode overlapping groups
+                    // We don't want this as this can create a lot of data
+                    if let GroupsType::Slice {
+                        overlapping: true, ..
+                    } = self.groups.as_ref().as_ref()
+                    {
+                        polars_warn!(
+                            "performance - an aggregated list with overlapping groups may consume excessive memory"
+                        )
+                    }
+                }
+
                 // We should not insert nulls, otherwise the offsets in the groups will not be correct.
                 Cow::Owned(c.explode(true).unwrap())
             },
