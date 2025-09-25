@@ -128,7 +128,7 @@ pub fn fmt_exprs(
         }
 
         for (name, expr) in formatted {
-            write!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}\n").unwrap();
+            writeln!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}").unwrap();
         }
     } else {
         let Some(e) = exprs.first() else {
