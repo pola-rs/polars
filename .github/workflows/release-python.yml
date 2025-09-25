@@ -35,41 +35,51 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.sha }}
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Check runtime versions
-      run: |
-        set -e
+      - name: Install yq
+        run: pip install yq
 
-        mv py-polars/polars/pyproject.toml py-polars/pyproject.toml
+      - name: Check runtime versions
+        env:
+          POLARS_PYPROJECT_TOML: py-polars/polars/pyproject.toml
+          POLARS_CARGO_TOML: py-polars/Cargo.toml
+        run: |
+          set -e
 
-        VERSION=$(tomlq '.project.version' py-polars/pyproject.toml | tr -d '"')
+          VERSION=$(tomlq '.project.version' "$POLARS_PYPROJECT_TOML" | tr -d '"')
+          CARGO_VERSION=$(tomlq '.package.version' "$POLARS_CARGO_TOML" | tr -d '"')
 
-        RT32_VERSION=($(tomlq '.project.dependencies[0]' py-polars/pyproject.toml | tr -d '"'))
-        RT64_VERSION=($(tomlq '.project."optional-dependencies".rt64[0]' py-polars/pyproject.toml | tr -d '"'))
-        COMPAT_VERSION=($(tomlq '.project."optional-dependencies".compat[0]' py-polars/pyproject.toml | tr -d '"'))
+          RT32_VERSION=($(tomlq '.project.dependencies[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
+          RT64_VERSION=($(tomlq '.project."optional-dependencies".rt64[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
+          COMPAT_VERSION=($(tomlq '.project."optional-dependencies".compat[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
 
-        [[ "$(echo $VERSION)" == "${RT32_VERSION[2]}" ]] || (echo "Incorrect rt32 version" && exit 1)
-        [[ "$(echo $VERSION)" == "${RT64_VERSION[2]}" ]] || (echo "Incorrect rt64 version" && exit 1)
-        [[ "$(echo $VERSION)" == "${COMPAT_VERSION[2]}" ]] || (echo "Incorrect compat version" && exit 1)
+          [[ "$VERSION" == "$(echo $CARGO_VERSION | sed 's/-beta\./b/')" ]] || (echo "Incorrect cargo version" && exit 1)
+          [[ "$VERSION" == "${RT32_VERSION[2]}" ]] || (echo "Incorrect rt32 version" && exit 1)
+          [[ "$VERSION" == "${RT64_VERSION[2]}" ]] || (echo "Incorrect rt64 version" && exit 1)
+          [[ "$VERSION" == "${COMPAT_VERSION[2]}" ]] || (echo "Incorrect compat version" && exit 1)
 
-    - name: Install uv
-      run: pip install uv
+      - name: Install uv
+        run: pip install uv
 
-    - name: Build sdist and wheel
-      run: uv build py-polars --dist base-dist
+      - name: Build sdist and wheel
+        run: |
+          mv py-polars/polars/pyproject.toml py-polars/pyproject.toml
+          uv build py-polars --out-dir dist
 
-    - name: Upload base package
-      uses: actions/upload-artifact@v4
-      with:
-        path: dist
+      - name: Upload base package
+        uses: actions/upload-artifact@v4
+        with:
+          path: dist
+
 
   create-sdist:
     needs: [base-package]
@@ -87,7 +97,7 @@ jobs:
       - name: Download sdists and wheels
         uses: actions/download-artifact@v4
         with:
-          path: base-dist
+          path: dist
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
@@ -138,6 +148,7 @@ jobs:
 
       - name: Test sdist
         run: |
+          pip install --force-reinstall --no-dependencies dist/polars-*.whl
           pip install --force-reinstall --verbose dist/*.tar.gz
           python -c 'import polars'
 
@@ -263,6 +274,15 @@ jobs:
         run: |
           python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $GITHUB_PATH
 
+      - name: Set variables in CPU check module
+        run: |
+          sed $SED_INPLACE 's/^_POLARS_ARCH = \"unknown\"$/_POLARS_ARCH = \"${{ matrix.architecture }}\"/g' $CPU_CHECK_MODULE
+          sed $SED_INPLACE 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"${{ steps.features.outputs.features }}\"/g' $CPU_CHECK_MODULE
+      - name: Set variables in CPU check module - Compat
+        if: matrix.package == 'polars-runtime-compat'
+        run: |
+          sed $SED_INPLACE 's/^_POLARS_LTS_CPU = False$/_POLARS_LTS_CPU = True/g' $CPU_CHECK_MODULE
+
       - name: Install yq
         if: matrix.package != 'polars'
         run: pip install yq
@@ -325,15 +345,6 @@ jobs:
             echo "RUSTFLAGS=-C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
             echo "CFLAGS=$CC_FEATURES -mtune=$TUNE_CPU" >> $GITHUB_ENV
           fi
-
-      - name: Set variables in CPU check module
-        run: |
-          sed $SED_INPLACE 's/^_POLARS_ARCH = \"unknown\"$/_POLARS_ARCH = \"${{ matrix.architecture }}\"/g' $CPU_CHECK_MODULE
-          sed $SED_INPLACE 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"${{ steps.features.outputs.features }}\"/g' $CPU_CHECK_MODULE
-      - name: Set variables in CPU check module - LTS_CPU
-        if: matrix.package == 'polars-runtime-compat'
-        run: |
-          sed $SED_INPLACE 's/^_POLARS_LTS_CPU = False$/_POLARS_LTS_CPU = True/g' $CPU_CHECK_MODULE
 
       - name: Set Rust target for aarch64
         if: matrix.architecture == 'aarch64'

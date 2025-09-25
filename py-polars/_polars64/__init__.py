@@ -271,3 +271,8 @@ If you believe this warning to be a false positive, you can set the `POLARS_SKIP
             RuntimeWarning,
             stacklevel=1,
         )
+
+
+# This must be done before importing the Polars Rust bindings, otherwise we
+# might execute illegal instructions.
+check_cpu_flags()
