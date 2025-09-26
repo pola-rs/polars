@@ -103,10 +103,15 @@ def integers(
 
 
 def floats(
-    bit_width: Literal[32, 64] = 64, *, allow_infinity: bool = True
+    bit_width: Literal[32, 64] = 64,
+    *,
+    allow_nan: bool = True,
+    allow_infinity: bool = True,
 ) -> SearchStrategy[float]:
     """Create a strategy for generating integers."""
-    return st.floats(width=bit_width, allow_infinity=allow_infinity)
+    return st.floats(
+        width=bit_width, allow_nan=allow_nan, allow_infinity=allow_infinity
+    )
 
 
 def booleans() -> SearchStrategy[bool]:
@@ -397,9 +402,17 @@ def data(
     if (strategy := _STATIC_STRATEGIES.get(dtype.base_type())) is not None:
         strategy = strategy
     elif dtype == Float32:
-        strategy = floats(32, allow_infinity=kwargs.pop("allow_infinity", True))
+        strategy = floats(
+            32,
+            allow_nan=kwargs.pop("allow_nan", True),
+            allow_infinity=kwargs.pop("allow_infinity", True),
+        )
     elif dtype == Float64:
-        strategy = floats(64, allow_infinity=kwargs.pop("allow_infinity", True))
+        strategy = floats(
+            64,
+            allow_nan=kwargs.pop("allow_nan", True),
+            allow_infinity=kwargs.pop("allow_infinity", True),
+        )
     elif dtype == Datetime:
         strategy = datetimes(
             time_unit=getattr(dtype, "time_unit", None) or "us",

@@ -1502,14 +1502,23 @@ class DateTimeNameSpace:
         └─────────────────────┴───────────┴───────────────────────────────┘
         """
 
-    def total_days(self) -> Series:
+    def total_days(self, *, fractional: bool = False) -> Series:
         """
         Extract the total days from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the day.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the day.
+
         Returns
         -------
-        Series
-            Series of data type :class:`Int64`.
+        Expr
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -1535,14 +1544,23 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_hours(self) -> Series:
+    def total_hours(self, *, fractional: bool = False) -> Series:
         """
         Extract the total hours from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the hour.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the hour.
+
         Returns
         -------
-        Series
-            Series of data type :class:`Int64`.
+        Expr
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -1570,14 +1588,23 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_minutes(self) -> Series:
+    def total_minutes(self, *, fractional: bool = False) -> Series:
         """
         Extract the total minutes from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the minute.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the minute.
+
         Returns
         -------
-        Series
-            Series of data type :class:`Int64`.
+        Expr
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -1605,14 +1632,23 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_seconds(self) -> Series:
+    def total_seconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total seconds from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the second.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the second.
+
         Returns
         -------
-        Series
-            Series of data type :class:`Int64`.
+        Expr
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -1642,14 +1678,23 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_milliseconds(self) -> Series:
+    def total_milliseconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total milliseconds from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the millisecond.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the millisecond.
+
         Returns
         -------
-        Series
-            Series of data type :class:`Int64`.
+        Expr
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -1678,14 +1723,23 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_microseconds(self) -> Series:
+    def total_microseconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total microseconds from a Duration type.
 
+        If `fractional=True`, the result will be encoded as a floating point,
+        and will include the fractional component of the microsecond.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the microsecond.
+
         Returns
         -------
-        Series
-            Series of data type :class:`Int64`.
+        Expr
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
@@ -1714,14 +1768,22 @@ class DateTimeNameSpace:
         ]
         """
 
-    def total_nanoseconds(self) -> Series:
+    def total_nanoseconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total nanoseconds from a Duration type.
 
+        Parameters
+        ----------
+        fractional
+            Whether to include return the result as a :class:`.Float64`.
+            Because the smallest :type:`.TimeUnit` is `'ns'`, the
+            fractional component will always be zero.
+
         Returns
         -------
-        Series
-            Series of data type :class:`Int64`.
+        Expr
+            Expression of data type :class:`.Int64` or :class:`.Float64` if
+            `fractional` is set.
 
         Examples
         --------
