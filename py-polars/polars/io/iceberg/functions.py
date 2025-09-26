@@ -66,16 +66,14 @@ def scan_iceberg(
         the filter.
 
         If a row-count is requested (i.e. `scan_iceberg().select(pl.len())`), this
-        allows returning a count directly from Iceberg metadata. Note that by
-        default, deletion files will still be fully loaded - this can be configured
-        via `fast_deletion_count`.
+        allows returning a count directly from Iceberg metadata. Note however that
+        for datasets containing position delete files, `fast_deletion_count` must
+        also be enabled for this to work.
 
     fast_deletion_count
-        When enabled together with `use_metadata_statistics`, a
-        `scan_iceberg().select(len())` query will skip loading deletion files, and
-        instead use their record count stored in the Iceberg metadata. This will
-        give incorrect results if position delete files contain duplicated
-        entries.
+        Allows returning a row count calculated directly from Iceberg metadata
+        for datasets that contain position delete files. This will give incorrect
+        results if position delete files contain duplicated entries.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
