@@ -422,6 +422,12 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Install yq
+        run: |
+          pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          rm -rf dist/*
+          pip install yq
+
       - name: Update runtime package and module names
         run: |
           mv py-polars/_polars_runtime_64 py-polars/_polars_runtime_32
