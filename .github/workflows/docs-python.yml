@@ -57,12 +57,12 @@ jobs:
           fi
 
       # Chooses the manually given commit if manually triggered.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.git_commit || github.event.client_payload.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
