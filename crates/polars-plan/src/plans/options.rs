@@ -172,7 +172,9 @@ impl FunctionFlags {
     }
 
     pub fn non_order_producing(self) -> bool {
-        self.contains(Self::NON_ORDER_PRODUCING) | self.contains(Self::RETURNS_SCALAR)
+        self.contains(Self::NON_ORDER_PRODUCING)
+            | self.contains(Self::RETURNS_SCALAR)
+            | self.is_elementwise()
     }
 
     pub fn returns_scalar(self) -> bool {
