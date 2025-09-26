@@ -65,7 +65,11 @@ fn get_aexpr_and_type<'a>(
     input_schema: &Schema,
 ) -> Option<(&'a AExpr, DataType)> {
     let ae = expr_arena.get(e);
-    Some((ae, ae.get_dtype(input_schema, expr_arena).ok()?))
+    Some((
+        ae,
+        ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+            .ok()?,
+    ))
 }
 
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
@@ -100,7 +104,7 @@ impl OptimizationRule for TypeCoercionRule {
                     if let CastOptions::Strict = options {
                         let cast_from = expr_arena
                             .get(input_expr)
-                            .to_field(schema, expr_arena)?
+                            .to_field(&ToFieldContext::new(expr_arena, schema))?
                             .dtype;
                         let cast_to = &dtype;
 
@@ -421,10 +425,7 @@ impl OptimizationRule for TypeCoercionRule {
                         },
                     }
 
-                    if matches!(
-                        super_type,
-                        DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc)
-                    ) {
+                    if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
                         raise_supertype(&function, &input, schema, expr_arena)?;
                         unreachable!()
                     }
@@ -457,40 +458,51 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                for (i, expr) in input.iter().enumerate() {
-                    let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
+                let no_cast_needed = input.iter().all(|expr| {
+                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
+                    matches!(dtype, DataType::Int64 | DataType::Float64)
+                });
+                if no_cast_needed {
+                    return Ok(None);
+                }
 
-                    if !matches!(dtype, DataType::Int64) {
-                        let function = function.clone();
-                        let mut input = input.to_vec();
-                        cast_expr_ir(
-                            &mut input[i],
-                            &dtype,
-                            &DataType::Int64,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
-                        for expr in &mut input[i + 1..] {
-                            let (_, dtype) =
-                                unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
+                let function = function.clone();
+                let input = input.clone().into_iter().enumerate().map(|(i, expr)| {
+                    let mut expr = expr.to_owned();
+                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
+                    Ok(match &dtype {
+                        DataType::Int64 | DataType::Float64 => expr,
+                        dt if dt.is_integer() => {
                             cast_expr_ir(
-                                expr,
+                                &mut expr,
                                 &dtype,
                                 &DataType::Int64,
                                 expr_arena,
                                 CastOptions::Strict,
                             )?;
-                        }
+                            expr
+                        },
+                        dt if dt.is_float() => {
+                            cast_expr_ir(
+                                &mut expr,
+                                &dtype,
+                                &DataType::Float64,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                            expr
+                        },
+                        dt => {
+                            polars_bail!(InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration")
+                        },
+                    })
+                }).try_collect()?;
 
-                        return Ok(Some(AExpr::Function {
-                            function,
-                            input,
-                            options,
-                        }));
-                    }
-                }
-
-                None
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
             },
             #[cfg(feature = "list_gather")]
             AExpr::Function {
@@ -828,7 +840,7 @@ fn inline_or_prune_cast(
 
             match op {
                 LogicalOr | LogicalAnd => {
-                    let field = aexpr.to_field(input_schema, expr_arena)?;
+                    let field = aexpr.to_field(&ToFieldContext::new(expr_arena, input_schema))?;
                     if field.dtype == *dtype {
                         return Ok(Some(aexpr.clone()));
                     }

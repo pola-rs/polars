@@ -675,9 +675,18 @@ def test_join_where_literal_20061() -> None:
 def test_boolean_predicate_join_where() -> None:
     urls = pl.LazyFrame({"url": "abcd.com/page"})
     categories = pl.LazyFrame({"base_url": "abcd.com", "category": "landing page"})
-    assert (
-        "NESTED LOOP JOIN"
-        in urls.join_where(
-            categories, pl.col("url").str.starts_with(pl.col("base_url"))
-        ).explain()
+
+    q = urls.join_where(categories, pl.col("url").str.starts_with(pl.col("base_url")))
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("url", ["abcd.com/page"], dtype=pl.String),
+            pl.Series("base_url", ["abcd.com"], dtype=pl.String),
+            pl.Series("category", ["landing page"], dtype=pl.String),
+        ]
     )
+
+    plan = q.explain()
+    assert "NESTED LOOP JOIN" in plan
+
+    assert_frame_equal(q.collect(), expect)

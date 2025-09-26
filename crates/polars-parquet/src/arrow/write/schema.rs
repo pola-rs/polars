@@ -383,7 +383,9 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
             Some(PrimitiveConvertedType::Interval),
             None,
         ),
-        ArrowDataType::Int128 => (PhysicalType::FixedLenByteArray(16), None, None),
+        ArrowDataType::UInt128 | ArrowDataType::Int128 => {
+            (PhysicalType::FixedLenByteArray(16), None, None)
+        },
         ArrowDataType::List(f)
         | ArrowDataType::FixedSizeList(f, _)
         | ArrowDataType::LargeList(f) => {

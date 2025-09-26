@@ -339,6 +339,7 @@ impl<'a> TreeFmtNode<'a> {
                             h,
                             match payload {
                                 SinkTypeIR::Memory => "SINK (memory)",
+                                SinkTypeIR::Callback(..) => "SINK (callback)",
                                 SinkTypeIR::File { .. } => "SINK (file)",
                                 SinkTypeIR::Partition { .. } => "SINK (partition)",
                             },

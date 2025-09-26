@@ -7,7 +7,6 @@ mod delay_rechunk;
 
 mod cluster_with_columns;
 mod collapse_and_project;
-mod collapse_joins;
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
@@ -110,7 +109,7 @@ pub fn optimize(
     #[cfg(debug_assertions)]
     let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
 
-    let mut _opt_members = &mut None;
+    let mut _opt_members: &mut Option<MemberCollector> = &mut None;
 
     macro_rules! get_or_init_members {
         () => {
@@ -181,11 +180,6 @@ pub fn optimize(
         lp_arena.replace(lp_top, alp);
     }
 
-    // Make sure it is after predicate pushdown
-    if opt_flags.collapse_joins() && get_or_init_members!().has_filter_with_join_input {
-        collapse_joins::optimize(lp_top, lp_arena, expr_arena, opt_flags.new_streaming());
-    }
-
     // Make sure its before slice pushdown.
     if opt_flags.fast_projection() {
         rules.push(Box::new(SimpleProjectionAndCollapse::new(
@@ -224,9 +218,6 @@ pub fn optimize(
     if !opt_flags.eager() {
         rules.push(Box::new(FlattenUnionRule {}));
     }
-
-    // Note: ExpandDatasets must run after slice and predicate pushdown.
-    rules.push(Box::new(expand_datasets::ExpandDatasets {}) as Box<dyn OptimizationRule>);
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
@@ -297,6 +288,8 @@ pub fn optimize(
             }
         }
     }
+
+    expand_datasets::expand_datasets(lp_top, lp_arena, expr_arena)?;
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

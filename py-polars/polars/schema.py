@@ -14,7 +14,7 @@ from polars.exceptions import DuplicateError
 from polars.interchange.protocol import CompatLevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import (
+    from polars._plr import (
         init_polars_schema_from_arrow_c_schema,
         polars_schema_field_from_arrow_c_schema,
         polars_schema_to_pycapsule,

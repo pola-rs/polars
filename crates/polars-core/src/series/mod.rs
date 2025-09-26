@@ -37,6 +37,7 @@ pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
 use polars_error::feature_gated;
+use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
 use crate::POOL;
@@ -383,7 +384,7 @@ impl Series {
 
         use DataType as D;
         let do_clone = match dtype {
-            D::Unknown(UnknownKind::Any | UnknownKind::Ufunc) => true,
+            D::Unknown(UnknownKind::Any) => true,
             D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
             D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)
@@ -506,7 +507,11 @@ impl Series {
         match (self.dtype(), dtype) {
             #[cfg(feature = "dtype-decimal")]
             (D::Int128, D::Decimal(precision, scale)) => {
-                self.clone().into_decimal(*precision, scale.unwrap())
+                let ca = self.i128().unwrap();
+                Ok(ca
+                    .clone()
+                    .into_decimal_unchecked(*precision, *scale)
+                    .into_series())
             },
 
             #[cfg(feature = "dtype-categorical")]
@@ -585,7 +590,7 @@ impl Series {
     /// first cast to `Int64` to prevent overflow issues.
     pub fn sum<T>(&self) -> PolarsResult<T>
     where
-        T: NumCast,
+        T: NumCast + IsFloat,
     {
         let sum = self.sum_reduce()?;
         let sum = sum.value().extract().unwrap();
@@ -596,7 +601,7 @@ impl Series {
     /// Returns an option because the array is nullable.
     pub fn min<T>(&self) -> PolarsResult<Option<T>>
     where
-        T: NumCast,
+        T: NumCast + IsFloat,
     {
         let min = self.min_reduce()?;
         let min = min.value().extract::<T>();
@@ -607,7 +612,7 @@ impl Series {
     /// Returns an option because the array is nullable.
     pub fn max<T>(&self) -> PolarsResult<Option<T>>
     where
-        T: NumCast,
+        T: NumCast + IsFloat,
     {
         let max = self.max_reduce()?;
         let max = max.value().extract::<T>();
@@ -772,6 +777,12 @@ impl Series {
         }
     }
 
+    /// Get the mean of the Series as a new Series of length 1.
+    /// Returns a Series with a single null entry if self is an empty numeric series.
+    pub fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        self.0.mean_reduce()
+    }
+
     /// Get the product of an array.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
@@ -790,6 +801,8 @@ impl Series {
                 UInt64 => Ok(self.u64().unwrap().prod_reduce()),
                 #[cfg(feature = "dtype-i128")]
                 Int128 => Ok(self.i128().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-u128")]
+                UInt128 => Ok(self.u128().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {
@@ -809,11 +822,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-decimal")]
-    pub(crate) fn into_decimal(
-        self,
-        precision: Option<usize>,
-        scale: usize,
-    ) -> PolarsResult<Series> {
+    pub(crate) fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Int128 => Ok(self
                 .i128()
@@ -822,8 +831,7 @@ impl Series {
                 .into_decimal(precision, scale)?
                 .into_series()),
             DataType::Decimal(cur_prec, cur_scale)
-                if (cur_prec.is_none() || precision.is_none() || *cur_prec == precision)
-                    && *cur_scale == Some(scale) =>
+                if scale == *cur_scale && precision >= *cur_prec =>
             {
                 Ok(self)
             },
@@ -931,10 +939,6 @@ impl Series {
         let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
         let len = std::cmp::min(len, self.len());
         self.slice(-(len as i64), len)
-    }
-
-    pub fn mean_reduce(&self) -> Scalar {
-        crate::scalar::reduce::mean_reduce(self.mean(), self.dtype().clone())
     }
 
     /// Compute the unique elements, but maintain order. This requires more work
@@ -1169,23 +1173,23 @@ mod test {
     #[cfg(feature = "dtype-decimal")]
     fn series_append_decimal() {
         let s1 = Series::new("a".into(), &[1.1, 2.3])
-            .cast(&DataType::Decimal(None, Some(2)))
+            .cast(&DataType::Decimal(38, 2))
             .unwrap();
         let s2 = Series::new("b".into(), &[3])
-            .cast(&DataType::Decimal(None, Some(0)))
+            .cast(&DataType::Decimal(38, 0))
             .unwrap();
 
         {
             let mut s1 = s1.clone();
             s1.append(&s2).unwrap();
             assert_eq!(s1.len(), 3);
-            assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 2));
+            assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 38, 2));
         }
 
         {
             let mut s2 = s2;
             s2.extend(&s1).unwrap();
-            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
+            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 38, 0));
         }
     }
 

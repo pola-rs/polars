@@ -9,6 +9,7 @@ mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -139,12 +140,6 @@ impl LazyFrame {
     /// Toggle cluster with columns optimization.
     pub fn with_cluster_with_columns(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::CLUSTER_WITH_COLUMNS, toggle);
-        self
-    }
-
-    /// Toggle collapse joins optimization.
-    pub fn with_collapse_joins(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptFlags::COLLAPSE_JOINS, toggle);
         self
     }
 
@@ -661,7 +656,9 @@ impl LazyFrame {
         if engine == Engine::Auto {
             engine = match payload {
                 #[cfg(feature = "new_streaming")]
-                SinkType::File { .. } | SinkType::Partition { .. } => Engine::Streaming,
+                SinkType::Callback { .. } | SinkType::File { .. } | SinkType::Partition { .. } => {
+                    Engine::Streaming
+                },
                 _ => Engine::InMemory,
             };
         }
@@ -1060,6 +1057,19 @@ impl LazyFrame {
             cloud_options,
             per_partition_sort_by,
             finish_callback,
+        }))
+    }
+
+    pub fn sink_batches(
+        self,
+        function: PlanCallback<DataFrame, bool>,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+    ) -> PolarsResult<Self> {
+        self.sink(SinkType::Callback(CallbackSinkType {
+            function,
+            maintain_order,
+            chunk_size,
         }))
     }
 

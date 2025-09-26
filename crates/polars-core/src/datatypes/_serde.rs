@@ -52,6 +52,7 @@ enum SerializableDataType {
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
@@ -91,7 +92,7 @@ enum SerializableDataType {
         strings: Series,
     },
     #[cfg(feature = "dtype-decimal")]
-    Decimal(Option<usize>, Option<usize>),
+    Decimal(usize, usize),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -105,6 +106,7 @@ impl From<&DataType> for SerializableDataType {
             UInt16 => Self::UInt16,
             UInt32 => Self::UInt32,
             UInt64 => Self::UInt64,
+            UInt128 => Self::UInt128,
             Int8 => Self::Int8,
             Int16 => Self::Int16,
             Int32 => Self::Int32,
@@ -156,6 +158,7 @@ impl From<SerializableDataType> for DataType {
             UInt16 => Self::UInt16,
             UInt32 => Self::UInt32,
             UInt64 => Self::UInt64,
+            UInt128 => Self::UInt128,
             Int8 => Self::Int8,
             Int16 => Self::Int16,
             Int32 => Self::Int32,

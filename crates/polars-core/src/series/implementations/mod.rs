@@ -383,6 +383,9 @@ macro_rules! impl_dyn_series {
             fn min_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(ChunkAggSeries::min_reduce(&self.0))
             }
+            fn mean_reduce(&self) -> PolarsResult<Scalar> {
+                Ok(Scalar::new(DataType::Float64, self.mean().into()))
+            }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(QuantileAggSeries::median_reduce(&self.0))
             }
@@ -467,6 +470,8 @@ impl_dyn_series!(UInt8Chunked, UInt8Type);
 impl_dyn_series!(UInt16Chunked, UInt16Type);
 impl_dyn_series!(UInt32Chunked, UInt32Type);
 impl_dyn_series!(UInt64Chunked, UInt64Type);
+#[cfg(feature = "dtype-u128")]
+impl_dyn_series!(UInt128Chunked, UInt128Type);
 #[cfg(feature = "dtype-i8")]
 impl_dyn_series!(Int8Chunked, Int8Type);
 #[cfg(feature = "dtype-i16")]

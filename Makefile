@@ -151,8 +151,7 @@ fix:
 
 .PHONY: update-dsl-schema-hashes
 update-dsl-schema-hashes:  ## Update the DSL schema hashes file
-	cargo build --all-features
-	./target/debug/dsl-schema update-hashes
+	cargo run --all-features --bin dsl-schema update-hashes
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run all code quality checks

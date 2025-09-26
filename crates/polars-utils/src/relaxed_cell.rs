@@ -100,6 +100,11 @@ impl RelaxedCell<bool> {
     pub const fn new_bool(value: bool) -> Self {
         Self(AtomicBool::new(value))
     }
+
+    #[inline(always)]
+    pub fn fetch_or(&self, val: bool) -> bool {
+        self.0.fetch_or(val, Ordering::Relaxed)
+    }
 }
 
 impl AtomicNative for bool {

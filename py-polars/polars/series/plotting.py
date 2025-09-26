@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from typing import TYPE_CHECKING, Callable
 
-from polars.dependencies import altair as alt
+from polars._dependencies import altair as alt
 
 if TYPE_CHECKING:
     import sys
