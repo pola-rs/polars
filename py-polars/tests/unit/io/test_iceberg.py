@@ -1931,6 +1931,19 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
         == 3
     )
 
+    assert (
+        pickle.loads(
+            pickle.dumps(
+                pl.scan_iceberg(
+                    tbl, reader_override="native", use_metadata_statistics=False
+                ).select(pl.len())
+            )
+        )
+        .collect()
+        .item()
+        == 3
+    )
+
     Path(p).unlink()
 
     with pytest.raises(
