@@ -25,6 +25,8 @@ pub mod implementations;
 mod into;
 pub(crate) mod iterator;
 pub mod ops;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 mod series_trait;
 
 use std::borrow::Cow;
