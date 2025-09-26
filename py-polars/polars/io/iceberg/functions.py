@@ -71,11 +71,11 @@ def scan_iceberg(
         via `fast_deletion_count`.
 
     fast_deletion_count
-        When enabled, the number of rows deleted will be sourced as the total
-        record count of all deletion files as indicated in the Iceberg metadata
-        for `scan_iceberg().select(len())` queries. This will skip loading
-        deletion files, but will not give a correct result if position delete
-        files contain duplicated entries.
+        When enabled together with `use_metadata_statistics`, a
+        `scan_iceberg().select(len())` query will skip loading deletion files, and
+        instead use their record count stored in the Iceberg metadata. This will
+        give incorrect results if position delete files contain duplicated
+        entries.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
