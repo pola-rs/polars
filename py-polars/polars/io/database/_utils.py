@@ -152,7 +152,7 @@ def _is_adbc_snowflake_conn(conn: Any) -> bool:
         return "snowflake" in conn.adbc_get_info()["vendor_name"].lower()
     # Otherwise, use a workaround checking a Snowflake specific ADBC option
     try:
-        import adbc_driver_snowflake
+        adbc_driver_snowflake = import_optional("adbc_driver_snowflake")
 
         return (
             "snowflake"
