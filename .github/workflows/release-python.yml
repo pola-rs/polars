@@ -423,10 +423,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install yq
-        run: |
-          pip install --force-reinstall --no-dependencies dist/polars-*.whl
-          rm -rf dist/*
-          pip install yq
+        run: pip install yq
 
       - name: Update runtime package and module names
         run: |
