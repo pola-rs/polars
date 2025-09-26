@@ -36,7 +36,6 @@ proptest = { workspace = true }
 rand = { workspace = true }
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
-tokio-util = { workspace = true, features = ["compat"] }
 
 [build-dependencies]
 version_check = { workspace = true }

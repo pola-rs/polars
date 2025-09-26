@@ -95,7 +95,6 @@ strength_reduce = "0.2"
 strum = "0.27"
 strum_macros = "0.27"
 tokio = { version = "1.44", default-features = false }
-tokio-util = "0.7.8"
 unicode-normalization = "0.1.24"
 unicode-reverse = "1.0.8"
 url = "2.4"
