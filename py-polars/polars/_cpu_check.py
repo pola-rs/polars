@@ -36,22 +36,14 @@ were to try it on the Rust side the compiler could emit illegal instructions
 before/during the CPU feature check code.
 """
 
-# Replaced during the build process with the architecture of our wheel.
-_POLARS_ARCH = "unknown"
-
-# Replaced during the build process with our list of required feature flags
-# enabled at compile time.
-_POLARS_FEATURE_FLAGS = ""
-
-# Set to True during the build process if we are building a LTS CPU version.
-_POLARS_LTS_CPU = False
-
 _IS_WINDOWS = os.name == "nt"
 _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
 
 
-def get_lts_cpu() -> bool:
-    return _POLARS_LTS_CPU
+def get_runtime_repr() -> str:
+    import polars._plr as plr
+
+    return plr.RUNTIME_REPR
 
 
 def _open_posix_libc() -> ctypes.CDLL:
@@ -236,11 +228,11 @@ def _read_cpu_flags() -> dict[str, bool]:
     }
 
 
-def check_cpu_flags() -> None:
-    if not _POLARS_FEATURE_FLAGS or os.environ.get("POLARS_SKIP_CPU_CHECK"):
+def check_cpu_flags(feature_flags: str) -> None:
+    if not feature_flags or os.environ.get("POLARS_SKIP_CPU_CHECK"):
         return
 
-    expected_cpu_flags = [f.lstrip("+") for f in _POLARS_FEATURE_FLAGS.split(",")]
+    expected_cpu_flags = [f.lstrip("+") for f in feature_flags.split(",")]
     supported_cpu_flags = _read_cpu_flags()
 
     missing_features = []

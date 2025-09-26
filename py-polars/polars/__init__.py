@@ -33,12 +33,6 @@ Source Code: https://github.com/pola-rs/polars
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    # This must be done before importing the Polars Rust bindings, otherwise we
-    # might execute illegal instructions.
-    import polars._cpu_check
-
-    polars._cpu_check.check_cpu_flags()
-
     # We also configure the allocator before importing the Polars Rust bindings.
     # See https://github.com/pola-rs/polars/issues/18088,
     # https://github.com/pola-rs/polars/pull/21829.

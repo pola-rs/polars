@@ -11,6 +11,7 @@ __build__: Any
 _ir_nodes: Any
 _allocator: Any
 _debug: bool
+RUNTIME_REPR: str
 
 CompatLevel: TypeAlias = int | bool
 BufferInfo: TypeAlias = tuple[int, int, int]
