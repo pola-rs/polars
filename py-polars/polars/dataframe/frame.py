@@ -4345,8 +4345,8 @@ class DataFrame:
                 n_rows: int
 
                 # We can reliably introspect the underlying driver from a URI
-                # We can also introspect instiated connections when PyArrow is installed
-                # Otherwise, the underlying driver is unknown
+                # We can also introspect instantiated connections when PyArrow is
+                # installed. Otherwise, the underlying driver is unknown
                 # Ref: https://github.com/apache/arrow-adbc/issues/2828
                 if isinstance(connection, str):
                     adbc_module_name = _get_adbc_module_name_from_uri(connection)
