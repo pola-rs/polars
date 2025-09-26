@@ -23,44 +23,35 @@ bitflags::bitflags! {
         const BOOLEAN           = 1 << 1;
         const STRING            = 1 << 2;
         const STRING_OWNED      = 1 << 3;
-        const UINT8             = 1 << 4;
-        const UINT16            = 1 << 5;
-        const UINT32            = 1 << 6;
-        const UINT64            = 1 << 7;
-        const INT8              = 1 << 8;
-        const INT16             = 1 << 9;
-        const INT32             = 1 << 10;
-        const INT64             = 1 << 11;
-        const INT128            = 1 << 12;
-        const FLOAT32           = 1 << 13;
-        const FLOAT64           = 1 << 14;
-        const DATE              = 1 << 15;
-        const TIME              = 1 << 16;
-        const BINARY            = 1 << 17;
-        const BINARY_OWNED      = 1 << 18;
-        const OBJECT            = 1 << 19;
-        const OBJECT_OWNED      = 1 << 20;
+        const UINT              = 1 << 4;
+        const INT               = 1 << 5;
+        const FLOAT             = 1 << 6;
+        const DATE              = 1 << 7;
+        const TIME              = 1 << 8;
+        const BINARY            = 1 << 9;
+        const BINARY_OWNED      = 1 << 10;
+        const OBJECT            = 1 << 11;
+        const OBJECT_OWNED      = 1 << 12;
 
-        const DATETIME          = 1 << 21;
-        const DATETIME_OWNED    = 1 << 22;
-        const DURATION          = 1 << 23;
-        const DECIMAL           = 1 << 24;
-        const CATEGORICAL       = 1 << 25;
-        const CATEGORICAL_OWNED = 1 << 26;
-        const ENUM              = 1 << 27;
-        const ENUM_OWNED        = 1 << 28;
+        const DATETIME          = 1 << 13;
+        const DATETIME_OWNED    = 1 << 14;
+        const DURATION          = 1 << 15;
+        const DECIMAL           = 1 << 16;
+        const CATEGORICAL       = 1 << 17;
+        const CATEGORICAL_OWNED = 1 << 18;
+        const ENUM              = 1 << 19;
+        const ENUM_OWNED        = 1 << 20;
 
-        const LIST              = 1 << 29;
-        const ARRAY             = 1 << 30;
-        const STRUCT            = 1 << 31;
-        // const STRUCT_OWNED      = 1 << 32;
+        const LIST              = 1 << 21;
+        const ARRAY             = 1 << 22;
+        const STRUCT            = 1 << 23;
+        const STRUCT_OWNED      = 1 << 24;
     }
 }
 
 impl AnyValueArbitrarySelection {
     pub fn nested() -> Self {
-        Self::LIST | Self::ARRAY | Self::STRUCT
-        // | Self::STRUCT_OWNED
+        Self::LIST | Self::ARRAY | Self::STRUCT | Self::STRUCT_OWNED
     }
 }
 
@@ -114,18 +105,9 @@ pub fn anyvalue_strategy(
             _ if selection == S::BOOLEAN => any::<bool>().prop_map(AnyValue::Boolean).boxed(),
             _ if selection == S::STRING => string_strategy().boxed(),
             _ if selection == S::STRING_OWNED => string_owned_strategy().boxed(),
-            _ if selection == S::UINT8 => any::<u8>().prop_map(AnyValue::UInt8).boxed(),
-            _ if selection == S::UINT16 => any::<u16>().prop_map(AnyValue::UInt16).boxed(),
-            _ if selection == S::UINT32 => any::<u32>().prop_map(AnyValue::UInt32).boxed(),
-            _ if selection == S::UINT64 => any::<u64>().prop_map(AnyValue::UInt64).boxed(),
-            _ if selection == S::INT8 => any::<i8>().prop_map(AnyValue::Int8).boxed(),
-            _ if selection == S::INT16 => any::<i16>().prop_map(AnyValue::Int16).boxed(),
-            _ if selection == S::INT32 => any::<i32>().prop_map(AnyValue::Int32).boxed(),
-            _ if selection == S::INT64 => any::<i64>().prop_map(AnyValue::Int64).boxed(),
-            _ if selection == S::INT128 => any::<i128>().prop_map(AnyValue::Int128).boxed(),
-            _ if selection == S::FLOAT32 => any::<f32>().prop_map(AnyValue::Float32).boxed(),
-            _ if selection == S::FLOAT64 => any::<f64>().prop_map(AnyValue::Float64).boxed(),
-            #[cfg(feature = "dtype-date")]
+            _ if selection == S::UINT => uint_strategy().boxed(),
+            _ if selection == S::INT => int_strategy().boxed(),
+            _ if selection == S::FLOAT => float_strategy().boxed(),
             _ if selection == S::DATE => any::<i32>().prop_map(AnyValue::Date).boxed(),
             #[cfg(feature = "dtype-time")]
             _ if selection == S::TIME => any::<i64>().prop_map(AnyValue::Time).boxed(),
@@ -181,10 +163,11 @@ pub fn anyvalue_strategy(
                 anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
                 options.struct_fields_range.clone(),
             ),
-            // #[cfg(feature = "dtype-struct")]
-            // _ if selection == S::STRUCT_OWNED => struct_owned_strategy(
-            //     anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
-            //     options.struct_fields_range.clone(),
+            #[cfg(feature = "dtype-struct")]
+            _ if selection == S::STRUCT_OWNED => struct_owned_strategy(
+                anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
+                options.struct_fields_range.clone(),
+            ),
             _ => unreachable!(),
         }
     })
@@ -196,6 +179,33 @@ fn string_strategy() -> impl Strategy<Value = AnyValue<'static>> {
 
 fn string_owned_strategy() -> impl Strategy<Value = AnyValue<'static>> {
     any::<String>().prop_map(|s| AnyValue::StringOwned(PlSmallStr::from_string(s)))
+}
+
+fn uint_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    prop_oneof![
+        any::<u8>().prop_map(AnyValue::UInt8),
+        any::<u16>().prop_map(AnyValue::UInt16),
+        any::<u32>().prop_map(AnyValue::UInt32),
+        any::<u64>().prop_map(AnyValue::UInt64),
+        any::<u128>().prop_map(AnyValue::UInt128),
+    ]
+}
+
+fn int_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    prop_oneof![
+        any::<i8>().prop_map(AnyValue::Int8),
+        any::<i16>().prop_map(AnyValue::Int16),
+        any::<i32>().prop_map(AnyValue::Int32),
+        any::<i64>().prop_map(AnyValue::Int64),
+        any::<i128>().prop_map(AnyValue::Int128),
+    ]
+}
+
+fn float_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    prop_oneof![
+        any::<f32>().prop_map(AnyValue::Float32),
+        any::<f64>().prop_map(AnyValue::Float64),
+    ]
 }
 
 fn binary_strategy(
@@ -313,8 +323,9 @@ fn duration_strategy() -> impl Strategy<Value = AnyValue<'static>> {
 fn decimal_strategy(
     decimal_precision_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = AnyValue<'static>> {
-    (any::<i128>(), decimal_precision_range)
-        .prop_map(|(value, scale)| AnyValue::Decimal(value, scale))
+    decimal_precision_range
+        .prop_flat_map(|precision| (any::<i128>(), Just(precision), 0..=precision))
+        .prop_map(|(value, precision, scale)| AnyValue::Decimal(value, precision, scale))
 }
 
 #[cfg(feature = "dtype-categorical")]
@@ -413,7 +424,7 @@ fn struct_strategy(
 }
 
 #[cfg(feature = "dtype-struct")]
-fn _struct_owned_strategy(
+fn struct_owned_strategy(
     inner: impl Strategy<Value = AnyValue<'static>> + 'static,
     struct_fields_range: RangeInclusive<usize>,
 ) -> BoxedStrategy<AnyValue<'static>> {
