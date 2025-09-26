@@ -677,15 +677,15 @@ impl PyLazyFrame {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
 
-            polars_core::POOL.spawn(move || {
-                let result = ldf
-                    .collect_with_engine(engine.0)
-                    .map(PyDataFrame::new)
-                    .map_err(PyPolarsErr::from);
+            polars_io::utils::spawn_blocking(move || {
+                let result = ldf.collect_with_engine(engine.0).map_err(PyPolarsErr::from);
 
                 Python::with_gil(|py| match result {
                     Ok(df) => {
-                        lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
+                        lambda
+                            .call1(py, (PyDataFrame::new(df),))
+                            .map_err(|err| err.restore(py))
+                            .ok();
                     },
                     Err(err) => {
                         lambda
