@@ -4,7 +4,7 @@ import re
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-from polars._dependencies import import_optional
+from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.various import parse_version
 from polars.convert import from_arrow
 from polars.exceptions import ModuleUpgradeRequiredError
@@ -142,3 +142,23 @@ def _open_adbc_connection(connection_uri: str) -> Any:
         connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
 
     return adbc_driver.connect(connection_uri)
+
+
+def _is_adbc_snowflake_conn(conn: Any) -> bool:
+    import adbc_driver_manager
+
+    # If PyArrow is available, prefer using the built in method
+    if _PYARROW_AVAILABLE:
+        return "snowflake" in conn.adbc_get_info()["vendor_name"].lower()
+    # Otherwise, use a workaround checking a Snowflake specific ADBC option
+    try:
+        import adbc_driver_snowflake
+
+        return (
+            "snowflake"
+            in conn.adbc_database.get_option(
+                adbc_driver_snowflake.DatabaseOptions.HOST.value
+            ).lower()
+        )
+    except (ImportError, adbc_driver_manager.Error):
+        return False
