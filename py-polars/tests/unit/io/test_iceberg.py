@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
+import pickle
 import sys
 import zoneinfo
 from datetime import date, datetime
@@ -1799,6 +1800,17 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
             reader_override="native",
             use_metadata_statistics=False,
         ).filter(pl.col("IntegerType") > 1).collect()
+
+    with expect_file_not_found_err:
+        pickle.loads(
+            pickle.dumps(
+                pl.scan_iceberg(
+                    tbl,
+                    reader_override="native",
+                    use_metadata_statistics=False,
+                ).filter(pl.col("IntegerType") > 1)
+            )
+        ).collect()
 
     # Check different types
     ensure_filter_skips_file(pl.col("BooleanType") < True)

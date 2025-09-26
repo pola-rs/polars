@@ -402,6 +402,8 @@ class IcebergDataset:
             "snapshot_id": self._snapshot_id,
             "iceberg_storage_properties": self._iceberg_storage_properties,
             "reader_override": self._reader_override,
+            "use_metadata_statistics": self._use_metadata_statistics,
+            "fast_deletion_count": self._fast_deletion_count,
         }
 
         if verbose():
@@ -409,13 +411,17 @@ class IcebergDataset:
             snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
+            use_metadata_statistics = state["use_metadata_statistics"]
+            fast_deletion_count = state["fast_deletion_count"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
                 f"snapshot_id: {snapshot_id}, "
                 f"iceberg_storage_properties: {keys_repr}, "
-                f"reader_override: {reader_override}"
+                f"reader_override: {reader_override}, "
+                f"use_metadata_statistics: {use_metadata_statistics}, "
+                f"fast_deletion_count: {fast_deletion_count}"
             )
 
         return state
@@ -426,13 +432,17 @@ class IcebergDataset:
             snapshot_id = state["snapshot_id"]
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
+            use_metadata_statistics = state["use_metadata_statistics"]
+            fast_deletion_count = state["fast_deletion_count"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
                 f"snapshot_id: '{snapshot_id}', "
                 f"iceberg_storage_properties: {keys_repr}, "
-                f"reader_override: {reader_override}"
+                f"reader_override: {reader_override}, "
+                f"use_metadata_statistics: {use_metadata_statistics}, "
+                f"fast_deletion_count: {fast_deletion_count}"
             )
 
         IcebergDataset.__init__(
@@ -441,6 +451,8 @@ class IcebergDataset:
             snapshot_id=state["snapshot_id"],
             iceberg_storage_properties=state["iceberg_storage_properties"],
             reader_override=state["reader_override"],
+            use_metadata_statistics=state["use_metadata_statistics"],
+            fast_deletion_count=state["fast_deletion_count"],
         )
 
 
