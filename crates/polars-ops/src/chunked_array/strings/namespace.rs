@@ -166,6 +166,7 @@ pub trait StringNameSpaceImpl: AsString {
             DataType::UInt16 => parse_integer::<UInt16Type>(ca, base, strict),
             DataType::UInt32 => parse_integer::<UInt32Type>(ca, base, strict),
             DataType::UInt64 => parse_integer::<UInt64Type>(ca, base, strict),
+            DataType::UInt128 => parse_integer::<UInt128Type>(ca, base, strict),
             dtype => polars_bail!(InvalidOperation: "Invalid dtype {:?}", dtype),
         }
     }

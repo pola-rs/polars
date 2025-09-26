@@ -4,9 +4,9 @@ import re
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
+from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.various import parse_version
 from polars.convert import from_arrow
-from polars.dependencies import _PYARROW_AVAILABLE, import_optional
 from polars.exceptions import ModuleUpgradeRequiredError
 
 if TYPE_CHECKING:

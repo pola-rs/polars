@@ -2,7 +2,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
-use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType};
+use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, LIST_ELEMENT_DEFAULT_ID};
 use polars_core::series::{IntoSeries, Series};
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_error::{PolarsResult, feature_gated, polars_bail};
@@ -472,7 +472,10 @@ impl ColumnSelectorBuilder {
                         return mismatch_err("");
                     };
 
-                    if incoming_inner.physical_id != target_inner.physical_id {
+                    if incoming_inner.physical_id != target_inner.physical_id
+                        && incoming_inner.physical_id != LIST_ELEMENT_DEFAULT_ID
+                        && target_inner.physical_id != LIST_ELEMENT_DEFAULT_ID
+                    {
                         return mismatch_err("physical ID mismatch for list values column");
                     }
 
@@ -499,7 +502,10 @@ impl ColumnSelectorBuilder {
                             return mismatch_err("");
                         }
 
-                        if incoming_inner.physical_id != target_inner.physical_id {
+                        if incoming_inner.physical_id != target_inner.physical_id
+                            && incoming_inner.physical_id != LIST_ELEMENT_DEFAULT_ID
+                            && target_inner.physical_id != LIST_ELEMENT_DEFAULT_ID
+                        {
                             return mismatch_err(
                                 "physical ID mismatch for fixed size list values column",
                             );

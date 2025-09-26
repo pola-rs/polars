@@ -56,7 +56,6 @@ flag_getter_setters! {
     (SLICE_PUSHDOWN, get_slice_pushdown, set_slice_pushdown, clear=true)
     (COMM_SUBPLAN_ELIM, get_comm_subplan_elim, set_comm_subplan_elim, clear=true)
     (COMM_SUBEXPR_ELIM, get_comm_subexpr_elim, set_comm_subexpr_elim, clear=true)
-    (COLLAPSE_JOINS, get_collapse_joins, set_collapse_joins, clear=true)
     (CHECK_ORDER_OBSERVE, get_check_order_observe, set_check_order_observe, clear=true)
     (FAST_PROJECTION, get_fast_projection, set_fast_projection, clear=true)
 

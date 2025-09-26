@@ -1,6 +1,5 @@
 mod from;
 mod new;
-pub mod reduce;
 #[cfg(any(feature = "serde", feature = "dsl-schema"))]
 mod serde;
 

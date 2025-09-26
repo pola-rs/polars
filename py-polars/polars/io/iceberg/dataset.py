@@ -11,6 +11,7 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import (
+    IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
     _scan_pyarrow_dataset_impl,
 )
@@ -34,12 +35,14 @@ class IcebergDataset:
         snapshot_id: int | None = None,
         iceberg_storage_properties: dict[str, Any] | None = None,
         reader_override: Literal["native", "pyiceberg"] | None = None,
+        use_metadata_statistics: bool = True,
     ) -> None:
         self._metadata_path = None
         self._table = None
         self._snapshot_id = snapshot_id
         self._iceberg_storage_properties = iceberg_storage_properties
         self._reader_override: Literal["native", "pyiceberg"] | None = reader_override
+        self._use_metadata_statistics = use_metadata_statistics
 
         # Accept either a path or a table object. The one we don't have is
         # lazily initialized when needed.
@@ -69,6 +72,7 @@ class IcebergDataset:
         existing_resolved_version_key: str | None = None,
         limit: int | None = None,
         projection: list[str] | None = None,
+        filter_columns: list[str] | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
         if (
@@ -76,6 +80,7 @@ class IcebergDataset:
                 existing_resolved_version_key=existing_resolved_version_key,
                 limit=limit,
                 projection=projection,
+                filter_columns=filter_columns,
             )
         ) is None:
             return None
@@ -88,6 +93,7 @@ class IcebergDataset:
         existing_resolved_version_key: str | None = None,
         limit: int | None = None,
         projection: list[str] | None = None,
+        filter_columns: list[str] | None = None,
     ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -100,7 +106,9 @@ class IcebergDataset:
                 "IcebergDataset: to_dataset_scan(): "
                 f"snapshot ID: {self._snapshot_id}, "
                 f"limit: {limit}, "
-                f"projection: {projection}"
+                f"projection: {projection}, "
+                f"filter_columns: {filter_columns}, "
+                f"self._use_metadata_statistics: {self._use_metadata_statistics}"
             )
 
         tbl = self.table()
@@ -185,6 +193,11 @@ class IcebergDataset:
             tbl,
             projected_iceberg_schema,
         )
+        statistics_loader: IcebergStatisticsLoader | None = (
+            IcebergStatisticsLoader(tbl, iceberg_schema.select(*filter_columns))
+            if self._use_metadata_statistics and filter_columns is not None
+            else None
+        )
         deletion_files: dict[int, list[str]] = {}
 
         if reader_override != "pyiceberg" and not fallback_reason:
@@ -240,6 +253,9 @@ class IcebergDataset:
                     partition_values=file_info.file.partition,
                 )
 
+                if statistics_loader is not None:
+                    statistics_loader.push_file_statistics(file_info.file)
+
                 sources.append(file_info.file.file_path)
 
             if verbose:
@@ -269,12 +285,29 @@ class IcebergDataset:
 
             identity_transformed_values = missing_field_defaults.finish()
 
+            min_max_statistics = (
+                statistics_loader.finish(len(sources), identity_transformed_values)
+                if statistics_loader is not None
+                else None
+            )
+
+            storage_options = (
+                _convert_iceberg_to_object_store_storage_options(
+                    self._iceberg_storage_properties
+                )
+                if self._iceberg_storage_properties is not None
+                else None
+            )
+
             return _NativeIcebergScanData(
                 sources=sources,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
                 default_values=identity_transformed_values,
                 deletion_files=deletion_files,
+                min_max_statistics=min_max_statistics,
+                statistics_loader=statistics_loader,
+                storage_options=storage_options,
                 _snapshot_id_key=snapshot_id_key,
             )
 
@@ -414,6 +447,13 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     column_mapping: pa.Schema
     default_values: dict[int, pl.Series | str]
     deletion_files: dict[int, list[str]]
+    min_max_statistics: pl.DataFrame | None
+    # This is here for test purposes, as the `min_max_statistics` on this
+    # dataclass contain coalesced values from `default_values`, a test may
+    # access the statistics loader directly to inspect the values before
+    # coalescing.
+    statistics_loader: IcebergStatisticsLoader | None
+    storage_options: dict[str, str] | None
     _snapshot_id_key: str
 
     def to_lazyframe(self) -> pl.LazyFrame:
@@ -424,9 +464,11 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
             extra_columns="ignore",
+            storage_options=self.storage_options,
             _column_mapping=("iceberg-column-mapping", self.column_mapping),
             _default_values=("iceberg", self.default_values),
             _deletion_files=("iceberg-position-delete", self.deletion_files),
+            _table_statistics=self.min_max_statistics,
         )
 
     @property
@@ -459,3 +501,56 @@ def _redact_dict_values(obj: Any) -> Any:
         if obj is not None
         else "None"
     )
+
+
+def _convert_iceberg_to_object_store_storage_options(
+    iceberg_storage_properties: dict[str, str],
+) -> dict[str, str]:
+    storage_options = {}
+
+    for k, v in iceberg_storage_properties.items():
+        if (
+            translated_key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP.get(k)
+        ) is not None:
+            storage_options[translated_key] = v
+        elif "." not in k:
+            # Pass-through non-Iceberg config keys, as they may be native config
+            # keys. We identify Iceberg keys by checking for a dot - from
+            # observation nearly all Iceberg config keys contain dots, whereas
+            # native config keys do not contain them.
+            storage_options[k] = v
+
+        # Otherwise, unknown keys are ignored / not passed. This is to avoid
+        # interfering with credential provider auto-init, which bails on
+        # unknown keys.
+
+    return storage_options
+
+
+# https://py.iceberg.apache.org/configuration/#fileio
+# This does not contain all keys - some have no object-store equivalent.
+ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP: dict[str, str] = {
+    # S3
+    "s3.endpoint": "aws_endpoint_url",
+    "s3.access-key-id": "aws_access_key_id",
+    "s3.secret-access-key": "aws_secret_access_key",
+    "s3.session-token": "aws_session_token",
+    "s3.region": "aws_region",
+    "s3.proxy-uri": "proxy_url",
+    "s3.connect-timeout": "connect_timeout",
+    "s3.request-timeout": "timeout",
+    "s3.force-virtual-addressing": "aws_virtual_hosted_style_request",
+    # Azure
+    "adls.account-name": "azure_storage_account_name",
+    "adls.account-key": "azure_storage_account_key",
+    "adls.sas-token": "azure_storage_sas_key",
+    "adls.tenant-id": "azure_storage_tenant_id",
+    "adls.client-id": "azure_storage_client_id",
+    "adls.client-secret": "azure_storage_client_secret",
+    "adls.account-host": "azure_storage_authority_host",
+    "adls.token": "azure_storage_token",
+    # Google storage
+    "gcs.oauth2.token": "bearer_token",
+    # HuggingFace
+    "hf.token": "token",
+}

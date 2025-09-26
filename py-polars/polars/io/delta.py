@@ -5,9 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
-from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.cloud._utils import _get_path_scheme
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset

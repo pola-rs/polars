@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use arrow::bitmap::Bitmap;
 use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
+use polars_plan::dsl::TableStatistics;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
@@ -16,6 +16,7 @@ use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
 };
+use crate::nodes::io_sources::multi_scan::components::skip_files::SkipFilesMask;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::functions::resolve_slice::resolve_to_positive_slice;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
@@ -75,6 +76,7 @@ async fn finish_initialize_multi_scan_pipeline(
     let (skip_files_mask, predicate) = initialize_predicate(
         config.predicate.as_ref(),
         config.hive_parts.as_deref(),
+        config.table_statistics.as_ref(),
         verbose,
     )?;
 
@@ -98,10 +100,10 @@ async fn finish_initialize_multi_scan_pipeline(
     loop {
         if skip_files_mask
             .as_ref()
-            .is_some_and(|x| x.unset_bits() == 0)
+            .is_some_and(|x| x.num_skipped_files() == x.len())
         {
             if verbose {
-                eprintln!("[MultiScanTaskInit]: early return (skip_files_mask / predicate)")
+                eprintln!("[MultiScanTaskInit]: early return (filter excludes all files)")
             }
         } else if config.pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
             if cfg!(debug_assertions) {
@@ -246,9 +248,9 @@ async fn finish_initialize_multi_scan_pipeline(
         };
 
         if verbose {
-            let n_filtered = skip_files_mask
-                .clone()
-                .map_or(0, |x| x.sliced(range.start, range.len()).set_bits());
+            let n_filtered = skip_files_mask.clone().map_or(0, |x| {
+                x.sliced(range.start, range.len()).num_skipped_files()
+            });
             let n_readers_init = range.len() - n_filtered;
 
             eprintln!(
@@ -265,14 +267,14 @@ async fn finish_initialize_multi_scan_pipeline(
         if let Some(skip_files_mask) = &skip_files_mask {
             range.end = range
                 .end
-                .min(skip_files_mask.len() - skip_files_mask.trailing_ones());
+                .min(skip_files_mask.len() - skip_files_mask.trailing_skipped_files());
         }
 
         let range = range.filter(move |scan_source_idx| {
             let can_skip = !has_row_index_or_slice
                 && skip_files_mask
                     .as_ref()
-                    .is_some_and(|x| x.get_bit(*scan_source_idx));
+                    .is_some_and(|x| x.is_skipped_file(*scan_source_idx));
 
             !can_skip
         });
@@ -403,45 +405,63 @@ async fn finish_initialize_multi_scan_pipeline(
 fn initialize_predicate<'a>(
     predicate: Option<&'a ScanIOPredicate>,
     hive_parts: Option<&HivePartitionsDf>,
+    table_statsitics: Option<&TableStatistics>,
     verbose: bool,
-) -> PolarsResult<(Option<Bitmap>, Option<&'a ScanIOPredicate>)> {
-    if let Some(predicate) = predicate {
-        if let Some(hive_parts) = hive_parts {
-            let mut skip_files_mask = None;
+) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
+    #[expect(clippy::never_loop)]
+    loop {
+        let Some(predicate) = predicate else {
+            break;
+        };
 
-            if let Some(predicate) = &predicate.hive_predicate {
-                let mask = predicate
-                    .evaluate_io(hive_parts.df())?
-                    .bool()?
-                    .rechunk()
-                    .into_owned()
-                    .downcast_into_iter()
-                    .next()
-                    .unwrap()
-                    .values()
-                    .clone();
-
-                // TODO: Optimize to avoid doing this
-                let mask = !&mask;
-
-                if verbose {
-                    eprintln!(
-                        "[MultiScan]: Predicate pushdown allows skipping {} / {} files",
-                        mask.set_bits(),
-                        mask.len()
-                    );
-                }
-
-                skip_files_mask = Some(mask);
+        let (skip_files_mask, send_predicate_to_readers) = if let Some(hive_parts) = hive_parts
+            && let Some(hive_predicate) = &predicate.hive_predicate
+        {
+            if verbose {
+                eprintln!("[MultiScan]: Source filter mask initialization via hive partitions");
             }
 
-            let need_pred_for_inner_readers = !predicate.hive_predicate_is_full_predicate;
+            let inclusion_mask = hive_predicate
+                .evaluate_io(hive_parts.df())?
+                .bool()?
+                .rechunk()
+                .into_owned()
+                .downcast_into_iter()
+                .next()
+                .unwrap()
+                .values()
+                .clone();
 
-            return Ok((
-                skip_files_mask,
-                need_pred_for_inner_readers.then_some(predicate),
-            ));
+            (
+                SkipFilesMask::Inclusion(inclusion_mask),
+                !predicate.hive_predicate_is_full_predicate,
+            )
+        } else if let Some(table_statsitics) = table_statsitics
+            && let Some(skip_batch_predicate) = &predicate.skip_batch_predicate
+        {
+            if verbose {
+                eprintln!("[MultiScan]: Source filter mask initialization via table statistics");
+            }
+
+            let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statsitics.0)?;
+
+            (SkipFilesMask::Exclusion(exclusion_mask), true)
+        } else {
+            break;
+        };
+
+        if verbose {
+            eprintln!(
+                "[MultiScan]: Predicate pushdown allows skipping {} / {} files",
+                skip_files_mask.num_skipped_files(),
+                skip_files_mask.len()
+            );
         }
+
+        return Ok((
+            Some(skip_files_mask),
+            send_predicate_to_readers.then_some(predicate),
+        ));
     }
 
     Ok((None, predicate))

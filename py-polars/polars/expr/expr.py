@@ -21,6 +21,8 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
@@ -47,8 +49,6 @@ from polars.datatypes import (
     Int64,
     parse_into_datatype_expr,
 )
-from polars.dependencies import _check_for_numpy
-from polars.dependencies import numpy as np
 from polars.exceptions import (
     CustomUFuncWarning,
     OutOfBoundsError,
@@ -1684,21 +1684,21 @@ class Expr:
         ...     pl.all().round(mode="half_to_even").name.suffix("_to_even"),
         ... )
         shape: (8, 6)
-        ┌──────┬──────────────┬──────────┬──────────────┬─────────────┬──────────────┐
-        │ f64  ┆ d            ┆ f64_away ┆ d_away       ┆ f64_to_even ┆ d_to_even    │
-        │ ---  ┆ ---          ┆ ---      ┆ ---          ┆ ---         ┆ ---          │
-        │ f64  ┆ decimal[*,1] ┆ f64      ┆ decimal[*,1] ┆ f64         ┆ decimal[*,1] │
-        ╞══════╪══════════════╪══════════╪══════════════╪═════════════╪══════════════╡
-        │ -3.5 ┆ -3.5         ┆ -4.0     ┆ -4.0         ┆ -4.0        ┆ -4.0         │
-        │ -2.5 ┆ -2.5         ┆ -3.0     ┆ -3.0         ┆ -2.0        ┆ -2.0         │
-        │ -1.5 ┆ -1.5         ┆ -2.0     ┆ -2.0         ┆ -2.0        ┆ -2.0         │
-        │ -0.5 ┆ -0.5         ┆ -1.0     ┆ -1.0         ┆ -0.0        ┆ 0.0          │
-        │ 0.5  ┆ 0.5          ┆ 1.0      ┆ 1.0          ┆ 0.0         ┆ 0.0          │
-        │ 1.5  ┆ 1.5          ┆ 2.0      ┆ 2.0          ┆ 2.0         ┆ 2.0          │
-        │ 2.5  ┆ 2.5          ┆ 3.0      ┆ 3.0          ┆ 2.0         ┆ 2.0          │
-        │ 3.5  ┆ 3.5          ┆ 4.0      ┆ 4.0          ┆ 4.0         ┆ 4.0          │
-        └──────┴──────────────┴──────────┴──────────────┴─────────────┴──────────────┘
-        """
+        ┌──────┬───────────────┬──────────┬───────────────┬─────────────┬───────────────┐
+        │ f64  ┆ d             ┆ f64_away ┆ d_away        ┆ f64_to_even ┆ d_to_even     │
+        │ ---  ┆ ---           ┆ ---      ┆ ---           ┆ ---         ┆ ---           │
+        │ f64  ┆ decimal[38,1] ┆ f64      ┆ decimal[38,1] ┆ f64         ┆ decimal[38,1] │
+        ╞══════╪═══════════════╪══════════╪═══════════════╪═════════════╪═══════════════╡
+        │ -3.5 ┆ -3.5          ┆ -4.0     ┆ -4.0          ┆ -4.0        ┆ -4.0          │
+        │ -2.5 ┆ -2.5          ┆ -3.0     ┆ -3.0          ┆ -2.0        ┆ -2.0          │
+        │ -1.5 ┆ -1.5          ┆ -2.0     ┆ -2.0          ┆ -2.0        ┆ -2.0          │
+        │ -0.5 ┆ -0.5          ┆ -1.0     ┆ -1.0          ┆ -0.0        ┆ 0.0           │
+        │ 0.5  ┆ 0.5           ┆ 1.0      ┆ 1.0           ┆ 0.0         ┆ 0.0           │
+        │ 1.5  ┆ 1.5           ┆ 2.0      ┆ 2.0           ┆ 2.0         ┆ 2.0           │
+        │ 2.5  ┆ 2.5           ┆ 3.0      ┆ 3.0           ┆ 2.0         ┆ 2.0           │
+        │ 3.5  ┆ 3.5           ┆ 4.0      ┆ 4.0           ┆ 4.0         ┆ 4.0           │
+        └──────┴───────────────┴──────────┴───────────────┴─────────────┴───────────────┘
+        """  # noqa: W505
         return wrap_expr(self._pyexpr.round(decimals, mode))
 
     def round_sig_figs(self, digits: int) -> Expr:
@@ -9469,8 +9469,10 @@ Consider using {self}.implode() instead"""
         Parameters
         ----------
         dimensions
-            Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
-            dimension is inferred.
+            Tuple of the dimension sizes. If -1 is used as the value for the
+            first dimension, that dimension is inferred.
+            Because the size of the Column may not be known in advance, it is
+            only possible to use -1 for the first dimension.
 
         Returns
         -------

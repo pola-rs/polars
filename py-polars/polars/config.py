@@ -5,11 +5,11 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
+from polars._dependencies import json
 from polars._typing import EngineType
 from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
-from polars.dependencies import json
 from polars.lazyframe.engine_config import GPUEngine
 
 if TYPE_CHECKING:
@@ -1393,25 +1393,25 @@ class Config(contextlib.ContextDecorator):
         >>> with pl.Config(trim_decimal_zeros=False):
         ...     print(df)
         shape: (2, 1)
-        ┌──────────────┐
-        │ d            │
-        │ ---          │
-        │ decimal[*,5] │
-        ╞══════════════╡
-        │ 1.01000      │
-        │ -5.67890     │
-        └──────────────┘
+        ┌───────────────┐
+        │ d             │
+        │ ---           │
+        │ decimal[38,5] │
+        ╞═══════════════╡
+        │ 1.01000       │
+        │ -5.67890      │
+        └───────────────┘
         >>> with pl.Config(trim_decimal_zeros=True):
         ...     print(df)
         shape: (2, 1)
-        ┌──────────────┐
-        │ d            │
-        │ ---          │
-        │ decimal[*,5] │
-        ╞══════════════╡
-        │ 1.01         │
-        │ -5.6789      │
-        └──────────────┘
+        ┌───────────────┐
+        │ d             │
+        │ ---           │
+        │ decimal[38,5] │
+        ╞═══════════════╡
+        │ 1.01          │
+        │ -5.6789       │
+        └───────────────┘
         """
         plr.set_trim_decimal_zeros(active)
         return cls
