@@ -5,7 +5,7 @@ readme = "README.md"
 authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
-version = "1.34.0b1"
+version = "1.34.0b2"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 
@@ -28,7 +28,7 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
-dependencies = ["polars-runtime-32 == 1.34.0b1"]
+dependencies = ["polars-runtime-32 == 1.34.0b2"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -38,8 +38,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # Runtimes
-rt64 = ["polars-runtime-64 == 1.34.0b1"]
-rtcompat = ["polars-runtime-compat == 1.34.0b1"]
+rt64 = ["polars-runtime-64 == 1.34.0b2"]
+rtcompat = ["polars-runtime-compat == 1.34.0b2"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.0.1a1"]
