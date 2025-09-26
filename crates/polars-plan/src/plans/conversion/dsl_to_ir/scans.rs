@@ -572,6 +572,13 @@ passing a schema can allow \
 this scan to succeed with an empty DataFrame.",
                         )?;
 
+                        if verbose() {
+                            eprintln!(
+                                "sourcing parquet scan file schema from: '{}'",
+                                first_scan_source.to_include_path_name()
+                            )
+                        }
+
                         let (file_info, mut metadata) = scans::parquet_file_info(
                             first_scan_source,
                             unified_scan_args.row_index.as_ref(),
@@ -589,8 +596,18 @@ this scan to succeed with an empty DataFrame.",
             },
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { options } => (|| {
+                let first_scan_source =
+                    require_first_source("failed to retrieve first file schema (ipc)", "")?;
+
+                if verbose() {
+                    eprintln!(
+                        "sourcing ipc scan file schema from: '{}'",
+                        first_scan_source.to_include_path_name()
+                    )
+                }
+
                 let (file_info, md) = scans::ipc_file_info(
-                    require_first_source("failed to retrieve first file schema (ipc)", "")?,
+                    first_scan_source,
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
                 )?;
@@ -614,10 +631,20 @@ this scan to succeed with an empty DataFrame.",
                         unified_scan_args.missing_columns_policy = MissingColumnsPolicy::Insert;
                     }
 
+                    let first_scan_source =
+                        require_first_source("failed to retrieve file schemas (csv)", "")?;
+
+                    if verbose() {
+                        eprintln!(
+                            "sourcing csv scan file schema from: '{}'",
+                            first_scan_source.to_include_path_name()
+                        )
+                    }
+
                     PolarsResult::Ok((
                         scans::csv_file_info(
                             sources,
-                            require_first_source("failed to retrieve file schemas (csv)", "")?,
+                            first_scan_source,
                             unified_scan_args.row_index.as_ref(),
                             &mut options,
                             cloud_options,
@@ -629,10 +656,20 @@ this scan to succeed with an empty DataFrame.",
             },
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => (|| {
+                let first_scan_source =
+                    require_first_source("failed to retrieve first file schema (ndjson)", "")?;
+
+                if verbose() {
+                    eprintln!(
+                        "sourcing ndjson scan file schema from: '{}'",
+                        first_scan_source.to_include_path_name()
+                    )
+                }
+
                 PolarsResult::Ok((
                     scans::ndjson_file_info(
                         sources,
-                        require_first_source("failed to retrieve first file schema (ndjson)", "")?,
+                        first_scan_source,
                         unified_scan_args.row_index.as_ref(),
                         &options,
                         cloud_options,
