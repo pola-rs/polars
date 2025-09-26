@@ -3,10 +3,11 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from polars._dependencies import import_optional
+from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.unstable import issue_unstable_warning
-from polars._utils.various import qualified_type_name
+from polars._utils.various import parse_version, qualified_type_name
 from polars.datatypes import N_INFER_DEFAULT
+from polars.exceptions import ModuleUpgradeRequiredError
 from polars.io.database._cursor_proxies import ODBCCursorProxy
 from polars.io.database._executor import ConnectionExecutor
 
@@ -263,6 +264,27 @@ def read_database(
         else:
             msg = "unable to identify string connection as valid ODBC (no driver)"
             raise ValueError(msg)
+
+    # adbc_driver_manager must be >= 1.7.0 to support passing Python sequences into
+    # parameterised queries (via execute_options) without PyArrow installed
+    if (
+        execute_options is not None
+        and not _PYARROW_AVAILABLE
+        and type(connection).__module__.split(".", 1)[0].startswith("adbc")
+    ):
+        adbc_version_no_pyarrow_required = "1.7.0"
+        adbc_driver_manager = import_optional("adbc_driver_manager")
+        adbc_str_version = getattr(adbc_driver_manager, "__version__", "0.0")
+        if not parse_version(adbc_str_version) >= parse_version(
+            adbc_version_no_pyarrow_required
+        ):
+            msg = (
+                "pyarrow is required for adbc-driver-manager < "
+                f"{adbc_version_no_pyarrow_required} when using parameterized queries (via "
+                f"`execute_options`), found {adbc_str_version}.\nEither upgrade "
+                "`adbc-driver-manager` (suggested) or install `pyarrow`"
+            )
+            raise ModuleUpgradeRequiredError(msg)
 
     # return frame from arbitrary connections using the executor abstraction
     with ConnectionExecutor(connection) as cx:
