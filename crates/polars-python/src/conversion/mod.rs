@@ -33,6 +33,7 @@ use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::CloudScheme;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -1272,7 +1273,8 @@ pub(crate) fn parse_cloud_options(
     kv: impl IntoIterator<Item = (String, String)>,
 ) -> PyResult<CloudOptions> {
     let iter: &mut dyn Iterator<Item = _> = &mut kv.into_iter();
-    let out = CloudOptions::from_untyped_config(uri, iter).map_err(PyPolarsErr::from)?;
+    let out = CloudOptions::from_untyped_config(CloudScheme::from_uri(uri).as_ref(), iter)
+        .map_err(PyPolarsErr::from)?;
     Ok(out)
 }
 

@@ -5,6 +5,7 @@ use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_utils::_limit_path_len_io_err;
 use polars_utils::mmap::MemSlice;
+use polars_utils::plpath::PlPathRef;
 
 use crate::cloud::{
     CloudLocation, CloudOptions, ObjectStorePath, PolarsObjectStore, build_object_store,
@@ -29,13 +30,15 @@ pub struct MemSliceByteSource(pub MemSlice);
 
 impl MemSliceByteSource {
     async fn try_new_mmap_from_path(
-        path: &str,
+        path: PlPathRef<'_>,
         _cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
+        let path = path.as_local_path().unwrap();
+
         let file = Arc::new(
             tokio::fs::File::open(path)
                 .await
-                .map_err(|err| _limit_path_len_io_err(path.as_ref(), err))?
+                .map_err(|err| _limit_path_len_io_err(path, err))?
                 .into_std()
                 .await,
         );
@@ -72,7 +75,7 @@ pub struct ObjectStoreByteSource {
 
 impl ObjectStoreByteSource {
     async fn try_new_from_path(
-        path: &str,
+        path: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, store) =
@@ -178,7 +181,7 @@ pub enum DynByteSourceBuilder {
 impl DynByteSourceBuilder {
     pub async fn try_build_from_path(
         &self,
-        path: &str,
+        path: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<DynByteSource> {
         Ok(match self {
