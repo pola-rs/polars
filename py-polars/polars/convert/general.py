@@ -115,7 +115,7 @@ def from_dict(
 
 
 def from_dicts(
-    data: Iterable[dict[str, Any]],
+    data: Iterable[Mapping[str, Any]],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
