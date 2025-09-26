@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -99,3 +101,26 @@ def test_over_replace_strict_22870() -> None:
     assert_series_equal(
         out.get_column("val"), out.get_column("val_over"), check_names=False
     )
+
+
+@pytest.mark.parametrize(
+    "col",
+    [
+        [1, 2, 3],
+        [[11, 12], [21], [31]],
+    ],
+)
+def test_implode_explode_list_over_24616(col: list[Any]) -> None:
+    df = pl.DataFrame({"x": col})
+    q = df.lazy().select(pl.col.x.implode().explode().over(1))
+    q_base = df.lazy().select(pl.col.x.over(1))
+    expected = df
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q_base.collect(), expected)
+
+    df = pl.DataFrame({"g": [10, 10, 20], "x": col})
+    q = df.lazy().with_columns(pl.col.x.implode().explode().over("g"))
+    q_base = df.lazy().with_columns(pl.col.x.over("g"))
+    expected = df
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q_base.collect(), expected)

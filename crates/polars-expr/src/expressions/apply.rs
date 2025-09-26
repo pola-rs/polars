@@ -117,7 +117,11 @@ impl ApplyExpr {
         }
 
         let name = s.name().clone();
-        let agg = ac.aggregated();
+        let agg = match ac.agg_state() {
+            AggState::AggregatedScalar(_) => s.as_list().into_column(),
+            _ => ac.aggregated(),
+        };
+
         // Collection of empty list leads to a null dtype. See: #3687.
         if agg.is_empty() {
             // Create input for the function to determine the output dtype, see #3946.
