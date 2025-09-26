@@ -83,6 +83,10 @@ impl<'a> ExprToIRContext<'a> {
         ctx.check_column_names = false;
         ctx
     }
+
+    pub fn to_field_ctx<'b>(&'b self) -> ToFieldContext<'b> {
+        ToFieldContext::new(self.arena, self.schema)
+    }
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -409,7 +413,7 @@ pub(super) fn to_aexpr_impl(
             variant,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
-            let expr_dtype = ctx.arena.get(expr).to_dtype(ctx.schema, ctx.arena)?;
+            let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
             // Perform this before schema resolution so that we can better error messages.
