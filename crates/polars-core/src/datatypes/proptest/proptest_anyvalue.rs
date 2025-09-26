@@ -108,6 +108,7 @@ pub fn anyvalue_strategy(
             _ if selection == S::UINT => uint_strategy().boxed(),
             _ if selection == S::INT => int_strategy().boxed(),
             _ if selection == S::FLOAT => float_strategy().boxed(),
+            #[cfg(feature = "dtype-date")]
             _ if selection == S::DATE => any::<i32>().prop_map(AnyValue::Date).boxed(),
             #[cfg(feature = "dtype-time")]
             _ if selection == S::TIME => any::<i64>().prop_map(AnyValue::Time).boxed(),
