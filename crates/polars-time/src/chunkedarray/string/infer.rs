@@ -39,9 +39,9 @@ polars_utils::regex_cache::cached_regex! {
             ^
             ['"]?                      # optional quotes
             (?:\d{4,})                 # year
-            [-/\.]                     # separator
+            [-/\.]?                    # separator
             (?P<month>[01]?\d{1})      # month
-            [-/\.]                     # separator
+            [-/\.]?                    # separator
             (?:\d{1,2})                # day
             (?:
                 [T\ ]                  # separator
@@ -64,9 +64,9 @@ polars_utils::regex_cache::cached_regex! {
             ^
             ['"]?                  # optional quotes
             (?:\d{4,})             # year
-            [-/\.]                 # separator
+            [-/\.]?                # separator
             (?P<month>[01]?\d{1})  # month
-            [-/\.]                 # separator
+            [-/\.]?                # separator
             (?:\d{1,2})            # year
             [T\ ]                  # separator
             (?:\d{2})              # hour
