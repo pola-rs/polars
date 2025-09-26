@@ -11,9 +11,8 @@ use polars_time::prelude::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
-use super::CsvParseOptions;
 use super::buffer::init_buffers;
-use super::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
+use super::options::{CommentPrefix, CsvEncoding, CsvParseOptions, NullValuesCompiled};
 use super::parser::{
     CountLines, SplitLines, is_comment_line, parse_lines, skip_bom, skip_line_ending,
     skip_lines_naive, skip_this_line,
@@ -23,6 +22,7 @@ use super::schema_inference::infer_file_schema;
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
 use crate::RowIndex;
+use crate::csv::read::options::BatchSizeOptions;
 use crate::csv::read::parser::skip_this_line_naive;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
@@ -116,7 +116,9 @@ pub(crate) struct CoreReader<'a> {
     n_rows: Option<usize>,
     n_threads: Option<usize>,
     has_header: bool,
+    #[allow(unused)]
     chunk_size: usize,
+    batch_size_options: BatchSizeOptions,
     null_values: Option<NullValuesCompiled>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
@@ -151,6 +153,7 @@ impl<'a> CoreReader<'a> {
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
         chunk_size: usize,
+        batch_size_options: BatchSizeOptions,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         mut to_cast: Vec<Field>,
         skip_rows_after_header: usize,
@@ -246,6 +249,7 @@ impl<'a> CoreReader<'a> {
             n_threads,
             has_header,
             chunk_size,
+            batch_size_options,
             null_values,
             predicate,
             to_cast,
