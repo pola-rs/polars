@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import re
+import sys
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Callable
 
@@ -721,9 +722,10 @@ def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
         (pl.scan_parquet, pl.DataFrame.write_parquet),
     ],
 )
+@pytest.mark.parametrize("prefix", ["", "file:", "file://"])
 @pytest.mark.parametrize("use_glob", [True, False])
 def test_scan_ignore_hidden_files_21762(
-    tmp_path: Path, scan: Any, write: Any, use_glob: bool
+    tmp_path: Path, scan: Any, write: Any, use_glob: bool, prefix: str
 ) -> None:
     file_names: list[str] = ["a.ext", "_a.ext", ".a.ext", "a_.ext"]
 
@@ -746,7 +748,11 @@ def test_scan_ignore_hidden_files_21762(
             tmp_path / "_folder" / file_name,
         )
 
-    root = f"{tmp_path}/**/*.ext" if use_glob else tmp_path
+    if prefix.startswith("file:") and sys.platform == "win32":
+        pytest.skip("Unsupported on Windows")
+
+    suffix = "/**/*.ext" if use_glob else "/" if prefix.startswith("file:") else ""
+    root = f"{prefix}{tmp_path}{suffix}"
 
     assert_frame_equal(
         scan(root).sort("*"),
@@ -822,7 +828,7 @@ def test_scan_ignore_hidden_files_21762(
     )
 
     # Top-level glob only
-    root = tmp_path / "*.ext"
+    root = f"{tmp_path}/*.ext"
 
     assert_frame_equal(
         scan(root).sort("*"),

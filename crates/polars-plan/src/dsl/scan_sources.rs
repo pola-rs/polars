@@ -444,11 +444,7 @@ impl ScanSourceRef<'_> {
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<DynByteSource> {
         match self {
-            Self::Path(path) => {
-                builder
-                    .try_build_from_path(path.to_str(), cloud_options)
-                    .await
-            },
+            Self::Path(path) => builder.try_build_from_path(*path, cloud_options).await,
             Self::File(file) => Ok(DynByteSource::from(MemSlice::from_file(file)?)),
             Self::Buffer(buff) => Ok(DynByteSource::from((*buff).clone())),
         }

@@ -3308,7 +3308,6 @@ dependencies = [
  "strum_macros 0.27.1",
  "tempfile",
  "tokio",
- "url",
  "zstd",
 ]
 

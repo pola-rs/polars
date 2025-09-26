@@ -224,9 +224,9 @@ pub(super) fn parquet_file_info(
         if first_scan_source.is_cloud_url() {
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
-                let uri = first_path.to_str();
                 get_runtime().block_in_place_on(async {
-                    let mut reader = ParquetObjectStore::from_uri(uri, cloud_options, None).await?;
+                    let mut reader =
+                        ParquetObjectStore::from_uri(first_path, cloud_options, None).await?;
 
                     PolarsResult::Ok((
                         reader.schema().await?,
@@ -283,12 +283,11 @@ pub(super) fn ipc_file_info(
     use polars_utils::plpath::PlPathRef;
 
     let metadata = match first_scan_source {
-        ScanSourceRef::Path(addr) => match addr {
-            PlPathRef::Cloud(uri) => {
+        ScanSourceRef::Path(path) => match path {
+            PlPathRef::Cloud(_) => {
                 feature_gated!("cloud", {
-                    let uri = uri.to_string();
                     get_runtime().block_on(async {
-                        polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options)
+                        polars_io::ipc::IpcReaderAsync::from_uri(path, cloud_options)
                             .await?
                             .metadata()
                             .await
