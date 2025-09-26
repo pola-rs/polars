@@ -147,7 +147,7 @@ jobs:
           sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
       - name: Set runtime repr in plr
         run: |
-          sed -i "s/^pub static RUNTIME_REPR: &str = \"unknown\";$/pub static RUNTIME_REPR: &str = \"rt$(echo '${{ matrix.package }}' | cut -d '-' -f 3)\";/g" crates/polars-python/src/c_api/mod.rs
+          sed -i "s/^pub static RUNTIME_REPR: \&str = \"unknown\";$/pub static RUNTIME_REPR: \&str = \"rt$(echo '${{ matrix.package }}' | cut -d '-' -f 3)\";/g" crates/polars-python/src/c_api/mod.rs
       - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
@@ -308,7 +308,7 @@ jobs:
           sed $SED_INPLACE "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
       - name: Set runtime repr in plr
         run: |
-          sed $SED_INPLACE "s/^pub static RUNTIME_REPR: &str = \"unknown\";$/pub static RUNTIME_REPR: &str = \"rt$(echo '${{ matrix.package }}' | cut -d '-' -f 3)\";/g" crates/polars-python/src/c_api/mod.rs
+          sed $SED_INPLACE "s/^pub static RUNTIME_REPR: \&str = \"unknown\";$/pub static RUNTIME_REPR: \&str = \"rt$(echo '${{ matrix.package }}' | cut -d '-' -f 3)\";/g" crates/polars-python/src/c_api/mod.rs
       - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
