@@ -59,7 +59,7 @@ fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
     Some(
         GroupsType::Slice {
             groups,
-            rolling: false,
+            overlapping: false,
         }
         .into_sliceable(),
     )
