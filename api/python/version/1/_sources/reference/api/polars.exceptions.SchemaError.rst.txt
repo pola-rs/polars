@@ -1,0 +1,6 @@
+﻿polars.exceptions.SchemaError
+=============================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: SchemaError

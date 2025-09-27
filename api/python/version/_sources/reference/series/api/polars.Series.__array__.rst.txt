@@ -1,0 +1,6 @@
+﻿polars.Series.\_\_array\_\_
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.__array__
