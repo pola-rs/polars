@@ -195,6 +195,19 @@ impl fmt::Debug for Expr {
                 RenameAliasFn::ToLowercase => write!(f, "{expr:?}.name.to_lowercase()"),
                 RenameAliasFn::ToUppercase => write!(f, "{expr:?}.name.to_uppercase()"),
                 RenameAliasFn::Map(_) => write!(f, "{expr:?}.name.map()"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: false,
+                } => write!(f, "{expr:?}.replace(\"{pattern}\", \"{value}\")"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: true,
+                } => write!(
+                    f,
+                    "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
+                ),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]
