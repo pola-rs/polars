@@ -1192,7 +1192,12 @@ class StringNameSpace:
         """
 
     def replace(
-        self, pattern: str, value: str, *, literal: bool = False, n: int = 1
+        self,
+        pattern: IntoExprColumn,
+        value: IntoExprColumn,
+        *,
+        literal: bool = False,
+        n: int = 1,
     ) -> Series:
         r"""
         Replace first matching regex/literal substring with a new string value.
@@ -1300,7 +1305,9 @@ class StringNameSpace:
         ]
         """
 
-    def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
+    def replace_all(
+        self, pattern: IntoExprColumn, value: IntoExprColumn, *, literal: bool = False
+    ) -> Series:
         r"""
         Replace all matching regex/literal substrings with a new string value.
 

@@ -1939,8 +1939,8 @@ class ExprStringNameSpace:
 
     def replace(
         self,
-        pattern: str | Expr,
-        value: str | Expr,
+        pattern: IntoExprColumn,
+        value: IntoExprColumn,
         *,
         literal: bool = False,
         n: int = 1,
@@ -2061,7 +2061,7 @@ class ExprStringNameSpace:
         )
 
     def replace_all(
-        self, pattern: str | Expr, value: str | Expr, *, literal: bool = False
+        self, pattern: IntoExprColumn, value: IntoExprColumn, *, literal: bool = False
     ) -> Expr:
         r"""
         Replace all matching regex/literal substrings with a new string value.
