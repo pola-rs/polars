@@ -320,24 +320,37 @@ def test_list_sum_and_dtypes() -> None:
         (pl.Int16, pl.Int64),
         (pl.Int32, pl.Int32),
         (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
         (pl.UInt8, pl.Int64),
         (pl.UInt16, pl.Int64),
         (pl.UInt32, pl.UInt32),
         (pl.UInt64, pl.UInt64),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
     ]:
         df = pl.DataFrame(
-            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
-            schema={"a": pl.List(dt_in)},
+            {
+                "a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]],
+                "b": [[1], [1, 2, None], [1, 2, 3, None], [1, 2, 3, 4, None]],
+            },
+            schema={
+                "a": pl.List(dt_in),
+                "b": pl.List(dt_in),
+            },
         )
 
-        summed = df.explode("a").sum()
-        assert summed.dtypes == [dt_out]
-        assert summed.item() == 32
+        summed_a = df.select("a").explode("a").sum()
+        assert summed_a.dtypes == [dt_out]
+        assert summed_a.item() == 32
         assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
-    assert df.select(pl.col("a").list.sum()).to_dict(as_series=False) == {
-        "a": [1, 6, 10, 15]
-    }
+        # include nulls in the list
+        summed_b = df.select("b").explode("b").sum()
+        assert summed_b.dtypes == [dt_out]
+        assert summed_b.item() == 20
+        assert df.select(pl.col("b").list.sum()).dtypes == [dt_out]
+
+    assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
     # include nulls
     assert pl.DataFrame(
