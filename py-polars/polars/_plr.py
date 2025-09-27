@@ -7,7 +7,7 @@ import sys
 
 from polars._cpu_check import check_cpu_flags
 
-PKG_VERSION = "1.34.0-beta.2"
+PKG_VERSION = "1.34.0-beta.3"
 
 # Replaced during the build process with our list of required feature flags
 # enabled at compile time.
