@@ -388,9 +388,6 @@ def test_group_by_key_sensitivity(
     df = q.collect()
     assert ("AGGREGATE[maintain_order: true]" in q.explain()) is is_ordered
 
-    print(q.explain())
-    print(df)
-
     expected_values = pl.Series("a", values)
 
     if values is not None:
