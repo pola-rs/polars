@@ -3039,6 +3039,7 @@ dependencies = [
  "chrono",
  "either",
  "ethnum",
+ "flate2",
  "futures",
  "getrandom 0.2.16",
  "getrandom 0.3.3",
@@ -3057,6 +3058,7 @@ dependencies = [
  "rand 0.9.1",
  "tokio",
  "version_check",
+ "zstd",
 ]
 
 [[package]]

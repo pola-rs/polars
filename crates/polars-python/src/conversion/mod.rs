@@ -16,6 +16,8 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
+#[cfg(feature = "csv")]
+use polars::io::csv::write::CsvCompression;
 use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
@@ -31,6 +33,8 @@ use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
+#[cfg(feature = "csv")]
+use polars_utils::compression::{GzipLevel as CsvGzipLevel, ZstdLevel as CsvZstdLevel};
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::CloudScheme;
@@ -1508,6 +1512,37 @@ pub(crate) fn parse_parquet_compression(
         e => {
             return Err(PyValueError::new_err(format!(
                 "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
+            )));
+        },
+    };
+    Ok(parsed)
+}
+
+#[cfg(feature = "csv")]
+pub(crate) fn parse_csv_compression(
+    compression: &str,
+    compression_level: Option<i32>,
+) -> PyResult<Option<CsvCompression>> {
+    let parsed = match compression {
+        "uncompressed" => None,
+        "gzip" => Some(CsvCompression::Gzip(
+            compression_level
+                .map(|lvl| {
+                    CsvGzipLevel::try_new(lvl as u8)
+                        .map_err(|e| PyValueError::new_err(format!("{e:?}")))
+                })
+                .transpose()?,
+        )),
+        "zstd" => Some(CsvCompression::Zstd(
+            compression_level
+                .map(|lvl| {
+                    CsvZstdLevel::try_new(lvl).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+                })
+                .transpose()?,
+        )),
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "csv `compression` must be one of {{'uncompressed', 'gzip', 'zstd'}}, got {e}",
             )));
         },
     };

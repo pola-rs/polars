@@ -40,6 +40,46 @@ fn write_csv() {
 }
 
 #[test]
+fn write_csv_compression() {
+    use std::io::Read;
+
+    use flate2::read::MultiGzDecoder;
+    use polars_utils::compression::{GzipLevel, ZstdLevel};
+    use zstd::stream::read::Decoder as ZstdDecoder;
+
+    let mut buf: Vec<u8> = Vec::new();
+    let mut df = create_df();
+
+    let level = GzipLevel::try_new(3).ok();
+    let compression = Some(CsvCompression::Gzip(level));
+    CsvWriter::new(&mut buf)
+        .include_header(true)
+        .with_compression(compression)
+        .finish(&mut df)
+        .expect("gzip compressed csv written");
+    let mut csv = String::new();
+    MultiGzDecoder::new(buf.as_slice())
+        .read_to_string(&mut csv)
+        .expect("gzip decompressed");
+    assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7.0\n3,2.0\n4,3.0\n", csv);
+
+    let mut buf: Vec<u8> = Vec::new();
+    let level = ZstdLevel::try_new(3).ok();
+    let compression = Some(CsvCompression::Zstd(level));
+    CsvWriter::new(&mut buf)
+        .include_header(false)
+        .with_compression(compression)
+        .finish(&mut df)
+        .expect("zstd compressed csv written");
+    let mut csv = String::new();
+    ZstdDecoder::new(buf.as_slice())
+        .unwrap()
+        .read_to_string(&mut csv)
+        .expect("zstd decompressed");
+    assert_eq!("0,22.1\n1,19.9\n2,7.0\n3,2.0\n4,3.0\n", csv);
+}
+
+#[test]
 #[cfg(feature = "timezones")]
 fn write_dates() {
     use chrono;
