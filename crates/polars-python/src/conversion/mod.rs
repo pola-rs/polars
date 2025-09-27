@@ -16,13 +16,12 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
-use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars::prelude::deletion::DeletionFilesList;
+use polars::prelude::{ColumnMapping, dec128_verify_prec_scale};
 use polars::series::ops::NullBehavior;
-use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;

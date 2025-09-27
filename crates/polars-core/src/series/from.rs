@@ -305,7 +305,7 @@ impl Series {
             },
             ArrowDataType::Decimal32(precision, scale) => {
                 feature_gated!("dtype-decimal", {
-                    polars_compute::decimal::dec128_verify_prec_scale(*precision, *scale)?;
+                    dec128_verify_prec_scale(*precision, *scale)?;
 
                     let mut chunks = chunks;
                     for chunk in chunks.iter_mut() {
@@ -332,7 +332,7 @@ impl Series {
             },
             ArrowDataType::Decimal64(precision, scale) => {
                 feature_gated!("dtype-decimal", {
-                    polars_compute::decimal::dec128_verify_prec_scale(*precision, *scale)?;
+                    dec128_verify_prec_scale(*precision, *scale)?;
 
                     let mut chunks = chunks;
                     for chunk in chunks.iter_mut() {
@@ -359,7 +359,7 @@ impl Series {
             },
             ArrowDataType::Decimal(precision, scale) => {
                 feature_gated!("dtype-decimal", {
-                    polars_compute::decimal::dec128_verify_prec_scale(*precision, *scale)?;
+                    dec128_verify_prec_scale(*precision, *scale)?;
 
                     let mut chunks = chunks;
                     for chunk in chunks.iter_mut() {
@@ -383,7 +383,7 @@ impl Series {
                 feature_gated!("dtype-decimal", {
                     use arrow::types::i256;
 
-                    polars_compute::decimal::dec128_verify_prec_scale(*precision, *scale)?;
+                    dec128_verify_prec_scale(*precision, *scale)?;
 
                     let mut chunks = chunks;
                     for chunk in chunks.iter_mut() {
