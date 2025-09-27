@@ -462,13 +462,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload sdist to GitHub release
-        run: gh release upload $TAG $FILES --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.github-release.outputs.tag_name }}
-          FILES: wasm-dist/polars-*.whl
-
       - name: Publish GitHub release
         if: inputs.dry-run == false
         run: gh release edit $TAG --draft=false
