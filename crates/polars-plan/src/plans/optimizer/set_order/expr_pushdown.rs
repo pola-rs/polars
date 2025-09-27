@@ -224,7 +224,8 @@ pub fn get_frame_observing(
                 options.flags.terminates_input_order(),
                 options.flags.non_order_producing(),
             ) {
-                (false, false) => input_ordering | O::Independent,
+                // (false, false) => input_ordering | O::Independent,
+                (false, false) => panic!("{:?}", aexpr),
                 (false, true) => input_ordering,
                 (true, false) => O::Independent,
                 (true, true) => O::None,
