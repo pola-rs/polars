@@ -354,6 +354,7 @@ impl LazyFileListReader for LazyCsvReader {
                 include_file_paths: self.include_file_paths,
                 deletion_files: None,
                 table_statistics: None,
+                row_count: None,
             },
         )?
         .build()
