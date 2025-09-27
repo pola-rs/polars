@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
-use polars_compute::decimal::{dec128_fits, dec128_rescale, dec128_verify_prec_scale};
+use polars_compute::decimal::{dec128_fits, dec128_rescale};
 
 use super::*;
 use crate::chunked_array::cast::cast_chunks;
