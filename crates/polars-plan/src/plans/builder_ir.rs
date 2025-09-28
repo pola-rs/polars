@@ -64,7 +64,8 @@ impl<'a> IRBuilder<'a> {
             self
         } else {
             let input_schema = self.schema();
-            let schema = expr_irs_to_schema(&exprs, &input_schema, self.expr_arena);
+            let schema = expr_irs_to_schema(&exprs, &input_schema, self.expr_arena)
+                .expect("no valid schema can be derived for the query");
 
             let lp = IR::Select {
                 expr: exprs,
@@ -210,7 +211,8 @@ impl<'a> IRBuilder<'a> {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        let hstack_schema = expr_irs_to_schema(&exprs, &schema, self.expr_arena);
+        let hstack_schema = expr_irs_to_schema(&exprs, &schema, self.expr_arena)
+            .expect("no valid schema can be derived for the query");
         new_schema.merge(hstack_schema);
 
         let lp = IR::HStack {
@@ -236,7 +238,7 @@ impl<'a> IRBuilder<'a> {
             let field = self
                 .expr_arena
                 .get(node)
-                .to_field(&schema, self.expr_arena)
+                .to_field(&ToFieldContext::new(self.expr_arena, &schema))
                 .unwrap();
 
             expr_irs.push(
@@ -276,7 +278,8 @@ impl<'a> IRBuilder<'a> {
         options: Arc<GroupbyOptions>,
     ) -> Self {
         let current_schema = self.schema();
-        let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena);
+        let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena)
+            .expect("no valid schema can be derived for the key expression");
 
         #[cfg(feature = "dynamic_group_by")]
         {
@@ -295,7 +298,8 @@ impl<'a> IRBuilder<'a> {
             }
         }
 
-        let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena);
+        let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena)
+            .expect("no valid schema can be derived for the agg expression");
 
         // Coerce aggregation column(s) into List unless not needed (auto-implode)
         debug_assert!(aggs_schema.len() == aggs.len());

@@ -224,9 +224,9 @@ pub(super) fn parquet_file_info(
         if first_scan_source.is_cloud_url() {
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
-                let uri = first_path.to_str();
                 get_runtime().block_in_place_on(async {
-                    let mut reader = ParquetObjectStore::from_uri(uri, cloud_options, None).await?;
+                    let mut reader =
+                        ParquetObjectStore::from_uri(first_path, cloud_options, None).await?;
 
                     PolarsResult::Ok((
                         reader.schema().await?,
@@ -283,12 +283,11 @@ pub(super) fn ipc_file_info(
     use polars_utils::plpath::PlPathRef;
 
     let metadata = match first_scan_source {
-        ScanSourceRef::Path(addr) => match addr {
-            PlPathRef::Cloud(uri) => {
+        ScanSourceRef::Path(path) => match path {
+            PlPathRef::Cloud(_) => {
                 feature_gated!("cloud", {
-                    let uri = uri.to_string();
                     get_runtime().block_on(async {
-                        polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options)
+                        polars_io::ipc::IpcReaderAsync::from_uri(path, cloud_options)
                             .await?
                             .metadata()
                             .await
@@ -572,6 +571,13 @@ passing a schema can allow \
 this scan to succeed with an empty DataFrame.",
                         )?;
 
+                        if verbose() {
+                            eprintln!(
+                                "sourcing parquet scan file schema from: '{}'",
+                                first_scan_source.to_include_path_name()
+                            )
+                        }
+
                         let (file_info, mut metadata) = scans::parquet_file_info(
                             first_scan_source,
                             unified_scan_args.row_index.as_ref(),
@@ -589,8 +595,18 @@ this scan to succeed with an empty DataFrame.",
             },
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { options } => (|| {
+                let first_scan_source =
+                    require_first_source("failed to retrieve first file schema (ipc)", "")?;
+
+                if verbose() {
+                    eprintln!(
+                        "sourcing ipc scan file schema from: '{}'",
+                        first_scan_source.to_include_path_name()
+                    )
+                }
+
                 let (file_info, md) = scans::ipc_file_info(
-                    require_first_source("failed to retrieve first file schema (ipc)", "")?,
+                    first_scan_source,
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
                 )?;
@@ -614,10 +630,20 @@ this scan to succeed with an empty DataFrame.",
                         unified_scan_args.missing_columns_policy = MissingColumnsPolicy::Insert;
                     }
 
+                    let first_scan_source =
+                        require_first_source("failed to retrieve file schemas (csv)", "")?;
+
+                    if verbose() {
+                        eprintln!(
+                            "sourcing csv scan file schema from: '{}'",
+                            first_scan_source.to_include_path_name()
+                        )
+                    }
+
                     PolarsResult::Ok((
                         scans::csv_file_info(
                             sources,
-                            require_first_source("failed to retrieve file schemas (csv)", "")?,
+                            first_scan_source,
                             unified_scan_args.row_index.as_ref(),
                             &mut options,
                             cloud_options,
@@ -629,10 +655,20 @@ this scan to succeed with an empty DataFrame.",
             },
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => (|| {
+                let first_scan_source =
+                    require_first_source("failed to retrieve first file schema (ndjson)", "")?;
+
+                if verbose() {
+                    eprintln!(
+                        "sourcing ndjson scan file schema from: '{}'",
+                        first_scan_source.to_include_path_name()
+                    )
+                }
+
                 PolarsResult::Ok((
                     scans::ndjson_file_info(
                         sources,
-                        require_first_source("failed to retrieve first file schema (ndjson)", "")?,
+                        first_scan_source,
                         unified_scan_args.row_index.as_ref(),
                         &options,
                         cloud_options,

@@ -128,7 +128,7 @@ pub fn fmt_exprs(
         }
 
         for (name, expr) in formatted {
-            write!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}\\n").unwrap();
+            writeln!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}").unwrap();
         }
     } else {
         let Some(e) = exprs.first() else {
@@ -138,7 +138,7 @@ pub fn fmt_exprs(
         fmt_expr(f, e, expr_arena).unwrap();
 
         for e in &exprs[1..] {
-            f.write_str("\\n").unwrap();
+            f.write_str("\n").unwrap();
             fmt_expr(f, e, expr_arena).unwrap();
         }
     }
@@ -259,6 +259,7 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
+        PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
         PhysNodeKind::FileSink {
             input, file_type, ..
         } => match file_type {
@@ -399,6 +400,7 @@ fn visualize_plan_rec(
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
+            table_statistics: _,
             file_schema: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());

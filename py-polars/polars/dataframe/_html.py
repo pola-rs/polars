@@ -7,7 +7,7 @@ import re
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
-from polars.dependencies import html
+from polars._dependencies import html
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

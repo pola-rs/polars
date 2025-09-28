@@ -370,7 +370,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                         matches!(
                             expr_arena
                                 .get(agg)
-                                .get_dtype(_input_schema, expr_arena)
+                                .to_dtype(&ToFieldContext::new(expr_arena, _input_schema))
                                 .map(|dt| { dt.is_primitive_numeric() }),
                             Ok(true)
                         )

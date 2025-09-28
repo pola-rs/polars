@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, Series
 else:
-    from polars.dependencies import pyiceberg
+    from polars._dependencies import pyiceberg
 
 _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
     "to_py_date": to_py_date,

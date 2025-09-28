@@ -16,9 +16,9 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
 import polars.selectors as cs
+from polars._dependencies import dataclasses, pydantic
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
-from polars.dependencies import dataclasses, pydantic
 from polars.exceptions import DuplicateError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder

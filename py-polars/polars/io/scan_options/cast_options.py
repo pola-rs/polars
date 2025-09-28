@@ -31,6 +31,7 @@ class ScanCastOptions:
         | Collection[DatetimeCastOption] = "forbid",
         missing_struct_fields: Literal["insert", "raise"] = "raise",
         extra_struct_fields: Literal["ignore", "raise"] = "raise",
+        categorical_to_string: Literal["allow", "forbid"] = "forbid",
         _internal_call: bool = False,
     ) -> None:
         """
@@ -78,6 +79,13 @@ class ScanCastOptions:
             * `ignore`: Silently ignores.
             * `raise`: Raises an error.
 
+        categorical_to_string
+            Configuration for behavior when reading in a column whose expected
+            type is string, but type in the file is categorical.
+
+            * `allow`: Categorical is casted to string.
+            * `forbid`: Raises an error.
+
         """
         if not _internal_call:
             issue_unstable_warning("ScanCastOptions is considered unstable.")
@@ -87,6 +95,7 @@ class ScanCastOptions:
         self.datetime_cast = datetime_cast
         self.missing_struct_fields = missing_struct_fields
         self.extra_struct_fields = extra_struct_fields
+        self.categorical_to_string = categorical_to_string
 
     # Note: We don't cache this here, it's cached on the Rust-side.
     @staticmethod
@@ -110,6 +119,7 @@ class ScanCastOptions:
                 datetime_cast=["nanosecond-downcast", "convert-timezone"],
                 missing_struct_fields="insert",
                 extra_struct_fields="ignore",
+                categorical_to_string="allow",
                 _internal_call=True,
             )
 

@@ -1,6 +1,6 @@
 use core::fmt;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::Arc;
 
 /// A Path or URI
@@ -58,20 +58,13 @@ impl PlCloudPath {
     }
 
     pub fn strip_scheme(&self) -> &str {
-        &self.uri[self.scheme.as_str().len() + 3..]
+        self.scheme.strip_scheme_from_uri(&self.uri)
     }
 }
 
 impl PlCloudPathRef<'_> {
     pub fn new<'a>(uri: &'a str) -> Option<PlCloudPathRef<'a>> {
-        if let Some(i) = uri.find([':', '/']) {
-            if uri[i..].starts_with("://") && CLOUD_SCHEME_REGEX.is_match(&uri[..i]) {
-                let scheme = CloudScheme::from_str(&uri[..i]).unwrap();
-                return Some(PlCloudPathRef { scheme, uri });
-            }
-        }
-
-        None
+        CloudScheme::from_uri(uri).map(|scheme| PlCloudPathRef { scheme, uri })
     }
 
     pub fn into_owned(self) -> PlCloudPath {
@@ -90,24 +83,24 @@ impl PlCloudPathRef<'_> {
     }
 
     pub fn strip_scheme(&self) -> &str {
-        &self.uri[self.scheme.as_str().len() + "://".len()..]
+        self.scheme.strip_scheme_from_uri(self.uri)
     }
 }
 
-pub struct AddressDisplay<'a> {
-    addr: PlPathRef<'a>,
+pub struct PlPathDisplay<'a> {
+    path: PlPathRef<'a>,
 }
 
-impl<'a> fmt::Display for AddressDisplay<'a> {
+impl<'a> fmt::Display for PlPathDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.addr {
+        match self.path {
             PlPathRef::Local(p) => p.display().fmt(f),
             PlPathRef::Cloud(p) => p.fmt(f),
         }
     }
 }
 
-macro_rules! impl_scheme {
+macro_rules! impl_cloud_scheme {
     ($($t:ident = $n:literal,)+) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -116,19 +109,18 @@ macro_rules! impl_scheme {
             $($t,)+
         }
 
-        impl FromStr for CloudScheme {
-            type Err = ();
-
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                match s {
-                    $($n => Ok(Self::$t),)+
-                    _ => Err(()),
-                }
-            }
-        }
-
         impl CloudScheme {
-            pub fn as_str(&self) -> &'static str {
+             /// Note, private function. Users should use [`CloudScheme::from_uri`], that will handle e.g.
+            /// `file:/` without hostname properly.
+            #[expect(unreachable_patterns)]
+            fn from_scheme(s: &str) -> Option<Self> {
+                Some(match s {
+                    $($n => Self::$t,)+
+                    _ => return None,
+                })
+            }
+
+            pub const fn as_str(&self) -> &'static str {
                 match self {
                     $(Self::$t => $n,)+
                 }
@@ -137,30 +129,55 @@ macro_rules! impl_scheme {
     };
 }
 
-impl_scheme! {
-    S3 = "s3",
-    S3a = "s3a",
-    Gs = "gs",
-    Gcs = "gcs",
-    File = "file",
+impl_cloud_scheme! {
     Abfs = "abfs",
     Abfss = "abfss",
-    Azure = "azure",
-    Az = "az",
     Adl = "adl",
+    Az = "az",
+    Azure = "azure",
+    File = "file",
+    FileNoHostname = "file",
+    Gcs = "gcs",
+    Gs = "gs",
+    Hf = "hf",
     Http = "http",
     Https = "https",
-    Hf = "hf",
+    S3 = "s3",
+    S3a = "s3a",
+}
+
+impl CloudScheme {
+    pub fn from_uri(path: &str) -> Option<Self> {
+        if path.starts_with("file:/") {
+            return Some(if path.as_bytes().get(6) != Some(&b'/') {
+                Self::FileNoHostname
+            } else {
+                Self::File
+            });
+        }
+
+        Self::from_scheme(&path[..path.find("://")?])
+    }
+
+    pub fn strip_scheme_from_uri<'a>(&self, uri: &'a str) -> &'a str {
+        &uri[self.strip_scheme_index()..]
+    }
+
+    /// Returns `i` such that `&self.as_str()[i..]` strips the scheme, as well as the `://` if it
+    /// exists.
+    pub fn strip_scheme_index(&self) -> usize {
+        if let Self::FileNoHostname = self {
+            5
+        } else {
+            self.as_str().len() + 3
+        }
+    }
 }
 
 impl fmt::Display for CloudScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
-}
-
-crate::regex_cache::cached_regex! {
-    static CLOUD_SCHEME_REGEX = r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)$";
 }
 
 impl<'a> PlPathRef<'a> {
@@ -186,7 +203,7 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn as_cloud_addr(&self) -> Option<PlCloudPathRef<'_>> {
+    pub fn as_cloud_path(&'a self) -> Option<PlCloudPathRef<'a>> {
         match self {
             Self::Local(_) => None,
             Self::Cloud(p) => Some(*p),
@@ -230,8 +247,8 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn display(&self) -> AddressDisplay<'_> {
-        AddressDisplay { addr: *self }
+    pub fn display(&self) -> PlPathDisplay<'_> {
+        PlPathDisplay { path: *self }
     }
 
     pub fn from_local_path(path: &'a Path) -> Self {
@@ -239,14 +256,11 @@ impl<'a> PlPathRef<'a> {
     }
 
     pub fn new(uri: &'a str) -> Self {
-        if let Some(i) = uri.find([':', '/']) {
-            if uri[i..].starts_with("://") && CLOUD_SCHEME_REGEX.is_match(&uri[..i]) {
-                let scheme = CloudScheme::from_str(&uri[..i]).unwrap();
-                return Self::Cloud(PlCloudPathRef { scheme, uri });
-            }
+        if let Some(scheme) = CloudScheme::from_uri(uri) {
+            Self::Cloud(PlCloudPathRef { scheme, uri })
+        } else {
+            Self::from_local_path(Path::new(uri))
         }
-
-        Self::from_local_path(Path::new(uri))
     }
 
     pub fn into_owned(self) -> PlPath {
@@ -268,7 +282,7 @@ impl<'a> PlPathRef<'a> {
             Self::Local(p) => Self::Local(p.parent()?),
             Self::Cloud(p) => {
                 let uri = p.uri;
-                let offset_start = p.scheme.as_str().len() + 3;
+                let offset_start = p.scheme.strip_scheme_index();
                 let last_slash = uri[offset_start..]
                     .char_indices()
                     .rev()
@@ -284,25 +298,40 @@ impl<'a> PlPathRef<'a> {
         })
     }
 
+    pub fn file_name(&self) -> Option<&OsStr> {
+        match self {
+            Self::Local(p) => {
+                if p.is_dir() {
+                    None
+                } else {
+                    p.file_name()
+                }
+            },
+            Self::Cloud(p) => {
+                if p.scheme() == CloudScheme::File
+                    && std::fs::metadata(p.strip_scheme()).is_ok_and(|x| x.is_dir())
+                {
+                    return None;
+                }
+
+                let p = p.strip_scheme();
+                let out = p.rfind('/').map_or(p, |i| &p[i + 1..]);
+                (!out.is_empty()).then_some(out.as_ref())
+            },
+        }
+    }
+
     pub fn extension(&self) -> Option<&str> {
         match self {
             Self::Local(path) => path.extension().and_then(|e| e.to_str()),
             Self::Cloud(_) => {
-                let offset_path = self.strip_scheme();
-                let separator = '/';
+                let after_scheme = self.strip_scheme();
 
-                let mut ext_start = None;
-                for (i, c) in offset_path.char_indices() {
-                    if c == separator {
-                        ext_start = None;
-                    }
-
-                    if c == '.' && ext_start.is_none() {
-                        ext_start = Some(i);
-                    }
-                }
-
-                ext_start.map(|i| &offset_path[i + 1..])
+                after_scheme.rfind(['.', '/']).and_then(|i| {
+                    after_scheme[i..]
+                        .starts_with('.')
+                        .then_some(&after_scheme[i + 1..])
+                })
             },
         }
     }
@@ -325,6 +354,69 @@ impl<'a> PlPathRef<'a> {
         }
         PathBuf::from(&s[n..])
     }
+
+    /// Strips the scheme, then returns the authority component, and the remaining
+    /// string after the authority component. This can be understood as extracting
+    /// the bucket/prefix for cloud URIs.
+    ///
+    ///  E.g. `https://user@host:port/dir/file?param=value`
+    /// * Authority: `user@host:port`
+    /// * Remaining: `/dir/file?param=value`
+    ///
+    /// Note, for local / `file:` URIs, the returned authority will be empty, and
+    /// the remainder will be the full URI.
+    ///
+    /// # Returns
+    /// (authority, remaining).
+    pub fn strip_scheme_split_authority(&self) -> Option<(&'_ str, &'_ str)> {
+        match self.scheme() {
+            None | Some(CloudScheme::File | CloudScheme::FileNoHostname) => {
+                Some(("", self.strip_scheme()))
+            },
+            Some(scheme) => {
+                let path_str = self.to_str();
+                let position = self.authority_end_position();
+
+                if position < path_str.len() {
+                    assert!(path_str[position..].starts_with('/'));
+                }
+
+                (position < path_str.len()).then_some((
+                    &path_str[scheme.strip_scheme_index()..position],
+                    &path_str[position..],
+                ))
+            },
+        }
+    }
+
+    /// Returns `i` such that `&self.to_str()[..i]` trims to the authority. If there is no '/'
+    /// separator found, `i` will simply be the length of the string.
+    pub fn authority_end_position(&self) -> usize {
+        match self.scheme() {
+            None | Some(CloudScheme::File | CloudScheme::FileNoHostname) => 0,
+            Some(_) => {
+                let after_scheme = self.strip_scheme();
+                let offset = self.to_str().len() - after_scheme.len();
+
+                offset + after_scheme.find('/').unwrap_or(after_scheme.len())
+            },
+        }
+    }
+
+    /// # Returns
+    /// Returns an absolute local path if this path ref is a relative local path, otherwise returns None.
+    pub fn to_absolute_path(&self) -> Option<PlPath> {
+        if let Self::Local(p) = self
+            && !p.is_absolute()
+            && !p.to_str().unwrap().is_empty()
+        {
+            Some(PlPath::new(
+                std::path::absolute(p).unwrap().to_str().unwrap(),
+            ))
+        } else {
+            None
+        }
+    }
 }
 
 impl PlPath {
@@ -332,9 +424,9 @@ impl PlPath {
         PlPathRef::new(uri).into_owned()
     }
 
-    pub fn display(&self) -> AddressDisplay<'_> {
-        AddressDisplay {
-            addr: match self {
+    pub fn display(&self) -> PlPathDisplay<'_> {
+        PlPathDisplay {
+            path: match self {
                 Self::Local(p) => PlPathRef::Local(p.as_ref()),
                 Self::Cloud(p) => PlPathRef::Cloud(p.as_ref()),
             },
@@ -393,40 +485,88 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plpath_join() {
-        macro_rules! assert_plpath_join {
-            ($base:literal + $added:literal => $result:literal$(, $uri_result:literal)?) => {
-                // Normal path test
-                let path_base = $base.chars().map(|c| match c {
-                    '/' => std::path::MAIN_SEPARATOR,
-                    c => c,
-                }).collect::<String>();
-                let path_added = $added.chars().map(|c| match c {
-                    '/' => std::path::MAIN_SEPARATOR,
-                    c => c,
-                }).collect::<String>();
-                let path_result = $result.chars().map(|c| match c {
-                    '/' => std::path::MAIN_SEPARATOR,
-                    c => c,
-                }).collect::<String>();
-                assert_eq!(PlPath::new(&path_base).as_ref().join(path_added).to_str(), path_result);
+    fn test_plpath_file() {
+        let p = PlPath::new("file:///home/user");
+        assert_eq!(
+            (
+                p.cloud_scheme(),
+                p.cloud_scheme().map(|x| x.as_str()),
+                p.to_str(),
+                p.as_ref().strip_scheme(),
+            ),
+            (
+                Some(CloudScheme::File),
+                Some("file"),
+                "file:///home/user",
+                "/home/user"
+            )
+        );
 
+        let p = PlPath::new("file:/home/user");
+        assert_eq!(
+            (
+                p.cloud_scheme(),
+                p.cloud_scheme().map(|x| x.as_str()),
+                p.to_str(),
+                p.as_ref().strip_scheme(),
+            ),
+            (
+                Some(CloudScheme::FileNoHostname),
+                Some("file"),
+                "file:/home/user",
+                "/home/user"
+            )
+        );
+    }
+
+    #[test]
+    fn plpath_join() {
+        fn _assert_plpath_join(base: &str, added: &str, expect: &str, expect_uri: Option<&str>) {
+            // Normal path test
+            let path_base = base
+                .chars()
+                .map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                })
+                .collect::<String>();
+            let path_added = added
+                .chars()
+                .map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                })
+                .collect::<String>();
+            let path_result = expect
+                .chars()
+                .map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                })
+                .collect::<String>();
+            assert_eq!(
+                PlPath::new(&path_base).as_ref().join(path_added).to_str(),
+                path_result
+            );
+
+            if let Some(expect_uri) = expect_uri {
                 // URI path test
-                let uri_base = format!("file://{}", $base);
-                #[allow(unused_variables)]
-                let result = {
-                    let x = $result;
-                    $(let x = $uri_result;)?
-                    x
-                };
-                let uri_result = format!("file://{result}");
+                let uri_base = format!("file://{base}");
+
+                let uri_result = format!("file://{expect_uri}");
                 assert_eq!(
-                    PlPath::new(uri_base.as_str())
-                        .as_ref()
-                        .join($added)
-                        .to_str(),
+                    PlPath::new(uri_base.as_str()).as_ref().join(added).to_str(),
                     uri_result.as_str()
                 );
+            }
+        }
+
+        macro_rules! assert_plpath_join {
+            ($base:literal + $added:literal => $expect:literal) => {
+                _assert_plpath_join($base, $added, $expect, None)
+            };
+            ($base:literal + $added:literal => $expect:literal, $uri_result:literal) => {
+                _assert_plpath_join($base, $added, $expect, Some($uri_result))
             };
         }
 
@@ -450,5 +590,21 @@ mod tests {
         assert_plpath_join!("/an/even/longer" + "/path" => "/path", "/an/even/longer/path");
         assert_plpath_join!("/an/even/longer" + "path/wow" => "/an/even/longer/path/wow");
         assert_plpath_join!("/an/even/longer" + "/path/wow" => "/path/wow", "/an/even/longer/path/wow");
+    }
+
+    #[test]
+    fn test_plpath_name() {
+        assert_eq!(PlPathRef::new("s3://...").file_name(), Some("...".as_ref()));
+        assert_eq!(
+            PlPathRef::new("a/b/file.parquet").file_name(),
+            Some("file.parquet".as_ref())
+        );
+        assert_eq!(
+            PlPathRef::new("file.parquet").file_name(),
+            Some("file.parquet".as_ref())
+        );
+
+        assert_eq!(PlPathRef::new("s3://").file_name(), None);
+        assert_eq!(PlPathRef::new("").file_name(), None);
     }
 }

@@ -384,7 +384,7 @@ impl Series {
 
         use DataType as D;
         let do_clone = match dtype {
-            D::Unknown(UnknownKind::Any | UnknownKind::Ufunc) => true,
+            D::Unknown(UnknownKind::Any) => true,
             D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
             D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)
@@ -777,6 +777,12 @@ impl Series {
         }
     }
 
+    /// Get the mean of the Series as a new Series of length 1.
+    /// Returns a Series with a single null entry if self is an empty numeric series.
+    pub fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        self.0.mean_reduce()
+    }
+
     /// Get the product of an array.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
@@ -933,10 +939,6 @@ impl Series {
         let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
         let len = std::cmp::min(len, self.len());
         self.slice(-(len as i64), len)
-    }
-
-    pub fn mean_reduce(&self) -> Scalar {
-        crate::scalar::reduce::mean_reduce(self.mean(), self.dtype().clone())
     }
 
     /// Compute the unique elements, but maintain order. This requires more work

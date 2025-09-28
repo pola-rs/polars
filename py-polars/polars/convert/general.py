@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import _check_for_pyarrow
+from polars._dependencies import pandas as pd
+from polars._dependencies import pyarrow as pa
 from polars._utils.construction.dataframe import (
     arrow_to_pydf,
     dict_to_pydf,
@@ -28,15 +31,14 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
-from polars.dependencies import _check_for_pyarrow
-from polars.dependencies import pandas as pd
-from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from polars import DataFrame, Series
+    from polars._dependencies import numpy as np
+    from polars._dependencies import torch
     from polars._typing import (
         ArrowArrayExportable,
         ArrowStreamExportable,
@@ -45,8 +47,6 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
     )
-    from polars.dependencies import numpy as np
-    from polars.dependencies import torch
     from polars.interchange.protocol import SupportsInterchange
 
 
@@ -115,7 +115,7 @@ def from_dict(
 
 
 def from_dicts(
-    data: Iterable[dict[str, Any]],
+    data: Iterable[Mapping[str, Any]],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,

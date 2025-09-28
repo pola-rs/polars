@@ -56,23 +56,22 @@ pub enum Writeable {
 
 impl Writeable {
     pub fn try_new(
-        addr: PlPathRef,
+        path: PlPathRef<'_>,
         #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         let verbose = config::verbose();
 
-        match addr {
-            PlPathRef::Cloud(p) => {
+        match path {
+            PlPathRef::Cloud(_) => {
                 feature_gated!("cloud", {
                     use crate::cloud::BlockingCloudWriter;
 
                     if verbose {
-                        eprintln!("Writeable: try_new: cloud: {p}")
+                        eprintln!("Writeable: try_new: cloud: {}", path.to_str())
                     }
 
-                    let writer = crate::pl_async::get_runtime().block_in_place_on(
-                        BlockingCloudWriter::new(&p.to_string(), cloud_options),
-                    )?;
+                    let writer = crate::pl_async::get_runtime()
+                        .block_in_place_on(BlockingCloudWriter::new(path, cloud_options))?;
                     Ok(Self::Cloud(writer))
                 })
             },
@@ -104,8 +103,9 @@ impl Writeable {
                         eprintln!("Writeable: try_new: forced async converted path: {path}")
                     }
 
-                    let writer = crate::pl_async::get_runtime()
-                        .block_in_place_on(BlockingCloudWriter::new(&path, cloud_options))?;
+                    let writer = crate::pl_async::get_runtime().block_in_place_on(
+                        BlockingCloudWriter::new(PlPathRef::new(&path), cloud_options),
+                    )?;
                     Ok(Self::Cloud(writer))
                 })
             },
