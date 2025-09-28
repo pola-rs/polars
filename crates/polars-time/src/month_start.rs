@@ -83,12 +83,7 @@ impl PolarsMonthStart for DatetimeChunked {
         Ok(self
             .phys
             .try_apply_nonnull_values_generic(|t| {
-                roll_backward(
-                    t,
-                    tz,
-                    timestamp_to_datetime,
-                    datetime_to_timestamp,
-                )
+                roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)
             })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
     }
