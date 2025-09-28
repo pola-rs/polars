@@ -124,3 +124,15 @@ def test_month_end_ambiguous_start_24646() -> None:
         pl.col("a").dt.replace_time_zone("Pacific/Chatham")
     )
     assert_frame_equal(result, expected)
+
+
+def test_month_end_non_existent_start_24646() -> None:
+    # 2015-03-01 00:30 in America/Havana
+    dt = datetime(1990, 4, 2, 0, 30, tzinfo=ZoneInfo("America/Havana"))
+    with pytest.raises(ComputeError, match="is non-existent"):
+        pl.DataFrame({"a": [dt]}).select(pl.col("a").dt.month_start())
+    result = pl.DataFrame({"a": [dt]}).select(pl.col("a").dt.month_end())
+    expected = pl.DataFrame(
+        {"a": [datetime(1990, 4, 30, 0, 30, tzinfo=ZoneInfo("America/Havana"))]}
+    )
+    assert_frame_equal(result, expected)

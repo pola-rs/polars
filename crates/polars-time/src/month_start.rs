@@ -15,7 +15,6 @@ pub(crate) fn roll_backward(
     tz: Option<&Tz>,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
-    ambiguous: Ambiguous,
 ) -> PolarsResult<i64> {
     let ts = match tz {
         #[cfg(feature = "timezones")]
@@ -49,7 +48,7 @@ pub(crate) fn roll_backward(
     let t = match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => datetime_to_timestamp(
-            try_localize_datetime(ndt, tz, ambiguous, NonExistent::Raise)?
+            try_localize_datetime(ndt, tz, Ambiguous::Raise, NonExistent::Raise)?
                 .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
         ),
         _ => datetime_to_timestamp(ndt),
@@ -89,7 +88,6 @@ impl PolarsMonthStart for DatetimeChunked {
                     tz,
                     timestamp_to_datetime,
                     datetime_to_timestamp,
-                    Ambiguous::Raise,
                 )
             })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
@@ -105,7 +103,6 @@ impl PolarsMonthStart for DateChunked {
                 None,
                 timestamp_ms_to_datetime,
                 datetime_to_timestamp_ms,
-                Ambiguous::Raise,
             )?;
             PolarsResult::Ok((bwd / MSECS_IN_DAY) as i32)
         })?;
