@@ -429,6 +429,22 @@ impl PySeries {
         py.enter_polars(|| self.series.read().is_sorted(options))
     }
 
+    fn is_sorted_struct(
+        &self,
+        py: Python<'_>,
+        descending: Vec<bool>,
+        nulls_last: Vec<bool>,
+    ) -> PyResult<bool> {
+        let options = SortMultipleOptions {
+            descending,
+            nulls_last,
+            multithreaded: true,
+            maintain_order: false,
+            limit: None,
+        };
+        py.enter_polars(|| self.series.is_sorted_struct(options))
+    }
+
     fn clear(&self) -> Self {
         self.series.read().clear().into()
     }
