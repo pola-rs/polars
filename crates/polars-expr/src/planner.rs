@@ -500,10 +500,7 @@ fn create_physical_expr_inner(
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
 
-            let output_field_with_ctx = expr_arena
-                .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
-            let non_aggregated_output_field = expr_arena
+            let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input_field = expr_arena
@@ -528,8 +525,7 @@ fn create_physical_expr_inner(
                 *variant,
                 node_to_expr(expression, expr_arena),
                 state.allow_threading,
-                output_field_with_ctx,
-                non_aggregated_output_field.dtype,
+                output_field,
                 is_scalar,
                 pd_group,
                 evaluation_is_scalar,
