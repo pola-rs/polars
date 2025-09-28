@@ -17,7 +17,16 @@ fn roll_forward(
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
     offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
 ) -> PolarsResult<i64> {
-    let t = roll_backward(t, time_zone, timestamp_to_datetime, datetime_to_timestamp)?;
+    // Use Ambiguous::Latest to roll back to the start of the month. It doesn't matter
+    // if that timestamp lands on an ambiguous time as we then add 1 month anyway, we
+    // could just as well use Ambiguous::Earliest.
+    let t = roll_backward(
+        t,
+        time_zone,
+        timestamp_to_datetime,
+        datetime_to_timestamp,
+        Ambiguous::Latest,
+    )?;
     let t = offset_fn(&Duration::parse("1mo"), t, time_zone)?;
     offset_fn(&Duration::parse("-1d"), t, time_zone)
 }
