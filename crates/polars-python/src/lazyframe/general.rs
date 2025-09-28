@@ -976,9 +976,28 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn filter(&self, predicate: PyExpr) -> Self {
+    #[pyo3(signature = (function, maintain_order, chunk_size))]
+    pub fn sink_batches(
+        &self,
+        py: Python<'_>,
+        function: PyObject,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+    ) -> PyResult<PyLazyFrame> {
         let ldf = self.ldf.read().clone();
-        ldf.filter(predicate.inner).into()
+        py.enter_polars(|| {
+            ldf.sink_batches(
+                PlanCallback::new_python(PythonObject(function)),
+                maintain_order,
+                chunk_size,
+            )
+        })
+        .map(Into::into)
+        .map_err(Into::into)
+    }
+
+    fn filter(&self, predicate: PyExpr) -> Self {
+        self.ldf.read().clone().filter(predicate.inner).into()
     }
 
     fn remove(&self, predicate: PyExpr) -> Self {

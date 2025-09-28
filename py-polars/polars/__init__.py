@@ -33,12 +33,6 @@ Source Code: https://github.com/pola-rs/polars
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    # This must be done before importing the Polars Rust bindings, otherwise we
-    # might execute illegal instructions.
-    import polars._cpu_check
-
-    polars._cpu_check.check_cpu_flags()
-
     # We also configure the allocator before importing the Polars Rust bindings.
     # See https://github.com/pola-rs/polars/issues/18088,
     # https://github.com/pola-rs/polars/pull/21829.
@@ -490,9 +484,19 @@ __all__ = [
 
 
 if not TYPE_CHECKING:
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        import polars._plr as plr
+
     # This causes typechecking to resolve any Polars module attribute
     # as Any regardless of existence so we check for TYPE_CHECKING, see #24334.
     def __getattr__(name: str) -> Any:
+        # Backwards compatibility for plugins. This used to be called `polars.polars`,
+        # but is now `polars._plr`.
+        if name == "polars":
+            return plr
+        elif name == "_allocator":
+            return plr._allocator
+
         # Deprecate re-export of exceptions at top-level
         if name in dir(exceptions):
             from polars._utils.deprecation import issue_deprecation_warning

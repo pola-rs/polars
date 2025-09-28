@@ -74,7 +74,7 @@ you can also specify the number of rows you want:
 
 The function `glimpse` is another function that shows the values of the first few rows of a
 dataframe, but formats the output differently from `head`. Here, each line of the output corresponds
-to a single column, making it easier to take inspect wider dataframes:
+to a single column, making it easier to inspect wider dataframes:
 
 === ":fontawesome-brands-python: Python"
 [:material-api: `glimpse`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.glimpse.html)

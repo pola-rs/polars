@@ -164,6 +164,7 @@ impl ScanSources {
             Self::Paths(paths) => Ok(Self::Paths(expand_paths(
                 paths,
                 scan_args.glob,
+                scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
                 &mut scan_args.cloud_options,
             )?)),
             v => Ok(v.clone()),
@@ -182,6 +183,7 @@ impl ScanSources {
                 let (expanded_paths, hive_start_idx) = expand_paths_hive(
                     paths,
                     scan_args.glob,
+                    scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
                     &mut scan_args.cloud_options,
                     scan_args.hive_options.enabled.unwrap_or(false),
                 )?;
@@ -442,11 +444,7 @@ impl ScanSourceRef<'_> {
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<DynByteSource> {
         match self {
-            Self::Path(path) => {
-                builder
-                    .try_build_from_path(path.to_str(), cloud_options)
-                    .await
-            },
+            Self::Path(path) => builder.try_build_from_path(*path, cloud_options).await,
             Self::File(file) => Ok(DynByteSource::from(MemSlice::from_file(file)?)),
             Self::Buffer(buff) => Ok(DynByteSource::from((*buff).clone())),
         }

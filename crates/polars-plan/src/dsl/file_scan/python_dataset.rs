@@ -23,6 +23,7 @@ pub struct PythonDatasetProviderVTable {
         existing_resolved_version_key: Option<&str>,
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
+        filter_columns: Option<&[PlSmallStr]>,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>>,
 }
 
@@ -58,12 +59,14 @@ impl PythonDatasetProvider {
         existing_resolved_version_key: Option<&str>,
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
+        filter_columns: Option<&[PlSmallStr]>,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
         (dataset_provider_vtable().unwrap().to_dataset_scan)(
             &self.dataset_object,
             existing_resolved_version_key,
             limit,
             projection,
+            filter_columns,
         )
     }
 }

@@ -282,7 +282,12 @@ pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
     arena: &Arena<AExpr>,
 ) -> Schema {
     expr.into_iter()
-        .map(|node| arena.get(node.into()).to_field(schema, arena).unwrap())
+        .map(|node| {
+            arena
+                .get(node.into())
+                .to_field(&ToFieldContext::new(arena, schema))
+                .unwrap()
+        })
         .collect()
 }
 
@@ -290,18 +295,19 @@ pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr: I,
     schema: &Schema,
     arena: &Arena<AExpr>,
-) -> Schema {
+) -> PolarsResult<Schema> {
     expr.into_iter()
         .map(|e| {
             let e = e.as_ref();
-            let mut field = e.field(schema, arena).expect("should be resolved");
-
-            // TODO! (can this be removed?)
-            if let Some(name) = e.get_alias() {
-                field.name = name.clone()
-            }
-            field.dtype = field.dtype.materialize_unknown(true).unwrap();
-            field
+            let field = e.field(schema, arena).map(move |mut field| {
+                // TODO! (can this be removed?)
+                if let Some(name) = e.get_alias() {
+                    field.name = name.clone()
+                }
+                field.dtype = field.dtype.materialize_unknown(true).unwrap();
+                field
+            })?;
+            Ok(field)
         })
         .collect()
 }

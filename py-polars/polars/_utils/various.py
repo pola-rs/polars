@@ -28,6 +28,8 @@ from typing import (
 
 import polars as pl
 from polars import functions as F
+from polars._dependencies import _check_for_numpy, import_optional, subprocess
+from polars._dependencies import numpy as np
 from polars.datatypes import (
     Boolean,
     Date,
@@ -39,8 +41,6 @@ from polars.datatypes import (
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
-from polars.dependencies import _check_for_numpy, import_optional, subprocess
-from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, MutableMapping, Reversible
@@ -210,6 +210,15 @@ def _in_notebook() -> bool:
     except AttributeError:
         return False
     return True
+
+
+def _in_marimo_notebook() -> bool:
+    try:
+        import marimo as mo
+
+        return mo.running_in_notebook()  # pragma: no cover
+    except ImportError:
+        return False
 
 
 def arrlen(obj: Any) -> int | None:
@@ -665,7 +674,11 @@ def display_dot_graph(
         return dot
 
     output_type = (
-        "svg" if _in_notebook() or "POLARS_DOT_SVG_VIEWER" in os.environ else "png"
+        "svg"
+        if _in_notebook()
+        or _in_marimo_notebook()
+        or "POLARS_DOT_SVG_VIEWER" in os.environ
+        else "png"
     )
 
     try:
@@ -689,6 +702,10 @@ def display_dot_graph(
         from IPython.display import SVG, display
 
         return display(SVG(graph))
+    elif _in_marimo_notebook():
+        import marimo as mo
+
+        return mo.Html(f"{graph.decode()}")
     else:
         if (cmd := os.environ.get("POLARS_DOT_SVG_VIEWER", None)) is not None:
             import tempfile

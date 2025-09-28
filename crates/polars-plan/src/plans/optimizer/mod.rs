@@ -289,7 +289,7 @@ pub fn optimize(
         }
     }
 
-    expand_datasets::expand_datasts(lp_top, lp_arena)?;
+    expand_datasets::expand_datasets(lp_top, lp_arena, expr_arena)?;
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

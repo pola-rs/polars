@@ -1035,7 +1035,9 @@ fn take_iejoin_compatible_filters(
                 macro_rules! is_supported_type {
                     ($node:expr) => {{
                         let node = $node;
-                        let field = expr_arena.get(node).to_field(output_schema, expr_arena)?;
+                        let field = expr_arena
+                            .get(node)
+                            .to_field(&ToFieldContext::new(expr_arena, output_schema))?;
                         let dtype = field.dtype();
 
                         !dtype.is_nested() && dtype.to_physical().is_primitive_numeric()

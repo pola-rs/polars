@@ -7,17 +7,17 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import polars._reexport as pl
-from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Duration
-from polars.datatypes.convert import DataTypeMappings
-from polars.dependencies import (
+from polars._dependencies import (
     _check_for_numpy,
     _check_for_pytz,
     _check_for_torch,
     pytz,
     torch,
 )
-from polars.dependencies import numpy as np
+from polars._dependencies import numpy as np
+from polars._utils.wrap import wrap_expr
+from polars.datatypes import Date, Datetime, Duration
+from polars.datatypes.convert import DataTypeMappings
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
