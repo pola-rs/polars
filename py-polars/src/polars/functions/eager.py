@@ -314,8 +314,6 @@ def union(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
-    rechunk: bool = False,
-    parallel: bool = True,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -348,11 +346,6 @@ def union(
           join columns are automatically coalesced, but other column collisions
           will raise an error (if you need more control over this you should use
           a suitable `join` method directly).
-    rechunk
-        Make sure that the result data is in contiguous memory.
-    parallel
-        Only relevant for LazyFrames. This determines if the concatenated
-        lazy computations may be executed in parallel.
 
     Examples
     --------
@@ -522,8 +515,8 @@ def union(
             out = wrap_ldf(
                 plr.concat_lf(
                     [df.lazy() for df in elems],
-                    rechunk=rechunk,
-                    parallel=parallel,
+                    rechunk=False,
+                    parallel=True,
                     to_supertypes=how.endswith("relaxed"),
                     maintain_order=False,
                 )
@@ -532,8 +525,8 @@ def union(
             out = wrap_ldf(
                 plr.concat_lf_diagonal(
                     [df.lazy() for df in elems],
-                    rechunk=rechunk,
-                    parallel=parallel,
+                    rechunk=False,
+                    parallel=True,
                     to_supertypes=how.endswith("relaxed"),
                     maintain_order=False,
                 )
@@ -550,8 +543,8 @@ def union(
             return wrap_ldf(
                 plr.concat_lf(
                     elems,
-                    rechunk=rechunk,
-                    parallel=parallel,
+                    rechunk=False,
+                    parallel=True,
                     to_supertypes=how.endswith("relaxed"),
                     maintain_order=False,
                 )
@@ -560,8 +553,8 @@ def union(
             return wrap_ldf(
                 plr.concat_lf_diagonal(
                     elems,
-                    rechunk=rechunk,
-                    parallel=parallel,
+                    rechunk=False,
+                    parallel=True,
                     to_supertypes=how.endswith("relaxed"),
                     maintain_order=False,
                 )
@@ -570,7 +563,7 @@ def union(
             return wrap_ldf(
                 plr.concat_lf_horizontal(
                     elems,
-                    parallel=parallel,
+                    parallel=True,
                 )
             )
         else:
@@ -586,13 +579,11 @@ def union(
             raise ValueError(msg)
 
     elif isinstance(first, pl.Expr):
-        return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
+        return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], False))
     else:
         msg = f"did not expect type: {qualified_type_name(first)!r} in `concat`"
         raise TypeError(msg)
 
-    if rechunk:
-        return out.rechunk()
     return out
 
 
