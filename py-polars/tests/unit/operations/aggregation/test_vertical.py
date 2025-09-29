@@ -30,30 +30,50 @@ def assert_expr_equal(
     assert_frame_equal(context.select(left), context.select(right))
 
 
-def test_all_expr() -> None:
+def test_all_expr_empty() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert_frame_equal(df.select(pl.all()), df)
 
 
+def test_all_expr(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.with_columns(pl.col("A").cast(bool)).select(pl.all("A")).item()
+    assert fruits_cars.select(pl.all(pl.col("A").cast(bool))).item()
+
+    assert not fruits_cars.with_columns(pl.col("A") == 1).select(pl.all("A")).item()
+    assert not fruits_cars.select(pl.all(pl.col("A") == 1)).item()
+
+
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.with_columns(pl.col("A").cast(bool)).select(pl.any("A")).item()
+    assert fruits_cars.with_columns(pl.col("A") == 1).select(pl.any("A")).item()
+    assert fruits_cars.select(pl.any(pl.col("A") == 1)).item()
+
+    assert not fruits_cars.with_columns(pl.col("A") == 0).select(pl.any("A")).item()
+    assert not fruits_cars.select(pl.any(pl.col("A") == 0)).item()
 
 
 @pytest.mark.parametrize("function", ["all", "any"])
 @pytest.mark.parametrize("input", ["a", "^a|b$"])
 def test_alias_for_col_agg_bool(function: str, input: str) -> None:
-    result = getattr(pl, function)(input)  # e.g. pl.all(input)
     expected = getattr(pl.col(input), function)()  # e.g. pl.col(input).all()
     context = pl.DataFrame({"a": [True, False], "b": [True, True]})
+
+    result = getattr(pl, function)(input)  # e.g. pl.all(input)
+    assert_expr_equal(result, expected, context)
+
+    result = getattr(pl, function)(pl.col(input))  # e.g. pl.all(pl.col(input))
     assert_expr_equal(result, expected, context)
 
 
 @pytest.mark.parametrize("function", ["min", "max", "sum", "cum_sum"])
 @pytest.mark.parametrize("input", ["a", "^a|b$"])
 def test_alias_for_col_agg(function: str, input: str) -> None:
-    result = getattr(pl, function)(input)  # e.g. pl.min(input)
     expected = getattr(pl.col(input), function)()  # e.g. pl.col(input).min()
     context = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
+
+    result = getattr(pl, function)(input)  # e.g. pl.min(input)
+    assert_expr_equal(result, expected, context)
+
+    result = getattr(pl, function)(pl.col(input))  # e.g. pl.min(pl.col(input))
     assert_expr_equal(result, expected, context)
 
 
