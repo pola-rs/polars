@@ -1516,8 +1516,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`.Int64` or :class:`.Float64` if
+        Series
+            Series of data type :class:`.Int64` or :class:`.Float64` if
             `fractional` is set.
 
         Examples
@@ -1558,8 +1558,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`.Int64` or :class:`.Float64` if
+        Series
+            Series of data type :class:`.Int64` or :class:`.Float64` if
             `fractional` is set.
 
         Examples
@@ -1602,8 +1602,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`.Int64` or :class:`.Float64` if
+        Series
+            Series of data type :class:`.Int64` or :class:`.Float64` if
             `fractional` is set.
 
         Examples
@@ -1646,8 +1646,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`.Int64` or :class:`.Float64` if
+        Series
+            Series of data type :class:`.Int64` or :class:`.Float64` if
             `fractional` is set.
 
         Examples
@@ -1692,8 +1692,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`.Int64` or :class:`.Float64` if
+        Series
+            Series of data type :class:`.Int64` or :class:`.Float64` if
             `fractional` is set.
 
         Examples
@@ -1737,8 +1737,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`.Int64` or :class:`.Float64` if
+        Series
+            Series of data type :class:`.Int64` or :class:`.Float64` if
             `fractional` is set.
 
         Examples
@@ -1781,8 +1781,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`.Int64` or :class:`.Float64` if
+        Series
+            Series of data type :class:`.Int64` or :class:`.Float64` if
             `fractional` is set.
 
         Examples
