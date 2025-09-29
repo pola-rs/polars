@@ -18,7 +18,7 @@ use polars_io::json::JsonWriterOptions;
 use polars_io::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::IEJoinOptions;
-use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
+use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions, MaintainOrderJoin};
 use polars_ops::prelude::{JoinArgs, JoinType};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
@@ -78,6 +78,7 @@ pub enum JoinTypeOptionsIR {
     // Fused cross join and filter (only used in the in-memory engine)
     CrossAndFilter {
         predicate: ExprIR, // Must be elementwise.
+        maintain_order: MaintainOrderJoin,
     },
 }
 
@@ -87,7 +88,13 @@ impl Hash for JoinTypeOptionsIR {
         match self {
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => opt.hash(state),
-            CrossAndFilter { predicate } => predicate.node().hash(state),
+            CrossAndFilter {
+                predicate,
+                maintain_order,
+            } => {
+                predicate.node().hash(state);
+                maintain_order.hash(state);
+            },
         }
     }
 }
@@ -99,10 +106,16 @@ impl JoinTypeOptionsIR {
     ) -> PolarsResult<JoinTypeOptions> {
         use JoinTypeOptionsIR::*;
         match self {
-            CrossAndFilter { predicate } => {
+            CrossAndFilter {
+                predicate,
+                maintain_order,
+            } => {
                 let predicate = plan(&predicate)?;
 
-                Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
+                Ok(JoinTypeOptions::Cross(CrossJoinOptions {
+                    predicate,
+                    maintain_order,
+                }))
             },
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => Ok(JoinTypeOptions::IEJoin(opt)),
