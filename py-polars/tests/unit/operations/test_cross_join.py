@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import polars as pl
+from polars._typing import MaintainOrderJoin
 from polars.testing import assert_frame_equal
 
 
@@ -96,7 +97,7 @@ def test_cross_join_chunking_panic_22793() -> None:
 @pytest.mark.parametrize(
     "maintain_order", ["left", "right", "left_right", "right_left"]
 )
-def test_cross_join_maintain_order_24663(maintain_order: str) -> None:
+def test_cross_join_maintain_order_24663(maintain_order: MaintainOrderJoin) -> None:
     df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
     df2 = pl.DataFrame({"y": [0, 1, 2, 3, 4]})
     primary = [x for x in range(5) for _ in range(5)]
