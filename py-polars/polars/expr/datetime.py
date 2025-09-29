@@ -2225,7 +2225,6 @@ class ExprDateTimeNameSpace:
         If `fractional=True`, the result will be encoded as a floating point,
         and will include the fractional component of the second.
 
-
         Parameters
         ----------
         fractional
