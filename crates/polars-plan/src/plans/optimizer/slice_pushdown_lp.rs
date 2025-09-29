@@ -373,6 +373,7 @@ impl SlicePushDown {
 
                 // If offset is negative the length can never be greater than it.
                 if offset < 0 {
+                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
                     if len as u64 > offset.unsigned_abs() as u64 {
                         len = offset.unsigned_abs() as IdxSize;
                     }
@@ -413,6 +414,7 @@ impl SlicePushDown {
 
                 // If offset is negative the length can never be greater than it.
                 if offset < 0 {
+                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
                     if len as u64 > offset.unsigned_abs() as u64 {
                         len = offset.unsigned_abs() as IdxSize;
                     }
