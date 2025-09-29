@@ -14,7 +14,7 @@ from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, overload
 import polars._reexport as pl
 from polars import from_arrow
 from polars import functions as F
-from polars._dependencies import import_optional
+from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
@@ -1082,8 +1082,12 @@ def _read_spreadsheet_calamine(
                 msg = f"table named {table_name!r} not found in sheet {sheet_name!r}"
                 raise RuntimeError(msg)
             df = xl_table.to_polars()
-        else:
+        elif _PYARROW_AVAILABLE:
+            # eager loading is faster / more memory-efficient, but requires pyarrow
             ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)
+            df = from_arrow(ws_arrow)
+        else:
+            ws_arrow = parser.load_sheet(sheet_name, **read_options)
             df = from_arrow(ws_arrow)
 
         if read_options.get("header_row", False) is None and not read_options.get(
