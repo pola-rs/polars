@@ -24,6 +24,7 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     output_field: Field,
+    non_aggregated_output_field: Field,
 }
 
 impl ApplyExpr {
@@ -36,6 +37,7 @@ impl ApplyExpr {
         allow_threading: bool,
         input_schema: SchemaRef,
         output_field: Field,
+        non_aggregated_output_field: Field,
         function_operates_on_scalar: bool,
     ) -> Self {
         debug_assert!(
@@ -54,6 +56,7 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             output_field,
+            non_aggregated_output_field,
         }
     }
 
@@ -369,8 +372,8 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.non_aggregated_output_field.clone())
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         if self.inputs.len() == 1 && self.flags.is_elementwise() {
