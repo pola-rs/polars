@@ -1,8 +1,3 @@
-mod mean;
-mod min_max;
-mod moment;
-mod quantile;
-mod sum;
 use std::fmt::Debug;
 
 use arrow::array::PrimitiveArray;
@@ -10,11 +5,20 @@ use arrow::datatypes::ArrowDataType;
 use arrow::legacy::error::PolarsResult;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
+use num_traits::{Float, Num, NumCast};
+
+mod mean;
+mod min_max;
+mod moment;
+mod quantile;
+mod rank;
+mod sum;
+
 pub use mean::*;
 pub use min_max::*;
 pub use moment::*;
-use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
+pub use rank::*;
 pub use sum::*;
 
 use super::*;

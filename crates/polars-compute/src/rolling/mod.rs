@@ -47,8 +47,17 @@ pub type QuantileInterpolOptions = QuantileMethod;
 pub enum RollingFnParams {
     Quantile(RollingQuantileParams),
     Var(RollingVarParams),
-    Skew { bias: bool },
-    Kurtosis { fisher: bool, bias: bool },
+    Rank {
+        method: RankMethod,
+        seed: Option<u64>,
+    },
+    Skew {
+        bias: bool,
+    },
+    Kurtosis {
+        fisher: bool,
+        bias: bool,
+    },
 }
 
 fn det_offsets(i: Idx, window_size: WindowSize, _len: Len) -> (usize, usize) {
@@ -124,4 +133,18 @@ impl Hash for RollingQuantileParams {
         self.prob.to_bits().hash(state);
         self.method.hash(state);
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[strum(serialize_all = "snake_case")]
+pub enum RankMethod {
+    #[default]
+    Average,
+    Min,
+    Max,
+    Dense,
+    Ordinal,
+    Random,
 }

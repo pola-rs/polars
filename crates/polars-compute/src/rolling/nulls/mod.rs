@@ -2,6 +2,7 @@ mod mean;
 mod min_max;
 mod moment;
 mod quantile;
+mod rank;
 mod sum;
 
 use arrow::legacy::utils::CustomIterTools;
@@ -9,6 +10,7 @@ pub use mean::*;
 pub use min_max::*;
 pub use moment::*;
 pub use quantile::*;
+pub use rank::*;
 pub use sum::*;
 
 use super::*;
