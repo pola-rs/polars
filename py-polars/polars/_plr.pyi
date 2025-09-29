@@ -11,6 +11,7 @@ __build__: Any
 _ir_nodes: Any
 _allocator: Any
 _debug: bool
+RUNTIME_REPR: str
 
 CompatLevel: TypeAlias = int | bool
 BufferInfo: TypeAlias = tuple[int, int, int]
@@ -80,8 +81,8 @@ SetOperation: TypeAlias = Literal[
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]
 NDArray1D: TypeAlias = NDArray[Any]
-ParquetFieldOverwrites: Any
-StatisticsOptions: Any
+ParquetFieldOverwrites: TypeAlias = Any
+StatisticsOptions: TypeAlias = Any
 EngineType: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
 PyScanOptions: TypeAlias = Any
 

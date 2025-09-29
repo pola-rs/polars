@@ -13,9 +13,8 @@ use polars_io::predicates::{
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, ParquetType, PredicateFilter, PrimitiveLogicalType};
-use polars_utils::IdxSize;
-use polars_utils::enum_unit_vec::EUnitVec;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{IdxSize, UnitVec};
 
 use super::row_group_data_fetch::RowGroupData;
 use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
@@ -215,7 +214,7 @@ impl RowGroupDecoder {
 
                                     Ok((col, pred_true_mask))
                                 })
-                                .collect::<PolarsResult<EUnitVec<_>>>()
+                                .collect::<PolarsResult<UnitVec<_>>>()
                         }
                     }),
             )
@@ -316,7 +315,7 @@ async fn filter_cols(
             async move {
                 (offset..offset.saturating_add(cols_per_thread).min(cols.len()))
                     .map(|i| cols[i].filter(&mask))
-                    .collect::<PolarsResult<EUnitVec<_>>>()
+                    .collect::<PolarsResult<UnitVec<_>>>()
             }
         }))
     };
@@ -473,7 +472,7 @@ impl RowGroupDecoder {
 
                                     Ok((col, pred_true_mask))
                                 })
-                                .collect::<PolarsResult<EUnitVec<_>>>()
+                                .collect::<PolarsResult<UnitVec<_>>>()
                         }
                     }),
             )
@@ -599,7 +598,7 @@ impl RowGroupDecoder {
 
                                 projection.apply_transform(col)
                             })
-                            .collect::<PolarsResult<EUnitVec<_>>>()
+                            .collect::<PolarsResult<UnitVec<_>>>()
                     }
                 },
             ))

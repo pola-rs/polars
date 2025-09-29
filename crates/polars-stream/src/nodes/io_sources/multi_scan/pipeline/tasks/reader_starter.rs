@@ -610,8 +610,11 @@ async fn start_reader_impl(
 
     if let Some(forbid_extra_columns) = forbid_extra_columns {
         if let Ok(this_file_schema) = file_schema_rx.unwrap().recv().await {
-            forbid_extra_columns
-                .check_file_schema(&this_file_schema, file_iceberg_schema.as_ref())?;
+            forbid_extra_columns.check_file_schema(
+                &this_file_schema,
+                file_iceberg_schema.as_ref(),
+                scan_source.as_scan_source_ref().to_include_path_name(),
+            )?;
         } else {
             drop(reader_output_port);
             return Err(reader_handle.await.unwrap_err());

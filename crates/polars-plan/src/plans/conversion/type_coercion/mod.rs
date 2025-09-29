@@ -116,6 +116,7 @@ impl OptimizationRule for TypeCoercionRule {
                             datetime_microseconds_downcast: true,
                             datetime_convert_timezone: true,
                             null_upcast: true,
+                            categorical_to_string: true,
                             missing_struct_fields: MissingColumnsPolicy::Insert,
                             extra_struct_fields: ExtraColumnsPolicy::Ignore,
                         }
@@ -425,10 +426,7 @@ impl OptimizationRule for TypeCoercionRule {
                         },
                     }
 
-                    if matches!(
-                        super_type,
-                        DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc)
-                    ) {
+                    if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
                         raise_supertype(&function, &input, schema, expr_arena)?;
                         unreachable!()
                     }

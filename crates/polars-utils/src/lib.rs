@@ -18,7 +18,6 @@ mod config;
 pub use config::check_allow_importing_interval_as_struct;
 pub mod cpuid;
 pub mod decimal;
-pub mod enum_unit_vec;
 pub mod error;
 pub mod floor_divmod;
 pub mod functions;
@@ -83,3 +82,4 @@ pub mod pl_serialize;
 
 pub mod kahan_sum;
 pub use either;
+pub use idx_vec::UnitVec;
