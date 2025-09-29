@@ -140,12 +140,8 @@ impl DurationMethods for DurationChunked {
 
     /// Extract the nanoseconds from a `Duration` as a fractional value
     fn nanoseconds_fractional(&self) -> Float64Chunked {
-        self.nanoseconds()
-            .cast(&DataType::Float64)
-            .expect("cast failed")
-            .f64()
-            .unwrap()
-            .clone()
+        let t = time_units_in_second(self.time_unit());
+        num_of_unit_fractional(self, t as f64 / NANOSECONDS as f64)
     }
 }
 

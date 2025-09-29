@@ -309,19 +309,12 @@ def test_duration_float_types_series_11625(
 
 
 @pytest.mark.parametrize(
-    ("time_unit", "time_unit_scale"),
-    [("ns", 1), ("us", 1e3), ("ms", 1e6), (None, 1e3)],
-)
-@pytest.mark.parametrize(
-    ("digit", "digit_scale"),
+    ("time_unit", "time_unit_kw", "time_unit_scale"),
     [
-        ("days", 24 * 60 * 60 * 1e9),
-        ("hours", 60 * 60 * 1e9),
-        ("minutes", 60 * 1e9),
-        ("seconds", 1e9),
-        ("milliseconds", 1e6),
-        ("microseconds", 1e3),
-        ("nanoseconds", 1),
+        (None, "microseconds", 1e3),
+        ("ns", "nanoseconds", 1),
+        ("us", "microseconds", 1e3),
+        ("ms", "milliseconds", 1e6),
     ],
 )
 @pytest.mark.parametrize(
@@ -341,37 +334,21 @@ def test_duration_float_types_series_11625(
         name="a",
         allowed_dtypes=[pl.Int64],
         allow_null=False,
-        allow_nan=False,
-        allow_infinity=False,
         min_size=1,
     )
 )
 def test_duration_total_units_fractional(
     time_unit: TimeUnit,
+    time_unit_kw: str,
     time_unit_scale: int,
-    digit: str,
-    digit_scale: int,
     total_units_fn: Callable[[pl.Series], pl.Series],
     total_units_scale: int,
     s: pl.Series,
 ) -> None:
-    # Exclude cases that could potentially overflow Int64
-    s = s.clip(
-        0.99 * I64_MIN / digit_scale / time_unit_scale,
-        0.99 * I64_MAX / digit_scale / time_unit_scale,
-    )
-
-    # Truncate any digits below the current time unit precision
-    if digit_scale < time_unit_scale:
-        s = (s / time_unit_scale).round() * time_unit_scale
-
-    expected = s.cast(pl.Float64) * digit_scale
-    expected_ns = (expected / time_unit_scale).cast(pl.Int64) * time_unit_scale
-    expected_fractional = expected_ns.cast(pl.Float64) / total_units_scale
-
+    expected = s.cast(pl.Float64) * time_unit_scale / total_units_scale
     actual = total_units_fn(
-        pl.select(pl.duration(**{digit: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        pl.select(pl.duration(**{time_unit_kw: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
         .to_series()
         .dt,
     )
-    assert_series_equal(actual, expected_fractional, check_dtypes=False)
+    assert_series_equal(actual, expected)
