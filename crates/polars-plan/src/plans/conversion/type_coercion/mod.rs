@@ -1,9 +1,21 @@
 mod binary;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+mod datetime_range;
 mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
 use binary::process_binary;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+use datetime_range::{
+    convert_tz, replace_tz, update_date_range_types, update_datetime_range_types,
+};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -771,6 +783,134 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
+                        interval: _,
+                        closed: _,
+                        arg_type,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRanges {
+                        interval: _,
+                        closed: _,
+                        arg_type,
+                    }),
+                ref input,
+                options,
+            } => {
+                let function = function.clone();
+                let mut input = input.clone();
+
+                let (from_types, to_types) = unpack!(update_date_range_types(
+                    &mut input, expr_arena, schema, arg_type
+                )?);
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
+                let mut modified = false;
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if from_dtype != to_dtype {
+                        modified = true;
+                        cast_expr_ir(
+                            &mut input[i],
+                            &from_dtype,
+                            &to_dtype,
+                            expr_arena,
+                            CastOptions::Strict,
+                        )?;
+                    }
+                }
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
+            },
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
+                        ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                        arg_type,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRanges {
+                        ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                        arg_type,
+                    }),
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+                let function = function.clone();
+
+                let (from_types, to_types) = unpack!(update_datetime_range_types(
+                    &mut input, expr_arena, schema, interval, tu, tz, arg_type,
+                )?);
+
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
+                let mut modified = false;
+                for (i, (mut from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if from_dtype != to_dtype {
+                        modified = true;
+
+                        // If the target datatype has a different time zone from the existing one,
+                        // we replace time zone if we're naive, else we convert
+                        if let DataType::Datetime(tu, Some(from_tz)) = &to_dtype {
+                            match &from_dtype {
+                                DataType::Date => {
+                                    // We first cast to naive datetime, then convert time zone, then
+                                    // cast to final dt.
+                                    cast_expr_ir(
+                                        &mut input[i],
+                                        &from_dtype,
+                                        &DataType::Datetime(*tu, None),
+                                        expr_arena,
+                                        CastOptions::Strict,
+                                    )?;
+                                    replace_tz(&mut input[i], &to_dtype, expr_arena)?;
+                                    from_dtype = DataType::Datetime(*tu, None);
+                                },
+                                DataType::Datetime(_, Some(to_tz)) if from_tz != to_tz => {
+                                    convert_tz(&mut input[i], &to_dtype, expr_arena)?;
+                                },
+                                DataType::Datetime(_, None) => {
+                                    replace_tz(&mut input[i], &to_dtype, expr_arena)?;
+                                },
+                                _ => (),
+                            }
+                        }
+                        cast_expr_ir(
+                            &mut input[i],
+                            &from_dtype,
+                            &to_dtype,
+                            expr_arena,
+                            CastOptions::Strict,
+                        )?;
+                    }
+                }
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
+            },
             #[cfg(feature = "range")]
             AExpr::Function {
                 function:
@@ -810,6 +950,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
+
             AExpr::Slice { offset, length, .. } => {
                 let (_, offset_dtype) = unpack!(get_aexpr_and_type(expr_arena, offset, schema));
                 polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice expression, not {}", offset_dtype);
