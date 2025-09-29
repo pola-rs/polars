@@ -1506,9 +1506,6 @@ class DateTimeNameSpace:
         """
         Extract the total days from a Duration type.
 
-        If `fractional=True`, the result will be encoded as a floating point,
-        and will include the fractional component of the day.
-
         Parameters
         ----------
         fractional
@@ -1547,9 +1544,6 @@ class DateTimeNameSpace:
     def total_hours(self, *, fractional: bool = False) -> Series:
         """
         Extract the total hours from a Duration type.
-
-        If `fractional=True`, the result will be encoded as a floating point,
-        and will include the fractional component of the hour.
 
         Parameters
         ----------
@@ -1592,9 +1586,6 @@ class DateTimeNameSpace:
         """
         Extract the total minutes from a Duration type.
 
-        If `fractional=True`, the result will be encoded as a floating point,
-        and will include the fractional component of the minute.
-
         Parameters
         ----------
         fractional
@@ -1635,9 +1626,6 @@ class DateTimeNameSpace:
     def total_seconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total seconds from a Duration type.
-
-        If `fractional=True`, the result will be encoded as a floating point,
-        and will include the fractional component of the second.
 
         Parameters
         ----------
@@ -1682,9 +1670,6 @@ class DateTimeNameSpace:
         """
         Extract the total milliseconds from a Duration type.
 
-        If `fractional=True`, the result will be encoded as a floating point,
-        and will include the fractional component of the millisecond.
-
         Parameters
         ----------
         fractional
@@ -1726,9 +1711,6 @@ class DateTimeNameSpace:
     def total_microseconds(self, *, fractional: bool = False) -> Series:
         """
         Extract the total microseconds from a Duration type.
-
-        If `fractional=True`, the result will be encoded as a floating point,
-        and will include the fractional component of the microsecond.
 
         Parameters
         ----------

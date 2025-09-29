@@ -104,20 +104,19 @@ impl IRTemporalFunction {
             },
             Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
             #[cfg(feature = "dtype-duration")]
-            TotalDays { fractional: false }
-            | TotalHours { fractional: false }
-            | TotalMinutes { fractional: false }
-            | TotalSeconds { fractional: false }
-            | TotalMilliseconds { fractional: false }
-            | TotalMicroseconds { fractional: false }
-            | TotalNanoseconds { fractional: false } => mapper.with_dtype(DataType::Int64),
-            TotalDays { fractional: true }
-            | TotalHours { fractional: true }
-            | TotalMinutes { fractional: true }
-            | TotalSeconds { fractional: true }
-            | TotalMilliseconds { fractional: true }
-            | TotalMicroseconds { fractional: true }
-            | TotalNanoseconds { fractional: true } => mapper.with_dtype(DataType::Float64),
+            TotalDays { fractional }
+            | TotalHours { fractional }
+            | TotalMinutes { fractional }
+            | TotalSeconds { fractional }
+            | TotalMilliseconds { fractional }
+            | TotalMicroseconds { fractional }
+            | TotalNanoseconds { fractional } => {
+                if *fractional {
+                    mapper.with_dtype(DataType::Float64)
+                } else {
+                    mapper.with_dtype(DataType::Int64)
+                }
+            },
             ToString(_) => mapper.with_dtype(DataType::String),
             WithTimeUnit(tu) | CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),

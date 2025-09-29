@@ -59,7 +59,7 @@ impl DurationMethods for DurationChunked {
     /// Extract the hours from a `Duration` as a fractional value
     fn hours_fractional(&self) -> Float64Chunked {
         let t = time_units_in_second(self.time_unit());
-        num_of_unit_fractional(self, (t * SECONDS_IN_HOUR) as f64)
+        num_of_unit_fractional(self, t as f64 * SECONDS_IN_HOUR as f64)
     }
 
     /// Extract the days from a `Duration`
@@ -71,7 +71,7 @@ impl DurationMethods for DurationChunked {
     /// Extract the days from a `Duration` as a fractional value
     fn days_fractional(&self) -> Float64Chunked {
         let t = time_units_in_second(self.time_unit());
-        num_of_unit_fractional(self, (t * SECONDS_IN_DAY) as f64)
+        num_of_unit_fractional(self, t as f64 * SECONDS_IN_DAY as f64)
     }
 
     /// Extract the seconds from a `Duration`
@@ -83,7 +83,7 @@ impl DurationMethods for DurationChunked {
     /// Extract the minutes from a `Duration` as a fractional value
     fn minutes_fractional(&self) -> Float64Chunked {
         let t = time_units_in_second(self.time_unit());
-        num_of_unit_fractional(self, (t * 60) as f64)
+        num_of_unit_fractional(self, t as f64 * 60.0)
     }
 
     /// Extract the seconds from a `Duration`
@@ -111,7 +111,7 @@ impl DurationMethods for DurationChunked {
     /// Extract the milliseconds from a `Duration`
     fn milliseconds_fractional(&self) -> Float64Chunked {
         let t = time_units_in_second(self.time_unit());
-        num_of_unit_fractional(self, (t / MILLISECONDS) as f64)
+        num_of_unit_fractional(self, t as f64 / MILLISECONDS as f64)
     }
 
     /// Extract the microseconds from a `Duration`
@@ -142,9 +142,8 @@ impl DurationMethods for DurationChunked {
     fn nanoseconds_fractional(&self) -> Float64Chunked {
         self.nanoseconds()
             .cast(&DataType::Float64)
-            .unwrap()
-            .as_any()
-            .downcast_ref::<Float64Chunked>()
+            .expect("cast failed")
+            .f64()
             .unwrap()
             .clone()
     }
@@ -159,10 +158,10 @@ fn time_units_in_second(tu: TimeUnit) -> i64 {
 }
 
 fn num_of_unit_fractional(ca: &DurationChunked, unit_ns: f64) -> Float64Chunked {
-    ca.cast(&DataType::Float64)
+    ca.physical()
+        .cast(&DataType::Float64)
         .expect("cast failed")
-        .as_any()
-        .downcast_ref::<Float64Chunked>()
-        .expect("downcast failed")
+        .f64()
+        .unwrap()
         / unit_ns
 }
