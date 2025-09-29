@@ -9,6 +9,8 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any, Optional, Union
 
+from polars._dependencies import numpy as np
+from polars._dependencies import pyarrow as pa
 from polars.datatypes.classes import (
     Array,
     Binary,
@@ -39,10 +41,9 @@ from polars.datatypes.classes import (
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Unknown,
 )
-from polars.dependencies import numpy as np
-from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import dtype_str_repr as _dtype_str_repr
@@ -150,20 +151,21 @@ class _DataTypeMappings:
             Duration: "duration",
             Float32: "f32",
             Float64: "f64",
-            Int128: "i128",
+            Int8: "i8",
             Int16: "i16",
             Int32: "i32",
             Int64: "i64",
-            Int8: "i8",
+            Int128: "i128",
             List: "list",
             Object: "object",
             String: "str",
             Struct: "struct",
             Time: "time",
+            UInt8: "u8",
             UInt16: "u16",
             UInt32: "u32",
             UInt64: "u64",
-            UInt8: "u8",
+            UInt128: "u128",
         }
 
     @property
@@ -179,21 +181,22 @@ class _DataTypeMappings:
             Duration: timedelta,
             Float32: float,
             Float64: float,
-            Int128: int,
+            Int8: int,
             Int16: int,
             Int32: int,
             Int64: int,
-            Int8: int,
+            Int128: int,
             List: list,
             Null: None.__class__,
             Object: object,
             String: str,
             Struct: dict,
             Time: time,
+            UInt8: int,
             UInt16: int,
             UInt32: int,
             UInt64: int,
-            UInt8: int,
+            UInt128: int,
             # the below mappings are appropriate as we restrict cat/enum to strings
             Enum: str,
             Categorical: str,

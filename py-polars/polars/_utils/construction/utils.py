@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, get_type_hints
 
-from polars.dependencies import _check_for_pydantic, pydantic
+from polars._dependencies import _check_for_pydantic, pydantic
 
 if TYPE_CHECKING:
     import pandas as pd

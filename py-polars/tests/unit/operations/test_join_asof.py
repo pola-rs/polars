@@ -1306,14 +1306,31 @@ def test_join_asof_not_sorted() -> None:
         assert len(w) == 0  # no warnings caught
 
 
-@pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64, pl.Int128])
-@pytest.mark.parametrize("right_dtype", [pl.Int64, pl.UInt64, pl.Int128])
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        (pl.Int64, pl.Int64),
+        (pl.Int64, pl.UInt64),
+        (pl.Int64, pl.Int128),
+        (pl.UInt64, pl.Int64),
+        (pl.UInt64, pl.UInt64),
+        (pl.UInt64, pl.Int128),
+        (pl.UInt64, pl.UInt128),
+        (pl.Int128, pl.Int64),
+        (pl.Int128, pl.UInt64),
+        (pl.Int128, pl.Int128),
+        (pl.UInt128, pl.UInt64),
+        (pl.UInt128, pl.UInt128),
+    ],
+)
+@pytest.mark.parametrize("swap", [False, True])
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 def test_join_asof_large_int_21276(
-    left_dtype: PolarsIntegerType,
-    right_dtype: PolarsIntegerType,
+    dtypes: tuple[PolarsIntegerType, PolarsIntegerType],
+    swap: bool,
     strategy: AsofJoinStrategy,
 ) -> None:
+    left_dtype, right_dtype = reversed(dtypes) if swap else dtypes
     large_int64 = 1608129000134000123  # it only happen when "on" column is large
     left = pl.DataFrame({"ts": pl.Series([large_int64 + 2], dtype=left_dtype)})
     right = pl.DataFrame(

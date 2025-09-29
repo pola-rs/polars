@@ -815,3 +815,125 @@ def test_agg_with_slice_then_cast_23682(
             [{"a": 123, "b": [12]}], schema={"a": pl.Int64, "b": pl.List(pl.UInt8)}
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("op", "expr"),
+    [
+        ("any", pl.all().cast(pl.Boolean).any()),
+        ("all", pl.all().cast(pl.Boolean).all()),
+        ("arg_max", pl.all().arg_max()),
+        ("arg_min", pl.all().arg_min()),
+        ("min", pl.all().min()),
+        ("max", pl.all().max()),
+        ("mean", pl.all().mean()),
+        ("median", pl.all().median()),
+        ("product", pl.all().product()),
+        ("quantile", pl.all().quantile(0.5)),
+        ("std", pl.all().std()),
+        ("var", pl.all().var()),
+        ("sum", pl.all().sum()),
+        ("first", pl.all().first()),
+        ("last", pl.all().last()),
+        ("approx_n_unique", pl.all().approx_n_unique()),
+        ("bitwise_and", pl.all().bitwise_and()),
+        ("bitwise_or", pl.all().bitwise_or()),
+        ("bitwise_xor", pl.all().bitwise_xor()),
+    ],
+)
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [[10]]}, schema={"a": pl.Array(shape=(1,), inner=pl.Int32)}),
+        pl.DataFrame({"a": [[1]]}, schema={"a": pl.Struct(fields={"a": pl.Int32})}),
+        pl.DataFrame({"a": [True]}, schema={"a": pl.Boolean}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Categorical}),
+        pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Int32}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Float32}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Float64}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
+        pl.DataFrame({"a": [None]}, schema={"a": pl.Null}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Decimal()}),
+        pl.DataFrame({"a": [datetime.now()]}, schema={"a": pl.Datetime}),
+        pl.DataFrame({"a": [date.today()]}, schema={"a": pl.Date}),
+        pl.DataFrame({"a": [timedelta(seconds=10)]}, schema={"a": pl.Duration}),
+    ],
+)
+def test_agg_invalid_same_engines_behavior(
+    op: str, expr: pl.Expr, df: pl.DataFrame
+) -> None:
+    # If the in-memory engine produces a good result, then the streaming engine
+    # should also produce a good result, and then it should match the in-memory result.
+
+    if isinstance(df.schema["a"], pl.Struct) and op in {"any", "all"}:
+        # TODO: Remove this exception when #24509 is resolved
+        pytest.skip("polars/#24509")
+
+    if isinstance(df.schema["a"], pl.Duration) and op in {"std", "var"}:
+        # TODO: Remove this exception when std & var are implemented for Duration
+        pytest.skip(f"'{op}' aggregation not yet implemented for Duration")
+
+    inmemory_result, inmemory_error = None, None
+    streaming_result, streaming_error = None, None
+
+    try:
+        inmemory_result = df.select(expr)
+    except pl.exceptions.PolarsError as e:
+        inmemory_error = e
+
+    try:
+        streaming_result = df.lazy().select(expr).collect(engine="streaming")
+    except pl.exceptions.PolarsError as e:
+        streaming_error = e
+
+    assert (streaming_error is None) == (inmemory_error is None), (
+        f"mismatch in errors for: {streaming_error} != {inmemory_error}"
+    )
+    if inmemory_error:
+        assert streaming_error, (
+            f"streaming engine did not error (expected in-memory error: {inmemory_error})"
+        )
+        assert streaming_error.__class__ == inmemory_error.__class__
+
+    if not inmemory_error:
+        assert streaming_result is not None
+        assert inmemory_result is not None
+        assert_frame_equal(streaming_result, inmemory_result)
+
+
+@pytest.mark.parametrize(
+    ("op", "expr"),
+    [
+        ("sum", pl.all().sum()),
+        ("mean", pl.all().mean()),
+        ("median", pl.all().median()),
+        ("std", pl.all().std()),
+        ("var", pl.all().var()),
+        ("quantile", pl.all().quantile(0.5)),
+        ("cum_sum", pl.all().cum_sum()),
+    ],
+)
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [[10]]}, schema={"a": pl.Array(shape=(1), inner=pl.Int32)}),
+        pl.DataFrame({"a": [[1]]}, schema={"a": pl.Struct(fields={"a": pl.Int32})}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Categorical}),
+        pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
+    ],
+)
+def test_invalid_agg_dtypes_should_raise(
+    op: str, expr: pl.Expr, df: pl.DataFrame
+) -> None:
+    with pytest.raises(
+        pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
+    ):
+        df.select(expr)
+    with pytest.raises(
+        pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
+    ):
+        df.lazy().select(expr).collect(engine="streaming")

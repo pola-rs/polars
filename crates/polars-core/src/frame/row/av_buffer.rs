@@ -1,6 +1,8 @@
 use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::BitmapBuilder;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DecimalFmtBuffer;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
 
@@ -138,6 +140,11 @@ impl<'a> AnyValueBuffer<'a> {
                 AnyValue::Float64(v) => builder.append_value(format!("{v}")),
                 AnyValue::Boolean(true) => builder.append_value("true"),
                 AnyValue::Boolean(false) => builder.append_value("false"),
+                #[cfg(feature = "dtype-decimal")]
+                AnyValue::Decimal(v, _p, s) => {
+                    let mut fmt = DecimalFmtBuffer::new();
+                    builder.append_value(fmt.format_dec128(v, s, false));
+                },
                 _ => return None,
             },
             _ => return None,
@@ -499,13 +506,11 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         let avs = &*payload.0;
                         // amortize loop counter
                         for i in 0..avs.len() {
-                            unsafe {
-                                let (builder, _) = builders.get_unchecked_mut(i);
-                                let av = avs.get_unchecked(i).clone();
-                                // lifetime is bound to 'a
-                                let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
-                                builder.add(av.clone());
-                            }
+                            let (builder, _) = builders.get_unchecked_mut(i);
+                            let av = avs.get_unchecked(i).clone();
+                            // lifetime is bound to 'a
+                            let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
+                            builder.add(av.clone());
                         }
                         outer_validity.push(true);
                     },

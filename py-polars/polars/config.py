@@ -5,10 +5,11 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
+from polars._dependencies import json
 from polars._typing import EngineType
 from polars._utils.deprecation import deprecated
+from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
-from polars.dependencies import json
 from polars.lazyframe.engine_config import GPUEngine
 
 if TYPE_CHECKING:
@@ -16,6 +17,9 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from polars._typing import FloatFmt
+    from polars.io.cloud.credential_provider._providers import (
+        CredentialProviderFunction,
+    )
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -1389,25 +1393,25 @@ class Config(contextlib.ContextDecorator):
         >>> with pl.Config(trim_decimal_zeros=False):
         ...     print(df)
         shape: (2, 1)
-        ┌──────────────┐
-        │ d            │
-        │ ---          │
-        │ decimal[*,5] │
-        ╞══════════════╡
-        │ 1.01000      │
-        │ -5.67890     │
-        └──────────────┘
+        ┌───────────────┐
+        │ d             │
+        │ ---           │
+        │ decimal[38,5] │
+        ╞═══════════════╡
+        │ 1.01000       │
+        │ -5.67890      │
+        └───────────────┘
         >>> with pl.Config(trim_decimal_zeros=True):
         ...     print(df)
         shape: (2, 1)
-        ┌──────────────┐
-        │ d            │
-        │ ---          │
-        │ decimal[*,5] │
-        ╞══════════════╡
-        │ 1.01         │
-        │ -5.6789      │
-        └──────────────┘
+        ┌───────────────┐
+        │ d             │
+        │ ---           │
+        │ decimal[38,5] │
+        ╞═══════════════╡
+        │ 1.01          │
+        │ -5.6789       │
+        └───────────────┘
         """
         plr.set_trim_decimal_zeros(active)
         return cls
@@ -1519,4 +1523,49 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
             os.environ["POLARS_ENGINE_AFFINITY"] = engine
+        return cls
+
+    @classmethod
+    @unstable()
+    def set_default_credential_provider(
+        cls, credential_provider: CredentialProviderFunction | Literal["auto"] | None
+    ) -> type[Config]:
+        """
+        Set a default credential provider.
+
+        Sets the default credential provider to be used for functions that
+        read / write to cloud storage.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            Can also be set to None, which globally disables auto-initialization
+            of credential providers, or "auto" (the default behavior).
+
+        Examples
+        --------
+        >>> pl.Config.set_default_credential_provider(
+        ...     pl.CredentialProviderAWS(
+        ...         assume_role={"RoleArn": "...", "RoleSessionName": "..."}
+        ...     )
+        ... )
+        <class 'polars.config.Config'>
+        """
+        import polars.io.cloud.credential_provider._builder
+
+        if isinstance(credential_provider, str) and credential_provider != "auto":
+            raise ValueError(credential_provider)
+
+        polars.io.cloud.credential_provider._builder.DEFAULT_CREDENTIAL_PROVIDER = (
+            credential_provider
+        )
+
         return cls

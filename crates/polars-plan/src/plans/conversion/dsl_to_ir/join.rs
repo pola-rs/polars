@@ -256,7 +256,7 @@ pub fn resolve_join(
         ($expr:expr, $schema:expr) => {
             ctxt.expr_arena
                 .get($expr.node())
-                .get_dtype($schema, ctxt.expr_arena)
+                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, $schema))
         };
     }
 
@@ -312,7 +312,7 @@ pub fn resolve_join(
         } else {
             polars_ensure!(
                 ltype == rtype,
-                SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right (and no other type was available to cast to)",
                 lnode.output_name(), ltype, rnode.output_name(), rtype
             )
         }
@@ -421,7 +421,6 @@ fn resolve_join_where(
     if ctxt.opt_flags.eager() {
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
     }
-    ctxt.opt_flags.set(OptFlags::COLLAPSE_JOINS, true);
     check_join_keys(&predicates)?;
     let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
         .map_err(|e| e.context(failed_here!(join left)))?;
@@ -464,7 +463,7 @@ fn resolve_join_where(
 
         // Ensure the predicate dtype output of the root node is Boolean
         let ae = arena.get(node);
-        let dt_out = ae.to_dtype(&schema_merged, arena)?;
+        let dt_out = ae.to_dtype(&ToFieldContext::new(arena, &schema_merged))?;
         polars_ensure!(
             dt_out == DataType::Boolean,
             ComputeError: "'join_where' predicates must resolve to boolean"
@@ -575,8 +574,10 @@ fn build_upcast_node_list(
                         // Ensure our dtype casts are lossless
                         let left = expr_arena.get(*left_node);
                         let right = expr_arena.get(*right_node);
-                        let dtype_left = left.to_dtype(schema_merged, expr_arena)?;
-                        let dtype_right = right.to_dtype(schema_merged, expr_arena)?;
+                        let dtype_left =
+                            left.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
+                        let dtype_right =
+                            right.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         if dtype_left != dtype_right {
                             // Ensure that we have a lossless cast between the two types.
                             let dt = if dtype_left.is_primitive_numeric()

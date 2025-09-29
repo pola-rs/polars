@@ -27,6 +27,7 @@ from polars._utils.constants import (
     U16_MAX,
     U32_MAX,
     U64_MAX,
+    U128_MAX,
 )
 from polars.datatypes import (
     Array,
@@ -56,6 +57,7 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
 )
 from polars.testing.parametric.strategies._utils import flexhash
 from polars.testing.parametric.strategies.dtype import (
@@ -88,6 +90,7 @@ _INTEGER_STRATEGIES: dict[bool, dict[int, SearchStrategy[int]]] = {
         16: st.integers(0, U16_MAX),
         32: st.integers(0, U32_MAX),
         64: st.integers(0, U64_MAX),
+        128: st.integers(0, U128_MAX),
     },
 }
 
@@ -365,6 +368,7 @@ _STATIC_STRATEGIES: dict[DataTypeClass, SearchStrategy[Any]] = {
     UInt16: integers(16, signed=False),
     UInt32: integers(32, signed=False),
     UInt64: integers(64, signed=False),
+    UInt128: integers(128, signed=False),
     Time: times(),
     Date: dates(),
     String: strings(),

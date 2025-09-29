@@ -13,6 +13,14 @@ from typing import (
 
 import polars._reexport as pl
 import polars._utils.construction as plc
+from polars._dependencies import (
+    _PYARROW_AVAILABLE,
+    _check_for_numpy,
+    dataclasses,
+)
+from polars._dependencies import numpy as np
+from polars._dependencies import pandas as pd
+from polars._dependencies import pyarrow as pa
 from polars._utils.construction.dataframe import _sequence_of_dict_to_pydf
 from polars._utils.construction.utils import (
     get_first_non_none,
@@ -37,6 +45,7 @@ from polars.datatypes import (
     List,
     Null,
     Object,
+    String,
     Struct,
     Time,
     Unknown,
@@ -52,14 +61,6 @@ from polars.datatypes.constructor import (
     polars_type_to_constructor,
     py_type_to_constructor,
 )
-from polars.dependencies import (
-    _PYARROW_AVAILABLE,
-    _check_for_numpy,
-    dataclasses,
-)
-from polars.dependencies import numpy as np
-from polars.dependencies import pandas as pd
-from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PySeries
@@ -68,8 +69,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     from polars import DataFrame, Series
+    from polars._dependencies import pandas as pd
     from polars._typing import PolarsDataType
-    from polars.dependencies import pandas as pd
 
 
 def sequence_to_pyseries(
@@ -164,10 +165,27 @@ def sequence_to_pyseries(
             Boolean,
             Categorical,
             Enum,
-            Decimal,
-        ) or isinstance(dtype, Categorical):
+        ) or isinstance(dtype, (Categorical, Decimal)):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
+
+        # Uninstanced Decimal is a bit special and has various inference paths
+        if dtype == Decimal:
+            if pyseries.dtype() == String:
+                pyseries = pyseries.str_to_decimal_infer(inference_length=0)
+            elif pyseries.dtype().is_float():
+                # Go through string so we infer an appropriate scale.
+                pyseries = pyseries.cast(
+                    String, strict=strict, wrap_numerical=False
+                ).str_to_decimal_infer(inference_length=0)
+            elif pyseries.dtype().is_integer() or pyseries.dtype() == Null:
+                pyseries = pyseries.cast(
+                    Decimal(scale=0), strict=strict, wrap_numerical=False
+                )
+            elif not isinstance(pyseries.dtype(), Decimal):
+                msg = f"can't convert {pyseries.dtype()} to Decimal"
+                raise TypeError(msg)
+
         return pyseries
 
     elif dtype == Struct:

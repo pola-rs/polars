@@ -23,7 +23,7 @@ from polars._utils.logging import eprint, verbose
 from polars.io.cloud._utils import NoPickleOption
 
 if TYPE_CHECKING:
-    from polars.dependencies import boto3
+    from polars._dependencies import boto3
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias

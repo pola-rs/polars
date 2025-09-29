@@ -62,14 +62,14 @@ pub fn read_parquet_metadata(
                     let file = polars_utils::open_file(&local).map_err(PyPolarsErr::from)?;
                     read_metadata(&mut BufReader::new(file)).map_err(PyPolarsErr::from)?
                 },
-                PlPath::Cloud(cloud) => {
+                PlPath::Cloud(_) => {
                     use polars::prelude::ParquetObjectStore;
                     use polars_error::PolarsResult;
 
                     feature_gated!("cloud", {
                         get_runtime().block_on(async {
                             let mut reader = ParquetObjectStore::from_uri(
-                                &cloud.to_string(),
+                                p.as_ref(),
                                 cloud_options.as_ref(),
                                 None,
                             )

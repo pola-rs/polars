@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from polars.dependencies import import_optional
+from polars._dependencies import import_optional
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:

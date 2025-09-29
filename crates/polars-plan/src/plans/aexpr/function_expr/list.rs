@@ -69,29 +69,29 @@ impl IRListFunction {
         match self {
             Concat => mapper.map_to_list_supertype(),
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => mapper.with_dtype(DataType::Boolean),
+            Contains { nulls_equal: _ } => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_drop_nulls")]
-            DropNulls => mapper.with_same_dtype(),
+            DropNulls => mapper.ensure_is_list()?.with_same_dtype(),
             #[cfg(feature = "list_sample")]
-            Sample { .. } => mapper.with_same_dtype(),
-            Slice => mapper.with_same_dtype(),
-            Shift => mapper.with_same_dtype(),
-            Get(_) => mapper.map_to_list_and_array_inner_dtype(),
+            Sample { .. } => mapper.ensure_is_list()?.with_same_dtype(),
+            Slice => mapper.ensure_is_list()?.with_same_dtype(),
+            Shift => mapper.ensure_is_list()?.with_same_dtype(),
+            Get(_) => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
             #[cfg(feature = "list_gather")]
-            Gather(_) => mapper.with_same_dtype(),
+            Gather(_) => mapper.ensure_is_list()?.with_same_dtype(),
             #[cfg(feature = "list_gather")]
-            GatherEvery => mapper.with_same_dtype(),
+            GatherEvery => mapper.ensure_is_list()?.with_same_dtype(),
             #[cfg(feature = "list_count")]
-            CountMatches => mapper.with_dtype(IDX_DTYPE),
+            CountMatches => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
-            Min => mapper.map_to_list_and_array_inner_dtype(),
-            Max => mapper.map_to_list_and_array_inner_dtype(),
+            Min => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
+            Max => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
             Mean => mapper.nested_mean_median_type(),
             Median => mapper.nested_mean_median_type(),
-            Std(_) => mapper.moment_dtype(), // Need to also have this sometimes marked as float32 or duration..
-            Var(_) => mapper.var_dtype(),
-            ArgMin => mapper.with_dtype(IDX_DTYPE),
-            ArgMax => mapper.with_dtype(IDX_DTYPE),
+            Std(_) => mapper.ensure_is_list()?.moment_dtype(), // Need to also have this sometimes marked as float32 or duration..
+            Var(_) => mapper.ensure_is_list()?.var_dtype(),
+            ArgMin => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
+            ArgMax => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
             Diff { .. } => mapper.try_map_dtype(|dt| {
                 let DataType::List(inner) = dt else {
@@ -113,20 +113,33 @@ impl IRListFunction {
 
                 Ok(DataType::List(Box::new(inner_dt)))
             }),
-            Sort(_) => mapper.with_same_dtype(),
-            Reverse => mapper.with_same_dtype(),
-            Unique(_) => mapper.with_same_dtype(),
-            Length => mapper.with_dtype(IDX_DTYPE),
+            Sort(_) => mapper.ensure_is_list()?.with_same_dtype(),
+            Reverse => mapper.ensure_is_list()?.with_same_dtype(),
+            Unique(_) => mapper.ensure_is_list()?.with_same_dtype(),
+            Length => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_sets")]
-            SetOperation(_) => mapper.with_same_dtype(),
+            SetOperation(_) => mapper.ensure_is_list()?.with_same_dtype(),
             #[cfg(feature = "list_any_all")]
-            Any => mapper.with_dtype(DataType::Boolean),
+            Any => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_any_all")]
-            All => mapper.with_dtype(DataType::Boolean),
-            Join(_) => mapper.with_dtype(DataType::String),
+            All => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
+            Join(_) => mapper.try_map_dtype(|dtype| {
+                let DataType::List(inner_dtype) = dtype else {
+                    polars_bail!(
+                        InvalidOperation:
+                        "attempted list to_struct on non-list dtype: {dtype}",
+                    );
+                };
+                let inner_dtype = inner_dtype.as_ref();
+                polars_ensure!(inner_dtype.is_string(), InvalidOperation:
+                            "attempted list join with non-string dtype: {dtype}",);
+                Ok(DataType::String)
+            }),
             #[cfg(feature = "dtype-array")]
-            ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
-            NUnique => mapper.with_dtype(IDX_DTYPE),
+            ToArray(width) => mapper
+                .ensure_is_list()?
+                .try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
+            NUnique => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(names) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {

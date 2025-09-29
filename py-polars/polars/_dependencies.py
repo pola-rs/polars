@@ -167,6 +167,7 @@ if TYPE_CHECKING:
     import pyarrow
     import pydantic
     import pyiceberg
+    import pyiceberg.schema
     import pytz
     import torch
 
@@ -271,7 +272,7 @@ def import_optional(
 
     Examples
     --------
-    >>> from polars.dependencies import import_optional
+    >>> from polars._dependencies import import_optional
     >>> import_optional(
     ...     "definitely_a_real_module",
     ...     err_prefix="super-important package",

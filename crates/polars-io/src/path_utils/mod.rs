@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
 use polars_core::config;
-use polars_core::error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
+use polars_core::error::{PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::{CloudScheme, PlPath, PlPathRef};
 
@@ -142,19 +142,19 @@ pub fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
 }
 
 /// Returns `true` if `expanded_paths` were expanded from a single directory
-pub fn expanded_from_single_directory(addrs: &[PlPath], expanded_addrs: &[PlPath]) -> bool {
+pub fn expanded_from_single_directory(paths: &[PlPath], expanded_paths: &[PlPath]) -> bool {
     // Single input that isn't a glob
-    addrs.len() == 1 && get_glob_start_idx(addrs[0].as_ref().strip_scheme().as_bytes()).is_none()
+    paths.len() == 1 && get_glob_start_idx(paths[0].as_ref().strip_scheme().as_bytes()).is_none()
     // And isn't a file
     && {
         (
             // For local paths, we can just use `is_dir`
-            addrs[0].as_ref().as_local_path().is_some_and(|p| p.is_dir())
+            paths[0].as_ref().as_local_path().is_some_and(|p| p.is_dir())
         )
         || (
             // For cloud paths, we determine that the input path isn't a file by checking that the
             // output path differs.
-            expanded_addrs.is_empty() || (addrs[0] != expanded_addrs[0])
+            expanded_paths.is_empty() || (paths[0] != expanded_paths[0])
         )
     }
 }
@@ -163,9 +163,10 @@ pub fn expanded_from_single_directory(addrs: &[PlPath], expanded_addrs: &[PlPath
 pub fn expand_paths(
     paths: &[PlPath],
     glob: bool,
+    hidden_file_prefix: &[PlSmallStr],
     #[allow(unused_variables)] cloud_options: &mut Option<CloudOptions>,
 ) -> PolarsResult<Arc<[PlPath]>> {
-    expand_paths_hive(paths, glob, cloud_options, false).map(|x| x.0)
+    expand_paths_hive(paths, glob, hidden_file_prefix, cloud_options, false).map(|x| x.0)
 }
 
 struct HiveIdxTracker<'a> {
@@ -204,6 +205,7 @@ impl HiveIdxTracker<'_> {
 pub fn expand_paths_hive(
     paths: &[PlPath],
     glob: bool,
+    hidden_file_prefix: &[PlSmallStr],
     #[allow(unused_variables)] cloud_options: &mut Option<CloudOptions>,
     check_directory_level: bool,
 ) -> PolarsResult<(Arc<[PlPath]>, usize)> {
@@ -213,61 +215,22 @@ pub fn expand_paths_hive(
 
     let is_cloud = first_path.as_ref().is_cloud_url();
 
-    /// Wrapper around `Vec<PathBuf>` that also tracks file extensions, so that
-    /// we don't have to traverse the entire list again to validate extensions.
-    struct OutPaths {
-        paths: Vec<PlPath>,
-        exts: [Option<(PlSmallStr, usize)>; 2],
-        current_idx: usize,
-    }
-
-    impl OutPaths {
-        fn update_ext_status(
-            current_idx: &mut usize,
-            exts: &mut [Option<(PlSmallStr, usize)>; 2],
-            value: PlPathRef,
-        ) {
-            let ext = value
-                .extension()
-                .map(PlSmallStr::from)
-                .unwrap_or(PlSmallStr::EMPTY);
-
-            if exts[0].is_none() {
-                exts[0] = Some((ext, *current_idx));
-            } else if exts[1].is_none() && ext != exts[0].as_ref().unwrap().0 {
-                exts[1] = Some((ext, *current_idx));
-            }
-
-            *current_idx += 1;
-        }
-
-        fn push(&mut self, value: PlPath) {
-            {
-                let current_idx = &mut self.current_idx;
-                let exts = &mut self.exts;
-                Self::update_ext_status(current_idx, exts, value.as_ref());
-            }
-            self.paths.push(value)
-        }
-
-        fn extend(&mut self, values: impl IntoIterator<Item = PlPath>) {
-            let current_idx = &mut self.current_idx;
-            let exts = &mut self.exts;
-
-            self.paths.extend(values.into_iter().inspect(|x| {
-                Self::update_ext_status(current_idx, exts, x.as_ref());
-            }))
-        }
-
-        fn extend_from_slice(&mut self, values: &[PlPath]) {
-            self.extend(values.iter().cloned())
-        }
-    }
+    let is_hidden_file = move |path: &PlPath| {
+        path.as_ref()
+            .file_name()
+            .and_then(|x| x.to_str())
+            .is_some_and(|file_name| {
+                hidden_file_prefix
+                    .iter()
+                    .any(|x| file_name.starts_with(x.as_str()))
+            })
+    };
 
     let mut out_paths = OutPaths {
         paths: vec![],
         exts: [None, None],
         current_idx: 0,
+        is_hidden_file: &is_hidden_file,
     };
 
     let mut hive_idx_tracker = HiveIdxTracker {
@@ -304,27 +267,29 @@ pub fn expand_paths_hive(
                 }
             };
 
-            let expand_path_cloud = |addr: &str,
+            let expand_path_cloud = |path: PlPathRef<'_>,
                                      cloud_options: Option<&CloudOptions>|
              -> PolarsResult<(usize, Vec<PlPath>)> {
                 crate::pl_async::get_runtime().block_in_place_on(async {
+                    let path_str = path.to_str();
+
                     let (cloud_location, store) =
-                        crate::cloud::build_object_store(addr, cloud_options, glob).await?;
+                        crate::cloud::build_object_store(path, cloud_options, glob).await?;
                     let prefix = object_path_from_str(&cloud_location.prefix)?;
 
-                    let out = if !addr.ends_with("/")
+                    let out = if !path_str.ends_with("/")
                         && (!glob || cloud_location.expansion.is_none())
                         && {
                             // We need to check if it is a directory for local paths (we can be here due
                             // to FORCE_ASYNC). For cloud paths the convention is that the user must add
                             // a trailing slash `/` to scan directories. We don't infer it as that would
                             // mean sending one network request per path serially (very slow).
-                            is_cloud || Path::new(addr).is_file()
+                            path.is_cloud_url() || path.as_local_path().unwrap().is_file()
                         } {
                         (
                             0,
                             vec![PlPath::from_string(format_path(
-                                &cloud_location.scheme,
+                                cloud_location.scheme,
                                 &cloud_location.bucket,
                                 prefix.as_ref(),
                             ))],
@@ -332,15 +297,14 @@ pub fn expand_paths_hive(
                     } else {
                         use futures::TryStreamExt;
 
-                        if !is_cloud {
+                        if let Some(path) = path.as_local_path() {
                             // FORCE_ASYNC in the test suite wants us to raise a proper error message
                             // for non-existent file paths. Note we can't do this for cloud paths as
                             // there is no concept of a "directory" - a non-existent path is
                             // indistinguishable from an empty directory.
-                            let path = PathBuf::from(addr);
                             if !path.is_dir() {
                                 path.metadata()
-                                    .map_err(|err| _limit_path_len_io_err(&path, err))?;
+                                    .map_err(|err| _limit_path_len_io_err(path, err))?;
                             }
                         }
 
@@ -358,7 +322,7 @@ pub fn expand_paths_hive(
                                             let out = (x.size > 0).then(|| {
                                                 PlPath::from_string({
                                                     format_path(
-                                                        &cloud_location.scheme,
+                                                        cloud_location.scheme,
                                                         &cloud_location.bucket,
                                                         x.location.as_ref(),
                                                     )
@@ -377,14 +341,15 @@ pub fn expand_paths_hive(
                         // Since Path::parse() removes any trailing slash ('/'), we may need to restore it
                         // to calculate the right byte offset
                         let mut prefix = prefix.to_string();
-                        if addr.ends_with('/') {
+                        if path_str.ends_with('/') && !prefix.ends_with('/') {
                             prefix.push('/')
                         };
 
                         paths.sort_unstable();
+
                         (
                             format_path(
-                                &cloud_location.scheme,
+                                cloud_location.scheme,
                                 &cloud_location.bucket,
                                 prefix.as_ref(),
                             )
@@ -422,7 +387,8 @@ pub fn expand_paths_hive(
                         // Search after offset to prevent matching `.s3.amazonaws.com` (legacy global endpoint URL without region).
                         let region_end = offset + after_scheme[offset..].find(".amazonaws.com/")?;
 
-                        if after_scheme[..region_end].contains('/') {
+                        // Do not convert if '?' (this can be query parameters for AWS presigned URLs).
+                        if after_scheme[..region_end].contains('/') || after_scheme.contains('?') {
                             return None;
                         }
 
@@ -461,7 +427,7 @@ pub fn expand_paths_hive(
                     path.clone()
                 } else {
                     let (expand_start_idx, paths) =
-                        expand_path_cloud(path.to_str(), cloud_options.as_ref())?;
+                        expand_path_cloud(path.as_ref().as_ref(), cloud_options.as_ref())?;
                     out_paths.extend_from_slice(&paths);
                     hive_idx_tracker.update(expand_start_idx, path_idx)?;
                     continue;
@@ -469,8 +435,10 @@ pub fn expand_paths_hive(
 
                 hive_idx_tracker.update(0, path_idx)?;
 
-                let iter = crate::pl_async::get_runtime()
-                    .block_in_place_on(crate::async_glob(path.to_str(), cloud_options.as_ref()))?;
+                let iter = crate::pl_async::get_runtime().block_in_place_on(crate::async_glob(
+                    path.as_ref().as_ref(),
+                    cloud_options.as_ref(),
+                ))?;
 
                 if is_cloud {
                     out_paths.extend(iter.into_iter().map(PlPath::from_string));
@@ -488,16 +456,16 @@ pub fn expand_paths_hive(
         panic!("Feature `cloud` must be enabled to use globbing patterns with cloud urls.")
     } else {
         let mut stack = VecDeque::new();
+        let mut paths_scratch = vec![];
 
-        for path_idx in 0..paths.len() {
-            let path = paths[path_idx]
-                .as_ref()
-                .as_local_path()
-                .unwrap()
-                .to_path_buf();
+        for (path_idx, path) in paths.iter().enumerate() {
+            let path = path.as_ref();
+            let path = path.as_local_path().unwrap();
             stack.clear();
 
             if path.is_dir() {
+                let path = path.to_path_buf();
+
                 let i = path.to_str().unwrap().len();
 
                 hive_idx_tracker.update(i, path_idx)?;
@@ -505,14 +473,22 @@ pub fn expand_paths_hive(
                 stack.push_back(path.clone());
 
                 while let Some(dir) = stack.pop_front() {
-                    let mut paths = std::fs::read_dir(dir)
-                        .map_err(PolarsError::from)?
-                        .map(|x| x.map(|x| x.path()))
-                        .collect::<std::io::Result<Vec<_>>>()
-                        .map_err(PolarsError::from)?;
-                    paths.sort_unstable();
+                    let mut last_err = Ok(());
 
-                    for path in paths {
+                    paths_scratch.clear();
+                    paths_scratch.extend(std::fs::read_dir(dir)?.map_while(|x| match x {
+                        Ok(v) => Some(v.path()),
+                        Err(e) => {
+                            last_err = Err(e);
+                            None
+                        },
+                    }));
+
+                    last_err?;
+
+                    paths_scratch.sort_unstable();
+
+                    for path in paths_scratch.drain(..) {
                         if path.is_dir() {
                             stack.push_back(path);
                         } else if path.metadata()?.len() > 0 {
@@ -551,15 +527,78 @@ pub fn expand_paths_hive(
     if expanded_from_single_directory(paths, out_paths.paths.as_slice()) {
         if let [Some((_, i1)), Some((_, i2))] = out_paths.exts {
             polars_bail!(
-                InvalidOperation: r#"directory contained paths with different file extensions: \
+                InvalidOperation: "directory contained paths with different file extensions: \
                 first path: {}, second path: {}. Please use a glob pattern to explicitly specify \
-                which files to read (e.g. "dir/**/*", "dir/**/*.parquet")"#,
+                which files to read (e.g. 'dir/**/*', 'dir/**/*.parquet')",
                 &out_paths.paths[i1].display(), &out_paths.paths[i2].display()
             )
         }
     }
 
-    Ok((out_paths.paths.into(), hive_idx_tracker.idx))
+    return Ok((out_paths.paths.into(), hive_idx_tracker.idx));
+
+    /// Wrapper around `Vec<PathBuf>` that also tracks file extensions, so that
+    /// we don't have to traverse the entire list again to validate extensions.
+    struct OutPaths<'a, F: Fn(&PlPath) -> bool> {
+        paths: Vec<PlPath>,
+        exts: [Option<(PlSmallStr, usize)>; 2],
+        current_idx: usize,
+        is_hidden_file: &'a F,
+    }
+
+    impl<F> OutPaths<'_, F>
+    where
+        F: Fn(&PlPath) -> bool,
+    {
+        fn push(&mut self, value: PlPath) {
+            if (self.is_hidden_file)(&value) {
+                return;
+            }
+
+            let current_idx = &mut self.current_idx;
+            let exts = &mut self.exts;
+            Self::update_ext_status(current_idx, exts, value.as_ref());
+
+            self.paths.push(value)
+        }
+
+        fn extend(&mut self, values: impl IntoIterator<Item = PlPath>) {
+            let current_idx = &mut self.current_idx;
+            let exts = &mut self.exts;
+
+            self.paths.extend(
+                values
+                    .into_iter()
+                    .filter(|x| !(self.is_hidden_file)(x))
+                    .inspect(|x| {
+                        Self::update_ext_status(current_idx, exts, x.as_ref());
+                    }),
+            )
+        }
+
+        fn extend_from_slice(&mut self, values: &[PlPath]) {
+            self.extend(values.iter().cloned())
+        }
+
+        fn update_ext_status(
+            current_idx: &mut usize,
+            exts: &mut [Option<(PlSmallStr, usize)>; 2],
+            value: PlPathRef,
+        ) {
+            let ext = value
+                .extension()
+                .map(PlSmallStr::from)
+                .unwrap_or(PlSmallStr::EMPTY);
+
+            if exts[0].is_none() {
+                exts[0] = Some((ext, *current_idx));
+            } else if exts[1].is_none() && ext != exts[0].as_ref().unwrap().0 {
+                exts[1] = Some((ext, *current_idx));
+            }
+
+            *current_idx += 1;
+        }
+    }
 }
 
 /// Ignores errors from `std::fs::create_dir_all` if the directory exists.
@@ -625,7 +664,7 @@ mod tests {
 
         let path = "https://pola.rs/test.csv?token=bear";
         let paths = &[PlPath::new(path)];
-        let out = expand_paths(paths, true, &mut None).unwrap();
+        let out = expand_paths(paths, true, &[], &mut None).unwrap();
         assert_eq!(out.as_ref(), paths);
     }
 }
