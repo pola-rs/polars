@@ -7,9 +7,8 @@ use polars_utils::plpath::PlPathRef;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
-use super::CsvParseOptions;
 use super::buffer::Buffer;
-use super::options::{CommentPrefix, NullValuesCompiled};
+use super::options::{CommentPrefix, CsvParseOptions, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use crate::prelude::_csv_read_internal::find_starting_point;
 use crate::utils::compression::maybe_decompress_bytes;
@@ -842,7 +841,7 @@ impl CountLines {
                 debug_assert!(count == 0 || original_bytes[position] == self.eol_char);
                 return (count, position);
             } else {
-                let (c, o) = self.count_no_simd(bytes, !not_in_field_previous_iter);
+                let (c, o) = self.count_no_simd(bytes, !not_in_field_previous_iter, None);
 
                 let (count, position) = if c > 0 {
                     (count + c, total_idx + o)
@@ -858,10 +857,15 @@ impl CountLines {
 
     #[cfg(not(feature = "simd"))]
     pub fn count(&self, bytes: &[u8]) -> (usize, usize) {
-        self.count_no_simd(bytes, false)
+        self.count_no_simd(bytes, false, None)
     }
 
-    fn count_no_simd(&self, bytes: &[u8], in_field: bool) -> (usize, usize) {
+    fn count_no_simd(
+        &self,
+        bytes: &[u8],
+        in_field: bool,
+        stop_at_n_lines: Option<usize>,
+    ) -> (usize, usize) {
         let iter = bytes.iter();
         let mut in_field = in_field;
         let mut count = 0;
@@ -879,11 +883,21 @@ impl CountLines {
             else if c == self.eol_char && !in_field {
                 position = (b as *const _ as usize) - (bytes.as_ptr() as usize);
                 count += 1;
+
+                if let Some(stop_at_n_lines) = stop_at_n_lines {
+                    if count == stop_at_n_lines {
+                        break;
+                    }
+                }
             }
         }
         debug_assert!(count == 0 || bytes[position] == self.eol_char);
 
         (count, position)
+    }
+
+    pub fn count_at_most_n_rows(&self, bytes: &[u8], n_lines: usize) -> (usize, usize) {
+        self.count_no_simd(bytes, false, Some(n_lines))
     }
 }
 
