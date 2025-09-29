@@ -40,7 +40,7 @@ Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [tool.maturin]
-include = [{ path = "rust-toolchain.toml", format = "sdist" }, { path = "polars/**/*", format = ["sdist"] }]
+include = [{ path = "rust-toolchain.toml", format = "sdist" }, { path = "polars/**/*", format = ["sdist", "wheel"] }]
 
 [tool.mypy]
 files = ["polars", "tests"]
