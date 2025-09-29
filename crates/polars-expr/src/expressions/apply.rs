@@ -147,8 +147,7 @@ impl ApplyExpr {
         };
 
         let ca: ListChunked = if self.allow_threading {
-            let dtype = if self.output_field.dtype.is_known()
-                && !self.output_field.dtype.is_null()
+            let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
             {
                 let mut dtype = self.output_field.dtype.clone();
                 if !self.is_scalar() {

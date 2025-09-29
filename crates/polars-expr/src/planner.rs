@@ -416,10 +416,14 @@ fn create_physical_expr_inner(
                         return Ok(Arc::new(AggQuantileExpr::new(input, quantile, *interpol)));
                     }
 
-                    let output_field = expr_arena.get(expression).to_field_with_ctx(
-                        Context::Aggregation,
-                        &ToFieldContext::new(expr_arena, schema),
-                    )?;
+                    let mut output_field = expr_arena
+                        .get(expression)
+                        .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+                    if matches!(ctxt, Context::Aggregation) && !is_scalar_ae(expression, expr_arena)
+                    {
+                        output_field.coerce(output_field.dtype.clone().implode());
+                    }
 
                     let groupby = GroupByMethod::from(agg.clone());
                     let agg_type = AggregationType {
@@ -511,9 +515,17 @@ fn create_physical_expr_inner(
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
 
-            let output_field_with_ctx = expr_arena
+            let non_aggregated_output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let output_field_with_ctx =
+                if matches!(ctxt, Context::Aggregation) && !is_scalar_ae(expression, expr_arena) {
+                    let mut f = non_aggregated_output_field.clone();
+                    f.coerce(non_aggregated_output_field.dtype().clone().implode());
+                    f
+                } else {
+                    non_aggregated_output_field.clone()
+                };
             let non_aggregated_output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
