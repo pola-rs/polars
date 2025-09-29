@@ -73,6 +73,41 @@ impl AggregationContext<'_> {
     }
 }
 
+impl AggregationContext<'_> {
+    /// Iterate over groups without greedy aggregation into an AggList.
+    pub(super) fn iter_groups_lazy(
+        &mut self,
+        keep_names: bool,
+    ) -> Box<dyn Iterator<Item = Option<AmortSeries>> + '_> {
+        match self.agg_state() {
+            AggState::NotAggregated(_) => {
+                let groups = self.groups();
+                let len = groups.len();
+                let c = self.get_values().rechunk(); //TODO - do we require rechunk?
+                let name = if keep_names {
+                    c.name().clone()
+                } else {
+                    PlSmallStr::EMPTY
+                };
+                let iter = self.groups().iter();
+
+                // Safety:
+                // kdn TODO
+                unsafe {
+                    Box::new(NotAggLazyIter::new(
+                        c.as_materialized_series().array_ref(0).clone(),
+                        iter,
+                        len,
+                        c.dtype(),
+                        name,
+                    ))
+                }
+            },
+            _ => self.iter_groups(keep_names),
+        }
+    }
+}
+
 struct LitIter {
     len: usize,
     offset: usize,
@@ -184,5 +219,65 @@ impl Iterator for FlatIter {
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len - self.offset, Some(self.len - self.offset))
+    }
+}
+
+struct NotAggLazyIter<'a, I: Iterator<Item = GroupsIndicator<'a>>> {
+    array: ArrayRef,
+    iter: I,
+    groups_idx: usize,
+    len: usize,
+    // AmortSeries referenced that series
+    #[allow(dead_code)]
+    series_container: Rc<Series>,
+    item: AmortSeries,
+}
+
+impl<'a, I: Iterator<Item = GroupsIndicator<'a>>> NotAggLazyIter<'a, I> {
+    /// # Safety
+    /// kdn TODO
+    unsafe fn new(
+        array: ArrayRef,
+        iter: I,
+        len: usize,
+        logical: &DataType,
+        name: PlSmallStr,
+    ) -> Self {
+        let series_container = Rc::new(Series::from_chunks_and_dtype_unchecked(
+            name,
+            vec![array.clone()],
+            logical,
+        ));
+        Self {
+            array,
+            iter,
+            groups_idx: 0,
+            len,
+            series_container: series_container.clone(),
+            item: AmortSeries::new(series_container),
+        }
+    }
+}
+
+impl<'a, I: Iterator<Item = GroupsIndicator<'a>>> Iterator for NotAggLazyIter<'a, I> {
+    type Item = Option<AmortSeries>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(g) = self.iter.next() {
+            match g {
+                GroupsIndicator::Idx(_) => todo!(), //kdn TODO
+                GroupsIndicator::Slice(s) => {
+                    let mut arr =
+                        unsafe { self.array.sliced_unchecked(s[0] as usize, s[1] as usize) };
+                    unsafe { self.item.swap(&mut arr) };
+                    Some(Some(self.item.clone()))
+                },
+            }
+        } else {
+            None
+        }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len - self.groups_idx, Some(self.len - self.groups_idx))
     }
 }
