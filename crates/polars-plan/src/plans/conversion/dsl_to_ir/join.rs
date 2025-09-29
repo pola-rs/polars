@@ -34,6 +34,28 @@ pub fn resolve_join(
     mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
+    // Ensure that the requested `maintain_order` is supported
+    match &options.args.how {
+        JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full => (),
+        #[cfg(feature = "asof_join")]
+        JoinType::AsOf(_) => {
+            polars_ensure!(options.args.maintain_order == MaintainOrderJoin::None, InvalidOperation: "'maintain_order' is not supported for 'asof' joins");
+        },
+        JoinType::Semi => {
+            polars_ensure!(options.args.maintain_order == MaintainOrderJoin::None, InvalidOperation: "'maintain_order' is not supported for 'semi' joins");
+        },
+        JoinType::Anti => {
+            polars_ensure!(options.args.maintain_order == MaintainOrderJoin::None, InvalidOperation: "'maintain_order' is not supported for 'anti' joins");
+        },
+        #[cfg(feature = "iejoin")]
+        JoinType::IEJoin => {
+            polars_ensure!(options.args.maintain_order == MaintainOrderJoin::None, InvalidOperation: "'maintain_order' is not supported for inequality joins");
+        },
+        JoinType::Cross => {
+            polars_ensure!(options.args.maintain_order == MaintainOrderJoin::None, InvalidOperation: "'maintain_order' is not supported for 'cross' joins");
+        },
+    }
+
     if !predicates.is_empty() {
         feature_gated!("iejoin", {
             debug_assert!(left_on.is_empty() && right_on.is_empty());

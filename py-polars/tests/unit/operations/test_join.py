@@ -3905,3 +3905,28 @@ def test_join_asof_by_i128() -> None:
             schema={"a": pl.Int128, "i": pl.Int32, "b": pl.Int128},
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("how", "supported"),
+    [
+        ("inner", True),
+        ("left", True),
+        ("right", True),
+        ("full", True),
+        ("anti", False),
+        ("cross", False),
+        ("semi", False),
+    ],
+)
+def test_error_for_unsupported_maintain_order(
+    how: JoinStrategy, supported: bool
+) -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+
+    if supported:
+        df.join(df, on="a", how=how, maintain_order="left_right")
+    else:
+        on = "a" if how != "cross" else None
+        with pytest.raises(InvalidOperationError):
+            df.join(df, on=on, how=how, maintain_order="left_right")
