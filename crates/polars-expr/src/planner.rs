@@ -482,9 +482,6 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
-            let non_aggregated_output_field = expr_arena
-                .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
             let input =
@@ -501,7 +498,6 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.clone(),
                 output_field,
-                non_aggregated_output_field,
                 is_scalar,
             )))
         },
@@ -558,9 +554,6 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
-            let non_aggregated_output_field = expr_arena
-                .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
@@ -573,7 +566,6 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.clone(),
                 output_field,
-                non_aggregated_output_field,
                 is_scalar,
             )))
         },
@@ -601,10 +593,7 @@ fn create_physical_expr_inner(
                 move |c: &mut [polars_core::frame::column::Column]| c[0].explode(skip_empty),
             ) as Arc<dyn ColumnsUdf>);
 
-            let field = expr_arena
-                .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
-            let non_aggregated_output_field = expr_arena
+            let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
@@ -615,8 +604,7 @@ fn create_physical_expr_inner(
                 FunctionOptions::groupwise(),
                 state.allow_threading,
                 schema.clone(),
-                field,
-                non_aggregated_output_field,
+                output_field,
                 false,
             )))
         },
