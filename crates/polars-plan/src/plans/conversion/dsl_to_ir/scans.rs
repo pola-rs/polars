@@ -56,7 +56,7 @@ pub(super) fn dsl_to_ir(
             FileScanDsl::PythonDataset { .. } => {
                 // There are a lot of places that short-circuit if the paths is empty,
                 // so we just give a dummy path here.
-                ScanSources::Paths(Buffer::from([PlPath::from_str("dummy")]))
+                ScanSources::Paths(Buffer::from_iter([PlPath::from_str("dummy")]))
             },
             FileScanDsl::Anonymous { .. } => sources.clone(),
         };

@@ -320,12 +320,6 @@ impl<T> From<Vec<T>> for Buffer<T> {
     }
 }
 
-impl<T, const N: usize> From<[T; N]> for Buffer<T> {
-    fn from(value: [T; N]) -> Self {
-        value.into_iter().collect()
-    }
-}
-
 impl<T> Deref for Buffer<T> {
     type Target = [T];
 
