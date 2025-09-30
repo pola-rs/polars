@@ -1,3 +1,4 @@
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
@@ -143,7 +144,7 @@ impl LazyFrame {
         Self::scan_ipc_sources(ScanSources::Paths([path].into()), args)
     }
 
-    pub fn scan_ipc_files(paths: Arc<[PlPath]>, args: ScanArgsIpc) -> PolarsResult<Self> {
+    pub fn scan_ipc_files(paths: Buffer<PlPath>, args: ScanArgsIpc) -> PolarsResult<Self> {
         Self::scan_ipc_sources(ScanSources::Paths(paths), args)
     }
 

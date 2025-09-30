@@ -1,3 +1,4 @@
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParallelStrategy;
@@ -174,7 +175,7 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn scan_parquet_files(paths: Arc<[PlPath]>, args: ScanArgsParquet) -> PolarsResult<Self> {
+    pub fn scan_parquet_files(paths: Buffer<PlPath>, args: ScanArgsParquet) -> PolarsResult<Self> {
         Self::scan_parquet_sources(ScanSources::Paths(paths), args)
     }
 }

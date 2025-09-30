@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
@@ -92,7 +91,7 @@ pub trait LazyFileListReader: Clone {
 
     /// Set paths of the scanned files.
     #[must_use]
-    fn with_paths(self, paths: Arc<[PlPath]>) -> Self {
+    fn with_paths(self, paths: Buffer<PlPath>) -> Self {
         self.with_sources(ScanSources::Paths(paths))
     }
 
