@@ -81,7 +81,7 @@ jobs:
 
       - name: Install Polars
         working-directory: py-polars
-        run: maturin develop
+        run: VENV=$GITHUB_WORKSPACE/.venv make build
 
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2
