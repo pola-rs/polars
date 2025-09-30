@@ -322,8 +322,7 @@ impl<T> From<Vec<T>> for Buffer<T> {
 
 impl<T, const N: usize> From<[T; N]> for Buffer<T> {
     fn from(value: [T; N]) -> Self {
-        let v: Vec<T> = value.into_iter().collect();
-        Self::from(v)
+        value.into_iter().collect()
     }
 }
 
