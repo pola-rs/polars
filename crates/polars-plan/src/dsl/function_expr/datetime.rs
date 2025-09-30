@@ -28,19 +28,33 @@ pub enum TemporalFunction {
     Microsecond,
     Nanosecond,
     #[cfg(feature = "dtype-duration")]
-    TotalDays,
+    TotalDays {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalHours,
+    TotalHours {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalMinutes,
+    TotalMinutes {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalSeconds,
+    TotalSeconds {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalMilliseconds,
+    TotalMilliseconds {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalMicroseconds,
+    TotalMicroseconds {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalNanoseconds,
+    TotalNanoseconds {
+        fractional: bool,
+    },
     ToString(String),
     CastTimeUnit(TimeUnit),
     WithTimeUnit(TimeUnit),
@@ -97,19 +111,19 @@ impl Display for TemporalFunction {
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
             #[cfg(feature = "dtype-duration")]
-            TotalDays => "total_days",
+            TotalDays { .. } => "total_days",
             #[cfg(feature = "dtype-duration")]
-            TotalHours => "total_hours",
+            TotalHours { .. } => "total_hours",
             #[cfg(feature = "dtype-duration")]
-            TotalMinutes => "total_minutes",
+            TotalMinutes { .. } => "total_minutes",
             #[cfg(feature = "dtype-duration")]
-            TotalSeconds => "total_seconds",
+            TotalSeconds { .. } => "total_seconds",
             #[cfg(feature = "dtype-duration")]
-            TotalMilliseconds => "total_milliseconds",
+            TotalMilliseconds { .. } => "total_milliseconds",
             #[cfg(feature = "dtype-duration")]
-            TotalMicroseconds => "total_microseconds",
+            TotalMicroseconds { .. } => "total_microseconds",
             #[cfg(feature = "dtype-duration")]
-            TotalNanoseconds => "total_nanoseconds",
+            TotalNanoseconds { .. } => "total_nanoseconds",
             ToString(_) => "to_string",
             #[cfg(feature = "timezones")]
             ConvertTimeZone(_) => "convert_time_zone",
