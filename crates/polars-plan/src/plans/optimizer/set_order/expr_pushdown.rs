@@ -125,12 +125,18 @@ pub fn get_frame_observing(
 
         // Elementwise can be seen as a `zip + op`.
         AExpr::BinaryExpr { left, op: _, right } => zip!(*left, *right),
-        AExpr::Filter { input, by } => zip!(*input, *by),
         AExpr::Ternary {
             predicate,
             truthy,
             falsy,
         } => zip!(*predicate, *truthy, *falsy),
+
+        // Filter has to check whether zipping observes order, otherwise it propagates expr order.
+        AExpr::Filter { input, by } => {
+            let input = rec!(*input);
+            input.zip_with(rec!(*by))?;
+            input
+        },
 
         AExpr::Sort { expr, options } => {
             if options.maintain_order {

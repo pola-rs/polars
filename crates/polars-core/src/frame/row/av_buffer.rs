@@ -506,13 +506,11 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         let avs = &*payload.0;
                         // amortize loop counter
                         for i in 0..avs.len() {
-                            unsafe {
-                                let (builder, _) = builders.get_unchecked_mut(i);
-                                let av = avs.get_unchecked(i).clone();
-                                // lifetime is bound to 'a
-                                let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
-                                builder.add(av.clone());
-                            }
+                            let (builder, _) = builders.get_unchecked_mut(i);
+                            let av = avs.get_unchecked(i).clone();
+                            // lifetime is bound to 'a
+                            let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
+                            builder.add(av.clone());
                         }
                         outer_validity.push(true);
                     },
