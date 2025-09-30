@@ -552,9 +552,10 @@ where
         if let Some(v) = self.storage.try_take_vec() {
             out.extend(v)
         } else {
-            out.extend_from_slice(unsafe {
-                core::slice::from_raw_parts(self.storage.inner().ptr, self.initialized_len())
-            });
+            let slice: &[T] = &*self.storage;
+            assert_eq!(slice.len(), self.initialized_len());
+
+            out.extend_from_slice(slice);
         }
 
         *self = Self::try_new(SharedStorage::from_vec(out)).unwrap()
