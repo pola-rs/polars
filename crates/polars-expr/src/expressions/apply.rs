@@ -157,7 +157,7 @@ impl ApplyExpr {
 
         // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
         // memory explosion.
-        // kdn TODO: TBD - do we want to follow this path for *all* Slice
+        // kdn TODO: TBD - do we want to follow this path for *all* Slice groupstype?
         if matches!(ac.agg_state(), AggState::NotAggregated(_))
             && let GroupsType::Slice { rolling: true, .. } = ac.groups.as_ref().as_ref()
         {
