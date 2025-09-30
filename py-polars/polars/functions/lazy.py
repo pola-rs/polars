@@ -2490,8 +2490,8 @@ def from_epoch(
 
     Examples
     --------
-    >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
-    >>> df.select(pl.from_epoch(pl.col("timestamp"), time_unit="s")).collect()
+    >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]})
+    >>> df.select(pl.from_epoch(pl.col("timestamp"), time_unit="s"))
     shape: (2, 1)
     ┌─────────────────────┐
     │ timestamp           │
@@ -2502,7 +2502,7 @@ def from_epoch(
     │ 2022-10-25 07:31:39 │
     └─────────────────────┘
 
-    The function can also be used in an eager context by passing a Series.
+    You can also pass a series to this function.
 
     >>> s = pl.Series([12345, 12346])
     >>> pl.from_epoch(s, time_unit="d")
