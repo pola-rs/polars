@@ -141,6 +141,8 @@ jobs:
           mv py-polars/runtime/_polars_runtime_64 py-polars/runtime/_$SNAKE_CASE
       - name: Update runtime package and module names
         run: |
+          cp rust-toolchain.toml py-polars/runtime
+
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/runtime/pyproject.toml
           tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/runtime/Cargo.toml
