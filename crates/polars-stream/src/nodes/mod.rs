@@ -26,6 +26,7 @@ pub mod select;
 pub mod shift;
 pub mod simple_projection;
 pub mod streaming_slice;
+pub mod temporal_infer_parse;
 pub mod top_k;
 pub mod with_row_index;
 pub mod zip;

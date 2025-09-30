@@ -397,7 +397,7 @@ pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
         .or_else(|| infer_pattern_datetime_single(val))
 }
 
-fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
+pub fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     if patterns::DATETIME_D_M_Y.iter().any(|fmt| {
         NaiveDateTime::parse_from_str(val, fmt).is_ok()
             || NaiveDate::parse_from_str(val, fmt).is_ok()
@@ -418,7 +418,7 @@ fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     }
 }
 
-fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
+pub fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
     if patterns::DATE_D_M_Y
         .iter()
         .any(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
@@ -434,7 +434,7 @@ fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
     }
 }
 
-fn infer_pattern_time_single(val: &str) -> Option<Pattern> {
+pub fn infer_pattern_time_single(val: &str) -> Option<Pattern> {
     patterns::TIME_H_M_S
         .iter()
         .any(|fmt| NaiveTime::parse_from_str(val, fmt).is_ok())
