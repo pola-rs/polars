@@ -348,8 +348,10 @@ impl EvalExpr {
 
         ac.groups(); // Update the groups.
 
+        let flat_naive = ac.flat_naive();
+
         // Fast path. Groups are pointing to the same offsets in the data buffer.
-        if ac.flat_naive().len() == ca.len() * ca.width()
+        if flat_naive.len() == ca.len() * ca.width()
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
         {
             let ca_width = ca.width() as IdxSize;
@@ -371,7 +373,7 @@ impl EvalExpr {
             };
 
             if groups_are_unchanged {
-                let values = ac.flat_naive();
+                let values = flat_naive;
                 let dtype = values.dtype().clone();
                 let mut out = ArrayChunked::from_aligned_values(
                     self.output_field_with_ctx.name.clone(),
