@@ -70,7 +70,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           uv pip install -r py-polars/requirements-dev.txt -r docs/source/requirements.txt
-          uv pip install --no-dependencies -e py-polars
+          uv pip install --no-deps -e py-polars
 
       - name: Set up Rust
         run: rustup show
