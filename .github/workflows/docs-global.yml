@@ -66,6 +66,7 @@ jobs:
           uv venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+          echo "VENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
         run: |
@@ -83,9 +84,7 @@ jobs:
 
       - name: Install Polars
         working-directory: py-polars
-        run: |
-          VENV="$GITHUB_WORKSPACE/.venv"
-          make build
+        run: make build
 
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2
