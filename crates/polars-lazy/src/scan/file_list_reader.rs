@@ -30,7 +30,7 @@ pub trait LazyFileListReader: Clone {
                     .with_n_rows(None)
                     // Each individual reader should not apply a row index.
                     .with_row_index(None)
-                    .with_paths([path.clone()].into())
+                    .with_paths(Buffer::from_iter([path.clone()]))
                     .with_rechunk(false)
                     .finish_no_glob()
                     .map_err(|e| {

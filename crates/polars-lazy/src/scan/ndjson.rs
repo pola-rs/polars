@@ -53,7 +53,7 @@ impl LazyJsonLineReader {
     }
 
     pub fn new(path: PlPath) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path].into()))
+        Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
     /// Add a row index column.
