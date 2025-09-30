@@ -1,8 +1,9 @@
+use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use bytemuck::Pod;
 
@@ -36,7 +37,9 @@ use crate::ffi::InternalArrowArray;
 
 enum BackingStorage {
     Vec {
-        original_capacity: usize, // Elements, not bytes.
+        initialized_bytes: AtomicUsize,
+        /// Elements, not bytes.
+        original_capacity: usize,
         vtable: &'static VecVTable,
     },
     InternalArrowArray(InternalArrowArray),
@@ -55,7 +58,6 @@ enum BackingStorage {
 struct SharedStorageInner<T> {
     ref_count: AtomicU64,
     ptr: *mut T,
-    length_in_bytes: usize,
     backing: BackingStorage,
     // https://github.com/rust-lang/rfcs/blob/master/text/0769-sound-generic-drop.md#phantom-data
     phantom: PhantomData<T>,
@@ -72,8 +74,8 @@ impl<T> SharedStorageInner<T> {
         Self {
             ref_count: AtomicU64::new(1),
             ptr,
-            length_in_bytes,
             backing: BackingStorage::Vec {
+                initialized_bytes: AtomicUsize::new(length_in_bytes),
                 original_capacity,
                 vtable: VecVTable::new_static::<T>(),
             },
@@ -87,6 +89,7 @@ impl<T> Drop for SharedStorageInner<T> {
         match core::mem::replace(&mut self.backing, BackingStorage::External) {
             BackingStorage::InternalArrowArray(a) => drop(a),
             BackingStorage::Vec {
+                initialized_bytes,
                 original_capacity,
                 vtable,
             } => unsafe {
@@ -94,7 +97,7 @@ impl<T> Drop for SharedStorageInner<T> {
                 if std::mem::needs_drop::<T>() {
                     core::ptr::drop_in_place(core::ptr::slice_from_raw_parts_mut(
                         self.ptr,
-                        self.length_in_bytes / size_of::<T>(),
+                        initialized_bytes.load(Ordering::Acquire) / size_of::<T>(),
                     ));
                 }
 
@@ -110,6 +113,7 @@ impl<T> Drop for SharedStorageInner<T> {
 
 pub struct SharedStorage<T> {
     inner: NonNull<SharedStorageInner<T>>,
+    length_in_bytes: usize,
     phantom: PhantomData<SharedStorageInner<T>>,
 }
 
@@ -128,13 +132,13 @@ impl<T> SharedStorage<T> {
         static INNER: SharedStorageInner<()> = SharedStorageInner {
             ref_count: AtomicU64::new(1),
             ptr: core::ptr::without_provenance_mut(1 << 30), // Very overaligned for any T.
-            length_in_bytes: 0,
             backing: BackingStorage::Leaked,
             phantom: PhantomData,
         };
 
         Self {
             inner: NonNull::new(&raw const INNER as *mut SharedStorageInner<T>).unwrap(),
+            length_in_bytes: 0,
             phantom: PhantomData,
         }
     }
@@ -146,19 +150,21 @@ impl<T> SharedStorage<T> {
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
             ptr,
-            length_in_bytes,
             backing: BackingStorage::External,
             phantom: PhantomData,
         };
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            length_in_bytes,
             phantom: PhantomData,
         }
     }
 
     pub fn from_vec(v: Vec<T>) -> Self {
+        let length_in_bytes = v.len() * size_of::<T>();
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(SharedStorageInner::from_vec(v)))).unwrap(),
+            length_in_bytes,
             phantom: PhantomData,
         }
     }
@@ -175,12 +181,12 @@ impl<T> SharedStorage<T> {
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
             ptr: ptr.cast_mut(),
-            length_in_bytes: len * size_of::<T>(),
             backing: BackingStorage::InternalArrowArray(arr),
             phantom: PhantomData,
         };
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            length_in_bytes: len * size_of::<T>(),
             phantom: PhantomData,
         }
     }
@@ -234,7 +240,7 @@ impl<T> Drop for SharedStorageAsVecMut<'_, T> {
 impl<T> SharedStorage<T> {
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.inner().length_in_bytes / size_of::<T>()
+        self.length_in_bytes / size_of::<T>()
     }
 
     #[inline(always)]
@@ -262,7 +268,7 @@ impl<T> SharedStorage<T> {
     pub fn try_as_mut_slice(&mut self) -> Option<&mut [T]> {
         self.is_exclusive().then(|| {
             let inner = self.inner();
-            let len = inner.length_in_bytes / size_of::<T>();
+            let len = self.length_in_bytes / size_of::<T>();
             unsafe { core::slice::from_raw_parts_mut(inner.ptr, len) }
         })
     }
@@ -274,13 +280,14 @@ impl<T> SharedStorage<T> {
             return None;
         }
 
-        let ret;
+        let mut ret: Vec<T>;
         unsafe {
             let inner = &mut *self.inner.as_ptr();
 
             // We may only go back to a Vec if we originally came from a Vec
             // where the desired size/align matches the original.
             let BackingStorage::Vec {
+                initialized_bytes,
                 original_capacity,
                 vtable,
             } = &mut inner.backing
@@ -293,10 +300,12 @@ impl<T> SharedStorage<T> {
             }
 
             // Steal vec from inner.
-            let len = inner.length_in_bytes / size_of::<T>();
-            ret = Vec::from_raw_parts(inner.ptr, len, *original_capacity);
+            let initialized_len = initialized_bytes.load(Ordering::Acquire) / size_of::<T>();
+            let visible_len = self.length_in_bytes / size_of::<T>();
+            ret = Vec::from_raw_parts(inner.ptr, initialized_len, *original_capacity);
+            ret.truncate(visible_len);
             *original_capacity = 0;
-            inner.length_in_bytes = 0;
+            self.length_in_bytes = 0;
         }
         Some(ret)
     }
@@ -328,6 +337,15 @@ impl<T> SharedStorage<T> {
     }
 }
 
+impl<T> SharedStorage<T>
+where
+    T: Clone,
+{
+    pub fn try_into_extendable(self) -> Option<ExtendableSharedStorage<T>> {
+        ExtendableSharedStorage::try_new(self)
+    }
+}
+
 impl<T: Pod> SharedStorage<T> {
     pub fn try_transmute<U: Pod>(self) -> Result<SharedStorage<U>, Self> {
         let inner = self.inner();
@@ -335,7 +353,7 @@ impl<T: Pod> SharedStorage<T> {
         // The length of the array in bytes must be a multiple of the target size.
         // We can skip this check if the size of U divides the size of T.
         if !size_of::<T>().is_multiple_of(size_of::<U>())
-            && !inner.length_in_bytes.is_multiple_of(size_of::<U>())
+            && !self.length_in_bytes.is_multiple_of(size_of::<U>())
         {
             return Err(self);
         }
@@ -348,6 +366,7 @@ impl<T: Pod> SharedStorage<T> {
 
         let storage = SharedStorage {
             inner: self.inner.cast(),
+            length_in_bytes: self.length_in_bytes,
             phantom: PhantomData,
         };
         std::mem::forget(self);
@@ -372,7 +391,7 @@ impl<T> Deref for SharedStorage<T> {
     fn deref(&self) -> &Self::Target {
         unsafe {
             let inner = self.inner();
-            let len = inner.length_in_bytes / size_of::<T>();
+            let len = self.length_in_bytes / size_of::<T>();
             core::slice::from_raw_parts(inner.ptr, len)
         }
     }
@@ -387,6 +406,7 @@ impl<T> Clone for SharedStorage<T> {
         }
         Self {
             inner: self.inner,
+            length_in_bytes: self.length_in_bytes,
             phantom: PhantomData,
         }
     }
@@ -406,5 +426,195 @@ impl<T> Drop for SharedStorage<T> {
                 self.drop_slow();
             }
         }
+    }
+}
+
+/// Pushes to the excess capacity of a `SharedStorage` that may have shared references (potentially
+/// across multiple threads).
+pub struct ExtendableSharedStorage<T> {
+    storage: SharedStorage<T>,
+    data_ptr: *mut T,
+    /// Elements, not bytes
+    capacity: usize,
+}
+
+impl<T> ExtendableSharedStorage<T>
+where
+    T: Clone,
+{
+    fn try_new(mut storage: SharedStorage<T>) -> Option<Self> {
+        if !storage.is_exclusive() {
+            return None;
+        }
+
+        let BackingStorage::Vec {
+            initialized_bytes: _,
+            original_capacity,
+            vtable: _,
+        } = &storage.inner().backing
+        else {
+            return None;
+        };
+
+        let data_ptr = storage.inner().ptr;
+        let capacity = *original_capacity;
+
+        Some(Self {
+            storage,
+            data_ptr,
+            capacity,
+        })
+    }
+
+    pub fn make_storage(&self) -> SharedStorage<T> {
+        assert_eq!(
+            self.storage.length_in_bytes,
+            self.initialized_bytes().load(Ordering::Acquire)
+        );
+
+        self.storage.clone()
+    }
+
+    fn initialized_bytes(&self) -> &AtomicUsize {
+        let BackingStorage::Vec {
+            initialized_bytes, ..
+        } = &self.storage.inner().backing
+        else {
+            unsafe { unreachable_unchecked() }
+        };
+
+        initialized_bytes
+    }
+
+    #[inline]
+    fn initialized_len(&self) -> usize {
+        self.initialized_bytes().load(Ordering::Acquire) / size_of::<T>()
+    }
+
+    /// # Safety
+    /// `self.initialized_len() < self.capacity`
+    #[inline]
+    unsafe fn increment_len(&mut self) {
+        debug_assert!(self.initialized_len() < self.capacity);
+
+        // Release: Written value must be observable on other threads.
+        self.initialized_bytes()
+            .fetch_add(size_of::<T>(), Ordering::Release);
+        self.storage.length_in_bytes += size_of::<T>();
+
+        debug_assert_eq!(
+            self.initialized_bytes().load(Ordering::Acquire),
+            self.storage.length_in_bytes
+        );
+    }
+
+    #[inline(always)]
+    pub fn push(&mut self, idx: T) {
+        if self.initialized_len() == self.capacity {
+            self.reserve(1);
+        }
+
+        unsafe { self.push_unchecked(idx) }
+    }
+
+    /// # Safety
+    /// `self.initialized_len() < self.capacity`
+    #[inline(always)]
+    unsafe fn push_unchecked(&mut self, value: T) {
+        unsafe {
+            self.data_ptr.add(self.initialized_len()).write(value);
+            self.increment_len();
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn reserve(&mut self, additional: usize) {
+        let initialized_len = self.initialized_len();
+
+        let new_len = initialized_len.checked_add(additional).unwrap();
+
+        if new_len > self.capacity {
+            let double = self.capacity * 2;
+            self.realloc(double.max(new_len).max(8));
+        }
+    }
+
+    fn realloc(&mut self, new_cap: usize) {
+        assert!(new_cap >= self.initialized_len());
+        let mut out: Vec<T> = Vec::with_capacity(new_cap);
+
+        assert_eq!(
+            self.storage.length_in_bytes,
+            self.initialized_bytes().load(Ordering::Acquire)
+        );
+
+        if let Some(v) = self.storage.try_take_vec() {
+            out.extend(v)
+        } else {
+            out.extend_from_slice(unsafe {
+                core::slice::from_raw_parts(self.storage.inner().ptr, self.initialized_len())
+            });
+        }
+
+        *self = Self::try_new(SharedStorage::from_vec(out)).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_utils::relaxed_cell::RelaxedCell;
+
+    use crate::storage::SharedStorage;
+
+    #[test]
+    fn test_extendable_shared_storage() {
+        static DROP_COUNT: RelaxedCell<usize> = RelaxedCell::new_usize(0);
+
+        #[derive(Clone)]
+        struct TrackedDrop(#[expect(unused)] i64);
+
+        impl Drop for TrackedDrop {
+            fn drop(&mut self) {
+                DROP_COUNT.fetch_add(1);
+            }
+        }
+
+        use TrackedDrop as V;
+
+        let mut v: Vec<TrackedDrop> = Vec::with_capacity(5);
+        let capacity = v.capacity();
+        v.extend([V(1), V(1), V(1)]);
+
+        let mut extendable = SharedStorage::from_vec(v).try_into_extendable().unwrap();
+
+        let mut storage_3 = extendable.make_storage();
+
+        for _ in 0..capacity - 3 {
+            extendable.push(V(1))
+        }
+
+        assert!(capacity > 3);
+
+        // Should not affect length of existing `SharedStorage`s
+        assert_eq!(storage_3.len(), 3);
+        assert!(!storage_3.is_exclusive());
+
+        assert_eq!(extendable.make_storage().len(), capacity);
+        // This should cause realloc
+        extendable.push(V(1));
+
+        // `storage_3` is now exclusive
+        assert!(storage_3.is_exclusive());
+
+        assert_eq!(DROP_COUNT.load(), 0);
+
+        drop(extendable);
+
+        assert_eq!(DROP_COUNT.load(), capacity + 1);
+
+        drop(storage_3);
+
+        assert_eq!(DROP_COUNT.load(), 2 * capacity + 1);
     }
 }
