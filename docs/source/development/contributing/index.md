@@ -398,7 +398,7 @@ Start by bumping the version number in the source code:
   subdirectories. You'll probably want to use some search/replace strategy, as there are quite a few
   crates that need to be updated.
 - _Python:_ Update the version number in
-  [`py-polars/Cargo.toml`](https://github.com/pola-rs/polars/blob/main/py-polars/Cargo.toml#L3) to
+  [`py-polars/Cargo.toml`](https://github.com/pola-rs/polars/blob/main/py-polars/runtime/Cargo.toml#L3) to
   match the version of the draft release.
 
 4. From the `py-polars` directory, run `make build` to generate a new `Cargo.lock` file.
