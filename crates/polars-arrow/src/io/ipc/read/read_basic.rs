@@ -132,7 +132,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         })?
     };
 
-    polars_ensure!(decompressed_bytes % size_of::<T>() == 0, ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
+    polars_ensure!(decompressed_bytes.is_multiple_of(size_of::<T>()), ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
     let real_output_len = decompressed_bytes / size_of::<T>();
     if let Some(output_length) = output_length {
         polars_ensure!(output_length == real_output_len, ComputeError: "Malformed IPC file: got unexpected decompressed buffer size {real_output_len}, expected {output_length}");
