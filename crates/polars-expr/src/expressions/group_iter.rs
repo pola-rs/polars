@@ -264,6 +264,7 @@ impl<'a, I: Iterator<Item = GroupsIndicator<'a>>> Iterator for NotAggLazyIter<'a
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(g) = self.iter.next() {
+            self.groups_idx += 1;
             match g {
                 GroupsIndicator::Idx(_) => todo!(), //kdn TODO
                 GroupsIndicator::Slice(s) => {
