@@ -68,7 +68,9 @@ jobs:
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
-        run: uv pip install -r py-polars/requirements-dev.txt -r docs/source/requirements.txt
+        run: |
+          uv pip install -r py-polars/requirements-dev.txt -r docs/source/requirements.txt
+          uv pip install --no-dependencies -e py-polars
 
       - name: Set up Rust
         run: rustup show
