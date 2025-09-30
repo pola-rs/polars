@@ -738,6 +738,7 @@ class PyDataFrame:
         truncate_ragged_lines: bool,
         decimal_comma: bool,
         schema: Any | None,
+        include_file_paths: str | None,
     ) -> PyDataFrame: ...
     @staticmethod
     def read_json(

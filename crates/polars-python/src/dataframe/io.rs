@@ -11,7 +11,10 @@ use pyo3::pybacked::PyBackedStr;
 
 use super::PyDataFrame;
 use crate::conversion::Wrap;
-use crate::file::{get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path};
+use crate::file::{
+    PythonScanSourceInput, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
+    get_python_scan_source_input,
+};
 use crate::prelude::PyCompatLevel;
 use crate::utils::EnterPolarsExt;
 
@@ -24,7 +27,7 @@ impl PyDataFrame {
     skip_rows, skip_lines, projection, separator, rechunk, columns, encoding, n_threads, path,
     overwrite_dtype, overwrite_dtype_slice, low_memory, comment_prefix, quote_char,
     null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
-    row_index, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema)
+    row_index, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema, include_file_paths)
 )]
     pub fn read_csv(
         py: Python<'_>,
@@ -58,6 +61,7 @@ impl PyDataFrame {
         truncate_ragged_lines: bool,
         decimal_comma: bool,
         schema: Option<Wrap<Schema>>,
+        include_file_paths: Option<String>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
@@ -85,6 +89,16 @@ impl PyDataFrame {
         });
 
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
+        let include_file_paths_pathname = if include_file_paths.is_some() {
+            let pathname = match get_python_scan_source_input(py_f.unbind(), false)? {
+                PythonScanSourceInput::Path(path) => path.to_str().to_string(),
+                PythonScanSourceInput::File(_file) => "open-file".to_string(),
+                PythonScanSourceInput::Buffer(_bytes) => "in-mem".to_string(),
+            };
+            Some(pathname)
+        } else {
+            None
+        };
         py.enter_polars_df(move || {
             CsvReadOptions::default()
                 .with_path(path)
@@ -106,6 +120,10 @@ impl PyDataFrame {
                 .with_skip_rows_after_header(skip_rows_after_header)
                 .with_row_index(row_index)
                 .with_raise_if_empty(raise_if_empty)
+                .with_include_file_paths(
+                    include_file_paths.map(|s| s.into()),
+                    include_file_paths_pathname.map(|s| s.into()),
+                )
                 .with_parse_options(
                     CsvParseOptions::default()
                         .with_separator(separator.as_bytes()[0])
