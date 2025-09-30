@@ -81,7 +81,7 @@ impl ScanSource {
 
     pub fn into_sources(self) -> ScanSources {
         match self {
-            ScanSource::Path(p) => ScanSources::Paths([p].into()),
+            ScanSource::Path(p) => ScanSources::Paths(Buffer::from_iter([p])),
             ScanSource::File(f) => {
                 let ptr: *const [File] = std::ptr::slice_from_raw_parts(Arc::into_raw(f), 1);
                 // SAFETY: A T can be interpreted as [T] with length 1.
