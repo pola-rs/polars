@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use arrow::buffer::Buffer;
 use polars_core::config;
