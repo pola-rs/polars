@@ -1,4 +1,5 @@
 use arrow::array::MutableBinaryViewArray;
+#[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::str_to_dec128;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
@@ -808,6 +809,7 @@ impl Buffer {
             Buffer::UInt128(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
+            #[cfg(feature = "dtype-decimal")]
             Buffer::Decimal(buf) => buf.builder.append_null(),
             Buffer::DecimalFloat32(v, _) => v.append_null(),
             Buffer::DecimalFloat64(v, _) => v.append_null(),
@@ -1012,6 +1014,7 @@ impl Buffer {
                     None,
                 )
             },
+            #[cfg(feature = "dtype-decimal")]
             Decimal(buf) => <DecimalField as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
