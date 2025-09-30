@@ -142,6 +142,9 @@ jobs:
           mv py-polars/_polars_runtime_64 py-polars/_$SNAKE_CASE
       - name: Update runtime package and module names
         run: |
+          # Remove local development include
+          tomlq -i -t "del(.tool.maturin.include[1])" py-polars/pyproject.toml
+
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
           tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/Cargo.toml
@@ -303,6 +306,9 @@ jobs:
           mv py-polars/_polars_runtime_64 py-polars/_$SNAKE_CASE
       - name: Update runtime package and module names
         run: |
+          # Remove local development include
+          tomlq -i -t "del(.tool.maturin.include[1])" py-polars/pyproject.toml
+
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
           tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/Cargo.toml
