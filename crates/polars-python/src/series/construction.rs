@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use arrow::array::Array;
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
-use numpy::{Element, PyArray1, PyArrayMethods};
+use numpy::{Element, PyArray1, PyArrayMethods, PyUntypedArrayMethods};
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -58,8 +58,13 @@ impl PySeries {
         _strict: bool,
     ) -> PyResult<Self> {
         let array = array.readonly();
-        let vals = array.as_slice().unwrap();
-        py.enter_polars_series(|| Ok(Series::new(name.into(), vals)))
+
+        // We use raw ptr methods to read this as a u8 slice to work around PyO3/rust-numpy#509.
+        assert!(array.is_contiguous());
+        let data_ptr = array.data().cast::<u8>();
+        let data_len = array.len();
+        let vals = unsafe { core::slice::from_raw_parts(data_ptr, data_len) };
+        py.enter_polars_series(|| Series::new(name.into(), vals).cast(&DataType::Boolean))
     }
 
     #[staticmethod]
@@ -174,11 +179,12 @@ init_method_opt!(new_opt_u8, UInt8Type, u8);
 init_method_opt!(new_opt_u16, UInt16Type, u16);
 init_method_opt!(new_opt_u32, UInt32Type, u32);
 init_method_opt!(new_opt_u64, UInt64Type, u64);
+init_method_opt!(new_opt_u128, UInt128Type, u128);
 init_method_opt!(new_opt_i8, Int8Type, i8);
 init_method_opt!(new_opt_i16, Int16Type, i16);
 init_method_opt!(new_opt_i32, Int32Type, i32);
 init_method_opt!(new_opt_i64, Int64Type, i64);
-init_method_opt!(new_opt_i128, Int128Type, i64);
+init_method_opt!(new_opt_i128, Int128Type, i128);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 

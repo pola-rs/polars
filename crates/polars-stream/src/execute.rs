@@ -136,6 +136,10 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
 /// the vec at the same time. The stdlib specializes collect() to re-use the
 /// memory.
 fn reuse_vec<T, U>(v: Vec<T>) -> Vec<U> {
+    const {
+        assert!(std::mem::size_of::<T>() == std::mem::size_of::<U>());
+        assert!(std::mem::align_of::<T>() == std::mem::align_of::<U>());
+    }
     v.into_iter().filter_map(|_| None).collect()
 }
 

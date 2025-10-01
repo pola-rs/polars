@@ -504,8 +504,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "json")]
                 IB::JsonEncode => B::JsonEncode,
                 IB::WithFields => B::WithFields,
-                #[cfg(feature = "python")]
-                IB::MapFieldNames(special_eq) => B::MapFieldNames(special_eq),
+                IB::MapFieldNames(f) => B::MapFieldNames(f),
             })
         },
         #[cfg(feature = "temporal")]
@@ -536,19 +535,19 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Microsecond => B::Microsecond,
                 IB::Nanosecond => B::Nanosecond,
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalDays => B::TotalDays,
+                IB::TotalDays { fractional } => B::TotalDays { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalHours => B::TotalHours,
+                IB::TotalHours { fractional } => B::TotalHours { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalMinutes => B::TotalMinutes,
+                IB::TotalMinutes { fractional } => B::TotalMinutes { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalSeconds => B::TotalSeconds,
+                IB::TotalSeconds { fractional } => B::TotalSeconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalMilliseconds => B::TotalMilliseconds,
+                IB::TotalMilliseconds { fractional } => B::TotalMilliseconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalMicroseconds => B::TotalMicroseconds,
+                IB::TotalMicroseconds { fractional } => B::TotalMicroseconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalNanoseconds => B::TotalNanoseconds,
+                IB::TotalNanoseconds { fractional } => B::TotalNanoseconds { fractional },
                 IB::ToString(v) => B::ToString(v),
                 IB::CastTimeUnit(time_unit) => B::CastTimeUnit(time_unit),
                 IB::WithTimeUnit(time_unit) => B::WithTimeUnit(time_unit),
@@ -822,6 +821,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
+        IF::Rechunk => F::Rechunk,
         IF::Append { upcast } => F::Append { upcast },
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
@@ -898,7 +898,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "log")]
         IF::Entropy { base, normalize } => F::Entropy { base, normalize },
         #[cfg(feature = "log")]
-        IF::Log { base } => F::Log { base },
+        IF::Log => F::Log,
         #[cfg(feature = "log")]
         IF::Log1p => F::Log1p,
         #[cfg(feature = "log")]

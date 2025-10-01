@@ -28,7 +28,6 @@ pub trait NativeType:
     + TotalOrd
     + IsNull
     + MinMax
-    + AlignedBytesCast<Self::AlignedBytes>
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;
@@ -708,6 +707,14 @@ impl i256 {
     /// Returns a new [`i256`] from two `i128`.
     pub fn from_words(hi: i128, lo: i128) -> Self {
         Self(ethnum::I256::from_words(hi, lo))
+    }
+}
+
+impl TryFrom<i256> for i128 {
+    type Error = core::num::TryFromIntError;
+
+    fn try_from(value: i256) -> Result<Self, Self::Error> {
+        value.0.try_into()
     }
 }
 

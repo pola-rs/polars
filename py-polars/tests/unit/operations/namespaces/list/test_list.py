@@ -12,7 +12,6 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
-    SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
@@ -255,7 +254,10 @@ def test_contains() -> None:
 
 def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
-    with pytest.raises(SchemaError, match="invalid series dtype: expected `List`"):
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"expected List data type for list operation, got: array\[i8, 2\]",
+    ):
         df.select(pl.col("a").list.contains(2))
 
 
@@ -805,7 +807,10 @@ def test_list_to_array_wrong_lengths() -> None:
 
 def test_list_to_array_wrong_dtype() -> None:
     s = pl.Series([1.0, 2.0])
-    with pytest.raises(ComputeError, match="expected List dtype"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected List data type for list operation, got: f64",
+    ):
         s.list.to_array(2)
 
 
@@ -1119,6 +1124,7 @@ def test_list_filter_null() -> None:
     ]
 
 
+@pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:
     base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
@@ -1233,3 +1239,11 @@ def test_list_contains() -> None:
 def test_list_diff_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([1, 2, 3]).list.diff()
+
+
+def test_list_df_invalid_type_in_planner() -> None:
+    df = pl.DataFrame({"a": [1, 1], "b": [0, 1]})
+    q = df.lazy().group_by("a").agg(pl.col("b").list.drop_nulls())
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        q.collect_schema()

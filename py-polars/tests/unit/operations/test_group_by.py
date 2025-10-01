@@ -1149,8 +1149,9 @@ def test_absence_off_null_prop_8224() -> None:
 
 @pytest.mark.parametrize("maintain_order", [False, True])
 def test_grouped_slice_literals(maintain_order: bool) -> None:
-    assert_frame_equal(
-        pl.DataFrame({"idx": [1, 2, 3]})
+    df = pl.DataFrame({"idx": [1, 2, 3]})
+    q = (
+        df.lazy()
         .group_by(True, maintain_order=maintain_order)
         .agg(
             x=pl.lit([1, 2]).slice(
@@ -1158,10 +1159,18 @@ def test_grouped_slice_literals(maintain_order: bool) -> None:
             ),  # slices a list of 1 element, so remains the same element
             x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
             x3=pl.lit(pl.Series([[1, 2]])).slice(-1, 1),
-        ),
-        pl.DataFrame({"literal": [True], "x": [[1, 2]], "x2": [[2]], "x3": [[[1, 2]]]}),
+        )
+    )
+    out = q.collect()
+    expected = pl.DataFrame(
+        {"literal": [True], "x": [[[1, 2]]], "x2": [[2]], "x3": [[[1, 2]]]}
+    )
+    assert_frame_equal(
+        out,
+        expected,
         check_row_order=maintain_order,
     )
+    assert q.collect_schema() == q.collect().schema
 
 
 def test_positional_by_with_list_or_tuple_17540() -> None:
@@ -1508,3 +1517,48 @@ def test_group_by_head_tail_24215(maintain_order: bool) -> None:
         .tail(1)
     )
     assert_frame_equal(result, expected, check_row_order=maintain_order)
+
+
+def test_slice_group_by_offset_24259() -> None:
+    df = pl.DataFrame(
+        {
+            "letters": ["c", "c", "a", "c", "a", "b", "d"],
+            "nrs": [1, 2, 3, 4, 5, 6, None],
+        }
+    )
+    assert df.group_by("letters").agg(
+        x=pl.col("nrs").drop_nulls(),
+        tail=pl.col("nrs").drop_nulls().tail(1),
+    ).sort("letters").to_dict(as_series=False) == {
+        "letters": ["a", "b", "c", "d"],
+        "x": [[3, 5], [6], [1, 2, 4], []],
+        "tail": [[5], [6], [4], []],
+    }
+
+
+def test_group_by_first_nondet_24278() -> None:
+    values = [
+        96, 86, 0, 86, 43, 50, 9, 14, 98, 39, 93, 7, 71, 1, 93, 41, 56,
+        56, 93, 41, 58, 91, 81, 29, 81, 68, 5, 9, 32, 93, 78, 34, 17, 40,
+        14, 2, 52, 77, 81, 4, 56, 42, 64, 12, 29, 58, 71, 98, 32, 49, 34,
+        86, 29, 94, 37, 21, 41, 36, 9, 72, 23, 28, 71, 9, 66, 72, 84, 81,
+        23, 12, 64, 57, 99, 15, 77, 38, 95, 64, 13, 91, 43, 61, 70, 47,
+        39, 75, 47, 93, 45, 1, 95, 55, 29, 5, 83, 8, 3, 6, 45, 84,
+    ]  # fmt: skip
+    q = (
+        pl.LazyFrame({"a": values, "idx": range(100)})
+        .group_by("a")
+        .agg(pl.col.idx.first())
+        .select(a=pl.col.idx)
+    )
+
+    fst_value = q.collect().to_series().sum()
+    for _ in range(10):
+        assert q.collect().to_series().sum() == fst_value
+
+
+def test_group_by_cum_sum_key_24489() -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    out = df.group_by((pl.col.x > 1).cum_sum()).agg().collect()
+    expected = pl.DataFrame({"x": [0, 1]}, schema={"x": pl.UInt32})
+    assert_frame_equal(out, expected, check_row_order=False)

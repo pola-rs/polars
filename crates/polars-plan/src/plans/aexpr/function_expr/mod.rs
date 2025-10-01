@@ -186,6 +186,7 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
+    Rechunk,
     Append {
         upcast: bool,
     },
@@ -279,9 +280,7 @@ pub enum IRFunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    Log {
-        base: f64,
-    },
+    Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
@@ -521,7 +520,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
             Append { upcast } => {
                 upcast.hash(state);
             },
@@ -617,7 +616,7 @@ impl Hash for IRFunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            Log { base } => base.to_bits().hash(state),
+            Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
@@ -772,6 +771,7 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Rechunk => "rechunk",
             Append { .. } => "append",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
@@ -839,7 +839,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            Log { .. } => "log",
+            Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]
@@ -1147,6 +1147,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     include_breakpoint
                 )
             },
+            Rechunk => map!(dispatch::rechunk),
             Append { upcast } => map_as_slice!(dispatch::append, upcast),
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
@@ -1229,7 +1230,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
-            Log { base } => map!(log::log, base),
+            Log => map_as_slice!(log::log),
             #[cfg(feature = "log")]
             Log1p => map!(log::log1p),
             #[cfg(feature = "log")]
@@ -1437,7 +1438,9 @@ impl IRFunctionExpr {
             F::Negate => FunctionOptions::elementwise(),
             #[cfg(feature = "hist")]
             F::Hist { .. } => FunctionOptions::groupwise(),
-            F::NullCount => FunctionOptions::aggregation(),
+            F::NullCount => {
+                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+            },
             #[cfg(feature = "row_hash")]
             F::Hash(_, _, _, _) => FunctionOptions::elementwise(),
             #[cfg(feature = "arg_where")]
@@ -1465,18 +1468,22 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
+            F::Rechunk => FunctionOptions::length_preserving(),
             F::Append { .. } => FunctionOptions::groupwise(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
-            F::DropNans => FunctionOptions::row_separable(),
+            F::DropNans => FunctionOptions::row_separable().flag(FunctionFlags::PROPAGATES_ORDER),
             F::DropNulls => FunctionOptions::row_separable()
-                .with_flags(|f| f | FunctionFlags::ALLOW_EMPTY_INPUTS),
+                .flag(FunctionFlags::ALLOW_EMPTY_INPUTS | FunctionFlags::PROPAGATES_ORDER),
             #[cfg(feature = "mode")]
-            F::Mode => FunctionOptions::groupwise(),
+            F::Mode => FunctionOptions::groupwise()
+                .flag(FunctionFlags::INPUT_ORDER_AGNOSTIC | FunctionFlags::OUTPUT_UNORDERED),
             #[cfg(feature = "moment")]
-            F::Skew(_) => FunctionOptions::aggregation(),
+            F::Skew(_) => FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC),
             #[cfg(feature = "moment")]
-            F::Kurtosis(_, _) => FunctionOptions::aggregation(),
+            F::Kurtosis(_, _) => {
+                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+            },
             #[cfg(feature = "dtype-array")]
             F::Reshape(_) => FunctionOptions::groupwise(),
             #[cfg(feature = "repeat_by")]
@@ -1484,7 +1491,7 @@ impl IRFunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
-            F::Product => FunctionOptions::aggregation(),
+            F::Product => FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::groupwise(),
             F::Repeat => {
@@ -1508,13 +1515,18 @@ impl IRFunctionExpr {
             | F::CumMax { .. } => FunctionOptions::length_preserving(),
             F::Reverse => FunctionOptions::length_preserving(),
             #[cfg(feature = "dtype-struct")]
-            F::ValueCounts { .. } => {
-                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
-            },
+            F::ValueCounts { sort, .. } => FunctionOptions::groupwise().with_flags(|mut f| {
+                if !sort {
+                    f |= FunctionFlags::OUTPUT_UNORDERED
+                }
+                f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_ORDER_AGNOSTIC
+            }),
             #[cfg(feature = "unique_counts")]
             F::UniqueCounts => FunctionOptions::groupwise(),
             #[cfg(feature = "approx_unique")]
-            F::ApproxNUnique => FunctionOptions::aggregation(),
+            F::ApproxNUnique => {
+                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+            },
             F::Coalesce => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
@@ -1529,15 +1541,25 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log { .. } | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
-            F::Entropy { .. } => FunctionOptions::aggregation(),
-            F::Unique(_) => FunctionOptions::groupwise(),
+            F::Entropy { .. } => {
+                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+            },
+            F::Unique(maintain_order) => FunctionOptions::groupwise().with_flags(|f| {
+                if *maintain_order {
+                    f | FunctionFlags::PROPAGATES_ORDER
+                } else {
+                    f | FunctionFlags::INPUT_ORDER_AGNOSTIC | FunctionFlags::OUTPUT_UNORDERED
+                }
+            }),
             #[cfg(feature = "round_series")]
             F::Round { .. } | F::RoundSF { .. } | F::Floor | F::Ceil => {
                 FunctionOptions::elementwise()
             },
-            F::UpperBound | F::LowerBound => FunctionOptions::aggregation(),
+            F::UpperBound | F::LowerBound => {
+                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+            },
             #[cfg(feature = "fused")]
             F::Fused(_) => FunctionOptions::elementwise(),
             F::ConcatExpr(_) => FunctionOptions::groupwise()

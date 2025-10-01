@@ -90,7 +90,10 @@ impl IR {
                 options,
                 ..
             } => match &options.options {
-                Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) => Exprs::Boxed(Box::new(
+                Some(JoinTypeOptionsIR::CrossAndFilter {
+                    predicate,
+                    maintain_order: _,
+                }) => Exprs::Boxed(Box::new(
                     left_on
                         .iter()
                         .chain(right_on.iter())
@@ -101,6 +104,7 @@ impl IR {
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => Exprs::Empty,
+                SinkTypeIR::Callback(_) => Exprs::Empty,
                 SinkTypeIR::File(_) => Exprs::Empty,
                 SinkTypeIR::Partition(p) => {
                     let key_iter = match &p.variant {
@@ -162,7 +166,10 @@ impl IR {
                 options,
                 ..
             } => match Arc::make_mut(options).options.as_mut() {
-                Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) => ExprsMut::Boxed(Box::new(
+                Some(JoinTypeOptionsIR::CrossAndFilter {
+                    predicate,
+                    maintain_order: _,
+                }) => ExprsMut::Boxed(Box::new(
                     left_on
                         .iter_mut()
                         .chain(right_on.iter_mut())
@@ -173,6 +180,7 @@ impl IR {
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => ExprsMut::Empty,
+                SinkTypeIR::Callback(_) => ExprsMut::Empty,
                 SinkTypeIR::File(_) => ExprsMut::Empty,
                 SinkTypeIR::Partition(p) => {
                     let key_iter = match &mut p.variant {

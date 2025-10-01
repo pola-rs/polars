@@ -143,22 +143,17 @@ impl BinaryExpr {
     fn apply_all_literal<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
-        mut ac_r: AggregationContext<'a>,
+        ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = self.output_field.name().clone();
-        ac_l.groups();
-        ac_r.groups();
-        polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
+        debug_assert!(ac_l.is_literal() && ac_r.is_literal());
+        polars_ensure!(ac_l.groups.len() == ac_r.groups.len(),
+            ComputeError: "lhs and rhs should have same number of groups");
         let left_c = ac_l.get_values().rechunk().into_column();
         let right_c = ac_r.get_values().rechunk().into_column();
         let res_c = apply_operator(&left_c, &right_c, self.op)?;
-        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-        let res_s = if res_c.len() == 1 {
-            res_c.new_from_index(0, ac_l.groups.len())
-        } else {
-            ListChunked::full(name, res_c.as_materialized_series(), ac_l.groups.len()).into_column()
-        };
-        ac_l.with_values(res_s, true, Some(&self.expr))?;
+        polars_ensure!(res_c.len() == 1,
+            ComputeError: "binary operation on literals expected 1 value, found {}", res_c.len());
+        ac_l.with_literal(res_c);
         Ok(ac_l)
     }
 
@@ -247,13 +242,13 @@ impl PhysicalExpr for BinaryExpr {
         let ac_r = result_b?;
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
+            (AggState::LiteralScalar(_), AggState::LiteralScalar(_)) => {
+                self.apply_all_literal(ac_l, ac_r)
+            },
             (AggState::LiteralScalar(s), AggState::NotAggregated(_))
             | (AggState::NotAggregated(_), AggState::LiteralScalar(s)) => match s.len() {
                 1 => self.apply_elementwise(ac_l, ac_r, false),
                 _ => self.apply_group_aware(ac_l, ac_r),
-            },
-            (AggState::LiteralScalar(_), AggState::LiteralScalar(_)) => {
-                self.apply_all_literal(ac_l, ac_r)
             },
             (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
                 self.apply_elementwise(ac_l, ac_r, false)
@@ -280,8 +275,8 @@ impl PhysicalExpr for BinaryExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {

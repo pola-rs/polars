@@ -1461,6 +1461,18 @@ def test_extract_all_many() -> None:
     assert broad.schema == {"a": pl.List(pl.String), "null": pl.List(pl.String)}
 
 
+@pytest.mark.may_fail_cloud  # reason: zero-field struct
+def test_extract_groups_empty() -> None:
+    df = pl.DataFrame({"iso_code": ["ISO 80000-1:2009", "ISO/IEC/IEEE 29148:2018"]})
+
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
+        as_series=False
+    ) == {"iso_code": [{}, {}]}
+
+    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
+    assert q.collect_schema() == q.collect().schema
+
+
 def test_extract_groups() -> None:
     def _named_groups_builder(pattern: str, groups: dict[str, str]) -> str:
         return pattern.format(
@@ -1492,13 +1504,6 @@ def test_extract_groups() -> None:
         .to_dict(as_series=False)
         == expected
     )
-
-    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
-        as_series=False
-    ) == {"iso_code": [{}, {}]}
-
-    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
-    assert q.collect_schema() == q.collect().schema
 
     assert df.select(
         pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")

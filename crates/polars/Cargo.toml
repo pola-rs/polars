@@ -36,7 +36,6 @@ proptest = { workspace = true }
 rand = { workspace = true }
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
-tokio-util = { workspace = true, features = ["compat"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -281,6 +280,7 @@ dtype-full = [
   "dtype-decimal",
   "dtype-u8",
   "dtype-u16",
+  "dtype-u128",
   "dtype-categorical",
   "dtype-struct",
 ]
@@ -368,6 +368,13 @@ dtype-u16 = [
   "polars-lazy?/dtype-u16",
   "polars-ops/dtype-u16",
   "polars-time?/dtype-u16",
+]
+dtype-u128 = [
+  "polars-core/dtype-u128",
+  "polars-io/dtype-u128",
+  "polars-lazy?/dtype-u128",
+  "polars-ops/dtype-u128",
+  "polars-time?/dtype-u128",
 ]
 dtype-categorical = [
   "polars-core/dtype-categorical",

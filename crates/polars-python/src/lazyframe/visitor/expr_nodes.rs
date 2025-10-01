@@ -977,26 +977,26 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRTemporalFunction::DaysInMonth => {
                         (PyTemporalFunction::DaysInMonth,).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalDays => {
-                        (PyTemporalFunction::TotalDays,).into_py_any(py)
+                    IRTemporalFunction::TotalDays { fractional } => {
+                        (PyTemporalFunction::TotalDays, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalHours => {
-                        (PyTemporalFunction::TotalHours,).into_py_any(py)
+                    IRTemporalFunction::TotalHours { fractional } => {
+                        (PyTemporalFunction::TotalHours, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMinutes => {
-                        (PyTemporalFunction::TotalMinutes,).into_py_any(py)
+                    IRTemporalFunction::TotalMinutes { fractional } => {
+                        (PyTemporalFunction::TotalMinutes, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalSeconds => {
-                        (PyTemporalFunction::TotalSeconds,).into_py_any(py)
+                    IRTemporalFunction::TotalSeconds { fractional } => {
+                        (PyTemporalFunction::TotalSeconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMilliseconds => {
-                        (PyTemporalFunction::TotalMilliseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalMilliseconds { fractional } => {
+                        (PyTemporalFunction::TotalMilliseconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMicroseconds => {
-                        (PyTemporalFunction::TotalMicroseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalMicroseconds { fractional } => {
+                        (PyTemporalFunction::TotalMicroseconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalNanoseconds => {
-                        (PyTemporalFunction::TotalNanoseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalNanoseconds { fractional } => {
+                        (PyTemporalFunction::TotalNanoseconds, fractional).into_py_any(py)
                     },
                     IRTemporalFunction::ToString(format) => {
                         (PyTemporalFunction::ToString, format).into_py_any(py)
@@ -1181,6 +1181,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
                 },
+                IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::Append { upcast } => ("append", upcast).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
@@ -1259,7 +1260,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::Entropy { base, normalize } => {
                     ("entropy", base, normalize).into_py_any(py)
                 },
-                IRFunctionExpr::Log { base } => ("log", base).into_py_any(py),
+                IRFunctionExpr::Log => ("log",).into_py_any(py),
                 IRFunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 IRFunctionExpr::Exp => ("exp",).into_py_any(py),
                 IRFunctionExpr::Unique(maintain_order) => {

@@ -2,6 +2,7 @@ use AnyValue::Null;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, slice_offsets};
+use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use super::*;
@@ -69,7 +70,7 @@ fn slice_groups_idx(offset: i64, length: usize, mut first: IdxSize, idx: &[IdxSi
         first = *f;
     }
     // This is a clone of the vec, which is unfortunate. Maybe we have a `sliceable` unitvec one day.
-    (first, idx[offset..offset + len].into())
+    (first, IdxVec::from_slice(&idx[offset..offset + len]))
 }
 
 fn slice_groups_slice(offset: i64, length: usize, first: IdxSize, len: IdxSize) -> [IdxSize; 2] {
@@ -118,6 +119,13 @@ impl PhysicalExpr for SliceExpr {
         let mut ac_length = results.pop().unwrap();
         let mut ac_offset = results.pop().unwrap();
 
+        // Fast path:
+        // When `input` (ac) is a LiteralValue, and both `offset` and `length` are LiteralScalar,
+        // we slice the LiteralValue and avoid calling groups().
+        // TODO: When `input` (ac) is a LiteralValue, and `offset` or `length` is not a LiteralScalar,
+        // we can simplify the groups calculation since we have a List containing one scalar for
+        // each group.
+
         use AggState::*;
         let groups = match (&ac_offset.state, &ac_length.state) {
             (LiteralScalar(offset), LiteralScalar(length)) => {
@@ -126,6 +134,7 @@ impl PhysicalExpr for SliceExpr {
                 if let LiteralScalar(s) = ac.agg_state() {
                     let s1 = s.slice(offset, length);
                     ac.with_literal(s1);
+                    ac.aggregated();
                     return Ok(ac);
                 }
                 let groups = ac.groups();
@@ -151,6 +160,9 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             (LiteralScalar(offset), _) => {
+                if matches!(ac.state, LiteralScalar(_)) {
+                    ac.aggregated();
+                }
                 let groups = ac.groups();
                 let offset = extract_offset(offset, &self.expr)?;
                 let length = ac_length.aggregated();
@@ -186,6 +198,9 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             (_, LiteralScalar(length)) => {
+                if matches!(ac.state, LiteralScalar(_)) {
+                    ac.aggregated();
+                }
                 let groups = ac.groups();
                 let length = extract_length(length, &self.expr)?;
                 let offset = ac_offset.aggregated();
@@ -221,6 +236,10 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             _ => {
+                if matches!(ac.state, LiteralScalar(_)) {
+                    ac.aggregated();
+                }
+
                 let groups = ac.groups();
                 let length = ac_length.aggregated();
                 let offset = ac_offset.aggregated();

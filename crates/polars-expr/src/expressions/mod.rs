@@ -322,7 +322,7 @@ impl<'a> AggregationContext<'a> {
         expr: Option<&Expr>,
         // if the applied function was a `map` instead of an `apply`
         // this will keep functions applied over literals as literals: F(lit) = lit
-        mapped: bool,
+        preserve_literal: bool,
         returns_scalar: bool,
     ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, column.dtype()) {
@@ -349,7 +349,7 @@ impl<'a> AggregationContext<'a> {
                     // retrieve the length before grouping, so it stays  in this state.
                     AggState::AggregatedScalar(_) => AggState::AggregatedScalar(column),
                     // applying a function on a literal, keeps the literal state
-                    AggState::LiteralScalar(_) if column.len() == 1 && mapped => {
+                    AggState::LiteralScalar(_) if column.len() == 1 && preserve_literal => {
                         AggState::LiteralScalar(column)
                     },
                     _ => AggState::NotAggregated(column.into_column()),
@@ -393,7 +393,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    /// Aggregate into `ListChunked.
+    /// Aggregate into `ListChunked`.
     pub fn aggregated_as_list<'b>(&'b mut self) -> Cow<'b, ListChunked> {
         self.aggregated();
         let out = self.get_values();
@@ -433,12 +433,12 @@ impl<'a> AggregationContext<'a> {
             },
             AggState::AggregatedList(s) | AggState::AggregatedScalar(s) => s.into_column(),
             AggState::LiteralScalar(s) => {
-                self.groups();
                 let rows = self.groups.len();
                 let s = s.implode().unwrap();
                 let s = s.new_from_index(0, rows);
                 let s = s.into_column();
                 self.state = AggState::AggregatedList(s.clone());
+                self.with_update_groups(UpdateGroups::WithSeriesLen);
                 s.clone()
             },
         }
@@ -529,7 +529,8 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                Cow::Owned(c.explode(false).unwrap())
+                // We should not insert nulls, otherwise the offsets in the groups will not be correct.
+                Cow::Owned(c.explode(true).unwrap())
             },
             AggState::AggregatedScalar(c) => Cow::Borrowed(c),
             AggState::LiteralScalar(c) => Cow::Borrowed(c),
@@ -625,9 +626,17 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         if self.has_window_function {
             state.insert_has_window_function_flag();
         }
-        self.expr
-            .evaluate(df, &state)
-            .map(|c| c.take_materialized_series())
+        self.expr.evaluate(df, &state).map(|c| {
+            // IO expression result should be boolean-typed.
+            debug_assert_eq!(c.dtype(), &DataType::Boolean);
+            (if c.len() == 1 && df.height() != 1 {
+                // filter(lit(True)) will hit here.
+                c.new_from_index(0, df.height())
+            } else {
+                c
+            })
+            .take_materialized_series()
+        })
     }
 }
 

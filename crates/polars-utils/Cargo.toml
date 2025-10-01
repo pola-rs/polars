@@ -58,7 +58,7 @@ serde = [
   "dep:serde_stacker",
   "uuid/serde",
 ]
-dsl-schema = ["dep:schemars"]
+dsl-schema = ["dep:schemars", "schemars/uuid1"]
 python = ["pyo3", "polars-error/python"]
 
 [lints]

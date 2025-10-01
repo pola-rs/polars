@@ -33,9 +33,10 @@ fn pyobject_to_first_path_and_scan_sources(
 ) -> PyResult<(Option<PlPath>, ScanSources)> {
     use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
     Ok(match get_python_scan_source_input(obj, false)? {
-        PythonScanSourceInput::Path(path) => {
-            (Some(path.clone()), ScanSources::Paths([path].into()))
-        },
+        PythonScanSourceInput::Path(path) => (
+            Some(path.clone()),
+            ScanSources::Paths(FromIterator::from_iter([path])),
+        ),
         PythonScanSourceInput::File(file) => (None, ScanSources::Files([file.into()].into())),
         PythonScanSourceInput::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
     })
@@ -418,14 +419,6 @@ impl PyLazyFrame {
         dataset_object
     ))]
     fn new_from_dataset_object(dataset_object: PyObject) -> PyResult<Self> {
-        use crate::dataset::dataset_provider_funcs;
-
-        polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
-            name: dataset_provider_funcs::name,
-            schema: dataset_provider_funcs::schema,
-            to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
-        });
-
         let lf =
             LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
                 .into();
@@ -439,6 +432,7 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
         validate_schema: bool,
+        is_pure: bool,
     ) -> PyResult<Self> {
         let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
 
@@ -447,6 +441,7 @@ impl PyLazyFrame {
             scan_fn,
             pyarrow,
             validate_schema,
+            is_pure,
         )
         .into())
     }
@@ -457,6 +452,7 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
         validate_schema: bool,
+        is_pure: bool,
     ) -> PyResult<Self> {
         let schema = Arc::new(Schema::from_iter(
             schema
@@ -468,6 +464,7 @@ impl PyLazyFrame {
             scan_fn,
             pyarrow,
             validate_schema,
+            is_pure,
         )
         .into())
     }
@@ -477,12 +474,14 @@ impl PyLazyFrame {
         schema_fn: PyObject,
         scan_fn: PyObject,
         validate_schema: bool,
+        is_pure: bool,
     ) -> PyResult<Self> {
         Ok(LazyFrame::scan_from_python_function(
             Either::Left(schema_fn),
             scan_fn,
             false,
             validate_schema,
+            is_pure,
         )
         .into())
     }
@@ -523,7 +522,6 @@ impl PyLazyFrame {
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
         cluster_with_columns: bool,
-        collapse_joins: bool,
         _eager: bool,
         _check_order: bool,
         #[allow(unused_variables)] new_streaming: bool,
@@ -536,7 +534,6 @@ impl PyLazyFrame {
             .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
-            .with_collapse_joins(collapse_joins)
             .with_check_order(_check_order)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
@@ -980,9 +977,28 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn filter(&self, predicate: PyExpr) -> Self {
+    #[pyo3(signature = (function, maintain_order, chunk_size))]
+    pub fn sink_batches(
+        &self,
+        py: Python<'_>,
+        function: PyObject,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+    ) -> PyResult<PyLazyFrame> {
         let ldf = self.ldf.read().clone();
-        ldf.filter(predicate.inner).into()
+        py.enter_polars(|| {
+            ldf.sink_batches(
+                PlanCallback::new_python(PythonObject(function)),
+                maintain_order,
+                chunk_size,
+            )
+        })
+        .map(Into::into)
+        .map_err(Into::into)
+    }
+
+    fn filter(&self, predicate: PyExpr) -> Self {
+        self.ldf.read().clone().filter(predicate.inner).into()
     }
 
     fn remove(&self, predicate: PyExpr) -> Self {

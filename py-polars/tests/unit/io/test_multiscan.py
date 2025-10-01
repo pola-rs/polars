@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import re
+import sys
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Callable
 
@@ -325,7 +327,10 @@ def test_schema_mismatch_type_mismatch(
 
     # NDJSON will just parse according to `projected_schema`
     cx = (
-        pytest.raises(pl.exceptions.ComputeError, match="cannot parse 'a' as Int64")
+        pytest.raises(
+            pl.exceptions.ComputeError,
+            match=re.escape("cannot parse 'a' (string) as Int64"),
+        )
         if scan is pl.scan_ndjson
         else pytest.raises(
             pl.exceptions.SchemaError,  # type: ignore[arg-type]
@@ -636,7 +641,7 @@ def test_extra_columns_not_ignored_22218() -> None:
         pl.exceptions.SchemaError,
         match="extra column in file outside of expected schema: c, hint: specify .*or pass",
     ):
-        (pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect())
+        pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect()
 
     assert_frame_equal(
         pl.scan_parquet(
@@ -709,3 +714,161 @@ def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
             schema=schema,
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+    ],
+)
+@pytest.mark.parametrize("prefix", ["", "file:", "file://"])
+@pytest.mark.parametrize("use_glob", [True, False])
+def test_scan_ignore_hidden_files_21762(
+    tmp_path: Path, scan: Any, write: Any, use_glob: bool, prefix: str
+) -> None:
+    file_names: list[str] = ["a.ext", "_a.ext", ".a.ext", "a_.ext"]
+
+    for file_name in file_names:
+        write(pl.DataFrame({"rel_path": file_name}), tmp_path / file_name)
+
+    (tmp_path / "folder").mkdir()
+
+    for file_name in file_names:
+        write(
+            pl.DataFrame({"rel_path": f"folder/{file_name}"}),
+            tmp_path / "folder" / file_name,
+        )
+
+    (tmp_path / "_folder").mkdir()
+
+    for file_name in file_names:
+        write(
+            pl.DataFrame({"rel_path": f"_folder/{file_name}"}),
+            tmp_path / "_folder" / file_name,
+        )
+
+    if prefix.startswith("file:") and sys.platform == "win32":
+        pytest.skip("Unsupported on Windows")
+
+    suffix = "/**/*.ext" if use_glob else "/" if prefix.startswith("file:") else ""
+    root = f"{prefix}{tmp_path}{suffix}"
+
+    assert_frame_equal(
+        scan(root).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    ".a.ext",
+                    "_a.ext",
+                    "_folder/.a.ext",
+                    "_folder/_a.ext",
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/.a.ext",
+                    "folder/_a.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=".").sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_a.ext",
+                    "_folder/_a.ext",
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/_a.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=(".", "_")).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    # Top-level glob only
+    root = f"{tmp_path}/*.ext"
+
+    assert_frame_equal(
+        scan(root).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    ".a.ext",
+                    "_a.ext",
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=".").sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_a.ext",
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    # Direct file passed
+    with pytest.raises(pl.exceptions.ComputeError, match="expanded paths were empty"):
+        scan(tmp_path / "_a.ext", hidden_file_prefix="_").collect()

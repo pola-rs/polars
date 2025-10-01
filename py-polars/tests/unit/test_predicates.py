@@ -74,17 +74,23 @@ def test_predicate_null_block_asof_join() -> None:
         .set_sorted("timestamp")
     )
 
-    assert left.join_asof(right, by="id", on="timestamp").filter(
-        pl.col("value").is_not_null()
-    ).collect().to_dict(as_series=False) == {
-        "id": [1, 2, 3],
-        "timestamp": [
-            datetime(2022, 1, 1, 10, 0),
-            datetime(2022, 1, 1, 10, 1),
-            datetime(2022, 1, 1, 10, 2),
-        ],
-        "value": ["a", "b", "c"],
-    }
+    assert_frame_equal(
+        left.join_asof(right, by="id", on="timestamp")
+        .filter(pl.col("value").is_not_null())
+        .collect(),
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "timestamp": [
+                    datetime(2022, 1, 1, 10, 0),
+                    datetime(2022, 1, 1, 10, 1),
+                    datetime(2022, 1, 1, 10, 2),
+                ],
+                "value": ["a", "b", "c"],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_predicate_strptime_6558() -> None:
@@ -1032,6 +1038,12 @@ def test_predicate_pushdown_split_pushable(
 def test_predicate_pushdown_fallible_literal_in_filter_expr() -> None:
     # Fallible operations on literals inside of the predicate expr should not
     # block pushdown.
+
+    # Pushdown will also push any fallible expression if it's the only accumulated
+    # predicate, we insert this dummy predicate to ensure the predicate is being
+    # pushed solely because it is considered infallible.
+    dummy_predicate = pl.lit(1) == pl.lit(1)
+
     lf = pl.LazyFrame(
         {"column": "2025-01-01", "column_date": datetime(2025, 1, 1), "integer": 1}
     )
@@ -1040,7 +1052,8 @@ def test_predicate_pushdown_fallible_literal_in_filter_expr() -> None:
         MARKER=1,
     ).filter(
         pl.col("column_date")
-        == pl.lit("2025-01-01").str.to_datetime("%Y-%m-%d", strict=True)
+        == pl.lit("2025-01-01").str.to_datetime("%Y-%m-%d", strict=True),
+        dummy_predicate,
     )
 
     plan = q.explain()
@@ -1051,7 +1064,22 @@ def test_predicate_pushdown_fallible_literal_in_filter_expr() -> None:
 
     q = lf.with_columns(
         MARKER=1,
-    ).filter(pl.col("integer") == pl.lit("1").cast(pl.Int64, strict=True))
+    ).filter(
+        pl.col("column_date") == pl.lit("2025-01-01").str.strptime(pl.Datetime),
+        dummy_predicate,
+    )
+
+    plan = q.explain()
+
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+    assert q.collect().height == 1
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("integer") == pl.lit("1").cast(pl.Int64, strict=True), dummy_predicate
+    )
 
     plan = q.explain()
 
