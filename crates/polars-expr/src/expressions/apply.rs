@@ -167,7 +167,10 @@ impl ApplyExpr {
         }
 
         // At this point, calling aggregated() will not lead to memory explosion.
-        let agg = ac.aggregated();
+        let agg = match ac.agg_state() {
+            AggState::AggregatedScalar(_) => s.as_list().into_column(),
+            _ => ac.aggregated(),
+        };
 
         // Collection of empty list leads to a null dtype. See: #3687.
         if agg.is_empty() {
