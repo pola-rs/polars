@@ -6,13 +6,47 @@ use arrow::array::NullArray;
 use arrow::legacy::time_zone::Tz;
 use polars_core::POOL;
 use polars_core::prelude::*;
-use polars_error::polars_ensure;
+use polars_error::{feature_gated, polars_ensure};
 use rayon::prelude::*;
 use serializer::{serializer_for, string_serializer};
 
-use crate::csv::write::SerializeOptions;
+use crate::csv::write::{CsvCompression, SerializeOptions};
 
 pub(crate) fn write<W: Write>(
+    writer: &mut W,
+    df: &DataFrame,
+    chunk_size: usize,
+    options: &SerializeOptions,
+    compression: Option<CsvCompression>,
+    n_threads: usize,
+) -> PolarsResult<()> {
+    if let Some(method) = compression {
+        feature_gated!(
+            "compress",
+            match method {
+                CsvCompression::Gzip(level) => {
+                    let level = level.unwrap_or_default();
+                    let mut encoder = flate2::write::GzEncoder::new(
+                        writer,
+                        flate2::Compression::new(level.compression_level() as _),
+                    );
+                    write_impl(&mut encoder, df, chunk_size, options, n_threads)?;
+                    encoder.try_finish().map_err(|e| e.into())
+                },
+                CsvCompression::Zstd(level) => {
+                    let level = level.unwrap_or_default();
+                    let mut encoder = zstd::Encoder::new(writer, level.compression_level())?;
+                    write_impl(&mut encoder, df, chunk_size, options, n_threads)?;
+                    encoder.do_finish().map_err(|e| e.into())
+                },
+            }
+        )
+    } else {
+        write_impl(writer, df, chunk_size, options, n_threads)
+    }
+}
+
+pub(crate) fn write_impl<W: Write>(
     writer: &mut W,
     df: &DataFrame,
     chunk_size: usize,
@@ -213,6 +247,7 @@ pub(crate) fn write_header<W: Write>(
     writer: &mut W,
     names: &[&str],
     options: &SerializeOptions,
+    compression: Option<CsvCompression>,
 ) -> PolarsResult<()> {
     let mut header = Vec::new();
 
@@ -231,13 +266,48 @@ pub(crate) fn write_header<W: Write>(
         }
     }
     header.extend_from_slice(options.line_terminator.as_bytes());
-    writer.write_all(&header)?;
+    write_preamble(writer, &header, compression)?;
     Ok(())
 }
 
 /// Writes a UTF-8 BOM to `writer`.
-pub(crate) fn write_bom<W: Write>(writer: &mut W) -> PolarsResult<()> {
+pub(crate) fn write_bom<W: Write>(
+    writer: &mut W,
+    compression: Option<CsvCompression>,
+) -> PolarsResult<()> {
     const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
-    writer.write_all(&BOM)?;
+    write_preamble(writer, &BOM, compression)?;
     Ok(())
+}
+
+pub(crate) fn write_preamble<W: Write>(
+    writer: &mut W,
+    input_buf: &[u8],
+    compression: Option<CsvCompression>,
+) -> PolarsResult<()> {
+    if let Some(method) = compression {
+        feature_gated!(
+            "compress",
+            match method {
+                CsvCompression::Gzip(level) => {
+                    let level = level.unwrap_or_default();
+                    let mut encoder = flate2::write::GzEncoder::new(
+                        writer,
+                        flate2::Compression::new(level.compression_level() as _),
+                    );
+                    encoder.write_all(input_buf)?;
+                    encoder.try_finish().map_err(|e| e.into())
+                },
+                CsvCompression::Zstd(level) => {
+                    let level = level.unwrap_or_default();
+                    let mut encoder = zstd::Encoder::new(writer, level.compression_level())?;
+                    encoder.write_all(input_buf)?;
+                    encoder.do_finish().map_err(|e| e.into())
+                },
+            }
+        )
+    } else {
+        writer.write_all(input_buf)?;
+        Ok(())
+    }
 }

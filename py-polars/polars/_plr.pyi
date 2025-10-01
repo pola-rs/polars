@@ -50,6 +50,7 @@ StartBy: TypeAlias = Literal[
 ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
 RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
+CsvCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinType: TypeAlias = Literal["inner", "left", "right", "full", "semi", "anti", "cross"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
@@ -988,6 +989,8 @@ class PyLazyFrame:
         decimal_comma: bool,
         null_value: str | None,
         quote_style: QuoteStyle | None,
+        compression: CsvCompression,
+        compression_level: int | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
         retries: int,

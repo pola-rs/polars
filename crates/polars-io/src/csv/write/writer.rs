@@ -7,7 +7,7 @@ use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 
 use super::write_impl::{write, write_bom, write_header};
-use super::{QuoteStyle, SerializeOptions};
+use super::{CsvCompression, QuoteStyle, SerializeOptions};
 use crate::shared::SerWriter;
 
 /// Write a DataFrame to csv.
@@ -21,6 +21,7 @@ pub struct CsvWriter<W: Write> {
     header: bool,
     bom: bool,
     batch_size: NonZeroUsize,
+    compression: Option<CsvCompression>,
     n_threads: usize,
 }
 
@@ -41,13 +42,14 @@ where
             header: true,
             bom: false,
             batch_size: NonZeroUsize::new(1024).unwrap(),
+            compression: None,
             n_threads: POOL.current_num_threads(),
         }
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         if self.bom {
-            write_bom(&mut self.buffer)?;
+            write_bom(&mut self.buffer, self.compression)?;
         }
         let names = df
             .get_column_names()
@@ -55,13 +57,19 @@ where
             .map(|x| x.as_str())
             .collect::<Vec<_>>();
         if self.header {
-            write_header(&mut self.buffer, names.as_slice(), &self.options)?;
+            write_header(
+                &mut self.buffer,
+                names.as_slice(),
+                &self.options,
+                self.compression,
+            )?;
         }
         write(
             &mut self.buffer,
             df,
             self.batch_size.into(),
             &self.options,
+            self.compression,
             self.n_threads,
         )
     }
@@ -166,6 +174,13 @@ where
         self
     }
 
+    pub fn with_compression(mut self, compression: Option<CsvCompression>) -> Self {
+        if compression.is_some() {
+            self.compression = compression;
+        }
+        self
+    }
+
     pub fn n_threads(mut self, n_threads: usize) -> Self {
         self.n_threads = n_threads;
         self
@@ -198,7 +213,7 @@ impl<W: Write> BatchedWriter<W> {
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         if !self.has_written_bom {
             self.has_written_bom = true;
-            write_bom(&mut self.writer.buffer)?;
+            write_bom(&mut self.writer.buffer, self.writer.compression)?;
         }
 
         if !self.has_written_header {
@@ -212,6 +227,7 @@ impl<W: Write> BatchedWriter<W> {
                 &mut self.writer.buffer,
                 names.as_slice(),
                 &self.writer.options,
+                self.writer.compression,
             )?;
         }
 
@@ -220,6 +236,7 @@ impl<W: Write> BatchedWriter<W> {
             df,
             self.writer.batch_size.into(),
             &self.writer.options,
+            self.writer.compression,
             self.writer.n_threads,
         )?;
         Ok(())
@@ -229,7 +246,7 @@ impl<W: Write> BatchedWriter<W> {
     pub fn finish(&mut self) -> PolarsResult<()> {
         if !self.has_written_bom {
             self.has_written_bom = true;
-            write_bom(&mut self.writer.buffer)?;
+            write_bom(&mut self.writer.buffer, self.writer.compression)?;
         }
 
         if !self.has_written_header {
@@ -239,7 +256,12 @@ impl<W: Write> BatchedWriter<W> {
                 .iter_names()
                 .map(|x| x.as_str())
                 .collect::<Vec<_>>();
-            write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+            write_header(
+                &mut self.writer.buffer,
+                &names,
+                &self.writer.options,
+                self.writer.compression,
+            )?;
         };
 
         Ok(())

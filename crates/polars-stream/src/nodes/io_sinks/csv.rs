@@ -97,6 +97,7 @@ impl SinkNode for CsvSinkNode {
                     .with_decimal_comma(options.serialize_options.decimal_comma)
                     .with_null_value(options.serialize_options.null.clone())
                     .with_quote_style(options.serialize_options.quote_style)
+                    .with_compression(options.compression)
                     .n_threads(1) // Disable rayon parallelism
                     .batched(&schema)?;
                 writer.write_batch(&DataFrame::empty_with_schema(&schema))?;
@@ -175,6 +176,7 @@ impl SinkNode for CsvSinkNode {
                             .with_decimal_comma(options.serialize_options.decimal_comma)
                             .with_null_value(options.serialize_options.null.clone())
                             .with_quote_style(options.serialize_options.quote_style)
+                            .with_compression(options.compression)
                             .n_threads(1) // Disable rayon parallelism
                             .batched(&schema)?;
 

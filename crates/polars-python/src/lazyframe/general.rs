@@ -836,7 +836,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (
         target, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, decimal_comma, null_value,
-        quote_style, cloud_options, credential_provider, retries, sink_options
+        quote_style, compression, compression_level, cloud_options, credential_provider, retries, sink_options
     ))]
     fn sink_csv(
         &self,
@@ -856,6 +856,8 @@ impl PyLazyFrame {
         decimal_comma: bool,
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
+        compression: &str,
+        compression_level: Option<i32>,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
@@ -878,10 +880,12 @@ impl PyLazyFrame {
             quote_style,
         };
 
+        let compression = parse_csv_compression(compression, compression_level)?;
         let options = CsvWriterOptions {
             include_bom,
             include_header,
             batch_size,
+            compression,
             serialize_options,
         };
 

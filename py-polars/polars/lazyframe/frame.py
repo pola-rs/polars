@@ -8,7 +8,7 @@ from collections.abc import Collection, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
-from io import BytesIO, StringIO
+from io import BytesIO, StringIO, TextIOBase
 from operator import and_
 from pathlib import Path
 from typing import (
@@ -129,6 +129,7 @@ if TYPE_CHECKING:
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
+        CsvCompression,
         CsvQuoteStyle,
         EngineType,
         ExplainFormat,
@@ -3119,6 +3120,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         decimal_comma: bool = False,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
+        compression: CsvCompression = "uncompressed",
+        compression_level: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -3151,6 +3154,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         decimal_comma: bool = False,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
+        compression: CsvCompression = "uncompressed",
+        compression_level: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -3182,6 +3187,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         decimal_comma: bool = False,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
+        compression: CsvCompression = "uncompressed",
+        compression_level: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -3257,6 +3264,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               Namely, when writing a field that does not parse as a valid float
               or integer, then quotes will be used even if they aren`t strictly
               necessary.
+        compression : {'uncompressed', 'gzip', 'zstd'}
+            Compression method. Defaults to "uncompressed".
+        compression_level
+            The level of compression to use.
+            If set to `None` (default), use the default level.
+
+            - "gzip": min-level: 0, max-level: 9, default-level: 6
+            - "zstd": min-level: 1, max-level: 22, default-level: 3
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3366,6 +3381,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
+        if compression is None:
+            compression = "uncompressed"
+
+        # Disable compression for text targets to avoid encoding binary data as string.
+        if compression != "uncompressed" and isinstance(target, TextIOBase):
+            compression = "uncompressed"
+
         ldf_py = self._ldf.sink_csv(
             target=target,
             include_bom=include_bom,
@@ -3382,6 +3404,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             decimal_comma=decimal_comma,
             null_value=null_value,
             quote_style=quote_style,
+            compression=compression,
+            compression_level=compression_level,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
