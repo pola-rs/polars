@@ -74,7 +74,7 @@ impl AggregationContext<'_> {
 }
 
 impl AggregationContext<'_> {
-    /// Iterate over groups without greedy aggregation into an AggList.
+    /// Iterate over groups lazily, i.e., without greedy aggregation into an AggList.
     pub(super) fn iter_groups_lazy(
         &mut self,
         keep_names: bool,
@@ -83,7 +83,7 @@ impl AggregationContext<'_> {
             AggState::NotAggregated(_) => {
                 let groups = self.groups();
                 let len = groups.len();
-                let c = self.get_values().rechunk(); //TODO - do we require rechunk?
+                let c = self.get_values().rechunk();
                 let name = if keep_names {
                     c.name().clone()
                 } else {
@@ -91,8 +91,7 @@ impl AggregationContext<'_> {
                 };
                 let iter = self.groups().iter();
 
-                // Safety:
-                // kdn TODO
+                // SAFETY: dtype is correct
                 unsafe {
                     Box::new(NotAggLazyIter::new(
                         c.as_materialized_series().array_ref(0).clone(),
@@ -235,7 +234,7 @@ struct NotAggLazyIter<'a, I: Iterator<Item = GroupsIndicator<'a>>> {
 
 impl<'a, I: Iterator<Item = GroupsIndicator<'a>>> NotAggLazyIter<'a, I> {
     /// # Safety
-    /// kdn TODO
+    /// Caller must ensure the given `logical` dtype belongs to `array`.
     unsafe fn new(
         array: ArrayRef,
         iter: I,
@@ -266,7 +265,8 @@ impl<'a, I: Iterator<Item = GroupsIndicator<'a>>> Iterator for NotAggLazyIter<'a
         if let Some(g) = self.iter.next() {
             self.groups_idx += 1;
             match g {
-                GroupsIndicator::Idx(_) => todo!(), //kdn TODO
+                // TODO: Implement for Idx GroupsType
+                GroupsIndicator::Idx(_) => todo!(),
                 GroupsIndicator::Slice(s) => {
                     let mut arr =
                         unsafe { self.array.sliced_unchecked(s[0] as usize, s[1] as usize) };
