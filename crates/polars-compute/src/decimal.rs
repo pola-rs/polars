@@ -652,13 +652,19 @@ pub fn dec128_cmp(mut lv: i128, ls: usize, mut rv: i128, rs: usize) -> Ordering 
 /// specified precision and scale.  Consistent with float parsing, no decimal
 /// separator is required (eg "500", "500.", and "500.0" are all accepted);
 /// this allows mixed integer/decimal sequences to be parsed as decimals.
-/// Returns None if the number is not well-formed, or does not fit.
-/// Only b'.' is allowed as a decimal separator (issue #6698).
+/// Returns None if the number is not well-formed, or does not fit. The decimal
+/// separator defaults to b'.', but can be changed to b',' by setting `decimal_comma`
+/// to true.
 #[inline]
-pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize) -> Option<i128> {
+pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> Option<i128> {
     assert!(dec128_verify_prec_scale(p, s).is_ok());
 
-    let separator = bytes.iter().position(|b| *b == b'.').unwrap_or(bytes.len());
+    let decimal_sep = if decimal_comma { b',' } else { b'.' };
+
+    let separator = bytes
+        .iter()
+        .position(|b| *b == decimal_sep)
+        .unwrap_or(bytes.len());
     let (mut int, mut frac) = bytes.split_at(separator);
 
     // Trim trailing zeroes.
@@ -861,46 +867,55 @@ mod test {
 
     #[test]
     fn test_str_to_dec() {
-        assert_eq!(str_to_dec128(b"12.09", 8, 2), Some(1209));
-        assert_eq!(str_to_dec128(b"1200.90", 8, 2), Some(120090));
-        assert_eq!(str_to_dec128(b"143.9", 8, 2), Some(14390));
+        fn str_to_dec128_dot(bytes: &[u8], p: usize, s: usize) -> Option<i128> {
+            str_to_dec128(bytes, p, s, false)
+        }
 
-        assert_eq!(str_to_dec128(b"+000000.5", 8, 2), Some(50));
-        assert_eq!(str_to_dec128(b"-0.5", 8, 2), Some(-50));
-        assert_eq!(str_to_dec128(b"-1.5", 8, 2), Some(-150));
+        assert_eq!(str_to_dec128_dot(b"12.09", 8, 2), Some(1209));
+        assert_eq!(str_to_dec128_dot(b"1200.90", 8, 2), Some(120090));
+        assert_eq!(str_to_dec128_dot(b"143.9", 8, 2), Some(14390));
 
-        assert_eq!(str_to_dec128(b"12ABC.34", 8, 5), None);
-        assert_eq!(str_to_dec128(b"1ABC2.34", 8, 5), None);
-        assert_eq!(str_to_dec128(b"12.3ABC4", 8, 5), None);
-        assert_eq!(str_to_dec128(b"12.3.ABC4", 8, 5), None);
+        assert_eq!(str_to_dec128_dot(b"+000000.5", 8, 2), Some(50));
+        assert_eq!(str_to_dec128_dot(b"-0.5", 8, 2), Some(-50));
+        assert_eq!(str_to_dec128_dot(b"-1.5", 8, 2), Some(-150));
 
-        assert_eq!(str_to_dec128(b"12.-3", 8, 5), None);
-        assert_eq!(str_to_dec128(b"", 8, 5), None);
-        assert_eq!(str_to_dec128(b"5.", 8, 5), Some(500000i128));
-        assert_eq!(str_to_dec128(b"5", 8, 5), Some(500000i128));
-        assert_eq!(str_to_dec128(b".5", 8, 5), Some(50000i128));
+        assert_eq!(str_to_dec128_dot(b"12ABC.34", 8, 5), None);
+        assert_eq!(str_to_dec128_dot(b"1ABC2.34", 8, 5), None);
+        assert_eq!(str_to_dec128_dot(b"12.3ABC4", 8, 5), None);
+        assert_eq!(str_to_dec128_dot(b"12.3.ABC4", 8, 5), None);
+
+        assert_eq!(str_to_dec128_dot(b"12.-3", 8, 5), None);
+        assert_eq!(str_to_dec128_dot(b"", 8, 5), None);
+        assert_eq!(str_to_dec128_dot(b"5.", 8, 5), Some(500000i128));
+        assert_eq!(str_to_dec128_dot(b"5", 8, 5), Some(500000i128));
+        assert_eq!(str_to_dec128_dot(b".5", 8, 5), Some(50000i128));
 
         // Precision and scale fitting.
         let val = b"1200";
-        assert_eq!(str_to_dec128(val, 4, 0), Some(1200));
-        assert_eq!(str_to_dec128(val, 3, 0), None);
-        assert_eq!(str_to_dec128(val, 4, 1), None);
+        assert_eq!(str_to_dec128_dot(val, 4, 0), Some(1200));
+        assert_eq!(str_to_dec128_dot(val, 3, 0), None);
+        assert_eq!(str_to_dec128_dot(val, 4, 1), None);
 
         let val = b"1200.010";
-        assert_eq!(str_to_dec128(val, 7, 0), Some(1200));
-        assert_eq!(str_to_dec128(val, 7, 3), Some(1200010));
-        assert_eq!(str_to_dec128(val, 10, 6), Some(1200010000));
-        assert_eq!(str_to_dec128(val, 5, 3), None);
-        assert_eq!(str_to_dec128(val, 12, 5), Some(120001000));
-        assert_eq!(str_to_dec128(val, 38, 35), None);
+        assert_eq!(str_to_dec128_dot(val, 7, 0), Some(1200));
+        assert_eq!(str_to_dec128_dot(val, 7, 3), Some(1200010));
+        assert_eq!(str_to_dec128_dot(val, 10, 6), Some(1200010000));
+        assert_eq!(str_to_dec128_dot(val, 5, 3), None);
+        assert_eq!(str_to_dec128_dot(val, 12, 5), Some(120001000));
+        assert_eq!(str_to_dec128_dot(val, 38, 35), None);
 
         // Rounding.
-        assert_eq!(str_to_dec128(b"2.10", 5, 1), Some(21));
-        assert_eq!(str_to_dec128(b"2.14", 5, 1), Some(21));
-        assert_eq!(str_to_dec128(b"2.15", 5, 1), Some(22));
-        assert_eq!(str_to_dec128(b"2.24", 5, 1), Some(22));
-        assert_eq!(str_to_dec128(b"2.25", 5, 1), Some(22));
-        assert_eq!(str_to_dec128(b"2.26", 5, 1), Some(23));
+        assert_eq!(str_to_dec128_dot(b"2.10", 5, 1), Some(21));
+        assert_eq!(str_to_dec128_dot(b"2.14", 5, 1), Some(21));
+        assert_eq!(str_to_dec128_dot(b"2.15", 5, 1), Some(22));
+        assert_eq!(str_to_dec128_dot(b"2.24", 5, 1), Some(22));
+        assert_eq!(str_to_dec128_dot(b"2.25", 5, 1), Some(22));
+        assert_eq!(str_to_dec128_dot(b"2.26", 5, 1), Some(23));
+
+        // Decimal comma.
+        assert_eq!(str_to_dec128(b"12,09", 8, 2, true), Some(1209));
+        assert_eq!(str_to_dec128(b"1200,90", 8, 2, true), Some(120090));
+        assert_eq!(str_to_dec128(b"143,9", 8, 2, true), Some(14390));
     }
 
     #[test]
@@ -914,7 +929,7 @@ mod test {
                 for x in INTERESTING_VALUES.iter() {
                     if let Some(d) = bigdecimal_to_dec128(x, p, s) {
                         let fmt = buf.format_dec128(d, s, false);
-                        let d2 = str_to_dec128(fmt.as_bytes(), p, s);
+                        let d2 = str_to_dec128(fmt.as_bytes(), p, s, false);
                         assert_eq!(d, d2.unwrap());
                     } else {
                         break;
