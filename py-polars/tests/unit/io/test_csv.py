@@ -2250,11 +2250,30 @@ def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     assert_frame_equal(df, expected)
 
 
-def test_csv_float_decimal() -> None:
+def test_csv_float_type_decimal_comma() -> None:
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
     read = pl.read_csv(floats, decimal_comma=True, separator=";")
     assert read.dtypes == [pl.Float64] * 2
     assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
+
+
+def test_csv_decimal_type_decimal_comma_24414() -> None:
+    schema = pl.Schema({"a": pl.Decimal(scale=3), "b": pl.Decimal(scale=2)})
+
+    csv_dot = b"a,b\n12.239,1.233\n13.908,87.32"
+    out_dot = pl.read_csv(csv_dot, schema=schema)
+
+    csv = b"a;b\n12,239;1,233\n13,908;87,32"
+    out = pl.read_csv(csv, decimal_comma=True, separator=";", schema=schema)
+    assert_frame_equal(out_dot, out)
+
+    csv = b"a;b\n 12,239;1,233\n   13,908;87,32"
+    out = pl.read_csv(csv, decimal_comma=True, separator=";", schema=schema)
+    assert_frame_equal(out_dot, out)
+
+    csv = b'a,b\n"12,239","1,233"\n"13,908","87,32"'
+    out = pl.read_csv(csv, decimal_comma=True, schema=schema)
+    assert_frame_equal(out_dot, out)
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
