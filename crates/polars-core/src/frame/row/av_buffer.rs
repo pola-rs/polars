@@ -143,7 +143,7 @@ impl<'a> AnyValueBuffer<'a> {
                 #[cfg(feature = "dtype-decimal")]
                 AnyValue::Decimal(v, _p, s) => {
                     let mut fmt = DecimalFmtBuffer::new();
-                    builder.append_value(fmt.format_dec128(v, s, false));
+                    builder.append_value(fmt.format_dec128(v, s, false, false));
                 },
                 _ => return None,
             },
