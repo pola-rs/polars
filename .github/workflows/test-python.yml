@@ -88,7 +88,7 @@ jobs:
 
       - name: Install Polars
         run: |
-          uv pip install --no-deps -e py-polars
+          uv pip install --no-deps -e .
           maturin develop
 
       - name: Run doctests
