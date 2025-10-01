@@ -100,7 +100,7 @@ impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for ArrayChunked {
                 self.name().clone(),
                 fill_length,
                 self.inner_dtype(),
-                0,
+                self.width(),
             ),
         };
 

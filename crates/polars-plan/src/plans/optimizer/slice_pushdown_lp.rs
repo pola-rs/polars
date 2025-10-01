@@ -362,7 +362,7 @@ impl SlicePushDown {
                 if outer_slice.offset >= 0 && offset >= 0 {
                     let state = State {
                         offset: offset.checked_add(outer_slice.offset).unwrap(),
-                        len: if len as i64 > outer_slice.offset {
+                        len: if len as i128 > outer_slice.offset as i128 {
                             (len - outer_slice.offset as IdxSize).min(outer_slice.len)
                         } else {
                             0
@@ -373,23 +373,25 @@ impl SlicePushDown {
 
                 // If offset is negative the length can never be greater than it.
                 if offset < 0 {
-                    if len as i64 > -offset {
-                        len = (-offset) as IdxSize;
+                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
+                    if len as u64 > offset.unsigned_abs() as u64 {
+                        len = offset.unsigned_abs() as IdxSize;
                     }
                 }
 
                 // Both are negative, can also combine (but not so simply).
                 if outer_slice.offset < 0 && offset < 0 {
-                    let inner_start_rel_end = offset;
-                    let inner_stop_rel_end = inner_start_rel_end + len as i64;
-                    let naive_outer_start_rel_end = inner_stop_rel_end + outer_slice.offset;
-                    let naive_outer_stop_rel_end = naive_outer_start_rel_end + outer_slice.len as i64;
+                    // We use 128-bit arithmetic to avoid overflows, clamping at the end.
+                    let inner_start_rel_end = offset as i128;
+                    let inner_stop_rel_end = inner_start_rel_end + len as i128;
+                    let naive_outer_start_rel_end = inner_stop_rel_end + outer_slice.offset as i128;
+                    let naive_outer_stop_rel_end = naive_outer_start_rel_end + outer_slice.len as i128;
                     let clamped_outer_start_rel_end = naive_outer_start_rel_end.max(inner_start_rel_end);
                     let clamped_outer_stop_rel_end = naive_outer_stop_rel_end.max(clamped_outer_start_rel_end);
 
                     let state = State {
-                        offset: clamped_outer_start_rel_end,
-                        len: (clamped_outer_stop_rel_end - clamped_outer_start_rel_end) as IdxSize,
+                        offset: clamped_outer_start_rel_end.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
+                        len: (clamped_outer_stop_rel_end - clamped_outer_start_rel_end).min(IdxSize::MAX as i128) as IdxSize,
                     };
                     return self.pushdown(alp, Some(state), lp_arena, expr_arena);
                 }
@@ -412,8 +414,9 @@ impl SlicePushDown {
 
                 // If offset is negative the length can never be greater than it.
                 if offset < 0 {
-                    if len as i64 > -offset {
-                        len = (-offset) as IdxSize;
+                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
+                    if len as u64 > offset.unsigned_abs() as u64 {
+                        len = offset.unsigned_abs() as IdxSize;
                     }
                 }
 

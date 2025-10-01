@@ -11,10 +11,10 @@ pub(crate) struct RollingExpr {
     /// For now, don't support it.
     ///
     /// A function Expr. i.e. Mean, Median, Max, etc.
-    pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) options: RollingGroupOptions,
     pub(crate) expr: Expr,
+    pub(crate) output_field: Field,
 }
 
 impl PhysicalExpr for RollingExpr {
@@ -55,8 +55,8 @@ impl PhysicalExpr for RollingExpr {
         polars_bail!(InvalidOperation: "rolling expression not allowed in aggregation");
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.function.to_field(input_schema)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn as_expression(&self) -> Option<&Expr> {

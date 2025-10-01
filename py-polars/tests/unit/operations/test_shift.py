@@ -177,3 +177,10 @@ def test_shift_fill_value_nonscalar() -> None:
         match="'fill_value' must be a scalar value",
     ):
         df.select(pl.col("a").shift(1, fill_value=pl.col("b")))
+
+
+def test_shift_array_list_eval_24672() -> None:
+    s = pl.Series([[[1], [2], [3]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
+    expected = pl.Series([[None, [1], [2]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
+    out = s.list.eval(pl.element().shift())
+    assert_series_equal(expected, out)

@@ -136,7 +136,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 assert!(args.slice.is_none());
                 return fused_cross_filter(left_df, other, args.suffix.clone(), cross_options);
             }
-            return left_df.cross_join(other, args.suffix.clone(), args.slice);
+            return left_df.cross_join(other, args.suffix.clone(), args.slice, args.maintain_order);
         }
 
         // Clear literals if a frame is empty. Otherwise we could get an oob

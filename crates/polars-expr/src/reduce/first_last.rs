@@ -291,6 +291,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.in_dtype);
         if !values.is_empty() {
             let seq_id = seq_id + 1; // We use 0 for 'no value'.
             if P::should_replace(seq_id, self.seqs[group_idx as usize]) {
@@ -308,6 +309,8 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.in_dtype);
+        assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // We use 0 for 'no value'.
         for (i, g) in subset.iter().zip(group_idxs) {
             let grp_val = self.values.get_unchecked_mut(g.idx());
@@ -332,6 +335,8 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idxs: &[IdxSize],
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.in_dtype == other.in_dtype);
+        assert!(subset.len() == group_idxs.len());
         for (i, g) in group_idxs.iter().enumerate() {
             let si = *subset.get_unchecked(i) as usize;
             if P::should_replace(

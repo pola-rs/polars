@@ -2,6 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::fs::File;
 use std::sync::Arc;
 
+use arrow::buffer::Buffer;
 use polars_core::error::{PolarsResult, feature_gated};
 use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
@@ -24,7 +25,7 @@ use super::UnifiedScanArgs;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone)]
 pub enum ScanSources {
-    Paths(Arc<[PlPath]>),
+    Paths(Buffer<PlPath>),
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
@@ -80,7 +81,7 @@ impl ScanSource {
 
     pub fn into_sources(self) -> ScanSources {
         match self {
-            ScanSource::Path(p) => ScanSources::Paths([p].into()),
+            ScanSource::Path(p) => ScanSources::Paths(Buffer::from_iter([p])),
             ScanSource::File(f) => {
                 let ptr: *const [File] = std::ptr::slice_from_raw_parts(Arc::into_raw(f), 1);
                 // SAFETY: A T can be interpreted as [T] with length 1.
@@ -122,7 +123,7 @@ impl Default for ScanSources {
     fn default() -> Self {
         // We need to use `Paths` here to avoid erroring when doing hive-partitioned scans of empty
         // file lists.
-        Self::Paths(Arc::default())
+        Self::Paths(Buffer::new())
     }
 }
 
@@ -222,7 +223,7 @@ impl ScanSources {
     }
 
     /// Try cast the scan sources to [`ScanSources::Paths`] with a clone
-    pub fn into_paths(&self) -> Option<Arc<[PlPath]>> {
+    pub fn into_paths(&self) -> Option<Buffer<PlPath>> {
         match self {
             Self::Paths(paths) => Some(paths.clone()),
             Self::Files(_) | Self::Buffers(_) => None,

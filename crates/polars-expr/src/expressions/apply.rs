@@ -23,6 +23,8 @@ pub struct ApplyExpr {
     input_schema: SchemaRef,
     allow_threading: bool,
     check_lengths: bool,
+
+    /// Output field of the expression excluding potential aggregation.
     output_field: Field,
 }
 
@@ -35,7 +37,7 @@ impl ApplyExpr {
         options: FunctionOptions,
         allow_threading: bool,
         input_schema: SchemaRef,
-        output_field: Field,
+        non_aggregated_output_field: Field,
         function_operates_on_scalar: bool,
     ) -> Self {
         debug_assert!(
@@ -53,7 +55,7 @@ impl ApplyExpr {
             input_schema,
             allow_threading,
             check_lengths: options.check_lengths(),
-            output_field,
+            output_field: non_aggregated_output_field,
         }
     }
 
@@ -117,7 +119,11 @@ impl ApplyExpr {
         }
 
         let name = s.name().clone();
-        let agg = ac.aggregated();
+        let agg = match ac.agg_state() {
+            AggState::AggregatedScalar(_) => s.as_list().into_column(),
+            _ => ac.aggregated(),
+        };
+
         // Collection of empty list leads to a null dtype. See: #3687.
         if agg.is_empty() {
             // Create input for the function to determine the output dtype, see #3946.
@@ -147,7 +153,11 @@ impl ApplyExpr {
         let ca: ListChunked = if self.allow_threading {
             let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
             {
-                Some(self.output_field.dtype.clone())
+                let mut dtype = self.output_field.dtype.clone();
+                if !self.is_scalar() {
+                    dtype = dtype.implode();
+                }
+                Some(dtype)
             } else {
                 None
             };
@@ -369,8 +379,8 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         if self.inputs.len() == 1 && self.flags.is_elementwise() {

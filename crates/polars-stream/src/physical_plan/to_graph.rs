@@ -978,6 +978,7 @@ fn to_graph_rec<'a>(
 
         #[cfg(feature = "python")]
         PythonScan { options } => {
+            use arrow::buffer::Buffer;
             use polars_plan::dsl::python_dsl::PythonScanSource as S;
             use polars_plan::plans::PythonPredicate;
             use polars_utils::relaxed_cell::RelaxedCell;
@@ -1142,7 +1143,8 @@ fn to_graph_rec<'a>(
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).
-            let sources = ScanSources::Paths(Arc::from([PlPath::from_str("python-scan-0")]));
+            let sources =
+                ScanSources::Paths(Buffer::from_iter([PlPath::from_str("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
             let file_projection_builder = ProjectionBuilder::new(output_schema, None, None);

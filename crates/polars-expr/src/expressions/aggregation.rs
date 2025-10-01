@@ -28,19 +28,19 @@ pub struct AggregationType {
 pub(crate) struct AggregationExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) agg_type: AggregationType,
-    field: Option<Field>,
+    pub(crate) output_field: Field,
 }
 
 impl AggregationExpr {
     pub fn new(
         expr: Arc<dyn PhysicalExpr>,
         agg_type: AggregationType,
-        field: Option<Field>,
+        output_field: Field,
     ) -> Self {
         Self {
             input: expr,
             agg_type,
-            field,
+            output_field,
         }
     }
 }
@@ -441,12 +441,8 @@ impl PhysicalExpr for AggregationExpr {
         ))
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        if let Some(field) = self.field.as_ref() {
-            Ok(field.clone())
-        } else {
-            self.input.to_field(input_schema)
-        }
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {

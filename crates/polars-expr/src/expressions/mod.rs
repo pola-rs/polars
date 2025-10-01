@@ -433,7 +433,6 @@ impl<'a> AggregationContext<'a> {
             },
             AggState::AggregatedList(s) | AggState::AggregatedScalar(s) => s.into_column(),
             AggState::LiteralScalar(s) => {
-                self.groups();
                 let rows = self.groups.len();
                 let s = s.implode().unwrap();
                 let s = s.new_from_index(0, rows);

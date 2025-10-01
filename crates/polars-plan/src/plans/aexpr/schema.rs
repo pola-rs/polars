@@ -25,28 +25,6 @@ impl AExpr {
         self.to_field(ctx).map(|f| f.dtype)
     }
 
-    /// Get Field result of the expression. The schema is the input data. The provided
-    /// context will be used to coerce the type into a List if needed, also known as auto-implode.
-    pub fn to_field_with_ctx(
-        &self,
-        agg_ctx: Context,
-        ctx: &ToFieldContext<'_>,
-    ) -> PolarsResult<Field> {
-        // Indicates whether we should auto-implode the result. This is initialized to true if we are
-        // in an aggregation context, so functions that return scalars should explicitly set this
-        // to false in `to_field_impl`.
-        let agg_list = matches!(agg_ctx, Context::Aggregation);
-        let mut field = self.to_field_impl(ctx)?;
-
-        if agg_list {
-            if !self.is_scalar(ctx.arena) {
-                field.coerce(field.dtype().clone().implode());
-            }
-        }
-
-        Ok(field)
-    }
-
     /// Get Field result of the expression. The schema is the input data. The result will
     /// not be coerced (also known as auto-implode): this is the responsibility of the caller.
     pub fn to_field(&self, ctx: &ToFieldContext<'_>) -> PolarsResult<Field> {

@@ -275,8 +275,8 @@ impl PhysicalExpr for BinaryExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {

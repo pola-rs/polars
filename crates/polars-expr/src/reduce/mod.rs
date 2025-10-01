@@ -512,20 +512,23 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn update_group(
         &mut self,
-        _values: &Column,
+        values: &Column,
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.dtype);
         Ok(())
     }
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        _values: &Column,
-        _subset: &[IdxSize],
+        values: &Column,
+        subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.dtype);
+        assert!(subset.len() == group_idxs.len());
         for g in group_idxs {
             self.num_evictions += g.should_evict() as IdxSize;
         }
@@ -534,10 +537,13 @@ impl GroupedReduction for NullGroupedReduction {
 
     unsafe fn combine_subset(
         &mut self,
-        _other: &dyn GroupedReduction,
-        _subset: &[IdxSize],
-        _group_idxs: &[IdxSize],
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
     ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.dtype == other.dtype);
+        assert!(subset.len() == group_idxs.len());
         Ok(())
     }
 

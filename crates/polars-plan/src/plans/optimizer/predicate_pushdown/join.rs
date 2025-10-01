@@ -409,8 +409,10 @@ fn try_rewrite_join_type(
 
         match &options.options {
             Some(JoinTypeOptionsIR::CrossAndFilter { .. }) => {
-                let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) =
-                    Arc::make_mut(options).options.take()
+                let Some(JoinTypeOptionsIR::CrossAndFilter {
+                    predicate,
+                    maintain_order: _,
+                }) = Arc::make_mut(options).options.take()
                 else {
                     unreachable!()
                 };
@@ -535,10 +537,12 @@ fn try_rewrite_join_type(
             return Ok(());
         };
 
+        let maintain_order = options.args.maintain_order;
         let existing = Arc::make_mut(options)
             .options
             .replace(JoinTypeOptionsIR::CrossAndFilter {
                 predicate: ExprIR::from_node(nested_loop_predicates, expr_arena),
+                maintain_order,
             });
         assert!(existing.is_none()); // Important
 

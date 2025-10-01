@@ -519,7 +519,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     // a union vstacks columns and aggscan optimization determines columns to aggregate in a
     // hashmap, if that doesn't set them sorted the vstack will panic.
     let lf1: LazyFrame = DslBuilder::scan_parquet(
-        ScanSources::Paths([PlPath::new(GLOB_PARQUET)].into()),
+        ScanSources::Paths(FromIterator::from_iter([PlPath::new(GLOB_PARQUET)])),
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
@@ -531,7 +531,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     .into();
 
     let lf2: LazyFrame = DslBuilder::scan_ipc(
-        ScanSources::Paths([PlPath::new(GLOB_IPC)].into()),
+        ScanSources::Paths(FromIterator::from_iter([PlPath::new(GLOB_IPC)])),
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
@@ -543,7 +543,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     .into();
 
     let lf3: LazyFrame = DslBuilder::scan_csv(
-        ScanSources::Paths([PlPath::new(GLOB_CSV)].into()),
+        ScanSources::Paths(FromIterator::from_iter([PlPath::new(GLOB_CSV)])),
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,

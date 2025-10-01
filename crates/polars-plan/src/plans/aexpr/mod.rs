@@ -31,7 +31,6 @@ pub use properties::*;
 pub use schema::ToFieldContext;
 
 use crate::constants::LEN;
-use crate::plans::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]

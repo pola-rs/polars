@@ -38,19 +38,33 @@ pub enum IRTemporalFunction {
     Microsecond,
     Nanosecond,
     #[cfg(feature = "dtype-duration")]
-    TotalDays,
+    TotalDays {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalHours,
+    TotalHours {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalMinutes,
+    TotalMinutes {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalSeconds,
+    TotalSeconds {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalMilliseconds,
+    TotalMilliseconds {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalMicroseconds,
+    TotalMicroseconds {
+        fractional: bool,
+    },
     #[cfg(feature = "dtype-duration")]
-    TotalNanoseconds,
+    TotalNanoseconds {
+        fractional: bool,
+    },
     ToString(String),
     CastTimeUnit(TimeUnit),
     WithTimeUnit(TimeUnit),
@@ -90,8 +104,19 @@ impl IRTemporalFunction {
             },
             Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
             #[cfg(feature = "dtype-duration")]
-            TotalDays | TotalHours | TotalMinutes | TotalSeconds | TotalMilliseconds
-            | TotalMicroseconds | TotalNanoseconds => mapper.with_dtype(DataType::Int64),
+            TotalDays { fractional }
+            | TotalHours { fractional }
+            | TotalMinutes { fractional }
+            | TotalSeconds { fractional }
+            | TotalMilliseconds { fractional }
+            | TotalMicroseconds { fractional }
+            | TotalNanoseconds { fractional } => {
+                if *fractional {
+                    mapper.with_dtype(DataType::Float64)
+                } else {
+                    mapper.with_dtype(DataType::Int64)
+                }
+            },
             ToString(_) => mapper.with_dtype(DataType::String),
             WithTimeUnit(tu) | CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),
@@ -174,13 +199,13 @@ impl IRTemporalFunction {
             | T::CastTimeUnit(_)
             | T::WithTimeUnit(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-duration")]
-            T::TotalDays
-            | T::TotalHours
-            | T::TotalMinutes
-            | T::TotalSeconds
-            | T::TotalMilliseconds
-            | T::TotalMicroseconds
-            | T::TotalNanoseconds => FunctionOptions::elementwise(),
+            T::TotalDays { .. }
+            | T::TotalHours { .. }
+            | T::TotalMinutes { .. }
+            | T::TotalSeconds { .. }
+            | T::TotalMilliseconds { .. }
+            | T::TotalMicroseconds { .. }
+            | T::TotalNanoseconds { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "timezones")]
             T::ConvertTimeZone(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "month_start")]
@@ -234,19 +259,19 @@ impl Display for IRTemporalFunction {
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
             #[cfg(feature = "dtype-duration")]
-            TotalDays => "total_days",
+            TotalDays { .. } => "total_days",
             #[cfg(feature = "dtype-duration")]
-            TotalHours => "total_hours",
+            TotalHours { .. } => "total_hours",
             #[cfg(feature = "dtype-duration")]
-            TotalMinutes => "total_minutes",
+            TotalMinutes { .. } => "total_minutes",
             #[cfg(feature = "dtype-duration")]
-            TotalSeconds => "total_seconds",
+            TotalSeconds { .. } => "total_seconds",
             #[cfg(feature = "dtype-duration")]
-            TotalMilliseconds => "total_milliseconds",
+            TotalMilliseconds { .. } => "total_milliseconds",
             #[cfg(feature = "dtype-duration")]
-            TotalMicroseconds => "total_microseconds",
+            TotalMicroseconds { .. } => "total_microseconds",
             #[cfg(feature = "dtype-duration")]
-            TotalNanoseconds => "total_nanoseconds",
+            TotalNanoseconds { .. } => "total_nanoseconds",
             ToString(_) => "to_string",
             #[cfg(feature = "timezones")]
             ConvertTimeZone(_) => "convert_time_zone",
@@ -433,10 +458,22 @@ pub(super) fn total_days(s: &Column) -> PolarsResult<Column> {
         .map(|ca| ca.days().into_column())
 }
 #[cfg(feature = "dtype-duration")]
+pub(super) fn total_days_fractional(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .duration()
+        .map(|ca| ca.days_fractional().into_column())
+}
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_hours(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
         .duration()
         .map(|ca| ca.hours().into_column())
+}
+#[cfg(feature = "dtype-duration")]
+pub(super) fn total_hours_fractional(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .duration()
+        .map(|ca| ca.hours_fractional().into_column())
 }
 #[cfg(feature = "dtype-duration")]
 pub(super) fn total_minutes(s: &Column) -> PolarsResult<Column> {
@@ -445,10 +482,22 @@ pub(super) fn total_minutes(s: &Column) -> PolarsResult<Column> {
         .map(|ca| ca.minutes().into_column())
 }
 #[cfg(feature = "dtype-duration")]
+pub(super) fn total_minutes_fractional(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .duration()
+        .map(|ca| ca.minutes_fractional().into_column())
+}
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_seconds(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
         .duration()
         .map(|ca| ca.seconds().into_column())
+}
+#[cfg(feature = "dtype-duration")]
+pub(super) fn total_seconds_fractional(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .duration()
+        .map(|ca| ca.seconds_fractional().into_column())
 }
 #[cfg(feature = "dtype-duration")]
 pub(super) fn total_milliseconds(s: &Column) -> PolarsResult<Column> {
@@ -457,16 +506,34 @@ pub(super) fn total_milliseconds(s: &Column) -> PolarsResult<Column> {
         .map(|ca| ca.milliseconds().into_column())
 }
 #[cfg(feature = "dtype-duration")]
+pub(super) fn total_milliseconds_fractional(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .duration()
+        .map(|ca| ca.milliseconds_fractional().into_column())
+}
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_microseconds(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
         .duration()
         .map(|ca| ca.microseconds().into_column())
 }
 #[cfg(feature = "dtype-duration")]
+pub(super) fn total_microseconds_fractional(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .duration()
+        .map(|ca| ca.microseconds_fractional().into_column())
+}
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_nanoseconds(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
         .duration()
         .map(|ca| ca.nanoseconds().into_column())
+}
+#[cfg(feature = "dtype-duration")]
+pub(super) fn total_nanoseconds_fractional(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .duration()
+        .map(|ca| ca.nanoseconds_fractional().into_column())
 }
 pub(super) fn timestamp(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {
     s.as_materialized_series()

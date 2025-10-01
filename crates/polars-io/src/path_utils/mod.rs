@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
+use arrow::buffer::Buffer;
 use polars_core::config;
 use polars_core::error::{PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
@@ -165,7 +166,7 @@ pub fn expand_paths(
     glob: bool,
     hidden_file_prefix: &[PlSmallStr],
     #[allow(unused_variables)] cloud_options: &mut Option<CloudOptions>,
-) -> PolarsResult<Arc<[PlPath]>> {
+) -> PolarsResult<Buffer<PlPath>> {
     expand_paths_hive(paths, glob, hidden_file_prefix, cloud_options, false).map(|x| x.0)
 }
 
@@ -208,7 +209,7 @@ pub fn expand_paths_hive(
     hidden_file_prefix: &[PlSmallStr],
     #[allow(unused_variables)] cloud_options: &mut Option<CloudOptions>,
     check_directory_level: bool,
-) -> PolarsResult<(Arc<[PlPath]>, usize)> {
+) -> PolarsResult<(Buffer<PlPath>, usize)> {
     let Some(first_path) = paths.first() else {
         return Ok((vec![].into(), 0));
     };
@@ -256,7 +257,7 @@ pub fn expand_paths_hive(
                     ),
                 )?;
 
-                return Ok((Arc::from(paths), expand_start_idx));
+                return Ok((paths.into(), expand_start_idx));
             }
 
             let format_path = |scheme: &str, bucket: &str, location: &str| {

@@ -40,7 +40,9 @@ pub fn is_output_ordered(aexpr: &AExpr, arena: &Arena<AExpr>, frame_ordered: boo
             idx,
             returns_scalar,
         } => !returns_scalar && rec!(*idx),
-        AExpr::Filter { input, by } => rec!(*input) || rec!(*by),
+
+        // Filter propagates the input order.
+        AExpr::Filter { input, by: _ } => rec!(*input),
 
         // This aggregation is jiberish. Just be conservative.
         AExpr::Agg(IRAggExpr::AggGroups(_)) => true,

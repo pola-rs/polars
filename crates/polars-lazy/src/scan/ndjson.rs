@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
@@ -31,7 +31,7 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
-    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
+    pub fn new_paths(paths: Buffer<PlPath>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -53,7 +53,7 @@ impl LazyJsonLineReader {
     }
 
     pub fn new(path: PlPath) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path].into()))
+        Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
     /// Add a row index column.

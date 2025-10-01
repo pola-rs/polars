@@ -3990,9 +3990,9 @@ class DataFrame:
             The level of compression to use. Higher compression means smaller files on
             disk.
 
-            - "gzip" : min-level: 0, max-level: 9.
-            - "brotli" : min-level: 0, max-level: 11.
-            - "zstd" : min-level: 1, max-level: 22.
+            - "gzip" : min-level: 0, max-level: 9, default: 6.
+            - "brotli" : min-level: 0, max-level: 11, default: 1.
+            - "zstd" : min-level: 1, max-level: 22, default: 3.
 
         statistics
             Write statistics to the parquet headers. This is the default behavior.
@@ -7956,7 +7956,6 @@ class DataFrame:
             Do not rely on any observed ordering without explicitly setting this
             parameter, as your code may break in a future release.
             Not specifying any ordering can improve performance.
-            Supported for inner, left, right and full joins
 
             .. list-table ::
                :header-rows: 0

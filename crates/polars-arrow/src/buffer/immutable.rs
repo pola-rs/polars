@@ -37,7 +37,6 @@ use crate::storage::SharedStorage;
 /// // but cloning forbids getting mut since `slice` and `buffer` now share data
 /// assert_eq!(buffer.get_mut_slice(), None);
 /// ```
-#[derive(Clone)]
 pub struct Buffer<T> {
     /// The internal byte buffer.
     storage: SharedStorage<T>,
@@ -47,6 +46,16 @@ pub struct Buffer<T> {
 
     // The length of the buffer.
     length: usize,
+}
+
+impl<T> Clone for Buffer<T> {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            ptr: self.ptr,
+            length: self.length,
+        }
+    }
 }
 
 unsafe impl<T: Send + Sync> Sync for Buffer<T> {}
@@ -377,5 +386,51 @@ impl<T> Splitable for Buffer<T> {
                 length: self.length - offset,
             },
         )
+    }
+}
+
+#[cfg(feature = "serde")]
+mod _serde_impl {
+    use serde::{Deserialize, Serialize};
+
+    use super::Buffer;
+
+    impl<T> Serialize for Buffer<T>
+    where
+        T: Serialize,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            <[T] as Serialize>::serialize(self.as_slice(), serializer)
+        }
+    }
+
+    impl<'de, T> Deserialize<'de> for Buffer<T>
+    where
+        T: Deserialize<'de>,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            <Vec<T> as Deserialize>::deserialize(deserializer).map(Buffer::from)
+        }
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl<T: schemars::JsonSchema> schemars::JsonSchema for Buffer<T> {
+    fn schema_name() -> String {
+        <[T] as schemars::JsonSchema>::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        <[T] as schemars::JsonSchema>::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        <[T] as schemars::JsonSchema>::json_schema(generator)
     }
 }

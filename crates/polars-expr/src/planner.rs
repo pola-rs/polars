@@ -166,12 +166,13 @@ fn create_physical_expr_inner(
 
     match expr_arena.get(expression) {
         Len => Ok(Arc::new(phys_expr::CountExpr::new())),
-        Window {
+        aexpr @ Window {
             function,
             partition_by,
             order_by,
             options,
         } => {
+            let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
             let function = *function;
             state.set_window();
             let phys_function = create_physical_expr_inner(
@@ -197,7 +198,6 @@ fn create_physical_expr_inner(
                 })
                 .transpose()?;
 
-            let function_expr = node_to_expr(function, expr_arena);
             let expr = node_to_expr(expression, expr_arena);
 
             // set again as the state can be reset
@@ -261,19 +261,19 @@ fn create_physical_expr_inner(
                         group_by,
                         order_by,
                         apply_columns,
-                        function: function_expr,
                         phys_function,
                         mapping: *mapping,
                         expr,
                         has_different_group_sources,
+                        output_field,
                     }))
                 },
                 #[cfg(feature = "dynamic_group_by")]
                 WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
-                    function: function_expr,
                     phys_function,
                     options: options.clone(),
                     expr,
+                    output_field,
                 })),
             }
         },
@@ -364,6 +364,9 @@ fn create_physical_expr_inner(
                 Context::Default if !matches!(agg, IRAggExpr::Quantile { .. }) => {
                     use {GroupByMethod as GBM, IRAggExpr as I};
 
+                    let output_field = expr_arena
+                        .get(expression)
+                        .to_field(&ToFieldContext::new(expr_arena, schema))?;
                     let groupby = match agg {
                         I::Min { propagate_nans, .. } if *propagate_nans => GBM::NanMin,
                         I::Min { .. } => GBM::Min,
@@ -395,7 +398,11 @@ fn create_physical_expr_inner(
                         allow_threading,
                     };
 
-                    Ok(Arc::new(AggregationExpr::new(input, agg_type, None)))
+                    Ok(Arc::new(AggregationExpr::new(
+                        input,
+                        agg_type,
+                        output_field,
+                    )))
                 },
                 _ => {
                     if let IRAggExpr::Quantile {
@@ -409,17 +416,25 @@ fn create_physical_expr_inner(
                         return Ok(Arc::new(AggQuantileExpr::new(input, quantile, *interpol)));
                     }
 
-                    let field = expr_arena.get(expression).to_field_with_ctx(
-                        Context::Aggregation,
-                        &ToFieldContext::new(expr_arena, schema),
-                    )?;
+                    let mut output_field = expr_arena
+                        .get(expression)
+                        .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+                    if matches!(ctxt, Context::Aggregation) && !is_scalar_ae(expression, expr_arena)
+                    {
+                        output_field.coerce(output_field.dtype.clone().implode());
+                    }
 
                     let groupby = GroupByMethod::from(agg.clone());
                     let agg_type = AggregationType {
                         groupby,
                         allow_threading: false,
                     };
-                    Ok(Arc::new(AggregationExpr::new(input, agg_type, Some(field))))
+                    Ok(Arc::new(AggregationExpr::new(
+                        input,
+                        agg_type,
+                        output_field,
+                    )))
                 },
             }
         },
@@ -471,7 +486,7 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
@@ -500,9 +515,17 @@ fn create_physical_expr_inner(
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
 
-            let output_field_with_ctx = expr_arena
+            let non_aggregated_output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let output_field_with_ctx =
+                if matches!(ctxt, Context::Aggregation) && !is_scalar_ae(expression, expr_arena) {
+                    let mut f = non_aggregated_output_field.clone();
+                    f.coerce(non_aggregated_output_field.dtype().clone().implode());
+                    f
+                } else {
+                    non_aggregated_output_field.clone()
+                };
             let non_aggregated_output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
@@ -543,7 +566,7 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
 
@@ -582,9 +605,9 @@ fn create_physical_expr_inner(
                 move |c: &mut [polars_core::frame::column::Column]| c[0].explode(skip_empty),
             ) as Arc<dyn ColumnsUdf>);
 
-            let field = expr_arena
+            let output_field = expr_arena
                 .get(expression)
-                .to_field_with_ctx(ctxt, &ToFieldContext::new(expr_arena, schema))?;
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
             Ok(Arc::new(ApplyExpr::new(
                 vec![input],
@@ -593,7 +616,7 @@ fn create_physical_expr_inner(
                 FunctionOptions::groupwise(),
                 state.allow_threading,
                 schema.clone(),
-                field,
+                output_field,
                 false,
             )))
         },

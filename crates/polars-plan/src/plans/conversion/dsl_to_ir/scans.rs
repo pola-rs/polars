@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 
+use arrow::buffer::Buffer;
 use either::Either;
 use polars_io::RowIndex;
 #[cfg(feature = "cloud")]
@@ -55,7 +56,7 @@ pub(super) fn dsl_to_ir(
             FileScanDsl::PythonDataset { .. } => {
                 // There are a lot of places that short-circuit if the paths is empty,
                 // so we just give a dummy path here.
-                ScanSources::Paths(Arc::from([PlPath::from_str("dummy")]))
+                ScanSources::Paths(Buffer::from_iter([PlPath::from_str("dummy")]))
             },
             FileScanDsl::Anonymous { .. } => sources.clone(),
         };
@@ -512,7 +513,7 @@ enum CachedSourceKey {
         schema_overwrite: Option<SchemaRef>,
     },
     CsvJson {
-        paths: Arc<[PlPath]>,
+        paths: Buffer<PlPath>,
         schema: Option<SchemaRef>,
         schema_overwrite: Option<SchemaRef>,
     },
