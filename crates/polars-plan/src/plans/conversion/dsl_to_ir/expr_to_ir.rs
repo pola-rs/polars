@@ -439,6 +439,12 @@ pub(super) fn to_aexpr_impl(
 
             match variant {
                 EvalVariant::List => {},
+                EvalVariant::Array { as_list } => {
+                    polars_ensure!(
+                        as_list || is_length_preserving_ae(evaluation, ctx.arena),
+                        InvalidOperation: "`array.eval` is not allowed with non-length preserving expressions. Enable `as_list` if you want to output a variable amount of items per row."
+                    )
+                },
                 EvalVariant::Cumulative { .. } => {
                     polars_ensure!(
                         is_scalar_ae(evaluation, ctx.arena),

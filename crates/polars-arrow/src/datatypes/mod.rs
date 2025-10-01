@@ -440,6 +440,10 @@ impl ArrowDataType {
         )
     }
 
+    pub fn to_large_list(self, is_nullable: bool) -> ArrowDataType {
+        ArrowDataType::LargeList(Box::new(Field::new(LIST_VALUES_NAME, self, is_nullable)))
+    }
+
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
         ArrowDataType::FixedSizeList(
             Box::new(Field::new(LIST_VALUES_NAME, self, is_nullable)),

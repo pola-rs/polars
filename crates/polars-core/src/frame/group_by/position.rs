@@ -691,6 +691,17 @@ impl GroupPositions {
             },
         }
     }
+
+    pub fn as_unrolled_slice(&self) -> Option<&GroupsSlice> {
+        match &*self.sliced {
+            GroupsType::Idx(_) => None,
+            GroupsType::Slice { rolling: true, .. } => None,
+            GroupsType::Slice {
+                groups,
+                rolling: false,
+            } => Some(groups),
+        }
+    }
 }
 
 fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<GroupsType> {

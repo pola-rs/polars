@@ -21,7 +21,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::is_scalar_ae;
+pub use scalar::{is_length_preserving_ae, is_scalar_ae};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 mod properties;
@@ -284,9 +284,8 @@ impl AExpr {
             },
             AExpr::Agg(_) | AExpr::Len => true,
             AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Eval { expr, variant, .. } => match variant {
-                EvalVariant::List => is_scalar_ae(*expr, arena),
-                EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
+            AExpr::Eval { expr, variant, .. } => {
+                variant.is_length_preserving() && is_scalar_ae(*expr, arena)
             },
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
@@ -296,6 +295,72 @@ impl AExpr {
             | AExpr::Column(_)
             | AExpr::Filter { .. }
             | AExpr::Slice { .. } => false,
+        }
+    }
+
+    #[recursive::recursive]
+    pub fn is_length_preserving(&self, arena: &Arena<AExpr>) -> bool {
+        fn broadcasting_input_length_preserving(
+            n: impl IntoIterator<Item = Node>,
+            arena: &Arena<AExpr>,
+        ) -> bool {
+            let mut num_items = 0;
+            let mut num_length_preserving = 0;
+            let mut num_scalar_or_length_preserving = 0;
+
+            for n in n {
+                num_items += 1;
+
+                if is_length_preserving_ae(n, arena) {
+                    num_length_preserving += 1;
+                    num_scalar_or_length_preserving += 1;
+                } else if is_scalar_ae(n, arena) {
+                    num_scalar_or_length_preserving += 1;
+                }
+            }
+
+            num_length_preserving > 0 && num_scalar_or_length_preserving == num_items
+        }
+
+        match self {
+            AExpr::Column(_) => true,
+
+            AExpr::Literal(_) | AExpr::Agg(_) | AExpr::Len => false,
+            AExpr::Function { options, input, .. }
+            | AExpr::AnonymousFunction { options, input, .. } => {
+                if options.flags.is_elementwise() {
+                    broadcasting_input_length_preserving(input.iter().map(|e| e.node()), arena)
+                } else if options.flags.is_length_preserving() {
+                    input.iter().all(|e| e.is_length_preserving(arena))
+                } else {
+                    false
+                }
+            },
+            AExpr::BinaryExpr { left, right, .. } => {
+                broadcasting_input_length_preserving([*left, *right], arena)
+            },
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => broadcasting_input_length_preserving([*predicate, *truthy, *falsy], arena),
+            AExpr::Cast { expr, .. } => is_length_preserving_ae(*expr, arena),
+            AExpr::Eval { expr, variant, .. } => {
+                variant.is_length_preserving() && is_length_preserving_ae(*expr, arena)
+            },
+            AExpr::Sort { expr, .. } => is_length_preserving_ae(*expr, arena),
+            AExpr::Gather {
+                expr: _,
+                idx,
+                returns_scalar,
+            } => !returns_scalar && is_length_preserving_ae(*idx, arena),
+            AExpr::SortBy { expr, by, .. } => broadcasting_input_length_preserving(
+                std::iter::once(*expr).chain(by.iter().copied()),
+                arena,
+            ),
+            AExpr::Window { function, .. } => is_length_preserving_ae(*function, arena),
+
+            AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
         }
     }
 }

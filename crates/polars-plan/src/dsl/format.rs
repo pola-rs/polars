@@ -178,6 +178,12 @@ impl fmt::Debug for Expr {
                 variant,
             } => match variant {
                 EvalVariant::List => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                EvalVariant::Array { as_list: false } => {
+                    write!(f, "{input:?}.array.eval({evaluation:?})")
+                },
+                EvalVariant::Array { as_list: true } => {
+                    write!(f, "{input:?}.array.eval({evaluation:?}, as_list=true)")
+                },
                 EvalVariant::Cumulative { min_samples } => write!(
                     f,
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"

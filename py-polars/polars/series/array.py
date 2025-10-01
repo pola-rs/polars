@@ -774,3 +774,28 @@ class ArrayNameSpace:
             [6, null, null]
         ]
         """
+
+    def eval(self, expr: Expr, *, as_list: bool = False) -> Series:
+        """
+        Run any polars expression against the arrays' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`
+        as_list
+            Collect the resulting data as a list. This allows for expressions which
+            output a variable amount of data.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 4], [8, 5], [3, 2]], pl.Array(pl.Int64, 2))
+        >>> s.arr.eval(pl.element().rank())
+        shape: (3,)
+        Series: 'a' [array[f64, 2]]
+        [
+            [1.0, 2.0]
+            [2.0, 1.0]
+            [2.0, 1.0]
+        ]
+        """

@@ -55,7 +55,7 @@ pub fn is_output_ordered(aexpr: &AExpr, arena: &Arena<AExpr>, frame_ordered: boo
             evaluation: _,
             variant,
         } => match variant {
-            EvalVariant::List => rec!(*expr),
+            EvalVariant::Array { as_list: _ } | EvalVariant::List => rec!(*expr),
             EvalVariant::Cumulative { min_samples: _ } => true,
         },
         AExpr::AnonymousFunction { input, options, .. }
