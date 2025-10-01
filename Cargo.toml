@@ -3,7 +3,7 @@ resolver = "2"
 members = [
   "crates/*",
   "docs/source/src/rust",
-  "py-polars",
+  "py-polars/runtime",
   "pyo3-polars/example/derive_expression/expression_lib",
   "pyo3-polars/example/extend_polars_python_dispatch/extend_polars",
   "pyo3-polars/example/io_plugin/io_plugin",
