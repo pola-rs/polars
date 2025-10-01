@@ -1438,9 +1438,7 @@ impl IRFunctionExpr {
             F::Negate => FunctionOptions::elementwise(),
             #[cfg(feature = "hist")]
             F::Hist { .. } => FunctionOptions::groupwise(),
-            F::NullCount => {
-                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
-            },
+            F::NullCount => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "row_hash")]
             F::Hash(_, _, _, _) => FunctionOptions::elementwise(),
             #[cfg(feature = "arg_where")]
@@ -1472,17 +1470,22 @@ impl IRFunctionExpr {
             F::Append { .. } => FunctionOptions::groupwise(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
-            F::DropNans => FunctionOptions::row_separable().flag(FunctionFlags::PROPAGATES_ORDER),
+            F::DropNans => {
+                FunctionOptions::row_separable().flag(FunctionFlags::NON_ORDER_PRODUCING)
+            },
             F::DropNulls => FunctionOptions::row_separable()
-                .flag(FunctionFlags::ALLOW_EMPTY_INPUTS | FunctionFlags::PROPAGATES_ORDER),
+                .flag(FunctionFlags::ALLOW_EMPTY_INPUTS | FunctionFlags::NON_ORDER_PRODUCING),
             #[cfg(feature = "mode")]
-            F::Mode => FunctionOptions::groupwise()
-                .flag(FunctionFlags::INPUT_ORDER_AGNOSTIC | FunctionFlags::OUTPUT_UNORDERED),
+            F::Mode => FunctionOptions::groupwise().flag(
+                FunctionFlags::NON_ORDER_OBSERVING
+                    | FunctionFlags::TERMINATES_INPUT_ORDER
+                    | FunctionFlags::NON_ORDER_PRODUCING,
+            ),
             #[cfg(feature = "moment")]
-            F::Skew(_) => FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC),
+            F::Skew(_) => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "moment")]
             F::Kurtosis(_, _) => {
-                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+                FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             #[cfg(feature = "dtype-array")]
             F::Reshape(_) => FunctionOptions::groupwise(),
@@ -1491,7 +1494,7 @@ impl IRFunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
-            F::Product => FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC),
+            F::Product => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::groupwise(),
             F::Repeat => {
@@ -1513,19 +1516,20 @@ impl IRFunctionExpr {
             | F::CumProd { .. }
             | F::CumMin { .. }
             | F::CumMax { .. } => FunctionOptions::length_preserving(),
-            F::Reverse => FunctionOptions::length_preserving(),
+            F::Reverse => FunctionOptions::length_preserving()
+                .with_flags(|f| f | FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "dtype-struct")]
             F::ValueCounts { sort, .. } => FunctionOptions::groupwise().with_flags(|mut f| {
                 if !sort {
-                    f |= FunctionFlags::OUTPUT_UNORDERED
+                    f |= FunctionFlags::TERMINATES_INPUT_ORDER | FunctionFlags::NON_ORDER_PRODUCING
                 }
-                f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_ORDER_AGNOSTIC
+                f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::NON_ORDER_OBSERVING
             }),
             #[cfg(feature = "unique_counts")]
             F::UniqueCounts => FunctionOptions::groupwise(),
             #[cfg(feature = "approx_unique")]
             F::ApproxNUnique => {
-                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+                FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             F::Coalesce => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
@@ -1544,13 +1548,15 @@ impl IRFunctionExpr {
             F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
             F::Entropy { .. } => {
-                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+                FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             F::Unique(maintain_order) => FunctionOptions::groupwise().with_flags(|f| {
-                if *maintain_order {
-                    f | FunctionFlags::PROPAGATES_ORDER
+                let f = f | FunctionFlags::NON_ORDER_PRODUCING;
+
+                if !*maintain_order {
+                    f | FunctionFlags::NON_ORDER_OBSERVING | FunctionFlags::TERMINATES_INPUT_ORDER
                 } else {
-                    f | FunctionFlags::INPUT_ORDER_AGNOSTIC | FunctionFlags::OUTPUT_UNORDERED
+                    f
                 }
             }),
             #[cfg(feature = "round_series")]
@@ -1558,7 +1564,7 @@ impl IRFunctionExpr {
                 FunctionOptions::elementwise()
             },
             F::UpperBound | F::LowerBound => {
-                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+                FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             #[cfg(feature = "fused")]
             F::Fused(_) => FunctionOptions::elementwise(),
