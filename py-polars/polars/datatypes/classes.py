@@ -773,6 +773,12 @@ class Categories:
     def __eq__(self, other: object) -> bool:
         return isinstance(other, Categories) and self._categories == other._categories
 
+    def __getstate__(self) -> tuple[str, str, pldt.UnsignedIntegerType]:
+        return self.name(), self.namespace(), self.physical()
+
+    def __setstate__(self, state: tuple[str, str, pldt.UnsignedIntegerType]) -> None:
+        self.__dict__ = Categories(*state).__dict__
+
 
 class Categorical(DataType):
     """
