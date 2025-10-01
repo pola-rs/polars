@@ -197,4 +197,10 @@ impl ArrayNameSpace {
                 skip_empty: false,
             }))
     }
+
+    /// Horizontally concatenate columns into a single array column
+    pub fn concat(self, input: Vec<Expr>) -> Expr {
+        self.0
+            .map_n_ary(FunctionExpr::ArrayExpr(ArrayFunction::Concat), input)
+    }
 }
