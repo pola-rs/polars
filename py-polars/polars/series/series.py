@@ -3173,6 +3173,18 @@ class Series:
                 1
                 3
         ]
+
+        Filter based on a predicate:
+        
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.filter(s==2)
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+                2
+        ]
+
+        
         """
         if not isinstance(predicate, Series):
             predicate = Series("", predicate)
