@@ -141,4 +141,4 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     if driver_name in ("duckdb", "snowflake", "sqlite"):
         connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
 
-    return adbc_driver.connect(connection_uri)
+    return adbc_driver.connect(connection_uri, autocommit=True)

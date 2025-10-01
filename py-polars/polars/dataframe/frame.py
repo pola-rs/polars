@@ -4402,7 +4402,6 @@ class DataFrame:
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()
             return n_rows
 
         elif engine == "sqlalchemy":
