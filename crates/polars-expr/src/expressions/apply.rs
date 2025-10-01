@@ -120,24 +120,6 @@ impl ApplyExpr {
             );
         }
 
-        let name = s.name().clone();
-        let agg = match ac.agg_state() {
-            AggState::AggregatedScalar(_) => s.as_list().into_column(),
-            _ => ac.aggregated(),
-        };
-
-        // Collection of empty list leads to a null dtype. See: #3687.
-        if agg.is_empty() {
-            // Create input for the function to determine the output dtype, see #3946.
-            let agg = agg.list().unwrap();
-            let input_dtype = agg.inner_dtype();
-            let input = Column::full_null(name.clone(), 0, input_dtype);
-
-            let output = self.eval_and_flatten(&mut [input])?;
-            let ca = ListChunked::full(name, output.as_materialized_series(), 0);
-            return self.finish_apply_groups(ac, ca);
-        }
-
         let f = |opt_s: Option<Series>| match opt_s {
             None => Ok(None),
             Some(mut s) => {
@@ -169,7 +151,10 @@ impl ApplyExpr {
         }
 
         // At this point, calling aggregated() will not lead to memory explosion.
-        let agg = ac.aggregated();
+        let agg = match ac.agg_state() {
+            AggState::AggregatedScalar(_) => s.as_list().into_column(),
+            _ => ac.aggregated(),
+        };
 
         // Collection of empty list leads to a null dtype. See: #3687.
         if agg.is_empty() {
