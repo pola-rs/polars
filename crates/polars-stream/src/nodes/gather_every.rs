@@ -58,7 +58,7 @@ impl ComputeNode for GatherEveryNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
                 let height = morsel.df().height();
-                if self.offset > height {
+                if self.offset >= height {
                     self.offset -= height;
                     continue;
                 }
@@ -67,6 +67,7 @@ impl ComputeNode for GatherEveryNode {
                     break;
                 }
 
+                // Calculates `offset = (offset - height) mod n` without under- and overflow.
                 self.offset += height.next_multiple_of(self.n) - height;
                 self.offset %= self.n;
             }
