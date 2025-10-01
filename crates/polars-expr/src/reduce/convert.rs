@@ -8,7 +8,7 @@ use crate::reduce::any_all::{new_all_reduction, new_any_reduction};
 use crate::reduce::bitwise::{
     new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
 };
-use crate::reduce::count::CountReduce;
+use crate::reduce::count::{CountReduce, NullCountReduce};
 use crate::reduce::first_last::{new_first_reduction, new_last_reduction};
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
@@ -81,6 +81,18 @@ pub fn into_reduction(
                 (out, expr)
             }
         },
+
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::NullCount,
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let count = Box::new(NullCountReduce::new()) as Box<_>;
+            (count, input)
+        },
+
         #[cfg(feature = "bitwise")]
         AExpr::Function {
             input: inner_exprs,
