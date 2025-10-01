@@ -89,7 +89,7 @@ jobs:
       - name: Install Polars
         run: |
           uv pip install --no-deps -e .
-          maturin develop
+          maturin develop --manifest-path runtime
 
       - name: Run doctests
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
