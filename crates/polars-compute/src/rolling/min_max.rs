@@ -105,7 +105,9 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMax
     }
 }
 
-impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<'a, T> for MinMaxWindow<'a, T, P> {
+impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<'a, T, T>
+    for MinMaxWindow<'a, T, P>
+{
     fn new(
         slice: &'a [T],
         start: usize,
