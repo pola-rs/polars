@@ -87,7 +87,9 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Polars
-        run: make build
+        run: |
+          uv pip install --no-deps -e py-polars
+          maturin develop
 
       - name: Run doctests
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
