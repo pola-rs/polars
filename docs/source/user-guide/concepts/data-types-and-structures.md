@@ -163,6 +163,39 @@ inference:
 --8<-- "python/user-guide/concepts/data-types-and-structures.py:schema_overrides"
 ```
 
+### Inspecting a Schema/DataType and TypeGuards
+
+Most datatypes can be specified entirely by their name. For instance a Float64 is always just a
+Float64. However other datatypes, such as Arrays, Lists, and others can be unique such that one List
+isn't the same as another List. The classes for those datatypes have attributes and methods that
+distinguish them from other datatypes of the same name. If you are inspecting a DataFrame's schema,
+the type system won't know what methods the resulting datatypes should have unless you use a
+TypeGuard which is provided.
+
+Suppose we have this DataFrame:
+
+```python
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:typeguard-def"
+```
+
+If we want to print all the internal fields of all the struct columns then we need to check each
+column of the schema. The Datatype `Struct` has an attribute called `fields` which will tell us its
+fields but none of the other DataTypes have that attribute. If we just do:
+
+```python exec="off" result="text" session="user-guide/data-types-and-structures"
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:typeguard-no"
+```
+
+Then the, at runtime, it will work but the type checker will complain that it can not access
+attribute `fields` as it is unknown. Instead we can use the TypeGuard checks:
+
+```python exec="off" result="text" session="user-guide/data-types-and-structures"
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:typeguard-yes"
+```
+
+which will give the same result but when `is_struct` is `True` it tells the type checker that `d`'s
+type should be `Struct` and it won't complain about the unknown field.
+
 ## Data types internals
 
 Polars utilizes the [Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) for

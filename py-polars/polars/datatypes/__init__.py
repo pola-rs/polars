@@ -60,6 +60,17 @@ from polars.datatypes.convert import (
     supported_numpy_char_code,
     unpack_dtypes,
 )
+from polars.datatypes.typeguards import (
+    is_array,
+    is_categorical,
+    is_datetime,
+    is_decimal,
+    is_duration,
+    is_enum,
+    is_list,
+    is_struct,
+    is_time,
+)
 
 __all__ = [
     # classes
@@ -119,4 +130,14 @@ __all__ = [
     "parse_into_dtype",
     "parse_into_datatype_expr",
     "try_parse_into_dtype",
+    # typeguards
+    "is_struct",
+    "is_array",
+    "is_list",
+    "is_decimal",
+    "is_time",
+    "is_datetime",
+    "is_duration",
+    "is_categorical",
+    "is_enum",
 ]
