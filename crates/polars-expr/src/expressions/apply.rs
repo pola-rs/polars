@@ -103,14 +103,11 @@ impl ApplyExpr {
     fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
         self.function.call_udf(inputs)
     }
+
     fn apply_single_group_aware<'a>(
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        dbg!("start apply_single_group_aware"); //kdn
-        dbg!(&self.expr);
-        // dbg!(&ac);
-
         let s = ac.get_values();
         let name = s.name().clone();
 
@@ -157,7 +154,8 @@ impl ApplyExpr {
 
         // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
         // memory explosion.
-        // kdn TODO: TBD - do we want to follow this path for *all* Slice groupstype?
+        // TODO: add parallel iterator path, and use this path for up to all NotAggregated
+        // states, pending benchmarking
         if matches!(ac.agg_state(), AggState::NotAggregated(_))
             && let GroupsType::Slice { rolling: true, .. } = ac.groups.as_ref().as_ref()
         {
@@ -170,7 +168,7 @@ impl ApplyExpr {
             return self.finish_apply_groups(ac, ca.with_name(name));
         }
 
-        // At this point, calling aggregated will not lead to memory explosion.
+        // At this point, calling aggregated() will not lead to memory explosion.
         let agg = ac.aggregated();
 
         // Collection of empty list leads to a null dtype. See: #3687.
