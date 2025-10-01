@@ -8,7 +8,6 @@ mod binary;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod boolean;
-mod bounds;
 #[cfg(feature = "business")]
 mod business;
 #[cfg(feature = "dtype-categorical")]
@@ -299,8 +298,6 @@ pub enum IRFunctionExpr {
     Floor,
     #[cfg(feature = "round_series")]
     Ceil,
-    UpperBound,
-    LowerBound,
     #[cfg(feature = "fused")]
     Fused(fused::FusedOperator),
     ConcatExpr(bool),
@@ -633,8 +630,6 @@ impl Hash for IRFunctionExpr {
             IRFunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
-            UpperBound => {},
-            LowerBound => {},
             ConcatExpr(a) => a.hash(state),
             #[cfg(feature = "peaks")]
             PeakMin => {},
@@ -859,8 +854,6 @@ impl Display for IRFunctionExpr {
             Floor => "floor",
             #[cfg(feature = "round_series")]
             Ceil => "ceil",
-            UpperBound => "upper_bound",
-            LowerBound => "lower_bound",
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
             ConcatExpr(_) => "concat_expr",
@@ -1244,8 +1237,6 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Floor => map!(round::floor),
             #[cfg(feature = "round_series")]
             Ceil => map!(round::ceil),
-            UpperBound => map!(bounds::upper_bound),
-            LowerBound => map!(bounds::lower_bound),
             #[cfg(feature = "fused")]
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
@@ -1562,9 +1553,6 @@ impl IRFunctionExpr {
             #[cfg(feature = "round_series")]
             F::Round { .. } | F::RoundSF { .. } | F::Floor | F::Ceil => {
                 FunctionOptions::elementwise()
-            },
-            F::UpperBound | F::LowerBound => {
-                FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             #[cfg(feature = "fused")]
             F::Fused(_) => FunctionOptions::elementwise(),

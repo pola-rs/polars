@@ -1272,8 +1272,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
                 IRFunctionExpr::Ceil => ("ceil",).into_py_any(py),
-                IRFunctionExpr::UpperBound => ("upper_bound",).into_py_any(py),
-                IRFunctionExpr::LowerBound => ("lower_bound",).into_py_any(py),
                 IRFunctionExpr::Fused(_) => return Err(PyNotImplementedError::new_err("fused")),
                 IRFunctionExpr::ConcatExpr(_) => {
                     return Err(PyNotImplementedError::new_err("concat expr"));
