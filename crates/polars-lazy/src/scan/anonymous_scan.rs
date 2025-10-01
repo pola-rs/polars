@@ -61,6 +61,7 @@ impl LazyFrame {
                 include_file_paths: None,
                 deletion_files: None,
                 table_statistics: None,
+                row_count: None,
             },
         )?
         .build()
