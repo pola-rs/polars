@@ -131,7 +131,7 @@ jobs:
         run: cargo llvm-cov clean --workspace
 
       - name: Install Polars
-        run: make build
+        run: maturin develop --manifest-path py-polars/runtime/Cargo.toml
 
       - name: Run Python tests
         working-directory: py-polars
