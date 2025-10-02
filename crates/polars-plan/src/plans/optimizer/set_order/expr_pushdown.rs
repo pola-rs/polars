@@ -89,10 +89,10 @@ pub fn adjust_for_with_columns_context(
     order?.zip_with(ExprOutputOrder::Frame)
 }
 
-/// Determine whether the output observes the order of the expressions input frame.
+/// Returns the observable orderings in the output of this `AExpr`.
 ///
-/// This answers the question:
-/// > Given that my output is (un)ordered, can my input be unordered?
+/// If within the expression tree an expression observes a `Frame` ordering, this instead returns
+/// `Err(FrameOrderObserved)`.
 pub fn get_observable_orders(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
