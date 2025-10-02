@@ -7,14 +7,15 @@
 //! > https://doi.org/10.1017/S0956796811000104
 
 use std::cmp::Ordering;
-use std::f64;
 use std::fmt::Debug;
-use std::ops::Bound;
 
 use slotmap::{Key as SlotMapKey, SlotMap, new_key_type};
 
-const DELTA: f64 = 1.0 + f64::consts::SQRT_2;
-const GAMMA: f64 = f64::consts::SQRT_2;
+// Balance parameters suggested by https://doi.org/10.1137/1.9781611976007.13
+const DELTA: usize = 3;
+const GAMMA: usize = 2;
+
+type CompareFn<T> = fn(&T, &T) -> Ordering;
 
 new_key_type! {
     struct Key;
@@ -29,22 +30,18 @@ struct Node<T> {
     unique_weight: usize,
 }
 
-pub struct OrderStatisticTree<'a, T, CMP>
-where
-    CMP: Fn(&T, &T) -> Ordering,
-{
+pub struct OrderStatisticTree<T> {
     arena: SlotMap<Key, Node<T>>,
     root: Key,
-    compare: &'a CMP,
+    compare: CompareFn<T>,
 }
 
-impl<'a, T, CMP> std::fmt::Debug for OrderStatisticTree<'a, T, CMP>
+impl<'a, T> std::fmt::Debug for OrderStatisticTree<T>
 where
     T: std::fmt::Debug,
-    CMP: Fn(&T, &T) -> Ordering,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "BinarySearchTree {{")?;
+        writeln!(f, "OrderStatisticTree {{")?;
         writeln!(f, "  root: {:?}", self.root)?;
         for (k, v) in self.arena.iter() {
             writeln!(f, "  key: {:?}, value: {:?}", k, v)?;
@@ -53,11 +50,9 @@ where
     }
 }
 
-impl<'a, T: Debug + Default, CMP> OrderStatisticTree<'a, T, CMP>
-where
-    CMP: Fn(&T, &T) -> Ordering,
-{
-    pub fn new(compare: &'a CMP) -> Self {
+impl<'a, T: Debug> OrderStatisticTree<T> {
+    #[inline]
+    pub fn new(compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             arena: SlotMap::<Key, Node<T>>::with_key(),
             root: Key::null(),
@@ -65,7 +60,8 @@ where
         }
     }
 
-    pub fn with_capacity(capacity: usize, compare: &'a CMP) -> Self {
+    #[inline]
+    pub fn with_capacity(capacity: usize, compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             arena: SlotMap::<Key, Node<T>>::with_capacity_and_key(capacity),
             root: Key::null(),
@@ -73,14 +69,17 @@ where
         }
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
-        self.count() == 0
+        self.len() == 0
     }
 
-    pub fn count(&self) -> usize {
+    #[inline]
+    pub fn len(&self) -> usize {
         self.weight(self.root)
     }
 
+    #[inline]
     pub fn unique_count(&self) -> usize {
         self.unique_weight(self.root)
     }
@@ -93,17 +92,17 @@ where
         if tree.is_null() {
             return 0;
         }
-        self.arena[tree].weight
+        unsafe { self.arena.get_unchecked(tree) }.weight
     }
 
     fn unique_weight(&self, tree: Key) -> usize {
         if tree.is_null() {
             return 0;
         }
-        self.arena[tree].unique_weight
+        unsafe { self.arena.get_unchecked(tree) }.unique_weight
     }
 
-    fn node(&mut self, left: Key, value: T, right: Key) -> Key {
+    fn new_node(&mut self, left: Key, value: T, right: Key) -> Key {
         let weight = self.weight(left) + 1 + self.weight(right);
         let leftmax = self.maximum(left);
         let rightmin = self.minimum(right);
@@ -126,15 +125,15 @@ where
         self.arena.insert(n)
     }
 
-    fn leaf(&mut self, value: T) -> Key {
-        self.node(Key::null(), value, Key::null())
+    fn new_leaf(&mut self, value: T) -> Key {
+        self.new_node(Key::null(), value, Key::null())
     }
 
     fn minimum(&self, tree: Key) -> Option<&T> {
         if tree.is_null() {
             return None;
         }
-        let n = &self.arena[tree];
+        let n = unsafe { self.arena.get_unchecked(tree) };
         if n.left.is_null() {
             return Some(&n.value);
         }
@@ -145,53 +144,55 @@ where
         if tree.is_null() {
             return None;
         }
-        let n = &self.arena[tree];
+        let n = unsafe { self.arena.get_unchecked(tree) };
         if n.right.is_null() {
             return Some(&n.value);
         }
         self.maximum(n.right)
     }
 
+    #[inline]
     pub fn insert(&mut self, value: T) {
-        self.root = self._insert(value, self.root);
+        self.root = self.insert_inner(value, self.root);
     }
 
-    fn _insert(&mut self, value: T, tree: Key) -> Key {
+    fn insert_inner(&mut self, value: T, tree: Key) -> Key {
         if tree.is_null() {
-            return self.leaf(value);
+            return self.new_leaf(value);
         }
 
-        let n = self.arena.remove(tree).unwrap();
+        let n = unsafe { self.arena.remove(tree).unwrap_unchecked() };
         match (self.compare)(&value, &n.value) {
             Ordering::Less => {
-                let left = self._insert(value, n.left);
+                let left = self.insert_inner(value, n.left);
                 self.balance_r(left, n.value, n.right)
             },
             _ => {
-                let right = self._insert(value, n.right);
+                let right = self.insert_inner(value, n.right);
                 self.balance_l(n.left, n.value, right)
             },
         }
     }
 
+    #[inline]
     pub fn remove(&mut self, value: &T) -> Option<T> {
         let deleted;
-        (deleted, self.root) = self._remove(value, self.root);
+        (deleted, self.root) = self.remove_inner(value, self.root);
         deleted
     }
 
-    fn _remove(&mut self, value: &T, tree: Key) -> (Option<T>, Key) {
+    fn remove_inner(&mut self, value: &T, tree: Key) -> (Option<T>, Key) {
         if tree.is_null() {
             return (None, tree);
         }
-        let n = self.arena.remove(tree).unwrap();
+        let n = unsafe { self.arena.remove(tree).unwrap_unchecked() };
         match (self.compare)(&value, &n.value) {
             Ordering::Less => {
-                let (deleted, left) = self._remove(value, n.left);
+                let (deleted, left) = self.remove_inner(value, n.left);
                 (deleted, self.balance_l(left, n.value, n.right))
             },
             Ordering::Greater => {
-                let (deleted, right) = self._remove(value, n.right);
+                let (deleted, right) = self.remove_inner(value, n.right);
                 (deleted, self.balance_r(n.left, n.value, right))
             },
             Ordering::Equal => (Some(n.value), self.glue(n.left, n.right)),
@@ -205,10 +206,10 @@ where
             return left;
         } else if self.weight(left) > self.weight(right) {
             let (deleted, left) = self.remove_max(left);
-            self.balance_r(left, deleted.unwrap(), right)
+            self.balance_r(left, unsafe { deleted.unwrap_unchecked() }, right)
         } else {
             let (deleted, right) = self.remove_min(right);
-            self.balance_l(left, deleted.unwrap(), right)
+            self.balance_l(left, unsafe { deleted.unwrap_unchecked() }, right)
         }
     }
 
@@ -216,7 +217,7 @@ where
         if tree.is_null() {
             return (None, tree);
         }
-        let n = self.arena.remove(tree).unwrap();
+        let n = unsafe { self.arena.remove(tree).unwrap_unchecked() };
         if n.left.is_null() {
             return (Some(n.value), n.right);
         }
@@ -228,7 +229,7 @@ where
         if tree.is_null() {
             return (None, tree);
         }
-        let n = self.arena.remove(tree).unwrap();
+        let n = unsafe { self.arena.remove(tree).unwrap_unchecked() };
         if n.right.is_null() {
             return (Some(n.value), n.left);
         }
@@ -236,6 +237,7 @@ where
         (deleted, self.balance_r(n.left, n.value, right))
     }
 
+    #[inline]
     pub fn contains(&self, value: &T) -> bool {
         self._contains(value, self.root)
     }
@@ -244,7 +246,7 @@ where
         if tree.is_null() {
             return false;
         }
-        let n = &self.arena[tree];
+        let n = unsafe { self.arena.get_unchecked(tree) };
         match (self.compare)(value, &n.value) {
             Ordering::Less => self._contains(value, n.left),
             Ordering::Equal => true,
@@ -254,13 +256,13 @@ where
 
     fn balance_l(&mut self, left: Key, value: T, right: Key) -> Key {
         if self.pair_is_balanced(left, right) {
-            return self.node(left, value, right);
+            return self.new_node(left, value, right);
         }
         self.rotate_l(left, value, right)
     }
 
     fn rotate_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = &self.arena[right];
+        let r = unsafe { self.arena.get_unchecked(right) };
         if self.is_single(r.left, r.right) {
             self.single_l(left, value, right)
         } else {
@@ -269,28 +271,28 @@ where
     }
 
     fn single_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = self.arena.remove(right).unwrap();
-        let new_left = self.node(left, value, r.left);
-        self.node(new_left, r.value, r.right)
+        let r = unsafe { self.arena.remove(right).unwrap_unchecked() };
+        let new_left = self.new_node(left, value, r.left);
+        self.new_node(new_left, r.value, r.right)
     }
 
     fn double_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = self.arena.remove(right).unwrap();
-        let rl = self.arena.remove(r.left).unwrap();
-        let new_left = self.node(left, value, rl.left);
-        let new_right = self.node(rl.right, r.value, r.right);
-        self.node(new_left, rl.value, new_right)
+        let r = unsafe { self.arena.remove(right).unwrap_unchecked() };
+        let rl = unsafe { self.arena.remove(r.left).unwrap_unchecked() };
+        let new_left = self.new_node(left, value, rl.left);
+        let new_right = self.new_node(rl.right, r.value, r.right);
+        self.new_node(new_left, rl.value, new_right)
     }
 
     fn balance_r(&mut self, left: Key, value: T, right: Key) -> Key {
         if self.pair_is_balanced(right, left) {
-            return self.node(left, value, right);
+            return self.new_node(left, value, right);
         }
         self.rotate_r(left, value, right)
     }
 
     fn rotate_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = &self.arena[left];
+        let l = unsafe { self.arena.get_unchecked(left) };
         if self.is_single(l.right, l.left) {
             self.single_r(left, value, right)
         } else {
@@ -299,17 +301,17 @@ where
     }
 
     fn single_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = self.arena.remove(left).unwrap();
-        let new_right = self.node(l.right, value, right);
-        self.node(l.left, l.value, new_right)
+        let l = unsafe { self.arena.remove(left).unwrap_unchecked() };
+        let new_right = self.new_node(l.right, value, right);
+        self.new_node(l.left, l.value, new_right)
     }
 
     fn double_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = self.arena.remove(left).unwrap();
-        let lr = self.arena.remove(l.right).unwrap();
-        let new_right = self.node(lr.right, value, right);
-        let new_left = self.node(l.left, l.value, lr.left);
-        self.node(new_left, lr.value, new_right)
+        let l = unsafe { self.arena.remove(left).unwrap_unchecked() };
+        let lr = unsafe { self.arena.remove(l.right).unwrap_unchecked() };
+        let new_right = self.new_node(lr.right, value, right);
+        let new_left = self.new_node(l.left, l.value, lr.left);
+        self.new_node(new_left, lr.value, new_right)
     }
 
     #[doc(hidden)]
@@ -321,7 +323,7 @@ where
         if tree.is_null() {
             return true;
         }
-        let n = &self.arena[tree];
+        let n = unsafe { self.arena.get_unchecked(tree) };
         self.pair_is_balanced(n.left, n.right)
             && self.pair_is_balanced(n.right, n.left)
             && self.tree_is_balanced(n.left)
@@ -329,67 +331,49 @@ where
     }
 
     fn pair_is_balanced(&self, left: Key, right: Key) -> bool {
-        let a = self.weight(left) as f64;
-        let b = self.weight(right) as f64;
-        f64::abs((DELTA * (a + 1.0)) - (b + 1.0)) >= 0.0
+        let a = self.weight(left);
+        let b = self.weight(right);
+        DELTA * (a + 1) >= (b + 1) && DELTA * (b + 1) >= (a + 1)
     }
 
     fn is_single(&self, left: Key, right: Key) -> bool {
-        let a = self.weight(left) as f64;
-        let b = self.weight(right) as f64;
-        f64::abs((GAMMA * (b + 1.0)) - (a + 1.0)) > 0.0
+        let a = self.weight(left);
+        let b = self.weight(right);
+        a + 1 < GAMMA * (b + 1)
     }
 
-    pub fn rank_lower(&self, bound: Bound<&T>) -> Result<usize, usize> {
-        let bound_inner = match &bound {
-            Bound::Included(b) => b,
-            Bound::Excluded(b) => b,
-            Bound::Unbounded => return Err(1),
-        };
-        let rank = self._rank_lower(bound_inner, self.root);
-        match bound {
-            Bound::Excluded(_) => rank.map(|x| x - 1),
-            Bound::Included(_) => rank,
-            Bound::Unbounded => unreachable!(),
-        }
+    #[inline]
+    pub fn rank_lower(&self, bound: &T) -> Result<usize, usize> {
+        self.rank_lower_inner(bound, self.root)
     }
 
-    fn _rank_lower(&self, value: &T, tree: Key) -> Result<usize, usize> {
+    fn rank_lower_inner(&self, value: &T, tree: Key) -> Result<usize, usize> {
         if tree.is_null() {
             return Err(1);
         }
-        let n = &self.arena[tree];
+        let n = unsafe { self.arena.get_unchecked(tree) };
         match (self.compare)(value, &n.value) {
-            Ordering::Less => self._rank_lower(value, n.left),
+            Ordering::Less => self.rank_lower_inner(value, n.left),
             Ordering::Equal => self
-                ._rank_lower(value, n.left)
+                .rank_lower_inner(value, n.left)
                 .or(Ok(self.weight(n.left) + 1)),
             Ordering::Greater => self
-                ._rank_lower(value, n.right)
+                .rank_lower_inner(value, n.right)
                 .map(|rank| self.weight(n.left) + 1 + rank)
                 .map_err(|rank| self.weight(n.left) + 1 + rank),
         }
     }
 
-    pub fn rank_upper(&self, bound: Bound<&T>) -> Result<usize, usize> {
-        let bound_inner = match &bound {
-            Bound::Included(b) => b,
-            Bound::Excluded(b) => b,
-            Bound::Unbounded => return Err(self.count() + 1),
-        };
-        let rank = self._rank_upper(bound_inner, self.root);
-        match bound {
-            Bound::Excluded(_) => rank.map(|x| x + 1),
-            Bound::Included(_) => rank,
-            Bound::Unbounded => unreachable!(),
-        }
+    #[inline]
+    pub fn rank_upper(&self, bound: &T) -> Result<usize, usize> {
+        self._rank_upper(bound, self.root)
     }
 
     fn _rank_upper(&self, value: &T, tree: Key) -> Result<usize, usize> {
         if tree.is_null() {
             return Err(self.weight(tree) + 1);
         }
-        let n = &self.arena[tree];
+        let n = unsafe { self.arena.get_unchecked(tree) };
         match (self.compare)(value, &n.value) {
             Ordering::Less => self._rank_upper(value, n.left),
             Ordering::Equal => self
@@ -404,28 +388,29 @@ where
         }
     }
 
-    pub fn unique_rank(&self, value: &T) -> Result<usize, usize> {
-        self._unique_rank(value, self.root)
+    #[inline]
+    pub fn rank_unique(&self, value: &T) -> Result<usize, usize> {
+        self.rank_unique_inner(value, self.root)
     }
 
-    fn _unique_rank(&self, value: &T, tree: Key) -> Result<usize, usize> {
+    fn rank_unique_inner(&self, value: &T, tree: Key) -> Result<usize, usize> {
         if tree.is_null() {
             return Err(1);
         }
-        let n = &self.arena[tree];
+        let n = unsafe { self.arena.get_unchecked(tree) };
         match (self.compare)(value, &n.value) {
-            Ordering::Less => self._unique_rank(value, n.left),
+            Ordering::Less => self.rank_unique_inner(value, n.left),
             Ordering::Equal if self._contains(value, n.left) => Ok(self.unique_weight(n.left)),
             Ordering::Equal => Ok(self.unique_weight(n.left) + 1),
             Ordering::Greater => self
-                ._unique_rank(value, n.right)
+                .rank_unique_inner(value, n.right)
                 .map(|rank| self.unique_weight(tree) - self.unique_weight(n.right) + rank)
                 .map_err(|rank| self.unique_weight(tree) - self.unique_weight(n.right) + rank),
         }
     }
 
-    pub fn iter(&'a self) -> Iter<'a, T, CMP> {
-        let capacity = usize::ilog2(self.count() + 1) as usize;
+    pub fn iter(&'a self) -> Iter<'a, T> {
+        let capacity = usize::ilog2(self.len() + 1) as usize;
         let mut stack = Vec::with_capacity(capacity);
         stack.push(IterStackFrame {
             tree: self.root,
@@ -448,12 +433,12 @@ struct IterStackFrame {
     state: IterNodeState,
 }
 
-pub struct Iter<'a, T, CMP: Fn(&T, &T) -> Ordering> {
-    tree: &'a OrderStatisticTree<'a, T, CMP>,
+pub struct Iter<'a, T> {
+    tree: &'a OrderStatisticTree<T>,
     stack: Vec<IterStackFrame>,
 }
 
-impl<'a, T: Debug, CMP: Fn(&T, &T) -> Ordering> Iterator for Iter<'a, T, CMP> {
+impl<'a, T: Debug> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -515,16 +500,16 @@ mod test {
     }
 
     fn test_insert_inner(items: Vec<i32>) -> Result<(), TestCaseError> {
-        let mut ost = OrderStatisticTree::new(&i32::cmp);
+        let mut ost = OrderStatisticTree::new(i32::cmp);
         for item in &items {
             ost.insert(*item);
             assert!(ost.is_balanced());
         }
-        assert_eq!(ost.count(), items.len());
+        assert_eq!(ost.len(), items.len());
         let mut sorted_items = items.clone();
         sorted_items.sort();
         let collected_items: Vec<_> = ost.iter().cloned().collect();
-        assert_eq!(ost.count(), items.len());
+        assert_eq!(ost.len(), items.len());
         assert_eq!(&collected_items, &sorted_items);
         Ok(())
     }
@@ -542,7 +527,7 @@ mod test {
 
     fn test_remove_inner(input: (Vec<i32>, Vec<i32>)) -> Result<(), TestCaseError> {
         let (mut items, to_remove) = input;
-        let mut ost = OrderStatisticTree::new(&i32::cmp);
+        let mut ost = OrderStatisticTree::new(i32::cmp);
         for item in &items {
             ost.insert(*item);
             assert!(ost.is_balanced());
@@ -556,9 +541,9 @@ mod test {
             if let Ok(idx) = idx {
                 items.remove(idx);
             }
-            assert_eq!(ost.count(), items.len());
+            assert_eq!(ost.len(), items.len());
         }
-        assert_eq!(ost.count(), items.len());
+        assert_eq!(ost.len(), items.len());
         for item in 0..100 {
             assert_eq!(ost.contains(&item), items.contains(&item));
         }
@@ -574,37 +559,27 @@ mod test {
     }
 
     fn test_rank_inner(mut items: Vec<i32>) -> Result<(), TestCaseError> {
-        let mut ost = OrderStatisticTree::new(&i32::cmp);
+        let mut ost = OrderStatisticTree::new(i32::cmp);
         for item in &items {
             ost.insert(*item);
         }
         items.sort();
         for item in 0..100 {
-            let rank_lower_inc = ost.rank_lower(Bound::Included(&item));
-            let rank_lower_exc = ost.rank_lower(Bound::Excluded(&item));
-            let rank_upper_inc = ost.rank_upper(Bound::Included(&item));
-            let rank_upper_exc = ost.rank_upper(Bound::Excluded(&item));
+            let rank_lower = ost.rank_lower(&item);
+            let rank_upper = ost.rank_upper(&item);
 
-            let expected_rank_lower_inc;
-            let expected_rank_lower_exc;
-            let expected_rank_upper_inc;
-            let expected_rank_upper_exc;
+            let expected_rank_lower;
+            let expected_rank_upper;
             if items.contains(&item) {
-                expected_rank_lower_inc = Ok(items.iter().filter(|&x| *x < item).count() + 1);
-                expected_rank_lower_exc = Ok(items.iter().filter(|&x| *x < item).count());
-                expected_rank_upper_inc = Ok(items.iter().filter(|&x| *x <= item).count());
-                expected_rank_upper_exc = Ok(items.iter().filter(|&x| *x <= item).count() + 1);
+                expected_rank_lower = Ok(items.iter().filter(|&x| *x < item).count() + 1);
+                expected_rank_upper = Ok(items.iter().filter(|&x| *x <= item).count());
             } else {
-                expected_rank_lower_inc = Err(items.iter().filter(|&x| *x < item).count() + 1);
-                expected_rank_lower_exc = expected_rank_lower_inc;
-                expected_rank_upper_inc = Err(items.iter().filter(|&x| *x <= item).count() + 1);
-                expected_rank_upper_exc = expected_rank_upper_inc;
+                expected_rank_lower = Err(items.iter().filter(|&x| *x < item).count() + 1);
+                expected_rank_upper = Err(items.iter().filter(|&x| *x <= item).count() + 1);
             }
 
-            assert_eq!(rank_lower_inc, expected_rank_lower_inc);
-            assert_eq!(rank_lower_exc, expected_rank_lower_exc);
-            assert_eq!(rank_upper_inc, expected_rank_upper_inc);
-            assert_eq!(rank_upper_exc, expected_rank_upper_exc);
+            assert_eq!(rank_lower, expected_rank_lower);
+            assert_eq!(rank_upper, expected_rank_upper);
         }
         Ok(())
     }
@@ -618,16 +593,16 @@ mod test {
     }
 
     fn test_unique_rank_inner(mut items: Vec<i32>) -> Result<(), TestCaseError> {
-        let mut ost = OrderStatisticTree::new(&i32::cmp);
+        let mut ost = OrderStatisticTree::new(i32::cmp);
         for item in &items {
             ost.insert(*item);
         }
-        assert_eq!(ost.count(), items.len());
+        assert_eq!(ost.len(), items.len());
         items.sort();
         items.dedup();
         assert_eq!(ost.unique_count(), items.len());
         for item in 0..50 {
-            let unique_rank = ost.unique_rank(&item);
+            let unique_rank = ost.rank_unique(&item);
             let expected_unique_rank = if items.contains(&item) {
                 Ok(items.iter().filter(|&x| *x < item).count() + 1)
             } else {
@@ -640,17 +615,15 @@ mod test {
 
     #[test]
     fn test_empty() {
-        let ost = OrderStatisticTree::<i32, _>::new(&i32::cmp);
+        let ost = OrderStatisticTree::<i32>::new(i32::cmp);
         assert!(ost.is_empty());
-        assert_eq!(ost.count(), 0);
+        assert_eq!(ost.len(), 0);
         assert_eq!(ost.unique_count(), 0);
         assert!(ost.is_balanced());
         assert!(!ost.contains(&1));
-        assert_eq!(ost.rank_lower(Bound::Included(&1)), Err(1));
-        assert_eq!(ost.rank_lower(Bound::Excluded(&1)), Err(1));
-        assert_eq!(ost.rank_upper(Bound::Included(&1)), Err(1));
-        assert_eq!(ost.rank_upper(Bound::Excluded(&1)), Err(1));
-        assert_eq!(ost.unique_rank(&1), Err(1));
+        assert_eq!(ost.rank_lower(&1), Err(1));
+        assert_eq!(ost.rank_upper(&1), Err(1));
+        assert_eq!(ost.rank_unique(&1), Err(1));
     }
 
     #[test]
@@ -660,14 +633,14 @@ mod test {
     }
 
     fn test_iter_inner(items: Vec<i32>) -> Result<(), TestCaseError> {
-        let mut ost = OrderStatisticTree::new(&i32::cmp);
+        let mut ost = OrderStatisticTree::new(i32::cmp);
         for item in &items {
             ost.insert(*item);
         }
         let mut sorted_items = items.clone();
         sorted_items.sort();
         let collected_items: Vec<_> = ost.iter().cloned().collect();
-        assert_eq!(ost.count(), items.len());
+        assert_eq!(ost.len(), items.len());
         assert_eq!(&collected_items, &sorted_items);
         Ok(())
     }

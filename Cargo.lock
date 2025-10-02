@@ -3678,6 +3678,7 @@ dependencies = [
  "memmap2",
  "num-traits",
  "polars-error",
+ "proptest",
  "pyo3",
  "rand 0.9.1",
  "raw-cpuid",
