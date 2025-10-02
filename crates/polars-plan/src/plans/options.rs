@@ -149,14 +149,6 @@ impl FunctionFlags {
         self.contains(Self::LENGTH_PRESERVING)
     }
 
-    pub fn propagates_order(self) -> bool {
-        self.contains(Self::NON_ORDER_PRODUCING)
-    }
-
-    pub fn is_output_unordered(self) -> bool {
-        self.contains(Self::TERMINATES_INPUT_ORDER | Self::NON_ORDER_PRODUCING)
-    }
-
     pub fn observes_input_order(self) -> bool {
         let non_order_observing =
             self.contains(Self::NON_ORDER_OBSERVING) | self.contains(Self::ROW_SEPARABLE);
