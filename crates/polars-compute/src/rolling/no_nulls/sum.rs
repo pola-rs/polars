@@ -56,7 +56,7 @@ where
     }
 }
 
-impl<'a, T, S> RollingAggWindowNoNulls<'a, T, T> for SumWindow<'a, T, S>
+impl<'a, T, S> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,

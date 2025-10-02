@@ -24,7 +24,7 @@ impl<T: ToPrimitive + Copy, M: StateUpdate> MomentWindow<'_, T, M> {
 }
 
 impl<'a, T: NativeType + IsFloat + Float + ToPrimitive + FromPrimitive, M: StateUpdate>
-    RollingAggWindowNoNulls<'a, T, T> for MomentWindow<'a, T, M>
+    RollingAggWindowNoNulls<'a, T> for MomentWindow<'a, T, M>
 {
     fn new(
         slice: &'a [T],

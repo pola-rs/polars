@@ -23,7 +23,7 @@ pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNoNulls<'a, T: NativeType, Out: NativeType> {
+pub trait RollingAggWindowNoNulls<'a, T: NativeType, Out: NativeType = T> {
     fn new(
         slice: &'a [T],
         start: usize,

@@ -161,7 +161,7 @@ where
         return Box::new(out);
     }
     */
-    rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
+    rolling_apply_agg_window::<QuantileWindow<T>, _, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,

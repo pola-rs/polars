@@ -159,7 +159,7 @@ where
         panic!("weights not yet supported on array with null values")
     }
     if center {
-        rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
+        rolling_apply_agg_window::<SumWindow<T, T>, _, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
@@ -168,7 +168,7 @@ where
             None,
         )
     } else {
-        rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
+        rolling_apply_agg_window::<SumWindow<T, T>, _, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,

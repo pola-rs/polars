@@ -26,7 +26,7 @@ impl<
         + Zero
         + SealedRolling
         + Sub<Output = T>,
-> RollingAggWindowNoNulls<'a, T, T> for QuantileWindow<'a, T>
+> RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
     fn new(
         slice: &'a [T],

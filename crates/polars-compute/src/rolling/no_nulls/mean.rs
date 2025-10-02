@@ -6,7 +6,7 @@ pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T, f64>,
 }
 
-impl<'a, T> RollingAggWindowNoNulls<'a, T, T> for MeanWindow<'a, T>
+impl<'a, T> RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
 where
     T: NativeType
         + IsFloat

@@ -51,7 +51,6 @@ where
 }
 
 impl<'a, T: Debug> OrderStatisticTree<T> {
-    #[inline]
     pub fn new(compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             arena: SlotMap::<Key, Node<T>>::with_key(),
@@ -60,7 +59,6 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         }
     }
 
-    #[inline]
     pub fn with_capacity(capacity: usize, compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             arena: SlotMap::<Key, Node<T>>::with_capacity_and_key(capacity),
@@ -69,17 +67,14 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         }
     }
 
-    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    #[inline]
     pub fn len(&self) -> usize {
         self.weight(self.root)
     }
 
-    #[inline]
     pub fn unique_count(&self) -> usize {
         self.unique_weight(self.root)
     }
@@ -151,7 +146,6 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         self.maximum(n.right)
     }
 
-    #[inline]
     pub fn insert(&mut self, value: T) {
         self.root = self.insert_inner(value, self.root);
     }
@@ -174,7 +168,6 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         }
     }
 
-    #[inline]
     pub fn remove(&mut self, value: &T) -> Option<T> {
         let deleted;
         (deleted, self.root) = self.remove_inner(value, self.root);
@@ -237,7 +230,6 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         (deleted, self.balance_r(n.left, n.value, right))
     }
 
-    #[inline]
     pub fn contains(&self, value: &T) -> bool {
         self._contains(value, self.root)
     }
@@ -342,7 +334,6 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         a + 1 < GAMMA * (b + 1)
     }
 
-    #[inline]
     pub fn rank_lower(&self, bound: &T) -> Result<usize, usize> {
         self.rank_lower_inner(bound, self.root)
     }
@@ -364,7 +355,6 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         }
     }
 
-    #[inline]
     pub fn rank_upper(&self, bound: &T) -> Result<usize, usize> {
         self._rank_upper(bound, self.root)
     }
@@ -388,7 +378,6 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         }
     }
 
-    #[inline]
     pub fn rank_unique(&self, value: &T) -> Result<usize, usize> {
         self.rank_unique_inner(value, self.root)
     }
