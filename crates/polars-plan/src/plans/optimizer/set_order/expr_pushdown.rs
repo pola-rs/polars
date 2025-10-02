@@ -107,13 +107,6 @@ pub(super) struct ExprOutputOrderResolver {
 
 impl ExprOutputOrderResolver {
     pub(super) fn new(column_ordering: ExprOutputOrder) -> Self {
-        use ExprOutputOrder as O;
-
-        match &column_ordering {
-            O::Frame | O::Independent | O::None => {},
-            O::Both => panic!(),
-        }
-
         Self { column_ordering }
     }
 
