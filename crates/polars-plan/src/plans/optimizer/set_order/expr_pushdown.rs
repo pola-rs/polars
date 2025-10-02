@@ -212,16 +212,15 @@ impl ExprOutputOrderResolver {
                 },
 
                 // Input order observing aggregations.
-                IRAggExpr::Implode(node) | IRAggExpr::First(node) | IRAggExpr::Last(node) => {
+                IRAggExpr::Implode(node)
+                | IRAggExpr::First(node)
+                | IRAggExpr::Last(node)
+                | IRAggExpr::AggGroups(node) => {
                     if rec!(*node).has_frame_ordering() {
                         return Err(FrameOrderObserved);
                     }
                     O::None
                 },
-
-                // @NOTE: This aggregation makes very little sense. We do the most pessimistic thing
-                // possible here.
-                IRAggExpr::AggGroups(_) => return Err(FrameOrderObserved),
             },
 
             AExpr::Gather {
