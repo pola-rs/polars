@@ -7,7 +7,7 @@ use super::super::rank::*;
 use super::*;
 
 #[derive(Debug)]
-pub struct RankWindowInner<'a, T>
+struct RankWindowInner<'a, T>
 where
     T: NativeType + TotalOrd,
 {
@@ -43,12 +43,12 @@ where
             ost,
         };
         unsafe {
-            RankWindowInner::update_ost(&mut slf, start, end);
+            RankWindowInner::update(&mut slf, start, end);
         }
         slf
     }
 
-    unsafe fn update_ost(&mut self, new_start: usize, new_end: usize) {
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
         debug_assert!(self.ost.len() == self.last_end - self.last_start);
         debug_assert!(self.last_start <= self.last_end);
         debug_assert!(self.last_end <= self.slice.len());
@@ -98,7 +98,7 @@ where
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<f64> {
         unsafe {
-            self.rw.update_ost(start, end);
+            self.rw.update(start, end);
         }
         let cur = unsafe { self.rw.slice.get_unchecked(self.rw.last_end - 1) };
         let rank_lo = self.rw.ost.rank_lower(&cur).unwrap() as f64;
@@ -127,8 +127,12 @@ where
         window_size: Option<usize>,
     ) -> Self {
         let Some(RollingFnParams::Rank { method, .. }) = params else {
-            unreachable!("expected RollingFnParams::Rank");
+            unreachable!("expected RollingFnParams::Rank with Min/Max/Dense method");
         };
+        assert!(matches!(
+            method,
+            RollingRankMethod::Min | RollingRankMethod::Max | RollingRankMethod::Dense
+        ));
         Self {
             rw: RankWindowInner::new(slice, start, end, params, window_size),
             method,
@@ -137,7 +141,7 @@ where
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<u64> {
         unsafe {
-            self.rw.update_ost(start, end);
+            self.rw.update(start, end);
         }
         let cur = unsafe { self.rw.slice.get_unchecked(self.rw.last_end - 1) };
         let rank = match self.method {
@@ -186,7 +190,7 @@ where
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<u64> {
         unsafe {
-            self.rw.update_ost(start, end);
+            self.rw.update(start, end);
         }
         let cur = unsafe { self.rw.slice.get_unchecked(self.rw.last_end - 1) };
         let rank_lo = self.rw.ost.rank_lower(&cur).unwrap();
