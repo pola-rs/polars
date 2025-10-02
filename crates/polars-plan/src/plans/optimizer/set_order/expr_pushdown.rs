@@ -198,12 +198,10 @@ impl ExprOutputOrderResolver {
                 | IRAggExpr::Count { input: node, .. }
                 | IRAggExpr::Std(node, _)
                 | IRAggExpr::Var(node, _) => {
-                    // Input order is deregarded, but must not observe order.
                     _ = rec!(*node);
                     O::None
                 },
                 IRAggExpr::Quantile { expr, quantile, .. } => {
-                    // Input and quantile order is deregarded, but must not observe order.
                     _ = rec!(*expr);
                     _ = rec!(*quantile);
                     O::None
@@ -229,8 +227,7 @@ impl ExprOutputOrderResolver {
                 let expr = rec!(*expr);
                 let idx = rec!(*idx);
 
-                // We need to ensure that the values come in frame order. The order of the idxes is
-                // propagated.
+                // Ordering of `expr` is always observed, as gather performs positional selections.
                 if expr.has_frame_ordering() {
                     return Err(FrameOrderObserved);
                 }
