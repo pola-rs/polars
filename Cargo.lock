@@ -3607,6 +3607,7 @@ dependencies = [
  "crossbeam-queue",
  "crossbeam-utils",
  "futures",
+ "hashbrown 0.15.4",
  "memmap2",
  "parking_lot",
  "percent-encoding",

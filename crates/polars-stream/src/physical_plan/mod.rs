@@ -235,10 +235,12 @@ pub enum PhysNodeKind {
     },
     Rle(PhysStream),
     RleId(PhysStream),
+    IsFirstDistinct(PhysStream),
     PeakMinMax {
         input: PhysStream,
         is_peak_max: bool,
     },
+
 
     OrderedUnion {
         inputs: Vec<PhysStream>,
@@ -380,6 +382,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::GatherEvery { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
+            | PhysNodeKind::IsFirstDistinct(input)
             | PhysNodeKind::PeakMinMax { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
                 rec!(input.node);

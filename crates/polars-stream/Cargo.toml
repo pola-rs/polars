@@ -19,6 +19,7 @@ crossbeam-deque = { workspace = true }
 crossbeam-queue = { workspace = true }
 crossbeam-utils = { workspace = true }
 futures = { workspace = true }
+hashbrown = { workspace = true }
 memmap = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
