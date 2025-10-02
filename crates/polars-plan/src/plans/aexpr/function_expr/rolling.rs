@@ -18,10 +18,7 @@ pub enum IRRollingFunction {
     Quantile,
     Var,
     Std,
-    Rank {
-        options: RankOptions,
-        seed: Option<u64>,
-    },
+    Rank,
     #[cfg(feature = "moment")]
     Skew,
     #[cfg(feature = "moment")]

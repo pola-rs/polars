@@ -6,7 +6,7 @@ pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T, f64>,
 }
 
-impl<'a, T> RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
+impl<'a, T> RollingAggWindowNoNulls<'a, T, T> for MeanWindow<'a, T>
 where
     T: NativeType
         + IsFloat
@@ -53,7 +53,7 @@ where
         false => det_offsets,
     };
     match weights {
-        None => rolling_apply_agg_window::<MeanWindow<_>, _, _>(
+        None => rolling_apply_agg_window::<MeanWindow<_>, _, _, _>(
             values,
             window_size,
             min_periods,

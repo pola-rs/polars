@@ -1,39 +1,25 @@
-use polars_utils::total_ord::{self, TotalEq, TotalOrd};
-use rand::SeedableRng;
+use polars_utils::order_statistic_tree::OrderStatisticTree;
+use polars_utils::total_ord::TotalOrd;
 use rand::rngs::SmallRng;
-use skiplist::OrderedSkipList;
+use rand::{Rng, SeedableRng};
 
 use super::super::rank::*;
 use super::*;
 
 #[derive(Debug)]
-struct SkipListContainer<T: NativeType + TotalOrd + TotalEq>(T);
-
-impl<T: NativeType> PartialEq for SkipListContainer<T> {
-    fn eq(&self, other: &Self) -> bool {
-        TotalEq::tot_eq(&self.0, &other.0)
-    }
-}
-
-impl<T: NativeType> PartialOrd for SkipListContainer<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(TotalOrd::tot_cmp(&self.0, &other.0))
-    }
-}
-
-#[derive(Debug)]
-pub struct RankWindow<'a, T: NativeType> {
-    start: usize,
-    end: usize,
-    slice: &'a [T],
-    sl: skiplist::OrderedSkipList<SkipListContainer<T>>,
-    method: RankMethod,
-    rng: Option<SmallRng>,
-}
-
-impl<'a, T> RollingAggWindowNoNulls<'a, T> for RankWindow<'a, T>
+pub struct RankWindowInner<'a, T>
 where
-    T: Debug + NativeType + total_ord::TotalOrd,
+    T: NativeType + TotalOrd,
+{
+    last_start: usize,
+    last_end: usize,
+    slice: &'a [T],
+    ost: OrderStatisticTree<&'a T>,
+}
+
+impl<'a, T> RankWindowInner<'a, T>
+where
+    T: NativeType,
 {
     fn new(
         slice: &'a [T],
@@ -42,76 +28,170 @@ where
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
     ) -> Self {
-        // TODO: [amber] LEFT HERE: For some reason, `params` is None here.  Should we insert some default or should it be Some(..)?
-        let RollingFnParams::Rank { method, seed } = params.unwrap() else {
+        let RollingFnParams::Rank { descending, .. } = params.unwrap() else {
             unreachable!("expected RollingFnParams::Rank");
         };
-        let sl = OrderedSkipList::with_capacity(window_size.unwrap());
-        let mut rng = None;
-        if method == RankMethod::Random {
-            rng = Some(match seed {
-                Some(x) => SmallRng::seed_from_u64(x),
-                None => SmallRng::from_os_rng(),
-            });
-        }
-
-        Self {
-            start,
-            end,
+        let cmp = match descending {
+            true => |a: &&T, b: &&T| T::tot_cmp(*b, *a),
+            false => |a: &&T, b: &&T| T::tot_cmp(*a, *b),
+        };
+        let ost = OrderStatisticTree::with_capacity(window_size.unwrap(), cmp);
+        let mut slf = Self {
+            last_start: 0,
+            last_end: 0,
             slice,
-            sl,
+            ost,
+        };
+        unsafe {
+            RankWindowInner::update_ost(&mut slf, start, end);
+        }
+        slf
+    }
+
+    unsafe fn update_ost(&mut self, new_start: usize, new_end: usize) {
+        debug_assert!(self.ost.len() == self.last_end - self.last_start);
+        debug_assert!(self.last_start <= self.last_end);
+        debug_assert!(self.last_end <= self.slice.len());
+        debug_assert!(new_start <= new_end);
+        debug_assert!(new_end <= self.slice.len());
+        debug_assert!(self.last_start <= new_start);
+        debug_assert!(self.last_end <= new_end);
+
+        for i in self.last_start..new_start {
+            let v = unsafe { self.slice.get_unchecked(i) };
+            self.ost
+                .remove(&v)
+                .expect("previously added value is missing");
+        }
+        for i in self.last_end..new_end {
+            let v = unsafe { self.slice.get_unchecked(i) };
+            self.ost.insert(v);
+        }
+        self.last_start = new_start;
+        self.last_end = new_end;
+    }
+}
+
+#[derive(Debug)]
+struct RankWindowAvg<'a, T>
+where
+    T: NativeType + TotalOrd,
+{
+    rw: RankWindowInner<'a, T>,
+}
+
+impl<'a, T> RollingAggWindowNoNulls<'a, T, f64> for RankWindowAvg<'a, T>
+where
+    T: Debug + NativeType + TotalOrd,
+{
+    fn new(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self {
+        Self {
+            rw: RankWindowInner::new(slice, start, end, params, window_size),
+        }
+    }
+
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<f64> {
+        unsafe {
+            self.rw.update_ost(start, end);
+        }
+        let cur = unsafe { self.rw.slice.get_unchecked(self.rw.last_end - 1) };
+        let rank_lo = self.rw.ost.rank_lower(&cur).unwrap() as f64;
+        let rank_hi = self.rw.ost.rank_upper(&cur).unwrap() as f64;
+        Some((rank_lo + rank_hi) / 2.0)
+    }
+}
+
+struct RankWindowMinMaxDense<'a, T>
+where
+    T: NativeType + TotalOrd,
+{
+    rw: RankWindowInner<'a, T>,
+    method: RollingRankMethod,
+}
+
+impl<'a, T> RollingAggWindowNoNulls<'a, T, u64> for RankWindowMinMaxDense<'a, T>
+where
+    T: Debug + NativeType + TotalOrd,
+{
+    fn new(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self {
+        let Some(RollingFnParams::Rank { method, .. }) = params else {
+            unreachable!("expected RollingFnParams::Rank");
+        };
+        Self {
+            rw: RankWindowInner::new(slice, start, end, params, window_size),
             method,
+        }
+    }
+
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<u64> {
+        unsafe {
+            self.rw.update_ost(start, end);
+        }
+        let cur = unsafe { self.rw.slice.get_unchecked(self.rw.last_end - 1) };
+        let rank = match self.method {
+            RollingRankMethod::Min => self.rw.ost.rank_lower(&cur),
+            RollingRankMethod::Max => self.rw.ost.rank_upper(&cur),
+            RollingRankMethod::Dense => self.rw.ost.rank_unique(&cur),
+            rank => unreachable!("expected Min/Max/Dense rank method, got {rank:?}"),
+        };
+        Some(rank.unwrap() as u64)
+    }
+}
+
+#[derive(Debug)]
+struct RankWindowRandom<'a, T>
+where
+    T: NativeType + TotalOrd,
+{
+    rw: RankWindowInner<'a, T>,
+    rng: SmallRng,
+}
+
+impl<'a, T> RollingAggWindowNoNulls<'a, T, u64> for RankWindowRandom<'a, T>
+where
+    T: Debug + NativeType + TotalOrd,
+{
+    fn new(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self {
+        let RollingFnParams::Rank { seed, .. } = params.unwrap() else {
+            unreachable!("expected RollingFnParams::Rank");
+        };
+        let rng = if let Some(seed) = seed {
+            SmallRng::seed_from_u64(seed)
+        } else {
+            SmallRng::from_os_rng()
+        };
+        Self {
+            rw: RankWindowInner::new(slice, start, end, params, window_size),
             rng,
         }
     }
 
-    unsafe fn update(&mut self, new_start: usize, new_end: usize) -> Option<T> {
-        use std::ops::Bound::*;
-
-        use SkipListContainer as SLC;
-
-        debug_assert!(self.sl.len() == self.end - self.start);
-        debug_assert!(self.start <= self.end);
-        debug_assert!(self.end <= self.slice.len());
-        debug_assert!(new_start <= new_end);
-        debug_assert!(new_end <= self.slice.len());
-        debug_assert!(self.start <= new_start);
-        debug_assert!(self.end <= new_end);
-
-        while self.start < new_start {
-            let v = unsafe { *self.slice.get_unchecked(self.start) };
-            self.sl.remove(&SLC(v));
-            self.start += 1;
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<u64> {
+        unsafe {
+            self.rw.update_ost(start, end);
         }
-        while self.end < new_end {
-            let v = unsafe { *self.slice.get_unchecked(self.end) };
-            self.sl.insert(SLC(v));
-            self.end += 1;
-        }
-
-        let cur = unsafe { *self.slice.get_unchecked(new_end) };
-        let loe = self.sl.lower_bound(Excluded(&SLC(cur)));
-        let loi = self.sl.lower_bound(Included(&SLC(cur)));
-        let uoe = self.sl.upper_bound(Excluded(&SLC(cur)));
-        let uoi = self.sl.upper_bound(Included(&SLC(cur)));
-
-        dbg!(&self.sl);
-        dbg!(&cur);
-        dbg!(loe);
-        dbg!(loi);
-        dbg!(uoe);
-        dbg!(uoi);
-
-        return None;
-
-        match self.method {
-            RankMethod::Average => todo!(),
-            RankMethod::Min => todo!(),
-            RankMethod::Max => todo!(),
-            RankMethod::Dense => todo!(),
-            RankMethod::Ordinal => todo!(),
-            RankMethod::Random => todo!(),
-        }
+        let cur = unsafe { self.rw.slice.get_unchecked(self.rw.last_end - 1) };
+        let rank_lo = self.rw.ost.rank_lower(&cur).unwrap();
+        let rank_hi = self.rw.ost.rank_upper(&cur).unwrap();
+        Some(self.rng.random_range(rank_lo..rank_hi) as u64)
     }
 }
 
@@ -133,11 +213,37 @@ where
         false => det_offsets,
     };
 
-    rolling_apply_agg_window::<RankWindow<_>, _, _>(
-        values,
-        window_size,
-        min_periods,
-        offset_fn,
-        params,
-    )
+    let method = if let Some(RollingFnParams::Rank { method, .. }) = params {
+        method
+    } else {
+        unreachable!("expected RollingFnParams::Rank");
+    };
+    match method {
+        RollingRankMethod::Average => rolling_apply_agg_window::<RankWindowAvg<T>, _, _, _>(
+            values,
+            window_size,
+            min_periods,
+            offset_fn,
+            params,
+        ),
+        RollingRankMethod::Min | RollingRankMethod::Max | RollingRankMethod::Dense => {
+            rolling_apply_agg_window::<RankWindowMinMaxDense<T>, _, _, _>(
+                values,
+                window_size,
+                min_periods,
+                offset_fn,
+                params,
+            )
+        },
+        RollingRankMethod::Random => rolling_apply_agg_window::<RankWindowRandom<T>, _, _, _>(
+            values,
+            window_size,
+            min_periods,
+            offset_fn,
+            params,
+        ),
+        method @ RollingRankMethod::Ordinal => {
+            unimplemented!("rank method {method:?} is not implemented")
+        },
+    }
 }

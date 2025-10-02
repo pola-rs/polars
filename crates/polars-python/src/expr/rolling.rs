@@ -326,27 +326,26 @@ impl PyExpr {
     fn rolling_rank(
         &self,
         window_size: usize,
-        method: Wrap<RankMethod>,
+        method: Wrap<RollingRankMethod>,
         descending: bool,
         seed: Option<u64>,
         min_periods: Option<usize>,
         center: bool,
     ) -> Self {
         let min_periods = min_periods.unwrap_or(window_size);
-        let window_options = RollingOptionsFixedWindow {
+        let options = RollingOptionsFixedWindow {
             window_size,
             min_periods,
+            weights: None,
             center,
-            ..Default::default()
+            fn_params: Some(RollingFnParams::Rank {
+                method: method.0,
+                descending,
+                seed,
+            }),
         };
-        let rank_options = RankOptions {
-            method: method.0,
-            descending,
-        };
-        self.inner
-            .clone()
-            .rolling_rank(rank_options, seed, window_options)
-            .into()
+
+        self.inner.clone().rolling_rank(options).into()
     }
 
     #[pyo3(signature = (window_size, bias, min_periods, center))]

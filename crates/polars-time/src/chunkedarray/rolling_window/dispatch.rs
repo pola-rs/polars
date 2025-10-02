@@ -537,6 +537,7 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_rank(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         let s = self.as_series();
+
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let mut ca = ca.clone();

@@ -1114,6 +1114,25 @@ impl<'py> FromPyObject<'py> for Wrap<RankMethod> {
     }
 }
 
+impl<'py> FromPyObject<'py> for Wrap<RollingRankMethod> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "min" => RollingRankMethod::Min,
+            "max" => RollingRankMethod::Max,
+            "average" => RollingRankMethod::Average,
+            "dense" => RollingRankMethod::Dense,
+            "ordinal" => RollingRankMethod::Ordinal,
+            "random" => RollingRankMethod::Random,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "rank `method` must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl<'py> FromPyObject<'py> for Wrap<Roll> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {

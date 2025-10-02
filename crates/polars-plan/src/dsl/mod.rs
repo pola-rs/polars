@@ -1240,19 +1240,8 @@ impl Expr {
     }
 
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_rank(
-        self,
-        rank_options: RankOptions,
-        seed: Option<u64>,
-        options: RollingOptionsFixedWindow,
-    ) -> Expr {
-        self.finish_rolling(
-            options,
-            RollingFunction::Rank {
-                options: rank_options,
-                seed,
-            },
-        )
+    pub fn rolling_rank(self, options: RollingOptionsFixedWindow) -> Expr {
+        self.finish_rolling(options, RollingFunction::Rank)
     }
 
     /// Apply a rolling skew.

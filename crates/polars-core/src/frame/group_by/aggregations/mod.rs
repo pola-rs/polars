@@ -127,7 +127,7 @@ pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(
 ) -> PrimitiveArray<T>
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T, T>,
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     T: IsFloat + NativeType,
 {

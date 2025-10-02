@@ -22,7 +22,7 @@ pub(crate) fn rolling_apply_agg_window_sorted<'a, Agg, T, O>(
 ) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T, T>,
     O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
     T: Debug + IsFloat + NativeType,
 {
@@ -84,7 +84,7 @@ pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
 ) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T, T>,
     O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
     T: Debug + IsFloat + NativeType,
 {

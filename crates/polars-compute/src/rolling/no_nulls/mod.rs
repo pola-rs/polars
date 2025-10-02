@@ -23,7 +23,7 @@ pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
+pub trait RollingAggWindowNoNulls<'a, T: NativeType, Out: NativeType> {
     fn new(
         slice: &'a [T],
         start: usize,
@@ -36,11 +36,11 @@ pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
 }
 
 // Use an aggregation window that maintains the state
-pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
+pub(super) fn rolling_apply_agg_window<'a, Agg, T, O, Fo>(
     values: &'a [T],
     window_size: usize,
     min_periods: usize,
@@ -49,8 +49,9 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
 ) -> PolarsResult<ArrayRef>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T, O>,
     T: Debug + NativeType + Num,
+    O: Debug + NativeType + Num,
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);

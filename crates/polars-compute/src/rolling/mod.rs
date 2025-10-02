@@ -48,7 +48,8 @@ pub enum RollingFnParams {
     Quantile(RollingQuantileParams),
     Var(RollingVarParams),
     Rank {
-        method: RankMethod,
+        method: RollingRankMethod,
+        descending: bool,
         seed: Option<u64>,
     },
     Skew {
@@ -139,12 +140,12 @@ impl Hash for RollingQuantileParams {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
-pub enum RankMethod {
+pub enum RollingRankMethod {
     #[default]
     Average,
     Min,
     Max,
     Dense,
-    Ordinal,
+    Ordinal, // TODO: [amber] Is this the same as Max for rolling windows? Should this be removed?
     Random,
 }

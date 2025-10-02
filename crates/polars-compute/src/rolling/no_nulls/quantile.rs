@@ -26,7 +26,7 @@ impl<
         + Zero
         + SealedRolling
         + Sub<Output = T>,
-> RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
+> RollingAggWindowNoNulls<'a, T, T> for QuantileWindow<'a, T>
 {
     fn new(
         slice: &'a [T],
@@ -152,7 +152,7 @@ where
                 )));
             }
 
-            rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
+            rolling_apply_agg_window::<QuantileWindow<_>, _, _, _>(
                 values,
                 window_size,
                 min_periods,

@@ -215,6 +215,7 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "rank")]
     Rank {
         options: RankOptions,
+        seed: Option<u64>,
     },
     Repeat,
     #[cfg(feature = "round_series")]

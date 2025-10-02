@@ -693,7 +693,7 @@ pub(super) fn convert_functions(
                     R::Quantile => IR::Quantile,
                     R::Var => IR::Var,
                     R::Std => IR::Std,
-                    R::Rank { options, seed } => IR::Rank { options, seed },
+                    R::Rank => IR::Rank,
                     #[cfg(feature = "moment")]
                     R::Skew => IR::Skew,
                     #[cfg(feature = "moment")]
