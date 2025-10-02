@@ -5,6 +5,7 @@ use crate::plans::set_order::expr_pushdown::{
     ExprOutputOrder, ExprOutputOrderResolver, FrameOrderObserved,
 };
 
+/// Returns whether the output of this `AExpr` contains any observable ordering.
 pub fn is_output_ordered(aexpr: &AExpr, arena: &Arena<AExpr>, frame_ordered: bool) -> bool {
     use ExprOutputOrder as O;
 
