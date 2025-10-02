@@ -1121,11 +1121,10 @@ impl<'py> FromPyObject<'py> for Wrap<RollingRankMethod> {
             "max" => RollingRankMethod::Max,
             "average" => RollingRankMethod::Average,
             "dense" => RollingRankMethod::Dense,
-            "ordinal" => RollingRankMethod::Ordinal,
             "random" => RollingRankMethod::Random,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "rank `method` must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {v}",
+                    "rank `method` must be one of {{'min', 'max', 'average', 'dense', 'random'}}, got {v}",
                 )));
             },
         };

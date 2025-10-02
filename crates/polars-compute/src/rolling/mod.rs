@@ -146,6 +146,5 @@ pub enum RollingRankMethod {
     Min,
     Max,
     Dense,
-    Ordinal, // TODO: [amber] Is this the same as Max for rolling windows? Should this be removed?
     Random,
 }

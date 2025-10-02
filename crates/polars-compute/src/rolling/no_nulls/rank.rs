@@ -242,8 +242,5 @@ where
             offset_fn,
             params,
         ),
-        method @ RollingRankMethod::Ordinal => {
-            unimplemented!("rank method {method:?} is not implemented")
-        },
     }
 }
