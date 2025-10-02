@@ -143,7 +143,7 @@ impl ExprOutputOrderResolver {
             // col(a).explode() * col(b).explode()
             AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
-            AExpr::Column(_) => O::Frame,
+            AExpr::Column(_) => self.column_ordering,
             AExpr::Literal(lv) if lv.is_scalar() => O::None,
             AExpr::Literal(_) => O::Independent,
 
