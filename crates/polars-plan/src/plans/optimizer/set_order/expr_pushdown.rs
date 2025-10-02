@@ -144,8 +144,13 @@ impl ExprOutputOrderResolver {
             AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
             AExpr::Column(_) => self.column_ordering,
-            AExpr::Literal(lv) if lv.is_scalar() => O::None,
-            AExpr::Literal(_) => O::Independent,
+            AExpr::Literal(lv) => {
+                if lv.is_scalar() {
+                    O::None
+                } else {
+                    O::Independent
+                }
+            },
 
             AExpr::Cast { expr, .. } => rec!(*expr),
 
