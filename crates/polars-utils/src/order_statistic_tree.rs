@@ -92,14 +92,14 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return 0;
         }
-        unsafe { self.arena.get_unchecked(tree) }.weight
+        self.arena[tree].weight
     }
 
     fn unique_weight(&self, tree: Key) -> usize {
         if tree.is_null() {
             return 0;
         }
-        unsafe { self.arena.get_unchecked(tree) }.unique_weight
+        self.arena[tree].unique_weight
     }
 
     fn new_node(&mut self, left: Key, value: T, right: Key) -> Key {
@@ -133,7 +133,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return None;
         }
-        let n = unsafe { self.arena.get_unchecked(tree) };
+        let n = &self.arena[tree];
         if n.left.is_null() {
             return Some(&n.value);
         }
@@ -144,7 +144,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return None;
         }
-        let n = unsafe { self.arena.get_unchecked(tree) };
+        let n = &self.arena[tree];
         if n.right.is_null() {
             return Some(&n.value);
         }
@@ -161,7 +161,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
             return self.new_leaf(value);
         }
 
-        let n = unsafe { self.arena.remove(tree).unwrap_unchecked() };
+        let n = self.arena.remove(tree).unwrap();
         match (self.compare)(&value, &n.value) {
             Ordering::Less => {
                 let left = self.insert_inner(value, n.left);
@@ -185,7 +185,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return (None, tree);
         }
-        let n = unsafe { self.arena.remove(tree).unwrap_unchecked() };
+        let n = self.arena.remove(tree).unwrap();
         match (self.compare)(&value, &n.value) {
             Ordering::Less => {
                 let (deleted, left) = self.remove_inner(value, n.left);
@@ -206,10 +206,10 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
             return left;
         } else if self.weight(left) > self.weight(right) {
             let (deleted, left) = self.remove_max(left);
-            self.balance_r(left, unsafe { deleted.unwrap_unchecked() }, right)
+            self.balance_r(left, deleted.unwrap(), right)
         } else {
             let (deleted, right) = self.remove_min(right);
-            self.balance_l(left, unsafe { deleted.unwrap_unchecked() }, right)
+            self.balance_l(left, deleted.unwrap(), right)
         }
     }
 
@@ -217,7 +217,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return (None, tree);
         }
-        let n = unsafe { self.arena.remove(tree).unwrap_unchecked() };
+        let n = self.arena.remove(tree).unwrap();
         if n.left.is_null() {
             return (Some(n.value), n.right);
         }
@@ -229,7 +229,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return (None, tree);
         }
-        let n = unsafe { self.arena.remove(tree).unwrap_unchecked() };
+        let n = self.arena.remove(tree).unwrap();
         if n.right.is_null() {
             return (Some(n.value), n.left);
         }
@@ -246,7 +246,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return false;
         }
-        let n = unsafe { self.arena.get_unchecked(tree) };
+        let n = &self.arena[tree];
         match (self.compare)(value, &n.value) {
             Ordering::Less => self._contains(value, n.left),
             Ordering::Equal => true,
@@ -262,7 +262,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
     }
 
     fn rotate_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = unsafe { self.arena.get_unchecked(right) };
+        let r = &self.arena[right];
         if self.is_single(r.left, r.right) {
             self.single_l(left, value, right)
         } else {
@@ -271,14 +271,14 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
     }
 
     fn single_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = unsafe { self.arena.remove(right).unwrap_unchecked() };
+        let r = self.arena.remove(right).unwrap();
         let new_left = self.new_node(left, value, r.left);
         self.new_node(new_left, r.value, r.right)
     }
 
     fn double_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = unsafe { self.arena.remove(right).unwrap_unchecked() };
-        let rl = unsafe { self.arena.remove(r.left).unwrap_unchecked() };
+        let r = self.arena.remove(right).unwrap();
+        let rl = self.arena.remove(r.left).unwrap();
         let new_left = self.new_node(left, value, rl.left);
         let new_right = self.new_node(rl.right, r.value, r.right);
         self.new_node(new_left, rl.value, new_right)
@@ -292,7 +292,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
     }
 
     fn rotate_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = unsafe { self.arena.get_unchecked(left) };
+        let l = &self.arena[left];
         if self.is_single(l.right, l.left) {
             self.single_r(left, value, right)
         } else {
@@ -301,14 +301,14 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
     }
 
     fn single_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = unsafe { self.arena.remove(left).unwrap_unchecked() };
+        let l = self.arena.remove(left).unwrap();
         let new_right = self.new_node(l.right, value, right);
         self.new_node(l.left, l.value, new_right)
     }
 
     fn double_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = unsafe { self.arena.remove(left).unwrap_unchecked() };
-        let lr = unsafe { self.arena.remove(l.right).unwrap_unchecked() };
+        let l = self.arena.remove(left).unwrap();
+        let lr = self.arena.remove(l.right).unwrap();
         let new_right = self.new_node(lr.right, value, right);
         let new_left = self.new_node(l.left, l.value, lr.left);
         self.new_node(new_left, lr.value, new_right)
@@ -323,7 +323,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return true;
         }
-        let n = unsafe { self.arena.get_unchecked(tree) };
+        let n = &self.arena[tree];
         self.pair_is_balanced(n.left, n.right)
             && self.pair_is_balanced(n.right, n.left)
             && self.tree_is_balanced(n.left)
@@ -351,7 +351,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return Err(1);
         }
-        let n = unsafe { self.arena.get_unchecked(tree) };
+        let n = &self.arena[tree];
         match (self.compare)(value, &n.value) {
             Ordering::Less => self.rank_lower_inner(value, n.left),
             Ordering::Equal => self
@@ -373,7 +373,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return Err(self.weight(tree) + 1);
         }
-        let n = unsafe { self.arena.get_unchecked(tree) };
+        let n = &self.arena[tree];
         match (self.compare)(value, &n.value) {
             Ordering::Less => self._rank_upper(value, n.left),
             Ordering::Equal => self
@@ -397,7 +397,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return Err(1);
         }
-        let n = unsafe { self.arena.get_unchecked(tree) };
+        let n = &self.arena[tree];
         match (self.compare)(value, &n.value) {
             Ordering::Less => self.rank_unique_inner(value, n.left),
             Ordering::Equal if self._contains(value, n.left) => Ok(self.unique_weight(n.left)),
