@@ -14,7 +14,7 @@ use polars_time::prelude::string::infer::{
 use polars_utils::vec::PushUnchecked;
 
 use super::options::CsvEncoding;
-use super::parser::{could_be_whitespace_fast, is_whitespace, skip_whitespace};
+use super::parser::{could_be_whitespace_fast, skip_whitespace};
 use super::utils::escape_field;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
