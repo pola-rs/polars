@@ -265,7 +265,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or_else(||
             polars_err!(
                 ComputeError: "Parquet file produces more than pow(2, 32) rows; \
-                consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
+                consider compiling with polars-bigidx feature (pip install polars[rt64]), \
                 or set 'streaming'"
             ),
         )?;

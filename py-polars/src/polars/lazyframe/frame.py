@@ -6693,7 +6693,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Notes
         -----
         The resulting column does not have any special properties. It is a regular
-        column of type `UInt32` (or `UInt64` in `polars-u64-idx`).
+        column of type `UInt32` (or `UInt64` in `polars[rt64]`).
 
         Examples
         --------
