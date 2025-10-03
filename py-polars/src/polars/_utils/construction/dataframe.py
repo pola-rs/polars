@@ -1019,6 +1019,7 @@ def iterable_to_pydf(
             strict=strict,
             orient="row",
             infer_schema_length=infer_schema_length,
+            schema_overrides=schema_overrides,
         )
 
     n_chunks = 0
