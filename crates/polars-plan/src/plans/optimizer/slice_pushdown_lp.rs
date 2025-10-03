@@ -263,15 +263,13 @@ impl SlicePushDown {
                 };
                 Ok(lp)
             }
-            (Union {mut inputs, mut options }, Some(state)) => {
-                if state.offset == 0 {
-                    for input in &mut inputs {
-                        let input_lp = lp_arena.take(*input);
-                        let input_lp = self.pushdown(input_lp, Some(state), lp_arena, expr_arena)?;
-                        lp_arena.replace(*input, input_lp);
-                    }
+            (Union {mut inputs, mut options }, opt_state) => {
+                for input in &mut inputs {
+                    let input_lp = lp_arena.take(*input);
+                    let input_lp = self.pushdown(input_lp, opt_state.filter(|x| x.offset == 0), lp_arena, expr_arena)?;
+                    lp_arena.replace(*input, input_lp);
                 }
-                options.slice = Some((state.offset, state.len as usize));
+                options.slice = opt_state.map(|x| (x.offset, x.len.try_into().unwrap()));
                 let lp = Union {inputs, options};
                 Ok(lp)
             },

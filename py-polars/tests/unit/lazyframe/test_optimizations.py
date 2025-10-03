@@ -383,3 +383,16 @@ def test_fused_correct_name() -> None:
         opts,
     )
     assert_frame_equal(opts, pl.DataFrame({"a": [2, 6, 12]}))
+
+
+def test_slice_pushdown_within_concat_24734() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame({"x": [0, 1, 2, 3, 4]}).head(2),
+            pl.LazyFrame(schema={"x": pl.Int64}),
+        ]
+    )
+
+    assert "SLICE" not in q.explain()
+
+    assert_frame_equal(q, pl.LazyFrame({"x": [0, 1]}))
