@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crossbeam_channel::Sender;
+use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
@@ -12,6 +13,7 @@ use tokio::task::JoinHandle;
 
 use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
+use crate::metrics::GraphMetrics;
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -150,6 +152,7 @@ fn run_subgraph(
     pipes: &[LogicalPipeKey],
     pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<RelaxedCell<u64>>>,
     state: &StreamingExecutionState,
+    metrics: Option<&Mutex<GraphMetrics>>,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
     let mut physical_pipes = SecondaryMap::new();
@@ -214,7 +217,8 @@ fn run_subgraph(
                 send_ports.push(output_pipe.as_mut().map(|p| p.send_port()));
             }
 
-            // Spawn a task per pipeline.
+            // Spawn the tasks.
+            let pre_spawn_offset = join_handles.len();
             node.compute.spawn(
                 scope,
                 &mut recv_ports[..],
@@ -222,6 +226,12 @@ fn run_subgraph(
                 state,
                 &mut join_handles,
             );
+            if let Some(lock) = metrics {
+                let mut m = lock.lock();
+                for handle in &join_handles[pre_spawn_offset..] {
+                    m.add_task(node_key, handle.metrics().unwrap().clone());
+                }
+            }
 
             // Ensure the ports were consumed.
             assert!(recv_ports.iter().all(|p| p.is_none()));
@@ -269,20 +279,12 @@ fn run_subgraph(
         }
 
         // Wait until all tasks are done.
-        // Only now do we turn on/off wait statistics tracking to reduce noise
-        // from task startup.
-        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
-            async_executor::track_task_wait_statistics(true);
-        }
         let ret = polars_io::pl_async::get_runtime().block_on(async move {
             for handle in join_handles {
                 handle.await?;
             }
             PolarsResult::Ok(())
         });
-        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
-            async_executor::track_task_wait_statistics(false);
-        }
         ret
     })?;
 
@@ -291,6 +293,7 @@ fn run_subgraph(
 
 pub fn execute_graph(
     graph: &mut Graph,
+    metrics: Option<&Mutex<GraphMetrics>>,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
     // Get the number of threads from the rayon thread-pool as that respects our config.
     let num_pipelines = POOL.current_num_threads();
@@ -324,8 +327,9 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states(&state)?;
+        graph.update_all_states(&state, metrics)?;
         polars_io::pl_async::get_runtime().block_on(async {
+            // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
                 handle.await.unwrap()?;
             }
@@ -348,8 +352,9 @@ pub fn execute_graph(
         }
 
         // Run the subgraph until phase completion.
-        run_subgraph(graph, &nodes, &pipes, &mut pipe_seq_offsets, &state)?;
+        run_subgraph(graph, &nodes, &pipes, &mut pipe_seq_offsets, &state, metrics)?;
         polars_io::pl_async::get_runtime().block_on(async {
+            // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
                 handle.await.unwrap()?;
             }
@@ -357,6 +362,10 @@ pub fn execute_graph(
         })?;
         if polars_core::config::verbose() {
             eprintln!("polars-stream: done running graph phase");
+        }
+        
+        if let Some(m) = metrics {
+            m.lock().flush_tasks();
         }
     }
 
@@ -367,6 +376,7 @@ pub fn execute_graph(
 
     // Finalize query tasks.
     polars_io::pl_async::get_runtime().block_on(async {
+        // TODO: track this in metrics.
         while let Ok(handle) = query_tasks_recv.try_recv() {
             handle.await.unwrap()?;
         }

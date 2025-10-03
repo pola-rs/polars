@@ -1,7 +1,11 @@
+use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
 use polars_error::PolarsResult;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use crate::execute::StreamingExecutionState;
+use crate::metrics::{self, GraphMetrics};
 use crate::nodes::ComputeNode;
 
 slotmap::new_key_type! {
@@ -71,7 +75,11 @@ impl Graph {
     }
 
     /// Updates all the nodes' states until a fixed point is reached.
-    pub fn update_all_states(&mut self, state: &StreamingExecutionState) -> PolarsResult<()> {
+    pub fn update_all_states(
+        &mut self,
+        state: &StreamingExecutionState, 
+        metrics: Option<&Mutex<GraphMetrics>>,
+    ) -> PolarsResult<()> {
         let mut to_update: Vec<_> = self.nodes.keys().collect();
         let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
             self.nodes.keys().map(|k| (k, ())).collect();
@@ -97,12 +105,19 @@ impl Graph {
                     node.compute.name()
                 );
             }
+            let start = (metrics.is_some() || verbose).then(Instant::now);
             node.compute
                 .update_state(&mut recv_state, &mut send_state, state)?;
+            let elapsed = start.map(|s| s.elapsed());
+            if let Some(lock) = metrics {
+                let mut m = lock.lock();
+                m.add_state_update(node_key, elapsed.unwrap());
+            }
             if verbose {
                 eprintln!(
-                    "updating {}, after: {recv_state:?} {send_state:?}",
-                    node.compute.name()
+                    "updating {}, after: {recv_state:?} {send_state:?} (took {:?})",
+                    node.compute.name(),
+                    elapsed.unwrap()
                 );
             }
 

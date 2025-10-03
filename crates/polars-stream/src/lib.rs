@@ -15,6 +15,7 @@ mod nodes;
 mod physical_plan;
 mod pipe;
 mod utils;
+mod metrics;
 
 // TODO: experiment with these.
 static DEFAULT_LINEARIZER_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
