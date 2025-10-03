@@ -1383,6 +1383,28 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             return self._ldf.describe_plan()
 
+    def _to_text_plan_graph(
+        self,
+        *,
+        optimized: bool = True,
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> str:
+        """Generates JSON that describes this plan."""
+        engine = _select_engine(engine)
+
+        if engine == "streaming":
+            issue_unstable_warning("streaming mode is considered unstable.")
+
+        if optimized:
+            optimizations = optimizations.__copy__()
+            optimizations._pyoptflags.streaming = engine == "streaming"
+            ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+
+            return ldf.to_text_plan_graph()
+
+        return self._ldf.to_text_plan_graph()
+
     @deprecate_streaming_parameter()
     @forward_old_opt_flags()
     def show_graph(

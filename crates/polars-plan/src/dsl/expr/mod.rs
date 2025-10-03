@@ -704,8 +704,8 @@ impl RenameAliasFn {
         let out = match self {
             Self::Prefix(prefix) => format_pl_smallstr!("{prefix}{name}"),
             Self::Suffix(suffix) => format_pl_smallstr!("{name}{suffix}"),
-            Self::ToLowercase => PlSmallStr::from_string(name.to_lowercase()),
-            Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
+            Self::ToLowercase => name.to_lowercase(),
+            Self::ToUppercase => name.to_lowercase(),
             Self::Map(f) => f.call(name.clone())?,
         };
         Ok(out)

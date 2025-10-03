@@ -5,6 +5,7 @@ use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
+use polars_error::to_compute_err;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -500,6 +501,12 @@ impl PyLazyFrame {
 
     fn describe_optimized_plan_tree(&self, py: Python) -> PyResult<String> {
         py.enter_polars(|| self.ldf.read().describe_optimized_plan_tree())
+    }
+
+    fn to_text_plan_graph(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| {
+            serde_json::to_string(&self.ldf.read().to_text_plan_graph()?).map_err(to_compute_err)
+        })
     }
 
     fn to_dot(&self, py: Python<'_>, optimized: bool) -> PyResult<String> {
