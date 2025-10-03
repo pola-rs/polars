@@ -189,9 +189,7 @@ impl TextPlanGraphGenerator<'_> {
                 let properties = match (()) {
                     #[cfg(feature = "dynamic_group_by")]
                     _ if dynamic.is_some() => {
-                        use polars_time::DynamicGroupOptions;
-
-                        let Some(DynamicGroupOptions {
+                        let Some(polars_time::DynamicGroupOptions {
                             index_column,
                             every,
                             period,
@@ -219,9 +217,7 @@ impl TextPlanGraphGenerator<'_> {
                     },
                     #[cfg(feature = "dynamic_group_by")]
                     _ if rolling.is_some() => {
-                        use polars_time::RollingGroupOptions;
-
-                        let Some(RollingGroupOptions {
+                        let Some(polars_time::RollingGroupOptions {
                             index_column,
                             period,
                             offset,
