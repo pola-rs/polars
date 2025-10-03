@@ -186,7 +186,7 @@ impl TextPlanGraphGenerator<'_> {
                 let maintain_order = *maintain_order;
                 let plan_callback = apply.as_ref().map(|x| format_pl_smallstr!("{:?}", x));
 
-                let properties = match (()) {
+                let properties = match () {
                     #[cfg(feature = "dynamic_group_by")]
                     _ if dynamic.is_some() => {
                         let Some(polars_time::DynamicGroupOptions {
