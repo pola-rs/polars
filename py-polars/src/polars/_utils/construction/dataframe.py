@@ -721,13 +721,6 @@ def _sequence_of_dict_to_pydf(
         strict=strict,
         infer_schema_length=infer_schema_length,
     )
-
-    # TODO: we can remove this `schema_overrides` block completely
-    #  once https://github.com/pola-rs/polars/issues/11044 is fixed
-    if schema_overrides:
-        pydf = _post_apply_columns(
-            pydf, columns=column_names, schema_overrides=schema_overrides, strict=strict
-        )
     return pydf
 
 
