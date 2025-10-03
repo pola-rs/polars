@@ -760,7 +760,15 @@ impl DecimalFmtBuffer {
         }
     }
 
-    pub fn format_dec128(&mut self, x: i128, scale: usize, trim_zeros: bool) -> &str {
+    pub fn format_dec128(
+        &mut self,
+        x: i128,
+        scale: usize,
+        trim_zeros: bool,
+        decimal_comma: bool,
+    ) -> &str {
+        let decimal_sep = if decimal_comma { b',' } else { b'.' };
+
         let mut itoa_buf = itoa::Buffer::new();
         let xs = itoa_buf.format(x.unsigned_abs()).as_bytes();
 
@@ -779,12 +787,12 @@ impl DecimalFmtBuffer {
             let frac_len = xs.len() - whole_len;
             if whole_len == 0 {
                 self.data[self.len] = b'0';
-                self.data[self.len + 1] = b'.';
+                self.data[self.len + 1] = decimal_sep;
                 self.data[self.len + 2..self.len + 2 + scale - frac_len].fill(b'0');
                 self.len += 2 + scale - frac_len;
             } else {
                 self.data[self.len..self.len + whole_len].copy_from_slice(&xs[..whole_len]);
-                self.data[self.len + whole_len] = b'.';
+                self.data[self.len + whole_len] = decimal_sep;
                 self.len += whole_len + 1;
             }
 
@@ -795,7 +803,7 @@ impl DecimalFmtBuffer {
                 while self.data.get(self.len - 1) == Some(&b'0') {
                     self.len -= 1;
                 }
-                if self.data.get(self.len - 1) == Some(&b'.') {
+                if self.data.get(self.len - 1) == Some(&decimal_sep) {
                     self.len -= 1;
                 }
             }
@@ -927,12 +935,14 @@ mod test {
                     continue;
                 }
                 for x in INTERESTING_VALUES.iter() {
-                    if let Some(d) = bigdecimal_to_dec128(x, p, s) {
-                        let fmt = buf.format_dec128(d, s, false);
-                        let d2 = str_to_dec128(fmt.as_bytes(), p, s, false);
-                        assert_eq!(d, d2.unwrap());
-                    } else {
-                        break;
+                    for d_comma in [true, false] {
+                        if let Some(d) = bigdecimal_to_dec128(x, p, s) {
+                            let fmt = buf.format_dec128(d, s, false, d_comma);
+                            let d2 = str_to_dec128(fmt.as_bytes(), p, s, d_comma);
+                            assert_eq!(d, d2.unwrap());
+                        } else {
+                            break;
+                        }
                     }
                 }
             }

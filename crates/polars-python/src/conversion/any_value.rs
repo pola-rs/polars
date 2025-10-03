@@ -124,7 +124,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Decimal(v, prec, scale) => {
             let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
             let mut buf = DecimalFmtBuffer::new();
-            let s = buf.format_dec128(v, scale, false);
+            let s = buf.format_dec128(v, scale, false, false);
             convert.call1((prec, s))
         },
     }

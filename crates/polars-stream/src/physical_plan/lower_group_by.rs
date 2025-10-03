@@ -228,9 +228,10 @@ fn try_lower_elementwise_scalar_agg_expr(
         AExpr::Function {
             input: inner_exprs,
             function:
-                IRFunctionExpr::Boolean(
-                    inner_fn @ (IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. }),
-                ),
+                inner_fn @ (IRFunctionExpr::Boolean(
+                    IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
+                )
+                | IRFunctionExpr::NullCount),
             options,
         } => {
             assert!(inner_exprs.len() == 1);
@@ -261,7 +262,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                     let input_col_node = expr_arena.add(AExpr::Column(input_col));
                     let trans_agg_node = expr_arena.add(AExpr::Function {
                         input: vec![ExprIR::from_node(input_col_node, expr_arena)],
-                        function: IRFunctionExpr::Boolean(inner_fn),
+                        function: inner_fn,
                         options,
                     });
 

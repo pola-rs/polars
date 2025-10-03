@@ -303,12 +303,24 @@ pub(super) fn next_line_position(
     }
 }
 
+#[inline(always)]
 pub(super) fn is_line_ending(b: u8, eol_char: u8) -> bool {
     b == eol_char || b == b'\r'
 }
 
+#[inline(always)]
 pub(super) fn is_whitespace(b: u8) -> bool {
     b == b' ' || b == b'\t'
+}
+
+/// May have false-positives, but not false negatives.
+#[inline(always)]
+pub(super) fn could_be_whitespace_fast(b: u8) -> bool {
+    // We're interested in \t (ASCII 9) and " " (ASCII 32), both of which are
+    // <= 32. In that range there aren't a lot of other common symbols (besides
+    // newline), so this is a quick test which can be worth doing to avoid the
+    // exact test.
+    b <= 32
 }
 
 #[inline]

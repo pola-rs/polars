@@ -169,7 +169,6 @@ where
 #[derive(Clone)]
 pub struct CrossJoinOptions {
     pub predicate: Arc<dyn CrossJoinFilter>,
-    pub maintain_order: MaintainOrderJoin,
 }
 
 impl CrossJoinOptions {
@@ -183,14 +182,12 @@ impl Eq for CrossJoinOptions {}
 impl PartialEq for CrossJoinOptions {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::addr_eq(self.as_ptr_ref(), other.as_ptr_ref())
-            && self.maintain_order == other.maintain_order
     }
 }
 
 impl Hash for CrossJoinOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.as_ptr_ref().hash(state);
-        self.maintain_order.hash(state);
     }
 }
 

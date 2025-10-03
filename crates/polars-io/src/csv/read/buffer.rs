@@ -14,7 +14,7 @@ use polars_time::prelude::string::infer::{
 use polars_utils::vec::PushUnchecked;
 
 use super::options::CsvEncoding;
-use super::parser::{is_whitespace, skip_whitespace};
+use super::parser::{could_be_whitespace_fast, skip_whitespace};
 use super::utils::escape_field;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
@@ -119,46 +119,34 @@ where
     #[inline]
     fn parse_bytes(
         &mut self,
-        bytes: &[u8],
+        mut bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
         _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
+        if !bytes.is_empty() && needs_escaping {
+            bytes = &bytes[1..bytes.len() - 1];
+        }
+
+        if !bytes.is_empty() && could_be_whitespace_fast(bytes[0]) {
+            bytes = skip_whitespace(bytes);
+        }
+
         if bytes.is_empty() {
-            self.append_null()
-        } else {
-            let bytes = if needs_escaping {
-                &bytes[1..bytes.len() - 1]
-            } else {
-                bytes
-            };
+            self.append_null();
+            return Ok(());
+        }
 
-            // legacy comment (remember this if you decide to use Results again):
-            // its faster to work on options.
-            // if we need to throw an error, we parse again to be able to throw the error
-
-            match T::parse(bytes) {
-                Some(value) => self.append_value(value),
-                None => {
-                    // try again without whitespace
-                    if !bytes.is_empty() && is_whitespace(bytes[0]) {
-                        let bytes = skip_whitespace(bytes);
-                        return self.parse_bytes(
-                            bytes,
-                            ignore_errors,
-                            false, // escaping was already done
-                            _missing_is_null,
-                            None,
-                        );
-                    }
-                    polars_ensure!(
-                        bytes.is_empty() || ignore_errors,
-                        ComputeError: "remaining bytes non-empty",
-                    );
+        match T::parse(bytes) {
+            Some(value) => self.append_value(value),
+            None => {
+                if ignore_errors {
                     self.append_null()
-                },
-            };
+                } else {
+                    polars_bail!(ComputeError: "invalid primitive value found during CSV parsing")
+                }
+            },
         }
         Ok(())
     }
@@ -398,39 +386,35 @@ impl ParsedBuffer for DecimalField {
     #[inline]
     fn parse_bytes(
         &mut self,
-        bytes: &[u8],
+        mut bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
         _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
-        let bytes = if needs_escaping {
-            &bytes[1..bytes.len() - 1]
-        } else {
-            bytes
-        };
+        if !bytes.is_empty() && needs_escaping {
+            bytes = &bytes[1..bytes.len() - 1];
+        }
+
+        if !bytes.is_empty() && could_be_whitespace_fast(bytes[0]) {
+            bytes = skip_whitespace(bytes);
+        }
+
+        if bytes.is_empty() {
+            self.builder.append_null();
+            return Ok(());
+        }
 
         match str_to_dec128(bytes, self.precision, self.scale, self.decimal_comma) {
             Some(value) => self.builder.append_value(value),
             None => {
-                // try again without whitespace
-                if !bytes.is_empty() && is_whitespace(bytes[0]) {
-                    let bytes = skip_whitespace(bytes);
-                    return self.parse_bytes(
-                        bytes,
-                        ignore_errors,
-                        false, // escaping was already done
-                        _missing_is_null,
-                        None,
-                    );
+                if ignore_errors {
+                    self.builder.append_null()
+                } else {
+                    polars_bail!(ComputeError: "invalid decimal value found during CSV parsing")
                 }
-                polars_ensure!(
-                    bytes.is_empty() || ignore_errors,
-                    ComputeError: "remaining bytes non-empty when parsing Decimal field",
-                );
-                self.builder.append_null()
             },
-        };
+        }
 
         Ok(())
     }
