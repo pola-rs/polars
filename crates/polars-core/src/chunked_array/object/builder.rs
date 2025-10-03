@@ -171,7 +171,7 @@ pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
     let list_s = unsafe {
         s.agg_list(&GroupsType::Slice {
             groups: vec![[0, s.len() as IdxSize]],
-            rolling: false,
+            overlapping: false,
         })
     };
     let arr = &list_s.chunks()[0];

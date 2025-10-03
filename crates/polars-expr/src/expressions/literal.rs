@@ -121,7 +121,7 @@ impl PhysicalExpr for LiteralExpr {
                 groups: (0..groups.len() as IdxSize)
                     .map(|i| [i * lit_length, lit_length])
                     .collect(),
-                rolling: false,
+                overlapping: false,
             };
             let agg_state = AggState::AggregatedList(Column::new_scalar(
                 s.name().clone(),
