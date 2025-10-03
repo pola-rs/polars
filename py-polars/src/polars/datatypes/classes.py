@@ -427,7 +427,7 @@ class Decimal(NumericType):
     ----------
     precision
         Maximum number of digits in each number.
-        If set to `None` (default), the precision is inferred.
+        If set to `None` (default), the precision is set to 38 (the maximum supported by Polars).
     scale
         Number of digits to the right of the decimal point in each number.
     """
