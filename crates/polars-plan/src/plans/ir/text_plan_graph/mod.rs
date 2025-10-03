@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::{PlHashMap, SortMultipleOptions};
-use polars_ops::frame::{AsOfOptions, JoinArgs, JoinType};
-use polars_time::{DynamicGroupOptions, RollingGroupOptions};
+use polars_ops::frame::{JoinArgs, JoinType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -175,7 +174,9 @@ impl TextPlanGraphGenerator<'_> {
                 apply,
             } => {
                 let GroupbyOptions {
+                    #[cfg(feature = "dynamic_group_by")]
                     dynamic,
+                    #[cfg(feature = "dynamic_group_by")]
                     rolling,
                     slice,
                 } = options.as_ref();
@@ -185,53 +186,69 @@ impl TextPlanGraphGenerator<'_> {
                 let maintain_order = *maintain_order;
                 let plan_callback = apply.as_ref().map(|x| format_pl_smallstr!("{:?}", x));
 
-                let properties = if let Some(DynamicGroupOptions {
-                    index_column,
-                    every,
-                    period,
-                    offset,
-                    label,
-                    include_boundaries,
-                    closed_window,
-                    start_by,
-                }) = dynamic
-                {
-                    IRTpgProperties::DynamicGroupBy {
-                        index_column: index_column.clone(),
-                        every: format_pl_smallstr!("{}", every),
-                        period: format_pl_smallstr!("{}", period),
-                        offset: format_pl_smallstr!("{}", offset),
-                        label: *label,
-                        include_boundaries: *include_boundaries,
-                        closed_window: *closed_window,
-                        group_by: keys,
-                        start_by: *start_by,
-                    }
-                } else if let Some(RollingGroupOptions {
-                    index_column,
-                    period,
-                    offset,
-                    closed_window,
-                }) = rolling
-                {
-                    IRTpgProperties::RollingGroupBy {
-                        keys,
-                        aggs,
-                        index_column: index_column.clone(),
-                        period: format_pl_smallstr!("{}", period),
-                        offset: format_pl_smallstr!("{}", offset),
-                        closed_window: *closed_window,
-                        slice: convert_opt_slice(slice),
-                        plan_callback,
-                    }
-                } else {
-                    IRTpgProperties::GroupBy {
+                let properties = match (()) {
+                    #[cfg(feature = "dynamic_group_by")]
+                    _ if dynamic.is_some() => {
+                        use polars_time::DynamicGroupOptions;
+
+                        let Some(DynamicGroupOptions {
+                            index_column,
+                            every,
+                            period,
+                            offset,
+                            label,
+                            include_boundaries,
+                            closed_window,
+                            start_by,
+                        }) = dynamic
+                        else {
+                            unreachable!()
+                        };
+
+                        IRTpgProperties::DynamicGroupBy {
+                            index_column: index_column.clone(),
+                            every: format_pl_smallstr!("{}", every),
+                            period: format_pl_smallstr!("{}", period),
+                            offset: format_pl_smallstr!("{}", offset),
+                            label: *label,
+                            include_boundaries: *include_boundaries,
+                            closed_window: *closed_window,
+                            group_by: keys,
+                            start_by: *start_by,
+                        }
+                    },
+                    #[cfg(feature = "dynamic_group_by")]
+                    _ if rolling.is_some() => {
+                        use polars_time::RollingGroupOptions;
+
+                        let Some(RollingGroupOptions {
+                            index_column,
+                            period,
+                            offset,
+                            closed_window,
+                        }) = rolling
+                        else {
+                            unreachable!()
+                        };
+
+                        IRTpgProperties::RollingGroupBy {
+                            keys,
+                            aggs,
+                            index_column: index_column.clone(),
+                            period: format_pl_smallstr!("{}", period),
+                            offset: format_pl_smallstr!("{}", offset),
+                            closed_window: *closed_window,
+                            slice: convert_opt_slice(slice),
+                            plan_callback,
+                        }
+                    },
+                    _ => IRTpgProperties::GroupBy {
                         keys,
                         aggs,
                         maintain_order,
                         slice: convert_opt_slice(slice),
                         plan_callback,
-                    }
+                    },
                 };
 
                 TpgNode {
@@ -318,6 +335,8 @@ impl TextPlanGraphGenerator<'_> {
                 let properties = match how {
                     #[cfg(feature = "asof_join")]
                     JoinType::AsOf(asof_options) => {
+                        use polars_ops::frame::AsOfOptions;
+
                         #[expect(unused_variables)]
                         let AsOfOptions {
                             strategy,

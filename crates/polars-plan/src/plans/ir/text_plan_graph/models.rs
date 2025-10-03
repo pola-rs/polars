@@ -1,6 +1,5 @@
 use polars_core::frame::UniqueKeepStrategy;
 use polars_ops::frame::{JoinCoalesce, JoinValidation, MaintainOrderJoin};
-use polars_time::ClosedWindow;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
@@ -77,27 +76,6 @@ pub enum IRTpgProperties {
         keys: Vec<PlSmallStr>,
         aggs: Vec<PlSmallStr>,
         maintain_order: bool,
-        slice: Option<[i128; 2]>,
-        plan_callback: Option<PlSmallStr>,
-    },
-    DynamicGroupBy {
-        index_column: PlSmallStr,
-        every: PlSmallStr,
-        period: PlSmallStr,
-        offset: PlSmallStr,
-        label: polars_time::prelude::Label,
-        include_boundaries: bool,
-        closed_window: ClosedWindow,
-        group_by: Vec<PlSmallStr>,
-        start_by: polars_time::prelude::StartBy,
-    },
-    RollingGroupBy {
-        keys: Vec<PlSmallStr>,
-        aggs: Vec<PlSmallStr>,
-        index_column: PlSmallStr,
-        period: PlSmallStr,
-        offset: PlSmallStr,
-        closed_window: ClosedWindow,
         slice: Option<[i128; 2]>,
         plan_callback: Option<PlSmallStr>,
     },
@@ -207,6 +185,29 @@ pub enum IRTpgProperties {
         coalesce: JoinCoalesce,
         allow_eq: bool,
         check_sortedness: bool,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    DynamicGroupBy {
+        index_column: PlSmallStr,
+        every: PlSmallStr,
+        period: PlSmallStr,
+        offset: PlSmallStr,
+        label: polars_time::prelude::Label,
+        include_boundaries: bool,
+        closed_window: polars_time::ClosedWindow,
+        group_by: Vec<PlSmallStr>,
+        start_by: polars_time::prelude::StartBy,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    RollingGroupBy {
+        keys: Vec<PlSmallStr>,
+        aggs: Vec<PlSmallStr>,
+        index_column: PlSmallStr,
+        period: PlSmallStr,
+        offset: PlSmallStr,
+        closed_window: polars_time::ClosedWindow,
+        slice: Option<[i128; 2]>,
+        plan_callback: Option<PlSmallStr>,
     },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {
