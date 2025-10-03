@@ -1278,7 +1278,7 @@ class ExprListNameSpace:
         │ [null, 3] ┆ [3, 4, null] ┆ [null, 3, 4]  │
         │ [5, 6, 7] ┆ [6, 8]       ┆ [5, 6, 7, 8]  │
         └───────────┴──────────────┴───────────────┘
-        """  # noqa: W505.
+        """  # noqa: W505
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc
@@ -1320,7 +1320,7 @@ class ExprListNameSpace:
         See Also
         --------
         polars.Expr.list.diff: Calculates the n-th discrete difference of every sublist.
-        """  # noqa: W505.
+        """  # noqa: W505
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc
@@ -1358,7 +1358,7 @@ class ExprListNameSpace:
         │ [null, 3] ┆ [3, 4, null] ┆ [null, 3]    │
         │ [5, 6, 7] ┆ [6, 8]       ┆ [6]          │
         └───────────┴──────────────┴──────────────┘
-        """  # noqa: W505.
+        """  # noqa: W505
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc
@@ -1396,7 +1396,7 @@ class ExprListNameSpace:
         │ [null, 3] ┆ [3, 4, null] ┆ [4]       │
         │ [5, 6, 7] ┆ [6, 8]       ┆ [8, 5, 7] │
         └───────────┴──────────────┴───────────┘
-        """  # noqa: W505.
+        """  # noqa: W505
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc

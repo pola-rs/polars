@@ -143,7 +143,7 @@ pub(crate) fn decimal_to_pyobject_iter<'py, 'a>(
     let mut buf = DecimalFmtBuffer::new();
     Ok(ca.physical().iter().map(move |opt_v| {
         opt_v.map(|v| {
-            let s = buf.format_dec128(v, ca.scale(), false);
+            let s = buf.format_dec128(v, ca.scale(), false, false);
             convert.call1((&py_precision, s)).unwrap()
         })
     }))

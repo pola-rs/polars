@@ -73,7 +73,7 @@ impl IRBooleanFunction {
         use IRBooleanFunction as B;
         match self {
             B::Any { .. } | B::All { .. } => {
-                FunctionOptions::aggregation().flag(FunctionFlags::INPUT_ORDER_AGNOSTIC)
+                FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             B::IsNull | B::IsNotNull => FunctionOptions::elementwise(),
             B::IsFinite | B::IsInfinite | B::IsNan | B::IsNotNan => FunctionOptions::elementwise()

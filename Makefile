@@ -83,7 +83,7 @@ requirements: .venv  ## Install/refresh Python project requirements
 	   -r py-polars/docs/requirements-docs.txt \
 	   -r docs/source/requirements.txt \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core \
-	&& $(VENV_BIN)/uv pip install --no-dependencies -e py-polars
+	&& $(VENV_BIN)/uv pip install --no-deps -e py-polars
 
 .PHONY: requirements-all
 requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)
