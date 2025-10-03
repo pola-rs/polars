@@ -393,6 +393,19 @@ def test_slice_pushdown_within_concat_24734() -> None:
         ]
     )
 
-    assert "SLICE" not in q.explain()
+    plan = q.explain()
+    assert "SLICE" not in plan
 
     assert_frame_equal(q, pl.LazyFrame({"x": [0, 1]}))
+
+    q = pl.concat(
+        [
+            pl.LazyFrame({"x": [0, 1, 2, 3, 4]}).select(pl.col("x").reverse()),
+            pl.LazyFrame(schema={"x": pl.Int64}),
+        ]
+    ).slice(1, 2)
+
+    plan = q.explain()
+    assert plan.index("SLICE[offset: 0, len: 3]") > plan.index("PLAN 0:")
+
+    assert_frame_equal(q, pl.LazyFrame({"x": [3, 2]}))

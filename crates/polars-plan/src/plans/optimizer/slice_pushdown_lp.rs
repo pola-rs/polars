@@ -264,9 +264,16 @@ impl SlicePushDown {
                 Ok(lp)
             }
             (Union {mut inputs, mut options }, opt_state) => {
+                let limit: Option<IdxSize> = opt_state.filter(|x| x.offset >= 0).and_then(|x| {
+                    x.len.checked_add(x.offset.try_into().unwrap())
+                });
+
                 for input in &mut inputs {
                     let input_lp = lp_arena.take(*input);
-                    let input_lp = self.pushdown(input_lp, opt_state.filter(|x| x.offset == 0), lp_arena, expr_arena)?;
+                    let input_lp = self.pushdown(input_lp, limit.map(|len| State {
+                        offset: 0,
+                        len,
+                    }), lp_arena, expr_arena)?;
                     lp_arena.replace(*input, input_lp);
                 }
                 options.slice = opt_state.map(|x| (x.offset, x.len.try_into().unwrap()));
