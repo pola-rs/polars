@@ -507,8 +507,8 @@ pub(crate) fn py_object_to_any_value(
         } else if PyMapping::type_check(ob) {
             Ok(get_mapping)
         }
-        // datetime must be checked before date because
-        // Python datetime is an instance of date.
+        // note: datetime must be checked *before* date
+        // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
             Ok(get_datetime as InitFn)
         } else if PyDate::type_check(ob) {
@@ -520,12 +520,19 @@ pub(crate) fn py_object_to_any_value(
         } else if ob.is_instance_of::<PyRange>() {
             Ok(get_list as InitFn)
         } else {
+            static NDARRAY_TYPE: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+            if let Ok(ndarray_type) = NDARRAY_TYPE.import(py, "numpy", "ndarray") {
+                if ob.is_instance(ndarray_type)? {
+                    // will convert via Series -> mmap_numpy_array
+                    return Ok(get_list as InitFn);
+                }
+            }
             static DECIMAL_TYPE: GILOnceCell<Py<PyType>> = GILOnceCell::new();
             if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
                 return Ok(get_decimal as InitFn);
             }
 
-            // Support NumPy scalars.
+            // support NumPy scalars
             if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
                 return Ok(get_int as InitFn);
             } else if ob.extract::<f64>().is_ok() {
