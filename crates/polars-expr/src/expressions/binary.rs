@@ -125,19 +125,68 @@ impl BinaryExpr {
     fn apply_elementwise<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
-        ac_r: AggregationContext,
+        mut ac_r: AggregationContext<'a>,
         aggregated: bool,
     ) -> PolarsResult<AggregationContext<'a>> {
-        // We want to be able to mutate in place, so we take the lhs to make sure that we drop.
-        let lhs = ac_l.get_values().clone();
-        let rhs = ac_r.get_values().clone();
+        // At this stage, we do not have both AggregatedList and NotAggregated ACs
 
-        // Drop lhs so that we might operate in place.
-        drop(ac_l.take());
+        // Check group lengths in case of all AggList
+        if [&ac_l, &ac_r]
+            .iter()
+            .all(|ac| matches!(ac.state, AggState::AggregatedList(_)))
+        {
+            ac_l.groups.check_lengths(&ac_r.groups)?;
+        }
 
-        let out = apply_operator_owned(lhs, rhs, self.op)?;
-        ac_l.with_values(out, aggregated, Some(&self.expr))?;
-        Ok(ac_l)
+        // The first non-LiteralScalar AC will be used as the base AC to retain the context
+        let left_is_literal = ac_l.is_literal();
+
+        match if !left_is_literal {
+            ac_l.agg_state()
+        } else {
+            ac_r.agg_state()
+        } {
+            AggState::AggregatedList(s) => {
+                let ca = s.list().unwrap();
+                let cols = [&ac_l, &ac_r]
+                    .iter()
+                    .map(|ac| ac.flat_naive().into_owned())
+                    .collect::<Vec<_>>();
+
+                let out = ca.apply_to_inner(&|_| {
+                    apply_operator(&cols[0], &cols[1], self.op)
+                        .map(|c| c.take_materialized_series())
+                })?;
+                let out = out.into_column();
+
+                if ac_l.is_literal() {
+                    std::mem::swap(&mut ac_l, &mut ac_r);
+                }
+
+                ac_l.with_values(out.into_column(), true, Some(&self.expr))?;
+                Ok(ac_l)
+            },
+
+            _ => {
+                // We want to be able to mutate in place, so we take the lhs to make sure that we drop.
+                let lhs = ac_l.get_values().clone();
+                let rhs = ac_r.get_values().clone();
+
+                let out = apply_operator_owned(lhs, rhs, self.op)?;
+
+                // Make sure ac_l is a non_literal AC so we retain correct group info, e.g.
+                // in the case of (LiteralScalar, NotAggregated with mutated groups)
+                if ac_l.is_literal() {
+                    std::mem::swap(&mut ac_l, &mut ac_r);
+                }
+
+                // Drop lhs so that we might operate in place.
+                drop(ac_l.take());
+
+                ac_l.with_values(out, aggregated, Some(&self.expr))?;
+                Ok(ac_l)
+            },
+        }
     }
 
     fn apply_all_literal<'a>(
@@ -239,8 +288,37 @@ impl PhysicalExpr for BinaryExpr {
             )
         });
         let mut ac_l = result_a?;
-        let ac_r = result_b?;
+        let mut ac_r = result_b?;
 
+        // Aggregate NotAggregated into AggregatedList, but only if strictly required AND
+        // when there is no risk of memory explosion. See ApplyExpr for additional context
+        // TODO - extend rolling to group_by_dynamic
+        let has_agg_list = [&ac_l, &ac_r]
+            .iter()
+            .any(|ac| matches!(ac.state, AggState::AggregatedList(_)));
+        let not_agg_has_rolling = [&ac_l, &ac_r]
+            .iter()
+            .any(|ac| matches!(ac.state, AggState::NotAggregated(_)) && ac.groups.is_rolling());
+
+        let not_agg_groups_may_diverge = [&ac_l, &ac_r]
+            .iter()
+            .filter(|ac| matches!(ac.state, AggState::NotAggregated(_)))
+            .map(|ac| ac.groups.as_ref())
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|w| !std::ptr::eq(w[0], w[1]));
+
+        for ac in [&mut ac_l, &mut ac_r] {
+            if matches!(ac.state, AggState::NotAggregated(_)) {
+                if !not_agg_has_rolling && (has_agg_list || not_agg_groups_may_diverge) {
+                    ac.aggregated();
+                }
+            }
+        }
+
+        // Dispatch
+        // TODO - consolidate into 4 branches:
+        // all_lit, aggscalar incompatible, compatible but expensive, other)
         match (ac_l.agg_state(), ac_r.agg_state()) {
             (AggState::LiteralScalar(_), AggState::LiteralScalar(_)) => {
                 self.apply_all_literal(ac_l, ac_r)
@@ -251,7 +329,11 @@ impl PhysicalExpr for BinaryExpr {
                 _ => self.apply_group_aware(ac_l, ac_r),
             },
             (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
-                self.apply_elementwise(ac_l, ac_r, false)
+                if not_agg_groups_may_diverge && not_agg_has_rolling {
+                    self.apply_group_aware(ac_l, ac_r)
+                } else {
+                    self.apply_elementwise(ac_l, ac_r, false)
+                }
             },
             (
                 AggState::AggregatedScalar(_) | AggState::LiteralScalar(_),
@@ -261,16 +343,13 @@ impl PhysicalExpr for BinaryExpr {
             | (AggState::NotAggregated(_), AggState::AggregatedScalar(_)) => {
                 self.apply_group_aware(ac_l, ac_r)
             },
-            (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {
-                let lhs = lhs.list().unwrap();
-                let rhs = rhs.list().unwrap();
-                let out = lhs.apply_to_inner(&|lhs| {
-                    apply_operator(&lhs.into_column(), &rhs.get_inner().into_column(), self.op)
-                        .map(|c| c.take_materialized_series())
-                })?;
-                ac_l.with_values(out.into_column(), true, Some(&self.expr))?;
-                Ok(ac_l)
+            (AggState::AggregatedList(_), AggState::AggregatedList(_)) => {
+                self.apply_elementwise(ac_l, ac_r, true)
             },
+            (
+                AggState::AggregatedList(_) | AggState::LiteralScalar(_),
+                AggState::AggregatedList(_) | AggState::LiteralScalar(_),
+            ) => self.apply_elementwise(ac_l, ac_r, true),
             _ => self.apply_group_aware(ac_l, ac_r),
         }
     }
