@@ -213,6 +213,7 @@ impl TextPlanGraphGenerator<'_> {
                             closed_window: *closed_window,
                             group_by: keys,
                             start_by: *start_by,
+                            plan_callback,
                         }
                     },
                     #[cfg(feature = "dynamic_group_by")]

@@ -197,6 +197,7 @@ pub enum IRTpgProperties {
         closed_window: polars_time::ClosedWindow,
         group_by: Vec<PlSmallStr>,
         start_by: polars_time::prelude::StartBy,
+        plan_callback: Option<PlSmallStr>,
     },
     #[cfg(feature = "dynamic_group_by")]
     RollingGroupBy {
