@@ -262,13 +262,15 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
 
-        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or_else(||
-            polars_err!(
-                ComputeError: "Parquet file produces more than pow(2, 32) rows; \
-                consider compiling with polars-bigidx feature (pip install polars[rt64]), \
-                or set 'streaming'"
-            ),
-        )?;
+        *previous_row_count = previous_row_count
+            .checked_add(current_row_count)
+            .ok_or_else(|| {
+                polars_err!(
+                    ComputeError: "Parquet file produces more than pow(2, 32) rows; \
+                    consider compiling with polars-bigidx feature (pip install polars[rt64]), \
+                    or set 'streaming'"
+                )
+            })?;
         dfs.push(df);
 
         if *previous_row_count as usize >= slice_end {

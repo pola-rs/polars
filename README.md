@@ -155,5 +155,6 @@ less memory.
 ## Legacy
 
 Do you want Polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build of
-Python on Apple Silicon under Rosetta? Install `pip install polars[rtcompat]`. This version of Polars
-is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
+Python on Apple Silicon under Rosetta? Install `pip install polars[rtcompat]`. This version of
+Polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
+features.
