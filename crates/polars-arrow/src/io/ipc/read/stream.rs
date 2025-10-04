@@ -162,7 +162,7 @@ fn read_next<R: Read + Seek>(
                 None,
                 dictionaries,
                 metadata.version,
-                &mut reader.take(block_length as u64),
+                &mut (&mut *reader).take(block_length as u64),
                 0,
                 scratch,
             );
@@ -191,7 +191,7 @@ fn read_next<R: Read + Seek>(
                 &metadata.schema,
                 &metadata.ipc_schema,
                 dictionaries,
-                &mut reader.take(block_length as u64),
+                &mut (&mut *reader).take(block_length as u64),
                 0,
                 scratch,
             )?;
