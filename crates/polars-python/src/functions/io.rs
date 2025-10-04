@@ -13,7 +13,7 @@ use crate::file::{EitherRustPythonFile, get_either_file};
 
 #[cfg(feature = "ipc")]
 #[pyfunction]
-pub fn read_ipc_schema(py: Python<'_>, py_f: PyObject) -> PyResult<Bound<'_, PyDict>> {
+pub fn read_ipc_schema(py: Python<'_>, py_f: Py<PyAny>) -> PyResult<Bound<'_, PyDict>> {
     use arrow::io::ipc::read::read_file_metadata;
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(r) => {
@@ -31,9 +31,9 @@ pub fn read_ipc_schema(py: Python<'_>, py_f: PyObject) -> PyResult<Bound<'_, PyD
 #[pyfunction]
 pub fn read_parquet_metadata(
     py: Python,
-    py_f: PyObject,
+    py_f: Py<PyAny>,
     storage_options: Option<Vec<(String, String)>>,
-    credential_provider: Option<PyObject>,
+    credential_provider: Option<Py<PyAny>>,
     retries: usize,
 ) -> PyResult<Bound<PyDict>> {
     use std::io::Cursor;
@@ -131,7 +131,7 @@ pub fn write_clipboard_string(s: &str) -> PyResult<()> {
 pub fn parse_cloud_options<'a>(
     first_path: Option<PlPathRef<'a>>,
     storage_options: Option<Vec<(String, String)>>,
-    credential_provider: Option<PyObject>,
+    credential_provider: Option<Py<PyAny>>,
     retries: usize,
 ) -> PyResult<Option<CloudOptions>> {
     let result = if let Some(first_path) = first_path {

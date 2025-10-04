@@ -1036,7 +1036,7 @@ fn to_graph_rec<'a>(
 
                     // Setup the IO plugin generator.
                     let (generator, can_parse_predicate) = {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
                             let utils = pl.getattr(intern!(py, "_utils")).unwrap();
                             let callable =
@@ -1086,7 +1086,7 @@ fn to_graph_rec<'a>(
                     }?;
 
                     let get_batch_fn = Box::new(move |state: &StreamingExecutionState| {
-                        let df = Python::with_gil(|py| {
+                        let df = Python::attach(|py| {
                             match generator.bind(py).call_method0(intern!(py, "__next__")) {
                                 Ok(out) => polars_plan::plans::python_df_to_rust(py, out).map(Some),
                                 Err(err)

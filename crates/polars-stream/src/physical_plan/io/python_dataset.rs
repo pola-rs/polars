@@ -24,7 +24,7 @@ pub fn python_dataset_scan_to_reader_builder(
             (
                 format_pl_smallstr!("python[{} @ pyarrow]", &expanded_scan.name),
                 Box::new(move |_state: &StreamingExecutionState| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         let Some(python_scan_function) =
                             python_scan_function.lock().unwrap().take()
                         else {

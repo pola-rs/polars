@@ -365,7 +365,7 @@ impl PyDataFrame {
         &self,
         py: Python<'_>,
         by: Vec<PyBackedStr>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         maintain_order: bool,
     ) -> PyResult<Self> {
         py.enter_polars_df(|| {
@@ -377,7 +377,7 @@ impl PyDataFrame {
             }?;
 
             let function = move |df: DataFrame| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let pypolars = polars(py).bind(py);
                     let pydf = PyDataFrame::new(df);
                     let python_df_wrapper =
@@ -498,8 +498,8 @@ impl PyDataFrame {
         lambda: Bound<PyAny>,
         output_type: Option<Wrap<DataType>>,
         inference_size: usize,
-    ) -> PyResult<(PyObject, bool)> {
-        Python::with_gil(|py| {
+    ) -> PyResult<(Py<PyAny>, bool)> {
+        Python::attach(|py| {
             let mut df = self.df.write();
             df.as_single_chunk_par(); // needed for series iter
             let df = &*RwLockWriteGuard::downgrade(df);

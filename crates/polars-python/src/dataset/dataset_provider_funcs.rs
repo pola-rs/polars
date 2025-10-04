@@ -9,13 +9,13 @@ use pyo3::conversion::FromPyObjectBound;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
-use pyo3::{PyObject, PyResult, Python, intern};
+use pyo3::{Py, PyAny, PyResult, Python, intern};
 
 use crate::interop::arrow::to_rust::field_to_rust;
 use crate::prelude::{Wrap, get_lf};
 
 pub fn name(dataset_object: &PythonObject) -> PlSmallStr {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         PyResult::Ok(PlSmallStr::from_str(
             &dataset_object
                 .getattr(py, intern!(py, "__class__"))?
@@ -27,7 +27,7 @@ pub fn name(dataset_object: &PythonObject) -> PlSmallStr {
 }
 
 pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let pyarrow_schema_cls = py
             .import("pyarrow")
             .ok()
@@ -82,7 +82,7 @@ pub fn to_dataset_scan(
     projection: Option<&[PlSmallStr]>,
     filter_columns: Option<&[PlSmallStr]>,
 ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let kwargs = PyDict::new(py);
 
         kwargs.set_item(
@@ -114,7 +114,7 @@ pub fn to_dataset_scan(
             kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
         }
 
-        let Some((scan, version)): Option<(PyObject, Wrap<PlSmallStr>)> = dataset_object
+        let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = dataset_object
             .getattr(py, intern!(py, "to_dataset_scan"))?
             .call(py, (), Some(&kwargs))?
             .extract(py)?

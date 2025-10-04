@@ -77,7 +77,11 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(
+        &self,
+        py: Python<'_>,
+        compat_level: PyCompatLevel,
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let mut df = self.df.write();
         let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
         py.enter_polars_ok(|| dfr.align_chunks_par())?;
@@ -102,12 +106,12 @@ impl PyDataFrame {
     /// since those can't be converted correctly via PyArrow. The calling Python
     /// code should make sure these are not included.
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_pandas(&self, py: Python) -> PyResult<Vec<PyObject>> {
+    pub fn to_pandas(&self, py: Python) -> PyResult<Vec<Py<PyAny>>> {
         let mut df = self.df.write();
         let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
         py.enter_polars_ok(|| dfr.as_single_chunk_par())?;
         let df = RwLockWriteGuard::downgrade(df);
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let pyarrow = py.import("pyarrow")?;
             let cat_columns = df
                 .get_columns()
@@ -173,7 +177,7 @@ impl PyDataFrame {
     fn __arrow_c_stream__<'py>(
         &self,
         py: Python<'py>,
-        requested_schema: Option<PyObject>,
+        requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         let mut df = self.df.write();
         let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.

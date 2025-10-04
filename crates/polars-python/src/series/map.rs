@@ -56,7 +56,7 @@ impl PySeries {
 
         }
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             if matches!(
                 series.dtype(),
                 DataType::Datetime(_, _)
@@ -259,7 +259,7 @@ impl PySeries {
                     let dtype_py = Wrap((*inner).clone());
                     let function_wrapped =
                         PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let out = function_owned.call1(py, args)?;
                                 if out.is_none(py) {
                                     Ok(py.None())
