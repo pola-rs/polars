@@ -25,7 +25,7 @@ impl PyDataFrame {
         order: Wrap<IndexOrder>,
         writable: bool,
         allow_copy: bool,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         df_to_numpy(py, &self.df.read(), order.0, writable, allow_copy)
     }
 }
@@ -36,7 +36,7 @@ pub(super) fn df_to_numpy(
     order: IndexOrder,
     writable: bool,
     allow_copy: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     if df.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty DataFrame.
@@ -67,7 +67,7 @@ pub(super) fn df_to_numpy(
 }
 
 /// Create a NumPy view of the given DataFrame.
-fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Option<PyObject> {
+fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Option<Py<PyAny>> {
     let first_dtype = check_df_dtypes_support_view(df)?;
 
     // TODO: Check for nested nulls using `series_contains_null` util when we support Array types.
@@ -172,7 +172,7 @@ where
 }
 
 /// Create a NumPy view of a numeric DataFrame.
-fn numeric_df_to_numpy_view<T>(py: Python<'_>, df: &DataFrame, owner: PyObject) -> PyObject
+fn numeric_df_to_numpy_view<T>(py: Python<'_>, df: &DataFrame, owner: Py<PyAny>) -> Py<PyAny>
 where
     T: PolarsNumericType,
     T::Native: Element,
@@ -202,7 +202,7 @@ where
     }
 }
 /// Create a NumPy view of a Datetime or Duration DataFrame.
-fn temporal_df_to_numpy_view(py: Python<'_>, df: &DataFrame, owner: PyObject) -> PyObject {
+fn temporal_df_to_numpy_view(py: Python<'_>, df: &DataFrame, owner: Py<PyAny>) -> Py<PyAny> {
     let s = df.get_columns().first().unwrap();
     let phys = s.to_physical_repr();
     let ca = phys.i64().unwrap();
@@ -229,7 +229,7 @@ fn df_to_numpy_with_copy(
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     if let Some(arr) = try_df_to_numpy_numeric_supertype(py, df, order) {
         Ok(arr)
     } else {
@@ -240,7 +240,7 @@ fn try_df_to_numpy_numeric_supertype(
     py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
-) -> Option<PyObject> {
+) -> Option<Py<PyAny>> {
     let st = dtypes_to_supertype(df.iter().map(|s| s.dtype())).ok()?;
 
     let np_array = match st {
@@ -257,7 +257,7 @@ fn df_columns_to_numpy(
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let np_arrays = df.iter().map(|s| {
         let mut arr = series_to_numpy(py, s, writable, true).unwrap();
 

@@ -219,7 +219,7 @@ impl PySeries {
 
         // Fall back to Object type for non-strict construction.
         if !strict && result.is_err() {
-            return Python::with_gil(|py| {
+            return Python::attach(|py| {
                 let objects = values
                     .try_iter()?
                     .map(|v| v?.extract())
