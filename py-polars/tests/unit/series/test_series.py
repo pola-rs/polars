@@ -1857,6 +1857,17 @@ def test_sign() -> None:
     expected = pl.Series("a", [-1.0, 0.0, 0.0, 1.0, float("nan"), None])
     assert_series_equal(a.sign(), expected)
 
+    # Decimal
+    s = pl.Series("a", [1, -1, 10, -10])
+    for scale in [0, 1, 2, 3, 7, 16, 20, 30]:
+        dtype = pl.Decimal(scale=scale)
+        assert_series_equal(s.sign().cast(dtype), s.cast(dtype).sign())
+
+        s = pl.Series("a", ["1.00", "20.00", "-1", "0", "-7"], dtype)
+        assert_series_equal(
+            s.sign(), pl.Series("a", ["1", "1", "-1", "0", "-1"], dtype)
+        )
+
     # Invalid input
     a = pl.Series("a", [date(1950, 2, 1), date(1970, 1, 1), date(2022, 12, 12), None])
     with pytest.raises(InvalidOperationError):

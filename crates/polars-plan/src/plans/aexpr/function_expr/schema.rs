@@ -57,7 +57,7 @@ impl IRFunctionExpr {
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper
-                .ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?
+                .ensure_satisfies(|_, dtype| dtype.is_numeric(), "sign")?
                 .with_same_dtype(),
             FillNull => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
