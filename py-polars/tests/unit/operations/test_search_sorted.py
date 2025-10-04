@@ -1,8 +1,16 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -89,3 +97,42 @@ def test_raise_literal_numeric_search_sorted_18096() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(idx=pl.col("foo").search_sorted("bar"))
+
+
+@pytest.mark.parametrize("dtype", [pl.Categorical(), pl.Enum(["a", "b", "c"])])
+def test_search_sorted_enum_categorical(dtype: PolarsDataType) -> None:
+    series = pl.Series(["a", None, "b", "c"], dtype=dtype)
+    desc_nulls_last = series.sort(descending=True, nulls_last=True)
+    assert desc_nulls_last.search_sorted(None, "left", descending=True) == 3
+    assert desc_nulls_last.search_sorted("a", "left", descending=True) == 2
+
+    desc_nulls_first = series.sort(descending=True, nulls_last=False)
+    assert desc_nulls_first.search_sorted(None, "left", descending=True) == 0
+    assert desc_nulls_first.search_sorted("a", "left", descending=True) == 3
+
+    asc_nulls_last = series.sort(descending=False, nulls_last=True)
+    assert asc_nulls_last.search_sorted(None, "left", descending=False) == 3
+    assert asc_nulls_last.search_sorted("a", "left", descending=False) == 0
+
+    asc_nulls_first = series.sort(descending=False, nulls_last=False)
+    assert asc_nulls_first.search_sorted(None, "left", descending=False) == 0
+    assert asc_nulls_first.search_sorted("a", "left", descending=False) == 1
+
+
+def test_enum_wrong_value() -> None:
+    series = pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"]))
+    with pytest.raises(
+        InvalidOperationError, match="conversion from `str` to `enum` failed"
+    ):
+        series.search_sorted("c")
+
+
+@pytest.mark.parametrize("value", [0, 0.1])
+def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
+    series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
+    msg = "got invalid or ambiguous dtypes"
+    with pytest.raises(InvalidOperationError, match=msg):
+        series.search_sorted(value)
+    df = pl.DataFrame({"s": series})
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(pl.col("s").search_sorted(value))
