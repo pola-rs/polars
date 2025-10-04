@@ -81,6 +81,10 @@ impl PlSmallStr {
     pub fn into_string(self) -> String {
         self.0.into_string()
     }
+
+    pub fn to_lowercase(&self) -> Self {
+        Self(self.0.to_lowercase())
+    }
 }
 
 impl Default for PlSmallStr {

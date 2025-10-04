@@ -223,7 +223,7 @@ pub enum ExtraColumnsPolicy {
     Ignore,
 }
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ColumnMapping {
