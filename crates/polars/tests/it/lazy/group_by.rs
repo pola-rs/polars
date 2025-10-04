@@ -171,7 +171,7 @@ fn test_filter_aggregated_expression() -> PolarsResult<()> {
     let df = df
         .lazy()
         .group_by([col("day")])
-        .agg([(col("x") - col("x").first()).filter(f)])
+        .agg([(col("x") - col("x").first(false)).filter(f)])
         .sort(["day"], Default::default())
         .collect()
         .unwrap();

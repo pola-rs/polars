@@ -470,7 +470,7 @@ fn test_slice_at_scan_group_by() -> PolarsResult<()> {
         .slice(0, 5)
         .filter(col("calories").lt(lit(10)))
         .group_by([col("calories")])
-        .agg([col("fats_g").first()])
+        .agg([col("fats_g").first(false)])
         .select([col("fats_g")]);
 
     assert!(slice_at_scan(q));

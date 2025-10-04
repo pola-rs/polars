@@ -40,7 +40,7 @@ impl GroupByDynamicExec {
         let (mut time_key, bounds, groups) = df.group_by_dynamic(group_by, &self.options)?;
         POOL.install(|| {
             keys.iter_mut().for_each(|key| {
-                unsafe { *key = key.agg_first(&groups) };
+                unsafe { *key = key.agg_first(&groups, false) };
             })
         });
         keys.extend(bounds);
