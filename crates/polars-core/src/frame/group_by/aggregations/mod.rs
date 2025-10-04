@@ -13,13 +13,13 @@ use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_compute::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
-    SumWindow,
+    MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
-    self, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams, quantile_filter,
+    self, MeanWindow, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams,
+    SumWindow, quantile_filter,
 };
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
@@ -626,13 +626,13 @@ where
                             _,
                             _,
                         >(values, offset_iter, None),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<
-                                rolling::nulls::SumWindow<T::Native, T::Native>,
-                                _,
-                                _,
-                            >(values, validity, offset_iter, None)
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            SumWindow<T::Native, T::Native>,
+                            _,
+                            _,
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -717,12 +717,11 @@ where
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MeanWindow<_>,
-                            _,
-                            _,
-                        >(
-                            values, validity, offset_iter, None
+                        Some(validity) => _rolling_apply_agg_window_nulls::<MeanWindow<_>, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            None,
                         ),
                     };
                     ChunkedArray::<T>::from(arr).into_series()
