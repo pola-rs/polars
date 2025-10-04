@@ -39,7 +39,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::sync::GILOnceCell;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
@@ -674,12 +674,12 @@ impl<'py> IntoPyObject<'py> for Wrap<Schema> {
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct ObjectValue {
-    pub inner: PyObject,
+    pub inner: Py<PyAny>,
 }
 
 impl Clone for ObjectValue {
     fn clone(&self) -> Self {
-        Python::with_gil(|py| Self {
+        Python::attach(|py| Self {
             inner: self.inner.clone_ref(py),
         })
     }
@@ -687,7 +687,7 @@ impl Clone for ObjectValue {
 
 impl Hash for ObjectValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let h = Python::with_gil(|py| self.inner.bind(py).hash().expect("should be hashable"));
+        let h = Python::attach(|py| self.inner.bind(py).hash().expect("should be hashable"));
         state.write_isize(h)
     }
 }
@@ -696,7 +696,7 @@ impl Eq for ObjectValue {}
 
 impl PartialEq for ObjectValue {
     fn eq(&self, other: &Self) -> bool {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             match self
                 .inner
                 .bind(py)
@@ -737,8 +737,8 @@ impl PolarsObject for ObjectValue {
     }
 }
 
-impl From<PyObject> for ObjectValue {
-    fn from(p: PyObject) -> Self {
+impl From<Py<PyAny>> for ObjectValue {
+    fn from(p: Py<PyAny>) -> Self {
         Self { inner: p }
     }
 }
@@ -773,7 +773,7 @@ impl<'a, 'py> IntoPyObject<'py> for &'a ObjectValue {
 
 impl Default for ObjectValue {
     fn default() -> Self {
-        Python::with_gil(|py| ObjectValue { inner: py.None() })
+        Python::attach(|py| ObjectValue { inner: py.None() })
     }
 }
 
@@ -1300,7 +1300,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if ob.is_none() {
             // Initialize the default ScanCastOptions from Python.
-            static DEFAULT: GILOnceCell<Wrap<CastColumnsPolicy>> = GILOnceCell::new();
+            static DEFAULT: PyOnceLock<Wrap<CastColumnsPolicy>> = PyOnceLock::new();
 
             let out = DEFAULT.get_or_try_init(ob.py(), || {
                 let ob = PyModule::import(ob.py(), "polars.io.scan_options.cast_options")
@@ -1573,7 +1573,7 @@ impl<'py> FromPyObject<'py> for Wrap<Option<KeyValueMetadata>> {
         #[derive(FromPyObject)]
         enum Metadata {
             Static(Vec<(String, String)>),
-            Dynamic(PyObject),
+            Dynamic(Py<PyAny>),
         }
 
         let metadata = Option::<Metadata>::extract_bound(ob)?;

@@ -10,7 +10,7 @@ impl PyExpr {
         self.inner.clone().name().keep().into()
     }
 
-    fn name_map(&self, lambda: PyObject) -> Self {
+    fn name_map(&self, lambda: Py<PyAny>) -> Self {
         self.inner
             .clone()
             .name()
@@ -34,7 +34,7 @@ impl PyExpr {
         self.inner.clone().name().to_uppercase().into()
     }
 
-    fn name_map_fields(&self, name_mapper: PyObject) -> Self {
+    fn name_map_fields(&self, name_mapper: Py<PyAny>) -> Self {
         self.inner
             .clone()
             .name()

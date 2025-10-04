@@ -155,7 +155,7 @@ impl NodeTraverser {
 
     /// Set a python UDF that will replace the subtree location with this function src.
     #[pyo3(signature = (function, is_pure = false))]
-    fn set_udf(&mut self, function: PyObject, is_pure: bool) {
+    fn set_udf(&mut self, function: Py<PyAny>, is_pure: bool) {
         let mut lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
         let ir = IR::PythonScan {
@@ -174,13 +174,13 @@ impl NodeTraverser {
         lp_arena.replace(self.root, ir);
     }
 
-    fn view_current_node(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn view_current_node(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let lp_arena = self.lp_arena.lock().unwrap();
         let lp_node = lp_arena.get(self.root);
         nodes::into_py(py, lp_node)
     }
 
-    fn view_expression(&self, py: Python<'_>, node: usize) -> PyResult<PyObject> {
+    fn view_expression(&self, py: Python<'_>, node: usize) -> PyResult<Py<PyAny>> {
         let expr_arena = self.expr_arena.lock().unwrap();
         let n = match &self.expr_mapping {
             Some(mapping) => *mapping.get(node).unwrap(),

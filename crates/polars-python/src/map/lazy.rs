@@ -11,7 +11,7 @@ pub(crate) fn call_lambda_with_series(
     py: Python<'_>,
     s: &[Column],
     output_dtype: Option<DataType>,
-    lambda: &PyObject,
+    lambda: &Py<PyAny>,
 ) -> PolarsResult<Column> {
     // Set return_dtype in kwargs
     let dict = PyDict::new(py);
@@ -24,7 +24,7 @@ pub(crate) fn call_lambda_with_series(
     let series_objects = s
         .iter()
         .map(|c| PySeries::new(c.as_materialized_series().clone()).into_py_any(py))
-        .collect::<PyResult<Vec<PyObject>>>()?;
+        .collect::<PyResult<Vec<Py<PyAny>>>>()?;
 
     let result = lambda.call(py, (series_objects,), Some(&dict))?;
     Ok(result
@@ -34,7 +34,7 @@ pub(crate) fn call_lambda_with_series(
 
 pub fn map_expr(
     pyexpr: &[PyExpr],
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     output_type: Option<PyDataTypeExpr>,
     is_elementwise: bool,
     returns_scalar: bool,

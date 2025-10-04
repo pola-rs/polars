@@ -62,13 +62,13 @@ memmap = { package = "memmap2", version = "0.9" }
 ndarray = { version = "0.16", default-features = false }
 num-bigint = "0.4.6"
 num-traits = "0.2"
-numpy = "0.25"
+numpy = "0.26"
 object_store = { version = "0.12", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
 proptest = { version = "1.6", default-features = false, features = ["std"] }
-pyo3 = "0.25"
+pyo3 = "0.26"
 rand = "0.9"
 rand_distr = "0.5"
 raw-cpuid = "11"

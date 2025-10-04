@@ -366,7 +366,7 @@ impl PyExpr {
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
     fn rolling_map(
         &self,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: Option<usize>,

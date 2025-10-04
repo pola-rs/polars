@@ -239,7 +239,7 @@ impl<Args: PlanCallbackArgs, Out: PlanCallbackOut> PlanCallback<Args, Out> {
     pub fn call(&self, args: Args) -> PolarsResult<Out> {
         match self {
             #[cfg(feature = "python")]
-            Self::Python(pyfn) => pyo3::Python::with_gil(|py| {
+            Self::Python(pyfn) => pyo3::Python::attach(|py| {
                 let out = Out::from_pyany(pyfn.call1(py, (args.into_pyany(py)?,))?, py)?;
                 Ok(out)
             }),

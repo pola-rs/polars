@@ -31,21 +31,21 @@ pub struct Alias {
     #[pyo3(get)]
     expr: usize,
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
 pub struct Column {
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
 pub struct Literal {
     #[pyo3(get)]
-    value: PyObject,
+    value: Py<PyAny>,
     #[pyo3(get)]
-    dtype: PyObject,
+    dtype: Py<PyAny>,
 }
 
 #[pyclass(name = "Operator", eq, frozen)]
@@ -296,7 +296,7 @@ pub struct BinaryExpr {
     #[pyo3(get)]
     left: usize,
     #[pyo3(get)]
-    op: PyObject,
+    op: Py<PyAny>,
     #[pyo3(get)]
     right: usize,
 }
@@ -306,7 +306,7 @@ pub struct Cast {
     #[pyo3(get)]
     expr: usize,
     #[pyo3(get)]
-    dtype: PyObject,
+    dtype: Py<PyAny>,
     // 0: strict
     // 1: non-strict
     // 2: overflow
@@ -355,12 +355,12 @@ pub struct SortBy {
 #[pyclass(frozen)]
 pub struct Agg {
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
     #[pyo3(get)]
     arguments: Vec<usize>,
     #[pyo3(get)]
     // Arbitrary control options
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -378,9 +378,9 @@ pub struct Function {
     #[pyo3(get)]
     input: Vec<usize>,
     #[pyo3(get)]
-    function_data: PyObject,
+    function_data: Py<PyAny>,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -409,7 +409,7 @@ pub struct Window {
     #[pyo3(get)]
     order_by_nulls_last: bool,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(name = "WindowMapping", frozen)]
@@ -553,7 +553,7 @@ impl PyGroupbyOptions {
     }
 }
 
-pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
+pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
     match expr {
         AExpr::Explode { .. } => Err(PyNotImplementedError::new_err("explode")),
         AExpr::Column(name) => Column {
@@ -562,7 +562,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py_any(py),
         AExpr::Literal(lit) => {
             use polars_core::prelude::AnyValue;
-            let dtype: PyObject = Wrap(lit.get_datatype()).into_py_any(py)?;
+            let dtype: Py<PyAny> = Wrap(lit.get_datatype()).into_py_any(py)?;
             let py_value = match lit {
                 LiteralValue::Dyn(d) => match d {
                     DynLiteralValue::Int(v) => v.into_py_any(py)?,
@@ -1344,7 +1344,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 IRFunctionExpr::Negate => ("negate",).into_py_any(py),
                 IRFunctionExpr::FillNullWithStrategy(strategy) => {
-                    let (strategy_str, py_limit): (&str, PyObject) = match strategy {
+                    let (strategy_str, py_limit): (&str, Py<PyAny>) = match strategy {
                         FillNullStrategy::Forward(limit) => {
                             let py_limit = limit
                                 .map(|v| PyInt::new(py, v).into())

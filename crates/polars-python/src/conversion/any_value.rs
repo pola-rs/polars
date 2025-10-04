@@ -18,7 +18,7 @@ use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::sync::GILOnceCell;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList, PyMapping,
     PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
@@ -520,7 +520,7 @@ pub(crate) fn py_object_to_any_value(
         } else if ob.is_instance_of::<PyRange>() {
             Ok(get_list as InitFn)
         } else {
-            static DECIMAL_TYPE: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+            static DECIMAL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
                 return Ok(get_decimal as InitFn);
             }

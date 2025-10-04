@@ -265,7 +265,7 @@ impl PolarsError {
             SQLSyntax(msg) => SQLSyntax(func(msg).into()),
             Context { error, .. } => error.wrap_msg(func),
             #[cfg(feature = "python")]
-            Python { error } => pyo3::Python::with_gil(|py| {
+            Python { error } => pyo3::Python::attach(|py| {
                 use pyo3::types::{PyAnyMethods, PyStringMethods};
                 use pyo3::{IntoPyObject, PyErr};
 
