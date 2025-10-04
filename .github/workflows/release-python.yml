@@ -39,8 +39,6 @@ defaults:
 jobs:
   base-package:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
 
     steps:
       - name: Checkout
@@ -76,7 +74,6 @@ jobs:
           [[ "$VERSION" == "${COMPAT_VERSION[2]}" ]] || (echo "Incorrect rtcompat version" && exit 1)
 
       - name: Update features in PLR
-        if: matrix.architecture == 'x86-64'
         env:
           PLR_PATH: py-polars/src/polars/_plr.py
         run: |
