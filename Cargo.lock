@@ -3620,6 +3620,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-time",
  "polars-utils",
  "pyo3",
  "rand 0.9.1",
