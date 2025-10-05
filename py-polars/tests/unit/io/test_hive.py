@@ -1010,6 +1010,19 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
         ),
     )
 
+    if sys.platform != "win32":
+        # https://github.com/pola-rs/polars/issues/24506
+        # `file:` URI with `//hostname` component omitted
+        lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
+
+        assert_frame_equal(
+            lf.collect(),
+            pl.select(
+                pl.Series("x", [1]),
+                pl.Series("a", [1], dtype=pl.UInt8),
+            ),
+        )
+
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("force_single_thread", [True, False])

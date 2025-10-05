@@ -366,6 +366,10 @@ fn visualize_plan_rec(
                 &[*input][..],
             )
         },
+        PhysNodeKind::GatherEvery { input, n, offset } => (
+            format!("gather_every\\nn: {n}, offset: {offset}"),
+            &[*input][..],
+        ),
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::PeakMinMax { input, is_peak_max } => (

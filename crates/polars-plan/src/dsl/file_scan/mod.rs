@@ -184,6 +184,9 @@ pub struct CastColumnsPolicy {
     /// DataType::Null to any
     pub null_upcast: bool,
 
+    /// DataType::Categorical to string
+    pub categorical_to_string: bool,
+
     pub missing_struct_fields: MissingColumnsPolicy,
     pub extra_struct_fields: ExtraColumnsPolicy,
 }
@@ -198,6 +201,7 @@ impl CastColumnsPolicy {
         datetime_microseconds_downcast: false,
         datetime_convert_timezone: false,
         null_upcast: true,
+        categorical_to_string: false,
         missing_struct_fields: MissingColumnsPolicy::Raise,
         extra_struct_fields: ExtraColumnsPolicy::Raise,
     };
