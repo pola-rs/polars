@@ -164,11 +164,25 @@ pub fn python_scan_predicate(
     let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
         // Convert to a pyarrow eval string.
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
-            if let Some(eval_str) = polars_plan::plans::python::pyarrow::predicate_to_pa(
+            use polars_core::config::verbose_print_sensitive;
+
+            let predicate_pa = polars_plan::plans::python::pyarrow::predicate_to_pa(
                 e.node(),
                 expr_arena,
                 Default::default(),
-            ) {
+            );
+
+            verbose_print_sensitive(|| {
+                format!(
+                    "python_scan_predicate: \
+                    predicate node: {}, \
+                    converted pyarrow predicate: {}",
+                    ExprIRDisplay::display_node(e.node(), expr_arena),
+                    &predicate_pa.as_deref().unwrap_or("<conversion failed>")
+                )
+            });
+
+            if let Some(eval_str) = predicate_pa {
                 options.predicate = PythonPredicate::PyArrow(eval_str);
                 // We don't have to use a physical expression as pyarrow deals with the filter.
                 None
@@ -262,6 +276,30 @@ fn create_physical_plan_impl(
                     name: "mem".to_string(),
                     f: Box::new(move |df, _state| Ok(Some(df))),
                 })),
+                SinkTypeIR::Callback(CallbackSinkType {
+                    function,
+                    maintain_order: _,
+                    chunk_size,
+                }) => {
+                    let chunk_size = chunk_size.map_or(usize::MAX, Into::into);
+
+                    Ok(Box::new(SinkExecutor {
+                        input,
+                        name: "batches".to_string(),
+                        f: Box::new(move |mut buffer, _state| {
+                            while !buffer.is_empty() {
+                                let df;
+                                (df, buffer) =
+                                    buffer.split_at(buffer.height().min(chunk_size) as i64);
+                                let should_stop = function.call(df)?;
+                                if should_stop {
+                                    break;
+                                }
+                            }
+                            Ok(Some(DataFrame::empty()))
+                        }),
+                    }))
+                },
                 SinkTypeIR::File(FileSinkType {
                     file_type,
                     target,

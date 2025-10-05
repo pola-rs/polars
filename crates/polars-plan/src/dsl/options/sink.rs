@@ -1,5 +1,6 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ use polars_utils::plpath::PlPath;
 
 use super::{ExprIR, FileType};
 use crate::dsl::{AExpr, Expr, SpecialEq};
+use crate::prelude::PlanCallback;
 
 /// Options that apply to all sinks.
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
@@ -179,9 +181,19 @@ pub struct FileSinkType {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, PartialEq, Hash)]
+pub struct CallbackSinkType {
+    pub function: PlanCallback<DataFrame, bool>,
+    pub maintain_order: bool,
+    pub chunk_size: Option<NonZeroUsize>,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum SinkTypeIR {
     Memory,
+    Callback(CallbackSinkType),
     File(FileSinkType),
     #[cfg_attr(all(feature = "serde", not(feature = "ir_serde")), serde(skip))]
     Partition(PartitionSinkTypeIR),
@@ -501,6 +513,7 @@ pub struct PartitionSinkTypeIR {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SinkType {
     Memory,
+    Callback(CallbackSinkType),
     File(FileSinkType),
     Partition(PartitionSinkType),
 }
@@ -540,8 +553,20 @@ impl SinkTypeIR {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Memory => {},
+            Self::Callback(f) => f.hash(state),
             Self::File(f) => f.hash(state),
             Self::Partition(f) => f.traverse_and_hash(expr_arena, state),
+        }
+    }
+}
+
+impl SinkTypeIR {
+    pub fn maintain_order(&self) -> bool {
+        match self {
+            SinkTypeIR::Memory => true,
+            SinkTypeIR::File(s) => s.sink_options.maintain_order,
+            SinkTypeIR::Partition(s) => s.sink_options.maintain_order,
+            SinkTypeIR::Callback(s) => s.maintain_order,
         }
     }
 }

@@ -19,7 +19,7 @@ impl PySeries {
         return_dtype: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
-        let series = &self.series;
+        let series = &self.series.read().clone(); // Clone so we don't deadlock on re-entrance.
 
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(return_dtype) = return_dtype {
@@ -58,7 +58,7 @@ impl PySeries {
 
         Python::with_gil(|py| {
             if matches!(
-                self.series.dtype(),
+                series.dtype(),
                 DataType::Datetime(_, _)
                     | DataType::Date
                     | DataType::Duration(_)
@@ -70,8 +70,8 @@ impl PySeries {
                     | DataType::Decimal(_, _)
             ) || !skip_nulls
             {
-                let mut avs = Vec::with_capacity(self.series.len());
-                let s = self.series.rechunk();
+                let mut avs = Vec::with_capacity(series.len());
+                let s = series.rechunk();
 
                 for av in s.iter() {
                     let out = match (skip_nulls, av) {
@@ -87,7 +87,7 @@ impl PySeries {
                     };
                     avs.push(out)
                 }
-                let out = Series::new(self.series.name().clone(), &avs);
+                let out = Series::new(series.name().clone(), &avs);
                 let dtype = out.dtype();
                 if dtype.is_nested() {
                     check_nested_object(dtype)?;
@@ -187,6 +187,17 @@ impl PySeries {
                 },
                 Some(DataType::UInt64) => {
                     let ca: UInt64Chunked = dispatch_apply!(
+                        series,
+                        apply_lambda_with_primitive_out_type,
+                        py,
+                        function,
+                        0,
+                        None
+                    )?;
+                    ca.into_series()
+                },
+                Some(DataType::UInt128) => {
+                    let ca: UInt128Chunked = dispatch_apply!(
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,

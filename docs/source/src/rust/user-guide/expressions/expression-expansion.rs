@@ -159,7 +159,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([all()
             .as_expr()
             .name()
-            .map(|name| Ok(PlSmallStr::from_string(name.to_ascii_uppercase())))])
+            .map(PlanCallback::new(|name: PlSmallStr| {
+                Ok(PlSmallStr::from_string(name.to_ascii_uppercase()))
+            }))])
         .collect()?;
     println!("{result}");
     // --8<-- [end:name-map]

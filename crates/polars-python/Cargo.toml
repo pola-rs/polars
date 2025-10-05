@@ -17,7 +17,7 @@ polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
-polars-mem-engine = { workspace = true }
+polars-mem-engine = { workspace = true, features = ["python"] }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
@@ -44,6 +44,7 @@ libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
+parking_lot = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
@@ -198,6 +199,7 @@ dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
 dtype-i128 = []
+dtype-u128 = []
 dtype-array = []
 object = ["polars/object"]
 
@@ -208,6 +210,7 @@ dtypes = [
   "dtype-u16",
   "dtype-u8",
   "dtype-i128",
+  "dtype-u128",
   "object",
 ]
 

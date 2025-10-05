@@ -339,8 +339,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
                 S::WithFields => unreachable!("handled before"),
-                #[cfg(feature = "python")]
-                S::MapFieldNames(special_eq) => IS::MapFieldNames(special_eq),
+                S::MapFieldNames(f) => IS::MapFieldNames(f),
             })
         },
         #[cfg(feature = "temporal")]
@@ -371,19 +370,19 @@ pub(super) fn convert_functions(
                 T::Microsecond => IT::Microsecond,
                 T::Nanosecond => IT::Nanosecond,
                 #[cfg(feature = "dtype-duration")]
-                T::TotalDays => IT::TotalDays,
+                T::TotalDays { fractional } => IT::TotalDays { fractional },
                 #[cfg(feature = "dtype-duration")]
-                T::TotalHours => IT::TotalHours,
+                T::TotalHours { fractional } => IT::TotalHours { fractional },
                 #[cfg(feature = "dtype-duration")]
-                T::TotalMinutes => IT::TotalMinutes,
+                T::TotalMinutes { fractional } => IT::TotalMinutes { fractional },
                 #[cfg(feature = "dtype-duration")]
-                T::TotalSeconds => IT::TotalSeconds,
+                T::TotalSeconds { fractional } => IT::TotalSeconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                T::TotalMilliseconds => IT::TotalMilliseconds,
+                T::TotalMilliseconds { fractional } => IT::TotalMilliseconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                T::TotalMicroseconds => IT::TotalMicroseconds,
+                T::TotalMicroseconds { fractional } => IT::TotalMicroseconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                T::TotalNanoseconds => IT::TotalNanoseconds,
+                T::TotalNanoseconds { fractional } => IT::TotalNanoseconds { fractional },
                 T::ToString(v) => IT::ToString(v),
                 T::CastTimeUnit(time_unit) => IT::CastTimeUnit(time_unit),
                 T::WithTimeUnit(time_unit) => IT::WithTimeUnit(time_unit),
@@ -732,6 +731,7 @@ pub(super) fn convert_functions(
                 options,
             }
         },
+        F::Rechunk => I::Rechunk,
         F::Append { upcast } => I::Append { upcast },
         F::ShiftAndFill => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
@@ -822,7 +822,7 @@ pub(super) fn convert_functions(
         #[cfg(feature = "log")]
         F::Entropy { base, normalize } => I::Entropy { base, normalize },
         #[cfg(feature = "log")]
-        F::Log { base } => I::Log { base },
+        F::Log => I::Log,
         #[cfg(feature = "log")]
         F::Log1p => I::Log1p,
         #[cfg(feature = "log")]
@@ -836,8 +836,22 @@ pub(super) fn convert_functions(
         F::Floor => I::Floor,
         #[cfg(feature = "round_series")]
         F::Ceil => I::Ceil,
-        F::UpperBound => I::UpperBound,
-        F::LowerBound => I::LowerBound,
+        F::UpperBound => {
+            let field = e[0].field(ctx.schema, ctx.arena)?;
+            return Ok((
+                ctx.arena
+                    .add(AExpr::Literal(field.dtype.to_physical().max()?.into())),
+                field.name,
+            ));
+        },
+        F::LowerBound => {
+            let field = e[0].field(ctx.schema, ctx.arena)?;
+            return Ok((
+                ctx.arena
+                    .add(AExpr::Literal(field.dtype.to_physical().min()?.into())),
+                field.name,
+            ));
+        },
         F::ConcatExpr(v) => I::ConcatExpr(v),
         #[cfg(feature = "cov")]
         F::Correlation { method } => {

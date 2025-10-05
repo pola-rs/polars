@@ -372,6 +372,11 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
     }
 
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        Ok(Scalar::new(self.dtype().clone(), mean.into()))
+    }
+
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let av: AnyValue = self.median().map(|v| v as i64).into();
         Ok(Scalar::new(self.dtype().clone(), av))
@@ -379,6 +384,11 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         Ok(Scalar::new(self.dtype().clone(), AnyValue::Null))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

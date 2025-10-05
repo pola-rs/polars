@@ -228,6 +228,55 @@ impl FunctionIR {
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
         }
     }
+
+    pub fn is_order_producing(&self, is_input_ordered: bool) -> bool {
+        match self {
+            FunctionIR::RowIndex { .. } => true,
+            FunctionIR::FastCount { .. } => false,
+            FunctionIR::Unnest { .. } => is_input_ordered,
+            FunctionIR::Rechunk => is_input_ordered,
+            #[cfg(feature = "python")]
+            FunctionIR::OpaquePython(..) => true,
+            FunctionIR::Explode { .. } => true,
+            #[cfg(feature = "pivot")]
+            FunctionIR::Unpivot { .. } => true,
+            FunctionIR::Opaque { .. } => true,
+        }
+    }
+
+    pub fn is_elementwise(&self) -> bool {
+        match self {
+            Self::Unnest { .. } => true,
+            #[cfg(feature = "python")]
+            Self::OpaquePython(..) => false,
+            #[cfg(feature = "pivot")]
+            Self::Unpivot { .. } => false,
+            Self::RowIndex { .. }
+            | Self::FastCount { .. }
+            | Self::Rechunk
+            | Self::Explode { .. }
+            | Self::Opaque { .. } => false,
+        }
+    }
+
+    pub fn observes_input_order(&self) -> bool {
+        true
+    }
+
+    /// Is the input ordering always the same as the output ordering.
+    pub fn has_equal_order(&self) -> bool {
+        match self {
+            Self::Unnest { .. } | Self::Rechunk => true,
+            #[cfg(feature = "python")]
+            Self::OpaquePython(..) => false,
+            #[cfg(feature = "pivot")]
+            Self::Unpivot { .. } => false,
+            Self::RowIndex { .. }
+            | Self::FastCount { .. }
+            | Self::Explode { .. }
+            | Self::Opaque { .. } => false,
+        }
+    }
 }
 
 impl Debug for FunctionIR {

@@ -174,18 +174,23 @@ impl Duration {
 
     fn _parse(s: &str, as_interval: bool) -> PolarsResult<Self> {
         let s = if as_interval { s.trim_start() } else { s };
-
         let parse_type = if as_interval { "interval" } else { "duration" };
-        let num_minus_signs = s.matches('-').count();
-        if num_minus_signs > 1 {
-            polars_bail!(InvalidOperation: "{} string can only have a single minus sign", parse_type);
-        }
-        if num_minus_signs > 0 {
-            if as_interval {
-                // TODO: intervals need to support per-element minus signs
-                polars_bail!(InvalidOperation: "minus signs are not currently supported in interval strings");
-            } else if !s.starts_with('-') {
-                polars_bail!(InvalidOperation: "only a single minus sign is allowed, at the front of the string");
+
+        for op_char in ['-', '+'] {
+            let n_unary_op = s.matches(op_char).count();
+            if n_unary_op > 1 {
+                let op_name = if op_char == '-' { "minus" } else { "plus" };
+                polars_bail!(InvalidOperation: "{} string can only have a single {} sign", parse_type, op_name);
+            }
+            if n_unary_op > 0 {
+                if as_interval {
+                    // TODO: 'interval' strings should be able to support per-element unary op/sign
+                    let op_name = if op_char == '-' { "minus" } else { "plus" };
+                    polars_bail!(InvalidOperation: "{} signs are not currently supported in interval strings", op_name);
+                } else if !s.starts_with(op_char) {
+                    let op_name = if op_char == '-' { "minus" } else { "plus" };
+                    polars_bail!(InvalidOperation: "only a single {} sign is allowed, at the front of the string", op_name);
+                }
             }
         }
         let mut months = 0;
@@ -197,8 +202,8 @@ impl Duration {
         let mut iter = s.char_indices().peekable();
         let mut start = 0;
 
-        // skip the '-' char
-        if negative {
+        // skip leading '-' (or '+') char
+        if negative || s.starts_with('+') {
             start += 1;
             iter.next().unwrap();
         }

@@ -1306,14 +1306,31 @@ def test_join_asof_not_sorted() -> None:
         assert len(w) == 0  # no warnings caught
 
 
-@pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64, pl.Int128])
-@pytest.mark.parametrize("right_dtype", [pl.Int64, pl.UInt64, pl.Int128])
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        (pl.Int64, pl.Int64),
+        (pl.Int64, pl.UInt64),
+        (pl.Int64, pl.Int128),
+        (pl.UInt64, pl.Int64),
+        (pl.UInt64, pl.UInt64),
+        (pl.UInt64, pl.Int128),
+        (pl.UInt64, pl.UInt128),
+        (pl.Int128, pl.Int64),
+        (pl.Int128, pl.UInt64),
+        (pl.Int128, pl.Int128),
+        (pl.UInt128, pl.UInt64),
+        (pl.UInt128, pl.UInt128),
+    ],
+)
+@pytest.mark.parametrize("swap", [False, True])
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 def test_join_asof_large_int_21276(
-    left_dtype: PolarsIntegerType,
-    right_dtype: PolarsIntegerType,
+    dtypes: tuple[PolarsIntegerType, PolarsIntegerType],
+    swap: bool,
     strategy: AsofJoinStrategy,
 ) -> None:
+    left_dtype, right_dtype = reversed(dtypes) if swap else dtypes
     large_int64 = 1608129000134000123  # it only happen when "on" column is large
     left = pl.DataFrame({"ts": pl.Series([large_int64 + 2], dtype=left_dtype)})
     right = pl.DataFrame(
@@ -1431,3 +1448,40 @@ def test_join_asof_planner_schema_24000() -> None:
     q = a.lazy().join_asof(b.lazy(), left_on="index", right_on="index_right")
 
     assert q.collect().schema == q.collect_schema()
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
+)
+def test_join_asof_int_dtypes_24383(dtype: PolarsIntegerType) -> None:
+    lf1 = pl.LazyFrame(
+        {
+            "id": pl.Series([1], dtype=dtype),
+            "date": pl.Series([date(2025, 12, 31)], dtype=pl.Date),
+        }
+    )
+
+    lf2 = pl.LazyFrame(
+        {
+            "id": pl.Series([1], dtype=dtype),
+            "date": pl.Series([date(2025, 12, 31)], dtype=pl.Date),
+            "value": pl.Series([2.5], dtype=pl.Float32),
+        }
+    )
+
+    result = lf1.join_asof(
+        other=lf2,
+        on="date",
+        by="id",
+        check_sortedness=False,
+    )
+    expected = pl.DataFrame(
+        {
+            "id": pl.Series([1], dtype=dtype),
+            "date": pl.Series([date(2025, 12, 31)], dtype=pl.Date),
+            "value": pl.Series([2.5], dtype=pl.Float32),
+        }
+    )
+    assert result.collect_schema() == expected.schema
+    assert_frame_equal(result.collect(), expected)

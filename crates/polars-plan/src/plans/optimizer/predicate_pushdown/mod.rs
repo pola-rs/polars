@@ -34,7 +34,6 @@ mod inner {
         pub(super) verbose: bool,
         pub(super) block_at_cache: bool,
         nodes_scratch: UnitVec<Node>,
-        #[expect(unused)]
         pub(super) new_streaming: bool,
         // Controls pushing filters past fallible projections
         pub(super) maintain_errors: bool,
@@ -172,11 +171,7 @@ impl PredicatePushDown<'_> {
                     for (_, predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate.node(), &input_schema, expr_arena) {
-                            insert_and_combine_predicate(
-                                &mut pushdown_predicates,
-                                predicate,
-                                expr_arena,
-                            )
+                            insert_predicate_dedup(&mut pushdown_predicates, predicate, expr_arena)
                         }
                         // we cannot pushdown the predicate we do it here
                         else {
@@ -310,7 +305,7 @@ impl PredicatePushDown<'_> {
                 };
 
                 if let Some(predicate) = acc_predicates.remove(&tmp_key) {
-                    insert_and_combine_predicate(&mut acc_predicates, &predicate, expr_arena);
+                    insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
                 }
 
                 let alp = lp_arena.take(input);
@@ -365,21 +360,6 @@ impl PredicatePushDown<'_> {
                 if let Some(col) = unified_scan_args.include_file_paths.as_deref() {
                     blocked_names.push(col);
                 }
-
-                match &*scan_type {
-                    #[cfg(feature = "parquet")]
-                    FileScanIR::Parquet { .. } => {},
-                    #[cfg(feature = "ipc")]
-                    FileScanIR::Ipc { .. } => {},
-                    _ => {
-                        // Disallow row index pushdown of other scans as they may
-                        // not update the row index properly before applying the
-                        // predicate (e.g. FileScan::Csv doesn't).
-                        if let Some(ref row_index) = unified_scan_args.row_index {
-                            blocked_names.push(row_index.name.as_ref());
-                        };
-                    },
-                };
 
                 let local_predicates = if blocked_names.is_empty() {
                     vec![]
@@ -484,6 +464,7 @@ impl PredicatePushDown<'_> {
                 schema,
                 options,
                 acc_predicates,
+                self.new_streaming,
             ),
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {

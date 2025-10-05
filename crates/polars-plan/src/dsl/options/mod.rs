@@ -87,7 +87,9 @@ impl Hash for JoinTypeOptionsIR {
         match self {
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => opt.hash(state),
-            CrossAndFilter { predicate } => predicate.node().hash(state),
+            CrossAndFilter { predicate } => {
+                predicate.node().hash(state);
+            },
         }
     }
 }
@@ -261,7 +263,7 @@ impl Engine {
     }
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub slice: Option<(i64, usize)>,
@@ -272,6 +274,20 @@ pub struct UnionOptions {
     pub flattened_by_opt: bool,
     pub rechunk: bool,
     pub maintain_order: bool,
+}
+
+impl Default for UnionOptions {
+    fn default() -> Self {
+        Self {
+            slice: None,
+            rows: (None, 0),
+            parallel: true,
+            from_partitioned_ds: false,
+            flattened_by_opt: false,
+            rechunk: false,
+            maintain_order: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]

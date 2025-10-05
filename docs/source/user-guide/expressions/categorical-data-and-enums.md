@@ -160,11 +160,15 @@ cache. To understand the issue with this operation and why Polars raises an erro
 final section about
 [the performance considerations of using categorical data types](#performance-considerations-on-categorical-data-types).
 
-### Comparison between `Categorical` columns is not lexical
+### Comparison between `Categorical` columns is lexical
 
-When comparing two columns with data type `Categorical`, Polars does not perform lexical comparison
-between the values by default. If you want lexical ordering, you need to specify so when creating
-the column:
+Since Polars 1.32.0, when comparing two columns with data type `Categorical`, Polars always performs
+lexical (alphabetical) comparison between the values. The `ordering` parameter has been deprecated
+and is now ignored.
+
+Prior to Polars version 1.32.0, when comparing two columns with data type `Categorical`, Polars does
+not perform lexical comparison between the values by default. If you want lexical ordering, you need
+to specify so when creating the column:
 
 {{code_block('user-guide/expressions/categoricals', 'stringcache-categorical-comparison-lexical',
 ['StringCache', 'Categorical'])}}
@@ -178,8 +182,20 @@ Otherwise, the order is inferred together with the values:
 {{code_block('user-guide/expressions/categoricals', 'stringcache-categorical-comparison-physical',
 ['StringCache', 'Categorical'])}}
 
-```python exec="on" result="text" session="expressions/categoricals"
+```python
 --8<-- "python/user-guide/expressions/categoricals.py:stringcache-categorical-comparison-physical"
+```
+
+```
+shape: (5,)
+Series: '' [bool]
+[
+	false
+	false
+	false
+	true
+	false
+]
 ```
 
 ## Performance considerations on categorical data types

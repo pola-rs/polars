@@ -53,7 +53,7 @@ pub fn to_alp(
         cache_file_info: Default::default(),
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         verbose: verbose(),
-        cache_id_for_arc_ptr: Default::default(),
+        seen_caches: Default::default(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
@@ -111,19 +111,30 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             cached_ir,
         } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, ctxt)?,
         #[cfg(feature = "python")]
-        DslPlan::PythonScan { mut options } => {
-            let scan_fn = options.scan_fn.take();
+        DslPlan::PythonScan { options } => {
+            use crate::dsl::python_dsl::PythonOptionsDsl;
+
             let schema = options.get_schema()?;
+
+            let PythonOptionsDsl {
+                scan_fn,
+                schema_fn: _,
+                python_source,
+                validate_schema,
+                is_pure,
+            } = options;
+
             IR::PythonScan {
                 options: PythonOptions {
                     scan_fn,
                     schema,
-                    python_source: options.python_source,
-                    validate_schema: options.validate_schema,
+                    python_source,
+                    validate_schema,
                     output_schema: Default::default(),
                     with_columns: Default::default(),
                     n_rows: Default::default(),
                     predicate: Default::default(),
+                    is_pure,
                 },
             }
         },
@@ -428,14 +439,21 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             return run_conversion(lp, ctxt, "sort").map_err(|e| e.context(failed_here!(sort)));
         },
-        DslPlan::Cache { input } => {
-            let id = ctxt
-                .cache_id_for_arc_ptr
-                .entry(Arc::as_ptr(&input).addr())
-                .or_insert_with(UniqueId::new)
-                .to_owned();
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(cache)))?;
+        DslPlan::Cache { input, id } => {
+            let input = match ctxt.seen_caches.get(&id) {
+                Some(input) => *input,
+                None => {
+                    let input = to_alp_impl(owned(input), ctxt)
+                        .map_err(|e| e.context(failed_here!(cache)))?;
+                    let seen_before = ctxt.seen_caches.insert(id, input);
+                    assert!(
+                        seen_before.is_none(),
+                        "Cache could not have been created in the mean time. That would make the DAG cyclic."
+                    );
+                    input
+                },
+            };
+
             IR::Cache { input, id }
         },
         DslPlan::GroupBy {
@@ -575,12 +593,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         let policy = CastColumnsPolicy {
                             integer_upcast: per_column.integer_cast == UpcastOrForbid::Upcast,
                             float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
-                            float_downcast: false,
-                            datetime_nanoseconds_downcast: false,
-                            datetime_microseconds_downcast: false,
-                            datetime_convert_timezone: false,
                             missing_struct_fields: per_column.missing_struct_fields,
                             extra_struct_fields: per_column.extra_struct_fields,
+
+                            ..Default::default()
                         };
 
                         let should_cast =
@@ -659,6 +675,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input = to_alp_impl(input_owned.clone(), ctxt)
                 .map_err(|e| e.context(failed_here!(pipe_with_schema)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            let input_owned = DslPlan::IR {
+                dsl: Arc::new(input_owned),
+                version: ctxt.lp_arena.version(),
+                node: Some(input),
+            };
 
             // Adjust the input and start conversion again
             let input_adjusted =
@@ -751,17 +773,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool() || dt.is_decimal(),
                             |name| col(name.clone()).var(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Std { ddof } => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool() || dt.is_decimal(),
                             |name| col(name.clone()).std(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Quantile { quantile, method } => stats_helper(
-                            |dt| dt.is_primitive_numeric(),
+                            |dt| dt.is_primitive_numeric() || dt.is_decimal(),
                             |name| col(name.clone()).quantile(quantile.clone(), method),
                             &input_schema,
                         ),
@@ -769,7 +791,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             |dt| {
                                 dt.is_primitive_numeric()
                                     || dt.is_temporal()
-                                    || dt == &DataType::Boolean
+                                    || dt.is_bool()
+                                    || dt.is_decimal()
                             },
                             |name| col(name.clone()).mean(),
                             &input_schema,
@@ -930,6 +953,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
+                SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(f) => SinkTypeIR::File(f),
                 SinkType::Partition(f) => SinkTypeIR::Partition(PartitionSinkTypeIR {
                     base_path: f.base_path,
@@ -1051,13 +1075,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::IR { node, dsl, version } => {
-            return if node.is_some()
-                && version == ctxt.lp_arena.version()
-                && ctxt.conversion_optimizer.used_arenas.insert(version)
-            {
-                Ok(node.unwrap())
-            } else {
-                to_alp_impl(owned(dsl), ctxt)
+            return match node {
+                Some(node)
+                    if version == ctxt.lp_arena.version()
+                        && ctxt.conversion_optimizer.used_arenas.insert(version) =>
+                {
+                    Ok(node)
+                },
+                _ => to_alp_impl(owned(dsl), ctxt),
             };
         },
     };
@@ -1160,7 +1185,7 @@ fn resolve_group_by(
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
 
-    let mut aggs_schema = expr_irs_to_schema(&aggs, input_schema, expr_arena);
+    let mut aggs_schema = expr_irs_to_schema(&aggs, input_schema, expr_arena)?;
 
     // Make sure aggregation columns do not contain duplicates
     if aggs_schema.len() < aggs.len() {

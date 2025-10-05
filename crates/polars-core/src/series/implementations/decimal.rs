@@ -84,7 +84,7 @@ impl SeriesWrap<DecimalChunked> {
                     ListChunked::from_chunks_and_dtype_unchecked(
                         agg_s.name().clone(),
                         vec![Box::new(new_arr)],
-                        DataType::List(Box::new(DataType::Decimal(precision, Some(scale)))),
+                        DataType::List(Box::new(DataType::Decimal(precision, scale))),
                     )
                     .into_series()
                 }
@@ -167,6 +167,22 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.agg_helper(|ca| ca.agg_list(groups))
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
+        self.0
+            .cast(&DataType::Float64)
+            .unwrap()
+            .agg_var(groups, ddof)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
+        self.0
+            .cast(&DataType::Float64)
+            .unwrap()
+            .agg_std(groups, ddof)
     }
 
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -381,6 +397,11 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.apply_physical_to_s(|ca| ca.shift(periods))
     }
 
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
@@ -388,35 +409,37 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn sum_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let sum = ca.sum();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+            let DataType::Decimal(prec, scale) = self.dtype() else {
                 unreachable!()
             };
-            let av = AnyValue::Decimal(sum.unwrap(), *scale);
+            let av = AnyValue::Decimal(sum.unwrap(), *prec, *scale);
             Scalar::new(self.dtype().clone(), av)
         }))
     }
+
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let min = ca.min();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+            let DataType::Decimal(prec, scale) = self.dtype() else {
                 unreachable!()
             };
             let av = if let Some(min) = min {
-                AnyValue::Decimal(min, *scale)
+                AnyValue::Decimal(min, *prec, *scale)
             } else {
                 AnyValue::Null
             };
             Scalar::new(self.dtype().clone(), av)
         }))
     }
+
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let max = ca.max();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+            let DataType::Decimal(prec, scale) = self.dtype() else {
                 unreachable!()
             };
             let av = if let Some(m) = max {
-                AnyValue::Decimal(m, *scale)
+                AnyValue::Decimal(m, *prec, *scale)
             } else {
                 AnyValue::Null
             };
@@ -434,6 +457,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .mean()
             .map(|v| v / self.scale_factor() as f64)
     }
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::new(DataType::Float64, self.mean().into()))
+    }
 
     fn median(&self) -> Option<f64> {
         self.0
@@ -441,18 +467,25 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .median()
             .map(|v| v / self.scale_factor() as f64)
     }
+
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_scale(self.0.physical().median_reduce()))
     }
 
     fn std(&self, ddof: u8) -> Option<f64> {
-        self.0
-            .physical()
-            .std(ddof)
-            .map(|v| v / self.scale_factor() as f64)
+        self.0.cast(&DataType::Float64).ok()?.std(ddof)
     }
+
     fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
-        Ok(self.apply_scale(self.0.physical().std_reduce(ddof)))
+        self.0.cast(&DataType::Float64)?.std_reduce(ddof)
+    }
+
+    fn var(&self, ddof: u8) -> Option<f64> {
+        self.0.cast(&DataType::Float64).ok()?.var(ddof)
+    }
+
+    fn var_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+        self.0.cast(&DataType::Float64)?.var_reduce(ddof)
     }
 
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {

@@ -94,7 +94,6 @@ pub enum FileScanIR {
     #[cfg(feature = "python")]
     PythonDataset {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip, default))]
         cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
 
@@ -182,6 +181,12 @@ pub struct CastColumnsPolicy {
     /// Allow casting to change time units.
     pub datetime_convert_timezone: bool,
 
+    /// DataType::Null to any
+    pub null_upcast: bool,
+
+    /// DataType::Categorical to string
+    pub categorical_to_string: bool,
+
     pub missing_struct_fields: MissingColumnsPolicy,
     pub extra_struct_fields: ExtraColumnsPolicy,
 }
@@ -195,6 +200,8 @@ impl CastColumnsPolicy {
         datetime_nanoseconds_downcast: false,
         datetime_microseconds_downcast: false,
         datetime_convert_timezone: false,
+        null_upcast: true,
+        categorical_to_string: false,
         missing_struct_fields: MissingColumnsPolicy::Raise,
         extra_struct_fields: ExtraColumnsPolicy::Raise,
     };
@@ -223,6 +230,33 @@ pub enum ColumnMapping {
     Iceberg(IcebergSchemaRef),
 }
 
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct TableStatistics(pub Arc<DataFrame>);
+
+impl PartialEq for TableStatistics {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for TableStatistics {}
+
+impl Hash for TableStatistics {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ptr(&self.0) as *const () as usize);
+    }
+}
+
+impl std::ops::Deref for TableStatistics {
+    type Target = Arc<DataFrame>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// Scan arguments shared across different scan types.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -237,6 +271,8 @@ pub struct UnifiedScanArgs {
     pub rechunk: bool,
     pub cache: bool,
     pub glob: bool,
+    /// Files with these prefixes will not be read.
+    pub hidden_file_prefix: Option<Arc<[PlSmallStr]>>,
 
     pub projection: Option<Arc<[PlSmallStr]>>,
     pub column_mapping: Option<ColumnMapping>,
@@ -252,6 +288,7 @@ pub struct UnifiedScanArgs {
     pub include_file_paths: Option<PlSmallStr>,
 
     pub deletion_files: Option<DeletionFilesList>,
+    pub table_statistics: Option<TableStatistics>,
 }
 
 impl Default for UnifiedScanArgs {
@@ -263,6 +300,7 @@ impl Default for UnifiedScanArgs {
             rechunk: false,
             cache: false,
             glob: true,
+            hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
             default_values: None,
@@ -273,6 +311,7 @@ impl Default for UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::default(),
             include_file_paths: None,
             deletion_files: None,
+            table_statistics: None,
         }
     }
 }
@@ -412,6 +451,14 @@ impl CastColumnsPolicy {
             )
         };
 
+        if incoming_dtype.is_null() && !target_dtype.is_null() {
+            return if self.null_upcast {
+                Ok(true)
+            } else {
+                mismatch_err("unimplemented: 'null-upcast' in scan cast options")
+            };
+        }
+
         // We intercept the nested types first to prevent an expensive recursive eq - recursion
         // is instead done manually through this function.
 
@@ -547,11 +594,6 @@ impl CastColumnsPolicy {
 
         let incoming_dtype = incoming_dtype.as_ref();
         let target_dtype = target_dtype.as_ref();
-
-        // If the incoming type is always allowed to be cast.
-        if incoming_dtype.does_match_schema_type(target_dtype) {
-            return Ok(true);
-        }
 
         //
         // After this point the dtypes are mismatching.

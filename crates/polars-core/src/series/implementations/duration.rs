@@ -518,6 +518,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         ))
     }
 
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        Ok(Scalar::new(self.dtype().clone(), mean.into()))
+    }
+
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let v: AnyValue = self.median().map(|v| v as i64).into();
         let to = self.dtype().to_physical();
@@ -535,6 +540,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             self.dtype().clone(),
             v.as_duration(self.0.time_unit()),
         ))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

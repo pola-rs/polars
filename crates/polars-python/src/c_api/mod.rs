@@ -3,7 +3,8 @@ pub mod allocator;
 
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
-pub static PYPOLARS_VERSION: &str = "1.32.3";
+pub static PYPOLARS_VERSION: &str = "1.34.0";
+pub static RUNTIME_REPR: &str = "unknown";
 
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
@@ -91,7 +92,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 }
 
 #[pymodule]
-pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
@@ -235,6 +236,10 @@ pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     .unwrap();
     m.add_wrapped(wrap_pyfunction!(
         crate::interop::arrow::polars_schema_field_from_arrow_c_schema
+    ))
+    .unwrap();
+    m.add_wrapped(wrap_pyfunction!(
+        crate::interop::arrow::to_py::polars_schema_to_pycapsule
     ))
     .unwrap();
 
@@ -420,6 +425,7 @@ pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 
     // Build info
     m.add("__version__", PYPOLARS_VERSION)?;
+    m.add("RUNTIME_REPR", RUNTIME_REPR)?;
 
     // Plugins
     #[cfg(feature = "ffi_plugin")]

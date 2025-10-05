@@ -13,7 +13,7 @@ use polars_io::prelude::_csv_read_internal::{
 };
 use polars_io::prelude::buffer::validate_utf8;
 use polars_io::prelude::{
-    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, count_rows_from_slice,
+    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, count_rows_from_slice_raw,
 };
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::slice::SplitSlicePosition;
@@ -54,11 +54,12 @@ pub mod builder {
         fn reader_capabilities(&self) -> ReaderCapabilities {
             use ReaderCapabilities as RC;
 
-            if self.parse_options.comment_prefix.is_some() {
-                RC::empty()
-            } else {
-                RC::PRE_SLICE
-            }
+            RC::NEEDS_FILE_CACHE_INIT
+                | if self.parse_options.comment_prefix.is_some() {
+                    RC::empty()
+                } else {
+                    RC::PRE_SLICE
+                }
         }
 
         fn build_file_reader(
@@ -273,6 +274,7 @@ impl FileReader for CsvFileReader {
                 line_counter: CountLines::new(
                     self.options.parse_options.quote_char,
                     self.options.parse_options.eol_char,
+                    self.options.parse_options.comment_prefix.clone(),
                 ),
                 line_batch_tx,
                 options: self.options.clone(),
@@ -740,12 +742,11 @@ impl CountLinesWithComments {
     }
 
     fn count_lines(&self, bytes: &[u8]) -> PolarsResult<usize> {
-        count_rows_from_slice(
+        count_rows_from_slice_raw(
             bytes,
             self.quote_char,
             Some(&self.comment_prefix),
             self.eol_char,
-            false, // has_header
         )
     }
 }
