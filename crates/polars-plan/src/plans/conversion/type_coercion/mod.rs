@@ -116,6 +116,7 @@ impl OptimizationRule for TypeCoercionRule {
                             datetime_microseconds_downcast: true,
                             datetime_convert_timezone: true,
                             null_upcast: true,
+                            categorical_to_string: true,
                             missing_struct_fields: MissingColumnsPolicy::Insert,
                             extra_struct_fields: ExtraColumnsPolicy::Ignore,
                         }

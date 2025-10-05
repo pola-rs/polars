@@ -125,7 +125,7 @@ fn decimal_serializer<'a>(
     let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
     let f = move |x: Option<&i128>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
-            utf8::write_str(buf, fmt_buf.format_dec128(*x, scale, trim_zeros)).unwrap()
+            utf8::write_str(buf, fmt_buf.format_dec128(*x, scale, trim_zeros, false)).unwrap()
         } else {
             buf.extend(b"null")
         }

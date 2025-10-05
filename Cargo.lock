@@ -3056,7 +3056,6 @@ dependencies = [
  "proptest",
  "rand 0.9.1",
  "tokio",
- "tokio-util",
  "version_check",
 ]
 
@@ -3309,8 +3308,6 @@ dependencies = [
  "strum_macros 0.27.1",
  "tempfile",
  "tokio",
- "tokio-util",
- "url",
  "zstd",
 ]
 
@@ -3630,7 +3627,6 @@ dependencies = [
  "recursive",
  "slotmap",
  "tokio",
- "tokio-util",
  "version_check",
 ]
 
@@ -3807,7 +3803,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.34.0-beta.1"
+version = "1.34.0"
 dependencies = [
  "either",
  "libc",
@@ -5193,10 +5189,7 @@ checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
 dependencies = [
  "bytes",
  "futures-core",
- "futures-io",
  "futures-sink",
- "futures-util",
- "hashbrown 0.15.4",
  "pin-project-lite",
  "tokio",
 ]

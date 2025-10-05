@@ -1102,6 +1102,7 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
 
 
+@pytest.mark.write_disk
 def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1214,6 +1215,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
 
 # Note: This test also generally covers primitive type round-tripping.
 @pytest.mark.parametrize("test_uuid", [True, False])
+@pytest.mark.write_disk
 def test_fill_missing_fields_with_identity_partition_values(
     test_uuid: bool, tmp_path: Path
 ) -> None:
@@ -1367,6 +1369,7 @@ def test_fill_missing_fields_with_identity_partition_values(
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
 
 
+@pytest.mark.write_disk
 def test_fill_missing_fields_with_identity_partition_values_nested(
     tmp_path: Path,
 ) -> None:
@@ -1480,6 +1483,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     )
 
 
+@pytest.mark.write_disk
 def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
     import datetime
 
@@ -1827,4 +1831,46 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
         .with_row_index()
         .filter(pl.col("index").is_null()),
         pl.LazyFrame(schema={"index": pl.get_index_type(), **pl_schema}),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    next_field_id = partial(next, itertools.count(1))
+
+    iceberg_schema = IcebergSchema(
+        NestedField(
+            next_field_id(),
+            "values",
+            StringType(),
+        ),
+    )
+
+    tbl = catalog.create_table("namespace.table", iceberg_schema)
+
+    df = pl.DataFrame(
+        {"values": "A"},
+        schema={"values": pl.Categorical()},
+    )
+
+    arrow_tbl = df.to_arrow()
+
+    arrow_type = arrow_tbl.schema.field("values").type
+    assert arrow_type.index_type == pa.uint32()
+    assert arrow_type.value_type == pa.large_string()
+
+    tbl.append(arrow_tbl)
+
+    expect = pl.DataFrame({"values": "A"}, schema={"values": pl.String})
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect(),
+        expect,
     )
