@@ -100,7 +100,7 @@ impl IRBitwiseFunction {
             | B::TrailingOnes
             | B::TrailingZeros => FunctionOptions::elementwise(),
             B::And | B::Or | B::Xor => FunctionOptions::aggregation()
-                .with_flags(|f| f | FunctionFlags::INPUT_ORDER_AGNOSTIC),
+                .with_flags(|f| f | FunctionFlags::NON_ORDER_OBSERVING),
         }
     }
 }

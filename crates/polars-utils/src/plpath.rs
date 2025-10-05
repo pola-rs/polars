@@ -87,13 +87,13 @@ impl PlCloudPathRef<'_> {
     }
 }
 
-pub struct AddressDisplay<'a> {
-    addr: PlPathRef<'a>,
+pub struct PlPathDisplay<'a> {
+    path: PlPathRef<'a>,
 }
 
-impl<'a> fmt::Display for AddressDisplay<'a> {
+impl<'a> fmt::Display for PlPathDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.addr {
+        match self.path {
             PlPathRef::Local(p) => p.display().fmt(f),
             PlPathRef::Cloud(p) => p.fmt(f),
         }
@@ -120,7 +120,7 @@ macro_rules! impl_cloud_scheme {
                 })
             }
 
-            const fn as_str(&self) -> &'static str {
+            pub const fn as_str(&self) -> &'static str {
                 match self {
                     $(Self::$t => $n,)+
                 }
@@ -163,7 +163,8 @@ impl CloudScheme {
         &uri[self.strip_scheme_index()..]
     }
 
-    /// Index that would strip the scheme, including the `://` if it exists.
+    /// Returns `i` such that `&self.as_str()[i..]` strips the scheme, as well as the `://` if it
+    /// exists.
     pub fn strip_scheme_index(&self) -> usize {
         if let Self::FileNoHostname = self {
             5
@@ -202,7 +203,7 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn as_cloud_addr(&self) -> Option<PlCloudPathRef<'_>> {
+    pub fn as_cloud_path(&'a self) -> Option<PlCloudPathRef<'a>> {
         match self {
             Self::Local(_) => None,
             Self::Cloud(p) => Some(*p),
@@ -246,8 +247,8 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn display(&self) -> AddressDisplay<'_> {
-        AddressDisplay { addr: *self }
+    pub fn display(&self) -> PlPathDisplay<'_> {
+        PlPathDisplay { path: *self }
     }
 
     pub fn from_local_path(path: &'a Path) -> Self {
@@ -324,21 +325,13 @@ impl<'a> PlPathRef<'a> {
         match self {
             Self::Local(path) => path.extension().and_then(|e| e.to_str()),
             Self::Cloud(_) => {
-                let offset_path = self.strip_scheme();
-                let separator = '/';
+                let after_scheme = self.strip_scheme();
 
-                let mut ext_start = None;
-                for (i, c) in offset_path.char_indices() {
-                    if c == separator {
-                        ext_start = None;
-                    }
-
-                    if c == '.' && ext_start.is_none() {
-                        ext_start = Some(i);
-                    }
-                }
-
-                ext_start.map(|i| &offset_path[i + 1..])
+                after_scheme.rfind(['.', '/']).and_then(|i| {
+                    after_scheme[i..]
+                        .starts_with('.')
+                        .then_some(&after_scheme[i + 1..])
+                })
             },
         }
     }
@@ -361,6 +354,69 @@ impl<'a> PlPathRef<'a> {
         }
         PathBuf::from(&s[n..])
     }
+
+    /// Strips the scheme, then returns the authority component, and the remaining
+    /// string after the authority component. This can be understood as extracting
+    /// the bucket/prefix for cloud URIs.
+    ///
+    ///  E.g. `https://user@host:port/dir/file?param=value`
+    /// * Authority: `user@host:port`
+    /// * Remaining: `/dir/file?param=value`
+    ///
+    /// Note, for local / `file:` URIs, the returned authority will be empty, and
+    /// the remainder will be the full URI.
+    ///
+    /// # Returns
+    /// (authority, remaining).
+    pub fn strip_scheme_split_authority(&self) -> Option<(&'_ str, &'_ str)> {
+        match self.scheme() {
+            None | Some(CloudScheme::File | CloudScheme::FileNoHostname) => {
+                Some(("", self.strip_scheme()))
+            },
+            Some(scheme) => {
+                let path_str = self.to_str();
+                let position = self.authority_end_position();
+
+                if position < path_str.len() {
+                    assert!(path_str[position..].starts_with('/'));
+                }
+
+                (position < path_str.len()).then_some((
+                    &path_str[scheme.strip_scheme_index()..position],
+                    &path_str[position..],
+                ))
+            },
+        }
+    }
+
+    /// Returns `i` such that `&self.to_str()[..i]` trims to the authority. If there is no '/'
+    /// separator found, `i` will simply be the length of the string.
+    pub fn authority_end_position(&self) -> usize {
+        match self.scheme() {
+            None | Some(CloudScheme::File | CloudScheme::FileNoHostname) => 0,
+            Some(_) => {
+                let after_scheme = self.strip_scheme();
+                let offset = self.to_str().len() - after_scheme.len();
+
+                offset + after_scheme.find('/').unwrap_or(after_scheme.len())
+            },
+        }
+    }
+
+    /// # Returns
+    /// Returns an absolute local path if this path ref is a relative local path, otherwise returns None.
+    pub fn to_absolute_path(&self) -> Option<PlPath> {
+        if let Self::Local(p) = self
+            && !p.is_absolute()
+            && !p.to_str().unwrap().is_empty()
+        {
+            Some(PlPath::new(
+                std::path::absolute(p).unwrap().to_str().unwrap(),
+            ))
+        } else {
+            None
+        }
+    }
 }
 
 impl PlPath {
@@ -368,9 +424,9 @@ impl PlPath {
         PlPathRef::new(uri).into_owned()
     }
 
-    pub fn display(&self) -> AddressDisplay<'_> {
-        AddressDisplay {
-            addr: match self {
+    pub fn display(&self) -> PlPathDisplay<'_> {
+        PlPathDisplay {
+            path: match self {
                 Self::Local(p) => PlPathRef::Local(p.as_ref()),
                 Self::Cloud(p) => PlPathRef::Cloud(p.as_ref()),
             },

@@ -335,7 +335,7 @@ impl<T> Iterator for IntoIter<T> {
     }
 }
 
-impl<const N: usize, T> From<[T; N]> for UnitVec<T> {
+impl<T, const N: usize> From<[T; N]> for UnitVec<T> {
     fn from(value: [T; N]) -> Self {
         UnitVec::from_iter(value)
     }

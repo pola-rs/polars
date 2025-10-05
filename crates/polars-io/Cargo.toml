@@ -49,8 +49,6 @@ simdutf8 = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
-tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
-url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -114,7 +112,6 @@ async = [
   "async-trait",
   "futures",
   "tokio",
-  "tokio-util",
   "polars-error/regex",
   "polars-parquet?/async",
 ]
@@ -122,7 +119,6 @@ cloud = [
   "object_store",
   "async",
   "polars-error/object_store",
-  "url",
   "serde_json",
   "serde",
   "file_cache",

@@ -1272,7 +1272,8 @@ pub(crate) fn parse_cloud_options(
     kv: impl IntoIterator<Item = (String, String)>,
 ) -> PyResult<CloudOptions> {
     let iter: &mut dyn Iterator<Item = _> = &mut kv.into_iter();
-    let out = CloudOptions::from_untyped_config(uri, iter).map_err(PyPolarsErr::from)?;
+    let out = CloudOptions::from_untyped_config(CloudScheme::from_uri(uri).as_ref(), iter)
+        .map_err(PyPolarsErr::from)?;
     Ok(out)
 }
 
@@ -1401,6 +1402,19 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             },
         };
 
+        let categorical_to_string = match &*ob
+            .getattr(intern!(py, "categorical_to_string"))?
+            .extract::<PyBackedStr>()?
+        {
+            "allow" => true,
+            "forbid" => false,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for categorical_to_string: {v}"
+                )));
+            },
+        };
+
         return Ok(Wrap(CastColumnsPolicy {
             integer_upcast,
             float_upcast,
@@ -1409,6 +1423,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             datetime_microseconds_downcast: false,
             datetime_convert_timezone,
             null_upcast: true,
+            categorical_to_string,
             missing_struct_fields,
             extra_struct_fields,
         }));

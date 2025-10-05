@@ -265,18 +265,16 @@ impl ColumnSelectorBuilder {
         let target_dtype = target_dtype.as_ref();
 
         if target_dtype.is_integer() && incoming_dtype.is_integer() {
-            if !self.cast_columns_policy.integer_upcast {
-                return mismatch_err(
-                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')",
-                );
-            }
-
-            return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
-                Some(ref v) if v == target_dtype => {
-                    // Use overflowing on lossless cast to elide validation.
-                    attach_cast(CastOptions::Overflowing)
-                },
-                _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
+            return if self.cast_columns_policy.integer_upcast {
+                match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
+                    Some(ref v) if v == target_dtype => {
+                        // Use overflowing on lossless cast to elide validation.
+                        attach_cast(CastOptions::Overflowing)
+                    },
+                    _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
+                }
+            } else {
+                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')")
             };
         }
 
@@ -346,6 +344,16 @@ impl ColumnSelectorBuilder {
 
             // Dtype differs and we are allowed to coerce
             return attach_cast(CastOptions::NonStrict);
+        }
+
+        if target_dtype.is_string() && incoming_dtype.is_categorical() {
+            return if self.cast_columns_policy.categorical_to_string {
+                attach_cast(CastOptions::NonStrict)
+            } else {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(categorical_to_string='allow')",
+                )
+            };
         }
 
         mismatch_err("")

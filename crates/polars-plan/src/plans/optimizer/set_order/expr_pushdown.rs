@@ -53,10 +53,16 @@ impl ExprOutputOrder {
 
     /// Do a elementwise zip between two output orderings.
     pub fn zip_with(self, other: Self) -> Result<Self, FrameOrderObserved> {
+        use ExprOutputOrder as O;
+
         match (self, other) {
-            (Self::None, v) | (v, Self::None) => Ok(v),
-            (Self::Both, _) | (_, Self::Both) => Err(FrameOrderObserved),
-            (v, w) if v == w => Ok(v),
+            (v, O::None)
+            | (O::None, v)
+            | (v @ O::Independent, O::Independent)
+            | (v @ O::Frame, O::Frame) => Ok(v),
+
+            // Otherwise, one side contains frame ordering, and the other side
+            // contains independent ordering, which observes the frame ordering.
             _ => Err(FrameOrderObserved),
         }
     }
@@ -125,12 +131,18 @@ pub fn get_frame_observing(
 
         // Elementwise can be seen as a `zip + op`.
         AExpr::BinaryExpr { left, op: _, right } => zip!(*left, *right),
-        AExpr::Filter { input, by } => zip!(*input, *by),
         AExpr::Ternary {
             predicate,
             truthy,
             falsy,
         } => zip!(*predicate, *truthy, *falsy),
+
+        // Filter has to check whether zipping observes order, otherwise it propagates expr order.
+        AExpr::Filter { input, by } => {
+            let input = rec!(*input);
+            input.zip_with(rec!(*by))?;
+            input
+        },
 
         AExpr::Sort { expr, options } => {
             if options.maintain_order {
@@ -210,61 +222,24 @@ pub fn get_frame_observing(
         },
         AExpr::AnonymousFunction { input, options, .. }
         | AExpr::Function { input, options, .. } => {
-            // By definition, does not observe any input so cannot observe any ordering.
-            if input.is_empty() {
-                return Ok(
-                    if options.flags.returns_scalar() || options.flags.is_output_unordered() {
-                        O::None
-                    } else {
-                        O::Independent
-                    },
-                );
-            }
-
-            // Elementwise are regarded as a `zip + function`.
-            if options.flags.is_elementwise() {
-                return zip(input.iter().map(|e| Ok(rec!(e.node()))));
-            }
-
-            if options.flags.propagates_order() {
-                // Propagate the order of the singular input, this is for expressions like
-                // `drop_nulls` and `rechunk`.
-                assert_eq!(input.len(), 1);
-                match rec!(input[0].node()) {
-                    v if !(options.flags.is_row_separable()
-                        || options.flags.is_input_order_agnostic())
-                        && v.has_frame_ordering() =>
-                    {
-                        return Err(FrameOrderObserved);
-                    },
-                    v => v,
-                }
-            } else if options.flags.is_input_order_agnostic() {
-                // There are also expressions that are entirely input order agnostic like
-                // `null_count` and `unique(maintain_order=False)`
-                for e in input {
-                    _ = rec!(e.node());
-                }
-
-                if options.returns_scalar() || options.flags.is_output_unordered() {
-                    O::None
-                } else {
-                    O::Independent
-                }
+            let input_ordering = if input.is_empty() {
+                O::None
             } else {
-                // For other expressions, we are observing frame order i.f.f. any of the inputs are
-                // observing frame order.
-                for e in input {
-                    if rec!(e.node()).has_frame_ordering() {
-                        return Err(FrameOrderObserved);
-                    }
-                }
+                zip(input.iter().map(|e| Ok(rec!(e.node()))))?
+            };
 
-                if options.returns_scalar() || options.flags.is_output_unordered() {
-                    O::None
-                } else {
-                    O::Independent
-                }
+            if input_ordering.has_frame_ordering() && options.flags.observes_input_order() {
+                return Err(FrameOrderObserved);
+            }
+
+            match (
+                options.flags.terminates_input_order(),
+                options.flags.non_order_producing(),
+            ) {
+                (false, false) => input_ordering | O::Independent,
+                (false, true) => input_ordering,
+                (true, false) => O::Independent,
+                (true, true) => O::None,
             }
         },
 

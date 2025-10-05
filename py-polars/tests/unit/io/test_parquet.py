@@ -3349,7 +3349,7 @@ def test_field_overwrites_metadata() -> None:
     assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"
 
 
-def multiple_test_sorting_columns() -> None:
+def test_multiple_sorting_columns() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 1, 2, 2, 2],
