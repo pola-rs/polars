@@ -236,6 +236,46 @@ impl Iterator for BitmapIter<'_> {
         let num_remaining = self.num_remaining();
         (num_remaining, Some(num_remaining))
     }
+
+    #[inline]
+    fn nth(&mut self, mut n: usize) -> Option<Self::Item> {
+        if n >= self.word_len + self.rest_len {
+            return None;
+        }
+
+        // Advance words in buffer, skip words as needed
+        if n >= self.word_len {
+            n -= self.word_len;
+
+            let word_offset = n / 64;
+            n -= word_offset * 64;
+            self.rest_len -= word_offset * 64;
+            self.word_len = self.rest_len.min(64);
+
+            let byte_offset = 8 * word_offset;
+            unsafe {
+                let chunk = self
+                    .bytes
+                    .get_unchecked(byte_offset..byte_offset + 8)
+                    .try_into()
+                    .unwrap();
+                self.word = u64::from_le_bytes(chunk);
+                self.bytes = self.bytes.get_unchecked(byte_offset + 8..);
+            }
+        }
+
+        // At this point, n < self.word_len
+        debug_assert!(self.word_len > n);
+
+        // Advance index by n and take value at final index
+        self.word >>= n;
+        self.word_len -= n;
+
+        let ret = self.word & 1 != 0;
+        self.word >>= 1;
+        self.word_len -= 1;
+        Some(ret)
+    }
 }
 
 impl DoubleEndedIterator for BitmapIter<'_> {
@@ -381,6 +421,42 @@ mod tests {
 
             assert_eq!(iter.take_leading_zeros(), 0);
             assert_eq!(iter.take_leading_ones(), 0);
+        }
+    }
+
+    #[test]
+    #[allow(clippy::iter_nth_zero)]
+    fn test_nth() {
+        // Calling nth repeatedly advances through the bitmap
+        let mut iter = BitmapIter::new(&[0b10110001], 0, 8);
+        assert_eq!(iter.nth(0), Some(true));
+        assert_eq!(iter.nth(0), Some(false));
+        assert_eq!(iter.nth(2), Some(true));
+        assert_eq!(iter.nth(3), None);
+
+        // Test bitmap around word len multiples +/- 1 for parity with next()-based implementation
+        for len in [0, 1, 2, 63, 64, 65, 127, 128, 129] {
+            for offset in [0, 1, 2] {
+                // binary '01010101' == 85
+                let iter = BitmapIter::new(
+                    &[
+                        0, 1, 2, 4, 8, 16, 32, 64, 85, 170, 85, 170, 85, 170, 85, 170, 255, 0,
+                    ],
+                    offset,
+                    len,
+                );
+
+                for i in 0..=len {
+                    let mut iter_a = iter.clone();
+                    let mut iter_b = iter.clone();
+                    let a = iter_a.nth(i);
+                    for _ in 0..i {
+                        iter_b.next();
+                    }
+                    let b = iter_b.next();
+                    assert_eq!(a, b);
+                }
+            }
         }
     }
 }
