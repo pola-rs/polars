@@ -233,21 +233,13 @@ def test_offset_by_invalid_duration_unary_ops(offset: str) -> None:
         pl.Series([datetime(2025, 10, 3, 11, 42)]).dt.offset_by(offset)
 
 
-@pytest.mark.parametrize("offset", ["1", "1mo23d4", "-2d1"])
-def test_offset_by_invalid_missing_unit(offset: str) -> None:
+@pytest.mark.parametrize("offset", ["1", "1mo23d4", "-2d1", "12時30分45秒"])
+def test_offset_by_missing_or_invalid_unit(offset: str) -> None:
     with pytest.raises(
         InvalidOperationError,
         match=f"expected a valid unit to follow integer in the duration string '{offset}'",
     ):
         pl.Series([datetime(2025, 10, 6, 13, 45)]).dt.offset_by(offset)
-
-
-def test_offset_by_invalid_units() -> None:
-    with pytest.raises(
-        InvalidOperationError,
-        match="expected a valid unit to follow integer in the duration string '12時30分45秒'",
-    ):
-        pl.Series([datetime(2025, 10, 6, 13, 45)]).dt.offset_by("12時30分45秒")
 
 
 def test_offset_by_missing_unit_in_expr() -> None:
