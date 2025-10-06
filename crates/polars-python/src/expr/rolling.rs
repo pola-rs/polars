@@ -322,12 +322,11 @@ impl PyExpr {
             .into())
     }
 
-    #[pyo3(signature = (window_size, method, descending, seed, min_periods, center))]
+    #[pyo3(signature = (window_size, method, seed, min_periods, center))]
     fn rolling_rank(
         &self,
         window_size: usize,
         method: Wrap<RollingRankMethod>,
-        descending: bool,
         seed: Option<u64>,
         min_periods: Option<usize>,
         center: bool,
@@ -340,7 +339,6 @@ impl PyExpr {
             center,
             fn_params: Some(RollingFnParams::Rank {
                 method: method.0,
-                descending,
                 seed,
             }),
         };

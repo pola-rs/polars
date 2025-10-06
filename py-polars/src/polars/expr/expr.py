@@ -8403,7 +8403,6 @@ Consider using {self}.implode() instead"""
         window_size: int,
         method: RankMethod = "average",
         *,
-        descending: bool = False,
         seed: int | None = None,
         min_samples: int | None = None,
         center: bool = False,
@@ -8421,7 +8420,6 @@ Consider using {self}.implode() instead"""
             self._pyexpr.rolling_rank(
                 window_size,
                 method,
-                descending,
                 seed,
                 min_samples,
                 center,

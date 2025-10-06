@@ -1744,7 +1744,6 @@ class PyExpr:
         self,
         window_size: int,
         method: RankMethod,
-        descending: bool,
         seed: int | None = None,
         min_periods: int | None = None,
         center: bool = False,

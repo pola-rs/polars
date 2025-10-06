@@ -7461,7 +7461,6 @@ class Series:
         window_size: int,
         method: RankMethod = "average",
         *,
-        descending: bool = False,
         seed: int | None = None,
         min_samples: int | None = None,
         center: bool = False,

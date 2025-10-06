@@ -54,7 +54,6 @@ pub enum RollingFnParams {
     Var(RollingVarParams),
     Rank {
         method: RollingRankMethod,
-        descending: bool,
         seed: Option<u64>,
     },
     Skew {
