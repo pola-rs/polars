@@ -116,10 +116,7 @@ impl Hash for FunctionIR {
                 cloud_options.hash(state);
                 alias.hash(state);
             },
-            FunctionIR::Unnest {
-                columns,
-                separator,
-            } => {
+            FunctionIR::Unnest { columns, separator } => {
                 columns.hash(state);
                 separator.hash(state);
             },
@@ -222,10 +219,7 @@ impl FunctionIR {
                 df.as_single_chunk_par();
                 Ok(df)
             },
-            Unnest {
-                columns,
-                separator,
-            } => {
+            Unnest { columns, separator } => {
                 feature_gated!(
                     "dtype-struct",
                     df.unnest(columns.iter().cloned(), separator.as_deref())

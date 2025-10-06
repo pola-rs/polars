@@ -48,10 +48,7 @@ impl FunctionIR {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             Rechunk => Ok(Cow::Borrowed(input_schema)),
-            Unnest {
-                columns,
-                separator,
-            } => {
+            Unnest { columns, separator } => {
                 #[cfg(feature = "dtype-struct")]
                 {
                     let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
