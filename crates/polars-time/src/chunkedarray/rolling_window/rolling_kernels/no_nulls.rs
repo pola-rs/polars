@@ -5,10 +5,10 @@ use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use num_traits::{FromPrimitive, ToPrimitive};
-use polars_compute::rolling::RollingFnParams;
 use polars_compute::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use polars_compute::rolling::nulls::VarianceMoment;
 use polars_compute::rolling::quantile_filter::SealedRolling;
+use polars_compute::rolling::{MeanWindow, RollingFnParams, SumWindow};
 
 use super::*;
 
@@ -247,14 +247,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::SumWindow<T, T>, _, _>(
+        rolling_apply_agg_window_sorted::<SumWindow<T, T>, _, _>(
             values,
             offset_iter,
             min_periods,
             None,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::SumWindow<T, T>, _, _>(
+        rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
             values,
             offset_iter,
             min_periods,
@@ -285,14 +285,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::MeanWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<MeanWindow<_>, _, _>(
             values,
             offset_iter,
             min_periods,
             None,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(
+        rolling_apply_agg_window::<MeanWindow<_>, _, _>(
             values,
             offset_iter,
             min_periods,
