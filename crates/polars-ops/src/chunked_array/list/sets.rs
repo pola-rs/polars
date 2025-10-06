@@ -47,24 +47,31 @@ impl<'a> MaterializeValues<Option<&'a [u8]>> for MutablePlBinary {
     }
 }
 
-fn set_operation<K, I, J, R>(
-    set: &mut PlIndexSet<K>,
-    set2: &mut PlIndexSet<K>,
-    a: I,
-    b: J,
+type TotalItem<T> = <Option<T> as ToTotalOrd>::TotalOrdItem;
+
+#[allow(clippy::too_many_arguments)]
+fn set_operation<'a, 'b, T, I, J, R>(
+    set: &mut PlIndexSet<TotalItem<T>>,
+    set2: &mut PlIndexSet<TotalItem<T>>,
+    a: &mut I,
+    b: &mut J,
+    len_a: usize,
+    len_b: usize,
     out: &mut R,
     set_op: SetOperation,
     broadcast_rhs: bool,
 ) -> usize
 where
-    K: Eq + Hash + Copy,
-    I: IntoIterator<Item = K>,
-    J: IntoIterator<Item = K>,
-    R: MaterializeValues<K>,
+    T: Copy + TotalEq + TotalHash + 'a + 'b,
+    I: Iterator<Item = Option<&'a T>>,
+    J: Iterator<Item = Option<&'b T>>,
+    R: MaterializeValues<TotalItem<T>>,
+    TotalItem<T>: Eq + Hash + Copy,
 {
     set.clear();
-    let a = a.into_iter();
-    let b = b.into_iter();
+
+    let a = a.take(len_a).map(copied_wrapper_opt);
+    let b = b.take(len_b).map(copied_wrapper_opt);
 
     match set_op {
         SetOperation::Intersection => {
@@ -96,6 +103,57 @@ where
             }
             // We could speed this up, but implementing ourselves, but we need to have a cloneable
             // iterator as we need 2 passes
+            set.extend(a);
+            out.extend_buf(set.symmetric_difference(set2).copied())
+        },
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn set_operation_binary<'a, I, R>(
+    set: &mut PlIndexSet<Option<&'a [u8]>>,
+    set2: &mut PlIndexSet<Option<&'a [u8]>>,
+    a: &mut I,
+    b: &mut I,
+    len_a: usize,
+    len_b: usize,
+    out: &mut R,
+    set_op: SetOperation,
+    broadcast_rhs: bool,
+) -> usize
+where
+    I: Iterator<Item = Option<&'a [u8]>>,
+    R: MaterializeValues<Option<&'a [u8]>>,
+{
+    set.clear();
+    let a = a.take(len_a);
+    let b = b.take(len_b);
+
+    match set_op {
+        SetOperation::Intersection => {
+            set.extend(a);
+            if !broadcast_rhs {
+                set2.clear();
+                set2.extend(b);
+            }
+            out.extend_buf(set.intersection(set2).copied())
+        },
+        SetOperation::Union => {
+            set.extend(a.chain(b));
+            out.extend_buf(set.drain(..))
+        },
+        SetOperation::Difference => {
+            set.extend(a);
+            for v in b {
+                set.swap_remove(&v);
+            }
+            out.extend_buf(set.drain(..))
+        },
+        SetOperation::SymmetricDifference => {
+            if !broadcast_rhs {
+                set2.clear();
+                set2.extend(b);
+            }
             set.extend(a);
             out.extend_buf(set.symmetric_difference(set2).copied())
         },
@@ -172,77 +230,58 @@ where
                 .map(copied_wrapper_opt),
         );
     }
+
+    let mut iter_a = a.into_iter().skip(first_a as usize);
+    let mut iter_b = b.into_iter().skip(first_b as usize);
+
     for i in 1..offsets_slice.len() {
         // If we go OOB we take the first element as we are then broadcasting.
         let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;
         let end_a = *offsets_a.get(i).unwrap_or(&second_a) as usize;
+        let len_a = end_a - start_a;
 
         let start_b = *offsets_b.get(i - 1).unwrap_or(&first_b) as usize;
         let end_b = *offsets_b.get(i).unwrap_or(&second_b) as usize;
+        let len_b = end_b - start_b;
 
         // The branches are the same every loop.
         // We rely on branch prediction here.
         let offset = if broadcast_rhs {
-            // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
-            let a_iter = a
-                .into_iter()
-                .skip(start_a)
-                .take(end_a - start_a)
-                .map(copied_wrapper_opt);
-            let b_iter = b
-                .into_iter()
-                .skip(first_b as usize)
-                .take(second_b as usize - first_b as usize)
-                .map(copied_wrapper_opt);
+            let mut iter_b = iter_b.clone();
+            let len_b = second_b as usize - first_b as usize;
             set_operation(
                 &mut set,
                 &mut set2,
-                a_iter,
-                b_iter,
+                &mut iter_a,
+                &mut iter_b,
+                len_a,
+                len_b,
                 &mut values_out,
                 set_op,
                 true,
             )
         } else if broadcast_lhs {
-            let a_iter = a
-                .into_iter()
-                .skip(first_a as usize)
-                .take(second_a as usize - first_a as usize)
-                .map(copied_wrapper_opt);
-
-            let b_iter = b
-                .into_iter()
-                .skip(start_b)
-                .take(end_b - start_b)
-                .map(copied_wrapper_opt);
-
+            let mut iter_a = iter_a.clone();
+            let len_a = second_a as usize - first_a as usize;
             set_operation(
                 &mut set,
                 &mut set2,
-                a_iter,
-                b_iter,
+                &mut iter_a,
+                &mut iter_b,
+                len_a,
+                len_b,
                 &mut values_out,
                 set_op,
                 false,
             )
         } else {
-            // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
-            let a_iter = a
-                .into_iter()
-                .skip(start_a)
-                .take(end_a - start_a)
-                .map(copied_wrapper_opt);
-
-            let b_iter = b
-                .into_iter()
-                .skip(start_b)
-                .take(end_b - start_b)
-                .map(copied_wrapper_opt);
             set_operation(
                 &mut set,
                 &mut set2,
-                a_iter,
-                b_iter,
+                &mut iter_a,
+                &mut iter_b,
+                len_a,
+                len_b,
                 &mut values_out,
                 set_op,
                 false,
@@ -269,7 +308,7 @@ fn binary(
 ) -> PolarsResult<ListArray<i64>> {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
-    let mut set = Default::default();
+    let mut set: PlIndexSet<Option<&[u8]>> = Default::default();
     let mut set2: PlIndexSet<Option<&[u8]>> = Default::default();
 
     let mut values_out = MutablePlBinary::with_capacity(std::cmp::max(
@@ -298,56 +337,57 @@ fn binary(
         );
     }
 
+    let mut iter_a = a.into_iter().skip(first_a as usize);
+    let mut iter_b = b.into_iter().skip(first_b as usize);
+
     for i in 1..offsets_slice.len() {
         // If we go OOB we take the first element as we are then broadcasting.
         let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;
         let end_a = *offsets_a.get(i).unwrap_or(&second_a) as usize;
+        let len_a = end_a - start_a;
 
         let start_b = *offsets_b.get(i - 1).unwrap_or(&first_b) as usize;
         let end_b = *offsets_b.get(i).unwrap_or(&second_b) as usize;
+        let len_b = end_b - start_b;
 
         // The branches are the same every loop.
         // We rely on branch prediction here.
         let offset = if broadcast_rhs {
-            // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
-            let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
-            let b_iter = b
-                .into_iter()
-                .skip(first_b as usize)
-                .take(second_b as usize - first_b as usize);
-            set_operation(
+            let mut iter_b = iter_b.clone();
+            let len_b = second_b as usize - first_b as usize;
+            set_operation_binary(
                 &mut set,
                 &mut set2,
-                a_iter,
-                b_iter,
+                &mut iter_a,
+                &mut iter_b,
+                len_a,
+                len_b,
                 &mut values_out,
                 set_op,
                 true,
             )
         } else if broadcast_lhs {
-            let a_iter = a
-                .into_iter()
-                .skip(first_a as usize)
-                .take(second_a as usize - first_a as usize);
-            let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
-            set_operation(
+            let mut iter_a = iter_a.clone();
+            let len_a = second_a as usize - first_a as usize;
+            set_operation_binary(
                 &mut set,
                 &mut set2,
-                a_iter,
-                b_iter,
+                &mut iter_a,
+                &mut iter_b,
+                len_a,
+                len_b,
                 &mut values_out,
                 set_op,
                 false,
             )
         } else {
-            // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
-            let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
-            let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
-            set_operation(
+            set_operation_binary(
                 &mut set,
                 &mut set2,
-                a_iter,
-                b_iter,
+                &mut iter_a,
+                &mut iter_b,
+                len_a,
+                len_b,
                 &mut values_out,
                 set_op,
                 false,
