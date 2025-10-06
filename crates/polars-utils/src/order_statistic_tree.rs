@@ -76,8 +76,13 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         self.weight(self.root)
     }
 
-    pub fn unique_count(&self) -> usize {
+    pub fn unique_len(&self) -> usize {
         self.unique_weight(self.root)
+    }
+
+    pub fn clear(&mut self) {
+        self.sm.clear();
+        self.root = Key::null();
     }
 
     fn eq(&self, lhs: &T, rhs: &T) -> bool {
@@ -594,7 +599,7 @@ mod test {
         assert_eq!(ost.len(), items.len());
         items.sort();
         items.dedup();
-        assert_eq!(ost.unique_count(), items.len());
+        assert_eq!(ost.unique_len(), items.len());
         for item in 0..50 {
             let unique_rank = ost.rank_unique(&item);
             let expected_unique_rank = if items.contains(&item) {
@@ -612,7 +617,7 @@ mod test {
         let ost = OrderStatisticTree::<i32>::new(i32::cmp);
         assert!(ost.is_empty());
         assert_eq!(ost.len(), 0);
-        assert_eq!(ost.unique_count(), 0);
+        assert_eq!(ost.unique_len(), 0);
         assert!(ost.is_balanced());
         assert!(!ost.contains(&1));
         assert_eq!(ost.rank_lower(&1), Err(1));
@@ -637,5 +642,17 @@ mod test {
         assert_eq!(ost.len(), items.len());
         assert_eq!(&collected_items, &sorted_items);
         Ok(())
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut ost = OrderStatisticTree::new(i32::cmp);
+        for item in 0..10 {
+            ost.insert(item);
+        }
+        assert_eq!(ost.len(), 10);
+        assert_eq!(ost.unique_len(), 10);
+        ost.clear();
+        assert!(ost.is_empty());
     }
 }
