@@ -8414,7 +8414,59 @@ Consider using {self}.implode() instead"""
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        TODO: [amber] Add docstring
+        A window of length `window_size` will traverse the array. The values
+        that fill this window will be ranked according to the `method`
+        parameter. The resulting values will be the rank of the value that is
+        at the end of the sliding window.
+
+        Parameters
+        ----------
+        window_size
+            Integer size of the rolling window.
+        method : {'average', 'min', 'max', 'dense', 'random'}
+            The method used to assign ranks to tied elements.
+            The following methods are available (default is 'average'):
+
+            - 'average' : The average of the ranks that would have been assigned to
+              all the tied values is assigned to each value.
+            - 'min' : The minimum of the ranks that would have been assigned to all
+              the tied values is assigned to each value. (This is also referred to
+              as "competition" ranking.)
+            - 'max' : The maximum of the ranks that would have been assigned to all
+              the tied values is assigned to each value.
+            - 'dense' : Like 'min', but the rank of the next highest element is
+              assigned the rank immediately after those assigned to the tied
+              elements.
+            - 'random' : Like 'ordinal', but the rank for ties is not dependent
+              on the order that the values occur in the Series.
+        seed
+            Random seed used when `method='random'`. If set to None (default), a
+            random seed is generated for each rolling rank operation.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
+
+        Returns
+        -------
+        Expr
+            A Expr of data :class:`.Float64` if `method` is `"average"` or,
+            the index size (see :func:`.get_index_type()`) otherwise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 4, 4, 2, 9]})
+        >>> df.select(pl.col("a").rolling_rank(3, method="average"))
+        shape: (5,)
+        Series: '' [f64]
+        [
+            null
+            null
+            2.5
+            2.0
+            3.0
+        ]
         """
         return wrap_expr(
             self._pyexpr.rolling_rank(
