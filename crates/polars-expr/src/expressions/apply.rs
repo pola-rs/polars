@@ -524,7 +524,7 @@ impl PhysicalExpr for ApplyExpr {
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
                     let mut has_not_agg = false;
-                    let mut has_not_agg_with_rolling_groups = false;
+                    let mut has_not_agg_with_overlapping_groups = false;
                     let mut not_agg_groups_may_diverge = false;
 
                     let mut previous: Option<&AggregationContext<'_>> = None;
@@ -541,8 +541,8 @@ impl PhysicalExpr for ApplyExpr {
                                         !std::ptr::eq(p.groups.as_ref(), ac.groups.as_ref());
                                 }
                                 previous = Some(ac);
-                                if ac.groups.is_rolling() {
-                                    has_not_agg_with_rolling_groups = true;
+                                if ac.groups.is_overlapping() {
+                                    has_not_agg_with_overlapping_groups = true;
                                 }
                             },
                             _ => {},
@@ -559,7 +559,7 @@ impl PhysicalExpr for ApplyExpr {
                     } else if has_agg_scalar && (has_agg_list || has_not_agg) {
                         // Not compatible
                         self.apply_multiple_group_aware(acs, df)
-                    } else if elementwise_must_aggregate && has_not_agg_with_rolling_groups {
+                    } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
                         // Compatible but calling aggregated() is too expensive
                         self.apply_multiple_group_aware(acs, df)
                     } else {
