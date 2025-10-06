@@ -13,21 +13,9 @@ pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
         }),
         DataType::Decimal(_, scale) => {
             let ca = s.decimal()?;
-
-            let p_one = 10i128.pow(*scale as u32);
-            let n_one = -p_one;
-
             let out = ca
                 .physical()
-                .apply_values(|x| {
-                    if x < 0 {
-                        n_one
-                    } else if x > 0 {
-                        p_one
-                    } else {
-                        0
-                    }
-                })
+                .apply_values(|x| polars_compute::decimal::dec128_sign(x, *scale))
                 .into_column();
             unsafe { out.from_physical_unchecked(dtype) }
         },

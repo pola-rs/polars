@@ -647,6 +647,18 @@ pub fn dec128_cmp(mut lv: i128, ls: usize, mut rv: i128, rs: usize) -> Ordering 
     lv.cmp(&rv)
 }
 
+/// Get the sign (either -1, 0, 1) of a Decimal128.
+#[inline]
+pub fn dec128_sign(x: i128, s: usize) -> i128 {
+    if x < 0 {
+        -POW10_I128[s]
+    } else if x > 0 {
+        POW10_I128[s]
+    } else {
+        0
+    }
+}
+
 /// Deserialize bytes to a single i128 representing a decimal, at a specified
 /// precision and scale. The number is checked to ensure it fits within the
 /// specified precision and scale.  Consistent with float parsing, no decimal
