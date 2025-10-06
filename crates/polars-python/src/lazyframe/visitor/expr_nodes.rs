@@ -572,7 +572,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 LiteralValue::Scalar(sc) => {
                     match sc.as_any_value() {
-                        // AnyValue conversion of duration to python's
+                        // AnyValue conversion of duration to python'svis
                         // datetime.timedelta drops nanoseconds because
                         // there is no support for them. See
                         // https://github.com/python/cpython/issues/59648
@@ -1181,7 +1181,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
                 },
-                IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::Append { upcast } => ("append", upcast).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),

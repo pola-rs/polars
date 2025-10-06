@@ -452,10 +452,6 @@ impl PyExpr {
         self.inner.clone().append(other.inner, upcast).into()
     }
 
-    fn rechunk(&self) -> Self {
-        self.inner.clone().rechunk().into()
-    }
-
     fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
         self.inner.clone().round(decimals, mode.0).into()
     }
