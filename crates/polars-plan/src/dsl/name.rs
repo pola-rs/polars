@@ -48,6 +48,19 @@ impl ExprNameNameSpace {
         }
     }
 
+    /// Replace matching string pattern in the root column name with a new value.
+    #[cfg(feature = "regex")]
+    pub fn replace(self, pattern: &str, value: &str, literal: bool) -> Expr {
+        Expr::RenameAlias {
+            expr: Arc::new(self.0),
+            function: RenameAliasFn::Replace {
+                pattern: pattern.into(),
+                value: value.into(),
+                literal,
+            },
+        }
+    }
+
     /// Update the root column name to use lowercase characters.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_lowercase(self) -> Expr {

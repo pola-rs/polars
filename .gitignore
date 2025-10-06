@@ -29,6 +29,7 @@ polars/vendor
 .venv*/
 __pycache__/
 .coverage
+*.egg-info
 
 # Rust
 target/

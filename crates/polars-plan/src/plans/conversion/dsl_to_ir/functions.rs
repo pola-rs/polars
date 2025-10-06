@@ -836,8 +836,22 @@ pub(super) fn convert_functions(
         F::Floor => I::Floor,
         #[cfg(feature = "round_series")]
         F::Ceil => I::Ceil,
-        F::UpperBound => I::UpperBound,
-        F::LowerBound => I::LowerBound,
+        F::UpperBound => {
+            let field = e[0].field(ctx.schema, ctx.arena)?;
+            return Ok((
+                ctx.arena
+                    .add(AExpr::Literal(field.dtype.to_physical().max()?.into())),
+                field.name,
+            ));
+        },
+        F::LowerBound => {
+            let field = e[0].field(ctx.schema, ctx.arena)?;
+            return Ok((
+                ctx.arena
+                    .add(AExpr::Literal(field.dtype.to_physical().min()?.into())),
+                field.name,
+            ));
+        },
         F::ConcatExpr(v) => I::ConcatExpr(v),
         #[cfg(feature = "cov")]
         F::Correlation { method } => {

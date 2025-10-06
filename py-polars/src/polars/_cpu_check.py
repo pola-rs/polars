@@ -253,7 +253,7 @@ def check_cpu_flags(feature_flags: str) -> None:
 The following required CPU features were not detected:
     {", ".join(missing_features)}
 Continuing to use this version of Polars on this processor will likely result in a crash.
-Install the `polars-lts-cpu` package instead of `polars` to run Polars with better compatibility.
+Install `polars[rtcompat]` instead of `polars` to run Polars with better compatibility.
 
 Hint: If you are on an Apple ARM machine (e.g. M1) this is likely due to running Python under Rosetta.
 It is recommended to install a native version of Python that does not run under Rosetta x86-64 emulation.

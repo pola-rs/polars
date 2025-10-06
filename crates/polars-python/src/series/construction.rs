@@ -242,8 +242,8 @@ impl PySeries {
         let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(
-                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-            ))
+                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                ))
             })?;
         Ok(s.into())
     }

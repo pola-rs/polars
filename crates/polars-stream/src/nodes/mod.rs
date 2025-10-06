@@ -3,6 +3,7 @@ pub mod callback_sink;
 pub mod cum_agg;
 pub mod dynamic_slice;
 pub mod filter;
+pub mod gather_every;
 pub mod group_by;
 pub mod in_memory_map;
 pub mod in_memory_sink;

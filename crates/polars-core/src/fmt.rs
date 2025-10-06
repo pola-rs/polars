@@ -1311,7 +1311,7 @@ impl Series {
 fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
     let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
     let trim_zeros = get_trim_decimal_zeros();
-    f.write_str(fmt_float_string(fmt_buf.format_dec128(v, scale, trim_zeros)).as_str())
+    f.write_str(fmt_float_string(fmt_buf.format_dec128(v, scale, trim_zeros, false)).as_str())
 }
 
 #[cfg(all(

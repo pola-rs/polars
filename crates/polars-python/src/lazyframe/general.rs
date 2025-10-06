@@ -1566,8 +1566,12 @@ impl PyLazyFrame {
         Ok(schema_dict)
     }
 
-    fn unnest(&self, columns: PySelector) -> Self {
-        self.ldf.read().clone().unnest(columns.inner).into()
+    fn unnest(&self, columns: PySelector, separator: Option<&str>) -> Self {
+        self.ldf
+            .read()
+            .clone()
+            .unnest(columns.inner, separator.map(PlSmallStr::from_str))
+            .into()
     }
 
     fn count(&self) -> Self {

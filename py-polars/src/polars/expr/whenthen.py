@@ -80,6 +80,11 @@ class Then(Expr):
             Apply conditions as `col_name = value` keyword arguments that are treated as
             equality matches, such as `x = 123`. As with the predicates parameter,
             multiple conditions are implicitly combined using `&`.
+
+        Notes
+        -----
+        The expression output name is taken from the first `then` statement. It is
+        not affected by `predicates`, nor by `constraints`.
         """
         condition_pyexpr = parse_predicates_constraints_into_expression(
             *predicates, **constraints
@@ -164,6 +169,11 @@ class ChainedThen(Expr):
             Apply conditions as `col_name = value` keyword arguments that are treated as
             equality matches, such as `x = 123`. As with the predicates parameter,
             multiple conditions are implicitly combined using `&`.
+
+        Notes
+        -----
+        The expression output name is taken from the first `then` statement. It is
+        not affected by `predicates`, nor by `constraints`.
         """
         condition_pyexpr = parse_predicates_constraints_into_expression(
             *predicates, **constraints

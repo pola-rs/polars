@@ -9,7 +9,7 @@ corresponding programming language.
     pip install polars
 
     # Or for legacy CPUs without AVX2 support
-    pip install polars-lts-cpu
+    pip install polars[rtcompat]
     ```
 
 === ":fontawesome-brands-rust: Rust"
@@ -30,7 +30,7 @@ $2^{64}$ (~18 quintillion) by enabling the big index extension:
 === ":fontawesome-brands-python: Python"
 
     ``` bash
-    pip install polars-u64-idx
+    pip install polars[rt64]
     ```
 
 === ":fontawesome-brands-rust: Rust"
@@ -51,7 +51,7 @@ To install Polars for Python on an old CPU without
 === ":fontawesome-brands-python: Python"
 
     ``` bash
-    pip install polars-lts-cpu
+    pip install polars[rtcompat]
     ```
 
 ## Importing

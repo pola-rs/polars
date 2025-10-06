@@ -34,6 +34,14 @@ impl PyExpr {
         self.inner.clone().name().to_uppercase().into()
     }
 
+    fn name_replace(&self, pattern: &str, value: &str, literal: bool) -> Self {
+        self.inner
+            .clone()
+            .name()
+            .replace(pattern, value, literal)
+            .into()
+    }
+
     fn name_map_fields(&self, name_mapper: PyObject) -> Self {
         self.inner
             .clone()

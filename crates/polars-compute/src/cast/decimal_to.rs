@@ -116,7 +116,7 @@ pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray 
     let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
     let mut fmt_buf = DecimalFmtBuffer::new();
     for &x in from.values().iter() {
-        mutable.push_value_ignore_validity(fmt_buf.format_dec128(x, from_scale, false))
+        mutable.push_value_ignore_validity(fmt_buf.format_dec128(x, from_scale, false, false))
     }
 
     mutable.freeze().with_validity(from.validity().cloned())

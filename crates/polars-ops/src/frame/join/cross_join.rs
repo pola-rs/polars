@@ -138,12 +138,13 @@ pub(super) fn fused_cross_filter(
     right: &DataFrame,
     suffix: Option<PlSmallStr>,
     cross_join_options: &CrossJoinOptions,
+    maintain_order: MaintainOrderJoin,
 ) -> PolarsResult<DataFrame> {
     let unfiltered_size = (left.height() as u64).saturating_mul(right.height() as u64);
     let chunk_size = (unfiltered_size / _set_partition_size() as u64).clamp(1, 100_000);
     let num_chunks = (unfiltered_size / chunk_size).max(1) as usize;
 
-    let left_is_primary = match cross_join_options.maintain_order {
+    let left_is_primary = match maintain_order {
         MaintainOrderJoin::None => true,
         MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
@@ -165,8 +166,7 @@ pub(super) fn fused_cross_filter(
     let dfs = POOL
         .install(|| {
             cartesian_prod.par_iter().map(|(left, right)| {
-                let (mut left, right) =
-                    cross_join_dfs(left, right, None, false, cross_join_options.maintain_order)?;
+                let (mut left, right) = cross_join_dfs(left, right, None, false, maintain_order)?;
                 let mut right_columns = right.take_columns();
 
                 for (c, name) in right_columns.iter_mut().zip(rename_names) {

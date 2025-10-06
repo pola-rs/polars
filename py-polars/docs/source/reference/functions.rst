@@ -25,6 +25,7 @@ Miscellaneous
 
     align_frames
     concat
+    union
     defer
     escape_regex
 
