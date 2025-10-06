@@ -1716,19 +1716,24 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
         ("dense", get_index_type()),
     ],
 )
+@pytest.mark.parametrize("descending", [False, True])
 @given(
     s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
     window_size=st.integers(1, 50),
 )
 def test_rolling_rank(
-    s: pl.Series, window_size: int, method: RankMethod, out_dtype: pl.DataType
+    s: pl.Series,
+    window_size: int,
+    method: RankMethod,
+    out_dtype: pl.DataType,
+    descending: bool,
 ) -> None:
     df = pl.DataFrame({"a": s})
     expected = (
         df.with_row_index()
         .with_columns(
             a=pl.col("a")
-            .rank(method=method)
+            .rank(method=method, descending=descending)
             .rolling(index_column="index", period=f"{window_size}i")
             .list.last()
             .cast(out_dtype)
@@ -1741,25 +1746,44 @@ def test_rolling_rank(
         .drop(pl.col("index"))
     )
     actual = df.lazy().select(
-        pl.col("a").rolling_rank(window_size=window_size, method=method)
+        pl.col("a").rolling_rank(
+            window_size=window_size, method=method, descending=descending
+        )
     )
 
-    assert actual.collect_schema() == actual.collect().schema, (
-        f"expected {actual.collect_schema()}, got {actual.collect().schema}"
-    )
-    assert_frame_equal(actual.collect(), expected)
+    try:
+        assert actual.collect_schema() == actual.collect().schema, (
+            f"expected {actual.collect_schema()}, got {actual.collect().schema}"
+        )
+        assert_frame_equal(actual.collect(), expected)
+        print("PASS", file=sys.stderr)
+    except AssertionError:
+        print("FAIL", file=sys.stderr)
+        print(f"{actual.collect() = }", file=sys.stderr)
+        print(f"{expected = }", file=sys.stderr)
+        print(f"{s = }", file=sys.stderr)
+        raise
 
 
+@pytest.mark.parametrize("descending", [False, True])
 @given(
     s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
     window_size=st.integers(1, 50),
 )
-def test_rolling_rank_method_random(s: pl.Series, window_size: int) -> None:
+def test_rolling_rank_method_random(
+    s: pl.Series, window_size: int, descending: bool
+) -> None:
     df = pl.DataFrame({"a": s})
     actual = df.lazy().with_columns(
-        lo=pl.col("a").rolling_rank(window_size=window_size, method="min"),
-        hi=pl.col("a").rolling_rank(window_size=window_size, method="max"),
-        random=pl.col("a").rolling_rank(window_size=window_size, method="random"),
+        lo=pl.col("a").rolling_rank(
+            window_size=window_size, method="min", descending=descending
+        ),
+        hi=pl.col("a").rolling_rank(
+            window_size=window_size, method="max", descending=descending
+        ),
+        random=pl.col("a").rolling_rank(
+            window_size=window_size, method="random", descending=descending
+        ),
     )
 
     assert actual.collect_schema() == actual.collect().schema, (

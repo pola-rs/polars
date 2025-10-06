@@ -34,7 +34,13 @@ where
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
     ) -> Self {
-        let compare = |a: &&T, b: &&T| T::tot_cmp(*a, *b);
+        let Some(RollingFnParams::Rank { descending, .. }) = params else {
+            unreachable!("expected RollingFnParams::Rank")
+        };
+        let compare = match descending {
+            false => |a: &&T, b: &&T| T::tot_cmp(*a, *b),
+            true => |a: &&T, b: &&T| T::tot_cmp(*b, *a),
+        };
         let ost = match window_size {
             Some(ws) => OrderStatisticTree::with_capacity(ws, compare),
             None => OrderStatisticTree::new(compare),

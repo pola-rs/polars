@@ -44,7 +44,7 @@ impl Display for IRRollingFunction {
             Quantile => "quantile",
             Var => "var",
             Std => "std",
-            Rank { .. } => "rank",
+            Rank => "rank",
             #[cfg(feature = "moment")]
             Skew => "skew",
             #[cfg(feature = "moment")]
