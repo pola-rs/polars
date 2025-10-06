@@ -983,9 +983,9 @@ fn replace_n<'a>(
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(
-                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
-            )?;
+            let Some(val) = val.get(0) else {
+                return Ok(ca.clone());
+            };
             let literal = literal || is_literal_pat(pat);
 
             match literal {
