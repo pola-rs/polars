@@ -184,6 +184,7 @@ pub fn concat_lf(
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
+    maintain_order: bool,
 ) -> PyResult<PyLazyFrame> {
     let len = seq.len()?;
     let mut lfs = Vec::with_capacity(len);
@@ -200,6 +201,7 @@ pub fn concat_lf(
             rechunk,
             parallel,
             to_supertypes,
+            maintain_order,
             ..Default::default()
         },
     )
@@ -320,6 +322,7 @@ pub fn concat_lf_diagonal(
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
+    maintain_order: bool,
 ) -> PyResult<PyLazyFrame> {
     let iter = lfs.try_iter()?;
 
@@ -336,6 +339,7 @@ pub fn concat_lf_diagonal(
             rechunk,
             parallel,
             to_supertypes,
+            maintain_order,
             ..Default::default()
         },
     )

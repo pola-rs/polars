@@ -912,8 +912,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Floor => F::Floor,
         #[cfg(feature = "round_series")]
         IF::Ceil => F::Ceil,
-        IF::UpperBound => F::UpperBound,
-        IF::LowerBound => F::LowerBound,
         #[cfg(feature = "fused")]
         IF::Fused(f) => {
             assert_eq!(input.len(), 3);
