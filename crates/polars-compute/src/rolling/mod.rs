@@ -1,9 +1,12 @@
+mod mean;
 mod min_max;
-pub mod moment;
+mod moment;
 pub mod no_nulls;
 pub mod nulls;
 pub mod quantile_filter;
-pub mod rank;
+mod rank;
+mod sum;
+
 pub(super) mod window;
 use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
@@ -11,11 +14,13 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
+pub use mean::MeanWindow;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use polars_utils::float::IsFloat;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
+pub use sum::SumWindow;
 use window::*;
 
 type Start = usize;

@@ -94,7 +94,7 @@ impl PhysicalExpr for FilterExpr {
                 let groups = groups.iter().map(|gi| [gi.first(), 0]).collect::<Vec<_>>();
                 GroupsType::Slice {
                     groups,
-                    rolling: false,
+                    overlapping: false,
                 }
             }
             // Filter the indexes that are true.

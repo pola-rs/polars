@@ -759,7 +759,7 @@ impl Column {
                     &GroupsType::Slice {
                         // @NOTE: this group is always valid since s is non-empty.
                         groups: vec![[0, 1]],
-                        rolling: false,
+                        overlapping: false,
                     },
                 );
 
