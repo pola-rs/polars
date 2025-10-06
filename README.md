@@ -147,7 +147,7 @@ Extending Polars with UDFs compiled in Rust is easy. We expose PyO3 extensions f
 ## Going big...
 
 Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature flag or,
-for Python users, install `pip install polars-u64-idx`.
+for Python users, install `pip install polars[rt64]`.
 
 Don't use this unless you hit the row boundary as the default build of Polars is faster and consumes
 less memory.
@@ -155,5 +155,6 @@ less memory.
 ## Legacy
 
 Do you want Polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build of
-Python on Apple Silicon under Rosetta? Install `pip install polars-lts-cpu`. This version of Polars
-is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
+Python on Apple Silicon under Rosetta? Install `pip install polars[rtcompat]`. This version of
+Polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
+features.

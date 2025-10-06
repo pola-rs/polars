@@ -1,3 +1,5 @@
+#[cfg(feature = "csv")]
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
@@ -35,7 +37,7 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
+    pub fn new_paths(paths: Buffer<PlPath>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -51,7 +53,7 @@ impl LazyCsvReader {
     }
 
     pub fn new(path: PlPath) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path].into()))
+        Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
     /// Skip this number of rows after the header location.

@@ -259,9 +259,8 @@ impl FunctionIR {
         }
     }
 
-    /// Does the input order not semantically change the output.
-    pub fn is_input_order_agnostic(&self) -> bool {
-        false
+    pub fn observes_input_order(&self) -> bool {
+        true
     }
 
     /// Is the input ordering always the same as the output ordering.
