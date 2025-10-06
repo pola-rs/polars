@@ -532,7 +532,7 @@ impl PredicatePushDown<'_> {
                         },
                         FunctionIR::Unnest {
                             columns,
-                            name_separator: _,
+                            separator: _,
                         } => {
                             let exclude = columns.iter().cloned().collect::<PlHashSet<_>>();
 

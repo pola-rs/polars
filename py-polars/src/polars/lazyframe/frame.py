@@ -7816,7 +7816,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        name_separator: str | None = None,
+        separator: str | None = None,
     ) -> LazyFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -7830,7 +7830,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Name of the struct column(s) that should be unnested.
         *more_columns
             Additional columns to unnest, specified as positional arguments.
-        name_separator
+        separator
             Rename output column names as combination of the struct column name,
             name separator and field name.
 
@@ -7880,7 +7880,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     pl.struct(pl.col("^t_.$").name.map(lambda t: t[2:])).alias("t"),
         ...     "after",
         ... )
-        >>> df.unnest("t", name_separator="::").collect()
+        >>> df.unnest("t", separator="::").collect()
         shape: (2, 6)
         ┌────────┬──────┬──────┬──────┬───────────┬───────┐
         │ before ┆ t::a ┆ t::b ┆ t::c ┆ t::d      ┆ after │
@@ -7894,7 +7894,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         subset = parse_list_into_selector(columns) | parse_list_into_selector(
             more_columns
         )
-        return self._from_pyldf(self._ldf.unnest(subset._pyselector, name_separator))
+        return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
         """

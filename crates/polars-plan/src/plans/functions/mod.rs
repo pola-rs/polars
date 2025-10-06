@@ -46,7 +46,7 @@ pub enum FunctionIR {
 
     Unnest {
         columns: Arc<[PlSmallStr]>,
-        name_separator: Option<PlSmallStr>,
+        separator: Option<PlSmallStr>,
     },
     Rechunk,
     Explode {
@@ -118,10 +118,10 @@ impl Hash for FunctionIR {
             },
             FunctionIR::Unnest {
                 columns,
-                name_separator,
+                separator,
             } => {
                 columns.hash(state);
-                name_separator.hash(state);
+                separator.hash(state);
             },
             FunctionIR::Rechunk => {},
             FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
@@ -224,11 +224,11 @@ impl FunctionIR {
             },
             Unnest {
                 columns,
-                name_separator,
+                separator,
             } => {
                 feature_gated!(
                     "dtype-struct",
-                    df.unnest(columns.iter().cloned(), name_separator.as_deref())
+                    df.unnest(columns.iter().cloned(), separator.as_deref())
                 )
             },
             Explode { columns, .. } => df.explode(columns.iter().cloned()),

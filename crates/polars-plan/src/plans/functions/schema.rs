@@ -50,7 +50,7 @@ impl FunctionIR {
             Rechunk => Ok(Cow::Borrowed(input_schema)),
             Unnest {
                 columns,
-                name_separator,
+                separator,
             } => {
                 #[cfg(feature = "dtype-struct")]
                 {
@@ -60,7 +60,7 @@ impl FunctionIR {
                             match dtype {
                                 DataType::Struct(flds) => {
                                     for fld in flds {
-                                        let fld_name = match name_separator {
+                                        let fld_name = match separator {
                                             None => fld.name().clone(),
                                             Some(sep) => {
                                                 polars_utils::format_pl_smallstr!(

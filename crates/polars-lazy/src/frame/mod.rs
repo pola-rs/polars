@@ -2068,10 +2068,10 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest(self, cols: Selector, name_separator: Option<PlSmallStr>) -> Self {
+    pub fn unnest(self, cols: Selector, separator: Option<PlSmallStr>) -> Self {
         self.map_private(DslFunction::Unnest {
             columns: cols,
-            name_separator,
+            separator,
         })
     }
 

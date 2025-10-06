@@ -607,11 +607,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 } => return Err(PyNotImplementedError::new_err("opaque rust mapfunction")),
                 FunctionIR::Unnest {
                     columns,
-                    name_separator,
+                    separator,
                 } => (
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-                    name_separator.as_ref().map(|s| s.to_string()),
+                    separator.as_ref().map(|s| s.to_string()),
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,

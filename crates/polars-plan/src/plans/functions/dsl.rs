@@ -46,7 +46,7 @@ pub enum DslFunction {
     },
     Unnest {
         columns: Selector,
-        name_separator: Option<PlSmallStr>,
+        separator: Option<PlSmallStr>,
     },
     Stats(StatsFunction),
     /// FillValue
@@ -117,7 +117,7 @@ impl DslFunction {
             },
             DslFunction::Unnest {
                 columns,
-                name_separator,
+                separator,
             } => {
                 let columns = columns.into_columns(input_schema, &Default::default())?;
                 let columns: Arc<[PlSmallStr]> = columns.into_iter().collect();
@@ -130,7 +130,7 @@ impl DslFunction {
                 }
                 FunctionIR::Unnest {
                     columns,
-                    name_separator,
+                    separator,
                 }
             },
             #[cfg(feature = "python")]

@@ -11900,7 +11900,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        name_separator: str | None = None,
+        separator: str | None = None,
     ) -> DataFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -11914,7 +11914,7 @@ class DataFrame:
             Name of the struct column(s) that should be unnested.
         *more_columns
             Additional columns to unnest, specified as positional arguments.
-        name_separator
+        separator
             Rename output column names as combination of the struct column name,
             name separator and field name.
 
@@ -11964,7 +11964,7 @@ class DataFrame:
         ...     pl.struct(pl.col("^t_.$").name.map(lambda t: t[2:])).alias("t"),
         ...     "after",
         ... )
-        >>> df.unnest("t", name_separator="::")
+        >>> df.unnest("t", separator="::")
         shape: (2, 6)
         ┌────────┬──────┬──────┬──────┬───────────┬───────┐
         │ before ┆ t::a ┆ t::b ┆ t::c ┆ t::d      ┆ after │
@@ -11979,7 +11979,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .unnest(columns, *more_columns, name_separator=name_separator)
+            .unnest(columns, *more_columns, separator=separator)
             .collect(optimizations=QueryOptFlags._eager())
         )
 

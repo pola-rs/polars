@@ -3330,17 +3330,17 @@ impl DataFrame {
     pub fn unnest<I: IntoVec<PlSmallStr>>(
         &self,
         cols: I,
-        name_separator: Option<&str>,
+        separator: Option<&str>,
     ) -> PolarsResult<DataFrame> {
         let cols = cols.into_vec();
-        self.unnest_impl(cols.into_iter().collect(), name_separator)
+        self.unnest_impl(cols.into_iter().collect(), separator)
     }
 
     #[cfg(feature = "dtype-struct")]
     fn unnest_impl(
         &self,
         cols: PlHashSet<PlSmallStr>,
-        name_separator: Option<&str>,
+        separator: Option<&str>,
     ) -> PolarsResult<DataFrame> {
         let mut new_cols = Vec::with_capacity(std::cmp::min(self.width() * 2, self.width() + 128));
         let mut count = 0;
@@ -3348,11 +3348,11 @@ impl DataFrame {
             if cols.contains(s.name()) {
                 let ca = s.struct_()?.clone();
                 new_cols.extend(ca.fields_as_series().into_iter().map(|mut f| {
-                    if let Some(name_separator) = &name_separator {
+                    if let Some(separator) = &separator {
                         f.rename(polars_utils::format_pl_smallstr!(
                             "{}{}{}",
                             s.name(),
-                            name_separator,
+                            separator,
                             f.name()
                         ));
                     }
