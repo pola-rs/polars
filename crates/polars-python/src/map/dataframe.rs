@@ -32,7 +32,7 @@ pub fn apply_lambda_unknown<'py>(
     py: Python<'py>,
     lambda: Bound<'py, PyAny>,
     inference_size: usize,
-) -> PyResult<(PyObject, bool)> {
+) -> PyResult<(Py<PyAny>, bool)> {
     let mut null_count = 0;
     let mut iters = get_iters(df);
 

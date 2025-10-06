@@ -217,7 +217,7 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, columns, projection, n_rows))]
     pub fn read_avro(
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
@@ -235,7 +235,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(&self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
+    pub fn write_json(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         py.enter_polars(|| {
             // TODO: Cloud support
@@ -250,7 +250,7 @@ impl PyDataFrame {
     pub fn write_ipc_stream(
         &self,
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
     ) -> PyResult<()> {
@@ -268,7 +268,7 @@ impl PyDataFrame {
     pub fn write_avro(
         &self,
         py: Python<'_>,
-        py_f: PyObject,
+        py_f: Py<PyAny>,
         compression: Wrap<Option<AvroCompression>>,
         name: String,
     ) -> PyResult<()> {

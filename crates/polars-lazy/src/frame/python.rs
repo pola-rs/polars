@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use either::Either;
 use polars_core::schema::SchemaRef;
-use pyo3::PyObject;
+use pyo3::{Py, PyAny};
 
 use self::python_dsl::{PythonOptionsDsl, PythonScanSource};
 use crate::prelude::*;
 
 impl LazyFrame {
     pub fn scan_from_python_function(
-        schema: Either<PyObject, SchemaRef>,
-        scan_fn: PyObject,
+        schema: Either<Py<PyAny>, SchemaRef>,
+        scan_fn: Py<PyAny>,
         pyarrow: bool,
         // Validate that the source gives the proper schema
         validate_schema: bool,

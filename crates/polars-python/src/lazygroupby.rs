@@ -36,7 +36,7 @@ impl PyLazyGroupBy {
     }
 
     #[pyo3(signature = (lambda, schema))]
-    fn map_groups(&self, lambda: PyObject, schema: Option<Wrap<Schema>>) -> PyResult<PyLazyFrame> {
+    fn map_groups(&self, lambda: Py<PyAny>, schema: Option<Wrap<Schema>>) -> PyResult<PyLazyFrame> {
         let lgb = self.lgb.clone().unwrap();
         let schema = match schema {
             Some(schema) => Arc::new(schema.0),

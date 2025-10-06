@@ -29,7 +29,7 @@ use crate::utils::{EnterPolarsExt, to_py_err};
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 
 fn pyobject_to_first_path_and_scan_sources(
-    obj: PyObject,
+    obj: Py<PyAny>,
 ) -> PyResult<(Option<PlPath>, ScanSources)> {
     use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
     Ok(match get_python_scan_source_input(obj, false)? {
@@ -43,13 +43,13 @@ fn pyobject_to_first_path_and_scan_sources(
 }
 
 fn post_opt_callback(
-    lambda: &PyObject,
+    lambda: &Py<PyAny>,
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     duration_since_start: Option<std::time::Duration>,
 ) -> PolarsResult<()> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let nt = NodeTraverser::new(root, std::mem::take(lp_arena), std::mem::take(expr_arena));
 
         // Get a copy of the arenas.
@@ -82,7 +82,7 @@ impl PyLazyFrame {
         row_index, ignore_errors, include_file_paths, cloud_options, credential_provider, retries, file_cache_ttl
     ))]
     fn new_from_ndjson(
-        source: Option<PyObject>,
+        source: Option<Py<PyAny>>,
         sources: Wrap<ScanSources>,
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
@@ -95,7 +95,7 @@ impl PyLazyFrame {
         ignore_errors: bool,
         include_file_paths: Option<String>,
         cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
+        credential_provider: Option<Py<PyAny>>,
         retries: usize,
         file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
@@ -159,7 +159,7 @@ impl PyLazyFrame {
     )
     )]
     fn new_from_csv(
-        source: Option<PyObject>,
+        source: Option<Py<PyAny>>,
         sources: Wrap<ScanSources>,
         separator: &str,
         has_header: bool,
@@ -175,7 +175,7 @@ impl PyLazyFrame {
         null_values: Option<Wrap<NullValues>>,
         missing_utf8_is_empty_string: bool,
         infer_schema_length: Option<usize>,
-        with_schema_modify: Option<PyObject>,
+        with_schema_modify: Option<Py<PyAny>>,
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: Wrap<CsvEncoding>,
@@ -188,7 +188,7 @@ impl PyLazyFrame {
         glob: bool,
         schema: Option<Wrap<Schema>>,
         cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
+        credential_provider: Option<Py<PyAny>>,
         retries: usize,
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
@@ -278,7 +278,7 @@ impl PyLazyFrame {
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
                 let iter = schema.iter_names().map(|s| s.as_str());
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let names = PyList::new(py, iter).unwrap();
 
                     let out = lambda.call1(py, (names,)).expect("python function failed");
@@ -347,14 +347,14 @@ impl PyLazyFrame {
         include_file_paths
     ))]
     fn new_from_ipc(
-        source: Option<PyObject>,
+        source: Option<Py<PyAny>>,
         sources: Wrap<ScanSources>,
         n_rows: Option<usize>,
         cache: bool,
         rechunk: bool,
         row_index: Option<(String, IdxSize)>,
         cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
+        credential_provider: Option<Py<PyAny>>,
         hive_partitioning: Option<bool>,
         hive_schema: Option<Wrap<Schema>>,
         try_parse_hive_dates: bool,
@@ -418,7 +418,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (
         dataset_object
     ))]
-    fn new_from_dataset_object(dataset_object: PyObject) -> PyResult<Self> {
+    fn new_from_dataset_object(dataset_object: Py<PyAny>) -> PyResult<Self> {
         let lf =
             LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
                 .into();
@@ -429,7 +429,7 @@ impl PyLazyFrame {
     #[staticmethod]
     fn scan_from_python_function_arrow_schema(
         schema: &Bound<'_, PyList>,
-        scan_fn: PyObject,
+        scan_fn: Py<PyAny>,
         pyarrow: bool,
         validate_schema: bool,
         is_pure: bool,
@@ -449,7 +449,7 @@ impl PyLazyFrame {
     #[staticmethod]
     fn scan_from_python_function_pl_schema(
         schema: Vec<(PyBackedStr, Wrap<DataType>)>,
-        scan_fn: PyObject,
+        scan_fn: Py<PyAny>,
         pyarrow: bool,
         validate_schema: bool,
         is_pure: bool,
@@ -471,8 +471,8 @@ impl PyLazyFrame {
 
     #[staticmethod]
     fn scan_from_python_function_schema_function(
-        schema_fn: PyObject,
-        scan_fn: PyObject,
+        schema_fn: Py<PyAny>,
+        scan_fn: Py<PyAny>,
         validate_schema: bool,
         is_pure: bool,
     ) -> PyResult<Self> {
@@ -634,7 +634,7 @@ impl PyLazyFrame {
     fn profile(
         &self,
         py: Python<'_>,
-        lambda_post_opt: Option<PyObject>,
+        lambda_post_opt: Option<Py<PyAny>>,
     ) -> PyResult<(PyDataFrame, PyDataFrame)> {
         let (df, time_df) = py.enter_polars(|| {
             let ldf = self.ldf.read().clone();
@@ -654,7 +654,7 @@ impl PyLazyFrame {
         &self,
         py: Python<'_>,
         engine: Wrap<Engine>,
-        lambda_post_opt: Option<PyObject>,
+        lambda_post_opt: Option<Py<PyAny>>,
     ) -> PyResult<PyDataFrame> {
         py.enter_polars_df(|| {
             let ldf = self.ldf.read().clone();
@@ -673,7 +673,7 @@ impl PyLazyFrame {
         &self,
         py: Python<'_>,
         engine: Wrap<Engine>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
     ) -> PyResult<()> {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
@@ -684,7 +684,7 @@ impl PyLazyFrame {
                     .map(PyDataFrame::new)
                     .map_err(PyPolarsErr::from);
 
-                Python::with_gil(|py| match result {
+                Python::attach(|py| match result {
                     Ok(df) => {
                         lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
                     },
@@ -714,7 +714,7 @@ impl PyLazyFrame {
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
         cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
+        credential_provider: Option<Py<PyAny>>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
         metadata: Wrap<Option<KeyValueMetadata>>,
@@ -781,7 +781,7 @@ impl PyLazyFrame {
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
         cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
+        credential_provider: Option<Py<PyAny>>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
     ) -> PyResult<PyLazyFrame> {
@@ -857,7 +857,7 @@ impl PyLazyFrame {
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
         cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
+        credential_provider: Option<Py<PyAny>>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
     ) -> PyResult<PyLazyFrame> {
@@ -934,7 +934,7 @@ impl PyLazyFrame {
         py: Python<'_>,
         target: SinkTarget,
         cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
+        credential_provider: Option<Py<PyAny>>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
     ) -> PyResult<PyLazyFrame> {
@@ -981,7 +981,7 @@ impl PyLazyFrame {
     pub fn sink_batches(
         &self,
         py: Python<'_>,
-        function: PyObject,
+        function: Py<PyAny>,
         maintain_order: bool,
         chunk_size: Option<NonZeroUsize>,
     ) -> PyResult<PyLazyFrame> {
@@ -1349,7 +1349,7 @@ impl PyLazyFrame {
             .into())
     }
 
-    fn pipe_with_schema(&self, callback: PyObject) -> Self {
+    fn pipe_with_schema(&self, callback: Py<PyAny>) -> Self {
         let ldf = self.ldf.read().clone();
         let function = PythonObject(callback);
         ldf.pipe_with_schema(PlanCallback::new_python(function))
@@ -1510,7 +1510,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (function, predicate_pushdown, projection_pushdown, slice_pushdown, streamable, schema, validate_output))]
     fn map_batches(
         &self,
-        function: PyObject,
+        function: Py<PyAny>,
         predicate_pushdown: bool,
         projection_pushdown: bool,
         slice_pushdown: bool,

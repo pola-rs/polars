@@ -25,13 +25,13 @@ use crate::series::PySeries;
 fn python_function_caller_series(
     s: &[Column],
     output_dtype: Option<DataType>,
-    lambda: &PyObject,
+    lambda: &Py<PyAny>,
 ) -> PolarsResult<Column> {
-    Python::with_gil(|py| call_lambda_with_series(py, s, output_dtype, lambda))
+    Python::attach(|py| call_lambda_with_series(py, s, output_dtype, lambda))
 }
 
-fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame> {
-    Python::with_gil(|py| {
+fn python_function_caller_df(df: DataFrame, lambda: &Py<PyAny>) -> PolarsResult<DataFrame> {
+    Python::attach(|py| {
         let pypolars = polars(py).bind(py);
 
         // create a PySeries struct/object for Python
@@ -84,7 +84,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
 }
 
 fn warning_function(msg: &str, warning: PolarsWarning) {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let warn_fn = pl_utils(py)
             .bind(py)
             .getattr(intern!(py, "_polars_warn"))
@@ -119,20 +119,20 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         });
 
         let object_converter = Arc::new(|av: AnyValue| {
-            let object = Python::with_gil(|py| ObjectValue {
+            let object = Python::attach(|py| ObjectValue {
                 inner: Wrap(av).into_py_any(py).unwrap(),
             });
             Box::new(object) as Box<dyn Any>
         });
         let pyobject_converter = Arc::new(|av: AnyValue| {
-            let object = Python::with_gil(|py| Wrap(av).into_py_any(py).unwrap());
+            let object = Python::attach(|py| Wrap(av).into_py_any(py).unwrap());
             Box::new(object) as Box<dyn Any>
         });
 
         polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
             from_py: FromPythonConvertRegistry {
                 partition_target_cb_result: Arc::new(|py_f| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         Ok(Box::new(
                             py_f.extract::<Wrap<polars_plan::dsl::PartitionTargetCallbackResult>>(
                                 py,
@@ -142,17 +142,17 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                     })
                 }),
                 series: Arc::new(|py_f| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         Ok(Box::new(py_f.extract::<PySeries>(py)?.series.into_inner()) as _)
                     })
                 }),
                 df: Arc::new(|py_f| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df.into_inner()) as _)
                     })
                 }),
                 dsl_plan: Arc::new(|py_f| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         Ok(Box::new(
                             py_f.extract::<PyLazyFrame>(py)?
                                 .ldf
@@ -162,22 +162,20 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                     })
                 }),
                 schema: Arc::new(|py_f| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         Ok(Box::new(py_f.extract::<Wrap<polars_core::schema::Schema>>(py)?.0) as _)
                     })
                 }),
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
-                    Python::with_gil(|py| PyDataFrame::new(*df.downcast().unwrap()).into_py_any(py))
+                    Python::attach(|py| PyDataFrame::new(*df.downcast().unwrap()).into_py_any(py))
                 }),
                 series: Arc::new(|series| {
-                    Python::with_gil(|py| {
-                        PySeries::new(*series.downcast().unwrap()).into_py_any(py)
-                    })
+                    Python::attach(|py| PySeries::new(*series.downcast().unwrap()).into_py_any(py))
                 }),
                 dsl_plan: Arc::new(|dsl_plan| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         PyLazyFrame::from(LazyFrame::from(
                             *dsl_plan.downcast::<polars_plan::dsl::DslPlan>().unwrap(),
                         ))
@@ -185,7 +183,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                     })
                 }),
                 schema: Arc::new(|schema| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         Wrap(*schema.downcast::<polars_core::schema::Schema>().unwrap())
                             .into_py_any(py)
                     })

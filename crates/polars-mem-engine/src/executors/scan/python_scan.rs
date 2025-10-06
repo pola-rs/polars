@@ -60,7 +60,7 @@ impl Executor for PythonScanExec {
         }
         let with_columns = self.options.with_columns.take();
         let n_rows = self.options.n_rows.take();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
             let utils = pl.getattr(intern!(py, "_utils")).unwrap();
             let callable = utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
