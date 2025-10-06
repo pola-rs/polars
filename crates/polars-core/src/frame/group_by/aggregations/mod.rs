@@ -608,15 +608,13 @@ where
                             take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                                 .fold(T::Native::zero(), |a, b| a + b)
                         }
+                    } else if T::Native::is_float() {
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .fold(KahanSum::default(), |k, x| k + x)
+                            .sum()
                     } else {
-                        if T::Native::is_float() {
-                            take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
-                                .fold(KahanSum::default(), |k, x| k + x)
-                                .sum()
-                        } else {
-                            take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
-                                .fold(T::Native::zero(), |a, b| a + b)
-                        }
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .fold(T::Native::zero(), |a, b| a + b)
                     }
                 })
             },
