@@ -408,6 +408,14 @@ impl<'a, T> OrderStatisticTree<T> {
         }
     }
 
+    pub fn count(&self, value: &T) -> usize {
+        let Ok(lo) = self.rank_lower(value) else {
+            return 0;
+        };
+        let hi = self.rank_upper(value).unwrap();
+        hi + 1 - lo
+    }
+
     pub fn iter(&'a self) -> Iter<'a, T> {
         let capacity = usize::ilog2(self.len() + 1) as usize;
         let mut stack = Vec::with_capacity(capacity);
@@ -674,5 +682,17 @@ mod test {
         for item in 0..10 {
             assert!(ost.contains(&item));
         }
+    }
+
+    #[test]
+    fn test_count() {
+        let mut ost = OrderStatisticTree::new(i32::cmp);
+        for item in &[1, 2, 2, 3, 3, 3] {
+            ost.insert(*item);
+        }
+        assert_eq!(ost.count(&1), 1);
+        assert_eq!(ost.count(&2), 2);
+        assert_eq!(ost.count(&3), 3);
+        assert_eq!(ost.count(&4), 0);
     }
 }
