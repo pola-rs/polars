@@ -4,7 +4,7 @@ mod boolean;
 mod var;
 
 pub use boolean::*;
-use num_traits::{NumCast, ToPrimitive};
+use num_traits::ToPrimitive;
 use polars_utils::IdxSize;
 pub use var::*;
 
