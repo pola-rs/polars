@@ -1717,6 +1717,7 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
     ],
 )
 @pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("center", [False, True])
 @given(
     s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
     window_size=st.integers(1, 50),
@@ -1727,6 +1728,7 @@ def test_rolling_rank(
     method: RankMethod,
     out_dtype: pl.DataType,
     descending: bool,
+    center: bool,
 ) -> None:
     df = pl.DataFrame({"a": s})
     expected = (
@@ -1745,9 +1747,11 @@ def test_rolling_rank(
         )
         .drop(pl.col("index"))
     )
+    if center:
+        expected = expected.with_columns(a=pl.col("a").shift(-((window_size - 1) // 2)))
     actual = df.lazy().select(
         pl.col("a").rolling_rank(
-            window_size=window_size, method=method, descending=descending
+            window_size=window_size, method=method, descending=descending, center=center
         )
     )
 
@@ -1766,23 +1770,27 @@ def test_rolling_rank(
 
 
 @pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("center", [False, True])
 @given(
     s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
     window_size=st.integers(1, 50),
 )
 def test_rolling_rank_method_random(
-    s: pl.Series, window_size: int, descending: bool
+    s: pl.Series, window_size: int, descending: bool, center: bool
 ) -> None:
     df = pl.DataFrame({"a": s})
     actual = df.lazy().with_columns(
         lo=pl.col("a").rolling_rank(
-            window_size=window_size, method="min", descending=descending
+            window_size=window_size, method="min", descending=descending, center=center
         ),
         hi=pl.col("a").rolling_rank(
-            window_size=window_size, method="max", descending=descending
+            window_size=window_size, method="max", descending=descending, center=center
         ),
         random=pl.col("a").rolling_rank(
-            window_size=window_size, method="random", descending=descending
+            window_size=window_size,
+            method="random",
+            descending=descending,
+            center=center,
         ),
     )
 
