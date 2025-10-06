@@ -48,7 +48,6 @@ pub enum FunctionIR {
         columns: Arc<[PlSmallStr]>,
         separator: Option<PlSmallStr>,
     },
-    Rechunk,
     Explode {
         columns: Arc<[PlSmallStr]>,
         #[cfg_attr(feature = "ir_serde", serde(skip))]
@@ -80,7 +79,6 @@ impl PartialEq for FunctionIR {
     fn eq(&self, other: &Self) -> bool {
         use FunctionIR::*;
         match (self, other) {
-            (Rechunk, Rechunk) => true,
             (
                 FastCount {
                     sources: srcs_l, ..
@@ -120,7 +118,6 @@ impl Hash for FunctionIR {
                 columns.hash(state);
                 separator.hash(state);
             },
-            FunctionIR::Rechunk => {},
             FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
             #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { args, schema: _ } => args.hash(state),
@@ -141,7 +138,6 @@ impl FunctionIR {
     pub fn is_streamable(&self) -> bool {
         use FunctionIR::*;
         match self {
-            Rechunk => false,
             FastCount { .. } | Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
@@ -171,7 +167,7 @@ impl FunctionIR {
             OpaquePython(OpaquePythonUdf { predicate_pd, .. }) => *predicate_pd,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
-            Rechunk | Unnest { .. } | Explode { .. } => true,
+            Unnest { .. } | Explode { .. } => true,
             RowIndex { .. } | FastCount { .. } => false,
         }
     }
@@ -182,7 +178,7 @@ impl FunctionIR {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { projection_pd, .. }) => *projection_pd,
-            Rechunk | FastCount { .. } | Unnest { .. } | Explode { .. } => true,
+            FastCount { .. } | Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             RowIndex { .. } => true,
@@ -198,7 +194,7 @@ impl FunctionIR {
         }
     }
 
-    pub fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
+    pub fn evaluate(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         use FunctionIR::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),
@@ -215,10 +211,6 @@ impl FunctionIR {
                 cloud_options,
                 alias,
             } => count::count_rows(sources, scan_type, cloud_options.as_ref(), alias.clone()),
-            Rechunk => {
-                df.as_single_chunk_par();
-                Ok(df)
-            },
             Unnest { columns, separator } => {
                 feature_gated!(
                     "dtype-struct",
@@ -241,7 +233,6 @@ impl FunctionIR {
             FunctionIR::RowIndex { .. } => true,
             FunctionIR::FastCount { .. } => false,
             FunctionIR::Unnest { .. } => is_input_ordered,
-            FunctionIR::Rechunk => is_input_ordered,
             #[cfg(feature = "python")]
             FunctionIR::OpaquePython(..) => true,
             FunctionIR::Explode { .. } => true,
@@ -260,7 +251,6 @@ impl FunctionIR {
             Self::Unpivot { .. } => false,
             Self::RowIndex { .. }
             | Self::FastCount { .. }
-            | Self::Rechunk
             | Self::Explode { .. }
             | Self::Opaque { .. } => false,
         }
@@ -273,7 +263,7 @@ impl FunctionIR {
     /// Is the input ordering always the same as the output ordering.
     pub fn has_equal_order(&self) -> bool {
         match self {
-            Self::Unnest { .. } | Self::Rechunk => true,
+            Self::Unnest { .. } => true,
             #[cfg(feature = "python")]
             Self::OpaquePython(..) => false,
             #[cfg(feature = "pivot")]

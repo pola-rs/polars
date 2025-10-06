@@ -611,7 +611,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     separator.as_ref().map(|s| s.to_string()),
                 )
                     .into_py_any(py)?,
-                FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
                 FunctionIR::Explode { columns, schema: _ } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
