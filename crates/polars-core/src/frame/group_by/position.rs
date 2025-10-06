@@ -366,7 +366,13 @@ impl GroupsType {
     }
 
     pub fn is_overlapping(&self) -> bool {
-        matches!(self, GroupsType::Slice { overlapping: true, .. })
+        matches!(
+            self,
+            GroupsType::Slice {
+                overlapping: true,
+                ..
+            }
+        )
     }
 
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
