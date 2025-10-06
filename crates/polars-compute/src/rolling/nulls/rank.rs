@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use polars_utils::IdxSize;
 use polars_utils::order_statistic_tree::OrderStatisticTree;
 
 use super::super::rank::*;
@@ -74,7 +75,7 @@ where
         self.last_start = new_start;
         self.last_end = new_end;
         let cur = unsafe { self.slice.get_unchecked(self.last_end - 1) };
-        self.policy.rank(&self.ost, &cur)
+        self.policy.rank(&self.ost, cur)
     }
 
     fn is_valid(&self, _min_periods: usize) -> bool {
@@ -83,10 +84,10 @@ where
 }
 
 type RankWindowAvg<'a, T> = RankWindow<'a, T, f64, RankPolicyAverage>;
-type RankWindowMin<'a, T> = RankWindow<'a, T, u64, RankPolicyMin>;
-type RankWindowMax<'a, T> = RankWindow<'a, T, u64, RankPolicyMax>;
-type RankWindowDense<'a, T> = RankWindow<'a, T, u64, RankPolicyDense>;
-type RankWindowRandom<'a, T> = RankWindow<'a, T, u64, RankPolicyRandom>;
+type RankWindowMin<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyMin>;
+type RankWindowMax<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyMax>;
+type RankWindowDense<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyDense>;
+type RankWindowRandom<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyRandom>;
 
 pub fn rolling_rank<T>(
     arr: &PrimitiveArray<T>,

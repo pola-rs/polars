@@ -167,6 +167,7 @@ class Expr:
             "- instead of `pl.col('a') and pl.col('b')`, use `pl.col('a') & pl.col('b')`\n"
             "- instead of `pl.col('a') in [y, z]`, use `pl.col('a').is_in([y, z])`\n"
             "- instead of `max(pl.col('a'), pl.col('b'))`, use `pl.max_horizontal(pl.col('a'), pl.col('b'))`\n"
+            "- instead of `pl.col('a') <= pl.col('b') <= pl.col('c')`, use `pl.col('a') <= pl.col('b') & pl.col('b') <= pl.col('c')``\n"
         )
         raise TypeError(msg)
 

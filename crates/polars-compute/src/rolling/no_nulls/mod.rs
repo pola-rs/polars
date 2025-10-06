@@ -56,15 +56,6 @@ where
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     let mut agg_window = Agg::new(values, start, end, params, Some(window_size));
-    if let Some(validity) = create_validity(min_periods, len, window_size, &det_offsets_fn) {
-        if validity.iter().all(|x| !x) {
-            return Ok(Box::new(PrimitiveArray::<T>::new_null(
-                T::PRIMITIVE.into(),
-                len,
-            )));
-        }
-    }
-
     let out = (0..len).map(|idx| {
         let (start, end) = det_offsets_fn(idx, window_size, len);
         if end - start < min_periods {

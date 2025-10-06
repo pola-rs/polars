@@ -26,8 +26,9 @@ struct Node<T> {
     value: T,
     left: Key,
     right: Key,
-    weight: usize,
-    unique_weight: usize,
+    // Use u32, because SlotMap cannot contain more than 2*^32-2 elements anyway
+    weight: u32,
+    unique_weight: u32,
 }
 
 pub struct OrderStatisticTree<T> {
@@ -36,7 +37,7 @@ pub struct OrderStatisticTree<T> {
     compare: CompareFn<T>,
 }
 
-impl<'a, T> std::fmt::Debug for OrderStatisticTree<T>
+impl<T> std::fmt::Debug for OrderStatisticTree<T>
 where
     T: std::fmt::Debug,
 {
@@ -87,22 +88,22 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return 0;
         }
-        self.sm[tree].weight
+        self.sm[tree].weight as usize
     }
 
     fn unique_weight(&self, tree: Key) -> usize {
         if tree.is_null() {
             return 0;
         }
-        self.sm[tree].unique_weight
+        self.sm[tree].unique_weight as usize
     }
 
     fn new_node(&mut self, left: Key, value: T, right: Key) -> Key {
         let weight = self.weight(left) + 1 + self.weight(right);
         let leftmax = self.maximum(left);
         let rightmin = self.minimum(right);
-        let left_contains_v = leftmax.map_or(false, |lm| self.eq(lm, &value));
-        let right_contains_v = rightmin.map_or(false, |rm| self.eq(rm, &value));
+        let left_contains_v = leftmax.is_some_and(|lm| self.eq(lm, &value));
+        let right_contains_v = rightmin.is_some_and(|rm| self.eq(rm, &value));
         let unique_weight = if left_contains_v && right_contains_v {
             self.unique_weight(left) + self.unique_weight(right) - 1
         } else if left_contains_v || right_contains_v {
@@ -114,8 +115,8 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
             value,
             left,
             right,
-            weight,
-            unique_weight,
+            weight: weight.try_into().unwrap(),
+            unique_weight: unique_weight.try_into().unwrap(),
         };
         self.sm.insert(n)
     }
@@ -183,7 +184,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
             return (None, tree);
         }
         let n = self.drop_node(tree);
-        match (self.compare)(&value, &n.value) {
+        match (self.compare)(value, &n.value) {
             Ordering::Less => {
                 let (deleted, left) = self.remove_inner(value, n.left);
                 (deleted, self.balance_l(left, n.value, n.right))
@@ -198,9 +199,9 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
 
     fn glue(&mut self, left: Key, right: Key) -> Key {
         if left.is_null() {
-            return right;
+            right
         } else if right.is_null() {
-            return left;
+            left
         } else if self.weight(left) > self.weight(right) {
             let (deleted, left) = self.remove_max(left);
             self.balance_r(left, deleted.unwrap(), right)
