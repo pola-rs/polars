@@ -88,7 +88,7 @@ pub fn nth_set_bit_u64(w: u64, n: u64) -> Option<u64> {
             return None;
         }
 
-        Some(nth_set_bit.trailing_zeros())
+        Some(nth_set_bit.trailing_zeros().into())
     }
 
     #[cfg(any(miri, not(target_feature = "bmi2")))]
