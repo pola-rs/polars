@@ -73,11 +73,8 @@ impl<
 
                 debug_assert!(idx <= top_idx);
                 let v = if idx != top_idx {
-                    let mut vals = self
-                        .sorted
-                        .index_range(idx + null_count..top_idx + null_count + 1);
-                    let low = vals.next().unwrap().unwrap();
-                    let high = vals.next().unwrap().unwrap();
+                    let low = self.sorted.get(idx + null_count).unwrap();
+                    let high = self.sorted.get(idx + null_count + 1).unwrap();
                     (low + high) / T::from::<f64>(2.0f64).unwrap()
                 } else {
                     self.sorted.get(idx + null_count).unwrap()
@@ -92,12 +89,8 @@ impl<
                 if top_idx == idx {
                     Some(self.sorted.get(idx + null_count).unwrap())
                 } else {
-                    let mut vals = self
-                        .sorted
-                        .index_range(idx + null_count..top_idx + null_count + 1);
-                    let low = vals.next().unwrap().unwrap();
-                    let high = vals.next().unwrap().unwrap();
-
+                    let low = self.sorted.get(idx + null_count).unwrap();
+                    let high = self.sorted.get(top_idx + null_count).unwrap();
                     let proportion = T::from(float_idx - idx as f64).unwrap();
                     Some(proportion * (high - low) + low)
                 }

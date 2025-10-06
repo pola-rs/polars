@@ -63,10 +63,8 @@ impl<
                     Some(self.sorted.get(idx))
                 } else {
                     let proportion = T::from(float_idx_top - idx as f64).unwrap();
-                    let mut vals = self.sorted.index_range(idx..top_idx + 1);
-                    let vi = *vals.next().unwrap();
-                    let vj = *vals.next().unwrap();
-
+                    let vi = self.sorted.get(idx);
+                    let vj = self.sorted.get(idx + 1);
                     Some(proportion * (vj - vi) + vi)
                 };
             },
@@ -79,11 +77,8 @@ impl<
                 return if top_idx == idx {
                     Some(self.sorted.get(idx))
                 } else {
-                    let top_idx = idx + 1;
-                    let mut vals = self.sorted.index_range(idx..top_idx + 1);
-                    let mid = *vals.next().unwrap();
-                    let mid_plus_1 = *vals.next().unwrap();
-
+                    let mid = self.sorted.get(idx);
+                    let mid_plus_1 = self.sorted.get(idx + 1);
                     Some((mid + mid_plus_1) / (T::one() + T::one()))
                 };
             },

@@ -52,6 +52,7 @@ where
 }
 
 impl<'a, T> OrderStatisticTree<T> {
+    #[inline]
     pub fn new(compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             sm: SlotMap::<Key, Node<T>>::with_key(),
@@ -60,6 +61,7 @@ impl<'a, T> OrderStatisticTree<T> {
         }
     }
 
+    #[inline]
     pub fn with_capacity(capacity: usize, compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             sm: SlotMap::<Key, Node<T>>::with_capacity_and_key(capacity),
@@ -68,18 +70,22 @@ impl<'a, T> OrderStatisticTree<T> {
         }
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.weight(self.root)
     }
 
+    #[inline]
     pub fn unique_len(&self) -> usize {
         self.unique_weight(self.root)
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.sm.clear();
         self.root = Key::null();
@@ -156,6 +162,25 @@ impl<'a, T> OrderStatisticTree<T> {
         self.maximum(n.right)
     }
 
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&T> {
+        self.get_inner(idx, self.root)
+    }
+
+    fn get_inner(&self, idx: usize, tree: Key) -> Option<&T> {
+        if tree.is_null() {
+            return None;
+        }
+        let n = &self.sm[tree];
+        let lw = self.weight(n.left);
+        match idx.cmp(&lw) {
+            Ordering::Less => self.get_inner(idx, n.left),
+            Ordering::Equal => Some(&n.value),
+            Ordering::Greater => self.get_inner(idx - lw - 1, n.right),
+        }
+    }
+
+    #[inline]
     pub fn insert(&mut self, value: T) {
         self.root = self.insert_inner(value, self.root);
     }
@@ -178,6 +203,7 @@ impl<'a, T> OrderStatisticTree<T> {
         }
     }
 
+    #[inline]
     pub fn remove(&mut self, value: &T) -> Option<T> {
         let deleted;
         (deleted, self.root) = self.remove_inner(value, self.root);
@@ -240,6 +266,7 @@ impl<'a, T> OrderStatisticTree<T> {
         (deleted, self.balance_r(n.left, n.value, right))
     }
 
+    #[inline]
     pub fn contains(&self, value: &T) -> bool {
         self._contains(value, self.root)
     }
@@ -344,6 +371,7 @@ impl<'a, T> OrderStatisticTree<T> {
         a + 1 < GAMMA * (b + 1)
     }
 
+    #[inline]
     pub fn rank_lower(&self, bound: &T) -> Result<usize, usize> {
         self.rank_lower_inner(bound, self.root)
     }
@@ -365,6 +393,7 @@ impl<'a, T> OrderStatisticTree<T> {
         }
     }
 
+    #[inline]
     pub fn rank_upper(&self, bound: &T) -> Result<usize, usize> {
         self._rank_upper(bound, self.root)
     }
@@ -388,6 +417,7 @@ impl<'a, T> OrderStatisticTree<T> {
         }
     }
 
+    #[inline]
     pub fn rank_unique(&self, value: &T) -> Result<usize, usize> {
         self.rank_unique_inner(value, self.root)
     }
@@ -408,6 +438,7 @@ impl<'a, T> OrderStatisticTree<T> {
         }
     }
 
+    #[inline]
     pub fn count(&self, value: &T) -> usize {
         let Ok(lo) = self.rank_lower(value) else {
             return 0;
@@ -694,5 +725,19 @@ mod test {
         assert_eq!(ost.count(&2), 2);
         assert_eq!(ost.count(&3), 3);
         assert_eq!(ost.count(&4), 0);
+    }
+
+    #[test]
+    fn test_get() {
+        let mut ost = OrderStatisticTree::new(i32::cmp);
+        let mut items = [3, 1, 4, 1, 5, 9, 2, 6, 5];
+        for item in items {
+            ost.insert(item);
+        }
+        items.sort();
+        for i in 0..items.len() {
+            assert_eq!(ost.get(i), Some(&items[i]));
+        }
+        assert_eq!(ost.get(items.len()), None);
     }
 }
