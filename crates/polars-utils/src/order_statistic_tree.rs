@@ -51,7 +51,7 @@ where
     }
 }
 
-impl<'a, T: Debug> OrderStatisticTree<T> {
+impl<'a, T> OrderStatisticTree<T> {
     pub fn new(compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             sm: SlotMap::<Key, Node<T>>::with_key(),
@@ -481,6 +481,15 @@ impl<'a, T: Debug> Iterator for Iter<'a, T> {
     }
 }
 
+impl<T> Extend<T> for OrderStatisticTree<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iterable: I) {
+        let iterator = iterable.into_iter();
+        for element in iterator {
+            self.insert(element);
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
 
@@ -654,5 +663,16 @@ mod test {
         assert_eq!(ost.unique_len(), 10);
         ost.clear();
         assert!(ost.is_empty());
+    }
+
+    #[test]
+    fn test_extend() {
+        let mut ost = OrderStatisticTree::new(i32::cmp);
+        ost.extend(0..10);
+        assert_eq!(ost.len(), 10);
+        assert_eq!(ost.unique_len(), 10);
+        for item in 0..10 {
+            assert!(ost.contains(&item));
+        }
     }
 }
