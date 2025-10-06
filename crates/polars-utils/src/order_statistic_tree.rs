@@ -31,7 +31,7 @@ struct Node<T> {
 }
 
 pub struct OrderStatisticTree<T> {
-    arena: SlotMap<Key, Node<T>>,
+    sm: SlotMap<Key, Node<T>>,
     root: Key,
     compare: CompareFn<T>,
 }
@@ -43,7 +43,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "OrderStatisticTree {{")?;
         writeln!(f, "  root: {:?}", self.root)?;
-        for (k, v) in self.arena.iter() {
+        for (k, v) in self.sm.iter() {
             writeln!(f, "  key: {:?}, value: {:?}", k, v)?;
         }
         Ok(())
@@ -53,7 +53,7 @@ where
 impl<'a, T: Debug> OrderStatisticTree<T> {
     pub fn new(compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
-            arena: SlotMap::<Key, Node<T>>::with_key(),
+            sm: SlotMap::<Key, Node<T>>::with_key(),
             root: Key::null(),
             compare,
         }
@@ -61,7 +61,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
 
     pub fn with_capacity(capacity: usize, compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
-            arena: SlotMap::<Key, Node<T>>::with_capacity_and_key(capacity),
+            sm: SlotMap::<Key, Node<T>>::with_capacity_and_key(capacity),
             root: Key::null(),
             compare,
         }
@@ -87,14 +87,14 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return 0;
         }
-        self.arena[tree].weight
+        self.sm[tree].weight
     }
 
     fn unique_weight(&self, tree: Key) -> usize {
         if tree.is_null() {
             return 0;
         }
-        self.arena[tree].unique_weight
+        self.sm[tree].unique_weight
     }
 
     fn new_node(&mut self, left: Key, value: T, right: Key) -> Key {
@@ -117,18 +117,22 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
             weight,
             unique_weight,
         };
-        self.arena.insert(n)
+        self.sm.insert(n)
     }
 
     fn new_leaf(&mut self, value: T) -> Key {
         self.new_node(Key::null(), value, Key::null())
     }
 
+    fn drop_node(&mut self, tree: Key) -> Node<T> {
+        self.sm.remove(tree).unwrap()
+    }
+
     fn minimum(&self, tree: Key) -> Option<&T> {
         if tree.is_null() {
             return None;
         }
-        let n = &self.arena[tree];
+        let n = &self.sm[tree];
         if n.left.is_null() {
             return Some(&n.value);
         }
@@ -139,7 +143,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return None;
         }
-        let n = &self.arena[tree];
+        let n = &self.sm[tree];
         if n.right.is_null() {
             return Some(&n.value);
         }
@@ -155,7 +159,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
             return self.new_leaf(value);
         }
 
-        let n = self.arena.remove(tree).unwrap();
+        let n = self.drop_node(tree);
         match (self.compare)(&value, &n.value) {
             Ordering::Less => {
                 let left = self.insert_inner(value, n.left);
@@ -178,7 +182,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return (None, tree);
         }
-        let n = self.arena.remove(tree).unwrap();
+        let n = self.drop_node(tree);
         match (self.compare)(&value, &n.value) {
             Ordering::Less => {
                 let (deleted, left) = self.remove_inner(value, n.left);
@@ -210,7 +214,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return (None, tree);
         }
-        let n = self.arena.remove(tree).unwrap();
+        let n = self.drop_node(tree);
         if n.left.is_null() {
             return (Some(n.value), n.right);
         }
@@ -222,7 +226,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return (None, tree);
         }
-        let n = self.arena.remove(tree).unwrap();
+        let n = self.drop_node(tree);
         if n.right.is_null() {
             return (Some(n.value), n.left);
         }
@@ -238,7 +242,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return false;
         }
-        let n = &self.arena[tree];
+        let n = &self.sm[tree];
         match (self.compare)(value, &n.value) {
             Ordering::Less => self._contains(value, n.left),
             Ordering::Equal => true,
@@ -254,7 +258,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
     }
 
     fn rotate_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = &self.arena[right];
+        let r = &self.sm[right];
         if self.is_single(r.left, r.right) {
             self.single_l(left, value, right)
         } else {
@@ -263,14 +267,14 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
     }
 
     fn single_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = self.arena.remove(right).unwrap();
+        let r = self.drop_node(right);
         let new_left = self.new_node(left, value, r.left);
         self.new_node(new_left, r.value, r.right)
     }
 
     fn double_l(&mut self, left: Key, value: T, right: Key) -> Key {
-        let r = self.arena.remove(right).unwrap();
-        let rl = self.arena.remove(r.left).unwrap();
+        let r = self.drop_node(right);
+        let rl = self.drop_node(r.left);
         let new_left = self.new_node(left, value, rl.left);
         let new_right = self.new_node(rl.right, r.value, r.right);
         self.new_node(new_left, rl.value, new_right)
@@ -284,7 +288,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
     }
 
     fn rotate_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = &self.arena[left];
+        let l = &self.sm[left];
         if self.is_single(l.right, l.left) {
             self.single_r(left, value, right)
         } else {
@@ -293,14 +297,14 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
     }
 
     fn single_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = self.arena.remove(left).unwrap();
+        let l = self.drop_node(left);
         let new_right = self.new_node(l.right, value, right);
         self.new_node(l.left, l.value, new_right)
     }
 
     fn double_r(&mut self, left: Key, value: T, right: Key) -> Key {
-        let l = self.arena.remove(left).unwrap();
-        let lr = self.arena.remove(l.right).unwrap();
+        let l = self.drop_node(left);
+        let lr = self.drop_node(l.right);
         let new_right = self.new_node(lr.right, value, right);
         let new_left = self.new_node(l.left, l.value, lr.left);
         self.new_node(new_left, lr.value, new_right)
@@ -315,7 +319,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return true;
         }
-        let n = &self.arena[tree];
+        let n = &self.sm[tree];
         self.pair_is_balanced(n.left, n.right)
             && self.pair_is_balanced(n.right, n.left)
             && self.tree_is_balanced(n.left)
@@ -342,7 +346,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return Err(1);
         }
-        let n = &self.arena[tree];
+        let n = &self.sm[tree];
         match (self.compare)(value, &n.value) {
             Ordering::Less => self.rank_lower_inner(value, n.left),
             Ordering::Equal => self
@@ -363,7 +367,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return Err(self.weight(tree) + 1);
         }
-        let n = &self.arena[tree];
+        let n = &self.sm[tree];
         match (self.compare)(value, &n.value) {
             Ordering::Less => self._rank_upper(value, n.left),
             Ordering::Equal => self
@@ -386,7 +390,7 @@ impl<'a, T: Debug> OrderStatisticTree<T> {
         if tree.is_null() {
             return Err(1);
         }
-        let n = &self.arena[tree];
+        let n = &self.sm[tree];
         match (self.compare)(value, &n.value) {
             Ordering::Less => self.rank_unique_inner(value, n.left),
             Ordering::Equal if self._contains(value, n.left) => Ok(self.unique_weight(n.left)),
@@ -434,10 +438,10 @@ impl<'a, T: Debug> Iterator for Iter<'a, T> {
         use IterNodeState::*;
 
         let mut sf = self.stack.pop()?;
-        let mut n = self.tree.arena.get(sf.tree)?;
+        let mut n = self.tree.sm.get(sf.tree)?;
         while sf.state == GoRight && n.right.is_null() {
             sf = self.stack.pop()?;
-            n = self.tree.arena.get(sf.tree)?;
+            n = self.tree.sm.get(sf.tree)?;
         }
         if sf.state == GoRight {
             self.stack.push(IterStackFrame {
