@@ -15,6 +15,7 @@ from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
 
 def test_predicate_4906() -> None:
@@ -1184,6 +1185,62 @@ def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     assert plan.index("SELECTION") > plan.index("PYTHON SCAN")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}))
+
+
+def test_caching_19479() -> None:
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+
+    expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
+    expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
+
+    result = pl.concat([expr1, expr2])
+    assert "CACHE[id:" in result.explain()
+
+
+def test_no_caching_19479() -> None:
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+
+    expr1 = common_subplan.filter(pl.col("bar") * 2 > 4)
+    expr2 = common_subplan.filter(pl.col("bar") * 2 < 8)
+
+    result = pl.concat([expr1, expr2])
+    assert "CACHE[id:" not in result.explain()
+
+
+def test_caching_sink_multiple() -> None:
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+
+    expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
+    expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
+
+    assert "CACHE[id:" in pl.explain_all([expr1, expr2])
+
+
+def test_caching_sink_multiple_different_select() -> None:
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(
+        valid=(pl.col("foo") > 2) & (pl.col("bar") < 8)
+    )
+
+    expr1 = common_subplan.filter(valid=True).select("foo")
+    expr2 = common_subplan.filter(valid=False).select("bar")
+
+    assert "CACHE[id:" in pl.explain_all([expr1, expr2])
+
+
+def test_no_caching_scan(tmp_path: Path) -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    df.write_parquet(tmp_path / "df.parquet")
+
+    common_subplan = pl.scan_parquet(tmp_path / "df.parquet")
+    expr1 = common_subplan.filter(pl.col("foo") > 4)
+    expr2 = common_subplan.filter(pl.col("foo") < 8)
+
+    result = pl.concat([expr1, expr2])
+    assert "CACHE[id:" not in result.explain()
 
 
 def test_duplicate_filter_removal_23243() -> None:
