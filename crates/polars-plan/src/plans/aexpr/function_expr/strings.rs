@@ -958,6 +958,7 @@ where
         .zip(val)
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
             (Some(src), Some(val)) => Some(f(src, val)),
+            (Some(src), None) => Some(Cow::from(src)),
             _ => None,
         })
         .collect_trusted();
