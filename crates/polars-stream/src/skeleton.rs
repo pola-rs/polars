@@ -74,15 +74,6 @@ impl StreamingQuery {
             let visualization = plan.display_dot().to_string();
             std::fs::write(visual_path, visualization).unwrap();
         }
-        if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR_TEXT_PLAN_GRAPH") {
-            let plan = IRPlan {
-                lp_top: node,
-                lp_arena: ir_arena.clone(),
-                expr_arena: expr_arena.clone(),
-            };
-            let visualization = plan.to_text_plan_graph().to_json()?;
-            std::fs::write(visual_path, visualization).unwrap();
-        }
         let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
         let ctx = StreamingLowerIRContext {
             prepare_visualization: false,

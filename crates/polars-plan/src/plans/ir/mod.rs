@@ -2,6 +2,7 @@ mod dot;
 mod format;
 pub mod inputs;
 mod schema;
+#[cfg(feature = "ir_text_plan_graph")]
 pub mod text_plan_graph;
 pub(crate) mod tree_format;
 
@@ -18,8 +19,6 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use self::hive::HivePartitionsDf;
-use crate::plans::text_plan_graph::generate_text_plan_graph;
-use crate::plans::text_plan_graph::models::TextPlanGraph;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
@@ -192,10 +191,6 @@ impl IRPlan {
         self.as_ref().describe_tree_format()
     }
 
-    pub fn to_text_plan_graph(&self) -> TextPlanGraph {
-        self.as_ref().to_text_plan_graph()
-    }
-
     pub fn display(&self) -> format::IRDisplay<'_> {
         self.as_ref().display()
     }
@@ -234,15 +229,6 @@ impl<'a> IRPlanRef<'a> {
         let mut visitor = tree_format::TreeFmtVisitor::default();
         tree_format::TreeFmtNode::root_logical_plan(self).traverse(&mut visitor);
         format!("{visitor:#?}")
-    }
-
-    pub fn to_text_plan_graph(self) -> TextPlanGraph {
-        generate_text_plan_graph(
-            PlSmallStr::from_static("IR"),
-            &[self.lp_top],
-            self.lp_arena,
-            self.expr_arena,
-        )
     }
 }
 

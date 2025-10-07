@@ -18,9 +18,7 @@ pub struct TextPlanGraph {
 
 impl TextPlanGraph {
     pub fn to_json(&self) -> polars_error::PolarsResult<String> {
-        feature_gated!("ir_text_plan_graph_json", {
-            serde_json::to_string(self).map_err(polars_error::to_compute_err)
-        })
+        serde_json::to_string(self).map_err(polars_error::to_compute_err)
     }
 }
 

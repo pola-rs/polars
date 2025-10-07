@@ -35,7 +35,6 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
-use polars_plan::plans::text_plan_graph::models::TextPlanGraph;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -235,10 +234,6 @@ impl LazyFrame {
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
         Ok(self.clone().to_alp_optimized()?.describe_tree_format())
-    }
-
-    pub fn to_text_plan_graph(&self) -> PolarsResult<TextPlanGraph> {
-        Ok(self.clone().to_alp_optimized()?.to_text_plan_graph())
     }
 
     /// Return a String describing the logical plan.
