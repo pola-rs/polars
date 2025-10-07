@@ -128,7 +128,7 @@ dsl-schema = [
 ir_text_plan_graph_json = [
   "dep:serde_json",
   "ir_serde",
-  "serde"
+  "serde",
 ]
 
 # operations
