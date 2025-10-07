@@ -962,7 +962,7 @@ class ListNameSpace:
         ]
         """
 
-    def eval(self, expr: Expr) -> Series:
+    def agg(self, expr: Expr) -> Series:
         """Run any polars aggregation expression against the list' elements."""
 
     def filter(self, predicate: Expr) -> Series:
