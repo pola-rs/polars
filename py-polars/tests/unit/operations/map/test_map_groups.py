@@ -214,7 +214,7 @@ def test_map_groups_multiple_all_literal(
     assert_frame_equal(out, expected, check_row_order=maintain_order)
 
 
-@pytest.mark.may_fail_auto_streaming # reason: alternate error message
+@pytest.mark.may_fail_auto_streaming  # reason: alternate error message
 def test_map_groups_multiple_all_literal_elementwise_raises() -> None:
     df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3], "b": [2, 3, 4]})
     q = (
