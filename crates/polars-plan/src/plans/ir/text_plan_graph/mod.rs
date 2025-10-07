@@ -53,6 +53,8 @@ struct TextPlanGraphGenerator<'a> {
 
 impl TextPlanGraphGenerator<'_> {
     fn generate(mut self) -> (Vec<TpgNode>, Vec<Edge>) {
+        // Note, intentionally a queue to traverse in insertion order, the `cache_node_to_position`
+        // mapping assumes this.
         while let Some(node) = self.queue.pop_front() {
             let ir = self.ir_arena.get(node);
             let mut tpg_node = self.get_tpg_node(ir);
@@ -60,6 +62,7 @@ impl TextPlanGraphGenerator<'_> {
             tpg_node.id = current_node_position;
 
             for input_node in ir.inputs() {
+                // +1 is for the current node we haven't inserted yet.
                 let input_node_position = 1 + self.nodes_list.len() + self.queue.len();
 
                 if let IR::Cache { id, input: _ } = self.ir_arena.get(input_node) {

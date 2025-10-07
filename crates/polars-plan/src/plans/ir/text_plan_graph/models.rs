@@ -185,7 +185,7 @@ pub enum IRTpgProperties {
         left_by: Option<Vec<PlSmallStr>>,
         right_by: Option<Vec<PlSmallStr>>,
         strategy: polars_ops::frame::AsofStrategy,
-        /// [value, dtype]
+        /// [value, dtype_str]
         tolerance: Option<[PlSmallStr; 2]>,
         suffix: Option<PlSmallStr>,
         slice: Option<[i128; 2]>,
