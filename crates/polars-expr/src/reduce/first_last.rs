@@ -22,7 +22,11 @@ fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn Gr
             dtype,
             BoolFirstLastReducer::<P>(PhantomData),
         )),
-        _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
+        _ if dtype.is_primitive_numeric()
+            || dtype.is_temporal()
+            || dtype.is_decimal()
+            || dtype.is_categorical() =>
+        {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VGR::new(dtype, NumFirstLastReducer::<P, $T>(PhantomData)))
             })
@@ -127,7 +131,8 @@ where
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         let ca: ChunkedArray<T> = v.into_iter().map(|(x, _s)| x).collect_ca(PlSmallStr::EMPTY);
-        ca.into_series().cast(dtype)
+        let s = ca.into_series();
+        unsafe { s.from_physical_unchecked(dtype) }
     }
 }
 
