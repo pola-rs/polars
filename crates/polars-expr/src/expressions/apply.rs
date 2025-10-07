@@ -235,7 +235,8 @@ impl ApplyExpr {
         let out = self.function.call_udf(&mut cols)?;
         polars_ensure!(
             out.len() == 1,
-            ComputeError: "expression {:?} must return exactly one value on literals", &self.expr
+            ComputeError: "elementwise expression {:?} must return exactly 1 value on literals, got {}",
+                &self.expr, out.len()
         );
         let mut ac = acs.swap_remove(0);
         ac.with_literal(out);
