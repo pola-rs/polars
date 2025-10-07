@@ -4308,7 +4308,9 @@ class DataFrame:
 
             # base class for ADBC connections
             if not isinstance(conn, driver_manager.dbapi.Connection):
-                msg = f"unrecognised connection type {connection!r}"
+                msg = (
+                    f"unrecognised connection type {qualified_type_name(connection)!r}"
+                )
                 raise TypeError(msg)
 
             driver_manager_str_version = getattr(driver_manager, "__version__", "0.0")
@@ -4430,7 +4432,9 @@ class DataFrame:
             elif isinstance(connection, Connectable):
                 sa_object = connection
             else:
-                msg = f"unrecognised connection type {connection!r}"
+                msg = (
+                    f"unrecognised connection type {qualified_type_name(connection)!r}"
+                )
                 raise TypeError(msg)
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
@@ -4456,7 +4460,7 @@ class DataFrame:
             msg = f"engine {engine!r} is not supported"
             raise ValueError(msg)
         else:
-            msg = f"unrecognised connection type {connection!r}"
+            msg = f"unrecognised connection type {qualified_type_name(connection)!r}"
             raise TypeError(msg)
 
     @unstable()
