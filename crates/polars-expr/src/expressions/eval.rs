@@ -10,8 +10,8 @@ use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    AnyValue, ChunkCast, ChunkNestingUtils, Column, CompatLevel, Field, GroupPositions, GroupsType,
-    IntoColumn, ListBuilderTrait, ListChunked,
+    AnyValue, ChunkCast, ChunkExplode, ChunkNestingUtils, Column, CompatLevel, Field,
+    GroupPositions, GroupsType, IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -254,22 +254,101 @@ impl EvalExpr {
 
     fn evaluate_on_list_chunked(
         &self,
-        lst: &ListChunked,
+        ca: &ListChunked,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
-        let fits_idx_size = lst.get_inner().len() < (IdxSize::MAX as usize);
-        if match self.pd_group {
-            ExprPushdownGroup::Pushable => true,
-            ExprPushdownGroup::Fallible => !lst.has_nulls(),
-            ExprPushdownGroup::Barrier => false,
-        } && !self.evaluation_is_scalar
-        {
-            self.run_elementwise_on_values(lst, state)
-        } else if fits_idx_size && lst.null_count() == 0 && self.evaluation_is_scalar {
-            self.run_on_group_by_engine(lst, state)
-        } else {
-            self.run_per_sublist(lst, state)
+        let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
+
+        // Fast path: Empty or only nulls.
+        if ca.null_count() == ca.len() {
+            let name = self.output_field.name.clone();
+            let dtype = self.output_field.dtype.inner_dtype().unwrap();
+
+            return Ok(ListChunked::full_null_with_dtype(name, ca.len(), dtype).into_column());
         }
+
+        let has_masked_out_elements = ca.has_nulls() && ca.has_masked_out_values();
+
+        // Fast path: fully elementwise expression without masked out values.
+        if self.evaluation_is_elementwise && !has_masked_out_elements {
+            let column = self.evaluation.evaluate(&df, state)?;
+            let out = ca.apply_to_inner(&|_| Ok(column.take_materialized_series()))?;
+            return Ok(out);
+        }
+
+        let validity = ca.rechunk_validity();
+
+        let offsets = ca.offsets()?;
+
+        // Create groups for all valid array elements.
+        let groups = if ca.has_nulls() {
+            let validity = validity.as_ref().unwrap();
+            offsets
+                .offset_and_length_iter()
+                .zip(validity.iter())
+                .filter_map(|((offset, length), validity)| {
+                    validity.then_some([offset as IdxSize, length as IdxSize])
+                })
+                .collect()
+        } else {
+            offsets
+                .offset_and_length_iter()
+                .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
+                .collect()
+        };
+        let groups = GroupsType::Slice {
+            groups,
+            overlapping: false,
+        };
+        let groups = Cow::Owned(groups.into_sliceable());
+
+        let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
+
+        ac.groups(); // Update the groups.
+
+        let flat_naive = ac.flat_naive();
+
+        // Fast path. Groups are pointing to the same offsets in the data buffer.
+        if flat_naive.len() == df.height()
+            && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
+        {
+            let ca_width = ca.width() as IdxSize;
+            let groups_are_unchanged = if let Some(validity) = &validity {
+                assert_eq!(validity.set_bits(), output_groups.len());
+                validity
+                    .true_idx_iter()
+                    .zip(output_groups)
+                    .all(|(j, [start, len])| {
+                        let (original_start, original_end) =
+                            unsafe { offsets.start_end_unchecked(j) };
+                        (*start == original_start as IdxSize)
+                            & (*len == (original_end - original_start) as IdxSize)
+                    })
+            } else {
+                use polars_utils::itertools::Itertools;
+
+                output_groups
+                    .iter()
+                    .zip(offsets.offset_and_length_iter())
+                    .all(|([start, len], (original_start, original_len))| {
+                        (*start == original_start as IdxSize) & (*len == original_end as IdxSize)
+                    })
+            };
+
+            if groups_are_unchanged {
+                return Ok(ca.apply_to_inner(&|_| Ok(flat_naive))?.into_column());
+            }
+        }
+
+        // Slow path. Groups have changed, so we need to gather data again.
+        let mut ca = ac.aggregated_as_list();
+
+        // We didn't have any groups for the `null` values so we have to reinsert them.
+        if let Some(validity) = validity {
+            ca = Cow::Owned(ca.deposit(&validity));
+        }
+
+        Ok(ca.into_owned().into_column())
     }
 
     #[cfg(feature = "dtype-array")]
