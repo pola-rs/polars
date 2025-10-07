@@ -161,7 +161,7 @@ impl EvalExpr {
         // Fast path. Groups are pointing to the same offsets in the data buffer.
         if flat_naive.len() == df.height()
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
-            && (!is_agg || !self.evaluation_is_scalar || !ca.has_nulls())
+            && !(is_agg && self.evaluation_is_scalar)
         {
             let groups_are_unchanged = if let Some(validity) = &validity {
                 assert_eq!(validity.set_bits(), output_groups.len());
@@ -286,7 +286,7 @@ impl EvalExpr {
         // Fast path. Groups are pointing to the same offsets in the data buffer.
         if flat_naive.len() == ca.len() * ca.width()
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
-            && (!is_agg || !self.evaluation_is_scalar || !ca.has_nulls())
+            && !(is_agg && self.evaluation_is_scalar)
         {
             let ca_width = ca.width() as IdxSize;
             let groups_are_unchanged = if let Some(validity) = &validity {
