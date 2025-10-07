@@ -696,6 +696,19 @@ impl GroupPositions {
             },
         }
     }
+
+    pub fn as_unrolled_slice(&self) -> Option<&GroupsSlice> {
+        match &*self.sliced {
+            GroupsType::Idx(_) => None,
+            GroupsType::Slice {
+                overlapping: true, ..
+            } => None,
+            GroupsType::Slice {
+                groups,
+                overlapping: false,
+            } => Some(groups),
+        }
+    }
 }
 
 fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<GroupsType> {
