@@ -259,6 +259,10 @@ impl ExprIR {
         is_scalar_ae(self.node, expr_arena)
     }
 
+    pub fn is_length_preserving(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_length_preserving_ae(self.node, expr_arena)
+    }
+
     pub fn dtype(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<&DataType> {
         match self.output_dtype.get() {
             Some(dtype) => Ok(dtype),

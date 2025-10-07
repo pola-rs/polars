@@ -248,7 +248,7 @@ pub fn get_frame_observing(
             evaluation: _,
             variant,
         } => match variant {
-            EvalVariant::List => rec!(*expr),
+            EvalVariant::Array { as_list: _ } | EvalVariant::List => rec!(*expr),
             EvalVariant::Cumulative { min_samples: _ } => {
                 let expr = rec!(*expr);
                 if expr.has_frame_ordering() {
