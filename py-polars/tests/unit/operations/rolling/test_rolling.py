@@ -1743,7 +1743,7 @@ def test_rolling_rank(
             .then(None)
             .otherwise(pl.col("a"))
         )
-        .drop(pl.col("index"))
+        .drop("index")
     )
     if center:
         expected = expected.with_columns(a=pl.col("a").shift(-((window_size - 1) // 2)))

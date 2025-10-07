@@ -2,8 +2,8 @@
 //! as a weight-balanced tree (WBT).
 //! It is based on the weight-balanced tree based on the following papers:
 //!
-//!   * https://doi.org/10.1017/S0956796811000104
-//!   * https://doi.org/10.1137/1.9781611976007.13
+//!   * <https://doi.org/10.1017/S0956796811000104>
+//!   * <https://doi.org/10.1137/1.9781611976007.13>
 //!
 //! Each of the nodes in the tree contains a linked list of values to store
 //! multiple values with the same key.
@@ -55,7 +55,7 @@ pub struct OrderStatisticTree<T> {
     compare: CompareFn<T>,
 }
 
-impl<'a, T> OrderStatisticTree<T> {
+impl<T> OrderStatisticTree<T> {
     #[inline]
     pub fn new(compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
@@ -83,12 +83,12 @@ impl<'a, T> OrderStatisticTree<T> {
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.tree_weight(self.root).try_into().unwrap()
+        self.tree_weight(self.root)
     }
 
     #[inline]
     pub fn unique_len(&self) -> usize {
-        self.tree_unique_weight(self.root).try_into().unwrap()
+        self.tree_unique_weight(self.root)
     }
 
     #[inline]
@@ -196,11 +196,7 @@ impl<'a, T> OrderStatisticTree<T> {
 
         let mut vn = &self.value_nodes[tn.values.head];
         for _ in 0..(idx - lw) {
-            let next_vn = vn.next;
-            if next_vn.is_null() {
-                return None;
-            }
-            vn = &self.value_nodes[next_vn];
+            vn = &self.value_nodes[vn.next];
         }
         Some(&vn.value)
     }
@@ -287,9 +283,7 @@ impl<'a, T> OrderStatisticTree<T> {
 
     #[must_use]
     fn remove_min(&mut self, tree: TreeKey) -> (Option<ValueList>, TreeKey) {
-        if tree.is_null() {
-            return (None, tree);
-        }
+        debug_assert!(!tree.is_null());
         let tn = self.drop_tree_node(tree);
         if tn.left.is_null() {
             return (Some(tn.values), tn.right);
@@ -300,9 +294,7 @@ impl<'a, T> OrderStatisticTree<T> {
 
     #[must_use]
     fn remove_max(&mut self, tree: TreeKey) -> (Option<ValueList>, TreeKey) {
-        if tree.is_null() {
-            return (None, tree);
-        }
+        debug_assert!(!tree.is_null());
         let tn = self.drop_tree_node(tree);
         if tn.right.is_null() {
             return (Some(tn.values), tn.left);
@@ -705,8 +697,8 @@ mod test {
             ost.insert(item);
         }
         items.sort();
-        for i in 0..items.len() {
-            assert_eq!(ost.get(i), Some(&items[i]));
+        for (i, item) in items.iter().enumerate() {
+            assert_eq!(ost.get(i), Some(item));
         }
         assert_eq!(ost.get(items.len()), None);
     }
