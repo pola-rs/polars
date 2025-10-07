@@ -130,13 +130,13 @@ class Expr:
     _pyexpr: PyExpr = None  # type: ignore[assignment]
     _accessors: ClassVar[set[str]] = {
         "arr",
+        "bin",
         "cat",
         "dt",
         "list",
         "meta",
         "name",
         "str",
-        "bin",
         "struct",
     }
 
