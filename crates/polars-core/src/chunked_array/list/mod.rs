@@ -187,4 +187,34 @@ impl ListChunked {
             )
         })
     }
+
+    pub fn with_inner_values(&self, values: &Series) -> ListChunked {
+        // @Performance: Chunking here is not necessary, copied from `apply_to_inner`.
+
+        // generated Series will have wrong length otherwise.
+        let ca = self.rechunk();
+        let arr = ca.downcast_as_array();
+
+        assert_eq!(arr.values().len(), values.len());
+
+        let values = values.rechunk();
+        let out = values.chunks()[0].clone();
+
+        let inner_dtype = LargeListArray::default_datatype(out.dtype().clone());
+        let arr = LargeListArray::new(
+            inner_dtype,
+            (*arr.offsets()).clone(),
+            out,
+            arr.validity().cloned(),
+        );
+
+        // SAFETY: arr's inner dtype is derived from out dtype.
+        unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                ca.name().clone(),
+                vec![Box::new(arr)],
+                DataType::List(Box::new(values.dtype().clone())),
+            )
+        }
+    }
 }

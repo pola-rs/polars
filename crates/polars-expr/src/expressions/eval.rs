@@ -92,166 +92,6 @@ impl EvalExpr {
         }
     }
 
-    fn run_elementwise_on_values(
-        &self,
-        lst: &ListChunked,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        if lst.chunks().is_empty() {
-            return Ok(Column::new_empty(
-                self.output_field.name.clone(),
-                &self.output_field.dtype.clone(),
-            ));
-        }
-
-        let lst = lst
-            .trim_lists_to_normalized_offsets()
-            .map_or(Cow::Borrowed(lst), Cow::Owned);
-
-        let output_arrow_dtype = self
-            .output_field
-            .dtype
-            .clone()
-            .to_arrow(CompatLevel::newest());
-        let output_arrow_dtype_physical = output_arrow_dtype.underlying_physical_type();
-
-        let apply_to_chunk = |arr: &dyn Array| {
-            let arr: &ListArray<i64> = arr.as_any().downcast_ref().unwrap();
-
-            let values = unsafe {
-                Series::from_chunks_and_dtype_unchecked(
-                    PlSmallStr::EMPTY,
-                    vec![arr.values().clone()],
-                    lst.inner_dtype(),
-                )
-            };
-
-            let df = values.into_frame();
-
-            self.evaluation.evaluate(&df, state).map(|values| {
-                let values = values.take_materialized_series().rechunk().chunks()[0].clone();
-
-                ListArray::<i64>::new(
-                    output_arrow_dtype_physical.clone(),
-                    arr.offsets().clone(),
-                    values,
-                    arr.validity().cloned(),
-                )
-                .boxed()
-            })
-        };
-
-        let chunks = if self.allow_threading && lst.chunks().len() > 1 {
-            POOL.install(|| {
-                lst.chunks()
-                    .into_par_iter()
-                    .map(|x| apply_to_chunk(&**x))
-                    .collect::<PolarsResult<Vec<Box<dyn Array>>>>()
-            })?
-        } else {
-            lst.chunks()
-                .iter()
-                .map(|x| apply_to_chunk(&**x))
-                .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?
-        };
-
-        let out_inner_dt = self.output_field.dtype.inner_dtype().unwrap();
-        Ok(unsafe {
-            ListChunked::from_chunks(self.output_field.name.clone(), chunks)
-                .from_physical_unchecked(out_inner_dt.clone())
-                .unwrap()
-        }
-        .into_column())
-    }
-
-    fn run_per_sublist(&self, lst: &ListChunked, state: &ExecutionState) -> PolarsResult<Column> {
-        let mut err = None;
-        let mut ca: ListChunked = if self.allow_threading {
-            let m_err = Mutex::new(None);
-            let ca: ListChunked = POOL.install(|| {
-                lst.par_iter()
-                    .map(|opt_s| {
-                        opt_s.and_then(|s| {
-                            let df = s.into_frame();
-                            let out = self.evaluation.evaluate(&df, state);
-                            match out {
-                                Ok(s) => Some(s.take_materialized_series()),
-                                Err(e) => {
-                                    *m_err.lock().unwrap() = Some(e);
-                                    None
-                                },
-                            }
-                        })
-                    })
-                    .collect_ca_with_dtype(PlSmallStr::EMPTY, self.output_field.dtype.clone())
-            });
-            err = m_err.into_inner().unwrap();
-            ca
-        } else {
-            let mut df_container = DataFrame::empty();
-
-            lst.into_iter()
-                .map(|s| {
-                    s.and_then(|s| unsafe {
-                        df_container.with_column_unchecked(s.into_column());
-                        let out = self.evaluation.evaluate(&df_container, state);
-                        df_container.clear_columns();
-                        match out {
-                            Ok(s) => Some(s.take_materialized_series()),
-                            Err(e) => {
-                                err = Some(e);
-                                None
-                            },
-                        }
-                    })
-                })
-                .collect_trusted()
-        };
-        if let Some(err) = err {
-            return Err(err);
-        }
-
-        ca.rename(lst.name().clone());
-
-        // Cast may still be required in some cases, e.g. for an empty frame when running single-threaded
-        if ca.dtype() != &self.output_field.dtype {
-            ca.cast(&self.output_field.dtype).map(Column::from)
-        } else {
-            Ok(ca.into_column())
-        }
-    }
-
-    fn run_on_group_by_engine(
-        &self,
-        lst: &ListChunked,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let lst = lst.rechunk();
-        let arr = lst.downcast_as_array();
-        let groups = offsets_to_groups(arr.offsets()).unwrap();
-
-        // List elements in a series.
-        let values = Series::try_from((PlSmallStr::EMPTY, arr.values().clone())).unwrap();
-        let inner_dtype = lst.inner_dtype();
-        // SAFETY:
-        // Invariant in List means values physicals can be cast to inner dtype
-        let values = unsafe { values.from_physical_unchecked(inner_dtype).unwrap() };
-
-        let df_context = values.into_frame();
-
-        let mut ac = self
-            .evaluation
-            .evaluate_on_groups(&df_context, &groups, state)?;
-        let out = match ac.agg_state() {
-            AggState::AggregatedScalar(_) => {
-                let out = ac.aggregated();
-                out.as_list().into_column()
-            },
-            _ => ac.aggregated(),
-        };
-        Ok(out.with_name(self.output_field.name.clone()).into_column())
-    }
-
     fn evaluate_on_list_chunked(
         &self,
         ca: &ListChunked,
@@ -271,9 +111,12 @@ impl EvalExpr {
 
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !has_masked_out_elements {
-            let column = self.evaluation.evaluate(&df, state)?;
-            let out = ca.apply_to_inner(&|_| Ok(column.take_materialized_series()))?;
-            return Ok(out);
+            let mut column = self.evaluation.evaluate(&df, state)?;
+            if column.len() == 1 && df.height() != 1 {
+                column = column.new_from_index(0, df.height());
+            }
+            let out = ca.with_inner_values(column.as_materialized_series());
+            return Ok(out.into_column());
         }
 
         let validity = ca.rechunk_validity();
@@ -312,7 +155,6 @@ impl EvalExpr {
         if flat_naive.len() == df.height()
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
         {
-            let ca_width = ca.width() as IdxSize;
             let groups_are_unchanged = if let Some(validity) = &validity {
                 assert_eq!(validity.set_bits(), output_groups.len());
                 validity
@@ -325,23 +167,25 @@ impl EvalExpr {
                             & (*len == (original_end - original_start) as IdxSize)
                     })
             } else {
-                use polars_utils::itertools::Itertools;
-
                 output_groups
                     .iter()
                     .zip(offsets.offset_and_length_iter())
                     .all(|([start, len], (original_start, original_len))| {
-                        (*start == original_start as IdxSize) & (*len == original_end as IdxSize)
+                        (*start == original_start as IdxSize) & (*len == original_len as IdxSize)
                     })
             };
 
             if groups_are_unchanged {
-                return Ok(ca.apply_to_inner(&|_| Ok(flat_naive))?.into_column());
+                let values = flat_naive.as_materialized_series();
+                return Ok(ca.with_inner_values(values).into_column());
             }
         }
 
+        dbg!(&ca);
+        dbg!(&ac);
         // Slow path. Groups have changed, so we need to gather data again.
-        let mut ca = ac.aggregated_as_list();
+        let mut ca = ac.aggregated_as_broadcasted_list();
+        dbg!(&ca);
 
         // We didn't have any groups for the `null` values so we have to reinsert them.
         if let Some(validity) = validity {
@@ -374,7 +218,10 @@ impl EvalExpr {
 
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !ca.has_nulls() {
-            let column = self.evaluation.evaluate(&df, state)?;
+            let mut column = self.evaluation.evaluate(&df, state)?;
+            if column.len() == 1 && df.height() != 1 {
+                column = column.new_from_index(0, df.height());
+            }
             assert_eq!(column.len(), ca.len() * ca.width());
 
             let dtype = column.dtype().clone();
@@ -465,7 +312,7 @@ impl EvalExpr {
         }
 
         // Slow path. Groups have changed, so we need to gather data again.
-        let mut ca = ac.aggregated_as_list();
+        let mut ca = ac.aggregated_as_broadcasted_list();
 
         // We didn't have any groups for the `null` values so we have to reinsert them.
         if let Some(validity) = validity {
