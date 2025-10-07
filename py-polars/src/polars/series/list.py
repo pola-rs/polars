@@ -962,6 +962,9 @@ class ListNameSpace:
         ]
         """
 
+    def eval(self, expr: Expr) -> Series:
+        """Run any polars aggregation expression against the list' elements."""
+
     def filter(self, predicate: Expr) -> Series:
         """
         Filter elements in each list by a boolean expression, returning a new Series of lists.

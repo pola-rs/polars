@@ -801,3 +801,6 @@ class ArrayNameSpace:
             [2.0, 1.0]
         ]
         """
+
+    def agg(self, expr: Expr) -> Series:
+        """Run any polars aggregation expression against the arrays' elements."""

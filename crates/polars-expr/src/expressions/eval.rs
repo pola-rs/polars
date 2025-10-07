@@ -96,6 +96,7 @@ impl EvalExpr {
         &self,
         ca: &ListChunked,
         state: &ExecutionState,
+        is_agg: bool,
     ) -> PolarsResult<Column> {
         let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
 
@@ -104,7 +105,7 @@ impl EvalExpr {
             let name = self.output_field.name.clone();
             let dtype = self.output_field.dtype.inner_dtype().unwrap();
 
-            return Ok(ListChunked::full_null_with_dtype(name, ca.len(), dtype).into_column());
+            return Ok(Column::full_null(name, ca.len(), dtype));
         }
 
         let has_masked_out_elements = ca.has_nulls() && ca.has_masked_out_values();
@@ -115,8 +116,14 @@ impl EvalExpr {
             if column.len() == 1 && df.height() != 1 {
                 column = column.new_from_index(0, df.height());
             }
-            let out = ca.with_inner_values(column.as_materialized_series());
-            return Ok(out.into_column());
+
+            if !is_agg || !self.evaluation_is_scalar {
+                column = ca
+                    .with_inner_values(column.as_materialized_series())
+                    .into_column();
+            }
+
+            return Ok(column);
         }
 
         let validity = ca.rechunk_validity();
@@ -154,6 +161,7 @@ impl EvalExpr {
         // Fast path. Groups are pointing to the same offsets in the data buffer.
         if flat_naive.len() == df.height()
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
+            && (!is_agg || !self.evaluation_is_scalar || !ca.has_nulls())
         {
             let groups_are_unchanged = if let Some(validity) = &validity {
                 assert_eq!(validity.set_bits(), output_groups.len());
@@ -181,18 +189,26 @@ impl EvalExpr {
             }
         }
 
-        dbg!(&ca);
-        dbg!(&ac);
         // Slow path. Groups have changed, so we need to gather data again.
-        let mut ca = ac.aggregated_as_broadcasted_list();
-        dbg!(&ca);
+        if is_agg && self.evaluation_is_scalar {
+            let mut values = ac.finalize();
 
-        // We didn't have any groups for the `null` values so we have to reinsert them.
-        if let Some(validity) = validity {
-            ca = Cow::Owned(ca.deposit(&validity));
+            // We didn't have any groups for the `null` values so we have to reinsert them.
+            if let Some(validity) = validity {
+                values = values.deposit(&validity);
+            }
+
+            Ok(values)
+        } else {
+            let mut ca = ac.aggregated_as_list();
+
+            // We didn't have any groups for the `null` values so we have to reinsert them.
+            if let Some(validity) = validity {
+                ca = Cow::Owned(ca.deposit(&validity));
+            }
+
+            Ok(ca.into_owned().into_column())
         }
-
-        Ok(ca.into_owned().into_column())
     }
 
     #[cfg(feature = "dtype-array")]
@@ -201,6 +217,7 @@ impl EvalExpr {
         ca: &ArrayChunked,
         state: &ExecutionState,
         as_list: bool,
+        is_agg: bool,
     ) -> PolarsResult<Column> {
         let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
 
@@ -209,11 +226,7 @@ impl EvalExpr {
             let name = self.output_field.name.clone();
             let dtype = self.output_field.dtype().inner_dtype().unwrap();
 
-            return Ok(if as_list {
-                ListChunked::full_null_with_dtype(name, ca.len(), dtype).into_column()
-            } else {
-                ArrayChunked::full_null_with_dtype(name, ca.len(), dtype, ca.width()).into_column()
-            });
+            return Ok(Column::full_null(name, ca.len(), dtype));
         }
 
         // Fast path: fully elementwise expression without masked out values.
@@ -223,6 +236,10 @@ impl EvalExpr {
                 column = column.new_from_index(0, df.height());
             }
             assert_eq!(column.len(), ca.len() * ca.width());
+
+            if is_agg && self.evaluation_is_scalar {
+                return Ok(column);
+            }
 
             let dtype = column.dtype().clone();
             let out = ArrayChunked::from_aligned_values(
@@ -269,6 +286,7 @@ impl EvalExpr {
         // Fast path. Groups are pointing to the same offsets in the data buffer.
         if flat_naive.len() == ca.len() * ca.width()
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
+            && (!is_agg || !self.evaluation_is_scalar || !ca.has_nulls())
         {
             let ca_width = ca.width() as IdxSize;
             let groups_are_unchanged = if let Some(validity) = &validity {
@@ -312,18 +330,31 @@ impl EvalExpr {
         }
 
         // Slow path. Groups have changed, so we need to gather data again.
-        let mut ca = ac.aggregated_as_broadcasted_list();
+        if is_agg && self.evaluation_is_scalar {
+            let mut values = ac.finalize();
 
-        // We didn't have any groups for the `null` values so we have to reinsert them.
-        if let Some(validity) = validity {
-            ca = Cow::Owned(ca.deposit(&validity));
-        }
+            // We didn't have any groups for the `null` values so we have to reinsert them.
+            if let Some(validity) = validity {
+                values = values.deposit(&validity);
+            }
 
-        Ok(if as_list {
-            ca.into_owned().into_column()
+            Ok(values)
         } else {
-            ca.cast(self.output_field.dtype()).unwrap().into_column()
-        })
+            let mut ca = ac.aggregated_as_list();
+
+            // We didn't have any groups for the `null` values so we have to reinsert them.
+            if let Some(validity) = validity {
+                ca = Cow::Owned(ca.deposit(&validity));
+            }
+
+            Ok(if as_list {
+                ca.into_owned().into_column()
+            } else {
+                ca.cast(&self.non_aggregated_output_dtype)
+                    .unwrap()
+                    .into_column()
+            })
+        }
     }
 
     fn evaluate_cumulative_eval(
@@ -403,10 +434,17 @@ impl PhysicalExpr for EvalExpr {
         match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;
-                self.evaluate_on_list_chunked(lst, state)
+                self.evaluate_on_list_chunked(lst, state, false)
+            },
+            EvalVariant::ListAgg => {
+                let lst = input.list()?;
+                self.evaluate_on_list_chunked(lst, state, true)
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
-                self.evaluate_on_array_chunked(input.array()?, state, as_list)
+                self.evaluate_on_array_chunked(input.array()?, state, as_list, false)
+            }),
+            EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
+                self.evaluate_on_array_chunked(input.array()?, state, true, true)
             }),
             EvalVariant::Cumulative { min_samples } => self
                 .evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
@@ -423,12 +461,26 @@ impl PhysicalExpr for EvalExpr {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
         match self.variant {
             EvalVariant::List => {
-                let out = self.evaluate_on_list_chunked(input.get_values().list()?, state)?;
+                let out =
+                    self.evaluate_on_list_chunked(input.get_values().list()?, state, false)?;
+                input.with_values(out, false, Some(&self.expr))?;
+            },
+            EvalVariant::ListAgg => {
+                let out = self.evaluate_on_list_chunked(input.get_values().list()?, state, true)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
+                let out = self.evaluate_on_array_chunked(
+                    input.aggregated().array()?,
+                    state,
+                    as_list,
+                    false,
+                )?;
+                input.with_values(out, true, Some(&self.expr))?;
+            }),
+            EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
                 let out =
-                    self.evaluate_on_array_chunked(input.aggregated().array()?, state, as_list)?;
+                    self.evaluate_on_array_chunked(input.aggregated().array()?, state, true, true)?;
                 input.with_values(out, true, Some(&self.expr))?;
             }),
             EvalVariant::Cumulative { min_samples } => {

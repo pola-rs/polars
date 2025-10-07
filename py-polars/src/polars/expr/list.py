@@ -1217,6 +1217,10 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
+    def agg(self, expr: Expr) -> Expr:
+        """Run any polars aggregation expression against the lists' elements."""
+        return wrap_expr(self._pyexpr.list_agg(expr._pyexpr))
+
     def filter(self, predicate: Expr) -> Expr:
         """
         Filter elements in each list by a boolean expression.

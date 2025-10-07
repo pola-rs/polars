@@ -428,19 +428,6 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    /// Aggregate into `ListChunked`.
-    pub fn aggregated_as_broadcasted_list<'b>(&'b mut self) -> Cow<'b, ListChunked> {
-        self.aggregated();
-        let out = self.get_values();
-        match self.agg_state() {
-            AggState::AggregatedScalar(_) => Cow::Owned(out.as_list()),
-            AggState::LiteralScalar(_) => {
-                Cow::Owned(out.list().unwrap().new_from_index(0, self.groups.len()))
-            },
-            _ => Cow::Borrowed(out.list().unwrap()),
-        }
-    }
-
     /// Get the aggregated version of the series.
     pub fn aggregated(&mut self) -> Column {
         // we clone, because we only want to call `self.groups()` if needed.

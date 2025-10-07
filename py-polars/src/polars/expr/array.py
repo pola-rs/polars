@@ -991,3 +991,7 @@ class ExprArrayNameSpace:
         └─────┴─────┴───────────────┘
         """
         return wrap_expr(self._pyexpr.arr_eval(expr._pyexpr, as_list=as_list))
+
+    def agg(self, expr: Expr) -> Expr:
+        """Run any polars aggregation expression against the arrays' elements."""
+        return wrap_expr(self._pyexpr.arr_agg(expr._pyexpr))
