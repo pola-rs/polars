@@ -194,7 +194,7 @@ def test_list_null_constructor_schema() -> None:
 def test_temporal_dtype_string_values(
     data: list[str], dtype: PolarsDataType, expected_values: list[Any]
 ) -> None:
-    for tp in (dtype, dtype()):
+    for tp in (dtype, dtype()):  # type: ignore[operator]
         s = pl.Series(name="srs", values=data, dtype=tp)
         assert s.to_list() == expected_values
         assert s.dtype == dtype

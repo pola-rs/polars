@@ -233,7 +233,7 @@ def test_temporal_string_schema_overrides(schema_param: dict[str, SchemaDict]) -
             "time": ["12:00:00", "13:30:00"],
             "datetime": ["2024-01-01 23:59:59", "2024-01-02T13:30:00.123456"],
         },
-        **schema_param,
+        **schema_param,  # type: ignore[arg-type]
     )
     assert df.schema == {
         "date": pl.Date,
