@@ -1716,7 +1716,6 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
         ("dense", get_index_type()),
     ],
 )
-@pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("center", [False, True])
 @given(
     s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
@@ -1727,7 +1726,6 @@ def test_rolling_rank(
     window_size: int,
     method: RankMethod,
     out_dtype: pl.DataType,
-    descending: bool,
     center: bool,
 ) -> None:
     df = pl.DataFrame({"a": s})
@@ -1735,7 +1733,7 @@ def test_rolling_rank(
         df.with_row_index()
         .with_columns(
             a=pl.col("a")
-            .rank(method=method, descending=descending)
+            .rank(method=method)
             .rolling(index_column="index", period=f"{window_size}i")
             .list.last()
             .cast(out_dtype)
@@ -1750,9 +1748,7 @@ def test_rolling_rank(
     if center:
         expected = expected.with_columns(a=pl.col("a").shift(-((window_size - 1) // 2)))
     actual = df.lazy().select(
-        pl.col("a").rolling_rank(
-            window_size=window_size, method=method, descending=descending, center=center
-        )
+        pl.col("a").rolling_rank(window_size=window_size, method=method, center=center)
     )
 
     try:
@@ -1769,27 +1765,25 @@ def test_rolling_rank(
         raise
 
 
-@pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("center", [False, True])
 @given(
     s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
     window_size=st.integers(1, 50),
 )
 def test_rolling_rank_method_random(
-    s: pl.Series, window_size: int, descending: bool, center: bool
+    s: pl.Series, window_size: int, center: bool
 ) -> None:
     df = pl.DataFrame({"a": s})
     actual = df.lazy().with_columns(
         lo=pl.col("a").rolling_rank(
-            window_size=window_size, method="min", descending=descending, center=center
+            window_size=window_size, method="min", center=center
         ),
         hi=pl.col("a").rolling_rank(
-            window_size=window_size, method="max", descending=descending, center=center
+            window_size=window_size, method="max", center=center
         ),
         random=pl.col("a").rolling_rank(
             window_size=window_size,
             method="random",
-            descending=descending,
             center=center,
         ),
     )

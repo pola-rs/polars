@@ -24,8 +24,8 @@ impl<T: NativeType> RankPolicy<T, f64> for RankPolicyAverage {
         Self
     }
     fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<f64> {
-        let rank_lo = ost.rank_lower(&value).ok()? as f64;
-        let rank_hi = ost.rank_upper(&value).ok()? as f64;
+        let rank_lo = (ost.rank_lower(&value).ok()? + 1) as f64;
+        let rank_hi = (ost.rank_upper(&value).ok()? + 1) as f64;
         Some((rank_lo + rank_hi) / 2.0)
     }
 }
@@ -38,7 +38,7 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyMin {
         Self
     }
     fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
-        Some(IdxSize::try_from(ost.rank_lower(&value).ok()?).unwrap())
+        Some(IdxSize::try_from(ost.rank_lower(&value).ok()? + 1).unwrap())
     }
 }
 
@@ -50,7 +50,7 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyMax {
         Self
     }
     fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
-        Some(IdxSize::try_from(ost.rank_upper(&value).ok()?).unwrap())
+        Some(IdxSize::try_from(ost.rank_upper(&value).ok()? + 1).unwrap())
     }
 }
 
@@ -62,7 +62,7 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyDense {
         Self
     }
     fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
-        Some(IdxSize::try_from(ost.rank_unique(&value).ok()?).unwrap())
+        Some(IdxSize::try_from(ost.rank_unique(&value).ok()? + 1).unwrap())
     }
 }
 
@@ -83,8 +83,8 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyRandom {
         Self { rng }
     }
     fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
-        let rank_lo = ost.rank_lower(&value).ok()?;
-        let rank_hi = ost.rank_upper(&value).ok()?;
+        let rank_lo = ost.rank_lower(&value).ok()? + 1;
+        let rank_hi = ost.rank_upper(&value).ok()? + 1;
         Some(IdxSize::try_from(self.rng.random_range(rank_lo..=rank_hi)).unwrap())
     }
 }
