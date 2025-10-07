@@ -17,7 +17,6 @@ use polars_utils::slice_enum::Slice;
 use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::WaitToken;
-use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;

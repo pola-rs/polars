@@ -162,7 +162,10 @@ fn run_subgraph(
             .unwrap()
             .or_default()
             .clone();
-        physical_pipes.insert(pipe_key, PhysicalPipe::new(state.num_pipelines, pipe_key, seq_offset, metrics.clone()));
+        physical_pipes.insert(
+            pipe_key,
+            PhysicalPipe::new(state.num_pipelines, pipe_key, seq_offset, metrics.clone()),
+        );
     }
 
     // We do a topological sort of the graph: we want to spawn each node,
@@ -279,13 +282,12 @@ fn run_subgraph(
         }
 
         // Wait until all tasks are done.
-        let ret = polars_io::pl_async::get_runtime().block_on(async move {
+        polars_io::pl_async::get_runtime().block_on(async move {
             for handle in join_handles {
                 handle.await?;
             }
             PolarsResult::Ok(())
-        });
-        ret
+        })
     })?;
 
     Ok(())
@@ -352,7 +354,14 @@ pub fn execute_graph(
         }
 
         // Run the subgraph until phase completion.
-        run_subgraph(graph, &nodes, &pipes, &mut pipe_seq_offsets, &state, metrics.clone())?;
+        run_subgraph(
+            graph,
+            &nodes,
+            &pipes,
+            &mut pipe_seq_offsets,
+            &state,
+            metrics.clone(),
+        )?;
         polars_io::pl_async::get_runtime().block_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
@@ -363,7 +372,7 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: done running graph phase");
         }
-        
+
         if let Some(m) = metrics.as_ref() {
             m.lock().flush(graph);
         }

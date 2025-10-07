@@ -23,7 +23,7 @@ use crate::expression::StreamExpr;
 use crate::morsel::{MorselSeq, SourceToken};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{Morsel, TaskPriority};
-use crate::pipe::{port_channel, PortSender};
+use crate::pipe::{PortSender, port_channel};
 
 pub mod by_key;
 pub mod max_size;

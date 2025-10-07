@@ -21,7 +21,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
-use task::{Runnable, DynTask, Cancellable};
+use task::{Cancellable, DynTask, Runnable};
 
 static NUM_EXECUTOR_THREADS: RelaxedCell<usize> = RelaxedCell::new_usize(0);
 pub fn set_num_threads(t: usize) {
@@ -72,7 +72,7 @@ struct TaskMetadata {
     priority: TaskPriority,
     freshly_spawned: AtomicBool,
     scoped: Option<ScopedTaskMetadata>,
-    metrics: Option<Arc<TaskMetrics>>
+    metrics: Option<Arc<TaskMetrics>>,
 }
 
 impl Drop for TaskMetadata {
@@ -92,7 +92,7 @@ impl<T> JoinHandle<T> {
     pub fn metrics(&self) -> Option<&Arc<TaskMetrics>> {
         self.0.metadata().metrics.as_ref()
     }
-    
+
     #[expect(unused)]
     pub fn spawn_location(&self) -> &'static Location<'static> {
         self.0.metadata().spawn_location
@@ -396,7 +396,7 @@ impl<'scope> TaskScope<'scope, '_> {
         let mut runnable = None;
         let mut join_handle = None;
         self.cancel_handles.lock().insert_with_key(|task_key| {
-            let metrics = TRACK_METRICS.load().then(|| Arc::default());
+            let metrics = TRACK_METRICS.load().then(Arc::default);
             let dyn_task = unsafe {
                 // SAFETY: we make sure to cancel this task before 'scope ends.
                 let executor = Executor::global();
@@ -412,7 +412,7 @@ impl<'scope> TaskScope<'scope, '_> {
                             task_key,
                             completed_tasks: Arc::downgrade(&self.completed_tasks),
                         }),
-                        metrics
+                        metrics,
                     },
                 )
             };
@@ -460,7 +460,7 @@ where
     let spawn_location = Location::caller();
     let executor = Executor::global();
     let on_wake = move |task| executor.schedule_task(task);
-    let metrics = TRACK_METRICS.load().then(|| Arc::default());
+    let metrics = TRACK_METRICS.load().then(Arc::default);
     let dyn_task = task::spawn(
         fut,
         on_wake,
@@ -469,7 +469,7 @@ where
             priority,
             freshly_spawned: AtomicBool::new(true),
             scoped: None,
-            metrics
+            metrics,
         },
     );
     Arc::clone(&dyn_task).schedule();

@@ -3,8 +3,8 @@ use std::any::Any;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Wake, Waker};
 
 use atomic_waker::AtomicWaker;
@@ -131,7 +131,7 @@ where
 }
 
 /// Partially type-erased task: no future.
-pub trait DynTask<T, M>: Send + Sync + Runnable<M> + Joinable<T> + Cancellable { }
+pub trait DynTask<T, M>: Send + Sync + Runnable<M> + Joinable<T> + Cancellable {}
 
 impl<F, S, M> DynTask<F::Output, M> for Task<F, S, M>
 where
@@ -139,7 +139,8 @@ where
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
-{ }
+{
+}
 
 /// Partially type-erased task: no future or return type.
 pub trait Runnable<M>: Send + Sync {

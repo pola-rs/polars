@@ -7,7 +7,7 @@ use polars_utils::priority::Priority;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::connector::{connector, connector_with, ReceiverExt, SenderExt};
+use crate::async_primitives::connector::{ReceiverExt, SenderExt, connector_with};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
@@ -28,13 +28,13 @@ impl PortSender {
     #[inline]
     pub async fn send(&mut self, morsel: Morsel) -> Result<(), Morsel> {
         let rows = morsel.df().height() as u64;
-        let ret = self.0.send(morsel).await?;
+        self.0.send(morsel).await?;
         if let Some(metrics) = self.0.shared() {
             metrics.morsels_sent.fetch_add(1);
             metrics.rows_sent.fetch_add(rows);
             metrics.largest_morsel_sent.fetch_max(rows);
         }
-        Ok(ret)
+        Ok(())
     }
 }
 
@@ -67,7 +67,7 @@ pub struct PhysicalPipe {
     state: State,
     seq_offset: Arc<RelaxedCell<u64>>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
-    key: LogicalPipeKey
+    key: LogicalPipeKey,
 }
 
 impl PhysicalPipe {
@@ -193,10 +193,8 @@ impl SendPort<'_> {
                     self.0.state = State::Initialized;
                     senders
                 } else {
-                    let (offset_senders, offset_receivers): (
-                        Vec<PortSender>,
-                        Vec<PortReceiver>,
-                    ) = senders.iter().map(|_| self.0.make_channel()).unzip();
+                    let (offset_senders, offset_receivers): (Vec<PortSender>, Vec<PortReceiver>) =
+                        senders.iter().map(|_| self.0.make_channel()).unzip();
                     self.0.state = State::NeedsOffset {
                         senders,
                         receivers: offset_receivers,
@@ -210,12 +208,17 @@ impl SendPort<'_> {
 }
 
 impl PhysicalPipe {
-    pub fn new(num_pipelines: usize, key: LogicalPipeKey, seq_offset: Arc<RelaxedCell<u64>>, metrics: Option<Arc<Mutex<GraphMetrics>>>) -> Self {
+    pub fn new(
+        num_pipelines: usize,
+        key: LogicalPipeKey,
+        seq_offset: Arc<RelaxedCell<u64>>,
+        metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    ) -> Self {
         Self {
             state: State::Uninit { num_pipelines },
             key,
             seq_offset,
-            metrics
+            metrics,
         }
     }
 

@@ -18,7 +18,6 @@ use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
 use crate::async_executor;
-use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;

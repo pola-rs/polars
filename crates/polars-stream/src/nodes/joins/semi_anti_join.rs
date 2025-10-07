@@ -14,7 +14,6 @@ use polars_utils::itertools::Itertools;
 use polars_utils::sparse_init_vec::SparseInitVec;
 
 use crate::async_executor;
-use crate::async_primitives::connector::{Receiver, Sender};
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 

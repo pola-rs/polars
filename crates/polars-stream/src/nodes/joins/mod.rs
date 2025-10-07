@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
-use crate::pipe::{RecvPort, PortReceiver, port_channel};
+use crate::pipe::{PortReceiver, RecvPort, port_channel};
 
 pub mod cross_join;
 pub mod equi_join;

@@ -87,7 +87,7 @@ macro_rules! impl_relaxed_cell {
             fn fetch_add(atomic: &Self::Atomic, val: Self) -> Self {
                 atomic.fetch_add(val, Ordering::Relaxed)
             }
-            
+
             #[inline(always)]
             fn fetch_max(atomic: &Self::Atomic, val: Self) -> Self {
                 atomic.fetch_max(val, Ordering::Relaxed)

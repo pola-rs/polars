@@ -25,7 +25,6 @@ use rayon::prelude::*;
 
 use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
 use crate::async_executor;
-use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};

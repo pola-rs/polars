@@ -4,13 +4,12 @@ use crate::async_executor;
 use crate::async_executor::{JoinHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::WaitToken;
-use crate::morsel::{Morsel, MorselSeq, SourceToken};
+use crate::morsel::{MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::components::bridge::{
     BridgeRecvPort, BridgeState, StopReason,
 };
 use crate::pipe::PortSender;
 
-#[expect(clippy::type_complexity)]
 pub fn spawn_bridge(
     bridge_state: Arc<Mutex<BridgeState>>,
 ) -> (

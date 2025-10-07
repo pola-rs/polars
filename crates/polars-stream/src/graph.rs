@@ -1,11 +1,11 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use parking_lot::Mutex;
 use polars_error::PolarsResult;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use crate::execute::StreamingExecutionState;
-use crate::metrics::{self, GraphMetrics};
+use crate::metrics::GraphMetrics;
 use crate::nodes::ComputeNode;
 
 slotmap::new_key_type! {
@@ -77,7 +77,7 @@ impl Graph {
     /// Updates all the nodes' states until a fixed point is reached.
     pub fn update_all_states(
         &mut self,
-        state: &StreamingExecutionState, 
+        state: &StreamingExecutionState,
         metrics: Option<&Mutex<GraphMetrics>>,
     ) -> PolarsResult<()> {
         let mut to_update: Vec<_> = self.nodes.keys().collect();

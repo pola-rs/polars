@@ -10,12 +10,12 @@ mod execute;
 pub(crate) mod expression;
 mod graph;
 pub use skeleton::{QueryResult, StreamingQuery};
+mod metrics;
 mod morsel;
 mod nodes;
 mod physical_plan;
 mod pipe;
 mod utils;
-mod metrics;
 
 // TODO: experiment with these.
 static DEFAULT_LINEARIZER_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {

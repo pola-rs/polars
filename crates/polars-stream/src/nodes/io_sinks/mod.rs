@@ -10,7 +10,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 
 use self::metrics::WriteMetrics;
-use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
+use super::{ComputeNode, JoinHandle, PortState, RecvPort, SendPort, TaskScope};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::distributor_channel;

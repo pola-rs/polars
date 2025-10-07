@@ -253,7 +253,7 @@ impl<T: Send, S: Sync> SenderExt<T, S> {
     pub fn try_send(&mut self, value: T) -> Result<(), SendError<T>> {
         unsafe { self.connector.try_send(value) }
     }
-    
+
     pub fn shared(&self) -> &S {
         &self.connector.shared
     }
