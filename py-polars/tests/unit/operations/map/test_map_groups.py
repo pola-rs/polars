@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -214,6 +214,7 @@ def test_map_groups_multiple_all_literal(
     assert_frame_equal(out, expected, check_row_order=maintain_order)
 
 
+@pytest.mark.may_fail_auto_streaming # reason: alternate error message
 def test_map_groups_multiple_all_literal_elementwise_raises() -> None:
     df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3], "b": [2, 3, 4]})
     q = (
@@ -230,4 +231,8 @@ def test_map_groups_multiple_all_literal_elementwise_raises() -> None:
     )
     msg = "elementwise expression dyn int: 42.python_udf([dyn int: 43]) must return exactly 1 value on literals, got 3"
     with pytest.raises(ComputeError, match=re.escape(msg)):
-        q.collect()
+        q.collect(engine="in-memory")
+
+    # different error message in streaming, not specific to the problem
+    with pytest.raises(ShapeError):
+        q.collect(engine="streaming")
