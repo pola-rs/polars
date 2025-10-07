@@ -9,6 +9,7 @@ use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
+use crate::pipe::PortReceiver;
 
 #[allow(private_interfaces)]
 pub enum ShiftNode {
@@ -33,8 +34,8 @@ struct ShiftState {
 impl ShiftState {
     async fn shift_positive(
         &mut self,
-        mut recv: Option<Receiver<Morsel>>,
-        mut send: Sender<Morsel>,
+        mut recv: Option<PortReceiver>,
+        mut send: PortSender,
     ) -> PolarsResult<()> {
         let mut source_token = SourceToken::new();
         let wait_group = WaitGroup::default();
@@ -85,8 +86,8 @@ impl ShiftState {
 
     async fn shift_negative(
         &mut self,
-        mut recv: Receiver<Morsel>,
-        mut send: Sender<Morsel>,
+        mut recv: PortReceiver,
+        mut send: PortSender,
     ) -> PolarsResult<()> {
         let shift = self.offset.unsigned_abs() as usize;
 
@@ -114,7 +115,7 @@ impl ShiftState {
 
     async fn flush_negative(
         &mut self,
-        mut send: Sender<Morsel>,
+        mut send: PortSender,
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         let source_token = SourceToken::new();

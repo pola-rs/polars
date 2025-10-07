@@ -42,7 +42,7 @@ mod compute_node_prelude {
     pub use crate::execute::StreamingExecutionState;
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};
-    pub use crate::pipe::{RecvPort, SendPort};
+    pub use crate::pipe::{RecvPort, SendPort, PortReceiver, PortSender};
 }
 
 use compute_node_prelude::*;

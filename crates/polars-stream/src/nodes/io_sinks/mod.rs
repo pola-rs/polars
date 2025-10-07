@@ -18,6 +18,7 @@ use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::TaskPriority;
+use crate::pipe::PortReceiver;
 
 mod metrics;
 mod phase;
@@ -47,19 +48,19 @@ static DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| 
 });
 
 pub enum SinkInputPort {
-    Serial(Receiver<Morsel>),
-    Parallel(Vec<Receiver<Morsel>>),
+    Serial(PortReceiver),
+    Parallel(Vec<PortReceiver>),
 }
 
 impl SinkInputPort {
-    pub fn serial(self) -> Receiver<Morsel> {
+    pub fn serial(self) -> PortReceiver {
         match self {
             Self::Serial(s) => s,
             _ => panic!(),
         }
     }
 
-    pub fn parallel(self) -> Vec<Receiver<Morsel>> {
+    pub fn parallel(self) -> Vec<PortReceiver> {
         match self {
             Self::Parallel(s) => s,
             _ => panic!(),
@@ -140,7 +141,7 @@ pub fn parallelize_receive_task<T: Ord + Send + 'static>(
     num_pipelines: usize,
     maintain_order: bool,
     mut io_tx: Sender<Linearizer<T>>,
-) -> Vec<Receiver<(Receiver<Morsel>, Inserter<T>)>> {
+) -> Vec<Receiver<(PortReceiver, Inserter<T>)>> {
     // Phase Handling Task -> Encode Tasks.
     let (mut pass_txs, pass_rxs) = (0..num_pipelines)
         .map(|_| connector())

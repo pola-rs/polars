@@ -25,10 +25,11 @@ use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSl
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_scan::reader_interface::{FileReader, FileReaderCallbacks};
+use crate::pipe::PortSender;
 
 pub struct InitializedPipelineState {
     pub task_handle: AbortOnDropHandle<PolarsResult<()>>,
-    pub phase_channel_tx: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+    pub phase_channel_tx: connector::Sender<(PortSender, WaitToken)>,
     pub bridge_state: Arc<Mutex<BridgeState>>,
 }
 

@@ -286,7 +286,7 @@ impl ComputeNode for MergeSortedNode {
             // data.
             (left, right) => {
                 async fn buffer_unmerged(
-                    port: &mut Receiver<Morsel>,
+                    port: &mut PortReceiver,
                     unmerged: &mut VecDeque<DataFrame>,
                 ) {
                     // If a stop was requested, we need to buffer the remaining

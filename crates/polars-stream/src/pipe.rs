@@ -1,21 +1,84 @@
 use std::cmp::Reverse;
 use std::sync::Arc;
 
+use parking_lot::Mutex;
 use polars_error::PolarsResult;
 use polars_utils::priority::Priority;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::connector::{Receiver, Sender, connector};
+use crate::async_primitives::connector::{connector, connector_with, ReceiverExt, SenderExt};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
+use crate::graph::LogicalPipeKey;
+use crate::metrics::GraphMetrics;
 use crate::morsel::{Morsel, MorselSeq};
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
+
+pub fn port_channel(metrics: Option<Arc<PipeMetrics>>) -> (PortSender, PortReceiver) {
+    let (send, recv) = connector_with(metrics);
+    (PortSender(send), PortReceiver(recv))
+}
+
+pub struct PortSender(SenderExt<Morsel, Option<Arc<PipeMetrics>>>);
+pub struct PortReceiver(ReceiverExt<Morsel, Option<Arc<PipeMetrics>>>);
+
+impl PortSender {
+    #[inline]
+    pub async fn send(&mut self, morsel: Morsel) -> Result<(), Morsel> {
+        let rows = morsel.df().height() as u64;
+        let ret = self.0.send(morsel).await?;
+        if let Some(metrics) = self.0.shared() {
+            metrics.morsels_sent.fetch_add(1);
+            metrics.rows_sent.fetch_add(rows);
+            metrics.largest_morsel_sent.fetch_max(rows);
+        }
+        Ok(ret)
+    }
+}
+
+impl PortReceiver {
+    #[inline]
+    pub async fn recv(&mut self) -> Result<Morsel, ()> {
+        let morsel = self.0.recv().await?;
+        let rows = morsel.df().height() as u64;
+        if let Some(metrics) = self.0.shared() {
+            metrics.morsels_received.fetch_add(1);
+            metrics.rows_received.fetch_add(rows);
+            metrics.largest_morsel_received.fetch_max(rows);
+        }
+        Ok(morsel)
+    }
+}
+
+#[derive(Default)]
+#[repr(align(128))]
+pub struct PipeMetrics {
+    pub morsels_sent: RelaxedCell<u64>,
+    pub rows_sent: RelaxedCell<u64>,
+    pub largest_morsel_sent: RelaxedCell<u64>,
+    pub morsels_received: RelaxedCell<u64>,
+    pub rows_received: RelaxedCell<u64>,
+    pub largest_morsel_received: RelaxedCell<u64>,
+}
 
 pub struct PhysicalPipe {
     state: State,
     seq_offset: Arc<RelaxedCell<u64>>,
+    metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    key: LogicalPipeKey
+}
+
+impl PhysicalPipe {
+    fn make_channel(&self) -> (PortSender, PortReceiver) {
+        let metrics = self.metrics.as_ref().map(|m| {
+            let pipe_metrics = Arc::<PipeMetrics>::default();
+            m.lock().add_pipe(self.key, pipe_metrics.clone());
+            pipe_metrics
+        });
+        port_channel(metrics)
+    }
 }
 
 enum State {
@@ -25,24 +88,24 @@ enum State {
     },
     SerialReceiver {
         num_pipelines: usize,
-        send: Sender<Morsel>,
+        send: PortSender,
         maintain_order: bool,
     },
     ParallelReceiver {
-        senders: Vec<Sender<Morsel>>,
+        senders: Vec<PortSender>,
     },
     NeedsLinearizer {
-        receivers: Vec<Receiver<Morsel>>,
-        send: Sender<Morsel>,
+        receivers: Vec<PortReceiver>,
+        send: PortSender,
         maintain_order: bool,
     },
     NeedsDistributor {
-        recv: Receiver<Morsel>,
-        senders: Vec<Sender<Morsel>>,
+        recv: PortReceiver,
+        senders: Vec<PortSender>,
     },
     NeedsOffset {
-        senders: Vec<Sender<Morsel>>,
-        receivers: Vec<Receiver<Morsel>>,
+        senders: Vec<PortSender>,
+        receivers: Vec<PortReceiver>,
     },
     Initialized,
 }
@@ -51,15 +114,15 @@ pub struct SendPort<'a>(&'a mut PhysicalPipe);
 pub struct RecvPort<'a>(&'a mut PhysicalPipe);
 
 impl RecvPort<'_> {
-    pub fn serial(self) -> Receiver<Morsel> {
+    pub fn serial(self) -> PortReceiver {
         self.serial_with_maintain_order(true)
     }
 
-    pub fn serial_with_maintain_order(self, maintain_order: bool) -> Receiver<Morsel> {
+    pub fn serial_with_maintain_order(self, maintain_order: bool) -> PortReceiver {
         let State::Uninit { num_pipelines } = self.0.state else {
             unreachable!()
         };
-        let (send, recv) = connector();
+        let (send, recv) = self.0.make_channel();
         self.0.state = State::SerialReceiver {
             num_pipelines,
             send,
@@ -68,12 +131,12 @@ impl RecvPort<'_> {
         recv
     }
 
-    pub fn parallel(self) -> Vec<Receiver<Morsel>> {
+    pub fn parallel(self) -> Vec<PortReceiver> {
         let State::Uninit { num_pipelines } = self.0.state else {
             unreachable!()
         };
-        let (senders, receivers): (Vec<Sender<Morsel>>, Vec<Receiver<Morsel>>) =
-            (0..num_pipelines).map(|_| connector()).unzip();
+        let (senders, receivers): (Vec<PortSender>, Vec<PortReceiver>) =
+            (0..num_pipelines).map(|_| self.0.make_channel()).unzip();
         self.0.state = State::ParallelReceiver { senders };
         receivers
     }
@@ -85,14 +148,14 @@ impl SendPort<'_> {
         matches!(self.0.state, State::SerialReceiver { .. })
     }
 
-    pub fn serial(self) -> Sender<Morsel> {
+    pub fn serial(self) -> PortSender {
         match core::mem::replace(&mut self.0.state, State::Invalid) {
             State::SerialReceiver { send, .. } => {
                 if self.0.seq_offset.load() == 0 {
                     self.0.state = State::Initialized;
                     send
                 } else {
-                    let (offset_send, offset_recv) = connector();
+                    let (offset_send, offset_recv) = self.0.make_channel();
                     self.0.state = State::NeedsOffset {
                         senders: vec![send],
                         receivers: vec![offset_recv],
@@ -101,7 +164,7 @@ impl SendPort<'_> {
                 }
             },
             State::ParallelReceiver { senders } => {
-                let (send, recv) = connector();
+                let (send, recv) = self.0.make_channel();
                 self.0.state = State::NeedsDistributor { recv, senders };
                 send
             },
@@ -109,15 +172,15 @@ impl SendPort<'_> {
         }
     }
 
-    pub fn parallel(self) -> Vec<Sender<Morsel>> {
+    pub fn parallel(self) -> Vec<PortSender> {
         match core::mem::replace(&mut self.0.state, State::Invalid) {
             State::SerialReceiver {
                 num_pipelines,
                 send,
                 maintain_order,
             } => {
-                let (senders, receivers): (Vec<Sender<Morsel>>, Vec<Receiver<Morsel>>) =
-                    (0..num_pipelines).map(|_| connector()).unzip();
+                let (senders, receivers): (Vec<PortSender>, Vec<PortReceiver>) =
+                    (0..num_pipelines).map(|_| self.0.make_channel()).unzip();
                 self.0.state = State::NeedsLinearizer {
                     receivers,
                     send,
@@ -131,9 +194,9 @@ impl SendPort<'_> {
                     senders
                 } else {
                     let (offset_senders, offset_receivers): (
-                        Vec<Sender<Morsel>>,
-                        Vec<Receiver<Morsel>>,
-                    ) = senders.iter().map(|_| connector()).unzip();
+                        Vec<PortSender>,
+                        Vec<PortReceiver>,
+                    ) = senders.iter().map(|_| self.0.make_channel()).unzip();
                     self.0.state = State::NeedsOffset {
                         senders,
                         receivers: offset_receivers,
@@ -147,10 +210,12 @@ impl SendPort<'_> {
 }
 
 impl PhysicalPipe {
-    pub fn new(num_pipelines: usize, seq_offset: Arc<RelaxedCell<u64>>) -> Self {
+    pub fn new(num_pipelines: usize, key: LogicalPipeKey, seq_offset: Arc<RelaxedCell<u64>>, metrics: Option<Arc<Mutex<GraphMetrics>>>) -> Self {
         Self {
             state: State::Uninit { num_pipelines },
+            key,
             seq_offset,
+            metrics
         }
     }
 

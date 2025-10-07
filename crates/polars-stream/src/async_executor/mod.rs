@@ -59,6 +59,7 @@ struct ScopedTaskMetadata {
 }
 
 #[derive(Default)]
+#[repr(align(128))]
 pub struct TaskMetrics {
     pub total_polls: RelaxedCell<u64>,
     pub total_stolen_polls: RelaxedCell<u64>,

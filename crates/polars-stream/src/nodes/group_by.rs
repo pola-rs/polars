@@ -117,7 +117,7 @@ impl GroupBySinkState {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        receivers: Vec<Receiver<Morsel>>,
+        receivers: Vec<PortReceiver>,
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {

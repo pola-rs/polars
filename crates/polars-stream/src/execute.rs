@@ -152,7 +152,7 @@ fn run_subgraph(
     pipes: &[LogicalPipeKey],
     pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<RelaxedCell<u64>>>,
     state: &StreamingExecutionState,
-    metrics: Option<&Mutex<GraphMetrics>>,
+    metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
     let mut physical_pipes = SecondaryMap::new();
@@ -162,7 +162,7 @@ fn run_subgraph(
             .unwrap()
             .or_default()
             .clone();
-        physical_pipes.insert(pipe_key, PhysicalPipe::new(state.num_pipelines, seq_offset));
+        physical_pipes.insert(pipe_key, PhysicalPipe::new(state.num_pipelines, pipe_key, seq_offset, metrics.clone()));
     }
 
     // We do a topological sort of the graph: we want to spawn each node,
@@ -226,7 +226,7 @@ fn run_subgraph(
                 state,
                 &mut join_handles,
             );
-            if let Some(lock) = metrics {
+            if let Some(lock) = metrics.as_ref() {
                 let mut m = lock.lock();
                 for handle in &join_handles[pre_spawn_offset..] {
                     m.add_task(node_key, handle.metrics().unwrap().clone());
@@ -293,7 +293,7 @@ fn run_subgraph(
 
 pub fn execute_graph(
     graph: &mut Graph,
-    metrics: Option<&Mutex<GraphMetrics>>,
+    metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
     // Get the number of threads from the rayon thread-pool as that respects our config.
     let num_pipelines = POOL.current_num_threads();
@@ -327,7 +327,7 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states(&state, metrics)?;
+        graph.update_all_states(&state, metrics.as_deref())?;
         polars_io::pl_async::get_runtime().block_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
@@ -352,7 +352,7 @@ pub fn execute_graph(
         }
 
         // Run the subgraph until phase completion.
-        run_subgraph(graph, &nodes, &pipes, &mut pipe_seq_offsets, &state, metrics)?;
+        run_subgraph(graph, &nodes, &pipes, &mut pipe_seq_offsets, &state, metrics.clone())?;
         polars_io::pl_async::get_runtime().block_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
@@ -364,8 +364,8 @@ pub fn execute_graph(
             eprintln!("polars-stream: done running graph phase");
         }
         
-        if let Some(m) = metrics {
-            m.lock().flush_tasks();
+        if let Some(m) = metrics.as_ref() {
+            m.lock().flush(graph);
         }
     }
 

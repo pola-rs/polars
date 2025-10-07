@@ -257,7 +257,7 @@ struct SampleState {
 
 impl SampleState {
     async fn sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         morsels: &mut Vec<Morsel>,
         len: &mut usize,
         this_final_len: Arc<RelaxedCell<usize>>,
@@ -444,7 +444,7 @@ impl BuildState {
     }
 
     async fn partition_and_sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         local: &mut LocalBuilder,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
@@ -739,8 +739,8 @@ struct ProbeState {
 impl ProbeState {
     /// Returns the max morsel sequence sent.
     async fn partition_and_probe(
-        mut recv: Receiver<Morsel>,
-        mut send: Sender<Morsel>,
+        mut recv: PortReceiver,
+        mut send: PortSender,
         partitions: &[ProbeTable],
         unordered_morsel_seq: &AtomicU64,
         partitioner: HashPartitioner,
@@ -1083,7 +1083,7 @@ struct EmitUnmatchedState {
 impl EmitUnmatchedState {
     async fn emit_unmatched(
         &mut self,
-        mut send: Sender<Morsel>,
+        mut send: PortSender,
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
