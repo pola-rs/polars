@@ -700,10 +700,12 @@ impl GroupPositions {
     pub fn as_unrolled_slice(&self) -> Option<&GroupsSlice> {
         match &*self.sliced {
             GroupsType::Idx(_) => None,
-            GroupsType::Slice { rolling: true, .. } => None,
+            GroupsType::Slice {
+                overlapping: true, ..
+            } => None,
             GroupsType::Slice {
                 groups,
-                rolling: false,
+                overlapping: false,
             } => Some(groups),
         }
     }

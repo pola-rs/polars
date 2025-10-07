@@ -340,7 +340,7 @@ impl EvalExpr {
         };
         let groups = GroupsType::Slice {
             groups,
-            rolling: false,
+            overlapping: false,
         };
         let groups = Cow::Owned(groups.into_sliceable());
 
