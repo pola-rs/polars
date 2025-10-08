@@ -73,6 +73,7 @@ Computation
     Series.rolling_quantile
     Series.rolling_quantile_by
     Series.rolling_rank
+    Series.rolling_rank_by
     Series.rolling_skew
     Series.rolling_std
     Series.rolling_std_by

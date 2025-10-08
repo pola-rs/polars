@@ -67,6 +67,7 @@ Computation
     Expr.rolling_quantile
     Expr.rolling_quantile_by
     Expr.rolling_rank
+    Expr.rolling_rank_by
     Expr.rolling_skew
     Expr.rolling_std
     Expr.rolling_std_by
