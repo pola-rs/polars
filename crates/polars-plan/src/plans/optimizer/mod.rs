@@ -141,8 +141,23 @@ pub fn optimize(
             }
 
             let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+            if changed {
+                prune_unused_caches(lp_arena, &cid2c);
+            }
 
-            prune_unused_caches(lp_arena, cid2c);
+            // The CSPE only finds the lonest trail duplicates.
+            // Below the inserted caches, might be more duplicates. So we recurse one time to find
+            // inner duplicates as well.
+            for (_, (_count, caches_nodes)) in cid2c.iter() {
+                if let Some(cache) = caches_nodes.last() {
+                    if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
+                        let (_lp, c, cid2c) = cse::elim_cmn_subplans(*input, lp_arena, expr_arena);
+                        if c {
+                            prune_unused_caches(lp_arena, &cid2c);
+                        }
+                    }
+                }
+            }
 
             lp_top = lp;
             members.has_cache |= changed;

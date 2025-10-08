@@ -392,7 +392,7 @@ pub(crate) fn elim_cmn_subplans(
 ///
 /// `conctat([lf.select(), lf.select(), lf])`
 ///
-pub(crate) fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: CacheId2Caches) {
+pub(crate) fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
     for (count, nodes) in cid2c.values() {
         if *count == nodes.len() as u32 {
             continue;
