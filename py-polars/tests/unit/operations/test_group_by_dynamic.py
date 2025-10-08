@@ -1168,3 +1168,22 @@ def test_group_by_dynamic_closed_ternary_cum_sum_with_agg_24566(
 
     expected = pl.DataFrame({"d": [10, 11, 12, 13, 14], "index": result})
     assert_frame_equal(out, expected)
+
+
+def test_group_by_dynamic_with_group_by_iter_24394() -> None:
+    df = pl.DataFrame(
+        {
+            "t": [0, 1, 2, 3],
+            "g": [10, 20, 10, 20],
+        }
+    )
+
+    groups_dynamic = df.group_by_dynamic(
+        "t", every="3i", group_by="g", start_by="datapoint"
+    )
+    for (_, _), sub_df in groups_dynamic:
+        assert len(sub_df["g"].unique()) == 1
+
+    groups_rolling = df.rolling("t", period="2i", group_by="g")
+    for (_, _), sub_df in groups_rolling:
+        assert len(sub_df["g"].unique()) == 1

@@ -2680,12 +2680,14 @@ def row_index(name: str = "index") -> pl.Expr:
     The length of the returned sequence will match the context length, and the
     datatype will match the one returned by `get_index_dtype()`.
 
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
+    .. versionadded:: 1.32.0
 
     If you would like to generate sequences with custom offsets / length /
     step size / datatypes, it is recommended to use `int_range` instead.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------
