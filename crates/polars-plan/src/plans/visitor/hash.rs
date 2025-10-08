@@ -570,11 +570,12 @@ impl HashableEqLP<'_> {
                         l == r
                     })
             },
-            (IR::MergeSorted { key: l, .. }, IR::MergeSorted { key: r, .. }) => l == r,
             (IR::Cache { .. }, IR::Cache { .. }) => false,
             (IR::Sink { .. }, IR::Sink { .. }) => false,
             (IR::SinkMultiple { .. }, IR::SinkMultiple { .. }) => false,
             (IR::Invalid, IR::Invalid) => unreachable!(),
+            #[cfg(feature = "merge_sorted")]
+            (IR::MergeSorted { key: l, .. }, IR::MergeSorted { key: r, .. }) => l == r,
             _ => false,
         }
     }
