@@ -1168,9 +1168,9 @@ def test_cspe_recursive_24744() -> None:
     lf_a = df_a.lazy()
     lf_j1 = convoluted_inner_join(lf_left=lf_a, lf_right=lf_a)
     lf_j2 = convoluted_inner_join(lf_left=lf_j1, lf_right=lf_a)
-    lf_j3 = convoluted_inner_join(lf_left=lf_j2, lf_right=lf_a)
+    lf_j3 = convoluted_inner_join(lf_left=lf_j2, lf_right=lf_a).sort("x")
 
-    assert lf_j3.explain().count("CACHE") == 6
+    assert lf_j3.explain().count("CACHE") == 16
     assert_frame_equal(
         lf_j3.collect(),
         lf_j3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
@@ -1179,11 +1179,11 @@ def test_cspe_recursive_24744() -> None:
         lf_j3.show_graph(  # type: ignore[union-attr]
             engine="streaming", plan_stage="physical", raw_output=True
         ).count("multiplexer")
-        == 2
+        == 3
     )
     assert (
         lf_j3.show_graph(  # type: ignore[union-attr]
             engine="in-memory", plan_stage="physical", raw_output=True
         ).count("CACHE")
-        == 2
+        == 3
     )
