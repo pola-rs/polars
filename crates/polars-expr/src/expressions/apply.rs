@@ -238,7 +238,7 @@ impl ApplyExpr {
             ComputeError: "elementwise expression {:?} must return exactly 1 value on literals, got {}",
                 &self.expr, out.len()
         );
-        let mut ac = acs.swap_remove(0);
+        let mut ac = acs.pop().unwrap();
         ac.with_literal(out);
         Ok(ac)
     }
@@ -282,7 +282,6 @@ impl ApplyExpr {
         match acs[base_ac_idx].agg_state() {
             AggState::AggregatedList(s) => {
                 let aggregated = acs.iter().any(|ac| ac.is_aggregated());
-                debug_assert!(!self.is_scalar());
                 let ca = s.list().unwrap();
                 let input_len = s.len();
 
