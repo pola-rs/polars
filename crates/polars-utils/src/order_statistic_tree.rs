@@ -11,7 +11,7 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
-use slotmap::{Key, SlotMap, new_key_type};
+use slotmap::{Key as SlotMapKey, SlotMap, new_key_type};
 
 use crate::UnitVec;
 
@@ -21,26 +21,22 @@ const GAMMA: usize = 2;
 type CompareFn<T> = fn(&T, &T) -> Ordering;
 
 new_key_type! {
-    struct TreeKey;
-}
-
-new_key_type! {
-    struct ValueKey;
+    struct Key;
 }
 
 #[derive(Debug)]
-struct TreeNode<T> {
+struct Node<T> {
     values: UnitVec<T>,
-    left: TreeKey,
-    right: TreeKey,
+    left: Key,
+    right: Key,
     weight: u32,
     num_elems: u32,
 }
 
 #[derive(Debug)]
 pub struct OrderStatisticTree<T> {
-    tree_nodes: SlotMap<TreeKey, TreeNode<T>>,
-    root: TreeKey,
+    tree_nodes: SlotMap<Key, Node<T>>,
+    root: Key,
     compare: CompareFn<T>,
 }
 
@@ -49,7 +45,7 @@ impl<T> OrderStatisticTree<T> {
     pub fn new(compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             tree_nodes: SlotMap::with_key(),
-            root: TreeKey::null(),
+            root: Key::null(),
             compare,
         }
     }
@@ -58,7 +54,7 @@ impl<T> OrderStatisticTree<T> {
     pub fn with_capacity(capacity: usize, compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             tree_nodes: SlotMap::with_capacity_and_key(capacity),
-            root: TreeKey::null(),
+            root: Key::null(),
             compare,
         }
     }
@@ -85,7 +81,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     /// Returns the total number of elements in the tree rooted at `tree`.
-    fn num_elems(&self, tree: TreeKey) -> usize {
+    fn num_elems(&self, tree: Key) -> usize {
         if tree.is_null() {
             return 0;
         }
@@ -94,7 +90,7 @@ impl<T> OrderStatisticTree<T> {
 
     /// Returns the number of tree nodes, which is equal to the number of unique
     /// elements, in the tree rooted at `tree`.
-    fn tree_weight(&self, tree: TreeKey) -> usize {
+    fn tree_weight(&self, tree: Key) -> usize {
         if tree.is_null() {
             return 0;
         }
@@ -102,10 +98,10 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn new_tree_node(&mut self, left: TreeKey, values: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn new_tree_node(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
         let num_elems = self.num_elems(left) + self.num_elems(right) + values.len();
         let weight = self.tree_weight(left) + self.tree_weight(right) + 1;
-        let tn = TreeNode {
+        let tn = Node {
             values,
             left,
             right,
@@ -116,14 +112,14 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn new_leaf(&mut self, value: T) -> TreeKey {
+    fn new_leaf(&mut self, value: T) -> Key {
         let mut uv = UnitVec::new();
         uv.push(value);
-        self.new_tree_node(TreeKey::null(), uv, TreeKey::null())
+        self.new_tree_node(Key::null(), uv, Key::null())
     }
 
     #[must_use]
-    fn drop_tree_node(&mut self, tree: TreeKey) -> TreeNode<T> {
+    fn drop_tree_node(&mut self, tree: Key) -> Node<T> {
         self.tree_nodes.remove(tree).unwrap()
     }
 
@@ -132,7 +128,7 @@ impl<T> OrderStatisticTree<T> {
         self._get(idx, self.root)
     }
 
-    fn _get(&self, idx: usize, tree: TreeKey) -> Option<&T> {
+    fn _get(&self, idx: usize, tree: Key) -> Option<&T> {
         if tree.is_null() {
             return None;
         }
@@ -157,7 +153,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn _insert(&mut self, value: T, tree: TreeKey) -> TreeKey {
+    fn _insert(&mut self, value: T, tree: Key) -> Key {
         if tree.is_null() {
             return self.new_leaf(value);
         }
@@ -191,7 +187,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn _remove(&mut self, value: &T, tree: TreeKey) -> (Option<T>, TreeKey) {
+    fn _remove(&mut self, value: &T, tree: Key) -> (Option<T>, Key) {
         if tree.is_null() {
             return (None, tree);
         }
@@ -222,7 +218,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn glue(&mut self, left: TreeKey, right: TreeKey) -> TreeKey {
+    fn glue(&mut self, left: Key, right: Key) -> Key {
         if left.is_null() {
             right
         } else if right.is_null() {
@@ -237,7 +233,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn remove_min(&mut self, tree: TreeKey) -> (Option<UnitVec<T>>, TreeKey) {
+    fn remove_min(&mut self, tree: Key) -> (Option<UnitVec<T>>, Key) {
         debug_assert!(!tree.is_null());
         let tn = self.drop_tree_node(tree);
         if tn.left.is_null() {
@@ -248,7 +244,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn remove_max(&mut self, tree: TreeKey) -> (Option<UnitVec<T>>, TreeKey) {
+    fn remove_max(&mut self, tree: Key) -> (Option<UnitVec<T>>, Key) {
         debug_assert!(!tree.is_null());
         let tn = self.drop_tree_node(tree);
         if tn.right.is_null() {
@@ -263,7 +259,7 @@ impl<T> OrderStatisticTree<T> {
         self._contains(value, self.root)
     }
 
-    fn _contains(&self, value: &T, tree: TreeKey) -> bool {
+    fn _contains(&self, value: &T, tree: Key) -> bool {
         if tree.is_null() {
             return false;
         }
@@ -276,7 +272,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn balance_l(&mut self, left: TreeKey, values: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn balance_l(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
         if self.pair_is_balanced(left, right) {
             return self.new_tree_node(left, values, right);
         }
@@ -284,7 +280,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn rotate_l(&mut self, left: TreeKey, values: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn rotate_l(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
         let r = &self.tree_nodes[right];
         if self.is_single(r.left, r.right) {
             self.single_l(left, values, right)
@@ -294,14 +290,14 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn single_l(&mut self, left: TreeKey, values: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn single_l(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
         let r = self.drop_tree_node(right);
         let new_left = self.new_tree_node(left, values, r.left);
         self.new_tree_node(new_left, r.values, r.right)
     }
 
     #[must_use]
-    fn double_l(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn double_l(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
         let r = self.drop_tree_node(right);
         let rl = self.drop_tree_node(r.left);
         let new_left = self.new_tree_node(left, value, rl.left);
@@ -310,7 +306,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn balance_r(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn balance_r(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
         if self.pair_is_balanced(right, left) {
             return self.new_tree_node(left, value, right);
         }
@@ -318,7 +314,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn rotate_r(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn rotate_r(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
         let l = &self.tree_nodes[left];
         if self.is_single(l.right, l.left) {
             self.single_r(left, value, right)
@@ -328,14 +324,14 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn single_r(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn single_r(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
         let l = self.drop_tree_node(left);
         let new_right = self.new_tree_node(l.right, value, right);
         self.new_tree_node(l.left, l.values, new_right)
     }
 
     #[must_use]
-    fn double_r(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
+    fn double_r(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
         let l = self.drop_tree_node(left);
         let lr = self.drop_tree_node(l.right);
         let new_right = self.new_tree_node(lr.right, value, right);
@@ -348,7 +344,7 @@ impl<T> OrderStatisticTree<T> {
         self.tree_is_balanced(self.root)
     }
 
-    fn tree_is_balanced(&self, tree: TreeKey) -> bool {
+    fn tree_is_balanced(&self, tree: Key) -> bool {
         if tree.is_null() {
             return true;
         }
@@ -359,13 +355,13 @@ impl<T> OrderStatisticTree<T> {
             && self.tree_is_balanced(tn.right)
     }
 
-    fn pair_is_balanced(&self, left: TreeKey, right: TreeKey) -> bool {
+    fn pair_is_balanced(&self, left: Key, right: Key) -> bool {
         let a = self.tree_weight(left);
         let b = self.tree_weight(right);
         DELTA * (a + 1) >= (b + 1) && DELTA * (b + 1) >= (a + 1)
     }
 
-    fn is_single(&self, left: TreeKey, right: TreeKey) -> bool {
+    fn is_single(&self, left: Key, right: Key) -> bool {
         let a = self.tree_weight(left);
         let b = self.tree_weight(right);
         a + 1 < GAMMA * (b + 1)
@@ -376,7 +372,7 @@ impl<T> OrderStatisticTree<T> {
         self._rank_lower(bound, self.root)
     }
 
-    fn _rank_lower(&self, value: &T, tree: TreeKey) -> Result<usize, usize> {
+    fn _rank_lower(&self, value: &T, tree: Key) -> Result<usize, usize> {
         if tree.is_null() {
             return Err(0);
         }
@@ -396,7 +392,7 @@ impl<T> OrderStatisticTree<T> {
         self._rank_upper(bound, self.root)
     }
 
-    fn _rank_upper(&self, value: &T, tree: TreeKey) -> Result<usize, usize> {
+    fn _rank_upper(&self, value: &T, tree: Key) -> Result<usize, usize> {
         if tree.is_null() {
             return Err(self.num_elems(tree));
         }
@@ -416,7 +412,7 @@ impl<T> OrderStatisticTree<T> {
         self._rank_unique(value, self.root)
     }
 
-    fn _rank_unique(&self, value: &T, tree: TreeKey) -> Result<usize, usize> {
+    fn _rank_unique(&self, value: &T, tree: Key) -> Result<usize, usize> {
         if tree.is_null() {
             return Err(0);
         }
@@ -436,7 +432,7 @@ impl<T> OrderStatisticTree<T> {
         self._count(value, self.root)
     }
 
-    fn _count(&self, value: &T, tree: TreeKey) -> usize {
+    fn _count(&self, value: &T, tree: Key) -> usize {
         if tree.is_null() {
             return 0;
         }
