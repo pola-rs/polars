@@ -1754,10 +1754,9 @@ class PyExpr:
         by: PyExpr,
         window_size: str,
         method: RankMethod,
-        *,
-        seed: int | None = None,
-        min_samples: int = 1,
-        closed: ClosedInterval,
+        seed: int | None,
+        min_samples: int,
+        closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_skew(
         self,
