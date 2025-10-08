@@ -1273,9 +1273,9 @@ class ExprStringNameSpace:
         infer_schema_length
             Deprecated and ignored.
 
-        .. versionchanged:: 1.33.0
-            Deprecate `infer_schema_length` and make `dtype` non-optional to
-            ensure that the planner can determine the output datatype.
+            .. versionchanged:: 1.33.0
+                Deprecate `infer_schema_length` and make `dtype` non-optional to
+                ensure that the planner can determine the output datatype.
 
         See Also
         --------

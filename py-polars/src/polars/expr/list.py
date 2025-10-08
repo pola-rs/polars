@@ -1126,10 +1126,10 @@ class ExprListNameSpace:
             times, so the caller must provide an upper bound of the number of struct
             fields that will be created if `fields` is not a sequence of field names.
 
-        .. versionchanged:: 1.33.0
-            The `n_field_strategy` parameter is ignored and deprecated. The `fields`
-            needs to be a sequence of field names or the upper bound is regarded as
-            ground truth.
+            .. versionchanged:: 1.33.0
+                The `n_field_strategy` parameter is ignored and deprecated. The `fields`
+                needs to be a sequence of field names or the upper bound is regarded as
+                ground truth.
 
         Examples
         --------
