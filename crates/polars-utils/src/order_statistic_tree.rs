@@ -97,18 +97,32 @@ impl<T> OrderStatisticTree<T> {
         self.tree_nodes[tree].weight as usize
     }
 
+    fn update_weights(&mut self, tree: Key) {
+        debug_assert!(!tree.is_null());
+        let n = &self.tree_nodes[tree];
+        let weight = (self.tree_weight(n.left) + self.tree_weight(n.right) + 1)
+            .try_into()
+            .unwrap();
+        let num_elems = (self.num_elems(n.left) + self.num_elems(n.right) + n.values.len())
+            .try_into()
+            .unwrap();
+        let n = &mut self.tree_nodes[tree];
+        n.weight = weight;
+        n.num_elems = num_elems;
+    }
+
     #[must_use]
     fn new_tree_node(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
-        let num_elems = self.num_elems(left) + self.num_elems(right) + values.len();
-        let weight = self.tree_weight(left) + self.tree_weight(right) + 1;
         let tn = Node {
             values,
             left,
             right,
-            weight: weight.try_into().unwrap(),
-            num_elems: num_elems.try_into().unwrap(),
+            weight: Default::default(),
+            num_elems: Default::default(),
         };
-        self.tree_nodes.insert(tn)
+        let tree = self.tree_nodes.insert(tn);
+        self.update_weights(tree);
+        tree
     }
 
     #[must_use]
@@ -161,9 +175,10 @@ impl<T> OrderStatisticTree<T> {
         let tn = &self.tree_nodes[tree];
         match (self.compare)(&value, &tn.values[0]) {
             Ordering::Less => {
-                let tn = self.drop_tree_node(tree);
                 let left = self._insert(value, tn.left);
-                self.balance_r(left, tn.values, tn.right)
+                self.tree_nodes[tree].left = left;
+                self.update_weights(tree);
+                self.balance_r(tree)
             },
             Ordering::Equal => {
                 let tn = &mut self.tree_nodes[tree];
@@ -172,9 +187,10 @@ impl<T> OrderStatisticTree<T> {
                 tree
             },
             Ordering::Greater => {
-                let tn = self.drop_tree_node(tree);
                 let right = self._insert(value, tn.right);
-                self.balance_l(tn.left, tn.values, right)
+                self.tree_nodes[tree].right = right;
+                self.update_weights(tree);
+                self.balance_l(tree)
             },
         }
     }
@@ -195,14 +211,18 @@ impl<T> OrderStatisticTree<T> {
         let tn = &self.tree_nodes[tree];
         match (self.compare)(value, &tn.values[0]) {
             Ordering::Less => {
-                let tn = self.drop_tree_node(tree);
                 let (deleted, left) = self._remove(value, tn.left);
-                (deleted, self.balance_l(left, tn.values, tn.right))
+                let tn = &mut self.tree_nodes[tree];
+                tn.left = left;
+                self.update_weights(tree);
+                (deleted, self.balance_l(tree))
             },
             Ordering::Greater => {
-                let tn = self.drop_tree_node(tree);
                 let (deleted, right) = self._remove(value, tn.right);
-                (deleted, self.balance_r(tn.left, tn.values, right))
+                let tn = &mut self.tree_nodes[tree];
+                tn.right = right;
+                self.update_weights(tree);
+                (deleted, self.balance_r(tree))
             },
             Ordering::Equal if tn.values.len() > 1 => {
                 let tn = &mut self.tree_nodes[tree];
@@ -225,33 +245,39 @@ impl<T> OrderStatisticTree<T> {
             left
         } else if self.tree_weight(left) > self.tree_weight(right) {
             let (deleted, left) = self.remove_max(left);
-            self.balance_r(left, deleted.unwrap(), right)
+            let tree = self.new_tree_node(left, deleted.unwrap(), right);
+            self.balance_r(tree)
         } else {
             let (deleted, right) = self.remove_min(right);
-            self.balance_l(left, deleted.unwrap(), right)
+            let tree = self.new_tree_node(left, deleted.unwrap(), right);
+            self.balance_l(tree)
         }
     }
 
     #[must_use]
     fn remove_min(&mut self, tree: Key) -> (Option<UnitVec<T>>, Key) {
         debug_assert!(!tree.is_null());
-        let tn = self.drop_tree_node(tree);
-        if tn.left.is_null() {
+        if self.tree_nodes[tree].left.is_null() {
+            let tn = self.drop_tree_node(tree);
             return (Some(tn.values), tn.right);
         }
-        let (deleted, left) = self.remove_min(tn.left);
-        (deleted, self.balance_l(left, tn.values, tn.right))
+        let (deleted, left) = self.remove_min(self.tree_nodes[tree].left);
+        self.tree_nodes[tree].left = left;
+        self.update_weights(tree);
+        (deleted, self.balance_l(tree))
     }
 
     #[must_use]
     fn remove_max(&mut self, tree: Key) -> (Option<UnitVec<T>>, Key) {
         debug_assert!(!tree.is_null());
-        let tn = self.drop_tree_node(tree);
-        if tn.right.is_null() {
+        if self.tree_nodes[tree].right.is_null() {
+            let tn = self.drop_tree_node(tree);
             return (Some(tn.values), tn.left);
         }
-        let (deleted, right) = self.remove_max(tn.right);
-        (deleted, self.balance_r(tn.left, tn.values, right))
+        let (deleted, right) = self.remove_max(self.tree_nodes[tree].right);
+        self.tree_nodes[tree].right = right;
+        self.update_weights(tree);
+        (deleted, self.balance_r(tree))
     }
 
     #[inline]
@@ -272,69 +298,77 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn balance_l(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
-        if self.pair_is_balanced(left, right) {
-            return self.new_tree_node(left, values, right);
+    fn balance_l(&mut self, tree: Key) -> Key {
+        let n = &self.tree_nodes[tree];
+        if self.pair_is_balanced(n.left, n.right) {
+            return tree;
         }
-        self.rotate_l(left, values, right)
+        self.rotate_l(tree)
     }
 
     #[must_use]
-    fn rotate_l(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
-        let r = &self.tree_nodes[right];
+    fn rotate_l(&mut self, tree: Key) -> Key {
+        let n = &self.tree_nodes[tree];
+        let r = &self.tree_nodes[n.right];
         if self.is_single(r.left, r.right) {
-            self.single_l(left, values, right)
+            self.single_l(tree)
         } else {
-            self.double_l(left, values, right)
+            self.double_l(tree)
         }
     }
 
     #[must_use]
-    fn single_l(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
-        let r = self.drop_tree_node(right);
-        let new_left = self.new_tree_node(left, values, r.left);
+    fn single_l(&mut self, tree: Key) -> Key {
+        let n = self.drop_tree_node(tree);
+        let r = self.drop_tree_node(n.right);
+        let new_left = self.new_tree_node(n.left, n.values, r.left);
         self.new_tree_node(new_left, r.values, r.right)
     }
 
     #[must_use]
-    fn double_l(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
-        let r = self.drop_tree_node(right);
+    fn double_l(&mut self, tree: Key) -> Key {
+        let n = self.drop_tree_node(tree);
+        let r = self.drop_tree_node(n.right);
         let rl = self.drop_tree_node(r.left);
-        let new_left = self.new_tree_node(left, value, rl.left);
+        let new_left = self.new_tree_node(n.left, n.values, rl.left);
         let new_right = self.new_tree_node(rl.right, r.values, r.right);
         self.new_tree_node(new_left, rl.values, new_right)
     }
 
     #[must_use]
-    fn balance_r(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
-        if self.pair_is_balanced(right, left) {
-            return self.new_tree_node(left, value, right);
+    fn balance_r(&mut self, tree: Key) -> Key {
+        let n = &self.tree_nodes[tree];
+        if self.pair_is_balanced(n.right, n.left) {
+            return tree;
         }
-        self.rotate_r(left, value, right)
+        self.rotate_r(tree)
     }
 
     #[must_use]
-    fn rotate_r(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
-        let l = &self.tree_nodes[left];
+    fn rotate_r(&mut self, tree: Key) -> Key {
+        let n = &self.tree_nodes[tree];
+        let l = &self.tree_nodes[n.left];
         if self.is_single(l.right, l.left) {
-            self.single_r(left, value, right)
+            self.single_r(tree)
         } else {
-            self.double_r(left, value, right)
+            self.double_r(tree)
         }
     }
 
     #[must_use]
-    fn single_r(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
-        let l = self.drop_tree_node(left);
-        let new_right = self.new_tree_node(l.right, value, right);
+    fn single_r(&mut self, tree: Key) -> Key {
+        let n = self.drop_tree_node(tree);
+        let l = self.drop_tree_node(n.left);
+        let new_right = self.new_tree_node(l.right, n.values, n.right);
         self.new_tree_node(l.left, l.values, new_right)
     }
 
     #[must_use]
-    fn double_r(&mut self, left: Key, value: UnitVec<T>, right: Key) -> Key {
-        let l = self.drop_tree_node(left);
+    fn double_r(&mut self, tree: Key) -> Key {
+        let n = self.drop_tree_node(tree);
+        let l = self.drop_tree_node(n.left);
         let lr = self.drop_tree_node(l.right);
-        let new_right = self.new_tree_node(lr.right, value, right);
+        let new_right = self.new_tree_node(lr.right, n.values, n.right);
         let new_left = self.new_tree_node(l.left, l.values, lr.left);
         self.new_tree_node(new_left, lr.values, new_right)
     }
