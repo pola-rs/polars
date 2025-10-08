@@ -1,6 +1,5 @@
 use std::io;
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
 
 #[cfg(feature = "cloud")]
 pub use async_writeable::AsyncWriteable;
@@ -9,10 +8,11 @@ use polars_error::{PolarsError, PolarsResult, feature_gated};
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;
+use polars_utils::plpath::PlPathRef;
 
 use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
-use crate::{is_cloud_url, resolve_homedir};
+use crate::resolve_homedir;
 
 pub trait DynWriteable: io::Write + Send {
     // Needed because trait upcasting is only stable in 1.86.
@@ -56,78 +56,75 @@ pub enum Writeable {
 
 impl Writeable {
     pub fn try_new(
-        path: &str,
+        path: PlPathRef<'_>,
         #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
-        let is_cloud = is_cloud_url(path);
         let verbose = config::verbose();
 
-        if is_cloud {
-            feature_gated!("cloud", {
-                use crate::cloud::BlockingCloudWriter;
+        match path {
+            PlPathRef::Cloud(_) => {
+                feature_gated!("cloud", {
+                    use crate::cloud::BlockingCloudWriter;
 
-                if verbose {
-                    eprintln!("Writeable: try_new: cloud: {}", path)
-                }
+                    if verbose {
+                        eprintln!("Writeable: try_new: cloud: {}", path.to_str())
+                    }
 
-                if path.starts_with("file://") {
-                    create_file(Path::new(&path[const { "file://".len() }..]))?;
-                }
+                    let writer = crate::pl_async::get_runtime()
+                        .block_in_place_on(BlockingCloudWriter::new(path, cloud_options))?;
+                    Ok(Self::Cloud(writer))
+                })
+            },
+            PlPathRef::Local(path) if config::force_async() => {
+                feature_gated!("cloud", {
+                    use crate::cloud::BlockingCloudWriter;
 
-                let writer = crate::pl_async::get_runtime()
-                    .block_in_place_on(BlockingCloudWriter::new(path, cloud_options))?;
-                Ok(Self::Cloud(writer))
-            })
-        } else if config::force_async() {
-            feature_gated!("cloud", {
-                use crate::cloud::BlockingCloudWriter;
+                    let path = resolve_homedir(&path);
 
+                    if verbose {
+                        eprintln!("Writeable: try_new: forced async: {}", path.display())
+                    }
+
+                    create_file(&path)?;
+                    let path = std::fs::canonicalize(&path)?;
+
+                    ensure_not_mapped(&path.metadata()?)?;
+
+                    let path = format!(
+                        "file://{}",
+                        if cfg!(target_family = "windows") {
+                            path.to_str().unwrap().strip_prefix(r#"\\?\"#).unwrap()
+                        } else {
+                            path.to_str().unwrap()
+                        }
+                    );
+
+                    if verbose {
+                        eprintln!("Writeable: try_new: forced async converted path: {path}")
+                    }
+
+                    let writer = crate::pl_async::get_runtime().block_in_place_on(
+                        BlockingCloudWriter::new(PlPathRef::new(&path), cloud_options),
+                    )?;
+                    Ok(Self::Cloud(writer))
+                })
+            },
+            PlPathRef::Local(path) => {
                 let path = resolve_homedir(&path);
+                create_file(&path)?;
+
+                // Note: `canonicalize` does not work on some systems.
 
                 if verbose {
                     eprintln!(
-                        "Writeable: try_new: forced async: {}",
-                        path.to_str().unwrap()
+                        "Writeable: try_new: local: {} (canonicalize: {:?})",
+                        path.display(),
+                        std::fs::canonicalize(&path)
                     )
                 }
 
-                create_file(&path)?;
-                let path = std::fs::canonicalize(&path)?;
-
-                ensure_not_mapped(&path.metadata()?)?;
-
-                let path = format!(
-                    "file://{}",
-                    if cfg!(target_family = "windows") {
-                        path.to_str().unwrap().strip_prefix(r#"\\?\"#).unwrap()
-                    } else {
-                        path.to_str().unwrap()
-                    }
-                );
-
-                if verbose {
-                    eprintln!("Writeable: try_new: forced async converted path: {}", path)
-                }
-
-                let writer = crate::pl_async::get_runtime()
-                    .block_in_place_on(BlockingCloudWriter::new(&path, cloud_options))?;
-                Ok(Self::Cloud(writer))
-            })
-        } else {
-            let path = resolve_homedir(&path);
-            create_file(&path)?;
-
-            // Note: `canonicalize` does not work on some systems.
-
-            if verbose {
-                eprintln!(
-                    "Writeable: try_new: local: {} (canonicalize: {:?})",
-                    path.to_str().unwrap(),
-                    std::fs::canonicalize(&path)
-                )
-            }
-
-            Ok(Self::Local(polars_utils::open_file_write(&path)?))
+                Ok(Self::Local(polars_utils::open_file_write(&path)?))
+            },
         }
     }
 
@@ -198,10 +195,10 @@ impl DerefMut for Writeable {
 ///
 /// Open a path for writing. Supports cloud paths.
 pub fn try_get_writeable(
-    path: &str,
+    addr: PlPathRef<'_>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Box<dyn WriteClose + Send>> {
-    Writeable::try_new(path, cloud_options).map(|x| match x {
+    Writeable::try_new(addr, cloud_options).map(|x| match x {
         Writeable::Dyn(_) => unreachable!(),
         Writeable::Local(v) => Box::new(ClosableFile::from(v)) as Box<dyn WriteClose + Send>,
         #[cfg(feature = "cloud")]
@@ -218,6 +215,7 @@ mod async_writeable {
 
     use polars_error::{PolarsError, PolarsResult};
     use polars_utils::file::ClosableFile;
+    use polars_utils::plpath::PlPathRef;
     use tokio::io::AsyncWriteExt;
     use tokio::task;
 
@@ -262,11 +260,11 @@ mod async_writeable {
 
     impl AsyncWriteable {
         pub async fn try_new(
-            path: &str,
+            addr: PlPathRef<'_>,
             cloud_options: Option<&CloudOptions>,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
-            Writeable::try_new(path, cloud_options).and_then(|x| x.try_into_async_writeable())
+            Writeable::try_new(addr, cloud_options).and_then(|x| x.try_into_async_writeable())
         }
 
         pub async fn sync_on_close(

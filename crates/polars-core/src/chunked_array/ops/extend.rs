@@ -185,6 +185,15 @@ impl StructChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+#[doc(hidden)]
+impl<T: PolarsCategoricalType> CategoricalChunked<T> {
+    pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
+        assert!(self.dtype() == other.dtype());
+        self.phys.extend(&other.phys)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

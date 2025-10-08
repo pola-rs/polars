@@ -16,9 +16,9 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
 import polars.selectors as cs
+from polars._dependencies import dataclasses, pydantic
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
-from polars.dependencies import dataclasses, pydantic
 from polars.exceptions import DuplicateError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
@@ -33,6 +33,8 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+    from typing_extensions import assert_type
 
 
 # -----------------------------------------------------------------------------------
@@ -197,25 +199,25 @@ def test_init_structured_objects() -> None:
     class TradeDC:
         timestamp: datetime
         ticker: str
-        price: Decimal
+        price: float
         size: int | None = None
 
     class TradePD(pydantic.BaseModel):
         timestamp: datetime
         ticker: str
-        price: Decimal
+        price: float
         size: int
 
     class TradeNT(NamedTuple):
         timestamp: datetime
         ticker: str
-        price: Decimal
+        price: float
         size: int | None = None
 
     raw_data = [
-        (datetime(2022, 9, 8, 14, 30, 45), "AAPL", Decimal("157.5"), 125),
-        (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
-        (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
+        (datetime(2022, 9, 8, 14, 30, 45), "AAPL", 157.5, 125),
+        (datetime(2022, 9, 9, 10, 15, 12), "FLSY", 10.0, 1500),
+        (datetime(2022, 9, 7, 15, 30), "MU", 55.5, 400),
     ]
     columns = ["timestamp", "ticker", "price", "size"]
 
@@ -227,7 +229,7 @@ def test_init_structured_objects() -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.String,
-                "price": pl.Decimal(scale=1),
+                "price": pl.Float64,
                 "size": pl.Int64,
             }
             assert df.rows() == raw_data
@@ -240,7 +242,7 @@ def test_init_structured_objects() -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("ms"),
                 "ticker": pl.String,
-                "price": pl.Decimal(scale=1),
+                "price": pl.Float64,
                 "size": pl.Int32,
             }
 
@@ -250,14 +252,14 @@ def test_init_structured_objects() -> None:
             schema=[
                 ("ts", pl.Datetime("ms")),
                 ("tk", pl.Categorical),
-                ("pc", pl.Decimal(scale=1)),
+                ("pc", pl.Float64),
                 ("sz", pl.UInt16),
             ],
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical(ordering="physical"),
-            "pc": pl.Decimal(scale=1),
+            "tk": pl.Categorical(ordering="lexical"),
+            "pc": pl.Float64,
             "sz": pl.UInt16,
         }
         assert df.rows() == raw_data
@@ -842,7 +844,7 @@ def test_init_series() -> None:
         (time, pl.Time),
         (datetime, pl.Datetime("us")),
         (timedelta, pl.Duration("us")),
-        (Decimal, pl.Decimal(precision=None, scale=0)),
+        (Decimal, pl.Decimal(scale=0)),
     ],
 )
 def test_init_py_dtype(dtype: Any, expected_dtype: PolarsDataType) -> None:
@@ -960,7 +962,8 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # subclassed pandas object, with/without data & overrides
-    class XSeries(pd.Series):  # type: ignore[type-arg]
+    # type error fixed in pandas-stubs 2.3.0.250703, which doesn't support Python3.9
+    class XSeries(pd.Series):  # type: ignore[type-arg, unused-ignore]
         @property
         def _constructor(self) -> type:
             return XSeries
@@ -1112,6 +1115,9 @@ def test_init_only_columns() -> None:
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
         assert pl.List(pl.UInt8).is_(df.schema["d"])
 
+        if TYPE_CHECKING:
+            assert_type(pl.List(pl.UInt8).is_(df.schema["d"]), bool)
+
         dfe = df.clear()
         assert len(dfe) == 0
         assert df.schema == dfe.schema
@@ -1197,6 +1203,7 @@ def test_from_dicts_infer_integer_types() -> None:
             "c": 2**31 - 1,
             "d": 2**63 - 1,
             "e": 2**127 - 1,
+            "f": 2**128 - 1,
         }
     ]
     result = pl.from_dicts(data).schema
@@ -1207,11 +1214,12 @@ def test_from_dicts_infer_integer_types() -> None:
         "c": pl.Int64,
         "d": pl.Int64,
         "e": pl.Int128,
+        "f": pl.UInt128,
     }
     assert result == expected
 
     with pytest.raises(OverflowError):
-        pl.from_dicts([{"too_big": 2**127}])
+        pl.from_dicts([{"too_big": 2**128}])
 
 
 def test_from_dicts_list_large_int_17006() -> None:

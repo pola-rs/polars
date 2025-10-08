@@ -3,12 +3,14 @@ use std::borrow::Cow;
 
 use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
-use super::{StatisticsFlags, private};
+use super::{IsSorted, StatisticsFlags, private};
+use crate::POOL;
 use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+use crate::prelude::row_encode::_get_rows_encoded_ca_unordered;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -16,7 +18,7 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
@@ -33,6 +35,24 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.equal_element(idx_self, idx_other, other)
+    }
+
+    fn vec_hash(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
+        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+            .vec_hash(build_hasher, buf)
+    }
+
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
+        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+            .vec_hash_combine(build_hasher, hashes)
     }
 
     #[cfg(feature = "zip_with")]
@@ -81,7 +101,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
     fn name(&self) -> &PlSmallStr {
@@ -112,7 +132,13 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         let idxs = self.arg_sort(options);
-        Ok(unsafe { self.take_unchecked(&idxs) })
+        let mut result = unsafe { self.take_unchecked(&idxs) };
+        result.set_sorted_flag(if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        });
+        Ok(result)
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
@@ -171,12 +197,22 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        self.0
+            .trim_lists_to_normalized_offsets()
+            .map(IntoSeries::into_series)
+    }
+
+    fn propagate_nulls(&self) -> Option<Series> {
+        self.0.propagate_nulls().map(IntoSeries::into_series)
+    }
+
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, options)
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 
@@ -186,6 +222,52 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn has_nulls(&self) -> bool {
         self.0.has_nulls()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique(&self) -> PolarsResult<Series> {
+        if !self.inner_dtype().is_primitive_numeric() {
+            polars_bail!(opq = unique, self.dtype());
+        }
+        // this can be called in aggregation, so this fast path can be worth a lot
+        if self.len() < 2 {
+            return Ok(self.0.clone().into_series());
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false);
+        // SAFETY:
+        // groups are in bounds
+        Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        // this can be called in aggregation, so this fast path can be worth a lot
+        match self.len() {
+            0 => Ok(0),
+            1 => Ok(1),
+            _ => {
+                let main_thread = POOL.current_thread_index().is_none();
+                let groups = self.group_tuples(main_thread, false)?;
+                Ok(groups.len())
+            },
+        }
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        if !self.inner_dtype().is_primitive_numeric() {
+            polars_bail!(opq = arg_unique, self.dtype());
+        }
+        // this can be called in aggregation, so this fast path can be worth a lot
+        if self.len() == 1 {
+            return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        // arg_unique requires a stable order
+        let groups = self.group_tuples(main_thread, true)?;
+        let first = groups.take_group_firsts();
+        Ok(IdxCa::from_vec(self.name().clone(), first))
     }
 
     fn is_null(&self) -> BooleanChunked {
@@ -210,6 +292,10 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {

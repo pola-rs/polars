@@ -29,6 +29,7 @@ pub trait HotGrouper: Any + Send + Sync {
         hot_idxs: &mut Vec<IdxSize>,
         hot_group_idxs: &mut Vec<EvictIdx>,
         cold_idxs: &mut Vec<IdxSize>,
+        force_hot: bool,
     );
 
     /// Get all the current hot keys, in group order.
@@ -59,6 +60,8 @@ pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<d
             DataType::UInt16 => Box::new(SK::<UInt16Type>::new(dt, ng)),
             DataType::UInt32 => Box::new(SK::<UInt32Type>::new(dt, ng)),
             DataType::UInt64 => Box::new(SK::<UInt64Type>::new(dt, ng)),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => Box::new(SK::<UInt128Type>::new(dt, ng)),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => Box::new(SK::<Int8Type>::new(dt, ng)),
             #[cfg(feature = "dtype-i16")]
@@ -82,7 +85,11 @@ pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<d
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => Box::new(SK::<Int128Type>::new(dt, ng)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => Box::new(SK::<UInt32Type>::new(dt, ng)),
+            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    Box::new(SK::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(dt.clone(), ng))
+                })
+            },
 
             DataType::String | DataType::Binary => {
                 Box::new(binview::BinviewHashHotGrouper::new(ng))

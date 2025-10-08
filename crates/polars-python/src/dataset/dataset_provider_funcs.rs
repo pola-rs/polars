@@ -3,26 +3,25 @@ use std::sync::Arc;
 
 use polars::prelude::{DslPlan, PlSmallStr, Schema, SchemaRef};
 use polars_core::config;
-use polars_error::{PolarsResult, to_compute_err};
+use polars_error::PolarsResult;
 use polars_utils::python_function::PythonObject;
 use pyo3::conversion::FromPyObjectBound;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
-use pyo3::{PyResult, Python};
+use pyo3::{PyObject, PyResult, Python, intern};
 
 use crate::interop::arrow::to_rust::field_to_rust;
 use crate::prelude::{Wrap, get_lf};
-use crate::utils::to_py_err;
 
-pub fn reader_name(dataset_object: &PythonObject) -> PlSmallStr {
+pub fn name(dataset_object: &PythonObject) -> PlSmallStr {
     Python::with_gil(|py| {
-        let name: PyBackedStr = dataset_object
-            .getattr(py, "reader_name")?
-            .call0(py)?
-            .extract(py)?;
-
-        PyResult::Ok(PlSmallStr::from_str(&name))
+        PyResult::Ok(PlSmallStr::from_str(
+            &dataset_object
+                .getattr(py, intern!(py, "__class__"))?
+                .getattr(py, intern!(py, "__name__"))?
+                .extract::<PyBackedStr>(py)?,
+        ))
     })
     .unwrap()
 }
@@ -60,34 +59,39 @@ pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
                             None
                         },
                         None => None,
-                    }))
-                    .map_err(to_py_err)?;
+                    }))?;
 
                 if let Some(last_err) = last_err {
-                    return Err(last_err);
+                    return Err(last_err.into());
                 }
 
-                return PyResult::Ok(Arc::new(schema));
+                return Ok(Arc::new(schema));
             }
         }
 
         let Wrap(schema) = Wrap::<Schema>::from_py_object_bound(schema_obj.bind_borrowed(py))?;
 
-        PyResult::Ok(Arc::new(schema))
+        Ok(Arc::new(schema))
     })
-    .map_err(to_compute_err)
 }
 
 pub fn to_dataset_scan(
     dataset_object: &PythonObject,
+    existing_resolved_version_key: Option<&str>,
     limit: Option<usize>,
     projection: Option<&[PlSmallStr]>,
-) -> PolarsResult<DslPlan> {
+    filter_columns: Option<&[PlSmallStr]>,
+) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
     Python::with_gil(|py| {
         let kwargs = PyDict::new(py);
 
+        kwargs.set_item(
+            intern!(py, "existing_resolved_version_key"),
+            existing_resolved_version_key,
+        )?;
+
         if let Some(limit) = limit {
-            kwargs.set_item("limit", limit)?;
+            kwargs.set_item(intern!(py, "limit"), limit)?;
         }
 
         if let Some(projection) = projection {
@@ -97,21 +101,33 @@ pub fn to_dataset_scan(
                 projection_list.append(name.as_str())?;
             }
 
-            kwargs.set_item("projection", projection_list)?;
+            kwargs.set_item(intern!(py, "projection"), projection_list)?;
         }
 
-        let scan = dataset_object
-            .getattr(py, "to_dataset_scan")?
-            .call(py, (), Some(&kwargs))?;
+        if let Some(filter_columns) = filter_columns {
+            let filter_columns_list = PyList::empty(py);
 
-        let Ok(lf) = get_lf(scan.bind(py)) else {
-            return Err(PyValueError::new_err(format!(
-                "cannot extract LazyFrame from {}",
-                &scan
-            )));
+            for name in filter_columns {
+                filter_columns_list.append(name.as_str())?;
+            }
+
+            kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
+        }
+
+        let Some((scan, version)): Option<(PyObject, Wrap<PlSmallStr>)> = dataset_object
+            .getattr(py, intern!(py, "to_dataset_scan"))?
+            .call(py, (), Some(&kwargs))?
+            .extract(py)?
+        else {
+            return Ok(None);
         };
 
-        PyResult::Ok(lf.logical_plan)
+        let Ok(lf) = get_lf(scan.bind(py)) else {
+            return Err(
+                PyValueError::new_err(format!("cannot extract LazyFrame from {}", &scan)).into(),
+            );
+        };
+
+        Ok(Some((lf.logical_plan, version.0)))
     })
-    .map_err(to_compute_err)
 }

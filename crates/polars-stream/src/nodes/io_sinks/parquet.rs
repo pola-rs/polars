@@ -1,23 +1,26 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
-use std::sync::Mutex;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::{ArrowSchema, CompatLevel};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
-use polars_io::prelude::{ParquetWriteOptions, get_encodings};
+use polars_io::prelude::{ParquetWriteOptions, get_column_write_options};
 use polars_io::schema_to_arrow_checked;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    CompressedPage, Compressor, Encoding, FileWriter, SchemaDescriptor, Version, WriteOptions,
-    array_to_columns, to_parquet_schema,
+    ColumnWriteOptions, CompressedPage, Compressor, FileWriter, SchemaDescriptor, Version,
+    WriteOptions, array_to_columns, to_parquet_schema,
 };
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
+use polars_utils::relaxed_cell::RelaxedCell;
 
+use super::metrics::WriteMetrics;
 use super::{
     DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE, SinkInputPort,
     SinkNode, buffer_and_distribute_columns_task,
@@ -29,6 +32,7 @@ use crate::async_primitives::linearizer::Linearizer;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
+use crate::utils::task_handles_ext::AbortOnDropHandle;
 
 pub struct ParquetSinkNode {
     target: SinkTarget,
@@ -39,8 +43,14 @@ pub struct ParquetSinkNode {
 
     parquet_schema: SchemaDescriptor,
     arrow_schema: ArrowSchema,
-    encodings: Vec<Vec<Encoding>>,
+    column_options: Vec<ColumnWriteOptions>,
     cloud_options: Option<CloudOptions>,
+
+    file_size: Arc<RelaxedCell<u64>>,
+    metrics: Arc<Mutex<Option<WriteMetrics>>>,
+
+    io_tx: Option<crate::async_primitives::connector::Sender<Vec<Vec<CompressedPage>>>>,
+    io_task: Option<AbortOnDropHandle<PolarsResult<()>>>,
 }
 
 impl ParquetSinkNode {
@@ -50,22 +60,34 @@ impl ParquetSinkNode {
         sink_options: SinkOptions,
         write_options: &ParquetWriteOptions,
         cloud_options: Option<CloudOptions>,
+        collect_metrics: bool,
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
-        let parquet_schema = to_parquet_schema(&schema)?;
-        let encodings: Vec<Vec<Encoding>> = get_encodings(&schema);
+        let column_options: Vec<ColumnWriteOptions> =
+            get_column_write_options(&schema, &write_options.field_overwrites);
+        let parquet_schema = to_parquet_schema(&schema, &column_options)?;
+        let metrics =
+            Arc::new(Mutex::new(collect_metrics.then(|| {
+                WriteMetrics::new(target.to_display_string(), &input_schema)
+            })));
 
         Ok(Self {
             target,
 
             input_schema,
             sink_options,
-            write_options: *write_options,
+            write_options: write_options.clone(),
 
             parquet_schema,
             arrow_schema: schema,
-            encodings,
+            column_options,
             cloud_options,
+
+            file_size: Arc::default(),
+            metrics,
+
+            io_tx: None,
+            io_task: None,
         })
     }
 }
@@ -85,22 +107,92 @@ impl SinkNode for ParquetSinkNode {
         self.sink_options.maintain_order
     }
 
+    fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
+        // Collect task -> IO task
+        let (io_tx, mut io_rx) = connector::<Vec<Vec<CompressedPage>>>();
+
+        // IO task.
+        //
+        // Task that will actually do write to the target file. It is important that this is only
+        // spawned once.
+        let target = self.target.clone();
+        let sink_options = self.sink_options.clone();
+        let cloud_options = self.cloud_options.clone();
+        let write_options = self.write_options.clone();
+        let arrow_schema = self.arrow_schema.clone();
+        let parquet_schema = self.parquet_schema.clone();
+        let column_options = self.column_options.clone();
+        let output_file_size = self.file_size.clone();
+        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
+            let mut file = target
+                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .await?;
+
+            let writer = BufWriter::new(&mut *file);
+            let key_value_metadata = write_options.key_value_metadata;
+            let write_options = WriteOptions {
+                statistics: write_options.statistics,
+                compression: write_options.compression.into(),
+                version: Version::V1,
+                data_page_size: write_options.data_page_size,
+            };
+            let file_writer = Mutex::new(FileWriter::new_with_parquet_schema(
+                writer,
+                arrow_schema,
+                parquet_schema,
+                write_options,
+            ));
+            let mut writer = BatchedWriter::new(
+                file_writer,
+                column_options,
+                write_options,
+                false,
+                key_value_metadata,
+            );
+
+            let num_parquet_columns = writer.parquet_schema().leaves().len();
+            while let Ok(current_row_group) = io_rx.recv().await {
+                // @TODO: At the moment this is a sync write, this is not ideal because we can only
+                // have so many blocking threads in the tokio threadpool.
+                assert_eq!(current_row_group.len(), num_parquet_columns);
+                writer.write_row_group(&current_row_group)?;
+            }
+
+            let file_size = writer.finish()?;
+            drop(writer);
+
+            file.sync_on_close(sink_options.sync_on_close)?;
+            file.close()?;
+
+            output_file_size.store(file_size);
+            PolarsResult::Ok(())
+        });
+
+        self.io_tx = Some(io_tx);
+        self.io_task = Some(AbortOnDropHandle(io_task));
+
+        Ok(())
+    }
+
     fn spawn_sink(
         &mut self,
         recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
         state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
+        // Collect task -> IO task
+        let mut io_tx = self
+            .io_tx
+            .take()
+            .expect("not initialized / spawn called more than once");
         // Buffer task -> Encode tasks
         let (dist_tx, dist_rxs) =
             distributor_channel(state.num_pipelines, *DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
         // Encode tasks -> Collect task
         let (mut lin_rx, lin_txs) =
             Linearizer::new(state.num_pipelines, *DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
-        // Collect task -> IO task
-        let (mut io_tx, mut io_rx) = connector::<Vec<Vec<CompressedPage>>>();
 
-        let write_options = self.write_options;
+        let write_options = &self.write_options;
 
         let options = WriteOptions {
             statistics: write_options.statistics,
@@ -117,6 +209,7 @@ impl SinkNode for ParquetSinkNode {
                 .row_group_size
                 .unwrap_or(DEFAULT_ROW_GROUP_SIZE),
             self.input_schema.clone(),
+            self.metrics.clone(),
         ));
 
         // Encode task.
@@ -128,12 +221,12 @@ impl SinkNode for ParquetSinkNode {
                 .zip(lin_txs)
                 .map(|(mut dist_rx, mut lin_tx)| {
                     let parquet_schema = self.parquet_schema.clone();
-                    let encodings = self.encodings.clone();
+                    let column_options = self.column_options.clone();
 
                     spawn(TaskPriority::High, async move {
                         while let Ok((rg_idx, col_idx, column)) = dist_rx.recv().await {
                             let type_ = &parquet_schema.fields()[col_idx];
-                            let encodings = &encodings[col_idx];
+                            let column_options = &column_options[col_idx];
 
                             let array = column.as_materialized_series().rechunk();
                             let array = array.to_arrow(0, CompatLevel::newest());
@@ -146,7 +239,7 @@ impl SinkNode for ParquetSinkNode {
 
                             // Array -> Parquet pages.
                             let encoded_columns =
-                                array_to_columns(array, type_.clone(), options, encodings)?;
+                                array_to_columns(array, type_.clone(), column_options, options)?;
 
                             // Compress the pages.
                             let compressed_pages = encoded_columns
@@ -228,58 +321,36 @@ impl SinkNode for ParquetSinkNode {
 
             Ok(())
         }));
+    }
 
-        // IO task.
-        //
-        // Task that will actually do write to the target file. It is important that this is only
-        // spawned once.
-        let target = self.target.clone();
-        let sink_options = self.sink_options.clone();
-        let cloud_options = self.cloud_options.clone();
-        let write_options = self.write_options;
-        let arrow_schema = self.arrow_schema.clone();
-        let parquet_schema = self.parquet_schema.clone();
-        let encodings = self.encodings.clone();
-        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
-                .await?;
+    fn get_metrics(&self) -> PolarsResult<Option<WriteMetrics>> {
+        let file_size = self.file_size.load();
+        let metrics = self.metrics.lock().unwrap().take();
 
-            let writer = BufWriter::new(&mut *file);
-            let write_options = WriteOptions {
-                statistics: write_options.statistics,
-                compression: write_options.compression.into(),
-                version: Version::V1,
-                data_page_size: write_options.data_page_size,
-            };
-            let file_writer = Mutex::new(FileWriter::new_with_parquet_schema(
-                writer,
-                arrow_schema,
-                parquet_schema,
-                write_options,
-            ));
-            let mut writer = BatchedWriter::new(file_writer, encodings, write_options, false);
+        Ok(metrics.map(|mut m| {
+            m.file_size = file_size;
+            m
+        }))
+    }
 
-            let num_parquet_columns = writer.parquet_schema().leaves().len();
-            while let Ok(current_row_group) = io_rx.recv().await {
-                // @TODO: At the moment this is a sync write, this is not ideal because we can only
-                // have so many blocking threads in the tokio threadpool.
-                assert_eq!(current_row_group.len(), num_parquet_columns);
-                writer.write_row_group(&current_row_group)?;
-            }
+    fn finalize(
+        &mut self,
+        _state: &StreamingExecutionState,
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
+        // If we were never spawned, we need to make sure that the `tx` is taken. This signals to
+        // the IO task that it is done and prevents deadlocks.
+        drop(self.io_tx.take());
 
-            writer.finish()?;
-            drop(writer);
+        let io_task = self
+            .io_task
+            .take()
+            .expect("not initialized / finish called more than once");
 
-            file.sync_on_close(sink_options.sync_on_close)?;
-            file.close()?;
-
-            PolarsResult::Ok(())
-        });
-        join_handles.push(spawn(TaskPriority::Low, async move {
+        // Wait for the IO task to complete.
+        Some(Box::pin(async move {
             io_task
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
-        }));
+        }))
     }
 }

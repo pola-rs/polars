@@ -1,6 +1,7 @@
 use arrow::array::{PrimitiveArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::{AlignedBytes, NativeType, PrimitiveType};
+use polars_utils::vec::with_cast_mut_vec;
 
 use super::DecoderFunction;
 use crate::parquet::error::ParquetResult;
@@ -8,9 +9,10 @@ use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::dictionary_encoded::{append_validity, constrain_page_validity};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::freeze_validity;
+use crate::read::expr::SpecializedParquetColumnExpr;
 use crate::read::{Filter, ParquetError};
 
-mod predicate;
+pub mod predicate;
 mod required;
 
 #[allow(clippy::too_many_arguments)]
@@ -22,7 +24,6 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     validity: &mut BitmapBuilder,
     intermediate: &mut Vec<P>,
     target: &mut Vec<T>,
-    pred_true_mask: &mut BitmapBuilder,
     dfn: D,
 ) -> ParquetResult<()> {
     let can_filter_on_raw_data =
@@ -33,16 +34,21 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
 
     match filter {
         Some(Filter::Predicate(p))
-            if !can_filter_on_raw_data || p.predicate.to_equals_scalar().is_none() =>
+            if !can_filter_on_raw_data
+                || matches!(
+                    p.predicate.as_specialized(),
+                    Some(SpecializedParquetColumnExpr::Equal(_))
+                ) =>
         {
             let num_values = values.len() / size_of::<P::AlignedBytes>();
 
             // @TODO: Do something smarter with the validity
             let mut unfiltered_target = Vec::with_capacity(num_values);
-            let mut unfiltered_validity = page_validity
-                .is_some()
-                .then(|| BitmapBuilder::with_capacity(num_values))
-                .unwrap_or_default();
+            let mut unfiltered_validity = if page_validity.is_some() {
+                BitmapBuilder::with_capacity(num_values)
+            } else {
+                Default::default()
+            };
 
             decode_no_incompact_predicates(
                 values,
@@ -52,7 +58,6 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
                 &mut unfiltered_validity,
                 intermediate,
                 &mut unfiltered_target,
-                &mut BitmapBuilder::new(),
                 dfn,
             )?;
 
@@ -69,7 +74,6 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
                 polars_compute::filter::filter_with_bitmap(&array, &intermediate_pred_true_mask);
             let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
-            pred_true_mask.extend_from_bitmap(&intermediate_pred_true_mask);
             target.extend(array.values().iter().copied());
             if is_optional {
                 match array.validity() {
@@ -87,7 +91,6 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
                 validity,
                 intermediate,
                 target,
-                pred_true_mask,
                 dfn,
             )?;
         },
@@ -109,7 +112,6 @@ pub fn decode_no_incompact_predicates<
     validity: &mut BitmapBuilder,
     intermediate: &mut Vec<P>,
     target: &mut Vec<T>,
-    pred_true_mask: &mut BitmapBuilder,
     dfn: D,
 ) -> ParquetResult<()> {
     if cfg!(debug_assertions) && is_optional {
@@ -122,15 +124,16 @@ pub fn decode_no_incompact_predicates<
         })?;
 
         let start_length = target.len();
-        decode_aligned_bytes_dispatch(
-            values,
-            is_optional,
-            page_validity,
-            filter,
-            validity,
-            <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
-            pred_true_mask,
-        )?;
+        with_cast_mut_vec::<T, T::AlignedBytes, _, _>(target, |aligned_bytes_vec| {
+            decode_aligned_bytes_dispatch(
+                values,
+                is_optional,
+                page_validity,
+                filter,
+                validity,
+                aligned_bytes_vec,
+            )
+        })?;
 
         if D::NEED_TO_DECODE {
             let to_decode: &mut [P] = bytemuck::cast_slice_mut(&mut target[start_length..]);
@@ -145,15 +148,16 @@ pub fn decode_no_incompact_predicates<
         })?;
 
         intermediate.clear();
-        decode_aligned_bytes_dispatch(
-            values,
-            is_optional,
-            page_validity,
-            filter,
-            validity,
-            <P::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(intermediate),
-            pred_true_mask,
-        )?;
+        with_cast_mut_vec::<P, P::AlignedBytes, _, _>(intermediate, |aligned_bytes_vec| {
+            decode_aligned_bytes_dispatch(
+                values,
+                is_optional,
+                page_validity,
+                filter,
+                validity,
+                aligned_bytes_vec,
+            )
+        })?;
 
         target.extend(intermediate.iter().copied().map(|v| dfn.decode(v)));
     }
@@ -173,7 +177,6 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
     filter: Option<Filter>,
     validity: &mut BitmapBuilder,
     target: &mut Vec<B>,
-    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
@@ -205,24 +208,7 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             decode_masked_optional(values, page_validity, filter, target)
         },
-        (Some(Filter::Predicate(p)), None) => {
-            if let Some(needle) = p.predicate.to_equals_scalar() {
-                let needle = needle.to_aligned_bytes::<B>().unwrap();
-
-                let start_num_pred_true = pred_true_mask.set_bits();
-                predicate::decode_equals_no_values(values, needle, pred_true_mask);
-
-                if p.include_values {
-                    let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
-                    target.resize(target.len() + num_pred_true, needle);
-                }
-            } else {
-                unreachable!()
-            }
-
-            Ok(())
-        },
-        (Some(Filter::Predicate(_)), Some(_)) => todo!(),
+        (Some(Filter::Predicate(_)), _) => unreachable!(),
     }?;
 
     Ok(())
@@ -504,4 +490,99 @@ fn decode_masked_optional<B: AlignedBytes>(
     unsafe { target.set_len(start_length + num_rows) };
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::proptest::bitmap;
+    use proptest::collection::size_range;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn values_and_mask() -> impl Strategy<Value = (Vec<u32>, Bitmap)> {
+        any_with::<Vec<u32>>(size_range(0..100).lift()).prop_flat_map(|vec| {
+            let len = vec.len();
+            (Just(vec), bitmap(len))
+        })
+    }
+
+    fn validity_values_and_mask() -> impl Strategy<Value = (Bitmap, Vec<u32>, Bitmap)> {
+        bitmap(0..100).prop_flat_map(|validity| {
+            let len = validity.len();
+            let values_length = validity.set_bits();
+
+            (
+                Just(validity),
+                any_with::<Vec<u32>>(size_range(values_length).lift()),
+                bitmap(len),
+            )
+        })
+    }
+
+    fn _test_decode_masked_required(values: &Vec<u32>, mask: &Bitmap) {
+        let mut reference_result = Vec::with_capacity(mask.set_bits());
+        for (value, is_selected) in values.iter().zip(mask.iter()) {
+            if is_selected {
+                reference_result.push(*value);
+            }
+        }
+
+        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        decode_masked_required(
+            ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
+            mask.clone(),
+            &mut result,
+        )
+        .unwrap();
+
+        let result = bytemuck::cast_vec::<_, u32>(result);
+        assert_eq!(reference_result, result);
+    }
+
+    fn _test_decode_masked_optional(validity: &Bitmap, values: &Vec<u32>, mask: &Bitmap) {
+        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        decode_masked_optional(
+            ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
+            validity.clone(),
+            mask.clone(),
+            &mut result,
+        )
+        .unwrap();
+
+        let result = bytemuck::cast_vec::<_, u32>(result);
+
+        let mut result_i = 0;
+        let mut values_i = 0;
+        for (is_valid, is_selected) in validity.iter().zip(mask.iter()) {
+            if is_selected {
+                if is_valid {
+                    assert_eq!(result[result_i], values[values_i]);
+                }
+                result_i += 1;
+            }
+
+            if is_valid {
+                values_i += 1;
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_decode_masked_required(
+            (ref values, ref mask) in values_and_mask()
+        ) {
+            _test_decode_masked_required(values, mask)
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_decode_masked_optional(
+            (ref validity, ref values, ref mask) in validity_values_and_mask()
+        ) {
+            _test_decode_masked_optional(validity, values, mask)
+        }
+    }
 }

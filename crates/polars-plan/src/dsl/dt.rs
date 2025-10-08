@@ -112,6 +112,12 @@ impl DateLikeNameSpace {
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::Month))
     }
 
+    /// Get the number of days in the month of a Date/Datetime.
+    pub fn days_in_month(self) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::DaysInMonth))
+    }
+
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
     pub fn quarter(self) -> Expr {
@@ -282,47 +288,62 @@ impl DateLikeNameSpace {
     }
 
     /// Express a Duration in terms of its total number of integer days.
-    pub fn total_days(self) -> Expr {
+    #[cfg(feature = "dtype-duration")]
+    pub fn total_days(self, fractional: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalDays))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalDays {
+                fractional,
+            }))
     }
 
     /// Express a Duration in terms of its total number of integer hours.
-    pub fn total_hours(self) -> Expr {
+    #[cfg(feature = "dtype-duration")]
+    pub fn total_hours(self, fractional: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalHours))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalHours {
+                fractional,
+            }))
     }
 
     /// Express a Duration in terms of its total number of integer minutes.
-    pub fn total_minutes(self) -> Expr {
+    #[cfg(feature = "dtype-duration")]
+    pub fn total_minutes(self, fractional: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalMinutes))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalMinutes {
+                fractional,
+            }))
     }
 
     /// Express a Duration in terms of its total number of integer seconds.
-    pub fn total_seconds(self) -> Expr {
+    #[cfg(feature = "dtype-duration")]
+    pub fn total_seconds(self, fractional: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalSeconds))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalSeconds {
+                fractional,
+            }))
     }
 
     /// Express a Duration in terms of its total number of milliseconds.
-    pub fn total_milliseconds(self) -> Expr {
+    #[cfg(feature = "dtype-duration")]
+    pub fn total_milliseconds(self, fractional: bool) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
-            TemporalFunction::TotalMilliseconds,
+            TemporalFunction::TotalMilliseconds { fractional },
         ))
     }
 
     /// Express a Duration in terms of its total number of microseconds.
-    pub fn total_microseconds(self) -> Expr {
+    #[cfg(feature = "dtype-duration")]
+    pub fn total_microseconds(self, fractional: bool) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
-            TemporalFunction::TotalMicroseconds,
+            TemporalFunction::TotalMicroseconds { fractional },
         ))
     }
 
     /// Express a Duration in terms of its total number of nanoseconds.
-    pub fn total_nanoseconds(self) -> Expr {
+    #[cfg(feature = "dtype-duration")]
+    pub fn total_nanoseconds(self, fractional: bool) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
-            TemporalFunction::TotalNanoseconds,
+            TemporalFunction::TotalNanoseconds { fractional },
         ))
     }
 

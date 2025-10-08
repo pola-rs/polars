@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
@@ -18,13 +18,13 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
 use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
 use crate::async_executor;
-use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
@@ -74,39 +74,59 @@ fn compute_payload_selector(
     this: &Schema,
     other: &Schema,
     this_key_schema: &Schema,
+    other_key_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let should_coalesce = args.should_coalesce();
 
-    let mut coalesce_idx = 0;
     this.iter_names()
         .map(|c| {
-            let selector = if should_coalesce && this_key_schema.contains(c) {
-                if is_left != (args.how == JoinType::Right) {
+            #[expect(clippy::never_loop)]
+            loop {
+                let selector = if args.how == JoinType::Right {
+                    if is_left {
+                        if should_coalesce && this_key_schema.contains(c) {
+                            // Coalesced to RHS output key.
+                            None
+                        } else {
+                            Some(c.clone())
+                        }
+                    } else if !other.contains(c) || (should_coalesce && other_key_schema.contains(c)) {
+                        Some(c.clone())
+                    } else {
+                        break;
+                    }
+                } else if should_coalesce && this_key_schema.contains(c) {
+                    if is_left {
+                        Some(c.clone())
+                    } else if args.how == JoinType::Full {
+                        // We must keep the right-hand side keycols around for
+                        // coalescing.
+                        let key_idx = this_key_schema.index_of(c).unwrap();
+                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
+                        Some(name)
+                    } else {
+                        None
+                    }
+                } else if !other.contains(c) || is_left {
                     Some(c.clone())
-                } else if args.how == JoinType::Full {
-                    // We must keep the right-hand side keycols around for
-                    // coalescing.
-                    let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{coalesce_idx}");
-                    coalesce_idx += 1;
-                    Some(name)
                 } else {
-                    None
-                }
-            } else if !other.contains(c) || is_left {
-                Some(c.clone())
-            } else {
-                let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
-                if other.contains(&suffixed) {
-                    polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
-                    You may want to try:\n\
-                    - renaming the column prior to joining\n\
-                    - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
-                }
-                Some(suffixed)
-            };
-            Ok(selector)
+                    break;
+                };
+
+                return Ok(selector);
+            }
+
+            let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
+            if other.contains(&suffixed) {
+                polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
+                You may want to try:\n\
+                - renaming the column prior to joining\n\
+                - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
+            }
+
+            Ok(Some(suffixed))
         })
         .collect()
 }
@@ -115,17 +135,13 @@ fn compute_payload_selector(
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
         // TODO: don't do string-based column lookups for each dataframe, pre-compute coalesce indices.
-        let mut coalesce_idx = 0;
         df.get_columns()
             .iter()
             .filter_map(|c| {
-                if params.left_key_schema.contains(c.name()) {
+                if let Some(key_idx) = params.left_key_schema.index_of(c.name()) {
                     let other = df
-                        .column(&format_pl_smallstr!(
-                            "__POLARS_COALESCE_KEYCOL{coalesce_idx}"
-                        ))
+                        .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}"))
                         .unwrap();
-                    coalesce_idx += 1;
                     return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
                 }
 
@@ -240,18 +256,18 @@ struct SampleState {
 
 impl SampleState {
     async fn sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         morsels: &mut Vec<Morsel>,
         len: &mut usize,
-        this_final_len: Arc<AtomicUsize>,
-        other_final_len: Arc<AtomicUsize>,
+        this_final_len: Arc<RelaxedCell<usize>>,
+        other_final_len: Arc<RelaxedCell<usize>>,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
             if *len >= *JOIN_SAMPLE_LIMIT
                 || *len
                     >= other_final_len
-                        .load(Ordering::Relaxed)
+                        .load()
                         .saturating_mul(LOPSIDED_SAMPLE_FACTOR)
             {
                 morsel.source_token().stop();
@@ -260,7 +276,7 @@ impl SampleState {
             drop(morsel.take_consume_token());
             morsels.push(morsel);
         }
-        this_final_len.store(*len, Ordering::Relaxed);
+        this_final_len.store(*len);
         Ok(())
     }
 
@@ -427,7 +443,7 @@ impl BuildState {
     }
 
     async fn partition_and_sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         local: &mut LocalBuilder,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
@@ -722,8 +738,8 @@ struct ProbeState {
 impl ProbeState {
     /// Returns the max morsel sequence sent.
     async fn partition_and_probe(
-        mut recv: Receiver<Morsel>,
-        mut send: Sender<Morsel>,
+        mut recv: PortReceiver,
+        mut send: PortSender,
         partitions: &[ProbeTable],
         unordered_morsel_seq: &AtomicU64,
         partitioner: HashPartitioner,
@@ -811,6 +827,7 @@ impl ProbeState {
                     // consecutively on the same partition.
                     probe_partitions.clear();
                     hash_keys.gen_partitions(&partitioner, &mut probe_partitions, emit_unmatched);
+
                     let mut probe_group_start = 0;
                     while probe_group_start < probe_partitions.len() {
                         let p_idx = probe_partitions[probe_group_start];
@@ -950,17 +967,17 @@ impl ProbeState {
                             }
                         }
                     }
+                }
 
-                    if !probe_match.is_empty() {
-                        if !payload_rechunked {
-                            payload.rechunk_mut();
-                        }
-                        probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
-                        probe_match.clear();
-                        let out_morsel = new_morsel(&mut build_out, &mut probe_out);
-                        if send.send(out_morsel).await.is_err() {
-                            return Ok(max_seq);
-                        }
+                if !probe_match.is_empty() {
+                    if !payload_rechunked {
+                        payload.rechunk_mut();
+                    }
+                    probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                    probe_match.clear();
+                    let out_morsel = new_morsel(&mut build_out, &mut probe_out);
+                    if send.send(out_morsel).await.is_err() {
+                        return Ok(max_seq);
                     }
                 }
             }
@@ -1065,7 +1082,7 @@ struct EmitUnmatchedState {
 impl EmitUnmatchedState {
     async fn emit_unmatched(
         &mut self,
-        mut send: Sender<Morsel>,
+        mut send: PortSender,
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
@@ -1181,6 +1198,7 @@ impl EquiJoinNode {
             &left_input_schema,
             &right_input_schema,
             &left_key_schema,
+            &right_key_schema,
             true,
             &args,
         )?;
@@ -1188,6 +1206,7 @@ impl EquiJoinNode {
             &right_input_schema,
             &left_input_schema,
             &right_key_schema,
+            &left_key_schema,
             false,
             &args,
         )?;
@@ -1397,12 +1416,12 @@ impl ComputeNode for EquiJoinNode {
         match &mut self.state {
             EquiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                let left_final_len = Arc::new(AtomicUsize::new(if recv_ports[0].is_none() {
+                let left_final_len = Arc::new(RelaxedCell::from(if recv_ports[0].is_none() {
                     sample_state.left_len
                 } else {
                     usize::MAX
                 }));
-                let right_final_len = Arc::new(AtomicUsize::new(if recv_ports[1].is_none() {
+                let right_final_len = Arc::new(RelaxedCell::from(if recv_ports[1].is_none() {
                     sample_state.right_len
                 } else {
                     usize::MAX

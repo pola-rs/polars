@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
 use polars_utils::python_function::PythonFunction;
-#[cfg(feature = "serde")]
+#[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::dsl::python_dsl::PythonScanSource;
@@ -28,6 +28,8 @@ pub struct PythonOptions {
     pub predicate: PythonPredicate,
     /// Validate if the source gives the proper schema.
     pub validate_schema: bool,
+    /// Whether this scan is free of side effects (allows for CSE when that is the case).
+    pub is_pure: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .try_into_reader_with_file_path(Some("docs/assets/data/monopoly_props_groups.csv".into()))?
         .finish()?
         .head(Some(5));
-    println!("{}", props_groups);
+    println!("{props_groups}");
     // --8<-- [end:props_groups]
 
     // --8<-- [start:props_prices]
@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .try_into_reader_with_file_path(Some("docs/assets/data/monopoly_props_prices.csv".into()))?
         .finish()?
         .head(Some(5));
-    println!("{}", props_prices);
+    println!("{props_prices}");
     // --8<-- [end:props_prices]
 
     // --8<-- [start:equi-join]
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             JoinArgs::default(),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:equi-join]
 
     // --8<-- [start:props_groups2]
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_column(col("property_name").str().to_lowercase())
         .collect()?;
-    println!("{}", props_groups2);
+    println!("{props_groups2}");
     // --8<-- [end:props_groups2]
 
     // --8<-- [start:props_prices2]
@@ -55,21 +55,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([col("property_name").alias("name"), col("cost")])
         .collect()?;
-    println!("{}", props_prices2);
+    println!("{props_prices2}");
     // --8<-- [end:props_prices2]
 
     // --8<-- [start:join-key-expression]
     let result = props_groups2
-        .clone()
         .lazy()
         .join(
-            props_prices2.clone().lazy(),
+            props_prices2.lazy(),
             [col("property_name")],
             [col("name").str().to_lowercase()],
             JoinArgs::default(),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:join-key-expression]
 
     // --8<-- [start:inner-join]
@@ -83,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             JoinArgs::new(JoinType::Inner),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:inner-join]
 
     // --8<-- [start:left-join]
@@ -97,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             JoinArgs::new(JoinType::Left),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:left-join]
 
     // --8<-- [start:right-join]
@@ -111,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             JoinArgs::new(JoinType::Right),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:right-join]
 
     // --8<-- [start:left-right-join-equals]
@@ -135,7 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ])
             .collect()?,
     );
-    println!("{}", dfs_match);
+    println!("{dfs_match}");
     // --8<-- [end:left-right-join-equals]
 
     // --8<-- [start:full-join]
@@ -149,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             JoinArgs::new(JoinType::Full),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:full-join]
 
     // --8<-- [start:full-join-coalesce]
@@ -163,7 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:full-join-coalesce]
 
     // --8<-- [start:semi-join]
@@ -177,12 +176,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             JoinArgs::new(JoinType::Semi),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:semi-join]
 
     // --8<-- [start:anti-join]
     let result = props_groups
-        .clone()
         .lazy()
         .join(
             props_prices.clone().lazy(),
@@ -191,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             JoinArgs::new(JoinType::Anti),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:anti-join]
 
     // --8<-- [start:players]
@@ -199,7 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "name" => ["Alice", "Bob"],
         "cash" => [78, 135],
     )?;
-    println!("{}", players);
+    println!("{players}");
     // --8<-- [end:players]
 
     // --8<-- [start:non-equi]
@@ -207,10 +205,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .join_builder()
-        .with(props_prices.clone().lazy())
+        .with(props_prices.lazy())
         .join_where(vec![col("cash").cast(DataType::Int64).gt(col("cost"))])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:non-equi]
 
     // --8<-- [start:df_trades]
@@ -226,7 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "stock" => ["A", "B", "B", "C"],
         "trade" => [101, 299, 301, 500],
     )?;
-    println!("{}", df_trades);
+    println!("{df_trades}");
     // --8<-- [end:df_trades]
 
     // --8<-- [start:df_quotes]
@@ -240,7 +238,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "stock" => ["A", "B", "C", "A"],
         "quote" => [100, 300, 501, 102],
     )?;
-    println!("{}", df_quotes);
+    println!("{df_quotes}");
     // --8<-- [end:df_quotes]
 
     // --8<-- [start:asof]
@@ -255,7 +253,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         true,
     )?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:asof]
 
     // --8<-- [start:asof-tolerance]
@@ -270,7 +268,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         true,
     )?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:asof-tolerance]
 
     // --8<-- [start:cartesian-product]
@@ -279,12 +277,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = players
-        .clone()
         .lazy()
         .select([col("name")])
-        .cross_join(tokens.clone().lazy(), None)
+        .cross_join(tokens.lazy(), None)
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:cartesian-product]
 
     Ok(())

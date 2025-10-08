@@ -171,6 +171,10 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
             bit_width: 64,
             is_signed: false,
         })),
+        UInt128 => ipc::Type::Int(Box::new(ipc::Int {
+            bit_width: 128,
+            is_signed: false,
+        })),
         Int8 => ipc::Type::Int(Box::new(ipc::Int {
             bit_width: 8,
             is_signed: true,
@@ -204,6 +208,16 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
             precision: *precision as i32,
             scale: *scale as i32,
             bit_width: 128,
+        })),
+        Decimal32(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
+            precision: *precision as i32,
+            scale: *scale as i32,
+            bit_width: 32,
+        })),
+        Decimal64(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
+            precision: *precision as i32,
+            scale: *scale as i32,
+            bit_width: 64,
         })),
         Decimal256(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
             precision: *precision as i32,
@@ -243,6 +257,7 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
                 IntervalUnit::YearMonth => ipc::IntervalUnit::YearMonth,
                 IntervalUnit::DayTime => ipc::IntervalUnit::DayTime,
                 IntervalUnit::MonthDayNano => ipc::IntervalUnit::MonthDayNano,
+                IntervalUnit::MonthDayMillis => unimplemented!(),
             },
         })),
         List(_) => ipc::Type::List(Box::new(ipc::List {})),
@@ -281,11 +296,12 @@ fn serialize_children(
         | Int16
         | Int32
         | Int64
+        | Int128
         | UInt8
         | UInt16
         | UInt32
         | UInt64
-        | Int128
+        | UInt128
         | Float16
         | Float32
         | Float64
@@ -301,9 +317,11 @@ fn serialize_children(
         | LargeBinary
         | Utf8
         | LargeUtf8
-        | Decimal(_, _)
         | Utf8View
         | BinaryView
+        | Decimal(_, _)
+        | Decimal32(_, _)
+        | Decimal64(_, _)
         | Decimal256(_, _) => vec![],
         FixedSizeList(inner, _) | LargeList(inner) | List(inner) | Map(inner, _) => {
             vec![serialize_field(inner, &ipc_field.fields[0])]
@@ -334,7 +352,7 @@ pub(crate) fn serialize_dictionary(
     use IntegerType::*;
     let is_signed = match index_type {
         Int8 | Int16 | Int32 | Int64 | Int128 => true,
-        UInt8 | UInt16 | UInt32 | UInt64 => false,
+        UInt8 | UInt16 | UInt32 | UInt64 | UInt128 => false,
     };
 
     let bit_width = match index_type {
@@ -342,7 +360,7 @@ pub(crate) fn serialize_dictionary(
         Int16 | UInt16 => 16,
         Int32 | UInt32 => 32,
         Int64 | UInt64 => 64,
-        Int128 => 128,
+        Int128 | UInt128 => 128,
     };
 
     let index_type = arrow_format::ipc::Int {

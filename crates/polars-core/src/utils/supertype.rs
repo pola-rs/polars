@@ -1,5 +1,7 @@
 use bitflags::bitflags;
 use num_traits::Signed;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{DEC128_MAX_PREC, i128_to_dec128};
 
 use super::*;
 
@@ -34,7 +36,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
             v => {
                 // Did we add a new float type?
                 if cfg!(debug_assertions) {
-                    panic!("{:?}", v)
+                    panic!("{v:?}")
                 } else {
                     None
                 }
@@ -49,7 +51,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
             (Int8, _) | (_, Int8) => Some(Int8),
             v => {
                 if cfg!(debug_assertions) {
-                    panic!("{:?}", v)
+                    panic!("{v:?}")
                 } else {
                     None
                 }
@@ -57,13 +59,14 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
         }
     } else if l.is_unsigned_integer() && r.is_unsigned_integer() {
         match (l, r) {
+            (UInt128, _) | (_, UInt128) => Some(UInt128),
             (UInt64, _) | (_, UInt64) => Some(UInt64),
             (UInt32, _) | (_, UInt32) => Some(UInt32),
             (UInt16, _) | (_, UInt16) => Some(UInt16),
             (UInt8, _) | (_, UInt8) => Some(UInt8),
             v => {
                 if cfg!(debug_assertions) {
-                    panic!("{:?}", v)
+                    panic!("{v:?}")
                 } else {
                     None
                 }
@@ -73,6 +76,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
         // One side is signed, the other is unsigned. We just need to upcast the
         // unsigned side to a signed integer with the next-largest bit width.
         match (l, r) {
+            (UInt128, _) | (_, UInt128) => None, // No lossless cast possible
             (UInt64, _) | (_, UInt64) | (Int128, _) | (_, Int128) => Some(Int128),
             (UInt32, _) | (_, UInt32) | (Int64, _) | (_, Int64) => Some(Int64),
             (UInt16, _) | (_, UInt16) | (Int32, _) | (_, Int32) => Some(Int32),
@@ -81,7 +85,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
                 // One side was UInt and we should have already matched against
                 // all the UInt types
                 if cfg!(debug_assertions) {
-                    panic!("{:?}", v)
+                    panic!("{v:?}")
                 } else {
                     None
                 }
@@ -135,7 +139,8 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     get_supertype_with_options(l, r, SuperTypeOptions::default())
 }
 
-/// Given two data types, determine the data type that both types can safely be cast to.
+/// Given two data types, determine the data type that both types can reasonably safely be cast to.
+///
 ///
 /// Returns [`None`] if no such data type exists.
 pub fn get_supertype_with_options(
@@ -193,14 +198,6 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-i16")]
             (Int16, Float64) => Some(Float64),
 
-
-            #[cfg(feature = "dtype-i128")]
-            (a, Int128) if a.is_integer() | a.is_bool() => Some(Int128),
-            #[cfg(feature = "dtype-i128")]
-            (a, Int128) if a.is_float() => Some(Float64),
-            #[cfg(feature = "dtype-i128")]
-
-
             (Int32, Boolean) => Some(Int32),
             #[cfg(feature = "dtype-i8")]
             (Int32, Int8) => Some(Int32),
@@ -239,6 +236,16 @@ pub fn get_supertype_with_options(
             (Int64, Float32) => Some(Float64), // Follow numpy
             (Int64, Float64) => Some(Float64),
 
+            #[cfg(feature = "dtype-i128")]
+            (Int128, a) if a.is_integer() | a.is_bool() => Some(Int128),
+            #[cfg(feature = "dtype-i128")]
+            (Int128, a) if a.is_float() => Some(Float64),
+
+            #[cfg(feature = "dtype-u8")]
+            (UInt8, UInt32) => Some(UInt32),
+            #[cfg(feature = "dtype-u8")]
+            (UInt8, UInt64) => Some(UInt64),
+
             #[cfg(all(feature = "dtype-u16", feature = "dtype-u8"))]
             (UInt16, UInt8) => Some(UInt16),
             #[cfg(feature = "dtype-u16")]
@@ -246,12 +253,14 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-u16")]
             (UInt16, UInt64) => Some(UInt64),
 
-            #[cfg(feature = "dtype-u8")]
-            (UInt8, UInt32) => Some(UInt32),
-            #[cfg(feature = "dtype-u8")]
-            (UInt8, UInt64) => Some(UInt64),
-
             (UInt32, UInt64) => Some(UInt64),
+
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_unsigned_integer() || a.is_bool() => Some(UInt128),
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_signed_integer() => Some(Int128),
+            #[cfg(feature = "dtype-u128")]
+            (UInt128, a) if a.is_float() => Some(Float64),
 
             #[cfg(feature = "dtype-u8")]
             (Boolean, UInt8) => Some(UInt8),
@@ -266,6 +275,8 @@ pub fn get_supertype_with_options(
             (Float32, UInt16) => Some(Float32),
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
+
+            (Float32, Float64) => Some(Float64),
 
             #[cfg(feature = "dtype-u8")]
             (Float64, UInt8) => Some(Float64),
@@ -404,19 +415,14 @@ pub fn get_supertype_with_options(
                             None
                         }
                     },
-                    // numeric vs float|str -> always float|str|decimal
-                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_integer() => Some(Unknown(UnknownKind::Float)),
-                    // Materialize float to float or decimal
-                    UnknownKind::Float if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
+                    // Materialize float to float
+                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_integer() | dt.is_decimal() => Some(Unknown(UnknownKind::Float)),
                     // Materialize str
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
                     // Materialize str
                     #[cfg(feature = "dtype-categorical")]
-                    UnknownKind::Str if dt.is_categorical()  => {
-                        let Categorical(_, ord) = dt else { unreachable!()};
-                        Some(Categorical(None, *ord))
-                    },
+                    UnknownKind::Str if dt.is_categorical() => Some(dt.clone()),
                     // Keep unknown
                     dynam if dt.is_null() => Some(Unknown(*dynam)),
                     // Find integers sizes
@@ -444,7 +450,11 @@ pub fn get_supertype_with_options(
                             }
                         }
                     }
-                    UnknownKind::Int(_) if dt.is_decimal() => Some(dt.clone()),
+                    #[cfg(feature = "dtype-decimal")]
+                    UnknownKind::Int(_) if dt.is_decimal() => {
+                        let DataType::Decimal(_prec, scale) = dt else { unreachable!() };
+                        Some(DataType::Decimal(DEC128_MAX_PREC, *scale))
+                    }
                     _ => Some(Unknown(UnknownKind::Any))
                 }
             },
@@ -463,12 +473,32 @@ pub fn get_supertype_with_options(
             }
             #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
-                Some(Decimal((*p1).zip(*p2).map(|(p1, p2)| p1.max(p2)), (*s1).max(*s2)))
+                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
+            },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(_, _), Float32 | Float64) => Some(Float64),
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
+                let fits = |v| { i128_to_dec128(v, *prec, *scale).is_some() };
+                let fits_orig_prec_scale = match dt {
+                    UInt8 => fits(u8::MAX as i128),
+                    UInt16 => fits(u16::MAX as i128),
+                    UInt32 => fits(u32::MAX as i128),
+                    UInt64 => fits(u64::MAX as i128),
+                    UInt128 => false,
+                    Int8 => fits(i8::MAX as i128),
+                    Int16 => fits(i16::MAX as i128),
+                    Int32 => fits(i32::MAX as i128),
+                    Int64 => fits(i64::MAX as i128),
+                    Int128 => false,
+                    _ => unreachable!(),
+                };
+                if fits_orig_prec_scale {
+                    Some(Decimal(*prec, *scale))
+                } else {
+                    Some(Decimal(DEC128_MAX_PREC, *scale))
+                }
             }
-            #[cfg(feature = "dtype-decimal")]
-            (Decimal(_, _), f @ (Float32 | Float64)) => Some(f.clone()),
-            #[cfg(feature = "dtype-decimal")]
-            (d @ Decimal(_, _), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => Some(d.clone()),
             _ => None,
         }
     }
@@ -601,7 +631,7 @@ fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
 pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
     into_iter: I,
 ) -> PolarsResult<DataType> {
-    let mut iter = into_iter.clone().into_iter();
+    let mut iter = into_iter.into_iter();
 
     let mut st = iter
         .next()
@@ -612,42 +642,5 @@ pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
         st = try_get_supertype(d.as_ref(), &st)?;
     }
 
-    match st {
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(Some(_), ordering) => {
-            // This merges the global rev maps with linear complexity.
-            // If we do a binary reduce, it would be quadratic.
-            let mut iter = into_iter.into_iter();
-            let first_dt = iter.next().unwrap();
-            let first_dt = first_dt.as_ref();
-            let DataType::Categorical(Some(rm), _) = first_dt else {
-                unreachable!()
-            };
-            polars_ensure!(matches!(rm.as_ref(), RevMapping::Global(_, _, _)), ComputeError: "global string cache must be set to merge categorical columns");
-
-            let mut merger = GlobalRevMapMerger::new(rm.clone());
-
-            for d in iter {
-                if let DataType::Categorical(Some(rm), _) = d.as_ref() {
-                    merger.merge_map(rm)?
-                }
-            }
-            let rev_map = merger.finish();
-
-            Ok(DataType::Categorical(Some(rev_map), ordering))
-        },
-        // This would be quadratic if we do this with the binary `merge_dtypes`.
-        DataType::List(inner) if inner.contains_categoricals() => {
-            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
-        },
-        #[cfg(feature = "dtype-array")]
-        DataType::Array(inner, _) if inner.contains_categoricals() => {
-            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
-        },
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(fields) if fields.iter().any(|f| f.dtype().contains_categoricals()) => {
-            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
-        },
-        _ => Ok(st),
-    }
+    Ok(st)
 }

@@ -50,7 +50,7 @@ where
             state = simd_f(state, m.select(Simd::from_slice(c), identity));
             offset += N;
         }
-        if arr.len() % N > 0 {
+        if !arr.len().is_multiple_of(N) {
             let mut rest: [T; N] = identity.to_array();
             let arr_rest = arr_chunks.remainder();
             rest[..arr_rest.len()].copy_from_slice(arr_rest);
@@ -61,7 +61,7 @@ where
         for c in arr_chunks.by_ref() {
             state = simd_f(state, Simd::from_slice(c));
         }
-        if arr.len() % N > 0 {
+        if !arr.len().is_multiple_of(N) {
             let mut rest: [T; N] = identity.to_array();
             let arr_rest = arr_chunks.remainder();
             rest[..arr_rest.len()].copy_from_slice(arr_rest);
@@ -109,7 +109,7 @@ where
             );
             offset += N;
         }
-        if arr.len() % N > 0 {
+        if !arr.len().is_multiple_of(N) {
             let mut min_rest: [T; N] = min_identity.to_array();
             let mut max_rest: [T; N] = max_identity.to_array();
 
@@ -135,7 +135,7 @@ where
             let slice = Simd::from_slice(c);
             state = simd_f(state, (slice, slice));
         }
-        if arr.len() % N > 0 {
+        if !arr.len().is_multiple_of(N) {
             let mut min_rest: [T; N] = min_identity.to_array();
             let mut max_rest: [T; N] = max_identity.to_array();
 

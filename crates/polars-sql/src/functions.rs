@@ -5,8 +5,6 @@ use polars_core::prelude::{
     DataType, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail, polars_err,
 };
 use polars_lazy::dsl::Expr;
-#[cfg(feature = "list_eval")]
-use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
@@ -524,6 +522,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT AVG(column_1) FROM df;
     /// ```
     Avg,
+    /// SQL 'corr' function.
+    /// Returns the Pearson correlation coefficient between two columns.
+    /// ```sql
+    /// SELECT CORR(column_1, column_2) FROM df;
+    /// ```
+    Corr,
     /// SQL 'count' function.
     /// Returns the amount of elements in the grouping.
     /// ```sql
@@ -533,6 +537,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COUNT(DISTINCT *) FROM df;
     /// ```
     Count,
+    /// SQL 'covar_pop' function.
+    /// Returns the population covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_POP(column_1, column_2) FROM df;
+    /// ```
+    CovarPop,
+    /// SQL 'covar_samp' function.
+    /// Returns the sample covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_SAMP(column_1, column_2) FROM df;
+    /// ```
+    CovarSamp,
     /// SQL 'first' function.
     /// Returns the first element of the grouping.
     /// ```sql
@@ -595,7 +611,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT VARIANCE(column_1) FROM df;
     /// ```
     Variance,
-
     // ----
     // Array functions
     // ----
@@ -721,11 +736,15 @@ impl PolarsSQLFunctions {
             "columns",
             "concat",
             "concat_ws",
+            "corr",
             "cos",
             "cosd",
             "cot",
             "cotd",
             "count",
+            "covar",
+            "covar_pop",
+            "covar_samp",
             "date",
             "date_part",
             "degrees",
@@ -899,7 +918,10 @@ impl PolarsSQLFunctions {
             // Aggregate functions
             // ----
             "avg" => Self::Avg,
+            "corr" => Self::Corr,
             "count" => Self::Count,
+            "covar_pop" => Self::CovarPop,
+            "covar" | "covar_samp" => Self::CovarSamp,
             "first" => Self::First,
             "last" => Self::Last,
             "max" => Self::Max,
@@ -946,6 +968,8 @@ impl PolarsSQLFunctions {
 impl SQLFunctionVisitor<'_> {
     pub(crate) fn visit_function(&mut self) -> PolarsResult<Expr> {
         use PolarsSQLFunctions::*;
+        use polars_lazy::prelude::Literal;
+
         let function_name = PolarsSQLFunctions::try_from_sql(self.func, self.ctx)?;
         let function = self.func;
 
@@ -960,6 +984,8 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLInterface: "'IGNORE|RESPECT NULLS' is not currently supported")
         }
 
+        let log_with_base =
+            |e: Expr, base: f64| e.log(LiteralValue::Dyn(DynLiteralValue::Float(base)).lit());
         match function_name {
             // ----
             // Bitwise functions
@@ -979,11 +1005,11 @@ impl SQLFunctionVisitor<'_> {
             Div => self.visit_binary(|e, d| e.floor_div(d).cast(DataType::Int64)),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
-            Ln => self.visit_unary(|e| e.log(std::f64::consts::E)),
+            Ln => self.visit_unary(|e| log_with_base(e, std::f64::consts::E)),
             Log => self.visit_binary(Expr::log),
-            Log10 => self.visit_unary(|e| e.log(10.0)),
+            Log10 => self.visit_unary(|e| log_with_base(e, 10.0)),
             Log1p => self.visit_unary(Expr::log1p),
-            Log2 => self.visit_unary(|e| e.log(2.0)),
+            Log2 => self.visit_unary(|e| log_with_base(e, 2.0)),
             Pi => self.visit_nullary(Expr::pi),
             Mod => self.visit_binary(|e1, e2| e1 % e2),
             Pow => self.visit_binary::<Expr>(Expr::pow),
@@ -1160,7 +1186,7 @@ impl SQLFunctionVisitor<'_> {
                         .then(e.clone().str().slice(lit(0), length.clone().abs()))
                         .otherwise(e.clone().str().slice(
                             lit(0),
-                            (e.clone().str().len_chars() + length.clone()).clip_min(lit(0)),
+                            (e.str().len_chars() + length.clone()).clip_min(lit(0)),
                         )),
                 })
             }),
@@ -1228,7 +1254,7 @@ impl SQLFunctionVisitor<'_> {
                                     if f.is_empty() {
                                         polars_bail!(SQLSyntax: "invalid/empty 'flags' for REGEXP_LIKE ({})", args[2]);
                                     };
-                                    lit(format!("(?{}){}", f, s))
+                                    lit(format!("(?{f}){s}"))
                                 },
                                 _ => {
                                     polars_bail!(SQLSyntax: "invalid arguments for REGEXP_LIKE ({}, {})", args[1], args[2]);
@@ -1273,7 +1299,7 @@ impl SQLFunctionVisitor<'_> {
                                 .slice(length.clone().abs(), lit(LiteralValue::untyped_null())),
                         )
                         .otherwise(e.clone().str().slice(
-                            e.clone().str().len_chars().cast(DataType::Int32) - length.clone(),
+                            e.str().len_chars().cast(DataType::Int32) - length.clone(),
                             lit(LiteralValue::untyped_null()),
                         )),
                 })
@@ -1304,7 +1330,7 @@ impl SQLFunctionVisitor<'_> {
                                     .get(idx, true)
                                     .fill_null(lit("")),
                             )
-                            .otherwise(e.clone()))
+                            .otherwise(e))
                     }),
                     _ => {
                         polars_bail!(SQLSyntax: "SPLIT_PART expects 3 arguments (found {})", args.len())
@@ -1382,19 +1408,19 @@ impl SQLFunctionVisitor<'_> {
                             (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                                 polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", args[2])
                             },
-                            (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), _) if n > 0 => e.str().slice(lit(n - 1), length.clone()),
+                            (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), _) if n > 0 => e.str().slice(lit(n - 1), length),
                             (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), _) => {
-                                e.str().slice(lit(0), (length.clone() + lit(n - 1)).clip_min(lit(0)))
+                                e.str().slice(lit(0), (length + lit(n - 1)).clip_min(lit(0)))
                             },
                             (Expr::Literal(_), _) => polars_bail!(SQLSyntax: "invalid 'start' for SUBSTR ({})", args[1]),
                             (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_)))) => {
                                 polars_bail!(SQLSyntax: "invalid 'length' for SUBSTR ({})", args[1])
                             },
                             _ => {
-                                let adjusted_start = start.clone() - lit(1);
+                                let adjusted_start = start - lit(1);
                                 when(adjusted_start.clone().lt(lit(0)))
                                     .then(e.clone().str().slice(lit(0), (length.clone() + adjusted_start.clone()).clip_min(lit(0))))
-                                    .otherwise(e.clone().str().slice(adjusted_start.clone(), length.clone()))
+                                    .otherwise(e.str().slice(adjusted_start, length))
                             }
                         })
                     }),
@@ -1407,7 +1433,10 @@ impl SQLFunctionVisitor<'_> {
             // Aggregate functions
             // ----
             Avg => self.visit_unary(Expr::mean),
+            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
             Count => self.visit_count(),
+            CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
+            CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
@@ -1473,7 +1502,7 @@ impl SQLFunctionVisitor<'_> {
             // Array functions
             // ----
             ArrayAgg => self.visit_arr_agg(),
-            ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
+            ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s, true)),
             ArrayGet => {
                 // note: SQL is 1-indexed, not 0-indexed
                 self.visit_binary(|e, idx: Expr| {
@@ -1507,9 +1536,9 @@ impl SQLFunctionVisitor<'_> {
                         };
                         let pat = match pat {
                             _ if pat.starts_with('^') && pat.ends_with('$') => pat.to_string(),
-                            _ if pat.starts_with('^') => format!("{}.*$", pat),
-                            _ if pat.ends_with('$') => format!("^.*{}", pat),
-                            _ => format!("^.*{}.*$", pat),
+                            _ if pat.starts_with('^') => format!("{pat}.*$"),
+                            _ if pat.ends_with('$') => format!("^.*{pat}"),
+                            _ => format!("^.*{pat}.*$"),
                         };
                         if let Some(active_schema) = &active_schema {
                             let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();
@@ -1522,13 +1551,13 @@ impl SQLFunctionVisitor<'_> {
                             Ok(if col_names.len() == 1 {
                                 col(col_names.into_iter().next().unwrap())
                             } else {
-                                cols(col_names)
+                                cols(col_names).as_expr()
                             })
                         } else {
                             Ok(col(pat.as_str()))
                         }
                     },
-                    Expr::Wildcard => Ok(col("*")),
+                    Expr::Selector(s) => Ok(s.as_expr()),
                     _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
                 })
             },
@@ -1781,7 +1810,7 @@ impl SQLFunctionVisitor<'_> {
                     } else {
                         e.cast(DataType::List(Box::from(DataType::String)))
                             .list()
-                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())), false)
+                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())))
                             .list()
                             .join(sep, false)
                     })
@@ -1798,23 +1827,22 @@ impl SQLFunctionVisitor<'_> {
 
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
-        match (is_distinct, args.as_slice()) {
+        let count_expr = match (is_distinct, args.as_slice()) {
             // count(*), count()
-            (false, [FunctionArgExpr::Wildcard] | []) => Ok(len()),
+            (false, [FunctionArgExpr::Wildcard] | []) => len(),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                let expr = self.apply_window_spec(expr, &self.func.over)?;
-                Ok(expr.count())
+                expr.count()
             },
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                let expr = self.apply_window_spec(expr, &self.func.over)?;
-                Ok(expr.clone().n_unique().sub(expr.null_count().gt(lit(0))))
+                expr.clone().n_unique().sub(expr.null_count().gt(lit(0)))
             },
-            _ => self.not_supported_error(),
-        }
+            _ => self.not_supported_error()?,
+        };
+        self.apply_window_spec(count_expr, &self.func.over)
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {

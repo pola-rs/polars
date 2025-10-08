@@ -45,7 +45,7 @@ impl MutableFixedSizeBinaryArray {
     ) -> PolarsResult<Self> {
         let size = FixedSizeBinaryArray::maybe_get_size(&dtype)?;
 
-        if values.len() % size != 0 {
+        if !values.len().is_multiple_of(size) {
             polars_bail!(ComputeError:
                 "values (of len {}) must be a multiple of size ({}) in FixedSizeBinaryArray.",
                 values.len(),

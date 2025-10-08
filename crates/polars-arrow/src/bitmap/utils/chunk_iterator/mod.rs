@@ -132,7 +132,10 @@ impl<'a, T: BitChunk> BitChunks<'a, T> {
                 remainder
             },
         };
-        T::from_ne_bytes(remainder)
+        let mut remainder = T::from_ne_bytes(remainder);
+        let mask = (T::one() << self.remainder_len()) - T::one();
+        remainder &= mask;
+        remainder
     }
 
     /// Returns the remainder bits in [`BitChunks::remainder`].

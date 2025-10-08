@@ -32,6 +32,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
         UInt16 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         UInt32 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         UInt64 => Box::new(|f, index| write!(f, "{}", array.value(index))),
+        UInt128 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Float16 => unreachable!(),
         Float32 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Float64 => Box::new(|f, index| write!(f, "{}", array.value(index))),
@@ -125,6 +126,26 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                 format!("{base}.{decimals}")
             };
             dyn_primitive!(array, i128, display)
+        },
+        Decimal32(_, scale) => {
+            let scale = *scale as u32;
+            let factor = 10i32.pow(scale);
+            let display = move |x: i32| {
+                let base = x / factor;
+                let decimals = (x - base * factor).abs();
+                format!("{base}.{decimals}")
+            };
+            dyn_primitive!(array, i32, display)
+        },
+        Decimal64(_, scale) => {
+            let scale = *scale as u32;
+            let factor = 10i64.pow(scale);
+            let display = move |x: i64| {
+                let base = x / factor;
+                let decimals = (x - base * factor).abs();
+                format!("{base}.{decimals}")
+            };
+            dyn_primitive!(array, i64, display)
         },
         Decimal256(_, scale) => {
             let scale = *scale as u32;

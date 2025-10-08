@@ -1,4 +1,5 @@
-use std::sync::LazyLock;
+use std::pin::Pin;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -8,7 +9,8 @@ use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 
-use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
+use self::metrics::WriteMetrics;
+use super::{ComputeNode, JoinHandle, PortState, RecvPort, SendPort, TaskScope};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::distributor_channel;
@@ -16,7 +18,9 @@ use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::TaskPriority;
+use crate::pipe::PortReceiver;
 
+mod metrics;
 mod phase;
 use phase::PhaseOutcome;
 
@@ -44,19 +48,19 @@ static DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| 
 });
 
 pub enum SinkInputPort {
-    Serial(Receiver<Morsel>),
-    Parallel(Vec<Receiver<Morsel>>),
+    Serial(PortReceiver),
+    Parallel(Vec<PortReceiver>),
 }
 
 impl SinkInputPort {
-    pub fn serial(self) -> Receiver<Morsel> {
+    pub fn serial(self) -> PortReceiver {
         match self {
             Self::Serial(s) => s,
             _ => panic!(),
         }
     }
 
-    pub fn parallel(self) -> Vec<Receiver<Morsel>> {
+    pub fn parallel(self) -> Vec<PortReceiver> {
         match self {
             Self::Parallel(s) => s,
             _ => panic!(),
@@ -71,15 +75,22 @@ fn buffer_and_distribute_columns_task(
     mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
     chunk_size: usize,
     schema: SchemaRef,
+    metrics: Arc<Mutex<Option<WriteMetrics>>>,
 ) -> JoinHandle<PolarsResult<()>> {
     spawn(TaskPriority::High, async move {
         let mut seq = 0usize;
         let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
+        let mut metrics_ = metrics.lock().unwrap().take();
         while let Ok((outcome, rx)) = recv_port_rx.recv().await {
             let mut rx = rx.serial();
             while let Ok(morsel) = rx.recv().await {
                 let (df, _, _, consume_token) = morsel.into_inner();
+
+                if let Some(metrics) = metrics_.as_mut() {
+                    metrics.append(&df)?;
+                }
+
                 // @NOTE: This also performs schema validation.
                 buffer.vstack_mut(&df)?;
 
@@ -102,6 +113,14 @@ fn buffer_and_distribute_columns_task(
 
             outcome.stopped();
         }
+        if let Some(metrics_) = metrics_ {
+            *metrics.lock().unwrap() = Some(metrics_);
+        }
+
+        // Don't write an empty row group at the end.
+        if buffer.is_empty() {
+            return Ok(());
+        }
 
         // Flush the remaining rows.
         assert!(buffer.height() <= chunk_size);
@@ -116,20 +135,17 @@ fn buffer_and_distribute_columns_task(
 }
 
 #[allow(clippy::type_complexity)]
-pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
+pub fn parallelize_receive_task<T: Ord + Send + 'static>(
     join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     mut recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
     num_pipelines: usize,
     maintain_order: bool,
-) -> (
-    Vec<Receiver<(Receiver<Morsel>, Inserter<T>)>>,
-    Receiver<Linearizer<T>>,
-) {
+    mut io_tx: Sender<Linearizer<T>>,
+) -> Vec<Receiver<(PortReceiver, Inserter<T>)>> {
     // Phase Handling Task -> Encode Tasks.
     let (mut pass_txs, pass_rxs) = (0..num_pipelines)
         .map(|_| connector())
         .collect::<(Vec<_>, Vec<_>)>();
-    let (mut io_tx, io_rx) = connector();
 
     join_handles.push(spawn(TaskPriority::High, async move {
         while let Ok((outcome, port_rxs)) = recv_port_rx.recv().await {
@@ -155,7 +171,7 @@ pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
         Ok(())
     }));
 
-    (pass_rxs, io_rx)
+    pass_rxs
 }
 
 pub trait SinkNode {
@@ -173,6 +189,32 @@ pub trait SinkNode {
         state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
+
+    /// Callback that gets called once before the sink is spawned.
+    fn initialize(&mut self, state: &StreamingExecutionState) -> PolarsResult<()> {
+        _ = state;
+        Ok(())
+    }
+
+    /// Callback for when the query has finished successfully.
+    ///
+    /// This should only be called when the writing is finished and all the join handles have been
+    /// awaited.
+    fn finalize(
+        &mut self,
+        state: &StreamingExecutionState,
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
+        _ = state;
+        None
+    }
+
+    /// Fetch metrics for a specific sink.
+    ///
+    /// This should only be called when the writing is finished and all the join handles have been
+    /// awaited.
+    fn get_metrics(&self) -> PolarsResult<Option<WriteMetrics>> {
+        Ok(None)
+    }
 }
 
 /// The state needed to manage a spawned [`SinkNode`].
@@ -183,20 +225,39 @@ struct StartedSinkComputeNode {
 
 /// A [`ComputeNode`] to wrap a [`SinkNode`].
 pub struct SinkComputeNode {
-    sink: Box<dyn SinkNode + Send + Sync>,
+    sink: Box<dyn SinkNode + Send>,
     started: Option<StartedSinkComputeNode>,
+    state: SinkState,
+}
+
+enum SinkState {
+    /// Initial state of a [`SinkComputeNode`].
+    ///
+    /// This still requires `sink.initialize` to be called on the `SinkNode`.
+    Uninitialized,
+
+    /// Active state of a [`SinkComputeNode`].
+    ///
+    /// When finished, the `sink.finalize` method should be called.
+    Initialized,
+
+    /// Final state for the [`SinkComputeNode`].
+    ///
+    /// Receive port is Done and [`SinkNode`] is finalized.
+    Finished,
 }
 
 impl SinkComputeNode {
-    pub fn new(sink: Box<dyn SinkNode + Send + Sync>) -> Self {
+    pub fn new(sink: Box<dyn SinkNode + Send>) -> Self {
         Self {
             sink,
             started: None,
+            state: SinkState::Uninitialized,
         }
     }
 }
 
-impl<T: SinkNode + Send + Sync + 'static> From<T> for SinkComputeNode {
+impl<T: SinkNode + Send + 'static> From<T> for SinkComputeNode {
     fn from(value: T) -> Self {
         Self::new(Box::new(value))
     }
@@ -211,23 +272,45 @@ impl ComputeNode for SinkComputeNode {
         &mut self,
         recv: &mut [PortState],
         _send: &mut [PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
+        // Ensure that initialize is only called once.
+        if matches!(self.state, SinkState::Uninitialized) {
+            self.sink.initialize(state)?;
+            self.state = SinkState::Initialized;
+        }
+
         if recv[0] != PortState::Done {
             recv[0] = PortState::Ready;
         }
 
-        if recv[0] == PortState::Done {
-            if let Some(mut started) = self.started.take() {
-                drop(started.input_send);
-                polars_io::pl_async::get_runtime().block_on(async move {
+        if recv[0] == PortState::Done && !matches!(self.state, SinkState::Finished) {
+            let started = self.started.take();
+            let finalize = self.sink.finalize(state);
+
+            state.spawn_subphase_task(async move {
+                // We need to join on all started tasks before finalizing the node because the
+                // unfinished tasks might still need access to the node.
+                //
+                // Note, that if the sink never received any data, this `started` might be None.
+                // However, we do still need to finalize the node otherwise no file will be
+                // created.
+                if let Some(mut started) = started {
+                    drop(started.input_send);
                     // Either the task finished or some error occurred.
                     while let Some(ret) = started.join_handles.next().await {
                         ret?;
                     }
-                    PolarsResult::Ok(())
-                })?;
-            }
+                }
+
+                if let Some(finalize) = finalize {
+                    finalize.await?;
+                }
+
+                PolarsResult::Ok(())
+            });
+
+            self.state = SinkState::Finished;
         }
 
         Ok(())
@@ -289,5 +372,9 @@ impl ComputeNode for SinkComputeNode {
 
             Ok(())
         }));
+    }
+
+    fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
+        Ok(None)
     }
 }

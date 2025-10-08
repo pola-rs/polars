@@ -14,7 +14,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperationError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsTemporalType, TimeUnit
@@ -650,9 +650,27 @@ def test_strptime_complete_formats(string: str, fmt: str, expected: datetime) ->
 @pytest.mark.parametrize(
     ("data", "format", "expected"),
     [
-        ("05:10:10.074000", "%H:%M:%S%.f", time(5, 10, 10, 74000)),
-        ("05:10:10.074000", "%T%.6f", time(5, 10, 10, 74000)),
-        ("05:10:10.074000", "%H:%M:%S%.3f", time(5, 10, 10, 74000)),
+        ("00:00:00.000005000", "%H:%M:%S%.f", time(0, 0, 0, 5)),
+        ("01:23:10.000500", "%H:%M:%S%.6f", time(1, 23, 10, 500)),
+        ("08:10:11.000", "%H:%M:%S%.3f", time(8, 10, 11)),
+        ("15:50:25", "%T", time(15, 50, 25)),
+        ("22:35", "%R", time(22, 35)),
+    ],
+)
+def test_to_time_inferred(data: str, format: str, expected: time) -> None:
+    df = pl.DataFrame({"tmstr": [data]})
+    expected_df = df.with_columns(tm=pl.Series("tm", values=[expected]))
+    for fmt in (format, None):
+        res = df.with_columns(tm=pl.col("tmstr").str.to_time(fmt))
+        assert_frame_equal(res, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("data", "format", "expected"),
+    [
+        ("05:10:11.740000", "%H:%M:%S%.f", time(5, 10, 11, 740000)),
+        ("13:20:12.000074", "%T%.6f", time(13, 20, 12, 74)),
+        ("21:30:13.007400", "%H:%M:%S%.3f", time(21, 30, 13, 7400)),
     ],
 )
 def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
@@ -806,3 +824,85 @@ def test_matching_strings_but_different_format_22495(value: str) -> None:
     s = pl.Series("my_strings", [value])
     result = s.str.to_date("%Y-%m-%d", strict=False).item()
     assert result is None
+
+
+def test_date_parse_omit_day_month() -> None:
+    fmt_B = "%Y %B"
+    fmt_b = "%Y %b"
+    df = (
+        pl.select(date=pl.date_range(pl.date(2022, 1, 1), pl.date(2022, 12, 1), "1mo"))
+        .with_columns(
+            strdateB=pl.col("date").dt.strftime(fmt_B),
+            strdateb=pl.col("date").dt.strftime(fmt_b),
+        )
+        .with_columns(
+            round_tripB=pl.col("strdateB").str.strptime(pl.Date, fmt_B),
+            round_tripb=pl.col("strdateb").str.strptime(pl.Date, fmt_b),
+        )
+    )
+    check = df.filter(
+        ~pl.all_horizontal(
+            pl.col("date") == pl.col("round_tripB"),
+            pl.col("date") == pl.col("round_tripb"),
+        )
+    )
+    assert check.height == 0
+
+    s = pl.Series(
+        [
+            "2022 January",
+            "2022 February",
+            "2022 March",
+            "2022 April",
+            "2022 May",
+            "2022 June",
+            "2022 July",
+            "2022 August",
+            "2022 September",
+            "2022 October",
+            "2022 November",
+            "2022 December",
+        ]
+    )
+    result = s.str.strptime(pl.Date, "%Y %B")
+    expected = pl.Series(
+        [
+            date(2022, 1, 1),
+            date(2022, 2, 1),
+            date(2022, 3, 1),
+            date(2022, 4, 1),
+            date(2022, 5, 1),
+            date(2022, 6, 1),
+            date(2022, 7, 1),
+            date(2022, 8, 1),
+            date(2022, 9, 1),
+            date(2022, 10, 1),
+            date(2022, 11, 1),
+            date(2022, 12, 1),
+        ]
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("length", [1, 5])
+def test_eager_inference_on_expr(length: int) -> None:
+    s = pl.Series("a", ["2025-04-06T18:57:42.77123Z"] * length)
+
+    assert_series_equal(
+        s.str.strptime(pl.Datetime),
+        pl.Series(
+            "a",
+            [
+                datetime(
+                    2025, 4, 6, 18, 57, 42, 771230, tzinfo=timezone(timedelta(hours=0))
+                )
+            ]
+            * length,
+        ),
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match="`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data",
+    ):
+        s.to_frame().select(pl.col("a").str.strptime(pl.Datetime))

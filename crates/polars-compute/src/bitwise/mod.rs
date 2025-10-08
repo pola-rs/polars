@@ -1,6 +1,7 @@
 use std::convert::identity;
 
 use arrow::array::{Array, BooleanArray, PrimitiveArray};
+use arrow::bitmap::{binary_fold, intersects_with};
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::utils::CustomIterTools;
 
@@ -157,6 +158,11 @@ impl_bitwise_kernel! {
     (f64, f64::to_bits, f64::from_bits),
 }
 
+#[cfg(feature = "dtype-u128")]
+impl_bitwise_kernel! {
+    (u128, identity, identity),
+}
+
 #[cfg(feature = "dtype-i128")]
 impl_bitwise_kernel! {
     (i128, identity, identity),
@@ -215,7 +221,14 @@ impl BitwiseKernel for BooleanArray {
         } else if !self.has_nulls() {
             Some(self.values().unset_bits() == 0)
         } else {
-            Some((self.values() & self.validity().unwrap()).unset_bits() == 0)
+            let false_found = binary_fold(
+                self.values(),
+                self.validity().unwrap(),
+                |lhs, rhs| (!lhs & rhs) != 0,
+                false,
+                |a, b| a || b,
+            );
+            Some(!false_found)
         }
     }
 
@@ -225,7 +238,7 @@ impl BitwiseKernel for BooleanArray {
         } else if !self.has_nulls() {
             Some(self.values().set_bits() > 0)
         } else {
-            Some((self.values() & self.validity().unwrap()).set_bits() > 0)
+            Some(intersects_with(self.values(), self.validity().unwrap()))
         }
     }
 
@@ -235,7 +248,14 @@ impl BitwiseKernel for BooleanArray {
         } else if !self.has_nulls() {
             Some(self.values().set_bits() % 2 == 1)
         } else {
-            Some((self.values() & self.validity().unwrap()).set_bits() % 2 == 1)
+            let nonnull_parity = binary_fold(
+                self.values(),
+                self.validity().unwrap(),
+                |lhs, rhs| lhs & rhs,
+                0,
+                |a, b| a ^ b,
+            );
+            Some(nonnull_parity.count_ones() % 2 == 1)
         }
     }
 

@@ -3,15 +3,15 @@ use std::borrow::Cow;
 use arrow::array::Array;
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
-use numpy::{Element, PyArray1, PyArrayMethods};
+use numpy::{Element, PyArray1, PyArrayMethods, PyUntypedArrayMethods};
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::PySeries;
+use crate::conversion::Wrap;
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{Wrap, reinterpret_vec};
 use crate::error::PyPolarsErr;
 use crate::interop::arrow::to_rust::array_to_rust;
 use crate::prelude::ObjectValue;
@@ -52,19 +52,24 @@ fn mmap_numpy_array<T: Element + NativeType>(name: &str, array: &Bound<PyArray1<
 impl PySeries {
     #[staticmethod]
     fn new_bool(
-        py: Python,
+        py: Python<'_>,
         name: &str,
         array: &Bound<PyArray1<bool>>,
         _strict: bool,
     ) -> PyResult<Self> {
         let array = array.readonly();
-        let vals = array.as_slice().unwrap();
-        py.enter_polars_series(|| Ok(Series::new(name.into(), vals)))
+
+        // We use raw ptr methods to read this as a u8 slice to work around PyO3/rust-numpy#509.
+        assert!(array.is_contiguous());
+        let data_ptr = array.data().cast::<u8>();
+        let data_len = array.len();
+        let vals = unsafe { core::slice::from_raw_parts(data_ptr, data_len) };
+        py.enter_polars_series(|| Series::new(name.into(), vals).cast(&DataType::Boolean))
     }
 
     #[staticmethod]
     fn new_f32(
-        py: Python,
+        py: Python<'_>,
         name: &str,
         array: &Bound<PyArray1<f32>>,
         nan_is_null: bool,
@@ -86,7 +91,7 @@ impl PySeries {
 
     #[staticmethod]
     fn new_f64(
-        py: Python,
+        py: Python<'_>,
         name: &str,
         array: &Bound<PyArray1<f64>>,
         nan_is_null: bool,
@@ -130,11 +135,14 @@ impl PySeries {
     }
 }
 
-fn new_primitive<'a, T>(name: &str, values: &'a Bound<PyAny>, _strict: bool) -> PyResult<PySeries>
+fn new_primitive<'py, T>(
+    name: &str,
+    values: &Bound<'py, PyAny>,
+    _strict: bool,
+) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-    T::Native: FromPyObject<'a>,
+    T::Native: FromPyObject<'py>,
 {
     let len = values.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name.into(), len);
@@ -171,19 +179,20 @@ init_method_opt!(new_opt_u8, UInt8Type, u8);
 init_method_opt!(new_opt_u16, UInt16Type, u16);
 init_method_opt!(new_opt_u32, UInt32Type, u32);
 init_method_opt!(new_opt_u64, UInt64Type, u64);
+init_method_opt!(new_opt_u128, UInt128Type, u128);
 init_method_opt!(new_opt_i8, Int8Type, i8);
 init_method_opt!(new_opt_i16, Int16Type, i16);
 init_method_opt!(new_opt_i32, Int32Type, i32);
 init_method_opt!(new_opt_i64, Int64Type, i64);
-init_method_opt!(new_opt_i128, Int128Type, i64);
+init_method_opt!(new_opt_i128, Int128Type, i128);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 
-fn convert_to_avs<'a>(
-    values: &'a Bound<'a, PyAny>,
+fn convert_to_avs(
+    values: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
-) -> PyResult<Vec<AnyValue<'a>>> {
+) -> PyResult<Vec<AnyValue<'static>>> {
     values
         .try_iter()?
         .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object))
@@ -198,6 +207,7 @@ impl PySeries {
             .try_iter()?
             .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true))
             .collect::<PyResult<Vec<AnyValue>>>();
+
         let result = any_values_result.and_then(|avs| {
             let s = Series::from_any_values(name.into(), avs.as_slice(), strict).map_err(|e| {
                 PyTypeError::new_err(format!(
@@ -232,8 +242,8 @@ impl PySeries {
         let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(
-                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-            ))
+                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                ))
             })?;
         Ok(s.into())
     }
@@ -285,7 +295,10 @@ impl PySeries {
 
     #[staticmethod]
     fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> PyResult<Self> {
-        let series = reinterpret_vec(values);
+        let series: Vec<_> = values
+            .into_iter()
+            .map(|ops| ops.map(|ps| ps.series.into_inner()))
+            .collect();
         if let Some(s) = series.iter().flatten().next() {
             if s.dtype().is_object() {
                 return Err(PyValueError::new_err(
@@ -308,7 +321,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_object(py: Python, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
+    pub fn new_object(py: Python<'_>, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
             let mut validity = BitmapBuilder::with_capacity(values.len());

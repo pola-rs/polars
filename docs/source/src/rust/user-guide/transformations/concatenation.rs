@@ -12,11 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "a"=> &[2],
             "b"=> &[4],
     )?;
-    let df_vertical_concat = concat(
-        [df_v1.clone().lazy(), df_v2.clone().lazy()],
-        UnionArgs::default(),
-    )?
-    .collect()?;
+    let df_vertical_concat =
+        concat([df_v1.lazy(), df_v2.lazy()], UnionArgs::default())?.collect()?;
     println!("{}", &df_vertical_concat);
     // --8<-- [end:vertical]
 

@@ -1,6 +1,7 @@
 use std::hash::BuildHasher;
 
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::unique_id::UniqueId;
 
 use super::*;
 use crate::prelude::visitor::IRNode;
@@ -89,12 +90,17 @@ mod identifier_impl {
 }
 use identifier_impl::*;
 
-#[derive(Default)]
 struct IdentifierMap<V> {
     inner: PlHashMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
+    fn new() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+
     fn get(&self, id: &Identifier, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<&V> {
         self.inner
             .raw_entry()
@@ -121,6 +127,12 @@ impl<V> IdentifierMap<V> {
                 v
             },
         }
+    }
+}
+
+impl<V> Default for IdentifierMap<V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -237,7 +249,7 @@ impl Visitor for LpIdentifierVisitor<'_> {
     }
 }
 
-pub(super) type CacheId2Caches = PlHashMap<usize, (u32, Vec<Node>)>;
+pub(super) type CacheId2Caches = PlHashMap<UniqueId, (u32, Vec<Node>)>;
 
 struct CommonSubPlanRewriter<'a> {
     sp_count: &'a SubPlanCount,
@@ -249,7 +261,7 @@ struct CommonSubPlanRewriter<'a> {
     visited_idx: usize,
     /// Indicates if this expression is rewritten.
     rewritten: bool,
-    cache_id: IdentifierMap<usize>,
+    cache_id: IdentifierMap<UniqueId>,
     // Maps cache_id : (cache_count and cache_nodes)
     cache_id_to_caches: CacheId2Caches,
 }
@@ -331,16 +343,14 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let cache_id = self.cache_id.inner.len();
         let cache_id = *self
             .cache_id
-            .entry(id.clone(), || cache_id, &arena.0, &arena.1);
+            .entry(id.clone(), UniqueId::new, &arena.0, &arena.1);
         let cache_count = self.sp_count.get(id, &arena.0, &arena.1).unwrap().1;
 
         let cache_node = IR::Cache {
             input: node.node(),
             id: cache_id,
-            cache_hits: cache_count - 1,
         };
         node.assign(cache_node, &mut arena.0);
         let (_count, nodes) = self

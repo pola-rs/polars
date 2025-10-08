@@ -29,7 +29,6 @@ fn apply_operation_mut<T, F>(mut lhs: Series, mut rhs: Series, op: F) -> Series
 where
     T: PolarsNumericType,
     F: Fn(ChunkedArray<T>, ChunkedArray<T>) -> ChunkedArray<T> + Copy,
-    ChunkedArray<T>: IntoSeries,
 {
     let lhs_ca: &mut ChunkedArray<T> = lhs._get_inner_mut().as_mut();
     let rhs_ca: &mut ChunkedArray<T> = rhs._get_inner_mut().as_mut();
@@ -60,6 +59,8 @@ macro_rules! impl_operation {
                             Int16 => apply_operation_mut::<Int16Type, _>(lhs, rhs, $function),
                             Int32 => apply_operation_mut::<Int32Type, _>(lhs, rhs, $function),
                             Int64 => apply_operation_mut::<Int64Type, _>(lhs, rhs, $function),
+                            #[cfg(feature = "dtype-i128")]
+                            Int128 => apply_operation_mut::<Int128Type, _>(lhs, rhs, $function),
                             #[cfg(feature = "dtype-u8")]
                             UInt8 => apply_operation_mut::<UInt8Type, _>(lhs, rhs, $function),
                             #[cfg(feature = "dtype-u16")]

@@ -13,6 +13,7 @@ use crate::prelude::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IsSorted {
     Ascending,
     Descending,
@@ -31,8 +32,12 @@ impl IsSorted {
 }
 
 pub enum BitRepr {
-    Small(UInt32Chunked),
-    Large(UInt64Chunked),
+    U8(UInt8Chunked),
+    U16(UInt16Chunked),
+    U32(UInt32Chunked),
+    U64(UInt64Chunked),
+    #[cfg(feature = "dtype-u128")]
+    U128(UInt128Chunked),
 }
 
 pub(crate) mod private {
@@ -61,7 +66,7 @@ pub(crate) mod private {
         }
 
         /// Get field (used in schema)
-        fn _field(&self) -> Cow<Field>;
+        fn _field(&self) -> Cow<'_, Field>;
 
         fn _dtype(&self) -> &DataType;
 
@@ -88,16 +93,12 @@ pub(crate) mod private {
             &self,
             _build_hasher: PlSeedableRandomStateQuality,
             _buf: &mut Vec<u64>,
-        ) -> PolarsResult<()> {
-            polars_bail!(opq = vec_hash, self._dtype());
-        }
+        ) -> PolarsResult<()>;
         fn vec_hash_combine(
             &self,
             _build_hasher: PlSeedableRandomStateQuality,
             _hashes: &mut [u64],
-        ) -> PolarsResult<()> {
-            polars_bail!(opq = vec_hash_combine, self._dtype());
-        }
+        ) -> PolarsResult<()>;
 
         /// # Safety
         ///
@@ -211,13 +212,13 @@ pub trait SeriesTrait:
     fn rename(&mut self, name: PlSmallStr);
 
     /// Get the lengths of the underlying chunks
-    fn chunk_lengths(&self) -> ChunkLenIter;
+    fn chunk_lengths(&self) -> ChunkLenIter<'_>;
 
     /// Name of series.
     fn name(&self) -> &PlSmallStr;
 
     /// Get field (used in schema)
-    fn field(&self) -> Cow<Field> {
+    fn field(&self) -> Cow<'_, Field> {
         self._field()
     }
 
@@ -378,11 +379,30 @@ pub trait SeriesTrait:
     /// ```
     fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
+    /// Trim all lists of unused start and end elements recursively.
+    ///
+    /// - `None` if nothing needed to be done.
+    /// - `Some(series)` if something changed.
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        None
+    }
+
+    /// Propagate down nulls in nested types.
+    ///
+    /// - `None` if nothing needed to be done.
+    /// - `Some(series)` if something changed.
+    fn propagate_nulls(&self) -> Option<Series> {
+        None
+    }
+
+    /// Find the indices of elements where the null masks are different recursively.
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
+
     fn cast(&self, _dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         polars_ensure!(index < self.len(), oob = index, self.len());
         // SAFETY: Just did bounds check
         let value = unsafe { self.get_unchecked(index) };
@@ -396,7 +416,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// Does not do any bounds checking
-    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue;
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue<'_>;
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         polars_bail!(opq = sort_with, self._dtype());
@@ -492,6 +512,10 @@ pub trait SeriesTrait:
     /// Get the median of the Series as a new Series of length 1.
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         polars_bail!(opq = median, self._dtype());
+    }
+    /// Get the mean of the Series as a new Scalar
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = mean, self._dtype());
     }
     /// Get the variance of the Series as a new Series of length 1.
     fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
@@ -594,19 +618,16 @@ pub trait SeriesTrait:
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     fn rolling_map(
         &self,
-        _f: &dyn Fn(&Series) -> Series,
+        _f: &dyn Fn(&Series) -> PolarsResult<Series>,
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series> {
         polars_bail!(opq = rolling_map, self._dtype());
     }
 }
 
-impl (dyn SeriesTrait + '_) {
-    pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
-    where
-        N: 'static + PolarsDataType<IsLogical = FalseT>,
-    {
-        polars_ensure!(&N::get_dtype() == self.dtype(), unpack);
+impl dyn SeriesTrait + '_ {
+    pub fn unpack<T: PolarsPhysicalType>(&self) -> PolarsResult<&ChunkedArray<T>> {
+        polars_ensure!(&T::get_static_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())
     }
 }

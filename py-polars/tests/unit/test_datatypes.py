@@ -138,7 +138,6 @@ def test_repr(dtype: PolarsDataType, representation: str) -> None:
     assert repr(dtype) == representation
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_conversion_dtype() -> None:
     df = (
         pl.DataFrame(
@@ -215,11 +214,8 @@ def test_raise_invalid_namespace() -> None:
         (pl.UInt32, 0, 4294967295),
         (pl.Int64, -9223372036854775808, 9223372036854775807),
         (pl.UInt64, 0, 18446744073709551615),
-        (
-            pl.Int128,
-            -170141183460469231731687303715884105728,
-            170141183460469231731687303715884105727,
-        ),
+        (pl.Int128, -(2**127), 2**127 - 1),
+        (pl.UInt128, 0, 2**128 - 1),
         (pl.Float32, float("-inf"), float("inf")),
         (pl.Float64, float("-inf"), float("inf")),
         (pl.Time, time(0, 0), time(23, 59, 59, 999999)),

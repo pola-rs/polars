@@ -24,12 +24,11 @@ use object_store::{BackoffConfig, RetryConfig};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::LruCache;
+use polars_utils::plpath::{CloudScheme, PlPathRef};
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "cloud")]
-use url::Url;
 
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
@@ -54,19 +53,30 @@ type Configs<T> = Vec<(T, String)>;
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub(crate) enum CloudConfig {
     #[cfg(feature = "aws")]
-    Aws(Configs<AmazonS3ConfigKey>),
+    Aws(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<AmazonS3ConfigKey>,
+    ),
     #[cfg(feature = "azure")]
-    Azure(Configs<AzureConfigKey>),
+    Azure(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<AzureConfigKey>,
+    ),
     #[cfg(feature = "gcp")]
-    Gcp(Configs<GoogleConfigKey>),
+    Gcp(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<GoogleConfigKey>,
+    ),
     #[cfg(feature = "http")]
     Http { headers: Vec<(String, String)> },
 }
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
     pub max_retries: usize,
@@ -120,7 +130,7 @@ pub(crate) fn try_build_http_header_map_from_items_slice<S: AsRef<str>>(
 
 #[allow(dead_code)]
 /// Parse an untype configuration hashmap to a typed configuration for the given configuration key type.
-fn parsed_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
+fn parse_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
     config: I,
 ) -> PolarsResult<Configs<T>>
 where
@@ -142,62 +152,35 @@ pub enum CloudType {
     Aws,
     Azure,
     File,
+    /// Google cloud platform
     Gcp,
     Http,
+    /// HuggingFace
     Hf,
 }
 
 impl CloudType {
-    #[cfg(feature = "cloud")]
-    pub(crate) fn from_url(parsed: &Url) -> PolarsResult<Self> {
-        Ok(match parsed.scheme() {
-            "s3" | "s3a" => Self::Aws,
-            "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
-            "gs" | "gcp" | "gcs" => Self::Gcp,
-            "file" => Self::File,
-            "http" | "https" => Self::Http,
-            "hf" => Self::Hf,
-            _ => polars_bail!(ComputeError: "unknown url scheme"),
-        })
+    pub fn from_cloud_scheme(scheme: &CloudScheme) -> Self {
+        match scheme {
+            CloudScheme::Abfs
+            | CloudScheme::Abfss
+            | CloudScheme::Adl
+            | CloudScheme::Az
+            | CloudScheme::Azure => Self::Azure,
+
+            CloudScheme::File | CloudScheme::FileNoHostname => Self::File,
+
+            CloudScheme::Gcs | CloudScheme::Gs => Self::Gcp,
+
+            CloudScheme::Hf => Self::Hf,
+
+            CloudScheme::Http | CloudScheme::Https => Self::Http,
+
+            CloudScheme::S3 | CloudScheme::S3a => Self::Aws,
+        }
     }
 }
 
-#[cfg(feature = "cloud")]
-pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::ParseError> {
-    Ok(if input.contains("://") {
-        if input.starts_with("http://") || input.starts_with("https://") {
-            url::Url::parse(input)
-        } else {
-            url::Url::parse(&input.replace("%", "%25"))
-        }?
-    } else {
-        let path = std::path::Path::new(input);
-        let mut tmp;
-        url::Url::from_file_path(if path.is_relative() {
-            tmp = std::env::current_dir().unwrap();
-            tmp.push(path);
-            tmp.as_path()
-        } else {
-            path
-        })
-        .unwrap()
-    })
-}
-
-impl FromStr for CloudType {
-    type Err = PolarsError;
-
-    #[cfg(feature = "cloud")]
-    fn from_str(url: &str) -> Result<Self, Self::Err> {
-        let parsed = parse_url(url).map_err(to_compute_err)?;
-        Self::from_url(&parsed)
-    }
-
-    #[cfg(not(feature = "cloud"))]
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        polars_bail!(ComputeError: "at least one of the cloud features must be enabled");
-    }
-}
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 fn get_retry_config(max_retries: usize) -> RetryConfig {
     RetryConfig {
@@ -282,12 +265,32 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+    pub async fn build_aws(
+        &self,
+        url: &str,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
+
+        let opt_credential_provider =
+            self.initialized_credential_provider(clear_cached_credentials)?;
 
         let mut builder = AmazonS3Builder::from_env()
             .with_client_options(get_client_options())
             .with_url(url);
+
+        if let Some(credential_provider) = &opt_credential_provider {
+            let storage_update_options = parse_untyped_config::<AmazonS3ConfigKey, _>(
+                credential_provider
+                    .storage_update_options()?
+                    .into_iter()
+                    .map(|(k, v)| (k, v.to_string())),
+            )?;
+
+            for (key, value) in storage_update_options {
+                builder = builder.with_config(key, value);
+            }
+        }
 
         read_config(
             &mut builder,
@@ -322,7 +325,7 @@ impl CloudOptions {
             let CloudConfig::Aws(options) = options else {
                 panic!("impl error: cloud type mismatch")
             };
-            for (key, value) in options.iter() {
+            for (key, value) in options {
                 builder = builder.with_config(*key, value);
             }
         }
@@ -334,7 +337,7 @@ impl CloudOptions {
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()
         {
-            let bucket = crate::cloud::CloudLocation::new(url, false)?.bucket;
+            let bucket = crate::cloud::CloudLocation::new(PlPathRef::new(url), false)?.bucket;
             let region = {
                 let mut bucket_region = BUCKET_REGION.lock().unwrap();
                 bucket_region.get(bucket.as_str()).cloned()
@@ -380,13 +383,37 @@ impl CloudOptions {
 
         let builder = builder.with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = self.initialized_credential_provider()? {
-            builder.with_credentials(v.into_aws_provider())
+        let opt_credential_provider = match opt_credential_provider {
+            #[cfg(feature = "python")]
+            Some(PlCredentialProvider::Python(object)) => {
+                if pyo3::Python::with_gil(|py| {
+                    let Ok(func_object) = object
+                        .unwrap_as_provider_ref()
+                        .getattr(py, "_can_use_as_provider")
+                    else {
+                        return PolarsResult::Ok(true);
+                    };
+
+                    Ok(func_object.call0(py)?.extract::<bool>(py).unwrap())
+                })? {
+                    Some(PlCredentialProvider::Python(object))
+                } else {
+                    None
+                }
+            },
+
+            v => v,
+        };
+
+        let builder = if let Some(credential_provider) = opt_credential_provider {
+            builder.with_credentials(credential_provider.into_aws_provider())
         } else {
             builder
         };
 
-        builder.build().map_err(to_compute_err)
+        let out = builder.build()?;
+
+        Ok(out)
     }
 
     /// Set the configuration for Azure connections. This is the preferred API from rust.
@@ -403,7 +430,11 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+    pub fn build_azure(
+        &self,
+        url: &str,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
         let verbose = polars_core::config::verbose();
@@ -426,19 +457,22 @@ impl CloudOptions {
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = self.initialized_credential_provider()? {
-            if verbose {
-                eprintln!(
-                    "[CloudOptions::build_azure]: Using credential provider {:?}",
-                    &v
-                );
-            }
-            builder.with_credentials(v.into_azure_provider())
-        } else {
-            builder
-        };
+        let builder =
+            if let Some(v) = self.initialized_credential_provider(clear_cached_credentials)? {
+                if verbose {
+                    eprintln!(
+                        "[CloudOptions::build_azure]: Using credential provider {:?}",
+                        &v
+                    );
+                }
+                builder.with_credentials(v.into_azure_provider())
+            } else {
+                builder
+            };
 
-        builder.build().map_err(to_compute_err)
+        let out = builder.build()?;
+
+        Ok(out)
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
@@ -455,10 +489,14 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+    pub fn build_gcp(
+        &self,
+        url: &str,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let credential_provider = self.initialized_credential_provider()?;
+        let credential_provider = self.initialized_credential_provider(clear_cached_credentials)?;
 
         let builder = if credential_provider.is_none() {
             GoogleCloudStorageBuilder::from_env()
@@ -481,18 +519,20 @@ impl CloudOptions {
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = credential_provider.clone() {
+        let builder = if let Some(v) = credential_provider {
             builder.with_credentials(v.into_gcp_provider())
         } else {
             builder
         };
 
-        builder.build().map_err(to_compute_err)
+        let out = builder.build()?;
+
+        Ok(out)
     }
 
     #[cfg(feature = "http")]
     pub fn build_http(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
-        object_store::http::HttpBuilder::new()
+        let out = object_store::http::HttpBuilder::new()
             .with_url(url)
             .with_client_options({
                 let mut opts = super::get_client_options();
@@ -503,21 +543,22 @@ impl CloudOptions {
                 }
                 opts
             })
-            .build()
-            .map_err(to_compute_err)
+            .build()?;
+
+        Ok(out)
     }
 
     /// Parse a configuration from a Hashmap. This is the interface from Python.
     #[allow(unused_variables)]
     pub fn from_untyped_config<I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
-        url: &str,
+        scheme: Option<&CloudScheme>,
         config: I,
     ) -> PolarsResult<Self> {
-        match CloudType::from_str(url)? {
+        match scheme.map_or(CloudType::File, CloudType::from_cloud_scheme) {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
-                    parsed_untyped_config::<AmazonS3ConfigKey, _>(config)
+                    parse_untyped_config::<AmazonS3ConfigKey, _>(config)
                         .map(|aws| Self::default().with_aws(aws))
                 }
                 #[cfg(not(feature = "aws"))]
@@ -528,7 +569,7 @@ impl CloudOptions {
             CloudType::Azure => {
                 #[cfg(feature = "azure")]
                 {
-                    parsed_untyped_config::<AzureConfigKey, _>(config)
+                    parse_untyped_config::<AzureConfigKey, _>(config)
                         .map(|azure| Self::default().with_azure(azure))
                 }
                 #[cfg(not(feature = "azure"))]
@@ -541,7 +582,7 @@ impl CloudOptions {
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    parsed_untyped_config::<GoogleConfigKey, _>(config)
+                    parse_untyped_config::<GoogleConfigKey, _>(config)
                         .map(|gcp| Self::default().with_gcp(gcp))
                 }
                 #[cfg(not(feature = "gcp"))]
@@ -606,7 +647,7 @@ impl CloudOptions {
 
                     if let Some(v) = token {
                         this.config = Some(CloudConfig::Http {
-                            headers: vec![("Authorization".into(), format!("Bearer {}", v))],
+                            headers: vec![("Authorization".into(), format!("Bearer {v}"))],
                         })
                     }
 
@@ -623,9 +664,12 @@ impl CloudOptions {
     /// Python passes a credential provider builder that needs to be called to get the actual credential
     /// provider.
     #[cfg(feature = "cloud")]
-    fn initialized_credential_provider(&self) -> PolarsResult<Option<PlCredentialProvider>> {
+    fn initialized_credential_provider(
+        &self,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Option<PlCredentialProvider>> {
         if let Some(v) = self.credential_provider.clone() {
-            v.try_into_initialized()
+            v.try_into_initialized(clear_cached_credentials)
         } else {
             Ok(None)
         }
@@ -637,81 +681,8 @@ impl CloudOptions {
 mod tests {
     use hashbrown::HashMap;
 
-    use super::{parse_url, parsed_untyped_config};
+    use super::parse_untyped_config;
 
-    #[test]
-    fn test_parse_url() {
-        assert_eq!(
-            parse_url(r"http://Users/Jane Doe/data.csv")
-                .unwrap()
-                .as_str(),
-            "http://users/Jane%20Doe/data.csv"
-        );
-        assert_eq!(
-            parse_url(r"http://Users/Jane Doe/data.csv")
-                .unwrap()
-                .as_str(),
-            "http://users/Jane%20Doe/data.csv"
-        );
-        #[cfg(target_os = "windows")]
-        {
-            assert_eq!(
-                parse_url(r"file:///c:/Users/Jane Doe/data.csv")
-                    .unwrap()
-                    .as_str(),
-                "file:///c:/Users/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"file://\c:\Users\Jane Doe\data.csv")
-                    .unwrap()
-                    .as_str(),
-                "file:///c:/Users/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"c:\Users\Jane Doe\data.csv").unwrap().as_str(),
-                "file:///C:/Users/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"data.csv").unwrap().as_str(),
-                url::Url::from_file_path(
-                    [
-                        std::env::current_dir().unwrap().as_path(),
-                        std::path::Path::new("data.csv")
-                    ]
-                    .into_iter()
-                    .collect::<std::path::PathBuf>()
-                )
-                .unwrap()
-                .as_str()
-            );
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            assert_eq!(
-                parse_url(r"file:///home/Jane Doe/data.csv")
-                    .unwrap()
-                    .as_str(),
-                "file:///home/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"/home/Jane Doe/data.csv").unwrap().as_str(),
-                "file:///home/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"data.csv").unwrap().as_str(),
-                url::Url::from_file_path(
-                    [
-                        std::env::current_dir().unwrap().as_path(),
-                        std::path::Path::new("data.csv")
-                    ]
-                    .into_iter()
-                    .collect::<std::path::PathBuf>()
-                )
-                .unwrap()
-                .as_str()
-            );
-        }
-    }
     #[cfg(feature = "aws")]
     #[test]
     fn test_parse_untyped_config() {
@@ -723,7 +694,7 @@ mod tests {
         ]
         .into_iter()
         .collect::<HashMap<_, _>>();
-        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+        let aws_keys = parse_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
             .expect("Parsing keys shouldn't have thrown an error");
 
         assert_eq!(
@@ -738,7 +709,7 @@ mod tests {
         ]
         .into_iter()
         .collect::<HashMap<_, _>>();
-        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+        let aws_keys = parse_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
             .expect("Parsing keys shouldn't have thrown an error");
 
         assert_eq!(

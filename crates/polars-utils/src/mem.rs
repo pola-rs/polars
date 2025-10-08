@@ -1,14 +1,5 @@
 use std::sync::LazyLock;
 
-/// # Safety
-/// This may break aliasing rules, make sure you are the only owner.
-#[allow(clippy::mut_from_ref)]
-pub unsafe fn to_mutable_slice<T: Copy>(s: &[T]) -> &mut [T] {
-    let ptr = s.as_ptr() as *mut T;
-    let len = s.len();
-    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
-}
-
 pub static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| {
     #[cfg(target_family = "unix")]
     unsafe {
@@ -159,7 +150,7 @@ pub mod prefetch {
                 }
             },
             Some("force_populate_read") => force_populate_read,
-            Some(v) => panic!("invalid value for POLARS_MEMORY_PREFETCH: {}", v),
+            Some(v) => panic!("invalid value for POLARS_MEMORY_PREFETCH: {v}"),
         };
 
         if verbose {
@@ -173,7 +164,7 @@ pub mod prefetch {
                 _ => unreachable!(),
             };
 
-            eprintln!("memory prefetch function: {}", func_name);
+            eprintln!("memory prefetch function: {func_name}");
         }
 
         memory_prefetch_func

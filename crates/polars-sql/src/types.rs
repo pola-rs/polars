@@ -9,9 +9,9 @@ use sqlparser::ast::{
 };
 
 polars_utils::regex_cache::cached_regex! {
-    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$";
+    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?$";
     static DATE_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d$";
-    static TIME_LITERAL_RE = r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$";
+    static TIME_LITERAL_RE = r"^(?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?$";
 }
 
 pub fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
@@ -131,11 +131,9 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         | SQLDataType::Decimal(info)
         | SQLDataType::BigDecimal(info)
         | SQLDataType::Numeric(info) => match *info {
-            ExactNumberInfo::PrecisionAndScale(p, s) => {
-                DataType::Decimal(Some(p as usize), Some(s as usize))
-            },
-            ExactNumberInfo::Precision(p) => DataType::Decimal(Some(p as usize), Some(0)),
-            ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
+            ExactNumberInfo::PrecisionAndScale(p, s) => DataType::Decimal(p as usize, s as usize),
+            ExactNumberInfo::Precision(p) => DataType::Decimal(p as usize, 0),
+            ExactNumberInfo::None => DataType::Decimal(38, 9),
         },
 
         // ---------------------------------
@@ -178,12 +176,13 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
                 // these integer types are not supported by the PostgreSQL core distribution,
                 // but they ARE available via `pguint` (https://github.com/petere/pguint), an
                 // extension maintained by one of the PostgreSQL core developers, and/or DuckDB.
-                "hugeint" => DataType::Int128,
                 "int1" => DataType::Int8,
                 "uint1" | "utinyint" => DataType::UInt8,
                 "uint2" | "usmallint" => DataType::UInt16,
                 "uint4" | "uinteger" | "uint" => DataType::UInt32,
                 "uint8" | "ubigint" => DataType::UInt64,
+                "hugeint" => DataType::Int128,
+                "uhugeint" => DataType::UInt128,
                 _ => {
                     polars_bail!(SQLInterface: "datatype {:?} is not currently supported", value)
                 },

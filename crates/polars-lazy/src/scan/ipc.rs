@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
-
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::{HiveOptions, RowIndex};
+use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
@@ -72,12 +72,18 @@ impl LazyFileListReader for LazyIpcReader {
                 rechunk,
                 cache,
                 glob: true,
+                hidden_file_prefix: None,
                 projection: None,
+                column_mapping: None,
+                default_values: None,
                 row_index,
                 pre_slice,
-                cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+                cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                 missing_columns_policy: MissingColumnsPolicy::Raise,
+                extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths,
+                deletion_files: None,
+                table_statistics: None,
             },
         )?
         .build()
@@ -134,14 +140,11 @@ impl LazyFileListReader for LazyIpcReader {
 
 impl LazyFrame {
     /// Create a LazyFrame directly from a ipc scan.
-    pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        Self::scan_ipc_sources(
-            ScanSources::Paths([path.as_ref().to_path_buf()].into()),
-            args,
-        )
+    pub fn scan_ipc(path: PlPath, args: ScanArgsIpc) -> PolarsResult<Self> {
+        Self::scan_ipc_sources(ScanSources::Paths(Buffer::from_iter([path])), args)
     }
 
-    pub fn scan_ipc_files(paths: Arc<[PathBuf]>, args: ScanArgsIpc) -> PolarsResult<Self> {
+    pub fn scan_ipc_files(paths: Buffer<PlPath>, args: ScanArgsIpc) -> PolarsResult<Self> {
         Self::scan_ipc_sources(ScanSources::Paths(paths), args)
     }
 

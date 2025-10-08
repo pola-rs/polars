@@ -1,4 +1,5 @@
 pub(crate) mod any_value;
+mod categorical;
 pub(crate) mod chunked_array;
 mod datetime;
 
@@ -6,8 +7,8 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 
+pub use categorical::PyCategories;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
@@ -15,7 +16,14 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
+use polars::prelude::ColumnMapping;
+use polars::prelude::default_values::{
+    DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
+};
+use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
+use polars_compute::decimal::dec128_verify_prec_scale;
+use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
@@ -31,15 +39,19 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyList, PySequence, PyString};
+use pyo3::sync::GILOnceCell;
+use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
+use crate::expr::PyExpr;
 use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
+use crate::interop::arrow::to_rust::field_to_rust_arrow;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
 use crate::series::PySeries;
+use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame};
 
 /// # Safety
@@ -75,6 +87,7 @@ pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
     reinterpret_vec(buf)
 }
 
+#[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
 
@@ -95,34 +108,34 @@ impl<T> From<T> for Wrap<T> {
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
 pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_df"))?;
-    Ok(pydf.extract::<PyDataFrame>()?.df)
+    Ok(pydf.extract::<PyDataFrame>()?.df.into_inner())
 }
 
 pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
-    Ok(pydf.extract::<PyLazyFrame>()?.ldf)
+    Ok(pydf.extract::<PyLazyFrame>()?.ldf.into_inner())
 }
 
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     let s = obj.getattr(intern!(obj.py(), "_s"))?;
-    Ok(s.extract::<PySeries>()?.series)
+    Ok(s.extract::<PySeries>()?.series.into_inner())
 }
 
-pub(crate) fn to_series(py: Python, s: PySeries) -> PyResult<Bound<PyAny>> {
+pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny>> {
     let series = pl_series(py).bind(py);
     let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
     constructor.call1((s,))
 }
 
-impl<'a> FromPyObject<'a> for Wrap<PlSmallStr> {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<PlSmallStr> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(Wrap((&*ob.extract::<PyBackedStr>()?).into()))
     }
 }
 
 #[cfg(feature = "csv")]
-impl<'a> FromPyObject<'a> for Wrap<NullValues> {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<NullValues> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<PyBackedStr>() {
             Ok(Wrap(NullValues::AllColumnsSingle((&*s).into())))
         } else if let Ok(s) = ob.extract::<Vec<PyBackedStr>>() {
@@ -144,7 +157,7 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     }
 }
 
-fn struct_dict<'py, 'a>(
+fn struct_dict<'a, 'py>(
     py: Python<'py>,
     vals: impl Iterator<Item = AnyValue<'a>>,
     flds: &[Field],
@@ -154,29 +167,6 @@ fn struct_dict<'py, 'a>(
         dict.set_item(fld.name().as_str(), Wrap(val).into_pyobject(py)?)
     })?;
     Ok(dict)
-}
-
-// accept u128 array to ensure alignment is correct
-fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
-    const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
-    // SAFETY: transmute is safe as there are 48 bytes in 3 128bit ints
-    // and the minimal alignment of u8 fits u16
-    let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
-    let mut buffer = itoa::Buffer::new();
-    let value = buffer.format(v);
-    let len = value.len();
-    for (dst, src) in buf.iter_mut().zip(value.as_bytes().iter()) {
-        *dst = *src
-    }
-
-    let ptr = buf.as_mut_ptr() as *mut i128;
-    unsafe {
-        // this is safe because we know that the buffer is exactly 48 bytes long
-        *ptr -= ZEROS;
-        *ptr.add(1) -= ZEROS;
-        *ptr.add(2) -= ZEROS;
-    }
-    len
 }
 
 impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
@@ -218,6 +208,10 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             },
             DataType::UInt64 => {
                 let class = pl.getattr(intern!(py, "UInt64"))?;
+                class.call0()
+            },
+            DataType::UInt128 => {
+                let class = pl.getattr(intern!(py, "UInt128"))?;
                 class.call0()
             },
             DataType::Int128 => {
@@ -266,7 +260,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             },
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime"))?;
-                datetime_class.call1((tu.to_ascii(), tz.as_deref()))
+                datetime_class.call1((tu.to_ascii(), tz.as_deref().map(|x| x.as_str())))
             },
             DataType::Duration(tu) => {
                 let duration_class = pl.getattr(intern!(py, "Duration"))?;
@@ -277,21 +271,26 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Object"))?;
                 class.call0()
             },
-            DataType::Categorical(_, ordering) => {
-                let class = pl.getattr(intern!(py, "Categorical"))?;
-                class.call1((Wrap(*ordering),))
+            DataType::Categorical(cats, _) => {
+                let categories_class = pl.getattr(intern!(py, "Categories"))?;
+                let categorical_class = pl.getattr(intern!(py, "Categorical"))?;
+                let categories = categories_class
+                    .call_method1("_from_py_categories", (PyCategories::from(cats.clone()),))?;
+                let kwargs = [("categories", categories)];
+                categorical_class.call((), Some(&kwargs.into_py_dict(py)?))
             },
-            DataType::Enum(rev_map, _) => {
-                // we should always have an initialized rev_map coming from rust
-                let categories = rev_map.as_ref().unwrap().get_categories();
+            DataType::Enum(_, mapping) => {
+                let categories = unsafe {
+                    StringChunked::from_chunks(
+                        PlSmallStr::from_static("category"),
+                        vec![mapping.to_arrow(true)],
+                    )
+                };
                 let class = pl.getattr(intern!(py, "Enum"))?;
-                let s =
-                    Series::from_arrow(PlSmallStr::from_static("category"), categories.to_boxed())
-                        .map_err(PyPolarsErr::from)?;
-                let series = to_series(py, s.into())?;
+                let series = to_series(py, categories.into_series().into())?;
                 class.call1((series,))
             },
-            DataType::Time => pl.getattr(intern!(py, "Time")),
+            DataType::Time => pl.getattr(intern!(py, "Time")).and_then(|x| x.call0()),
             DataType::Struct(fields) => {
                 let field_class = pl.getattr(intern!(py, "Field"))?;
                 let iter = fields.iter().map(|fld| {
@@ -357,18 +356,18 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,
                     "UInt64" => DataType::UInt64,
+                    "UInt128" => DataType::UInt128,
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     "Boolean" => DataType::Boolean,
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
-                    "Categorical" => DataType::Categorical(None, Default::default()),
-                    "Enum" => DataType::Enum(None, Default::default()),
+                    "Categorical" => DataType::from_categories(Categories::global()),
+                    "Enum" => DataType::from_frozen_categories(FrozenCategories::new([]).unwrap()),
                     "Date" => DataType::Date,
                     "Time" => DataType::Time,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
-                    "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "Struct" => DataType::Struct(vec![]),
@@ -376,6 +375,11 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
                     "Unknown" => DataType::Unknown(Default::default()),
+                    "Decimal" => {
+                        return Err(PyTypeError::new_err(
+                            "Decimal without precision/scale set is not a valid Polars datatype",
+                        ));
+                    },
                     dt => {
                         return Err(PyTypeError::new_err(format!(
                             "'{dt}' is not a Polars data type",
@@ -392,22 +396,27 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
+            "UInt128" => DataType::UInt128,
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Boolean" => DataType::Boolean,
             "String" => DataType::String,
             "Binary" => DataType::Binary,
             "Categorical" => {
-                let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
-                let ordering = ordering.extract::<Wrap<CategoricalOrdering>>()?.0;
-                DataType::Categorical(None, ordering)
+                let categories = ob.getattr(intern!(py, "categories")).unwrap();
+                let py_categories = categories.getattr(intern!(py, "_categories")).unwrap();
+                let py_categories = py_categories.extract::<PyCategories>()?;
+                DataType::from_categories(py_categories.categories().clone())
             },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let categories = ca.downcast_iter().next().unwrap().clone();
-                create_enum_dtype(categories)
+                assert!(!categories.has_nulls());
+                DataType::from_frozen_categories(
+                    FrozenCategories::new(categories.values_iter()).unwrap(),
+                )
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,
@@ -416,7 +425,10 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
                 let time_zone = time_zone.extract::<Option<PyBackedStr>>()?;
-                DataType::Datetime(time_unit, time_zone.as_deref().map(|x| x.into()))
+                DataType::Datetime(
+                    time_unit,
+                    TimeZone::opt_try_new(time_zone.as_deref()).map_err(to_py_err)?,
+                )
             },
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
@@ -426,7 +438,8 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
                 let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
-                DataType::Decimal(precision, Some(scale))
+                dec128_verify_prec_scale(precision, scale).map_err(to_py_err)?;
+                DataType::Decimal(precision, scale)
             },
             "List" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();
@@ -463,17 +476,17 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
     }
 }
 
+enum CategoricalOrdering {
+    Lexical,
+}
+
 impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
     type Target = PyString;
     type Output = Bound<'py, Self::Target>;
     type Error = Infallible;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        match self.0 {
-            CategoricalOrdering::Physical => "physical",
-            CategoricalOrdering::Lexical => "lexical",
-        }
-        .into_pyobject(py)
+        "lexical".into_pyobject(py)
     }
 }
 
@@ -488,8 +501,8 @@ impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
 }
 
 #[cfg(feature = "parquet")]
-impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<StatisticsOptions> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let mut statistics = StatisticsOptions::empty();
 
         let dict = ob.downcast::<PyDict>()?;
@@ -514,9 +527,9 @@ impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
     }
 }
 
-impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
-        let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
+impl<'py> FromPyObject<'py> for Wrap<Row<'static>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let vals = ob.extract::<Vec<Wrap<AnyValue<'static>>>>()?;
         let vals = reinterpret_vec(vals);
         Ok(Wrap(Row(vals)))
     }
@@ -539,6 +552,49 @@ impl<'py> FromPyObject<'py> for Wrap<Schema> {
     }
 }
 
+impl<'py> FromPyObject<'py> for Wrap<ArrowSchema> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let py = ob.py();
+
+        let pyarrow_schema_cls = py
+            .import(intern!(py, "pyarrow"))?
+            .getattr(intern!(py, "Schema"))?;
+
+        if ob.is_none() {
+            return Err(PyValueError::new_err("arrow_schema() returned None").into());
+        }
+
+        let schema_cls = ob.getattr(intern!(py, "__class__"))?;
+
+        if !schema_cls.is(&pyarrow_schema_cls) {
+            return Err(PyTypeError::new_err(format!(
+                "expected pyarrow.Schema, got: {schema_cls}"
+            )));
+        }
+
+        let mut iter = ob.try_iter()?.map(|x| x.and_then(field_to_rust_arrow));
+
+        let mut last_err = None;
+
+        let schema =
+            ArrowSchema::from_iter_check_duplicates(std::iter::from_fn(|| match iter.next() {
+                Some(Ok(v)) => Some(v),
+                Some(Err(e)) => {
+                    last_err = Some(e);
+                    None
+                },
+                None => None,
+            }))
+            .map_err(to_py_err)?;
+
+        if let Some(last_err) = last_err {
+            return Err(last_err.into());
+        }
+
+        Ok(Wrap(schema))
+    }
+}
+
 impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let list = ob.downcast::<PyList>()?.to_owned();
@@ -548,7 +604,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         }
 
         enum MutableSources {
-            Paths(Vec<PathBuf>),
+            Paths(Vec<PlPath>),
             Files(Vec<File>),
             Buffers(Vec<MemSlice>),
         }
@@ -601,7 +657,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
     }
 }
 
-impl<'py> IntoPyObject<'py> for Wrap<&Schema> {
+impl<'py> IntoPyObject<'py> for Wrap<Schema> {
     type Target = PyDict;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
@@ -687,8 +743,8 @@ impl From<PyObject> for ObjectValue {
     }
 }
 
-impl<'a> FromPyObject<'a> for ObjectValue {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for ObjectValue {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(ObjectValue {
             inner: ob.to_owned().unbind(),
         })
@@ -721,8 +777,8 @@ impl Default for ObjectValue {
     }
 }
 
-impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
-    fn extract_bound(obj: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py, T: NativeType + FromPyObject<'py>> FromPyObject<'py> for Wrap<Vec<T>> {
+    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
         let seq = obj.downcast::<PySequence>()?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
         for item in seq.try_iter()? {
@@ -784,8 +840,14 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
 impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "physical" => CategoricalOrdering::Physical,
             "lexical" => CategoricalOrdering::Lexical,
+            "physical" => {
+                polars_warn!(
+                    Deprecation,
+                    "physical ordering is deprecated, will use lexical ordering instead"
+                );
+                CategoricalOrdering::Lexical
+            },
             v => {
                 return Err(PyValueError::new_err(format!(
                     "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",
@@ -872,7 +934,7 @@ impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
-            "zstd" => Some(IpcCompression::ZSTD),
+            "zstd" => Some(IpcCompression::ZSTD(Default::default())),
             v => {
                 return Err(PyValueError::new_err(format!(
                     "ipc `compression` must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",
@@ -1205,8 +1267,13 @@ impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn parse_cloud_options(uri: &str, kv: Vec<(String, String)>) -> PyResult<CloudOptions> {
-    let out = CloudOptions::from_untyped_config(uri, kv).map_err(PyPolarsErr::from)?;
+pub(crate) fn parse_cloud_options(
+    uri: &str,
+    kv: impl IntoIterator<Item = (String, String)>,
+) -> PyResult<CloudOptions> {
+    let iter: &mut dyn Iterator<Item = _> = &mut kv.into_iter();
+    let out = CloudOptions::from_untyped_config(CloudScheme::from_uri(uri).as_ref(), iter)
+        .map_err(PyPolarsErr::from)?;
     Ok(out)
 }
 
@@ -1225,6 +1292,161 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+// Conversion from ScanCastOptions class from the Python side.
+impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if ob.is_none() {
+            // Initialize the default ScanCastOptions from Python.
+            static DEFAULT: GILOnceCell<Wrap<CastColumnsPolicy>> = GILOnceCell::new();
+
+            let out = DEFAULT.get_or_try_init(ob.py(), || {
+                let ob = PyModule::import(ob.py(), "polars.io.scan_options.cast_options")
+                    .unwrap()
+                    .getattr("ScanCastOptions")
+                    .unwrap()
+                    .call_method0("_default")
+                    .unwrap();
+
+                let out = Self::extract_bound(&ob)?;
+
+                // The default policy should match ERROR_ON_MISMATCH (but this can change).
+                debug_assert_eq!(&out.0, &CastColumnsPolicy::ERROR_ON_MISMATCH);
+
+                PyResult::Ok(out)
+            })?;
+
+            return Ok(out.clone());
+        }
+
+        let py = ob.py();
+
+        let integer_upcast = match &*ob
+            .getattr(intern!(py, "integer_cast"))?
+            .extract::<PyBackedStr>()?
+        {
+            "upcast" => true,
+            "forbid" => false,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for integer_cast: {v}"
+                )));
+            },
+        };
+
+        let mut float_upcast = false;
+        let mut float_downcast = false;
+
+        let float_cast_object = ob.getattr(intern!(py, "float_cast"))?;
+
+        parse_multiple_options("float_cast", float_cast_object, |v| {
+            match v {
+                "forbid" => {},
+                "upcast" => float_upcast = true,
+                "downcast" => float_downcast = true,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for float_cast: {v}"
+                    )));
+                },
+            }
+
+            Ok(())
+        })?;
+
+        let mut datetime_nanoseconds_downcast = false;
+        let mut datetime_convert_timezone = false;
+
+        let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
+
+        parse_multiple_options("datetime_cast", datetime_cast_object, |v| {
+            match v {
+                "forbid" => {},
+                "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
+                "convert-timezone" => datetime_convert_timezone = true,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for datetime_cast: {v}"
+                    )));
+                },
+            };
+
+            Ok(())
+        })?;
+
+        let missing_struct_fields = match &*ob
+            .getattr(intern!(py, "missing_struct_fields"))?
+            .extract::<PyBackedStr>()?
+        {
+            "insert" => MissingColumnsPolicy::Insert,
+            "raise" => MissingColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for missing_struct_fields: {v}"
+                )));
+            },
+        };
+
+        let extra_struct_fields = match &*ob
+            .getattr(intern!(py, "extra_struct_fields"))?
+            .extract::<PyBackedStr>()?
+        {
+            "ignore" => ExtraColumnsPolicy::Ignore,
+            "raise" => ExtraColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for extra_struct_fields: {v}"
+                )));
+            },
+        };
+
+        let categorical_to_string = match &*ob
+            .getattr(intern!(py, "categorical_to_string"))?
+            .extract::<PyBackedStr>()?
+        {
+            "allow" => true,
+            "forbid" => false,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for categorical_to_string: {v}"
+                )));
+            },
+        };
+
+        return Ok(Wrap(CastColumnsPolicy {
+            integer_upcast,
+            float_upcast,
+            float_downcast,
+            datetime_nanoseconds_downcast,
+            datetime_microseconds_downcast: false,
+            datetime_convert_timezone,
+            null_upcast: true,
+            categorical_to_string,
+            missing_struct_fields,
+            extra_struct_fields,
+        }));
+
+        fn parse_multiple_options(
+            parameter_name: &'static str,
+            py_object: Bound<'_, PyAny>,
+            mut parser_func: impl FnMut(&str) -> PyResult<()>,
+        ) -> PyResult<()> {
+            if let Ok(v) = py_object.extract::<PyBackedStr>() {
+                parser_func(&v)?;
+            } else if let Ok(v) = py_object.try_iter() {
+                for v in v {
+                    parser_func(&v?.extract::<PyBackedStr>()?)?;
+                }
+            } else {
+                return Err(PyValueError::new_err(format!(
+                    "unknown type for {parameter_name}: {py_object}"
+                )));
+            }
+
+            Ok(())
+        }
     }
 }
 
@@ -1305,8 +1527,8 @@ where
 #[derive(Debug, Copy, Clone)]
 pub struct PyCompatLevel(pub CompatLevel);
 
-impl<'a> FromPyObject<'a> for PyCompatLevel {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for PyCompatLevel {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(PyCompatLevel(if let Ok(level) = ob.extract::<u16>() {
             if let Ok(compat_level) = CompatLevel::with_level(level) {
                 compat_level
@@ -1342,5 +1564,228 @@ impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl<'py> FromPyObject<'py> for Wrap<Option<KeyValueMetadata>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Metadata {
+            Static(Vec<(String, String)>),
+            Dynamic(PyObject),
+        }
+
+        let metadata = Option::<Metadata>::extract_bound(ob)?;
+        let key_value_metadata = metadata.map(|x| match x {
+            Metadata::Static(kv) => KeyValueMetadata::from_static(kv),
+            Metadata::Dynamic(func) => KeyValueMetadata::from_py_function(func),
+        });
+        Ok(Wrap(key_value_metadata))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<Option<TimeZone>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let tz = Option::<Wrap<PlSmallStr>>::extract_bound(ob)?;
+
+        let tz = tz.map(|x| x.0);
+
+        Ok(Wrap(TimeZone::opt_try_new(tz).map_err(to_py_err)?))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<UpcastOrForbid> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "upcast" => UpcastOrForbid::Upcast,
+            "forbid" => UpcastOrForbid::Forbid,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "cast parameter must be one of {{'upcast', 'forbid'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ExtraColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "ignore" => ExtraColumnsPolicy::Ignore,
+            "raise" => ExtraColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "extra column/field parameter must be one of {{'ignore', 'raise'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "insert" => MissingColumnsPolicy::Insert,
+            "raise" => MissingColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "missing column/field parameter must be one of {{'insert', 'raise'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicyOrExpr> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(pyexpr) = ob.extract::<PyExpr>() {
+            return Ok(Wrap(MissingColumnsPolicyOrExpr::InsertWith(pyexpr.inner)));
+        }
+
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "insert" => MissingColumnsPolicyOrExpr::Insert,
+            "raise" => MissingColumnsPolicyOrExpr::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "missing column/field parameter must be one of {{'insert', 'raise', expression}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ColumnMapping> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (column_mapping_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*column_mapping_type {
+            "iceberg-column-mapping" => {
+                let arrow_schema: Wrap<ArrowSchema> = ob.extract()?;
+                ColumnMapping::Iceberg(Arc::new(
+                    IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?,
+                ))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown column mapping type: {v}"
+                )));
+            },
+        }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (deletion_file_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*deletion_file_type {
+            "iceberg-position-delete" => {
+                let dict: Bound<'_, PyDict> = ob.extract()?;
+
+                let mut out = PlIndexMap::new();
+
+                for (k, v) in dict
+                    .try_iter()?
+                    .zip(dict.call_method0("values")?.try_iter()?)
+                {
+                    let k: usize = k?.extract()?;
+                    let v: Bound<'_, PyAny> = v?.extract()?;
+
+                    let files = v
+                        .try_iter()?
+                        .map(|x| {
+                            x.and_then(|x| {
+                                let x: String = x.extract()?;
+                                Ok(x)
+                            })
+                        })
+                        .collect::<PyResult<Arc<[String]>>>()?;
+
+                    if !files.is_empty() {
+                        out.insert(k, files);
+                    }
+                }
+
+                DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown deletion file type: {v}"
+                )));
+            },
+        }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<DefaultFieldValues> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (default_values_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*default_values_type {
+            "iceberg" => {
+                let dict: Bound<'_, PyDict> = ob.extract()?;
+
+                let mut out = PlIndexMap::new();
+
+                for (k, v) in dict
+                    .try_iter()?
+                    .zip(dict.call_method0("values")?.try_iter()?)
+                {
+                    let k: u32 = k?.extract()?;
+                    let v = v?;
+
+                    let v: Result<Column, String> = if let Ok(s) = get_series(&v) {
+                        Ok(s.into_column())
+                    } else {
+                        let err_msg: String = v.extract()?;
+                        Err(err_msg)
+                    };
+
+                    out.insert(k, v);
+                }
+
+                DefaultFieldValues::Iceberg(Arc::new(IcebergIdentityTransformedPartitionFields(
+                    out,
+                )))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown deletion file type: {v}"
+                )));
+            },
+        }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<PlPath> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(path) = ob.extract::<PyBackedStr>() {
+            Ok(Wrap(PlPath::new(&path)))
+        } else if let Ok(path) = ob.extract::<std::path::PathBuf>() {
+            Ok(Wrap(PlPath::Local(path.into())))
+        } else {
+            Err(
+                PyTypeError::new_err(format!("PlPath cannot be formed from '{}'", ob.get_type()))
+                    .into(),
+            )
+        }
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<PlPath> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        self.0.to_str().into_pyobject(py)
     }
 }

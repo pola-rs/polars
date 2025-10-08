@@ -268,7 +268,7 @@ pub static UNMAP_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
     ThreadPoolBuilder::new()
         .num_threads(1)
-        .thread_name(move |i| format!("{}-unmap-{}", thread_name, i))
+        .thread_name(move |i| format!("{thread_name}-unmap-{i}"))
         .build()
         .expect("could not spawn threads")
 });
@@ -344,7 +344,18 @@ impl MMapSemaphore {
         file: &File,
         options: MmapOptions,
     ) -> PolarsResult<MMapSemaphore> {
-        let mmap = unsafe { options.map(file) }?;
+        let mmap = match unsafe { options.map(file) } {
+            Ok(m) => m,
+
+            // Mmap can fail with ENODEV on filesystems which don't support
+            // MAP_SHARED, try MAP_PRIVATE instead, see #24343.
+            #[cfg(target_family = "unix")]
+            Err(e) if e.raw_os_error() == Some(libc::ENODEV) => unsafe {
+                options.map_copy_read_only(file)?
+            },
+
+            Err(e) => return Err(e.into()),
+        };
 
         #[cfg(target_family = "unix")]
         {

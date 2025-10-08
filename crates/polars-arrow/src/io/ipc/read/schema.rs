@@ -73,6 +73,7 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerTy
         (64, true) => IntegerType::Int64,
         (64, false) => IntegerType::UInt64,
         (128, true) => IntegerType::Int128,
+        (128, false) => IntegerType::UInt128,
         _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32, 64 or 128."),
     })
 }
@@ -347,6 +348,8 @@ fn get_dtype(
                 .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
             let dtype = match bit_width {
+                32 => ArrowDataType::Decimal32(precision, scale),
+                64 => ArrowDataType::Decimal64(precision, scale),
                 128 => ArrowDataType::Decimal(precision, scale),
                 256 => ArrowDataType::Decimal256(precision, scale),
                 _ => return Err(polars_err!(oos = OutOfSpecKind::NegativeFooterLength)),

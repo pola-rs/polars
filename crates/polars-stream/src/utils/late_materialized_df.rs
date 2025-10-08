@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{FileScan, ScanSources};
+use polars_plan::dsl::{FileScanIR, ScanSources};
 use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, FileInfo, IR};
 use polars_plan::prelude::{AnonymousScanOptions, UnifiedScanArgs};
 
@@ -26,12 +26,12 @@ impl LateMaterializedDataFrame {
             fmt_str: "LateMaterializedDataFrame",
         });
         IR::Scan {
-            sources: ScanSources::Paths(Arc::default()),
+            sources: ScanSources::Paths(Default::default()),
             file_info: FileInfo::new(schema, None, (None, usize::MAX)),
             hive_parts: None,
             predicate: None,
             output_schema: None,
-            scan_type: Box::new(FileScan::Anonymous {
+            scan_type: Box::new(FileScanIR::Anonymous {
                 options,
                 function: self,
             }),

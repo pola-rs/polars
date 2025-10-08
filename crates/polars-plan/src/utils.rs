@@ -49,7 +49,7 @@ pub(crate) fn is_scan(plan: &IR) -> bool {
 pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
     arena
         .iter(current_node)
-        .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
+        .all(|(_node, e)| matches!(e, AExpr::Column(_)))
 }
 
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
@@ -77,20 +77,15 @@ where
 }
 
 /// Check if expression is independent from any column.
-pub(crate) fn is_column_independent(expr: &Expr) -> bool {
-    !expr.into_iter().any(|e| match e {
-        Expr::Nth(_)
-        | Expr::Column(_)
-        | Expr::Columns(_)
-        | Expr::DtypeColumn(_)
-        | Expr::IndexColumn(_)
-        | Expr::Wildcard
-        | Expr::Len
-        | Expr::SubPlan(..)
-        | Expr::Selector(_) => true,
-
+pub(crate) fn is_column_independent_aexpr(expr: Node, arena: &Arena<AExpr>) -> bool {
+    !has_aexpr(expr, arena, |e| match e {
+        AExpr::Column(_) | AExpr::Len => true,
         #[cfg(feature = "dtype-struct")]
-        Expr::Field(_) => true,
+        AExpr::Function {
+            input: _,
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(_)),
+            options: _,
+        } => true,
         _ => false,
     })
 }
@@ -108,7 +103,6 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSma
             // don't follow the partition by branch
             AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
             AExpr::Column(name) => return Ok(name.clone()),
-            AExpr::Alias(_, name) => return Ok(name.clone()),
             AExpr::Len => return Ok(get_len_name()),
             AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
             AExpr::Ternary { truthy, .. } => return aexpr_output_name(*truthy, arena),
@@ -130,41 +124,47 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
             Expr::Window { function, .. } => return expr_output_name(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
-            Expr::KeepName(_) | Expr::Wildcard | Expr::RenameAlias { .. } => polars_bail!(
-                ComputeError:
-                "cannot determine output column without a context for this expression"
-            ),
-            Expr::Columns(_) | Expr::DtypeColumn(_) | Expr::IndexColumn(_) => polars_bail!(
-                ComputeError:
-                "this expression may produce multiple output names"
-            ),
+            Expr::KeepName(_) => polars_bail!(nyi = "`name.keep` is not allowed here"),
+            Expr::RenameAlias { expr, function } => return function.call(&expr_output_name(expr)?),
             Expr::Len => return Ok(get_len_name()),
             Expr::Literal(val) => return Ok(val.output_column_name().clone()),
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                input: _,
+                function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
+            } => return Ok(name.clone()),
+
+            // Selector with single by_name is fine.
+            Expr::Selector(Selector::ByName { names, .. }) if names.len() == 1 => {
+                return Ok(names[0].clone());
+            },
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function:
+                    FunctionExpr::StructExpr(StructFunction::SelectFields(Selector::ByName {
+                        names,
+                        ..
+                    })),
+                ..
+            } if names.len() == 1 => return Ok(names[0].clone()),
+
+            // Other selectors aren't possible right now.
+            Expr::Selector(_) => break,
+
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
+                ..
+            } => break,
+
             _ => {},
         }
     }
     polars_bail!(
         ComputeError:
         "unable to find root column name for expr '{expr:?}' when calling 'output_name'",
-    );
-}
-
-/// This function should be used to find the name of the start of an expression
-/// Normal iteration would just return the first root column it found
-pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<PlSmallStr> {
-    for e in expr {
-        match e {
-            Expr::Filter { input, .. } => return get_single_leaf(input),
-            Expr::Gather { expr, .. } => return get_single_leaf(expr),
-            Expr::SortBy { expr, .. } => return get_single_leaf(expr),
-            Expr::Window { function, .. } => return get_single_leaf(function),
-            Expr::Column(name) => return Ok(name.clone()),
-            Expr::Len => return Ok(get_len_name()),
-            _ => {},
-        }
-    }
-    polars_bail!(
-        ComputeError: "unable to find a single leaf column in expr {:?}", expr
     );
 }
 
@@ -184,8 +184,8 @@ pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     polars_ensure!(leaves.len() <= 1, ComputeError: "found more than one root column name");
     match leaves.pop() {
         Some(Expr::Column(name)) => Ok(name.clone()),
-        Some(Expr::Wildcard) => polars_bail!(
-            ComputeError: "wildcard has no root column name",
+        Some(Expr::Selector(_)) => polars_bail!(
+            ComputeError: "selector has no root column name",
         ),
         Some(_) => unreachable!(),
         None => polars_bail!(
@@ -219,21 +219,17 @@ pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &PlSmallSt
 /// Get all leaf column expressions in the expression tree.
 pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item = &Expr> {
     expr.into_iter().flat_map(|e| match e {
-        Expr::Column(_) | Expr::Wildcard => Some(e),
+        Expr::Column(_) => Some(e),
         _ => None,
     })
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub fn expressions_to_schema(
-    expr: &[Expr],
-    schema: &Schema,
-    ctxt: Context,
-) -> PolarsResult<Schema> {
+pub fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> PolarsResult<Schema> {
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
     expr.iter()
         .map(|expr| {
-            let mut field = expr.to_field_amortized(schema, ctxt, &mut expr_arena)?;
+            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
 
             field.dtype = field.dtype.materialize_unknown(true)?;
             Ok(field)
@@ -283,14 +279,13 @@ pub(crate) fn check_input_column_node(
 pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
     expr: I,
     schema: &Schema,
-    ctxt: Context,
     arena: &Arena<AExpr>,
 ) -> Schema {
     expr.into_iter()
         .map(|node| {
             arena
                 .get(node.into())
-                .to_field(schema, ctxt, arena)
+                .to_field(&ToFieldContext::new(arena, schema))
                 .unwrap()
         })
         .collect()
@@ -299,20 +294,20 @@ pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
 pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr: I,
     schema: &Schema,
-    ctxt: Context,
     arena: &Arena<AExpr>,
-) -> Schema {
+) -> PolarsResult<Schema> {
     expr.into_iter()
         .map(|e| {
             let e = e.as_ref();
-            let mut field = e.field(schema, ctxt, arena).expect("should be resolved");
-
-            // TODO! (can this be removed?)
-            if let Some(name) = e.get_alias() {
-                field.name = name.clone()
-            }
-            field.dtype = field.dtype.materialize_unknown(true).unwrap();
-            field
+            let field = e.field(schema, arena).map(move |mut field| {
+                // TODO! (can this be removed?)
+                if let Some(name) = e.get_alias() {
+                    field.name = name.clone()
+                }
+                field.dtype = field.dtype.materialize_unknown(true).unwrap();
+                field
+            })?;
+            Ok(field)
         })
         .collect()
 }

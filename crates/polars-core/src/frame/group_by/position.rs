@@ -130,8 +130,10 @@ impl GroupsIdx {
 
     pub fn iter(
         &self,
-    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<IdxSize>>, std::slice::Iter<IdxVec>>
-    {
+    ) -> std::iter::Zip<
+        std::iter::Copied<std::slice::Iter<'_, IdxSize>>,
+        std::slice::Iter<'_, IdxVec>,
+    > {
         self.into_iter()
     }
 
@@ -151,10 +153,19 @@ impl GroupsIdx {
         self.first.len()
     }
 
-    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> BorrowIdxItem {
+    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> BorrowIdxItem<'_> {
         let first = *self.first.get_unchecked(index);
         let all = self.all.get_unchecked(index);
         (first, all)
+    }
+
+    // Create an 'empty group', containing 1 group of length 0
+    pub fn new_empty() -> Self {
+        Self {
+            sorted: false,
+            first: vec![0],
+            all: vec![vec![].into()],
+        }
     }
 }
 
@@ -245,8 +256,11 @@ pub enum GroupsType {
     Slice {
         // the groups slices
         groups: GroupsSlice,
-        // indicates if we do a rolling group_by
-        rolling: bool,
+        // Indicates if the groups may overlap, as is typically the case with `rolling`
+        // or `dynamic_group_by`.
+        // Example use cases: avoid memory explosion when calling aggregation; unroll groups
+        // when exploding an aggregated list with overlapping groups.
+        overlapping: bool,
     },
 }
 
@@ -327,7 +341,7 @@ impl GroupsType {
         }
     }
 
-    pub fn iter(&self) -> GroupsTypeIter {
+    pub fn iter(&self) -> GroupsTypeIter<'_> {
         GroupsTypeIter::new(self)
     }
 
@@ -377,7 +391,7 @@ impl GroupsType {
         }
     }
 
-    pub fn par_iter(&self) -> GroupsTypeParIter {
+    pub fn par_iter(&self) -> GroupsTypeParIter<'_> {
         GroupsTypeParIter::new(self)
     }
 
@@ -405,7 +419,7 @@ impl GroupsType {
         }
     }
 
-    pub fn get(&self, index: usize) -> GroupsIndicator {
+    pub fn get(&self, index: usize) -> GroupsIndicator<'_> {
         match self {
             GroupsType::Idx(groups) => {
                 let first = groups.first[index];
@@ -658,7 +672,9 @@ impl GroupPositions {
     pub fn unroll(mut self) -> GroupPositions {
         match self.sliced.deref_mut() {
             GroupsType::Idx(_) => self,
-            GroupsType::Slice { rolling: false, .. } => self,
+            GroupsType::Slice {
+                overlapping: false, ..
+            } => self,
             GroupsType::Slice { groups, .. } => {
                 // SAFETY: sliced is a shallow partial clone of original.
                 // A new owning Vec is required per GH issue #21859
@@ -674,10 +690,23 @@ impl GroupPositions {
 
                 GroupsType::Slice {
                     groups,
-                    rolling: false,
+                    overlapping: false,
                 }
                 .into_sliceable()
             },
+        }
+    }
+
+    pub fn as_unrolled_slice(&self) -> Option<&GroupsSlice> {
+        match &*self.sliced {
+            GroupsType::Idx(_) => None,
+            GroupsType::Slice {
+                overlapping: true, ..
+            } => None,
+            GroupsType::Slice {
+                groups,
+                overlapping: false,
+            } => Some(groups),
         }
     }
 }
@@ -707,7 +736,10 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
                 groups.is_sorted_flag(),
             )))
         },
-        GroupsType::Slice { groups, rolling } => {
+        GroupsType::Slice {
+            groups,
+            overlapping,
+        } => {
             let groups = unsafe {
                 let groups = slice_slice(groups, offset, len);
                 let ptr = groups.as_ptr() as *mut _;
@@ -716,7 +748,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
 
             ManuallyDrop::new(GroupsType::Slice {
                 groups,
-                rolling: *rolling,
+                overlapping: *overlapping,
             })
         },
     }

@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -47,7 +47,10 @@ def test_unique_predicate_pd() -> None:
                 .filter(pl.col("x") == "abc")
                 .filter(pl.col("z"))
             )
-            assert_frame_equal(q.collect(predicate_pushdown=False), q.collect())
+            assert_frame_equal(
+                q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+                q.collect(),
+            )
 
 
 def test_unique_on_list_df() -> None:
@@ -62,6 +65,23 @@ def test_unique_on_list_df() -> None:
 def test_list_unique() -> None:
     s = pl.Series("a", [[1, 2], [3], [1, 2], [4, 5], [2], [2]])
     assert s.unique(maintain_order=True).to_list() == [[1, 2], [3], [4, 5], [2]]
+    assert s.arg_unique().to_list() == [0, 1, 3, 4]
+    assert s.n_unique() == 4
+
+
+def test_array_unique() -> None:
+    s = pl.Series(
+        "a",
+        [
+            np.array([1, 2]),
+            np.array([3, 1]),
+            np.array([1, 2]),
+            np.array([4, 5]),
+            np.array([2, 2]),
+            np.array([2, 2]),
+        ],
+    )
+    assert s.unique(maintain_order=True).to_list() == [[1, 2], [3, 1], [4, 5], [2, 2]]
     assert s.arg_unique().to_list() == [0, 1, 3, 4]
     assert s.n_unique() == 4
 
@@ -141,27 +161,15 @@ def test_unique_null(maintain_order: bool) -> None:
         ([None, "a", "b", "b"], [None, "a", "b"]),
     ],
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_unique_categorical(input: list[str | None], output: list[str | None]) -> None:
-    with pl.StringCache():
-        s = pl.Series(input, dtype=pl.Categorical)
-        result = s.unique(maintain_order=True)
-        expected = pl.Series(output, dtype=pl.Categorical)
-        assert_series_equal(result, expected)
+    s = pl.Series(input, dtype=pl.Categorical)
+    result = s.unique(maintain_order=True)
+    expected = pl.Series(output, dtype=pl.Categorical)
+    assert_series_equal(result, expected)
 
-        result = s.unique(maintain_order=False)
-        expected = pl.Series(output, dtype=pl.Categorical)
-        assert_series_equal(result, expected, check_order=False)
-
-
-def test_unique_categorical_global() -> None:
-    with pl.StringCache():
-        pl.Series(["aaaa", "bbbb", "cccc"])  # pre-fill global cache
-        s = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
-        s_empty = s.slice(0, 0)
-
-        assert s_empty.unique().to_list() == []
-        assert_series_equal(s_empty.cat.get_categories(), pl.Series(["a", "b", "c"]))
+    result = s.unique(maintain_order=False)
+    expected = pl.Series(output, dtype=pl.Categorical)
+    assert_series_equal(result, expected, check_order=False)
 
 
 def test_unique_with_null() -> None:
@@ -206,8 +214,6 @@ def test_unique_with_bad_subset(
         df.unique(subset=subset)
 
 
-@pytest.mark.usefixtures("test_global_and_local")
-@with_string_cache_if_auto_streaming
 def test_categorical_unique_19409() -> None:
     df = pl.DataFrame({"x": [str(n % 50) for n in range(127)]}).cast(pl.Categorical)
     uniq = df.unique()
@@ -217,16 +223,15 @@ def test_categorical_unique_19409() -> None:
 
 
 def test_categorical_updated_revmap_unique_20233() -> None:
-    with pl.StringCache():
-        s = pl.Series("a", ["A"], pl.Categorical)
+    s = pl.Series("a", ["A"], pl.Categorical)
 
-        s = (
-            pl.select(a=pl.when(True).then(pl.lit("C", pl.Categorical)))
-            .select(a=pl.when(True).then(pl.lit("D", pl.Categorical)))
-            .to_series()
-        )
+    s = (
+        pl.select(a=pl.when(True).then(pl.lit("C", pl.Categorical)))
+        .select(a=pl.when(True).then(pl.lit("D", pl.Categorical)))
+        .to_series()
+    )
 
-        assert_series_equal(s.unique(), pl.Series("a", ["D"], pl.Categorical))
+    assert_series_equal(s.unique(), pl.Series("a", ["D"], pl.Categorical))
 
 
 def test_unique_check_order_20480() -> None:
@@ -296,3 +301,28 @@ def test_unique_keep_last_with_slice_22470() -> None:
     result = lf.unique(keep="last", maintain_order=True).slice(3, 4).collect()
     expected = pl.DataFrame({"x": [3, 4, 5, 6]})
     assert_frame_equal(result, expected)
+
+
+def test_unique_booleans_22753() -> None:
+    assert_series_equal(
+        pl.Series([None, None, True] + [None] * 128).slice(3).unique(),
+        pl.Series([None], dtype=pl.Boolean()),
+    )
+
+    assert_series_equal(
+        pl.Series([None, None, True]).head(2).unique(),
+        pl.Series([None], dtype=pl.Boolean()),
+    )
+
+
+def test_unique_i128_24231() -> None:
+    df = pl.Series(
+        [-(1 << 127), -(1 << 126), 1 << 125, 1 << 126], dtype=pl.Int128
+    ).to_frame("a")
+    assert_frame_equal(df, df.unique(), check_row_order=False)
+
+
+def test_unique_keep_none_24260() -> None:
+    data = pl.DataFrame({"a": [1, 3, 2], "b": [4, 4, 6]})
+    out = data.lazy().unique(subset="b", keep="none").collect()
+    assert_frame_equal(out, pl.DataFrame({"a": [2], "b": [6]}))

@@ -31,6 +31,9 @@ macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse for $ca_type {
             fn reverse(&self) -> Self {
+                if self.is_empty() {
+                    return self.clone();
+                };
                 let mut ca: Self = self.into_iter().rev().collect_trusted();
                 ca.rename(self.name().clone());
                 ca

@@ -68,6 +68,7 @@ use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 
+use arrow::array::LIST_VALUES_NAME;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
@@ -82,6 +83,7 @@ use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct JsonWriterOptions {}
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
@@ -329,7 +331,7 @@ where
 
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         dtype,
                         true,
                     )))

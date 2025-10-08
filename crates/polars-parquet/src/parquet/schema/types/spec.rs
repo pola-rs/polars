@@ -9,15 +9,13 @@ fn check_decimal_invariants(
 ) -> ParquetResult<()> {
     if precision < 1 {
         return Err(ParquetError::oos(format!(
-            "DECIMAL precision must be larger than 0; It is {}",
-            precision,
+            "DECIMAL precision must be larger than 0; It is {precision}",
         )));
     }
     if scale > precision {
         return Err(ParquetError::oos(format!(
-            "Invalid DECIMAL: scale ({}) cannot be greater than precision \
-            ({})",
-            scale, precision
+            "Invalid DECIMAL: scale ({scale}) cannot be greater than precision \
+            ({precision})"
         )));
     }
 
@@ -25,22 +23,19 @@ fn check_decimal_invariants(
         PhysicalType::Int32 => {
             if !(1..=9).contains(&precision) {
                 return Err(ParquetError::oos(format!(
-                    "Cannot represent INT32 as DECIMAL with precision {}",
-                    precision
+                    "Cannot represent INT32 as DECIMAL with precision {precision}"
                 )));
             }
         },
         PhysicalType::Int64 => {
             if !(1..=18).contains(&precision) {
                 return Err(ParquetError::oos(format!(
-                    "Cannot represent INT64 as DECIMAL with precision {}",
-                    precision
+                    "Cannot represent INT64 as DECIMAL with precision {precision}"
                 )));
             }
         },
         PhysicalType::FixedLenByteArray(length) => {
-            let oos_error =
-                || ParquetError::oos(format!("Byte Array length {} out of spec", length));
+            let oos_error = || ParquetError::oos(format!("Byte Array length {length} out of spec"));
             let max_precision = (2f64.powi(
                 (*length as i32)
                     .checked_mul(8)
@@ -53,9 +48,8 @@ fn check_decimal_invariants(
 
             if precision > max_precision {
                 return Err(ParquetError::oos(format!(
-                    "Cannot represent FIXED_LEN_BYTE_ARRAY as DECIMAL with length {} and \
-                    precision {}. The max precision can only be {}",
-                    length, precision, max_precision
+                    "Cannot represent FIXED_LEN_BYTE_ARRAY as DECIMAL with length {length} and \
+                    precision {precision}. The max precision can only be {max_precision}"
                 )));
             }
         },
@@ -83,8 +77,7 @@ pub fn check_converted_invariants(
         Utf8 | Bson | Json => {
             if physical_type != &PhysicalType::ByteArray {
                 return Err(ParquetError::oos(format!(
-                    "{:?} can only annotate BYTE_ARRAY fields",
-                    converted_type
+                    "{converted_type:?} can only annotate BYTE_ARRAY fields"
                 )));
             }
         },
@@ -94,16 +87,14 @@ pub fn check_converted_invariants(
         Date | TimeMillis | Uint8 | Uint16 | Uint32 | Int8 | Int16 | Int32 => {
             if physical_type != &PhysicalType::Int32 {
                 return Err(ParquetError::oos(format!(
-                    "{:?} can only annotate INT32",
-                    converted_type
+                    "{converted_type:?} can only annotate INT32"
                 )));
             }
         },
         TimeMicros | TimestampMillis | TimestampMicros | Uint64 | Int64 => {
             if physical_type != &PhysicalType::Int64 {
                 return Err(ParquetError::oos(format!(
-                    "{:?} can only annotate INT64",
-                    converted_type
+                    "{converted_type:?} can only annotate INT64"
                 )));
             }
         },
@@ -168,8 +159,7 @@ pub fn check_logical_invariants(
         (Float16, PhysicalType::FixedLenByteArray(2)) => {},
         (a, b) => {
             return Err(ParquetError::oos(format!(
-                "Cannot annotate {:?} from {:?} fields",
-                a, b
+                "Cannot annotate {a:?} from {b:?} fields"
             )));
         },
     };

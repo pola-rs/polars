@@ -60,6 +60,7 @@ fn min_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
                 UInt16 => dispatch_min::<u16>(values, offsets, arr.validity()),
                 UInt32 => dispatch_min::<u32>(values, offsets, arr.validity()),
                 UInt64 => dispatch_min::<u64>(values, offsets, arr.validity()),
+                UInt128 => dispatch_min::<u128>(values, offsets, arr.validity()),
                 Float32 => dispatch_min::<f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_min::<f64>(values, offsets, arr.validity()),
                 _ => unimplemented!(),
@@ -95,7 +96,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     let sc = s.min_reduce()?;
                     Ok(sc.into_series(s.name().clone()))
                 })?
-                .explode()
+                .explode(false)
                 .unwrap()
                 .into_series()
                 .cast(dt),
@@ -171,6 +172,7 @@ fn max_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
                 UInt16 => dispatch_max::<u16>(values, offsets, arr.validity()),
                 UInt32 => dispatch_max::<u32>(values, offsets, arr.validity()),
                 UInt64 => dispatch_max::<u64>(values, offsets, arr.validity()),
+                UInt128 => dispatch_max::<u128>(values, offsets, arr.validity()),
                 Float32 => dispatch_max::<f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_max::<f64>(values, offsets, arr.validity()),
                 _ => unimplemented!(),
@@ -206,7 +208,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     let sc = s.max_reduce()?;
                     Ok(sc.into_series(s.name().clone()))
                 })?
-                .explode()
+                .explode(false)
                 .unwrap()
                 .into_series()
                 .cast(dt),

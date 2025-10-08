@@ -37,9 +37,16 @@ impl fmt::Debug for Expr {
                     }
                 },
             },
-            Nth(i) => write!(f, "nth({i})"),
+            DataTypeFunction(dtype_fn) => fmt::Debug::fmt(dtype_fn, f),
             Len => write!(f, "len()"),
-            Explode(expr) => write!(f, "{expr:?}.explode()"),
+            Explode {
+                input: expr,
+                skip_empty: false,
+            } => write!(f, "{expr:?}.explode()"),
+            Explode {
+                input: expr,
+                skip_empty: true,
+            } => write!(f, "{expr:?}.explode(skip_empty)"),
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
@@ -109,7 +116,14 @@ impl fmt::Debug for Expr {
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
-                    Count(expr, _) => write!(f, "{expr:?}.count()"),
+                    Count {
+                        input,
+                        include_nulls: false,
+                    } => write!(f, "{input:?}.count()"),
+                    Count {
+                        input,
+                        include_nulls: true,
+                    } => write!(f, "{input:?}.len()"),
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
                     Std(expr, _) => write!(f, "{expr:?}.std()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
@@ -120,7 +134,7 @@ impl fmt::Debug for Expr {
                 dtype,
                 options,
             } => {
-                if options.strict() {
+                if options.is_strict() {
                     write!(f, "{expr:?}.strict_cast({dtype:?})")
                 } else {
                     write!(f, "{expr:?}.cast({dtype:?})")
@@ -134,37 +148,76 @@ impl fmt::Debug for Expr {
                 f,
                 ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})",
             ),
-            Function {
-                input, function, ..
-            } => {
+            Function { input, function } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{function}({:?})", input[0], &input[1..])
                 } else {
                     write!(f, "{:?}.{function}()", input[0])
                 }
             },
-            AnonymousFunction { input, options, .. } => {
+            AnonymousFunction {
+                input,
+                fmt_str,
+                function,
+                ..
+            } => {
+                let name = match function {
+                    LazySerde::Named { name, .. } => name.as_str(),
+                    _ => fmt_str.as_str(),
+                };
+
                 if input.len() >= 2 {
-                    write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
+                    write!(f, "{:?}.{}({:?})", input[0], name, &input[1..])
                 } else {
-                    write!(f, "{:?}.{}()", input[0], options.fmt_str)
+                    write!(f, "{:?}.{}()", input[0], name)
                 }
+            },
+            Eval {
+                expr: input,
+                evaluation,
+                variant,
+            } => match variant {
+                EvalVariant::List => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                EvalVariant::Array { as_list: false } => {
+                    write!(f, "{input:?}.array.eval({evaluation:?})")
+                },
+                EvalVariant::Array { as_list: true } => {
+                    write!(f, "{input:?}.array.eval({evaluation:?}, as_list=true)")
+                },
+                EvalVariant::Cumulative { min_samples } => write!(
+                    f,
+                    "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
+                ),
             },
             Slice {
                 input,
                 offset,
                 length,
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
-            Wildcard => write!(f, "*"),
-            Exclude(column, names) => write!(f, "{column:?}.exclude({names:?})"),
             KeepName(e) => write!(f, "{e:?}.name.keep()"),
-            RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
-            Columns(names) => write!(f, "cols({names:?})"),
-            DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),
-            IndexColumn(idxs) => write!(f, "index_columns({idxs:?})"),
-            Selector(_) => write!(f, "selector"),
+            RenameAlias { expr, function } => match function {
+                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.name.prefix({s})"),
+                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.name.suffix({s})"),
+                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.name.to_lowercase()"),
+                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.name.to_uppercase()"),
+                RenameAliasFn::Map(_) => write!(f, "{expr:?}.name.map()"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: false,
+                } => write!(f, "{expr:?}.replace(\"{pattern}\", \"{value}\")"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: true,
+                } => write!(
+                    f,
+                    "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
+                ),
+            },
+            Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]
-            Field(names) => write!(f, ".field({names:?})"),
+            Field(names) => write!(f, "pl.field({names:?})"),
         }
     }
 }

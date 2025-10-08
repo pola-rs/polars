@@ -102,10 +102,7 @@ fn converted_group_from_str(s: &str) -> ParquetResult<GroupConvertedType> {
         "MAP_KEY_VALUE" => GroupConvertedType::MapKeyValue,
         "LIST" => GroupConvertedType::List,
         other => {
-            return Err(ParquetError::oos(format!(
-                "Invalid converted type {}",
-                other
-            )));
+            return Err(ParquetError::oos(format!("Invalid converted type {other}")));
         },
     })
 }
@@ -141,7 +138,7 @@ fn repetition_from_str(s: &str) -> ParquetResult<Repetition> {
         "REQUIRED" => Repetition::Required,
         "OPTIONAL" => Repetition::Optional,
         "REPEATED" => Repetition::Repeated,
-        other => return Err(ParquetError::oos(format!("Invalid repetition {}", other))),
+        other => return Err(ParquetError::oos(format!("Invalid repetition {other}"))),
     })
 }
 
@@ -155,7 +152,7 @@ fn type_from_str(s: &str) -> ParquetResult<Type> {
         "DOUBLE" => Ok(Type::DOUBLE),
         "BYTE_ARRAY" | "BINARY" => Ok(Type::BYTE_ARRAY),
         "FIXED_LEN_BYTE_ARRAY" => Ok(Type::FIXED_LEN_BYTE_ARRAY),
-        other => Err(ParquetError::oos(format!("Invalid type {}", other))),
+        other => Err(ParquetError::oos(format!("Invalid type {other}"))),
     }
 }
 
@@ -251,12 +248,10 @@ fn assert_token(token: Option<&str>, expected: &str) -> ParquetResult<()> {
     match token {
         Some(value) if value == expected => Ok(()),
         Some(other) => Err(ParquetError::oos(format!(
-            "Expected '{}', found token '{}'",
-            expected, other
+            "Expected '{expected}', found token '{other}'"
         ))),
         None => Err(ParquetError::oos(format!(
-            "Expected '{}', but no token found (None)",
-            expected
+            "Expected '{expected}', but no token found (None)"
         ))),
     }
 }
@@ -437,8 +432,7 @@ impl Parser<'_> {
                         (false, converted_primitive_from_str(&string), string)
                     } else {
                         return Err(ParquetError::oos(format!(
-                            "Expected converted or logical type, found {}",
-                            string
+                            "Expected converted or logical type, found {string}"
                         )));
                     })
                 })?;

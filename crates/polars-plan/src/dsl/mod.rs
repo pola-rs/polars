@@ -17,15 +17,16 @@ pub mod binary;
 mod bitwise;
 mod builder_dsl;
 pub use builder_dsl::*;
+mod datatype_expr;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
-mod expr_dyn_fn;
 mod format;
 mod from;
 pub mod function_expr;
 pub mod functions;
 mod list;
+mod match_to_schema;
 #[cfg(feature = "meta")]
 mod meta;
 mod name;
@@ -50,11 +51,12 @@ mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
+pub use datatype_expr::DataTypeExpr;
 pub use expr::*;
-pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
+pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use name::*;
@@ -67,10 +69,9 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-#[cfg(any(feature = "search_sorted", feature = "is_between"))]
-use polars_core::utils::SuperTypeFlags;
-use polars_core::utils::{SuperTypeOptions, try_get_supertype};
-pub use selector::Selector;
+#[cfg(feature = "is_close")]
+use polars_utils::total_ord::TotalOrdWrap;
+pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -78,59 +79,10 @@ mod file_scan;
 pub use file_scan::*;
 pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
-use crate::constants::MAP_LIST_NAME;
 pub use crate::plans::lit;
 use crate::prelude::*;
 
 impl Expr {
-    /// Modify the Options passed to the `Function` node.
-    pub(crate) fn with_function_options<F>(self, func: F) -> Expr
-    where
-        F: Fn(FunctionOptions) -> FunctionOptions,
-    {
-        match self {
-            Self::AnonymousFunction {
-                input,
-                function,
-                output_type,
-                mut options,
-            } => {
-                options = func(options);
-                Self::AnonymousFunction {
-                    input,
-                    function,
-                    output_type,
-                    options,
-                }
-            },
-            Self::Function {
-                input,
-                function,
-                mut options,
-            } => {
-                options = func(options);
-                Self::Function {
-                    input,
-                    function,
-                    options,
-                }
-            },
-            _ => {
-                panic!("implementation error")
-            },
-        }
-    }
-
-    /// Overwrite the function name used for formatting.
-    /// (this is not intended to be used).
-    #[doc(hidden)]
-    pub fn with_fmt(self, name: &'static str) -> Expr {
-        self.with_function_options(|mut options| {
-            options.fmt_str = name;
-            options
-        })
-    }
-
     /// Compare `Expr` with other `Expr` on equality.
     pub fn eq<E: Into<Expr>>(self, other: E) -> Expr {
         binary_expr(self, Operator::Eq, other.into())
@@ -249,7 +201,10 @@ impl Expr {
 
     /// Explode the String/List column.
     pub fn explode(self) -> Self {
-        Expr::Explode(Arc::new(self))
+        Expr::Explode {
+            input: Arc::new(self),
+            skip_empty: false,
+        }
     }
 
     /// Slice the Series.
@@ -264,26 +219,12 @@ impl Expr {
 
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
-        let output_type = if upcast {
-            GetOutput::super_type()
-        } else {
-            GetOutput::same_type()
-        };
+        self.map_binary(FunctionExpr::Append { upcast }, other.into())
+    }
 
-        apply_binary(
-            self,
-            other.into(),
-            move |mut a, mut b| {
-                if upcast {
-                    let dtype = try_get_supertype(a.dtype(), b.dtype())?;
-                    a = a.cast(&dtype)?;
-                    b = b.cast(&dtype)?;
-                }
-                a.append(&b)?;
-                Ok(Some(a))
-            },
-            output_type,
-        )
+    /// Collect all chunks into a single chunk before continuing.
+    pub fn rechunk(self) -> Self {
+        self.map_unary(FunctionExpr::Rechunk)
     }
 
     /// Get the first `n` elements of the Expr result.
@@ -315,67 +256,20 @@ impl Expr {
 
     /// Get the index value that has the minimum value.
     pub fn arg_min(self) -> Self {
-        let options = FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "arg_min",
-            ..Default::default()
-        };
-
-        self.function_with_options(
-            move |c: Column| {
-                Ok(Some(Column::new(
-                    c.name().clone(),
-                    &[c.as_materialized_series().arg_min().map(|idx| idx as u32)],
-                )))
-            },
-            GetOutput::from_type(IDX_DTYPE),
-            options,
-        )
+        self.map_unary(FunctionExpr::ArgMin)
     }
 
     /// Get the index value that has the maximum value.
     pub fn arg_max(self) -> Self {
-        let options = FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "arg_max",
-            ..Default::default()
-        };
-
-        self.function_with_options(
-            move |c: Column| {
-                Ok(Some(Column::new(
-                    c.name().clone(),
-                    &[c.as_materialized_series()
-                        .arg_max()
-                        .map(|idx| idx as IdxSize)],
-                )))
-            },
-            GetOutput::from_type(IDX_DTYPE),
-            options,
-        )
+        self.map_unary(FunctionExpr::ArgMax)
     }
 
     /// Get the index values that would sort this expression.
-    pub fn arg_sort(self, sort_options: SortOptions) -> Self {
-        let options = FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            fmt_str: "arg_sort",
-            ..Default::default()
-        };
-
-        self.function_with_options(
-            move |c: Column| {
-                Ok(Some(
-                    c.as_materialized_series()
-                        .arg_sort(sort_options)
-                        .into_column(),
-                ))
-            },
-            GetOutput::from_type(IDX_DTYPE),
-            options,
-        )
+    pub fn arg_sort(self, descending: bool, nulls_last: bool) -> Self {
+        self.map_unary(FunctionExpr::ArgSort {
+            descending,
+            nulls_last,
+        })
     }
 
     #[cfg(feature = "index_of")]
@@ -386,35 +280,47 @@ impl Expr {
 
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
-    pub fn search_sorted<E: Into<Expr>>(self, element: E, side: SearchSortedSide) -> Expr {
-        self.map_binary(FunctionExpr::SearchSorted(side), element.into())
+    pub fn search_sorted<E: Into<Expr>>(
+        self,
+        element: E,
+        side: SearchSortedSide,
+        descending: bool,
+    ) -> Expr {
+        self.map_binary(
+            FunctionExpr::SearchSorted { side, descending },
+            element.into(),
+        )
     }
 
     /// Cast expression to another data type.
     /// Throws an error if conversion had overflows.
     /// Returns an Error if cast is invalid on rows after predicates are pushed down.
-    pub fn strict_cast(self, dtype: DataType) -> Self {
+    pub fn strict_cast(self, dtype: impl Into<DataTypeExpr>) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: CastOptions::Strict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast(self, dtype: DataType) -> Self {
+    pub fn cast(self, dtype: impl Into<DataTypeExpr>) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: CastOptions::NonStrict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast_with_options(self, dtype: DataType, cast_options: CastOptions) -> Self {
+    pub fn cast_with_options(
+        self,
+        dtype: impl Into<DataTypeExpr>,
+        cast_options: CastOptions,
+    ) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: cast_options,
         }
     }
@@ -510,7 +416,6 @@ impl Expr {
     /// Returns the `k` smallest rows by given column.
     ///
     /// For single column, use [`Expr::bottom_k`].
-    // #[cfg(feature = "top_k")]
     #[cfg(feature = "top_k")]
     pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
@@ -541,89 +446,109 @@ impl Expr {
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
-    pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
+    pub fn map<F, DT>(self, function: F, output_type: DT) -> Self
     where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+        self.map_with_fmt_str(function, output_type, "map")
+    }
 
+    pub fn map_with_fmt_str<F, DT>(
+        self,
+        function: F,
+        output_type: DT,
+        fmt_str: impl Into<PlSmallStr>,
+    ) -> Self
+    where
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
+    {
+        let f = BaseColumnUdf::new(
+            move |c: &mut [Column]| function(std::mem::take(&mut c[0])),
+            move |schema: &Schema, fields: &[Field]| output_type(schema, &fields[0]),
+        );
+
+        let options =
+            FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::OPTIONAL_RE_ENTRANT);
+        let fmt_str = Box::new(fmt_str.into());
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
-            output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                fmt_str: "map",
-                flags: FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT,
-                ..Default::default()
-            },
+            options,
+            fmt_str,
+        }
+    }
+
+    pub fn agg_with_fmt_str<F, DT>(
+        self,
+        function: F,
+        output_type: DT,
+        fmt_str: impl Into<PlSmallStr>,
+    ) -> Self
+    where
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
+    {
+        let f = BaseColumnUdf::new(
+            move |c: &mut [Column]| function(std::mem::take(&mut c[0])),
+            move |schema: &Schema, fields: &[Field]| output_type(schema, &fields[0]),
+        );
+
+        let options = FunctionOptions::aggregation();
+        let fmt_str = Box::new(fmt_str.into());
+        Expr::AnonymousFunction {
+            input: vec![self],
+            function: new_column_udf(f),
+            options,
+            fmt_str,
+        }
+    }
+
+    pub fn apply_with_fmt_str<F, DT>(
+        self,
+        function: F,
+        output_type: DT,
+        fmt_str: impl Into<PlSmallStr>,
+    ) -> Self
+    where
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
+    {
+        let f = BaseColumnUdf::new(
+            move |c: &mut [Column]| function(std::mem::take(&mut c[0])),
+            move |schema: &Schema, fields: &[Field]| output_type(schema, &fields[0]),
+        );
+
+        let options = FunctionOptions::groupwise();
+        let fmt_str = Box::new(fmt_str.into());
+        Expr::AnonymousFunction {
+            input: vec![self],
+            function: new_column_udf(f),
+            options,
+            fmt_str,
         }
     }
 
     /// Apply a function/closure once the logical plan get executed with many arguments.
     ///
     /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
-    pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
+    pub fn map_many<F, DT>(self, function: F, arguments: &[Expr], output_type: DT) -> Self
     where
-        F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
 
+        let function = BaseColumnUdf::new(function, output_type);
+
+        let options = FunctionOptions::elementwise();
         Expr::AnonymousFunction {
             input,
             function: new_column_udf(function),
-            output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                fmt_str: "",
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Apply a function/closure once the logical plan get executed.
-    ///
-    /// This function is very similar to [apply](Expr::apply), but differs in how it handles aggregations.
-    ///
-    ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-    ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-    ///  * `map_list` should be used when the function expects a list aggregated series.
-    pub fn map_list<F>(self, function: F, output_type: GetOutput) -> Self
-    where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
-    {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
-
-        Expr::AnonymousFunction {
-            input: vec![self],
-            function: new_column_udf(f),
-            output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyList,
-                fmt_str: MAP_LIST_NAME,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// A function that cannot be expressed with `map` or `apply` and requires extra settings.
-    pub fn function_with_options<F>(
-        self,
-        function: F,
-        output_type: GetOutput,
-        options: FunctionOptions,
-    ) -> Self
-    where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
-    {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
-
-        Expr::AnonymousFunction {
-            input: vec![self],
-            function: new_column_udf(f),
-            output_type,
             options,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 
@@ -636,43 +561,33 @@ impl Expr {
     ///
     /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-    pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
+    pub fn apply<F, DT>(self, function: F, output_type: DT) -> Self
     where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
-
-        Expr::AnonymousFunction {
-            input: vec![self],
-            function: new_column_udf(f),
-            output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::GroupWise,
-                fmt_str: "",
-                ..Default::default()
-            },
-        }
+        self.apply_with_fmt_str(function, output_type, PlSmallStr::EMPTY)
     }
 
     /// Apply a function/closure over the groups with many arguments. This should only be used in a group_by aggregation.
     ///
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
-    pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
+    pub fn apply_many<F, DT>(self, function: F, arguments: &[Expr], output_type: DT) -> Self
     where
-        F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
 
+        let function = BaseColumnUdf::new(function, output_type);
+
+        let options = FunctionOptions::groupwise();
         Expr::AnonymousFunction {
             input,
             function: new_column_udf(function),
-            output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::GroupWise,
-                fmt_str: "",
-                ..Default::default()
-            },
+            options,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 
@@ -710,6 +625,16 @@ impl Expr {
 
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
+    pub fn cumulative_eval(self, evaluation: Expr, min_samples: usize) -> Self {
+        Expr::Eval {
+            expr: Arc::new(self),
+            evaluation: Arc::new(evaluation),
+            variant: EvalVariant::Cumulative { min_samples },
+        }
+    }
+
+    /// Cumulatively count values from 0 to len.
+    #[cfg(feature = "cum_agg")]
     pub fn cum_count(self, reverse: bool) -> Self {
         self.map_unary(FunctionExpr::CumCount { reverse })
     }
@@ -740,34 +665,7 @@ impl Expr {
 
     /// Get the product aggregation of an expression.
     pub fn product(self) -> Self {
-        let options = FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "product",
-            ..Default::default()
-        };
-
-        self.function_with_options(
-            move |c: Column| {
-                Some(
-                    c.product()
-                        .map(|sc| sc.into_series(c.name().clone()).into_column()),
-                )
-                .transpose()
-            },
-            GetOutput::map_dtype(|dt| {
-                use DataType as T;
-                Ok(match dt {
-                    T::Float32 => T::Float32,
-                    T::Float64 => T::Float64,
-                    T::UInt64 => T::UInt64,
-                    #[cfg(feature = "dtype-i128")]
-                    T::Int128 => T::Int128,
-                    _ => T::Int64,
-                })
-            }),
-            options,
-        )
+        self.map_unary(FunctionExpr::Product)
     }
 
     /// Round underlying floating point array to given decimal numbers.
@@ -894,20 +792,26 @@ impl Expr {
     /// ╰────────┴────────╯
     /// ```
     pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
-        self.over_with_options(partition_by, None, Default::default())
+        self.over_with_options(Some(partition_by), None, Default::default())
+            .expect("We explicitly passed `partition_by`")
     }
 
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
-        partition_by: E,
+        partition_by: Option<E>,
         order_by: Option<(E, SortOptions)>,
         options: WindowMapping,
-    ) -> Self {
-        let partition_by = partition_by
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect();
+    ) -> PolarsResult<Self> {
+        polars_ensure!(partition_by.is_some() || order_by.is_some(), InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
+        let partition_by = if let Some(partition_by) = partition_by {
+            partition_by
+                .as_ref()
+                .iter()
+                .map(|e| e.clone().into())
+                .collect()
+        } else {
+            vec![lit(1)]
+        };
 
         let order_by = order_by.map(|(e, options)| {
             let e = e.as_ref();
@@ -922,12 +826,12 @@ impl Expr {
             (e, options)
         });
 
-        Expr::Window {
+        Ok(Expr::Window {
             function: Arc::new(self),
             partition_by,
             order_by,
             options: options.into(),
-        }
+        })
     }
 
     #[cfg(feature = "dynamic_group_by")]
@@ -969,11 +873,19 @@ impl Expr {
     /// or
     /// Get counts of the group by operation.
     pub fn count(self) -> Self {
-        AggExpr::Count(Arc::new(self), false).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: false,
+        }
+        .into()
     }
 
     pub fn len(self) -> Self {
-        AggExpr::Count(Arc::new(self), true).into()
+        AggExpr::Count {
+            input: Arc::new(self),
+            include_nulls: true,
+        }
+        .into()
     }
 
     /// Get a mask of duplicated values.
@@ -998,6 +910,26 @@ impl Expr {
     #[cfg(feature = "is_unique")]
     pub fn is_unique(self) -> Self {
         self.map_unary(BooleanFunction::IsUnique)
+    }
+
+    /// Check whether floating point values are close to each other.
+    #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_close")]
+    pub fn is_close<E: Into<Expr>>(
+        self,
+        expr: E,
+        abs_tol: f64,
+        rel_tol: f64,
+        nans_equal: bool,
+    ) -> Self {
+        self.map_binary(
+            BooleanFunction::IsClose {
+                abs_tol: TotalOrdWrap(abs_tol),
+                rel_tol: TotalOrdWrap(rel_tol),
+                nans_equal,
+            },
+            expr.into(),
+        )
     }
 
     /// Get the approximate count of unique values.
@@ -1036,9 +968,6 @@ impl Expr {
     /// Should be used in aggregation context. If you want to filter on a
     /// DataFrame level, use `LazyFrame::filter`.
     pub fn filter<E: Into<Expr>>(self, predicate: E) -> Self {
-        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
-            panic!("filter '*' not allowed, use LazyFrame::filter")
-        };
         Expr::Filter {
             input: Arc::new(self),
             by: Arc::new(predicate.into()),
@@ -1051,12 +980,10 @@ impl Expr {
     pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
         let function = BooleanFunction::IsIn { nulls_equal };
-        let options = function.function_options();
         let function = function.into();
         Expr::Function {
             input: vec![self, other],
             function,
-            options,
         }
     }
 
@@ -1135,23 +1062,6 @@ impl Expr {
         self.map_unary(FunctionExpr::Mode)
     }
 
-    /// Exclude a column from a wildcard/regex selection.
-    ///
-    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
-    pub fn exclude(self, columns: impl IntoVec<PlSmallStr>) -> Expr {
-        let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
-        Expr::Exclude(Arc::new(self), v)
-    }
-
-    pub fn exclude_dtype<D: AsRef<[DataType]>>(self, dtypes: D) -> Expr {
-        let v = dtypes
-            .as_ref()
-            .iter()
-            .map(|dt| Excluded::Dtype(dt.clone()))
-            .collect();
-        Expr::Exclude(Arc::new(self), v)
-    }
-
     #[cfg(feature = "interpolate")]
     /// Interpolate intermediate values.
     /// Nulls at the beginning and end of the series remain null.
@@ -1165,10 +1075,13 @@ impl Expr {
         self,
         by: Expr,
         options: RollingOptionsDynamicWindow,
-        rolling_function_by: fn(RollingOptionsDynamicWindow) -> RollingFunctionBy,
+        rolling_function_by: RollingFunctionBy,
     ) -> Expr {
         self.map_binary(
-            FunctionExpr::RollingExprBy(rolling_function_by(options)),
+            FunctionExpr::RollingExprBy {
+                function_by: rolling_function_by,
+                options,
+            },
             by,
         )
     }
@@ -1186,9 +1099,12 @@ impl Expr {
     fn finish_rolling(
         self,
         options: RollingOptionsFixedWindow,
-        rolling_function: fn(RollingOptionsFixedWindow) -> RollingFunction,
+        rolling_function: RollingFunction,
     ) -> Expr {
-        self.map_unary(FunctionExpr::RollingExpr(rolling_function(options)))
+        self.map_unary(FunctionExpr::RollingExpr {
+            function: rolling_function,
+            options,
+        })
     }
 
     /// Apply a rolling minimum based on another column.
@@ -1342,60 +1258,10 @@ impl Expr {
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     pub fn rolling_map(
         self,
-        f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
-        output_type: GetOutput,
+        f: PlanCallback<Series, Series>,
         options: RollingOptionsFixedWindow,
     ) -> Expr {
-        self.apply(
-            move |c: Column| {
-                c.as_materialized_series()
-                    .rolling_map(f.as_ref(), options.clone())
-                    .map(Column::from)
-                    .map(Some)
-            },
-            output_type,
-        )
-        .with_fmt("rolling_map")
-    }
-
-    #[cfg(feature = "rolling_window")]
-    /// Apply a custom function over a rolling/ moving window of the array.
-    /// Prefer this over rolling_apply in case of floating point numbers as this is faster.
-    /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    pub fn rolling_map_float<F>(self, window_size: usize, f: F) -> Expr
-    where
-        F: 'static + FnMut(&mut Float64Chunked) -> Option<f64> + Send + Sync + Copy,
-    {
-        self.apply(
-            move |c: Column| {
-                let out = match c.dtype() {
-                    DataType::Float64 => c
-                        .f64()
-                        .unwrap()
-                        .rolling_map_float(window_size, f)
-                        .map(|ca| ca.into_column()),
-                    _ => c
-                        .cast(&DataType::Float64)?
-                        .f64()
-                        .unwrap()
-                        .rolling_map_float(window_size, f)
-                        .map(|ca| ca.into_column()),
-                }?;
-                if let DataType::Float32 = c.dtype() {
-                    out.cast(&DataType::Float32).map(Some)
-                } else {
-                    Ok(Some(out))
-                }
-            },
-            GetOutput::map_field(|field| {
-                Ok(match field.dtype() {
-                    DataType::Float64 => field.clone(),
-                    DataType::Float32 => Field::new(field.name().clone(), DataType::Float32),
-                    _ => Field::new(field.name().clone(), DataType::Float64),
-                })
-            }),
-        )
-        .with_fmt("rolling_map_float")
+        self.finish_rolling(options, RollingFunction::Map(f))
     }
 
     #[cfg(feature = "peaks")]
@@ -1419,19 +1285,7 @@ impl Expr {
     pub fn replace<E: Into<Expr>>(self, old: E, new: E) -> Expr {
         let old = old.into();
         let new = new.into();
-        let literal_args = is_column_independent(&old) && is_column_independent(&new);
-        let function = FunctionExpr::Replace;
-        let mut options = function.function_options();
-        if !literal_args {
-            // If we search and replace by constants, we can run on batches.
-            // TODO: this optimization should be done during conversion to IR.
-            options.collect_groups = ApplyOptions::GroupWise;
-        }
-        Expr::Function {
-            input: vec![self, old, new],
-            function,
-            options,
-        }
+        self.map_n_ary(FunctionExpr::Replace, [old, new])
     }
 
     #[cfg(feature = "replace")]
@@ -1441,29 +1295,18 @@ impl Expr {
         old: E,
         new: E,
         default: Option<E>,
-        return_dtype: Option<DataType>,
+        return_dtype: Option<impl Into<DataTypeExpr>>,
     ) -> Expr {
         let old = old.into();
         let new = new.into();
-
-        // If we replace by constants, we can run on batches.
-        // TODO: this optimization should be done during conversion to IR.
-        let literal_args = is_column_independent(&old) && is_column_independent(&new);
-
-        let mut args = vec![self, old, new];
+        let mut args = vec![old, new];
         args.extend(default.map(Into::into));
-        let function = FunctionExpr::ReplaceStrict { return_dtype };
-        let mut options = function.function_options();
-        if !literal_args {
-            // If we search and replace by constants, we can run on batches.
-            // TODO: this optimization should be done during conversion to IR.
-            options.collect_groups = ApplyOptions::GroupWise;
-        }
-        Expr::Function {
-            input: args,
-            function,
-            options,
-        }
+        self.map_n_ary(
+            FunctionExpr::ReplaceStrict {
+                return_dtype: return_dtype.map(Into::into),
+            },
+            args,
+        )
     }
 
     #[cfg(feature = "cutqcut")]
@@ -1637,13 +1480,6 @@ impl Expr {
         self.map_unary(BooleanFunction::All { ignore_nulls })
     }
 
-    /// Shrink numeric columns to the minimal required datatype
-    /// needed to fit the extrema of this [`Series`].
-    /// This can be used to reduce memory pressure.
-    pub fn shrink_dtype(self) -> Self {
-        self.map_unary(FunctionExpr::ShrinkType)
-    }
-
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
@@ -1667,8 +1503,8 @@ impl Expr {
 
     #[cfg(feature = "log")]
     /// Compute the logarithm to a given base.
-    pub fn log(self, base: f64) -> Self {
-        self.map_unary(FunctionExpr::Log { base })
+    pub fn log(self, base: Expr) -> Self {
+        self.map_binary(FunctionExpr::Log, base)
     }
 
     #[cfg(feature = "log")]
@@ -1684,7 +1520,7 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
-    /// Compute the entropy as `-sum(pk * log(pk)`.
+    /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.map_unary(FunctionExpr::Entropy { base, normalize })
@@ -1788,49 +1624,22 @@ impl Expr {
 ///
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
-pub fn map_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+pub fn map_multiple<F, DT, E>(function: F, expr: E, output_type: DT) -> Expr
 where
-    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+    DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
 
+    let function = BaseColumnUdf::new(function, output_type);
+
+    let options = FunctionOptions::elementwise();
     Expr::AnonymousFunction {
         input,
         function: new_column_udf(function),
-        output_type,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            fmt_str: "",
-            ..Default::default()
-        },
-    }
-}
-
-/// Apply a function/closure over multiple columns once the logical plan get executed.
-///
-/// This function is very similar to [`apply_multiple`], but differs in how it handles aggregations.
-///
-///  * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-///  * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-///  * [`map_list_multiple`] should be used when the function expects a list aggregated series.
-pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
-where
-    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
-    E: AsRef<[Expr]>,
-{
-    let input = expr.as_ref().to_vec();
-
-    Expr::AnonymousFunction {
-        input,
-        function: new_column_udf(function),
-        output_type,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyList,
-            fmt_str: "",
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
+        options,
+        fmt_str: Box::new(PlSmallStr::EMPTY),
     }
 }
 
@@ -1843,34 +1652,23 @@ where
 ///
 /// * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 /// * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-pub fn apply_multiple<F, E>(
-    function: F,
-    expr: E,
-    output_type: GetOutput,
-    returns_scalar: bool,
-) -> Expr
+pub fn apply_multiple<F, DT, E>(function: F, expr: E, output_type: DT, returns_scalar: bool) -> Expr
 where
-    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+    DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
-    let mut flags = FunctionFlags::default();
-    if returns_scalar {
-        flags |= FunctionFlags::RETURNS_SCALAR;
-    }
-
+    let options = FunctionOptions::groupwise().with_flags(|mut f| {
+        f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
+        f
+    });
+    let function = BaseColumnUdf::new(function, output_type);
     Expr::AnonymousFunction {
         input,
         function: new_column_udf(function),
-        output_type,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            // don't set this to true
-            // this is for the caller to decide
-            fmt_str: "",
-            flags,
-            ..Default::default()
-        },
+        options,
+        fmt_str: Box::new(PlSmallStr::EMPTY),
     }
 }
 
@@ -1880,16 +1678,19 @@ pub fn len() -> Expr {
 }
 
 /// First column in a DataFrame.
-pub fn first() -> Expr {
-    Expr::Nth(0)
+pub fn first() -> Selector {
+    nth(0)
 }
 
 /// Last column in a DataFrame.
-pub fn last() -> Expr {
-    Expr::Nth(-1)
+pub fn last() -> Selector {
+    nth(-1)
 }
 
 /// Nth column in a DataFrame.
-pub fn nth(n: i64) -> Expr {
-    Expr::Nth(n)
+pub fn nth(n: i64) -> Selector {
+    Selector::ByIndex {
+        indices: [n].into(),
+        strict: true,
+    }
 }

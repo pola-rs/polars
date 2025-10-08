@@ -15,6 +15,8 @@ mod ffi;
 pub(super) mod fmt;
 mod from_natural;
 pub mod iterator;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 mod mutable;
 pub use mutable::*;
@@ -159,13 +161,13 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Returns an iterator over the values and validity, `Option<&T>`.
     #[inline]
-    pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<T>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<'_, T>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values().iter(), self.validity())
     }
 
     /// Returns an iterator of the values, `&T`, ignoring the arrays' validity.
     #[inline]
-    pub fn values_iter(&self) -> std::slice::Iter<T> {
+    pub fn values_iter(&self) -> std::slice::Iter<'_, T> {
         self.values().iter()
     }
 
@@ -456,13 +458,11 @@ impl<T: NativeType> PrimitiveArray<T> {
         let PrimitiveArray {
             values, validity, ..
         } = self;
-
-        // SAFETY: this is fine, we checked size and alignment, and NativeType
-        // is always Pod.
-        assert_eq!(size_of::<T>(), size_of::<U>());
-        assert_eq!(align_of::<T>(), align_of::<U>());
-        let new_values = unsafe { std::mem::transmute::<Buffer<T>, Buffer<U>>(values) };
-        PrimitiveArray::new(U::PRIMITIVE.into(), new_values, validity)
+        PrimitiveArray::new(
+            U::PRIMITIVE.into(),
+            Buffer::try_transmute::<U>(values).unwrap(),
+            validity,
+        )
     }
 
     /// Fills this entire array with the given value, leaving the validity mask intact.
@@ -580,6 +580,8 @@ pub type UInt16Array = PrimitiveArray<u16>;
 pub type UInt32Array = PrimitiveArray<u32>;
 /// A type definition [`PrimitiveArray`] for `u64`
 pub type UInt64Array = PrimitiveArray<u64>;
+/// A type definition [`PrimitiveArray`] for `u128`
+pub type UInt128Array = PrimitiveArray<u128>;
 
 /// A type definition [`MutablePrimitiveArray`] for `i8`
 pub type Int8Vec = MutablePrimitiveArray<i8>;
@@ -611,6 +613,8 @@ pub type UInt16Vec = MutablePrimitiveArray<u16>;
 pub type UInt32Vec = MutablePrimitiveArray<u32>;
 /// A type definition [`MutablePrimitiveArray`] for `u64`
 pub type UInt64Vec = MutablePrimitiveArray<u64>;
+/// A type definition [`MutablePrimitiveArray`] for `u128`
+pub type UInt128Vec = MutablePrimitiveArray<u128>;
 
 impl<T: NativeType> Default for PrimitiveArray<T> {
     fn default() -> Self {

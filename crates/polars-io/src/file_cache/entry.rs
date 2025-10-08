@@ -166,13 +166,12 @@ impl Inner {
                     Ok("1") => Some(false),
                     Ok("0") => Some(true),
                     Err(_) => None,
-                    Ok(v) => panic!(
-                        "invalid value {} for POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR",
-                        v
-                    ),
+                    Ok(v) => {
+                        panic!("invalid value {v} for POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR")
+                    },
                 };
                 if config::verbose() {
-                    eprintln!("[file_cache]: RAISE_ALLOC_ERROR: {:?}", v);
+                    eprintln!("[file_cache]: RAISE_ALLOC_ERROR: {v:?}");
                 }
                 v
             });
@@ -194,7 +193,7 @@ impl Inner {
                 {
                     polars_bail!(ComputeError: msg)
                 } else if config::verbose() {
-                    eprintln!("[file_cache]: warning: {}", msg)
+                    eprintln!("[file_cache]: warning: {msg}")
                 }
             }
         }
@@ -225,7 +224,7 @@ impl Inner {
         metadata.remote_version = remote_metadata.version.clone();
 
         if let Err(e) = metadata.compare_local_state(data_file_path) {
-            panic!("metadata mismatch after file fetch: {}", e);
+            panic!("metadata mismatch after file fetch: {e}");
         }
 
         let data_file = finish_open(data_file_path, metadata_file);
@@ -413,7 +412,7 @@ fn get_data_file_path(
         uri_hash,
         match remote_version {
             FileVersion::Timestamp(v) => {
-                owned = Some(format!("{:013x}", v));
+                owned = Some(format!("{v:013x}"));
                 owned.as_deref().unwrap()
             },
             FileVersion::ETag(v) => v.as_str(),

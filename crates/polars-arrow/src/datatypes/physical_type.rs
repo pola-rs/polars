@@ -67,6 +67,7 @@ impl PhysicalType {
 /// Each type corresponds to a variant of [`crate::array::DictionaryArray`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IntegerType {
     /// A signed 8-bit integer.
     Int8,
@@ -86,4 +87,6 @@ pub enum IntegerType {
     UInt32,
     /// An unsigned 64-bit integer.
     UInt64,
+    /// An unsigned 128-bit integer.
+    UInt128,
 }

@@ -1,10 +1,12 @@
+use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::Mutex;
 
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use polars_core::prelude::*;
-use polars_utils::format_pl_smallstr;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::{format_pl_smallstr, unitvec};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +33,7 @@ impl DslPlan {
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FileInfo {
     /// Schema of the physical file.
     ///
@@ -65,7 +68,7 @@ impl FileInfo {
         row_estimation: (Option<usize>, usize),
     ) -> Self {
         Self {
-            schema: schema.clone(),
+            schema,
             reader_schema,
             row_estimation,
         }
@@ -85,171 +88,21 @@ impl FileInfo {
             }
         }
     }
-}
 
-#[cfg(feature = "streaming")]
-fn estimate_sizes(
-    known_size: Option<usize>,
-    estimated_size: usize,
-    filter_count: usize,
-) -> (Option<usize>, usize) {
-    match (known_size, filter_count) {
-        (Some(known_size), 0) => (Some(known_size), estimated_size),
-        (None, 0) => (None, estimated_size),
-        (_, _) => (
-            None,
-            (estimated_size as f32 * 0.9f32.powf(filter_count as f32)) as usize,
-        ),
-    }
-}
+    pub fn iter_reader_schema_names(
+        &self,
+    ) -> Option<impl '_ + ExactSizeIterator<Item = &PlSmallStr>> {
+        let reader_schema = self.reader_schema.as_ref()?;
 
-#[cfg(feature = "streaming")]
-pub fn set_estimated_row_counts(
-    root: Node,
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-    mut _filter_count: usize,
-    scratch: &mut Vec<Node>,
-) -> (Option<usize>, usize, usize) {
-    use IR::*;
+        let len = match reader_schema {
+            Either::Left(v) => v.len(),
+            Either::Right(v) => v.len(),
+        };
 
-    fn apply_slice(out: &mut (Option<usize>, usize, usize), slice: Option<(i64, usize)>) {
-        if let Some((_, len)) = slice {
-            out.0 = out.0.map(|known_size| std::cmp::min(len, known_size));
-            out.1 = std::cmp::min(len, out.1);
-        }
-    }
-
-    match lp_arena.get(root) {
-        Filter { predicate, input } => {
-            _filter_count += expr_arena
-                .iter(predicate.node())
-                .filter(|(_, ae)| matches!(ae, AExpr::BinaryExpr { .. }))
-                .count()
-                + 1;
-            set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count, scratch)
-        },
-        Slice { input, len, .. } => {
-            let len = *len as usize;
-            let mut out =
-                set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count, scratch);
-            apply_slice(&mut out, Some((0, len)));
-            out
-        },
-        Union { .. } => {
-            if let Union {
-                inputs,
-                mut options,
-            } = lp_arena.take(root)
-            {
-                let mut sum_output = (None, 0usize);
-                for input in &inputs {
-                    let mut out =
-                        set_estimated_row_counts(*input, lp_arena, expr_arena, 0, scratch);
-                    if let Some((_offset, len)) = options.slice {
-                        apply_slice(&mut out, Some((0, len)))
-                    }
-                    // todo! deal with known as well
-                    let out = estimate_sizes(out.0, out.1, out.2);
-                    sum_output.1 = sum_output.1.saturating_add(out.1);
-                }
-                options.rows = sum_output;
-                lp_arena.replace(root, Union { inputs, options });
-                (sum_output.0, sum_output.1, 0)
-            } else {
-                unreachable!()
-            }
-        },
-        Join { .. } => {
-            if let Join {
-                input_left,
-                input_right,
-                mut options,
-                schema,
-                left_on,
-                right_on,
-            } = lp_arena.take(root)
-            {
-                let mut_options = Arc::make_mut(&mut options);
-                let (known_size, estimated_size, filter_count_left) =
-                    set_estimated_row_counts(input_left, lp_arena, expr_arena, 0, scratch);
-                mut_options.rows_left =
-                    estimate_sizes(known_size, estimated_size, filter_count_left);
-                let (known_size, estimated_size, filter_count_right) =
-                    set_estimated_row_counts(input_right, lp_arena, expr_arena, 0, scratch);
-                mut_options.rows_right =
-                    estimate_sizes(known_size, estimated_size, filter_count_right);
-
-                let mut out = match options.args.how {
-                    JoinType::Left => {
-                        let (known_size, estimated_size) = options.rows_left;
-                        (known_size, estimated_size, filter_count_left)
-                    },
-                    JoinType::Cross | JoinType::Full => {
-                        let (known_size_left, estimated_size_left) = options.rows_left;
-                        let (known_size_right, estimated_size_right) = options.rows_right;
-                        match (known_size_left, known_size_right) {
-                            (Some(l), Some(r)) => {
-                                (Some(l * r), estimated_size_left, estimated_size_right)
-                            },
-                            _ => (None, estimated_size_left * estimated_size_right, 0),
-                        }
-                    },
-                    _ => {
-                        let (known_size_left, estimated_size_left) = options.rows_left;
-                        let (known_size_right, estimated_size_right) = options.rows_right;
-                        if estimated_size_left > estimated_size_right {
-                            (known_size_left, estimated_size_left, 0)
-                        } else {
-                            (known_size_right, estimated_size_right, 0)
-                        }
-                    },
-                };
-                apply_slice(&mut out, options.args.slice);
-                lp_arena.replace(
-                    root,
-                    Join {
-                        input_left,
-                        input_right,
-                        options,
-                        schema,
-                        left_on,
-                        right_on,
-                    },
-                );
-                out
-            } else {
-                unreachable!()
-            }
-        },
-        DataFrameScan { df, .. } => {
-            let len = df.height();
-            (Some(len), len, _filter_count)
-        },
-        Scan { file_info, .. } => {
-            let (known_size, estimated_size) = file_info.row_estimation;
-            (known_size, estimated_size, _filter_count)
-        },
-        #[cfg(feature = "python")]
-        PythonScan { .. } => {
-            // TODO! get row estimation.
-            (None, usize::MAX, _filter_count)
-        },
-        lp => {
-            lp.copy_inputs(scratch);
-            let mut sum_output = (None, 0, 0);
-            while let Some(input) = scratch.pop() {
-                let out =
-                    set_estimated_row_counts(input, lp_arena, expr_arena, _filter_count, scratch);
-                sum_output.1 += out.1;
-                sum_output.2 += out.2;
-                sum_output.0 = match sum_output.0 {
-                    None => out.0,
-                    p => p,
-                };
-            }
-            sum_output
-        },
+        Some((0..len).map(move |i| match reader_schema {
+            Either::Left(v) => v.get_at_index(i).unwrap().0,
+            Either::Right(v) => v.get_at_index(i).unwrap().0,
+        }))
     }
 }
 
@@ -258,7 +111,7 @@ pub(crate) fn det_join_schema(
     schema_right: &SchemaRef,
     left_on: &[ExprIR],
     right_on: &[ExprIR],
-    options: &JoinOptions,
+    options: &JoinOptionsIR,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
     match &options.args.how {
@@ -278,13 +131,13 @@ pub(crate) fn det_join_schema(
             // Get join names.
             let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
             for e in left_on {
-                let field = e.field(schema_left, Context::Default, expr_arena)?;
+                let field = e.field(schema_left, expr_arena)?;
                 join_on_left.insert(field.name);
             }
 
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
-                let field = e.field(schema_right, Context::Default, expr_arena)?;
+                let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 
@@ -324,74 +177,57 @@ pub(crate) fn det_join_schema(
 
             Ok(Arc::new(new_schema))
         },
-        _how => {
+        how => {
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len())
                 .hstack(schema_left.iter_fields())?;
 
             let is_coalesced = options.args.should_coalesce();
 
-            let mut _asof_pre_added_rhs_keys: PlHashSet<PlSmallStr> = PlHashSet::new();
-
-            // Handles coalescing of asof-joins.
-            // Asof joins are not equi-joins
-            // so the columns that are joined on, may have different
-            // values so if the right has a different name, it is added to the schema
-            #[cfg(feature = "asof_join")]
-            if matches!(_how, JoinType::AsOf(_)) {
-                for (left_on, right_on) in left_on.iter().zip(right_on) {
-                    let field_left = left_on.field(schema_left, Context::Default, expr_arena)?;
-                    let field_right = right_on.field(schema_right, Context::Default, expr_arena)?;
-
-                    if is_coalesced && field_left.name != field_right.name {
-                        _asof_pre_added_rhs_keys.insert(field_right.name.clone());
-
-                        if schema_left.contains(&field_right.name) {
-                            new_schema.with_column(
-                                _join_suffix_name(&field_right.name, options.args.suffix()),
-                                field_right.dtype,
-                            );
-                        } else {
-                            new_schema.with_column(field_right.name, field_right.dtype);
-                        }
-                    }
-                }
-            }
-
-            let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
+            let mut join_on_right: PlIndexSet<_> = PlIndexSet::with_capacity(right_on.len());
             for e in right_on {
-                let field = e.field(schema_right, Context::Default, expr_arena)?;
+                let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 
-            for (name, dtype) in schema_right.iter() {
-                #[cfg(feature = "asof_join")]
-                {
-                    if let JoinType::AsOf(asof_options) = &options.args.how {
-                        // Asof adds keys earlier
-                        if _asof_pre_added_rhs_keys.contains(name) {
-                            continue;
-                        }
+            let mut right_by: PlHashSet<&PlSmallStr> = PlHashSet::default();
+            #[cfg(feature = "asof_join")]
+            if let JoinType::AsOf(asof_options) = &options.args.how {
+                if let Some(v) = &asof_options.right_by {
+                    right_by.extend(v.iter());
+                }
+            }
 
-                        // Asof join by columns are coalesced
-                        if asof_options
-                            .right_by
-                            .as_deref()
-                            .is_some_and(|x| x.contains(name))
-                        {
-                            // Do not add suffix. The column of the left table will be used
-                            continue;
-                        }
-                    }
+            for (name, dtype) in schema_right.iter() {
+                // Asof join by columns are coalesced
+                if right_by.contains(name) {
+                    // Do not add suffix. The column of the left table will be used
+                    continue;
                 }
 
-                if join_on_right.contains(name.as_str()) && is_coalesced {
+                if is_coalesced
+                    && let Some(idx) = join_on_right.get_index_of(name)
+                    && {
+                        let mut need_to_include_column = false;
+
+                        // Handles coalescing of asof-joins.
+                        // Asof joins are not equi-joins
+                        // so the columns that are joined on, may have different
+                        // values so if the right has a different name, it is added to the schema
+                        #[cfg(feature = "asof_join")]
+                        if matches!(how, JoinType::AsOf(_)) {
+                            let field_left = left_on[idx].field(schema_left, expr_arena)?;
+                            need_to_include_column = field_left.name != name;
+                        }
+
+                        !need_to_include_column
+                    }
+                {
                     // Column will be coalesced into an already added LHS column.
                     continue;
                 }
 
                 // For the error message.
                 let mut suffixed = None;
-
                 let (name, dtype) = if schema_left.contains(name) {
                     suffixed = Some(format_pl_smallstr!("{}{}", name, options.args.suffix()));
                     (suffixed.clone().unwrap(), dtype.clone())
@@ -455,5 +291,34 @@ impl Clone for CachedSchema {
 impl CachedSchema {
     pub fn get(&self) -> Option<SchemaRef> {
         self.0.lock().unwrap().clone()
+    }
+}
+
+pub fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
+    let plan = lp_arena.get(lp_node);
+    let mut inputs: UnitVec<Node> = unitvec!();
+
+    // Used to get the schema of the input.
+    if is_scan(plan) {
+        inputs.push(lp_node);
+    } else {
+        plan.copy_inputs(&mut inputs);
+    };
+    inputs
+}
+
+/// Retrieves the schema of the first LP input, or that of the `lp_node` if there
+/// are no inputs.
+///
+/// # Panics
+/// Panics if this `lp_node` does not have inputs and is not a `Scan` or `PythonScan`.
+pub fn get_input_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
+    let inputs = get_input(lp_arena, lp_node);
+    if inputs.is_empty() {
+        // Files don't have an input, so we must take their schema.
+        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
+    } else {
+        let input = inputs[0];
+        lp_arena.get(input).schema(lp_arena)
     }
 }

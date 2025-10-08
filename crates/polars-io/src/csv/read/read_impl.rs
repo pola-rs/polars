@@ -2,13 +2,13 @@ pub(super) mod batched;
 
 use std::fmt;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
+use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
 use super::CsvParseOptions;
@@ -19,7 +19,7 @@ use super::parser::{
     skip_lines_naive, skip_this_line,
 };
 use super::reader::prepare_csv_schema;
-use super::schema_inference::{check_decimal_comma, infer_file_schema};
+use super::schema_inference::infer_file_schema;
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
 use crate::RowIndex;
@@ -121,8 +121,6 @@ pub(crate) struct CoreReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_index: Option<RowIndex>,
-    #[cfg_attr(not(feature = "dtype-categorical"), allow(unused))]
-    has_categorical: bool,
 }
 
 impl fmt::Debug for CoreReader<'_> {
@@ -161,7 +159,6 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<CoreReader<'a>> {
         let separator = parse_options.separator;
 
-        check_decimal_comma(parse_options.decimal_comma, separator)?;
         #[cfg(feature = "decompress")]
         let mut reader_bytes = reader_bytes;
 
@@ -217,7 +214,7 @@ impl<'a> CoreReader<'a> {
             }
         }
 
-        let has_categorical = prepare_csv_schema(&mut schema, &mut to_cast)?;
+        prepare_csv_schema(&mut schema, &mut to_cast)?;
 
         // Create a null value for every column
         let null_values = parse_options
@@ -253,7 +250,6 @@ impl<'a> CoreReader<'a> {
             predicate,
             to_cast,
             row_index,
-            has_categorical,
         })
     }
 
@@ -320,6 +316,10 @@ impl<'a> CoreReader<'a> {
         Ok(df)
     }
 
+    // The code adheres to RFC 4180 in a strict sense, unless explicitly documented otherwise.
+    // Malformed CSV is common, see e.g. the use of lazy_quotes, whitespace and comments.
+    // In case malformed CSV is detected, a warning or an error will be issued.
+    // Not all malformed CSV will be detected, as that would impact performance.
     fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let (bytes, _) = self.find_starting_point(
             bytes,
@@ -345,6 +345,9 @@ impl<'a> CoreReader<'a> {
                         .collect::<Schema>(),
                 )
             };
+
+            cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
+
             if let Some(ref row_index) = self.row_index {
                 df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
             }
@@ -371,7 +374,7 @@ impl<'a> CoreReader<'a> {
 
         let results = Arc::new(Mutex::new(vec![]));
         // We have to do this after parsing as there can be comments.
-        let total_line_count = &AtomicUsize::new(0);
+        let total_line_count = &RelaxedCell::new_usize(0);
 
         #[cfg(not(target_family = "wasm"))]
         let pool;
@@ -388,12 +391,18 @@ impl<'a> CoreReader<'a> {
         #[cfg(target_family = "wasm")]
         let pool = &POOL;
 
-        let counter = CountLines::new(self.parse_options.quote_char, self.parse_options.eol_char);
+        let counter = CountLines::new(
+            self.parse_options.quote_char,
+            self.parse_options.eol_char,
+            None,
+        );
         let mut total_offset = 0;
+        let mut previous_total_offset = 0;
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
         pool.scope(|s| {
+            // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };
                 if b.is_empty() {
@@ -402,6 +411,9 @@ impl<'a> CoreReader<'a> {
                 debug_assert!(
                     total_offset == 0 || bytes[total_offset - 1] == self.parse_options.eol_char
                 );
+
+                // Count is the number of rows for the next chunk. In case of malformed CSV data,
+                // count may not be as expected.
                 let (count, position) = counter.find_next(b, &mut chunk_size);
                 debug_assert!(count == 0 || b[position] == self.parse_options.eol_char);
 
@@ -420,10 +432,12 @@ impl<'a> CoreReader<'a> {
                     let end = total_offset + position + 1;
                     let b = unsafe { bytes.get_unchecked(total_offset..end) };
 
+                    previous_total_offset = total_offset;
                     total_offset = end;
                     (b, count)
                 };
 
+                // Pass 2: process each individual chunk in parallel (field parsing)
                 if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
@@ -441,10 +455,21 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
-                                debug_assert!(df.height() <= count);
+
+                                // Check malformed
+                                if df.height() > count || (df.height() < count && slf.parse_options.comment_prefix.is_none()) {
+                                    // Note: in case data is malformed, df.height() is more likely to be correct than count.
+                                    let msg = format!("CSV malformed: expected {} rows, actual {} rows, in chunk starting at byte offset {}, length {}",
+                                        count, df.height(), previous_total_offset, b.len());
+                                    if slf.ignore_errors {
+                                        polars_warn!(msg);
+                                    } else {
+                                        polars_bail!(ComputeError: msg);
+                                    }
+                                }
 
                                 if slf.n_rows.is_some() {
-                                    total_line_count.fetch_add(df.height(), Ordering::Relaxed);
+                                    total_line_count.fetch_add(df.height());
                                 }
 
                                 // We cannot use the line count as there can be comments in the lines so we must correct line counts later.
@@ -473,7 +498,7 @@ impl<'a> CoreReader<'a> {
                     // Check just after we spawned a chunk. That mean we processed all data up until
                     // row count.
                     if self.n_rows.is_some()
-                        && total_line_count.load(Ordering::Relaxed) > self.n_rows.unwrap()
+                        && total_line_count.load() > self.n_rows.unwrap()
                     {
                         break;
                     }
@@ -496,15 +521,7 @@ impl<'a> CoreReader<'a> {
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn finish(mut self) -> PolarsResult<DataFrame> {
-        #[cfg(feature = "dtype-categorical")]
-        let mut _cat_lock = if self.has_categorical {
-            Some(polars_core::StringCacheHolder::hold())
-        } else {
-            None
-        };
-
         let reader_bytes = self.reader_bytes.take().unwrap();
-
         let mut df = self.parse_csv(&reader_bytes)?;
 
         // if multi-threaded the n_rows was probabilistically determined.

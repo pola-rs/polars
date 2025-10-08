@@ -56,7 +56,7 @@ mod tests {
 
         // insert
         for a in 0..10i64 {
-            let value = format!("a{}", a);
+            let value = format!("a{a}");
             let hash = hash_byte(value);
             insert(&mut bitset, hash);
         }

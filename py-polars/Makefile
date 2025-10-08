@@ -2,7 +2,9 @@
 
 PYTHONPATH=
 SHELL=bash
-VENV=../.venv
+ifeq ($(VENV),)
+VENV := ../.venv
+endif
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
@@ -70,6 +72,10 @@ pre-commit: fmt clippy  ## Run all code formatting and lint/quality checks
 .PHONY: test
 test: .venv build  ## Run fast unittests
 	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
+
+.PHONY: test-streaming
+test-streaming: .venv build  ## Run fast unittests with the streaming engine
+	POLARS_TIMEOUT_MS=60000 POLARS_AUTO_NEW_STREAMING=1 $(VENV_BIN)/pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only" $(PYTEST_ARGS)
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests

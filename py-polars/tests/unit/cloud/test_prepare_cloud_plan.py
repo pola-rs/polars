@@ -5,7 +5,7 @@ import pytest
 
 import polars as pl
 from polars._utils.cloud import prepare_cloud_plan
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import InvalidOperationError
 
 CLOUD_SOURCE = "s3://my-nonexistent-bucket/dataset"
 DST = "s3://my-nonexistent-bucket/output"
@@ -63,10 +63,9 @@ def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
 def test_prepare_cloud_plan_optimization_toggle() -> None:
     lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).sink_parquet(DST, lazy=True)
 
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
-        prepare_cloud_plan(lf, nonexistent_optimization=False)
-
-    result = prepare_cloud_plan(lf, projection_pushdown=False)
+    result = prepare_cloud_plan(
+        lf, optimizations=pl.QueryOptFlags(projection_pushdown=False)
+    )
     assert isinstance(result, bytes)
 
     # TODO: How to check that this optimization was toggled correctly?
@@ -88,20 +87,4 @@ def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
         InvalidOperationError,
         match="logical plan ineligible for execution on Polars Cloud",
     ):
-        prepare_cloud_plan(lf)
-
-
-@pytest.mark.parametrize(
-    "lf",
-    [
-        pl.LazyFrame({"a": [{"x": 1, "y": 2}]})
-        .select(pl.col("a").name.map(lambda x: x.upper()))
-        .sink_parquet(DST, lazy=True),
-        pl.LazyFrame({"a": [{"x": 1, "y": 2}]})
-        .select(pl.col("a").name.map_fields(lambda x: x.upper()))
-        .sink_parquet(DST, lazy=True),
-    ],
-)
-def test_prepare_cloud_plan_fail_on_serialization(lf: pl.LazyFrame) -> None:
-    with pytest.raises(ComputeError, match="serialization not supported"):
         prepare_cloud_plan(lf)

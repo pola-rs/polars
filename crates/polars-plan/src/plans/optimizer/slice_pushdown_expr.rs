@@ -13,8 +13,8 @@ impl OptimizationRule for SlicePushDown {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _lp_arena: &Arena<IR>,
-        _lp_node: Node,
+        _schema: &Schema,
+        _ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         if let AExpr::Slice {
             input,
@@ -27,21 +27,13 @@ impl OptimizationRule for SlicePushDown {
 
             use AExpr::*;
             let out = match expr_arena.get(*input) {
-                ae @ Alias(..) | ae @ Cast { .. } => {
+                ae @ Cast { .. } => {
                     let ae = ae.clone();
                     let scratch = self.empty_nodes_scratch_mut();
                     ae.inputs_rev(scratch);
                     let input = scratch[0];
                     let new_input = pushdown(input, offset, length, expr_arena);
                     Some(ae.replace_inputs(&[new_input]))
-                },
-                Literal(lv) => {
-                    match lv {
-                        LiteralValue::Series(_) => None,
-                        LiteralValue::Range { .. } => None,
-                        // no need to slice a literal value of unit length
-                        lv => Some(Literal(lv.clone())),
-                    }
                 },
                 BinaryExpr { left, right, op } => {
                     let left = *left;
@@ -70,14 +62,12 @@ impl OptimizationRule for SlicePushDown {
                         predicate,
                     })
                 },
-                m @ AnonymousFunction { options, .. }
-                    if matches!(options.collect_groups, ApplyOptions::ElementWise) =>
-                {
+                m @ AnonymousFunction { options, .. } if options.is_elementwise() => {
                     if let AnonymousFunction {
                         mut input,
                         function,
-                        output_type,
                         options,
+                        fmt_str,
                     } = m.clone()
                     {
                         input.iter_mut().for_each(|e| {
@@ -88,16 +78,14 @@ impl OptimizationRule for SlicePushDown {
                         Some(AnonymousFunction {
                             input,
                             function,
-                            output_type,
                             options,
+                            fmt_str,
                         })
                     } else {
                         unreachable!()
                     }
                 },
-                m @ Function { options, .. }
-                    if matches!(options.collect_groups, ApplyOptions::ElementWise) =>
-                {
+                m @ Function { options, .. } if options.is_elementwise() => {
                     if let Function {
                         mut input,
                         function,

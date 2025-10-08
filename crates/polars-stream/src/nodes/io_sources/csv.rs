@@ -2,11 +2,9 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-#[cfg(feature = "dtype-categorical")]
-use polars_core::StringCacheHolder;
 use polars_core::prelude::{Column, Field};
 use polars_core::schema::{SchemaExt, SchemaRef};
-use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
@@ -15,7 +13,7 @@ use polars_io::prelude::_csv_read_internal::{
 };
 use polars_io::prelude::buffer::validate_utf8;
 use polars_io::prelude::{
-    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, count_rows_from_slice,
+    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, count_rows_from_slice_raw,
 };
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::slice::SplitSlicePosition;
@@ -24,14 +22,15 @@ use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::slice_enum::Slice;
 
-use super::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
-use super::multi_file_reader::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
+use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
+use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::{self, distributor_channel};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
 
 pub mod builder {
@@ -43,9 +42,9 @@ pub mod builder {
     use polars_plan::dsl::ScanSource;
 
     use super::CsvFileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+    use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
+    use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+    use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
     impl FileReaderBuilder for Arc<CsvReadOptions> {
         fn reader_name(&self) -> &str {
@@ -55,11 +54,12 @@ pub mod builder {
         fn reader_capabilities(&self) -> ReaderCapabilities {
             use ReaderCapabilities as RC;
 
-            if self.parse_options.comment_prefix.is_some() {
-                RC::empty()
-            } else {
-                RC::PRE_SLICE
-            }
+            RC::NEEDS_FILE_CACHE_INIT
+                | if self.parse_options.comment_prefix.is_some() {
+                    RC::empty()
+                } else {
+                    RC::PRE_SLICE
+                }
         }
 
         fn build_file_reader(
@@ -134,7 +134,7 @@ impl FileReader for CsvFileReader {
         let memslice = self.get_bytes_maybe_decompress()?;
 
         let BeginReadArgs {
-            projected_schema,
+            projection: Projection::Plain(projected_schema),
             // Because we currently only support PRE_SLICE we don't need to handle row index here.
             row_index,
             pre_slice,
@@ -153,11 +153,17 @@ impl FileReader for CsvFileReader {
         };
 
         match &pre_slice {
+            Some(Slice::Negative { .. }) => unimplemented!(),
+
             // We don't account for comments when slicing lines. We should never hit this panic -
             // the FileReaderBuilder does not indicate PRE_SLICE support when we have a comment
             // prefix.
-            Some(..) if self.options.parse_options.comment_prefix.is_some() => panic!(),
-            Some(Slice::Negative { .. }) => unimplemented!(),
+            Some(pre_slice)
+                if self.options.parse_options.comment_prefix.is_some() && pre_slice.len() > 0 =>
+            {
+                panic!("{pre_slice:?}")
+            },
+
             _ => {},
         }
 
@@ -183,7 +189,10 @@ impl FileReader for CsvFileReader {
         )?;
 
         if let Some(schema) = &self.options.schema {
-            if schema.len() != inferred_schema.len()
+            // Note: User can provide schema with more columns, they will simply
+            // be projected as NULL.
+            // TODO: Should maybe expose a missing_columns parameter to the API for this.
+            if schema.len() < inferred_schema.len()
                 && !self.options.parse_options.truncate_ragged_lines
             {
                 polars_bail!(
@@ -265,6 +274,7 @@ impl FileReader for CsvFileReader {
                 line_counter: CountLines::new(
                     self.options.parse_options.quote_char,
                     self.options.parse_options.eol_char,
+                    self.options.parse_options.comment_prefix.clone(),
                 ),
                 line_batch_tx,
                 options: self.options.clone(),
@@ -337,8 +347,7 @@ impl FileReader for CsvFileReader {
                     if needs_full_row_count {
                         if verbose {
                             eprintln!(
-                                "[CSV LineBatchProcessor {}]: entering row count mode",
-                                worker_idx
+                                "[CSV LineBatchProcessor {worker_idx}]: entering row count mode"
                             );
                         }
 
@@ -582,8 +591,6 @@ struct ChunkReader {
     reader_schema: SchemaRef,
     parse_options: Arc<CsvParseOptions>,
     fields_to_cast: Vec<Field>,
-    #[cfg(feature = "dtype-categorical")]
-    _cat_lock: Option<StringCacheHolder>,
     ignore_errors: bool,
     projection: Vec<usize>,
     null_values: Option<NullValuesCompiled>,
@@ -602,10 +609,7 @@ impl ChunkReader {
         alt_count_lines: Option<Arc<CountLinesWithComments>>,
     ) -> PolarsResult<Self> {
         let mut fields_to_cast: Vec<Field> = options.fields_to_cast.clone();
-        let has_categorical = prepare_csv_schema(&mut reader_schema, &mut fields_to_cast)?;
-
-        #[cfg(feature = "dtype-categorical")]
-        let _cat_lock = has_categorical.then(polars_core::StringCacheHolder::hold);
+        prepare_csv_schema(&mut reader_schema, &mut fields_to_cast)?;
 
         let parse_options = options.parse_options.clone();
 
@@ -624,8 +628,6 @@ impl ChunkReader {
             reader_schema,
             parse_options,
             fields_to_cast,
-            #[cfg(feature = "dtype-categorical")]
-            _cat_lock,
             ignore_errors: options.ignore_errors,
             projection,
             null_values,
@@ -676,9 +678,28 @@ impl ChunkReader {
         let height = df.height();
         let n_lines_is_correct = df.height() == n_lines;
 
+        // Check malformed
+        if df.height() > n_lines
+            || (df.height() < n_lines && self.parse_options.comment_prefix.is_none())
+        {
+            // Note: in case data is malformed, df.height() is more likely to be correct than n_lines.
+            let msg = format!(
+                "CSV malformed: expected {} rows, actual {} rows, in chunk starting at row_offset {}, length {}",
+                n_lines,
+                df.height(),
+                chunk_row_offset,
+                chunk.len()
+            );
+            if self.ignore_errors {
+                polars_warn!(msg);
+            } else {
+                polars_bail!(ComputeError: msg);
+            }
+        }
+
         if slice != NO_SLICE {
             assert!(slice != SLICE_ENDED);
-            assert!(n_lines_is_correct);
+            assert!(n_lines_is_correct || slice.1 == 0);
 
             df = df.slice(i64::try_from(slice.0).unwrap(), slice.1);
         }
@@ -721,12 +742,11 @@ impl CountLinesWithComments {
     }
 
     fn count_lines(&self, bytes: &[u8]) -> PolarsResult<usize> {
-        count_rows_from_slice(
+        count_rows_from_slice_raw(
             bytes,
             self.quote_char,
             Some(&self.comment_prefix),
             self.eol_char,
-            false, // has_header
         )
     }
 }

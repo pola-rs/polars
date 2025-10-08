@@ -1,7 +1,7 @@
 // see https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
 use polars_utils::aliases::*;
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::super::Repetition;
@@ -13,7 +13,7 @@ use crate::parquet::error::ParquetResult;
 
 /// The complete description of a parquet column
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct PrimitiveType {
     /// The fields' generic information
     pub field_info: FieldInfo,
@@ -45,7 +45,7 @@ impl PrimitiveType {
 /// Representation of a Parquet type describing primitive and nested fields,
 /// including the top-level schema of the parquet file.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum ParquetType {
     PrimitiveType(PrimitiveType),
     GroupType {

@@ -7,6 +7,7 @@ use polars_io::csv::read::CsvReadOptions;
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
+use polars_utils::unique_id::UniqueId;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
@@ -35,15 +36,15 @@ impl DslBuilder {
 
         Ok(DslPlan::Scan {
             sources: ScanSources::default(),
-            file_info: Some(FileInfo {
-                schema: schema.clone(),
-                reader_schema: Some(either::Either::Right(schema)),
-                ..Default::default()
-            }),
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScan::Anonymous {
+            scan_type: Box::new(FileScanDsl::Anonymous {
                 function,
                 options: Arc::new(options),
+                file_info: FileInfo {
+                    schema: schema.clone(),
+                    reader_schema: Some(either::Either::Right(schema)),
+                    ..Default::default()
+                },
             }),
             cached_ir: Default::default(),
         }
@@ -59,12 +60,8 @@ impl DslBuilder {
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScan::Parquet {
-                options,
-                metadata: None,
-            }),
+            scan_type: Box::new(FileScanDsl::Parquet { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -79,12 +76,8 @@ impl DslBuilder {
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScan::Ipc {
-                options,
-                metadata: None,
-            }),
+            scan_type: Box::new(FileScanDsl::Ipc { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -99,9 +92,8 @@ impl DslBuilder {
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScan::Csv { options }),
+            scan_type: Box::new(FileScanDsl::Csv { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -115,11 +107,9 @@ impl DslBuilder {
 
         DslPlan::Scan {
             sources: ScanSources::default(),
-            file_info: None,
             unified_scan_args: Default::default(),
-            scan_type: Box::new(FileScan::PythonDataset {
+            scan_type: Box::new(FileScanDsl::PythonDataset {
                 dataset_object: Arc::new(PythonDatasetProvider::new(dataset_object)),
-                cached_ir: Default::default(),
             }),
             cached_ir: Default::default(),
         }
@@ -128,12 +118,15 @@ impl DslBuilder {
 
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
-        let id = input.as_ref() as *const DslPlan as usize;
-        DslPlan::Cache { input, id }.into()
+        DslPlan::Cache {
+            input,
+            id: UniqueId::new(),
+        }
+        .into()
     }
 
-    pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
-        self.map_private(DslFunction::Drop(DropFunction { to_drop, strict }))
+    pub fn drop(self, columns: Selector) -> Self {
+        self.project(vec![Expr::Selector(!columns)], ProjectionOptions::default())
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
@@ -147,7 +140,7 @@ impl DslBuilder {
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
         self.project(
-            vec![all().fill_null(fill_value)],
+            vec![all().as_expr().fill_null(fill_value)],
             ProjectionOptions {
                 duplicate_check: false,
                 ..Default::default()
@@ -155,40 +148,17 @@ impl DslBuilder {
         )
     }
 
-    pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
-        if let Some(subset) = subset {
-            self.filter(
-                all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|v| v.is_not_nan())
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            )
-        } else {
-            self.filter(
-                // TODO: when Decimal supports NaN, include here
-                all_horizontal([dtype_cols([DataType::Float32, DataType::Float64]).is_not_nan()])
-                    .unwrap(),
-            )
-        }
+    pub fn drop_nans(self, subset: Option<Selector>) -> Self {
+        let is_nan = subset
+            .unwrap_or(DataTypeSelector::Float.as_selector())
+            .as_expr()
+            .is_nan();
+        self.remove(any_horizontal([is_nan]).unwrap())
     }
 
-    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        if let Some(subset) = subset {
-            self.filter(
-                all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|v| v.is_not_null())
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            )
-        } else {
-            self.filter(all_horizontal([all().is_not_null()]).unwrap())
-        }
+    pub fn drop_nulls(self, subset: Option<Selector>) -> Self {
+        let is_not_null = subset.unwrap_or(Selector::Wildcard).as_expr().is_not_null();
+        self.filter(all_horizontal([is_not_null]).unwrap())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
@@ -208,6 +178,29 @@ impl DslBuilder {
         .into()
     }
 
+    pub fn match_to_schema(
+        self,
+        match_schema: SchemaRef,
+        per_column: Arc<[MatchToSchemaPerColumn]>,
+        extra_columns: ExtraColumnsPolicy,
+    ) -> Self {
+        DslPlan::MatchToSchema {
+            input: Arc::new(self.0),
+            match_schema,
+            per_column,
+            extra_columns,
+        }
+        .into()
+    }
+
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+        DslPlan::PipeWithSchema {
+            input: Arc::new(self.0),
+            callback,
+        }
+        .into()
+    }
+
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
         DslPlan::ExtContext {
             input: Arc::new(self.0),
@@ -216,10 +209,20 @@ impl DslBuilder {
         .into()
     }
 
-    /// Apply a filter
+    /// Apply a filter predicate, keeping the rows that match it.
     pub fn filter(self, predicate: Expr) -> Self {
         DslPlan::Filter {
             predicate,
+            input: Arc::new(self.0),
+        }
+        .into()
+    }
+
+    /// Remove rows matching a filter predicate (note that rows
+    /// where the predicate resolves to `null` are *not* removed).
+    pub fn remove(self, predicate: Expr) -> Self {
+        DslPlan::Filter {
+            predicate: predicate.neq_missing(lit(true)),
             input: Arc::new(self.0),
         }
         .into()
@@ -229,7 +232,7 @@ impl DslBuilder {
         self,
         keys: Vec<Expr>,
         aggs: E,
-        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
+        apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
         #[cfg(feature = "dynamic_group_by")] dynamic_options: Option<DynamicGroupOptions>,
         #[cfg(feature = "dynamic_group_by")] rolling_options: Option<RollingGroupOptions>,
@@ -277,7 +280,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<Selector>, allow_empty: bool) -> Self {
+    pub fn explode(self, columns: Selector, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode {
@@ -362,7 +365,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 validate_output,
             }),
         }
@@ -388,7 +391,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 fmt_str: name,
             }),
         }

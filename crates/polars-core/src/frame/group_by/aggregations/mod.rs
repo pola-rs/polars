@@ -13,16 +13,17 @@ use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_compute::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
-    SumWindow,
+    MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
-    self, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams, quantile_filter,
+    self, MeanWindow, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams,
+    SumWindow, quantile_filter,
 };
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
@@ -164,7 +165,6 @@ pub fn _agg_helper_idx<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
@@ -175,7 +175,6 @@ pub fn _agg_helper_idx_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_inner().into_series()
@@ -187,7 +186,6 @@ fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
@@ -198,7 +196,6 @@ fn agg_helper_idx_on_all_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn(&IdxVec) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> =
         POOL.install(|| groups.all().into_par_iter().map(f).collect());
@@ -209,7 +206,6 @@ pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
@@ -219,7 +215,6 @@ pub fn _agg_helper_slice_no_null<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_inner().into_series()
@@ -238,7 +233,6 @@ impl<T> QuantileDispatcher<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Ord,
-    ChunkedArray<T>: IntoSeries,
 {
     fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
         self.quantile_faster(quantile, method)
@@ -274,7 +268,6 @@ unsafe fn agg_quantile_generic<T, K>(
 where
     T: PolarsNumericType,
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
-    ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
@@ -299,7 +292,7 @@ where
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
                 let s = ca
-                    .cast_with_options(&K::get_dtype(), CastOptions::Overflowing)
+                    .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
@@ -328,7 +321,7 @@ where
                 };
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
-                ChunkedArray::from(arr).into_series()
+                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<K, _>(groups, |[first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
@@ -354,7 +347,6 @@ unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsType) ->
 where
     T: PolarsNumericType,
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
-    ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
 {
@@ -386,8 +378,7 @@ unsafe fn bitwise_agg<T: PolarsNumericType>(
     f: fn(&ChunkedArray<T>) -> Option<T::Native>,
 ) -> Series
 where
-    ChunkedArray<T>:
-        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
 {
     // Prevent a rechunk for every individual group.
 
@@ -423,8 +414,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>:
-        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
 {
     /// # Safety
     ///
@@ -452,7 +442,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
     T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Bounded + std::iter::Sum<T::Native>,
-    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native>,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
@@ -477,15 +467,11 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize)
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a.min_ignore_nan(b),
-                        )
+                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .reduce(|a, b| a.min_ignore_nan(b))
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
-                            a.min_ignore_nan(b)
-                        })
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .reduce(|a, b| a.min_ignore_nan(b))
                     }
                 })
             },
@@ -553,15 +539,11 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize)
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a.max_ignore_nan(b),
-                        )
+                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .reduce(|a, b| a.max_ignore_nan(b))
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
-                            a.max_ignore_nan(b)
-                        })
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .reduce(|a, b| a.max_ignore_nan(b))
                     }
                 })
             },
@@ -618,11 +600,21 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).unwrap_or(T::Native::zero())
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a + b)
-                            .unwrap_or(T::Native::zero())
+                        if T::Native::is_float() {
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                .fold(KahanSum::default(), |k, x| k + x)
+                                .sum()
+                        } else {
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                .fold(T::Native::zero(), |a, b| a + b)
+                        }
+                    } else if T::Native::is_float() {
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .fold(KahanSum::default(), |k, x| k + x)
+                            .sum()
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a + b)
-                            .unwrap_or(T::Native::zero())
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .fold(T::Native::zero(), |a, b| a + b)
                     }
                 })
             },
@@ -632,13 +624,13 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<SumWindow<_>, _, _>(
-                            values,
-                            offset_iter,
-                            None,
-                        ),
+                        None => _rolling_apply_agg_window_no_nulls::<
+                            SumWindow<T::Native, T::Native>,
+                            _,
+                            _,
+                        >(values, offset_iter, None),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::SumWindow<_>,
+                            SumWindow<T::Native, T::Native>,
                             _,
                             _,
                         >(
@@ -667,8 +659,7 @@ where
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries
-        + ChunkVar
+    ChunkedArray<T>: ChunkVar
         + VarAggSeries
         + ChunkQuantile<T::Native>
         + QuantileAggSeries
@@ -693,27 +684,23 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a + b,
+                        Some(
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                .fold(KahanSum::default(), |a, b| {
+                                    a + b.to_f64().unwrap_unchecked()
+                                })
+                                .sum()
+                                / idx.len() as f64,
                         )
-                        .unwrap()
-                        .to_f64()
-                        .map(|sum| sum / idx.len() as f64)
                     } else {
-                        take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _, _>(
+                        take_agg_primitive_iter_unchecked_count_nulls(
                             arr,
                             idx2usize(idx),
-                            |a, b| a + b,
-                            T::Native::zero(),
+                            KahanSum::default(),
+                            |a, b| a + b.to_f64().unwrap_unchecked(),
                             idx.len() as IdxSize,
                         )
-                        .map(|(sum, null_count)| {
-                            sum.to_f64()
-                                .map(|sum| sum / (idx.len() as f64 - null_count as f64))
-                                .unwrap()
-                        })
+                        .map(|(sum, null_count)| sum.sum() / (idx.len() as f64 - null_count as f64))
                     };
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
@@ -729,15 +716,14 @@ where
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MeanWindow<_>,
-                            _,
-                            _,
-                        >(
-                            values, validity, offset_iter, None
+                        Some(validity) => _rolling_apply_agg_window_nulls::<MeanWindow<_>, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            None,
                         ),
                     };
-                    ChunkedArray::from(arr).into_series()
+                    ChunkedArray::<T>::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -804,7 +790,7 @@ where
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
                     };
-                    ChunkedArray::from(arr).into_series()
+                    ChunkedArray::<T>::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -933,7 +919,7 @@ impl Float64Chunked {
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native> + ChunkVar,
+    ChunkedArray<T>: ChunkAgg<T::Native> + ChunkVar,
     T::Native: NumericNative + Ord,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsType) -> Series {
@@ -954,29 +940,24 @@ where
                         self.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else {
                         match (self.has_nulls(), self.chunks.len()) {
-                            (false, 1) => {
-                                take_agg_no_null_primitive_iter_unchecked::<_, f64, _, _>(
+                            (false, 1) => Some(
+                                take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                    .fold(KahanSum::default(), |a, b| a + b.to_f64().unwrap())
+                                    .sum()
+                                    / idx.len() as f64,
+                            ),
+                            (_, 1) => {
+                                take_agg_primitive_iter_unchecked_count_nulls(
                                     arr,
                                     idx2usize(idx),
-                                    |a, b| a + b,
+                                    KahanSum::default(),
+                                    |a, b| a + b.to_f64().unwrap(),
+                                    idx.len() as IdxSize,
                                 )
-                                .map(|sum| sum / idx.len() as f64)
-                            },
-                            (_, 1) => {
-                                {
-                                    take_agg_primitive_iter_unchecked_count_nulls::<
-                                        T::Native,
-                                        f64,
-                                        _,
-                                        _,
-                                    >(
-                                        arr, idx2usize(idx), |a, b| a + b, 0.0, idx.len() as IdxSize
-                                    )
-                                }
-                                .map(|(sum, null_count)| {
-                                    sum / (idx.len() as f64 - null_count as f64)
-                                })
-                            },
+                            }
+                            .map(|(sum, null_count)| {
+                                sum.sum() / (idx.len() as f64 - null_count as f64)
+                            }),
                             _ => {
                                 let take = { self.take_unchecked(idx) };
                                 take.mean()

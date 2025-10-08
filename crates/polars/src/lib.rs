@@ -178,7 +178,6 @@
 //!     - `regex` - Use regexes in [column selection]
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 //! * `sql` - Pass SQL queries to Polars.
-//! * `streaming` - Process datasets larger than RAM.
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from [`DataFrame`] to [ndarray](https://docs.rs/ndarray/)
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
@@ -422,14 +421,14 @@ pub use polars_core::{
     apply_method_all_arrow_series, chunked_array, datatypes, df, error, frame, functions, series,
     testing,
 };
-#[cfg(feature = "dtype-categorical")]
-pub use polars_core::{enable_string_cache, using_string_cache};
 #[cfg(feature = "polars-io")]
 pub use polars_io as io;
 #[cfg(feature = "lazy")]
 pub use polars_lazy as lazy;
 #[cfg(feature = "temporal")]
 pub use polars_time as time;
+#[doc(hidden)]
+pub use polars_utils;
 
 /// Polars crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

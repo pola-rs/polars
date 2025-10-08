@@ -1,3 +1,9 @@
+use arrow::array::builder::{ShareStrategy, make_builder};
+use arrow::array::{Array, FixedSizeListArray};
+use arrow::bitmap::BitmapBuilder;
+use polars_core::prelude::arity::unary_kernel;
+use polars_core::utils::slice_offsets;
+
 use super::min_max::AggType;
 use super::*;
 #[cfg(feature = "array_count")]
@@ -49,6 +55,11 @@ pub trait ArrayNameSpace: AsArray {
             dt if dt.is_primitive_numeric() => Ok(sum_array_numerical(ca, dt)),
             dt => sum_with_nulls(ca, dt),
         }
+    }
+
+    fn array_mean(&self) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        dispersion::mean_with_nulls(ca)
     }
 
     fn array_median(&self) -> PolarsResult<Series> {
@@ -192,6 +203,52 @@ pub trait ArrayNameSpace: AsArray {
             _ => polars_bail!(length_mismatch = "arr.shift", ca.len(), n.len()),
         };
         Ok(out.into_series())
+    }
+
+    fn array_slice(&self, offset: i64, length: i64) -> PolarsResult<Series> {
+        let slice_arr: ArrayChunked = unary_kernel(
+            self.as_array(),
+            move |arr: &FixedSizeListArray| -> FixedSizeListArray {
+                let length: usize = if length < 0 {
+                    (arr.size() as i64 + length).max(0)
+                } else {
+                    length
+                }
+                .try_into()
+                .expect("Length can not be larger than i64::MAX");
+                let (raw_offset, slice_len) = slice_offsets(offset, length, arr.size());
+
+                let mut builder = make_builder(arr.values().dtype());
+                builder.reserve(slice_len * arr.len());
+
+                let mut validity = BitmapBuilder::with_capacity(arr.len());
+
+                let values = arr.values().as_ref();
+                for row in 0..arr.len() {
+                    if !arr.is_valid(row) {
+                        validity.push(false);
+                        continue;
+                    }
+                    let inner_offset = row * arr.size() + raw_offset;
+                    builder.subslice_extend(values, inner_offset, slice_len, ShareStrategy::Always);
+                    validity.push(true);
+                }
+                let values = builder.freeze_reset();
+                let sliced_dtype = match arr.dtype() {
+                    ArrowDataType::FixedSizeList(inner, _) => {
+                        ArrowDataType::FixedSizeList(inner.clone(), slice_len)
+                    },
+                    _ => unreachable!(),
+                };
+                FixedSizeListArray::new(
+                    sliced_dtype,
+                    arr.len(),
+                    values,
+                    validity.into_opt_validity(),
+                )
+            },
+        );
+        Ok(slice_arr.into_series())
     }
 }
 

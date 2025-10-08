@@ -2,13 +2,12 @@ mod count;
 mod dsl;
 #[cfg(feature = "python")]
 mod python_udf;
-mod rename;
 mod schema;
 
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub use dsl::*;
 use polars_core::error::feature_gated;
@@ -40,23 +39,16 @@ pub enum FunctionIR {
 
     FastCount {
         sources: ScanSources,
-        scan_type: Box<FileScan>,
+        scan_type: Box<FileScanIR>,
         cloud_options: Option<CloudOptions>,
         alias: Option<PlSmallStr>,
     },
 
     Unnest {
         columns: Arc<[PlSmallStr]>,
+        separator: Option<PlSmallStr>,
     },
     Rechunk,
-    Rename {
-        existing: Arc<[PlSmallStr]>,
-        new: Arc<[PlSmallStr]>,
-        // A column name gets swapped with an existing column
-        swapping: bool,
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        schema: CachedSchema,
-    },
     Explode {
         columns: Arc<[PlSmallStr]>,
         #[cfg_attr(feature = "ir_serde", serde(skip))]
@@ -80,13 +72,6 @@ pub enum FunctionIR {
         // used for formatting
         fmt_str: PlSmallStr,
     },
-    /// Streaming engine pipeline
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
-    Pipeline {
-        function: Arc<Mutex<dyn DataFrameUdfMut>>,
-        schema: SchemaRef,
-        original: Option<Arc<IRPlan>>,
-    },
 }
 
 impl Eq for FunctionIR {}
@@ -104,18 +89,6 @@ impl PartialEq for FunctionIR {
                     sources: srcs_r, ..
                 },
             ) => srcs_l == srcs_r,
-            (
-                Rename {
-                    existing: existing_l,
-                    new: new_l,
-                    ..
-                },
-                Rename {
-                    existing: existing_r,
-                    new: new_r,
-                    ..
-                },
-            ) => existing_l == existing_r && new_l == new_r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             #[cfg(feature = "pivot")]
             (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
@@ -143,18 +116,11 @@ impl Hash for FunctionIR {
                 cloud_options.hash(state);
                 alias.hash(state);
             },
-            FunctionIR::Pipeline { .. } => {},
-            FunctionIR::Unnest { columns } => columns.hash(state),
-            FunctionIR::Rechunk => {},
-            FunctionIR::Rename {
-                existing,
-                new,
-                swapping: _,
-                ..
-            } => {
-                existing.hash(state);
-                new.hash(state);
+            FunctionIR::Unnest { columns, separator } => {
+                columns.hash(state);
+                separator.hash(state);
             },
+            FunctionIR::Rechunk => {},
             FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
             #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { args, schema: _ } => args.hash(state),
@@ -175,8 +141,8 @@ impl FunctionIR {
     pub fn is_streamable(&self) -> bool {
         use FunctionIR::*;
         match self {
-            Rechunk | Pipeline { .. } => false,
-            FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            Rechunk => false,
+            FastCount { .. } | Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             Opaque { streamable, .. } => *streamable,
@@ -205,9 +171,8 @@ impl FunctionIR {
             OpaquePython(OpaquePythonUdf { predicate_pd, .. }) => *predicate_pd,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
-            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            Rechunk | Unnest { .. } | Explode { .. } => true,
             RowIndex { .. } | FastCount { .. } => false,
-            Pipeline { .. } => unimplemented!(),
         }
     }
 
@@ -217,18 +182,17 @@ impl FunctionIR {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { projection_pd, .. }) => *projection_pd,
-            Rechunk | FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            Rechunk | FastCount { .. } | Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             RowIndex { .. } => true,
-            Pipeline { .. } => unimplemented!(),
         }
     }
 
-    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[PlSmallStr]> {
+    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<'_, [PlSmallStr]> {
         use FunctionIR::*;
         match self {
-            Unnest { columns } => Cow::Borrowed(columns.as_ref()),
+            Unnest { columns, .. } => Cow::Borrowed(columns.as_ref()),
             Explode { columns, .. } => Cow::Borrowed(columns.as_ref()),
             _ => Cow::Borrowed(&[]),
         }
@@ -255,23 +219,12 @@ impl FunctionIR {
                 df.as_single_chunk_par();
                 Ok(df)
             },
-            Unnest { columns: _columns } => {
-                feature_gated!("dtype-struct", df.unnest(_columns.iter().cloned()))
+            Unnest { columns, separator } => {
+                feature_gated!(
+                    "dtype-struct",
+                    df.unnest(columns.iter().cloned(), separator.as_deref())
+                )
             },
-            Pipeline { function, .. } => {
-                // we use a global string cache here as streaming chunks all have different rev maps
-                #[cfg(feature = "dtype-categorical")]
-                {
-                    let _sc = StringCacheHolder::hold();
-                    function.lock().unwrap().call_udf(df)
-                }
-
-                #[cfg(not(feature = "dtype-categorical"))]
-                {
-                    function.lock().unwrap().call_udf(df)
-                }
-            },
-            Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
             Explode { columns, .. } => df.explode(columns.iter().cloned()),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
@@ -283,17 +236,53 @@ impl FunctionIR {
         }
     }
 
-    pub fn to_streaming_lp(&self) -> Option<IRPlanRef> {
-        let Self::Pipeline {
-            function: _,
-            schema: _,
-            original,
-        } = self
-        else {
-            return None;
-        };
+    pub fn is_order_producing(&self, is_input_ordered: bool) -> bool {
+        match self {
+            FunctionIR::RowIndex { .. } => true,
+            FunctionIR::FastCount { .. } => false,
+            FunctionIR::Unnest { .. } => is_input_ordered,
+            FunctionIR::Rechunk => is_input_ordered,
+            #[cfg(feature = "python")]
+            FunctionIR::OpaquePython(..) => true,
+            FunctionIR::Explode { .. } => true,
+            #[cfg(feature = "pivot")]
+            FunctionIR::Unpivot { .. } => true,
+            FunctionIR::Opaque { .. } => true,
+        }
+    }
 
-        Some(original.as_ref()?.as_ref().as_ref())
+    pub fn is_elementwise(&self) -> bool {
+        match self {
+            Self::Unnest { .. } => true,
+            #[cfg(feature = "python")]
+            Self::OpaquePython(..) => false,
+            #[cfg(feature = "pivot")]
+            Self::Unpivot { .. } => false,
+            Self::RowIndex { .. }
+            | Self::FastCount { .. }
+            | Self::Rechunk
+            | Self::Explode { .. }
+            | Self::Opaque { .. } => false,
+        }
+    }
+
+    pub fn observes_input_order(&self) -> bool {
+        true
+    }
+
+    /// Is the input ordering always the same as the output ordering.
+    pub fn has_equal_order(&self) -> bool {
+        match self {
+            Self::Unnest { .. } | Self::Rechunk => true,
+            #[cfg(feature = "python")]
+            Self::OpaquePython(..) => false,
+            #[cfg(feature = "pivot")]
+            Self::Unpivot { .. } => false,
+            Self::RowIndex { .. }
+            | Self::FastCount { .. }
+            | Self::Explode { .. }
+            | Self::Opaque { .. } => false,
+        }
     }
 }
 
@@ -308,22 +297,10 @@ impl Display for FunctionIR {
         use FunctionIR::*;
         match self {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            Unnest { columns } => {
+            Unnest { columns, .. } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
-            },
-            Pipeline { original, .. } => {
-                if let Some(original) = original {
-                    let ir_display = original.as_ref().display();
-
-                    writeln!(f, "--- STREAMING")?;
-                    write!(f, "{ir_display}")?;
-                    let indent = 2;
-                    write!(f, "{:indent$}--- END STREAMING", "")
-                } else {
-                    write!(f, "STREAMING")
-                }
             },
             FastCount {
                 sources,

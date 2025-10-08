@@ -1,8 +1,7 @@
-use polars::prelude::DataType;
 use pyo3::prelude::*;
 
+use super::datatype::PyDataTypeExpr;
 use crate::PyExpr;
-use crate::prelude::Wrap;
 
 #[pymethods]
 impl PyExpr {
@@ -43,8 +42,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "binary_encoding")]
-    #[allow(clippy::wrong_self_convention)]
-    fn from_buffer(&self, dtype: Wrap<DataType>, kind: &str) -> PyResult<Self> {
+    fn bin_reinterpret(&self, dtype: PyDataTypeExpr, kind: &str) -> PyResult<Self> {
         use pyo3::exceptions::PyValueError;
 
         let is_little_endian = match kind.to_lowercase().as_str() {
@@ -60,7 +58,7 @@ impl PyExpr {
             .inner
             .clone()
             .binary()
-            .from_buffer(dtype.0, is_little_endian)
+            .reinterpret(dtype.inner, is_little_endian)
             .into())
     }
 

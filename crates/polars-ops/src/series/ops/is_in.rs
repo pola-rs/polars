@@ -4,7 +4,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use self::row_encode::_get_rows_encoded_ca_unordered;
@@ -54,7 +54,7 @@ fn is_in_helper_list_ca<'a, T>(
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked>
 where
-    T: PolarsDataType<IsLogical = FalseT>,
+    T: PolarsPhysicalType,
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
@@ -140,7 +140,7 @@ fn is_in_helper_array_ca<'a, T>(
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked>
 where
-    T: PolarsDataType<IsLogical = FalseT>,
+    T: PolarsPhysicalType,
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
@@ -238,7 +238,7 @@ where
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode()?;
+                let other = other.explode(true)?;
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
@@ -253,7 +253,7 @@ where
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode()?;
+                let other = other.explode(true)?;
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
@@ -312,7 +312,7 @@ fn is_in_binary(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode()?;
+                let other = other.explode(true)?;
                 let other = other.binary()?;
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
@@ -327,7 +327,7 @@ fn is_in_binary(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode()?;
+                let other = other.explode(true)?;
                 let other = other.binary()?;
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
@@ -380,7 +380,7 @@ fn is_in_boolean(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode()?;
+                let other = other.explode(true)?;
                 let other = other.bool()?;
                 is_in_boolean_broadcast(ca_in, other, nulls_equal)
             } else {
@@ -395,7 +395,7 @@ fn is_in_boolean(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode()?;
+                let other = other.explode(true)?;
                 let other = other.bool()?;
                 is_in_boolean_broadcast(ca_in, other, nulls_equal)
             } else {
@@ -407,144 +407,46 @@ fn is_in_boolean(
 }
 
 #[cfg(feature = "dtype-categorical")]
-fn is_in_cat_and_enum(
-    ca_in: &CategoricalChunked,
+fn is_in_cat_and_enum<T: PolarsCategoricalType>(
+    ca_in: &CategoricalChunked<T>,
     other: &Series,
     nulls_equal: bool,
-) -> PolarsResult<BooleanChunked> {
-    use std::borrow::Cow;
-
-    use arrow::array::{Array, FixedSizeListArray, IntoBoxedArray, ListArray};
-
-    let mut needs_remap = false;
+) -> PolarsResult<BooleanChunked>
+where
+    T::Native: ToTotalOrd<TotalOrdItem = T::Native>,
+{
     let to_categories = match (ca_in.dtype(), other.dtype().inner_dtype().unwrap()) {
-        (DataType::Enum(revmap, ordering), DataType::String) => {
-            let categories = revmap.as_deref().unwrap().get_categories();
+        (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping), DataType::String) => {
             (&|s: Series| {
                 let ca = s.str()?;
-                let ca = CategoricalChunked::from_string_to_enum(ca, categories, *ordering)?;
-                let ca = ca.into_physical();
+                let ca: ChunkedArray<T::PolarsPhysical> = ca
+                    .iter()
+                    .flat_map(|opt_s| {
+                        if let Some(s) = opt_s {
+                            Some(mapping.get_cat(s).map(T::Native::from_cat))
+                        } else {
+                            Some(None)
+                        }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY);
                 Ok(ca.into_series())
             }) as _
         },
-        (DataType::Categorical(revmap, ordering), DataType::String) => {
-            (&|s: Series| {
-                let categories = revmap.as_deref().unwrap().get_categories();
-                let ca = s.str()?;
-                let ca =
-                    if ca_in.get_rev_map().is_local() {
-                        assert!(categories.len() < u32::MAX as usize);
-                        let cats = PlIndexSet::from_iter(categories.values_iter());
-                        UInt32Chunked::from_iter(ca.iter().map(|v| {
-                            v.map(|v| cats.get_index_of(v).map_or(u32::MAX, |n| n as u32))
-                        }))
-                    } else {
-                        let cat = ca.cast(&DataType::Categorical(None, *ordering))?;
-                        cat.categorical()?.physical().clone()
-                    };
-                Ok(ca.into_series())
-            }) as _
+        (DataType::Categorical(lcats, _), DataType::Categorical(rcats, _)) => {
+            ensure_same_categories(lcats, rcats)?;
+            (&|s: Series| Ok(s.cat::<T>()?.physical().clone().into_series())) as _
         },
-        (DataType::Categorical(revmap, _), DataType::Categorical(other_revmap, _)) => {
-            let (Some(revmap), Some(other_revmap)) = (revmap, other_revmap) else {
-                polars_bail!(ComputeError: "expected revmap to be set at this point");
-            };
-            needs_remap = !revmap.same_src(other_revmap);
-            (&|s: Series| {
-                let ca = s.categorical()?;
-                let ca = ca.physical().clone();
-                Ok(ca.into_series())
-            }) as _
-        },
-        (DataType::Enum(revmap, _), DataType::Enum(other_revmap, _)) => {
-            let (Some(revmap), Some(other_revmap)) = (revmap, other_revmap) else {
-                polars_bail!(ComputeError: "expected revmap to be set at this point");
-            };
-            polars_ensure!(
-                revmap.same_src(other_revmap),
-                opq = is_in,
-                ca_in.dtype(),
-                other.dtype()
-            );
-            (&|s: Series| {
-                let ca = s.categorical()?;
-                let ca = ca.physical().clone();
-                Ok(ca.into_series())
-            }) as _
+        (DataType::Enum(lfcats, _), DataType::Enum(rfcats, _)) => {
+            ensure_same_frozen_categories(lfcats, rfcats)?;
+            (&|s: Series| Ok(s.cat::<T>()?.physical().clone().into_series())) as _
         },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     };
 
-    let mut ca_in = Cow::Borrowed(ca_in);
     let other = match other.dtype() {
-        DataType::List(_) => {
-            let mut other = Cow::Borrowed(other.list()?);
-            if needs_remap {
-                let other_rechunked = other.rechunk();
-                let other_arr = other_rechunked.downcast_as_array();
-
-                let other_inner = other.get_inner();
-                let other_offsets = other_arr.offsets().clone();
-                let other_inner = other_inner.categorical()?;
-                let (ca_in_remapped, other_inner) =
-                    make_rhs_categoricals_compatible(&ca_in, other_inner)?;
-
-                let other_inner_phys = other_inner.physical().rechunk();
-                let other_inner_phys = other_inner_phys.downcast_as_array();
-
-                let other_phys = ListArray::try_new(
-                    other_arr.dtype().clone(),
-                    other_offsets,
-                    other_inner_phys.clone().into_boxed(),
-                    other_arr.validity().cloned(),
-                )?;
-
-                other = Cow::Owned(unsafe {
-                    ListChunked::from_chunks_and_dtype(
-                        other.name().clone(),
-                        vec![other_phys.into_boxed()],
-                        DataType::List(Box::new(other_inner.dtype().clone())),
-                    )
-                });
-                ca_in = Cow::Owned(ca_in_remapped);
-            }
-            let other = other.apply_to_inner(to_categories)?;
-            other.into_series()
-        },
+        DataType::List(_) => other.list()?.apply_to_inner(to_categories)?.into_series(),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(_, _) => {
-            let mut other = Cow::Borrowed(other.array()?);
-            if needs_remap {
-                let other_rechunked = other.rechunk();
-                let other_arr = other_rechunked.downcast_as_array();
-
-                let other_inner = other.get_inner();
-                let other_inner = other_inner.categorical()?;
-                let (ca_in_remapped, other_inner) =
-                    make_rhs_categoricals_compatible(&ca_in, other_inner)?;
-
-                let other_inner_phys = other_inner.physical().rechunk();
-                let other_inner_phys = other_inner_phys.downcast_as_array();
-
-                let other_phys = FixedSizeListArray::try_new(
-                    other_arr.dtype().clone(),
-                    other.len(),
-                    other_inner_phys.clone().into_boxed(),
-                    other_arr.validity().cloned(),
-                )?;
-
-                other = Cow::Owned(unsafe {
-                    ArrayChunked::from_chunks_and_dtype(
-                        other.name().clone(),
-                        vec![other_phys.into_boxed()],
-                        DataType::Array(Box::new(other_inner.dtype().clone()), other.width()),
-                    )
-                });
-                ca_in = Cow::Owned(ca_in_remapped);
-            }
-            let other = other.apply_to_inner(to_categories)?;
-            other.into_series()
-        },
+        DataType::Array(_, _) => other.array()?.apply_to_inner(to_categories)?.into_series(),
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     };
 
@@ -562,7 +464,7 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
                         return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                     }
 
-                    let other = other.explode()?;
+                    let other = other.explode(true)?;
                     BooleanChunked::from_iter_values(
                         ca_in.name().clone(),
                         std::iter::repeat_n(other.has_nulls(), ca_in.len()),
@@ -581,7 +483,7 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
                         return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                     }
 
-                    let other = other.explode()?;
+                    let other = other.explode(true)?;
                     BooleanChunked::from_iter_values(
                         ca_in.name().clone(),
                         std::iter::repeat_n(other.has_nulls(), ca_in.len()),
@@ -607,36 +509,39 @@ fn is_in_decimal(
     other: &Series,
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked> {
-    let Some(DataType::Decimal(_, other_scale)) = other.dtype().inner_dtype() else {
+    let Some(DataType::Decimal(other_precision, other_scale)) = other.dtype().inner_dtype() else {
         polars_bail!(opq = is_in, ca_in.dtype(), other.dtype());
     };
-    let other_scale = other_scale.unwrap();
-    let scale = ca_in.scale().max(other_scale);
-    let ca_in = ca_in.to_scale(scale)?;
+    let prec = ca_in.precision().max(*other_precision);
+    let scale = ca_in.scale().max(*other_scale);
+
+    // We convert both sides to a common scale, mapping any out-of-range values to unique integers,
+    // allowing us to then use is_in on the integer representation.
+    let sentinel_in = i128::MAX;
+    let sentinel_other = i128::MAX - 1;
+    let ca_in_phys = ca_in.into_phys_with_prec_scale_or_sentinel(prec, scale, sentinel_in);
 
     match other.dtype() {
         DataType::List(_) => {
             let other = other.list()?;
             let other = other.apply_to_inner(&|s| {
                 let s = s.decimal()?;
-                let s = s.to_scale(scale)?;
-                let s = s.physical();
+                let s = s.into_phys_with_prec_scale_or_sentinel(prec, scale, sentinel_other);
                 Ok(s.to_owned().into_series())
             })?;
             let other = other.into_series();
-            is_in_numeric(ca_in.physical(), &other, nulls_equal)
+            is_in_numeric(&ca_in_phys, &other, nulls_equal)
         },
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => {
             let other = other.array()?;
             let other = other.apply_to_inner(&|s| {
                 let s = s.decimal()?;
-                let s = s.to_scale(scale)?;
-                let s = s.physical();
+                let s = s.into_phys_with_prec_scale_or_sentinel(prec, scale, sentinel_other);
                 Ok(s.to_owned().into_series())
             })?;
             let other = other.into_series();
-            is_in_numeric(ca_in.physical(), &other, nulls_equal)
+            is_in_numeric(&ca_in_phys, &other, nulls_equal)
         },
         _ => unreachable!(),
     }
@@ -662,7 +567,7 @@ fn is_in_row_encoded(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode()?;
+                let other = other.explode(true)?;
                 let other = other.binary_offset()?;
                 is_in_helper_ca(&ca_in, other, nulls_equal)
             } else {
@@ -683,7 +588,7 @@ fn is_in_row_encoded(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode()?;
+                let other = other.explode(true)?;
                 let other = other.binary_offset()?;
                 is_in_helper_ca(&ca_in, other, nulls_equal)
             } else {
@@ -726,9 +631,10 @@ pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Bool
 
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-            let ca = s.categorical().unwrap();
-            is_in_cat_and_enum(ca, other, nulls_equal)
+        dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
+            with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                is_in_cat_and_enum(s.cat::<$C>().unwrap(), other, nulls_equal)
+            })
         },
         DataType::String => {
             let ca = s.str().unwrap();

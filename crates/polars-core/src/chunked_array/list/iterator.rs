@@ -50,7 +50,7 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                     // dtype is known
                     unsafe {
                         let s = Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::EMPTY,
+                            self.series_container.name().clone(),
                             vec![array_ref],
                             &self.inner_dtype.to_physical(),
                         )
@@ -124,7 +124,9 @@ impl ListChunked {
     ///
     /// If the returned `AmortSeries` is cloned, the local copy will be replaced and a new container
     /// will be set.
-    pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    pub fn amortized_iter(
+        &self,
+    ) -> AmortizedListIter<'_, impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name(PlSmallStr::EMPTY)
     }
 
@@ -132,7 +134,7 @@ impl ListChunked {
     pub fn amortized_iter_with_name(
         &self,
         name: PlSmallStr,
-    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    ) -> AmortizedListIter<'_, impl Iterator<Item = Option<ArrayBox>> + '_> {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();

@@ -88,7 +88,7 @@ impl DataFrame {
 pub fn chunk_df_for_writing(
     df: &mut DataFrame,
     row_group_size: usize,
-) -> PolarsResult<std::borrow::Cow<DataFrame>> {
+) -> PolarsResult<std::borrow::Cow<'_, DataFrame>> {
     // ensures all chunks are aligned.
     df.align_chunks_par();
 

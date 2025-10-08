@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars._plr import PySeries
 from polars._utils.wrap import wrap_s
-from polars.polars import PySeries
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -212,7 +212,7 @@ def test_fallback_with_dtype_strict_failure(
             [
                 D("12"),
                 D("1.2345"),
-                # D("123456"),
+                D("123456"),
                 False,
                 True,
                 0,
@@ -225,14 +225,14 @@ def test_fallback_with_dtype_strict_failure(
             ],
             [
                 D("12.000"),
+                D("1.234"),
                 None,
-                # None,
                 None,
                 None,
                 D("0.000"),
                 D("-1.000"),
-                None,
-                None,
+                D("0.000"),
+                D("2.500"),
                 None,
                 None,
                 None,
@@ -382,9 +382,7 @@ def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
     dtype = pl.Enum(["a", "b"])
     values = ["a", "b", "c", None]
 
-    with pytest.raises(
-        TypeError, match="cannot append 'c' to enum without that variant"
-    ):
+    with pytest.raises(TypeError, match="attempted to insert 'c'"):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
@@ -398,8 +396,6 @@ def test_fallback_with_dtype_strict_failure_decimal_precision() -> None:
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
-@pytest.mark.usefixtures("test_global_and_local")
-@pytest.mark.may_fail_auto_streaming
 def test_categorical_lit_18874() -> None:
     assert_frame_equal(
         pl.DataFrame(

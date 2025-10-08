@@ -36,6 +36,8 @@ impl PolarsOpsNumericType for UInt8Type {}
 impl PolarsOpsNumericType for UInt16Type {}
 impl PolarsOpsNumericType for UInt32Type {}
 impl PolarsOpsNumericType for UInt64Type {}
+#[cfg(feature = "dtype-u128")]
+impl PolarsOpsNumericType for UInt128Type {}
 impl PolarsOpsNumericType for Int8Type {}
 impl PolarsOpsNumericType for Int16Type {}
 impl PolarsOpsNumericType for Int32Type {}
@@ -93,10 +95,7 @@ unsafe fn scatter_impl<V, T: NativeType>(
     }
 }
 
-impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T>
-where
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
     fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<T::Native>>,

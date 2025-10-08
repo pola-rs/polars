@@ -55,15 +55,9 @@ impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
     }
 }
 
-unsafe impl<T: PolarsDataType + 'static> IntoSeries for ChunkedArray<T>
-where
-    SeriesWrap<ChunkedArray<T>>: SeriesTrait,
-{
-    fn into_series(self) -> Series
-    where
-        Self: Sized,
-    {
-        Series(Arc::new(SeriesWrap(self)))
+unsafe impl<T: PolarsPhysicalType> IntoSeries for ChunkedArray<T> {
+    fn into_series(self) -> Series {
+        T::ca_into_series(self)
     }
 }
 
@@ -74,7 +68,7 @@ macro_rules! impl_dyn_series {
                 self.0.compute_len()
             }
 
-            fn _field(&self) -> Cow<Field> {
+            fn _field(&self) -> Cow<'_, Field> {
                 Cow::Borrowed(self.0.ref_field())
             }
 
@@ -216,7 +210,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "rolling_window")]
             fn rolling_map(
                 &self,
-                _f: &dyn Fn(&Series) -> Series,
+                _f: &dyn Fn(&Series) -> PolarsResult<Series>,
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
@@ -226,7 +220,7 @@ macro_rules! impl_dyn_series {
                 self.0.rename(name);
             }
 
-            fn chunk_lengths(&self) -> ChunkLenIter {
+            fn chunk_lengths(&self) -> ChunkLenIter<'_> {
                 self.0.chunk_lengths()
             }
             fn name(&self) -> &PlSmallStr {
@@ -325,7 +319,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
-            unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+            unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
                 self.0.get_any_value_unchecked(index)
             }
 
@@ -389,6 +383,9 @@ macro_rules! impl_dyn_series {
             fn min_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(ChunkAggSeries::min_reduce(&self.0))
             }
+            fn mean_reduce(&self) -> PolarsResult<Scalar> {
+                Ok(Scalar::new(DataType::Float64, self.mean().into()))
+            }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(QuantileAggSeries::median_reduce(&self.0))
             }
@@ -408,7 +405,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.and_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -416,7 +413,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn or_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.or_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -424,7 +421,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn xor_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.xor_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -437,6 +434,10 @@ macro_rules! impl_dyn_series {
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
+            }
+
+            fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+                self.0.find_validity_mismatch(other, idxs)
             }
 
             #[cfg(feature = "checked_arithmetic")]
@@ -469,6 +470,8 @@ impl_dyn_series!(UInt8Chunked, UInt8Type);
 impl_dyn_series!(UInt16Chunked, UInt16Type);
 impl_dyn_series!(UInt32Chunked, UInt32Type);
 impl_dyn_series!(UInt64Chunked, UInt64Type);
+#[cfg(feature = "dtype-u128")]
+impl_dyn_series!(UInt128Chunked, UInt128Type);
 #[cfg(feature = "dtype-i8")]
 impl_dyn_series!(Int8Chunked, Int8Type);
 #[cfg(feature = "dtype-i16")]
@@ -520,6 +523,6 @@ impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
             .unwrap()
             .clone();
 
-        Some(BitRepr::Small(repr))
+        Some(BitRepr::U32(repr))
     }
 }

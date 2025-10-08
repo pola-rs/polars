@@ -38,9 +38,9 @@ fn from_thrift_helper(
     // There is only one message type node in the schema tree.
     let is_root_node = index == 0;
 
-    let element = elements.get(index).ok_or_else(|| {
-        ParquetError::oos(format!("index {} on SchemaElement is not valid", index))
-    })?;
+    let element = elements
+        .get(index)
+        .ok_or_else(|| ParquetError::oos(format!("index {index} on SchemaElement is not valid")))?;
     let name = PlSmallStr::from_str(element.name.as_str());
     let converted_type = element.converted_type;
 

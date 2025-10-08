@@ -41,6 +41,6 @@ def test_json_decode_multiple_chunks() -> None:
 
     df = pl.concat([df_1, df_2])
 
-    assert df.with_columns(pl.col("s").str.json_decode()).to_dict(as_series=False) == {
-        "s": [{"x": None}, {"x": True}]
-    }
+    assert df.with_columns(
+        pl.col("s").str.json_decode(pl.Struct({"x": pl.Boolean}))
+    ).to_dict(as_series=False) == {"s": [{"x": None}, {"x": True}]}

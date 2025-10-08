@@ -89,7 +89,7 @@ where
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
         DataType::Date => (
-            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+            by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
             &None,
         ),
         DataType::Int64 => (
@@ -118,7 +118,7 @@ where
     let func = rolling_agg_fn_dynamic;
     let out: ArrayRef = if by_is_sorted {
         let arr = ca.downcast_iter().next().unwrap();
-        let by_values = by.cont_slice().unwrap();
+        let by_values = by.physical().cont_slice().unwrap();
         let values = arr.values().as_slice();
         func(
             values,
@@ -132,9 +132,9 @@ where
             None,
         )?
     } else {
-        let sorting_indices = by.arg_sort(Default::default());
+        let sorting_indices = by.physical().arg_sort(Default::default());
         let ca = unsafe { ca.take_unchecked(&sorting_indices) };
-        let by = unsafe { by.take_unchecked(&sorting_indices) };
+        let by = unsafe { by.physical().take_unchecked(&sorting_indices) };
         let arr = ca.downcast_iter().next().unwrap();
         let by_values = by.cont_slice().unwrap();
         let values = arr.values().as_slice();
@@ -197,7 +197,7 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         let mut s = self.as_series().clone();
         if s.dtype() == &DataType::Boolean {
-            s = s.cast(&DataType::new_idxsize()).unwrap();
+            s = s.cast(&DataType::IDX_DTYPE).unwrap();
         }
         if matches!(
             s.dtype(),
@@ -230,7 +230,7 @@ pub trait SeriesOpsTime: AsSeries {
         if options.weights.is_some() {
             s = s.to_float()?;
         } else if s.dtype() == &DataType::Boolean {
-            s = s.cast(&DataType::new_idxsize()).unwrap();
+            s = s.cast(&DataType::IDX_DTYPE).unwrap();
         } else if matches!(
             s.dtype(),
             DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16

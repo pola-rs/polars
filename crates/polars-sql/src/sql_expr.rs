@@ -14,8 +14,8 @@ use polars_lazy::prelude::*;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::typed_lit;
 use polars_time::Duration;
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use rand::Rng;
+use rand::distr::Alphanumeric;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -243,7 +243,7 @@ impl SQLExprVisitor<'_> {
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(value) => self.visit_literal(value),
-            SQLExpr::Wildcard(_) => Ok(Expr::Wildcard),
+            SQLExpr::Wildcard(_) => Ok(all().as_expr()),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
                 polars_bail!(SQLInterface: "expression {:?} is not currently supported", other)
@@ -266,7 +266,7 @@ impl SQLExprVisitor<'_> {
             if schema.len() != 1 {
                 polars_bail!(SQLSyntax: "SQL subquery returns more than one column");
             }
-            let rand_string: String = thread_rng()
+            let rand_string: String = rand::rng()
                 .sample_iter(&Alphanumeric)
                 .take(16)
                 .map(char::from)
@@ -359,7 +359,10 @@ impl SQLExprVisitor<'_> {
 
     /// Handle implicit temporal string comparisons.
     ///
-    /// eg: "dt >= '2024-04-30'", or "dtm::date = '2077-10-10'"
+    /// eg: clauses such as -
+    ///   "dt >= '2024-04-30'"
+    ///   "dt = '2077-10-10'::date"
+    ///   "dtm::date = '2077-10-10'
     fn convert_temporal_strings(&mut self, left: &Expr, right: &Expr) -> Expr {
         if let (Some(name), Some(s), expr_dtype) = match (left, right) {
             // identify "col <op> string" expressions
@@ -379,11 +382,14 @@ impl SQLExprVisitor<'_> {
             if expr_dtype.is_none() && self.active_schema.is_none() {
                 right.clone()
             } else {
-                let left_dtype = expr_dtype.or_else(|| {
-                    self.active_schema
-                        .as_ref()
-                        .and_then(|schema| schema.get(&name))
-                });
+                let left_dtype = expr_dtype.map_or_else(
+                    || {
+                        self.active_schema
+                            .as_ref()
+                            .and_then(|schema| schema.get(&name))
+                    },
+                    |dt| dt.as_literal(),
+                );
                 match left_dtype {
                     Some(DataType::Time) if is_iso_time(s) => {
                         right.clone().str().to_time(StrptimeOptions {
@@ -400,7 +406,7 @@ impl SQLExprVisitor<'_> {
                     Some(DataType::Datetime(tu, tz)) if is_iso_datetime(s) || is_iso_date(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
-                            lit(format!("{}T00:00:00", s))
+                            lit(format!("{s}T00:00:00"))
                         } else {
                             lit(s.replacen(' ', "T", 1))
                         }
@@ -467,14 +473,14 @@ impl SQLExprVisitor<'_> {
                 return Ok(self
                     .visit_expr(left)?
                     .dt()
-                    .offset_by(lit(format!("-{}", duration))));
+                    .offset_by(lit(format!("-{duration}"))));
             },
             (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
                 let duration = interval_to_duration(v, false)?;
                 return Ok(self
                     .visit_expr(left)?
                     .dt()
-                    .offset_by(lit(format!("{}", duration))));
+                    .offset_by(lit(format!("{duration}"))));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)
@@ -542,14 +548,14 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::PGRegexIMatch => match rhs {  // "x ~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
-                    lhs.str().contains(lit(format!("(?i){}", pat)), true)
+                    lhs.str().contains(lit(format!("(?i){pat}")), true)
                 },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", rhs),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match rhs {  // "x !~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
-                    lhs.str().contains(lit(format!("(?i){}", pat)), true).not()
+                    lhs.str().contains(lit(format!("(?i){pat}")), true).not()
                 },
                 _ => {
                     polars_bail!(SQLSyntax: "invalid pattern for '!~*' operator: {:?}", rhs)
@@ -770,7 +776,8 @@ impl SQLExprVisitor<'_> {
 
         #[cfg(feature = "json")]
         if dtype == &SQLDataType::JSON {
-            return Ok(expr.str().json_decode(None, None));
+            // @BROKEN: we cannot handle this.
+            return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
         Ok(match cast_kind {
@@ -824,7 +831,7 @@ impl SQLExprVisitor<'_> {
         &self,
         value: &SQLValue,
         op: Option<&UnaryOperator>,
-    ) -> PolarsResult<AnyValue> {
+    ) -> PolarsResult<AnyValue<'_>> {
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
             SQLValue::DollarQuotedString(s) => AnyValue::StringOwned(s.clone().value.into()),
@@ -1202,7 +1209,7 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
         },
         DateTimeField::Time => expr.dt().time(),
         #[cfg(feature = "timezones")]
-        DateTimeField::Timezone => expr.dt().base_utc_offset().dt().total_seconds(),
+        DateTimeField::Timezone => expr.dt().base_utc_offset().dt().total_seconds(false),
         DateTimeField::Epoch => {
             expr.clone()
                 .dt()

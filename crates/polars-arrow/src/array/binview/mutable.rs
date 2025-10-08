@@ -258,44 +258,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub fn push_value_ignore_validity<V: AsRef<T>>(&mut self, value: V) {
         let bytes = value.as_ref().to_bytes();
         self.total_bytes_len += bytes.len();
-
-        // A string can only be maximum of 4GB in size.
-        let len = u32::try_from(bytes.len()).unwrap();
-
-        let view = if len <= View::MAX_INLINE_SIZE {
-            View::new_inline(bytes)
-        } else {
-            self.total_buffer_len += bytes.len();
-
-            // We want to make sure that we never have to memcopy between buffers. So if the
-            // current buffer is not large enough, create a new buffer that is large enough and try
-            // to anticipate the larger size.
-            let required_capacity = self.in_progress_buffer.len() + bytes.len();
-            let does_not_fit_in_buffer = self.in_progress_buffer.capacity() < required_capacity;
-
-            // We can only save offsets that are below u32::MAX
-            let offset_will_not_fit = self.in_progress_buffer.len() > u32::MAX as usize;
-
-            if does_not_fit_in_buffer || offset_will_not_fit {
-                // Allocate a new buffer and flush the old buffer
-                let new_capacity = (self.in_progress_buffer.capacity() * 2)
-                    .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
-                    .max(bytes.len());
-                let in_progress = Vec::with_capacity(new_capacity);
-                let flushed = std::mem::replace(&mut self.in_progress_buffer, in_progress);
-                if !flushed.is_empty() {
-                    self.completed_buffers.push(flushed.into())
-                }
-            }
-
-            let offset = self.in_progress_buffer.len() as u32;
-            self.in_progress_buffer.extend_from_slice(bytes);
-
-            let buffer_idx = u32::try_from(self.completed_buffers.len()).unwrap();
-
-            View::new_from_bytes(bytes, buffer_idx, offset)
-        };
-
+        let view = self.push_value_into_buffer(bytes);
         self.views.push(view);
     }
 
@@ -332,6 +295,45 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         match &mut self.validity {
             Some(validity) => validity.push(false),
             None => self.init_validity(true),
+        }
+    }
+
+    /// Get a [`View`] for a specific set of bytes.
+    pub fn push_value_into_buffer(&mut self, bytes: &[u8]) -> View {
+        assert!(bytes.len() <= u32::MAX as usize);
+
+        if bytes.len() <= View::MAX_INLINE_SIZE as usize {
+            View::new_inline(bytes)
+        } else {
+            self.total_buffer_len += bytes.len();
+
+            // We want to make sure that we never have to memcopy between buffers. So if the
+            // current buffer is not large enough, create a new buffer that is large enough and try
+            // to anticipate the larger size.
+            let required_capacity = self.in_progress_buffer.len() + bytes.len();
+            let does_not_fit_in_buffer = self.in_progress_buffer.capacity() < required_capacity;
+
+            // We can only save offsets that are below u32::MAX
+            let offset_will_not_fit = self.in_progress_buffer.len() > u32::MAX as usize;
+
+            if does_not_fit_in_buffer || offset_will_not_fit {
+                // Allocate a new buffer and flush the old buffer
+                let new_capacity = (self.in_progress_buffer.capacity() * 2)
+                    .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
+                    .max(bytes.len());
+                let in_progress = Vec::with_capacity(new_capacity);
+                let flushed = std::mem::replace(&mut self.in_progress_buffer, in_progress);
+                if !flushed.is_empty() {
+                    self.completed_buffers.push(flushed.into())
+                }
+            }
+
+            let offset = self.in_progress_buffer.len() as u32;
+            self.in_progress_buffer.extend_from_slice(bytes);
+
+            let buffer_idx = u32::try_from(self.completed_buffers.len()).unwrap();
+
+            View::new_from_bytes(bytes, buffer_idx, offset)
         }
     }
 
@@ -583,7 +585,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
-    pub fn values_iter(&self) -> MutableBinaryViewValueIter<T> {
+    pub fn values_iter(&self) -> MutableBinaryViewValueIter<'_, T> {
         MutableBinaryViewValueIter::new(self)
     }
 

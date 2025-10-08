@@ -81,6 +81,8 @@ pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
             DataType::UInt16 => Box::new(SKIT::<UInt16Type>::new()),
             DataType::UInt32 => Box::new(SKIT::<UInt32Type>::new()),
             DataType::UInt64 => Box::new(SKIT::<UInt64Type>::new()),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => Box::new(SKIT::<UInt128Type>::new()),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => Box::new(SKIT::<Int8Type>::new()),
             #[cfg(feature = "dtype-i16")]
@@ -104,7 +106,11 @@ pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => Box::new(SKIT::<UInt32Type>::new()),
+            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    Box::new(SKIT::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
+                })
+            },
 
             DataType::String | DataType::Binary => Box::new(binview::BinviewKeyIdxTable::new()),
 

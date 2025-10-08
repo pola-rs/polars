@@ -17,6 +17,7 @@ pub struct MinMaxWindow<'a, T, P> {
     // all i, as per the policy.
     monotonic_idxs: VecDeque<usize>,
     nonnulls_in_window: usize,
+    last_start: usize,
     last_end: usize,
     policy: PhantomData<P>,
 }
@@ -49,7 +50,6 @@ impl<T: NativeType, P: MinMaxPolicy> MinMaxWindow<'_, T, P> {
                 break;
             }
             self.monotonic_idxs.pop_front();
-            self.nonnulls_in_window -= 1;
         }
     }
 }
@@ -69,6 +69,7 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMax
             validity: Some(validity),
             monotonic_idxs: VecDeque::new(),
             nonnulls_in_window: 0,
+            last_start: 0,
             last_end: 0,
             policy: PhantomData,
         };
@@ -82,11 +83,16 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMax
         unsafe {
             let v = self.validity.unwrap_unchecked();
             self.remove_old_values(start);
+            for i in self.last_start..start.min(self.last_end) {
+                self.nonnulls_in_window -= v.get_bit_unchecked(i) as usize;
+            }
             for i in start.max(self.last_end)..end {
                 if v.get_bit_unchecked(i) {
                     self.insert_nonnull_value(i);
                 }
             }
+
+            self.last_start = start;
             self.last_end = end;
             self.monotonic_idxs
                 .front()
@@ -113,6 +119,7 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<'a, T> for MinM
             validity: None,
             monotonic_idxs: VecDeque::new(),
             nonnulls_in_window: 0,
+            last_start: 0,
             last_end: 0,
             policy: PhantomData,
         };
@@ -128,6 +135,8 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<'a, T> for MinM
             for i in start.max(self.last_end)..end {
                 self.insert_nonnull_value(i);
             }
+
+            self.last_start = start;
             self.last_end = end;
             self.monotonic_idxs
                 .front()

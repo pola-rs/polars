@@ -9,7 +9,7 @@ pub struct PolarsExtension {
 
 impl PolarsExtension {
     /// This is very expensive
-    pub(crate) unsafe fn arr_to_av(arr: &FixedSizeBinaryArray, i: usize) -> AnyValue {
+    pub(crate) unsafe fn arr_to_av(arr: &FixedSizeBinaryArray, i: usize) -> AnyValue<'_> {
         let arr = arr.slice_typed_unchecked(i, 1);
         let pe = Self::new(arr);
         let pe = ManuallyDrop::new(pe);

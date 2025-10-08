@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RowIndex {
     pub name: PlSmallStr,
     pub offset: IdxSize,
@@ -14,6 +15,7 @@ pub struct RowIndex {
 /// Options for Hive partitioning.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct HiveOptions {
     /// This can be `None` to automatically enable for single directory scans
     /// and disable otherwise. However it should be initialized if it is inside

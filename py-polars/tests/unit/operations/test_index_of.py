@@ -11,10 +11,12 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal
+from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     from polars._typing import IntoExpr
-from polars.testing import assert_frame_equal
+    from polars.datatypes import IntegerType
 
 
 def isnan(value: object) -> bool:
@@ -49,7 +51,6 @@ def assert_index_of(
         value = pl.lit(value, dtype=series.dtype)
 
     # Eager API:
-    print(series.index_of(value), expected_index, value, series)
     assert series.index_of(value) == expected_index
     # Lazy API:
     assert pl.LazyFrame({"series": series}).select(
@@ -107,21 +108,26 @@ def test_empty() -> None:
         pl.Int16,
         pl.Int32,
         pl.Int64,
+        pl.Int128,
         pl.UInt8,
         pl.UInt16,
         pl.UInt32,
         pl.UInt64,
-        pl.Int128,
+        pl.UInt128,
     ],
 )
-def test_integer(dtype: pl.DataType) -> None:
+def test_integer(dtype: IntegerType) -> None:
+    print(dtype)
+    dtype_min = dtype.min()
+    dtype_max = pl.Int128.max() if dtype == pl.UInt128 else dtype.max()
+
     values = [
         51,
         3,
         None,
         4,
-        pl.select(dtype.max()).item(),  # type: ignore[attr-defined]
-        pl.select(dtype.min()).item(),  # type: ignore[attr-defined]
+        pl.select(dtype_max).item(),
+        pl.select(dtype_min).item(),
     ]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -130,7 +136,7 @@ def test_integer(dtype: pl.DataType) -> None:
         [pl.Series([100, 7], dtype=dtype), series], rechunk=False
     )
 
-    extra_values = [pl.select(v).item() for v in [dtype.max() - 1, dtype.min() + 1]]  # type: ignore[attr-defined]
+    extra_values = [pl.select(v).item() for v in [dtype_max - 1, dtype_min + 1]]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         value: IntoExpr
         for value in values:
@@ -179,6 +185,7 @@ LISTS_STRATEGY = st.lists(
 )
 # The examples are cases where this test previously caught bugs:
 @example([], [], [None])
+@pytest.mark.slow
 def test_randomized(
     list1: list[int | None], list2: list[int | None], list3: list[int | None]
 ) -> None:
@@ -325,20 +332,7 @@ def test_enum(convert_to_literal: bool) -> None:
 
 @pytest.mark.parametrize(
     "convert_to_literal",
-    [
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20318"
-            ),
-        ),
-        pytest.param(
-            False,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20171"
-            ),
-        ),
-    ],
+    [True, False],
 )
 def test_categorical(convert_to_literal: bool) -> None:
     series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
@@ -351,3 +345,25 @@ def test_categorical(convert_to_literal: bool) -> None:
     ]:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
+
+
+@pytest.mark.parametrize("value", [0, 0.1])
+def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
+    series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
+    msg = "cannot cast lossless"
+    with pytest.raises(InvalidOperationError, match=msg):
+        series.index_of(value)
+    df = pl.DataFrame({"s": series})
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(pl.col("s").index_of(value))
+
+
+@given(s=series(name="s", allow_chunks=True, max_size=10))
+def test_index_of_null_parametric(s: pl.Series) -> None:
+    idx_null = s.index_of(None)
+    if s.len() == 0:
+        assert idx_null is None
+    elif s.null_count() == 0:
+        assert idx_null is None
+    elif s.null_count() == len(s):
+        assert idx_null == 0

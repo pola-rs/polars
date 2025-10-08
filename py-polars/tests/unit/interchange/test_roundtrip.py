@@ -40,7 +40,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Datetime,
     # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    # pl.Categorical("physical"),
+    # pl.Categorical("lexical"),
     # TODO: Add Enum
     # pl.Enum,
 ]
@@ -56,11 +56,11 @@ def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
     df_pa = pa.interchange.from_dataframe(dfi)
 
-    with pl.StringCache():
-        result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
+    result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.may_fail_cloud  # reason: not-lazy, likely environment related
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
@@ -95,6 +95,7 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.may_fail_cloud  # reason: not-lazy, likely environment related
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
@@ -287,9 +288,4 @@ def test_from_pyarrow_str_dict_with_null_values_20270() -> None:
 
     assert_series_equal(
         df.to_series(), pl.Series("col1", ["A", "A", None, None, "B"], pl.Categorical)
-    )
-    assert_series_equal(
-        df.select(pl.col.col1.cat.get_categories()).to_series(),
-        pl.Series(["A", "B"]),
-        check_names=False,
     )

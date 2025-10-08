@@ -55,7 +55,7 @@ where
                         self.downcast_iter().next().unwrap(),
                         idx,
                         value,
-                        T::get_dtype().to_arrow(CompatLevel::newest()),
+                        T::get_static_dtype().to_arrow(CompatLevel::newest()),
                     )?;
                     return Ok(Self::with_chunk(self.name().clone(), arr));
                 }
@@ -109,7 +109,7 @@ where
                         arr,
                         mask,
                         value,
-                        T::get_dtype().to_arrow(CompatLevel::newest()),
+                        T::get_static_dtype().to_arrow(CompatLevel::newest()),
                     )
                 });
             Ok(ChunkedArray::from_chunk_iter(self.name().clone(), chunks))

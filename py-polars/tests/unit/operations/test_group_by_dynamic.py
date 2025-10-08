@@ -12,7 +12,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import Label, StartBy
+    from polars._typing import ClosedInterval, Label, StartBy
 
 
 @pytest.mark.parametrize(
@@ -1073,3 +1073,117 @@ def test_group_by_dynamic_overlapping_19704() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_group_by_dynamic_single_row_22585() -> None:
+    df = pl.DataFrame({"date": [date(2025, 1, 1)], "group": ["x"]})
+    out = df.group_by_dynamic("date", every="1y", group_by=["group"]).agg(pl.len())
+    expected = pl.DataFrame(
+        {"group": ["x"], "date": [date(2025, 1, 1)], "len": [1]}
+    ).with_columns(pl.col("len").cast(pl.UInt32))
+    assert_frame_equal(expected, out)
+
+
+def test_group_by_dynamic_zero_sum_23433() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 0, 1, 1, 2, 2, 2, 3, 3],
+            "x": [None, None, None, None, None, None, None, 1, 2],
+        }
+    )
+    out = df.group_by_dynamic("g", every="1i", period="2i").agg(pl.col.x.sum())
+    expected = pl.DataFrame({"g": [0, 1, 2, 3], "x": [0, 0, 3, 3]})
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_dynamic_null_mean_22724() -> None:
+    time = pl.datetime_range(
+        start=datetime(2025, 1, 1, 0, 0, 00),
+        end=datetime(2025, 1, 1, 0, 0, 10),
+        interval="1s",
+        eager=True,
+    )
+
+    b = pl.DataFrame(
+        {
+            "time": time,
+            "value": [None, None, None, 0, None, None, None, None, -1, None, None],
+            "empty": [None] * len(time),
+        }
+    ).cast({"value": pl.Float32, "empty": pl.Float32})
+    gb = b.group_by_dynamic("time", every="2s", period="3s", offset="-3s")
+    out = gb.agg([pl.col("value").cast(pl.Float32).mean()])
+
+    expected = pl.DataFrame(
+        {
+            "time": pl.Series(
+                [
+                    datetime(2024, 12, 31, 23, 59, 59),
+                    datetime(2025, 1, 1, 0, 0, 1),
+                    datetime(2025, 1, 1, 0, 0, 3),
+                    datetime(2025, 1, 1, 0, 0, 5),
+                    datetime(2025, 1, 1, 0, 0, 7),
+                    datetime(2025, 1, 1, 0, 0, 9),
+                ],
+                dtype=pl.Datetime(time_unit="us", time_zone=None),
+            ),
+            "value": pl.Series([None, 0.0, 0.0, None, -1.0, None], dtype=pl.Float32),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_dynamic_ternary_cum_sum_with_agg_24566() -> None:
+    df = pl.DataFrame({"d": [10, 11, 12, 13, 14]}).with_row_index()
+
+    out = df.group_by_dynamic(index_column="d", period="3i", every="1i").agg(
+        pl.when(pl.col("d") >= pl.col("d"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last()
+    )
+
+    expected = pl.DataFrame({"d": [10, 11, 12, 13, 14], "index": [3, 6, 9, 7, 4]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("closed", "result"),
+    [
+        ("left", [0, 1, 2, 3, 4]),
+        ("both", [1, 3, 5, 7, 4]),
+    ],
+)
+def test_group_by_dynamic_closed_ternary_cum_sum_with_agg_24566(
+    closed: ClosedInterval, result: list[int]
+) -> None:
+    df = pl.DataFrame({"d": [10, 11, 12, 13, 14]}).with_row_index()
+
+    out = df.group_by_dynamic(
+        index_column="d", period="1i", every="1i", closed=closed
+    ).agg(
+        pl.when(pl.col("d") >= pl.col("d"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last()
+    )
+
+    expected = pl.DataFrame({"d": [10, 11, 12, 13, 14], "index": result})
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_dynamic_with_group_by_iter_24394() -> None:
+    df = pl.DataFrame(
+        {
+            "t": [0, 1, 2, 3],
+            "g": [10, 20, 10, 20],
+        }
+    )
+
+    groups_dynamic = df.group_by_dynamic(
+        "t", every="3i", group_by="g", start_by="datapoint"
+    )
+    for (_, _), sub_df in groups_dynamic:
+        assert len(sub_df["g"].unique()) == 1
+
+    groups_rolling = df.rolling("t", period="2i", group_by="g")
+    for (_, _), sub_df in groups_rolling:
+        assert len(sub_df["g"].unique()) == 1

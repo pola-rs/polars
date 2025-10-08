@@ -1,7 +1,10 @@
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::{AlignedBytes, Bytes4Alignment4, NativeType};
+use arrow::types::{
+    AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, NativeType,
+};
 use polars_compute::filter::filter_boolean_kernel;
+use polars_utils::vec::with_cast_mut_vec;
 
 use super::ParquetError;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
@@ -10,13 +13,13 @@ use crate::read::Filter;
 
 mod optional;
 mod optional_masked_dense;
-mod predicate;
+pub mod predicate;
 mod required;
 mod required_masked_dense;
 
 /// A mapping from a `u32` to a value. This is used in to map dictionary encoding to a value.
 pub trait IndexMapping {
-    type Output: Copy;
+    type Output: Copy + AlignedBytes;
 
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -29,13 +32,14 @@ pub trait IndexMapping {
 }
 
 // Base mapping used for everything except the CategoricalDecoder.
-impl<T: Copy> IndexMapping for &[T] {
+impl<T: Copy + AlignedBytes> IndexMapping for &[T] {
     type Output = T;
 
     #[inline(always)]
     fn len(&self) -> usize {
         <[T]>::len(self)
     }
+
     #[inline(always)]
     unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
         *unsafe { <[T]>::get_unchecked(self, idx as usize) }
@@ -43,13 +47,42 @@ impl<T: Copy> IndexMapping for &[T] {
 }
 
 // Unit mapping used in the CategoricalDecoder.
-impl IndexMapping for usize {
+impl IndexMapping for u8 {
+    type Output = Bytes1Alignment1;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        *self as usize
+    }
+
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
+        bytemuck::must_cast(idx as u8)
+    }
+}
+
+impl IndexMapping for u16 {
+    type Output = Bytes2Alignment2;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        *self as usize
+    }
+
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
+        bytemuck::must_cast(idx as u16)
+    }
+}
+
+impl IndexMapping for u32 {
     type Output = Bytes4Alignment4;
 
     #[inline(always)]
     fn len(&self) -> usize {
-        *self
+        *self as usize
     }
+
     #[inline(always)]
     unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
         bytemuck::must_cast(idx)
@@ -60,25 +93,23 @@ impl IndexMapping for usize {
 pub fn decode_dict<T: NativeType>(
     values: HybridRleDecoder<'_>,
     dict: &[T],
-    dict_mask: Option<&Bitmap>,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut BitmapBuilder,
     target: &mut Vec<T>,
-    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
-    decode_dict_dispatch(
-        values,
-        bytemuck::cast_slice(dict),
-        dict_mask,
-        is_optional,
-        page_validity,
-        filter,
-        validity,
-        <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
-        pred_true_mask,
-    )
+    with_cast_mut_vec::<T, T::AlignedBytes, _, _>(target, |aligned_bytes_vec| {
+        decode_dict_dispatch(
+            values,
+            bytemuck::cast_slice(dict),
+            is_optional,
+            page_validity,
+            filter,
+            validity,
+            aligned_bytes_vec,
+        )
+    })
 }
 
 #[inline(never)]
@@ -86,13 +117,11 @@ pub fn decode_dict<T: NativeType>(
 pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
     dict: D,
-    dict_mask: Option<&Bitmap>,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut BitmapBuilder,
     target: &mut Vec<B>,
-    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
@@ -116,10 +145,7 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             optional_masked_dense::decode(values, dict, filter, page_validity, target)
         },
-        (Some(Filter::Predicate(p)), None) => {
-            predicate::decode(values, dict, dict_mask.unwrap(), &p, target, pred_true_mask)
-        },
-        (Some(Filter::Predicate(_)), Some(_)) => todo!(),
+        (Some(Filter::Predicate(_)), _) => unreachable!(),
     }?;
 
     Ok(())
@@ -133,11 +159,15 @@ pub(crate) fn append_validity(
 ) {
     match (page_validity, filter) {
         (None, None) => validity.extend_constant(values_len, true),
-        (None, Some(f)) => validity.extend_constant(f.num_rows(values_len), true),
+        (None, Some(Filter::Range(range))) => validity.extend_constant(range.len(), true),
+        (None, Some(Filter::Mask(mask))) => validity.extend_constant(mask.set_bits(), true),
+        (None, Some(Filter::Predicate(_))) => {
+            // Done later.
+        },
         (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
         (Some(page_validity), Some(Filter::Range(rng))) => {
             let page_validity = page_validity.clone();
-            validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
+            validity.extend_from_bitmap(&page_validity.sliced(rng.start, rng.len()))
         },
         (Some(page_validity), Some(Filter::Mask(mask))) => {
             validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
@@ -181,7 +211,7 @@ fn no_more_bitpacked_values() -> ParquetError {
 }
 
 #[inline(always)]
-fn verify_dict_indices(indices: &[u32], dict_size: usize) -> ParquetResult<()> {
+pub(super) fn verify_dict_indices(indices: &[u32], dict_size: usize) -> ParquetResult<()> {
     debug_assert!(dict_size <= u32::MAX as usize);
     let dict_size = dict_size as u32;
 

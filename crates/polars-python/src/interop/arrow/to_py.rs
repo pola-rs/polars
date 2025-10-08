@@ -36,7 +36,7 @@ pub(crate) fn to_py_array(
 /// RecordBatch to Python.
 pub(crate) fn to_py_rb(
     rb: &RecordBatch,
-    py: Python,
+    py: Python<'_>,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let mut arrays = Vec::with_capacity(rb.width());
@@ -67,18 +67,22 @@ pub(crate) fn to_py_rb(
 /// Export a series to a C stream via a PyCapsule according to the Arrow PyCapsule Interface
 /// https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
 pub(crate) fn series_to_stream<'py>(
-    series: &'py Series,
+    series: &Series,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let field = series.field().to_arrow(CompatLevel::newest());
-    let iter = Box::new(series.chunks().clone().into_iter().map(Ok)) as _;
+    let series = series.clone();
+    let iter = Box::new(
+        (0..series.n_chunks()).map(move |i| Ok(series.to_arrow(i, CompatLevel::newest()))),
+    ) as _;
+
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
     PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
 pub(crate) fn dataframe_to_stream<'py>(
-    df: &'py DataFrame,
+    df: &DataFrame,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let iter = Box::new(DataFrameStreamIterator::new(df));
@@ -86,6 +90,29 @@ pub(crate) fn dataframe_to_stream<'py>(
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
     PyCapsule::new(py, stream, Some(stream_capsule_name))
+}
+
+#[cfg(feature = "c_api")]
+#[pyfunction]
+pub(crate) fn polars_schema_to_pycapsule<'py>(
+    py: Python<'py>,
+    schema: crate::prelude::Wrap<polars::prelude::Schema>,
+    compat_level: crate::prelude::PyCompatLevel,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
+        PlSmallStr::EMPTY,
+        ArrowDataType::Struct(
+            schema
+                .0
+                .iter_fields()
+                .map(|x| x.to_arrow(compat_level.0))
+                .collect(),
+        ),
+        false,
+    ));
+
+    let capsule_name = CString::new("arrow_schema").unwrap();
+    PyCapsule::new(py, schema, Some(capsule_name))
 }
 
 pub struct DataFrameStreamIterator {

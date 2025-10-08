@@ -7,7 +7,7 @@ use polars_parquet::parquet::types::{NativeType, decode};
 use polars_parquet::read::PhysicalType;
 use polars_parquet::write::Encoding;
 
-pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<HybridRleDecoder> {
+pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<HybridRleDecoder<'_>> {
     let EncodedSplitBuffer {
         rep: _,
         def: _,
@@ -191,7 +191,7 @@ impl<'a, P> FixedLenBinaryPageState<'a, P> {
 pub type Casted<'a, T> = std::iter::Map<std::slice::ChunksExact<'a, u8>, fn(&'a [u8]) -> T>;
 
 /// Views the values of the data page as [`Casted`] to [`NativeType`].
-pub fn native_cast<T: NativeType>(page: &DataPage) -> ParquetResult<Casted<T>> {
+pub fn native_cast<T: NativeType>(page: &DataPage) -> ParquetResult<Casted<'_, T>> {
     let EncodedSplitBuffer {
         rep: _,
         def: _,

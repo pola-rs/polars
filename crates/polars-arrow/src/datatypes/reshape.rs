@@ -4,6 +4,7 @@ use std::num::NonZeroU64;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[repr(transparent)]
 pub struct Dimension(NonZeroU64);
 
@@ -12,6 +13,7 @@ pub struct Dimension(NonZeroU64);
 /// Any dimension smaller than 0 is seen as an `infer`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ReshapeDimension {
     Infer,
     Specified(Dimension),

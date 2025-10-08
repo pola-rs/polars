@@ -22,24 +22,10 @@ pub struct DistinctOptionsIR {
     pub slice: Option<(i64, usize)>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum ApplyOptions {
-    /// Collect groups to a list and apply the function over the groups.
-    /// This can be important in aggregation context.
-    /// e.g. [g1, g1, g2] -> [[g1, g1], g2]
-    GroupWise,
-    /// collect groups to a list and then apply
-    /// e.g. [g1, g1, g2] -> list([g1, g1, g2])
-    ApplyList,
-    /// do not collect before apply
-    /// e.g. [g1, g1, g2] -> [g1, g1, g2]
-    ElementWise,
-}
-
 // a boolean that can only be set to `false` safely
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct UnsafeBool(bool);
 impl Default for UnsafeBool {
     fn default() -> Self {
@@ -47,22 +33,48 @@ impl Default for UnsafeBool {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for FunctionFlags {
+    fn schema_name() -> String {
+        "FunctionFlags".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "FunctionFlags"))
+    }
+
+    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        use serde_json::{Map, Value};
+
+        let name_to_bits: Map<String, Value> = Self::all()
+            .iter_names()
+            .map(|(name, flag)| (name.to_owned(), flag.bits().into()))
+            .collect();
+
+        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            format: Some("bitflags".to_owned()),
+            extensions: schemars::Map::from_iter([
+                // Add a map of flag names and bit patterns to detect schema changes
+                ("bitflags".to_owned(), Value::Object(name_to_bits)),
+            ]),
+            ..Default::default()
+        })
+    }
+}
+
 bitflags!(
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-        pub struct FunctionFlags: u8 {
-            // Raise if use in group by
-            const ALLOW_GROUP_AWARE = 1 << 0;
-            // For example a `unique` or a `slice`
-            const CHANGES_LENGTH = 1 << 1;
-            // The physical expression may rename the output of this function.
-            // If set to `false` the physical engine will ensure the left input
-            // expression is the output name.
-            const ALLOW_RENAME = 1 << 2;
-            // if set, then the `Series` passed to the function in the group_by operation
-            // will ensure the name is set. This is an extra heap allocation per group.
-            const PASS_NAME_TO_APPLY = 1 << 3;
+        pub struct FunctionFlags: u16 {
+            /// The physical expression may rename the output of this function.
+            /// If set to `false` the physical engine will ensure the left input
+            /// expression is the output name.
+            const ALLOW_RENAME = 1 << 0;
+            /// if set, then the `Series` passed to the function in the group_by operation
+            /// will ensure the name is set. This is an extra heap allocation per group.
+            const PASS_NAME_TO_APPLY = 1 << 1;
             /// There can be two ways of expanding wildcards:
             ///
             /// Say the schema is 'a', 'b' and there is a function `f`. In this case, `f('*')` can expand
@@ -73,7 +85,7 @@ bitflags!(
             /// Setting this to true, will lead to behavior 1.
             ///
             /// This also accounts for regex expansion.
-            const INPUT_WILDCARD_EXPANSION = 1 << 4;
+            const INPUT_WILDCARD_EXPANSION = 1 << 2;
             /// Automatically explode on unit length if it ran as final aggregation.
             ///
             /// this is the case for aggregations like sum, min, covariance etc.
@@ -84,19 +96,92 @@ bitflags!(
             ///
             /// head_1(x) -> {1}
             /// sum(x) -> {4}
-            const RETURNS_SCALAR = 1 << 5;
+            ///
+            /// mutually exclusive with `RETURNS_SCALAR`
+            const RETURNS_SCALAR = 1 << 3;
             /// This can happen with UDF's that use Polars within the UDF.
             /// This can lead to recursively entering the engine and sometimes deadlocks.
             /// This flag must be set to handle that.
-            const OPTIONAL_RE_ENTRANT = 1 << 6;
+            const OPTIONAL_RE_ENTRANT = 1 << 4;
             /// Whether this function allows no inputs.
-            const ALLOW_EMPTY_INPUTS = 1 << 7;
+            const ALLOW_EMPTY_INPUTS = 1 << 5;
+
+            /// Given a function f and a column of values [v1, ..., vn]
+            /// f is row-separable i.f.f.
+            /// f([v1, ..., vn]) = concat(f(v1, ... vm), f(vm+1, ..., vn))
+            const ROW_SEPARABLE = 1 << 6;
+            /// Given a function f and a column of values [v1, ..., vn]
+            /// f is length preserving i.f.f. len(f([v1, ..., vn])) = n
+            ///
+            /// mutually exclusive with `RETURNS_SCALAR`
+            const LENGTH_PRESERVING = 1 << 7;
+            /// NULLs on the first input are propagated to the output.
+            const PRESERVES_NULL_FIRST_INPUT = 1 << 8;
+            /// NULLs on any input are propagated to the output.
+            const PRESERVES_NULL_ALL_INPUTS = 1 << 9;
+
+            /// Indicates that this expression does not observe the ordering of its input(s).
+            const NON_ORDER_OBSERVING = 1 << 10;
+
+            /// Indicates that the ordering of the inputs to this expression is not observable
+            /// in its output.
+            const TERMINATES_INPUT_ORDER = 1 << 11;
+
+            /// Indicates that this expression does not produce any ordering into its output.
+            const NON_ORDER_PRODUCING = 1 << 12;
         }
 );
 
+impl FunctionFlags {
+    pub fn set_elementwise(&mut self) {
+        *self |= Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING;
+    }
+
+    pub fn is_elementwise(self) -> bool {
+        self.contains(Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING)
+    }
+
+    pub fn is_row_separable(self) -> bool {
+        self.contains(Self::ROW_SEPARABLE)
+    }
+
+    pub fn is_length_preserving(self) -> bool {
+        self.contains(Self::LENGTH_PRESERVING)
+    }
+
+    pub fn propagates_order(self) -> bool {
+        self.contains(Self::NON_ORDER_PRODUCING)
+    }
+
+    pub fn is_output_unordered(self) -> bool {
+        self.contains(Self::TERMINATES_INPUT_ORDER | Self::NON_ORDER_PRODUCING)
+    }
+
+    pub fn observes_input_order(self) -> bool {
+        let non_order_observing =
+            self.contains(Self::NON_ORDER_OBSERVING) | self.contains(Self::ROW_SEPARABLE);
+
+        !non_order_observing
+    }
+
+    pub fn terminates_input_order(self) -> bool {
+        self.contains(Self::TERMINATES_INPUT_ORDER) | self.contains(Self::RETURNS_SCALAR)
+    }
+
+    pub fn non_order_producing(self) -> bool {
+        self.contains(Self::NON_ORDER_PRODUCING)
+            | self.contains(Self::RETURNS_SCALAR)
+            | self.is_elementwise()
+    }
+
+    pub fn returns_scalar(self) -> bool {
+        self.contains(Self::RETURNS_SCALAR)
+    }
+}
+
 impl Default for FunctionFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(0) | Self::ALLOW_GROUP_AWARE
+        Self::from_bits_truncate(0)
     }
 }
 
@@ -117,21 +202,15 @@ impl CastingRules {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(any(feature = "serde"), derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FunctionOptions {
-    /// Collect groups to a list and apply the function over the groups.
-    /// This can be important in aggregation context.
-    pub collect_groups: ApplyOptions,
-
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
     pub flags: FunctionFlags,
 
-    // used for formatting, (only for anonymous functions)
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub fmt_str: &'static str,
     /// Options used when deciding how to cast the arguments of the function.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     pub cast_options: Option<CastingRules>,
 }
 
@@ -145,47 +224,52 @@ impl FunctionOptions {
     }
 
     pub fn set_elementwise(&mut self) {
-        self.collect_groups = ApplyOptions::ElementWise
+        self.flags.set_elementwise();
     }
 
     pub fn is_elementwise(&self) -> bool {
-        matches!(
-            self.collect_groups,
-            ApplyOptions::ElementWise | ApplyOptions::ApplyList
-        ) && !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
-            && !self.flags.contains(FunctionFlags::RETURNS_SCALAR)
+        self.flags.is_elementwise()
     }
 
     pub fn is_length_preserving(&self) -> bool {
-        !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
+        self.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+    }
+
+    pub fn is_row_separable(&self) -> bool {
+        self.flags.is_row_separable()
     }
 
     pub fn returns_scalar(&self) -> bool {
-        self.flags.contains(FunctionFlags::RETURNS_SCALAR)
+        self.flags.returns_scalar()
     }
 
     pub fn elementwise() -> FunctionOptions {
         FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
             ..Default::default()
         }
+        .with_flags(|f| f | FunctionFlags::ROW_SEPARABLE | FunctionFlags::LENGTH_PRESERVING)
     }
 
     pub fn elementwise_with_infer() -> FunctionOptions {
-        Self::groupwise()
+        Self::length_preserving()
     }
 
     pub fn row_separable() -> FunctionOptions {
-        Self::groupwise()
+        FunctionOptions {
+            ..Default::default()
+        }
+        .with_flags(|f| f | FunctionFlags::ROW_SEPARABLE)
     }
 
     pub fn length_preserving() -> FunctionOptions {
-        Self::groupwise()
+        FunctionOptions {
+            ..Default::default()
+        }
+        .with_flags(|f| f | FunctionFlags::LENGTH_PRESERVING)
     }
 
     pub fn groupwise() -> FunctionOptions {
         FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
             ..Default::default()
         }
     }
@@ -205,37 +289,13 @@ impl FunctionOptions {
         self
     }
 
-    pub fn with_allow_rename(mut self, allow_rename: bool) -> FunctionOptions {
-        self.flags.set(FunctionFlags::ALLOW_RENAME, allow_rename);
+    pub fn flag(mut self, flags: FunctionFlags) -> FunctionOptions {
+        self.flags |= flags;
         self
     }
 
-    pub fn with_pass_name_to_apply(mut self, pass_name_to_apply: bool) -> Self {
-        self.flags
-            .set(FunctionFlags::PASS_NAME_TO_APPLY, pass_name_to_apply);
-        self
-    }
-
-    pub fn with_input_wildcard_expansion(
-        mut self,
-        input_wildcard_expansion: bool,
-    ) -> FunctionOptions {
-        self.flags.set(
-            FunctionFlags::INPUT_WILDCARD_EXPANSION,
-            input_wildcard_expansion,
-        );
-        self
-    }
-
-    pub fn with_allow_empty_inputs(mut self, allow_empty_inputs: bool) -> FunctionOptions {
-        self.flags
-            .set(FunctionFlags::ALLOW_EMPTY_INPUTS, allow_empty_inputs);
-        self
-    }
-
-    pub fn with_changes_length(mut self, changes_length: bool) -> FunctionOptions {
-        self.flags
-            .set(FunctionFlags::ALLOW_EMPTY_INPUTS, changes_length);
+    pub fn with_flags(mut self, f: impl Fn(FunctionFlags) -> FunctionFlags) -> FunctionOptions {
+        self.flags = f(self.flags);
         self
     }
 }
@@ -243,9 +303,7 @@ impl FunctionOptions {
 impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
             check_lengths: UnsafeBool(true),
-            fmt_str: Default::default(),
             cast_options: Default::default(),
             flags: Default::default(),
         }
@@ -253,6 +311,7 @@ impl Default for FunctionOptions {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectionOptions {
     pub run_parallel: bool,

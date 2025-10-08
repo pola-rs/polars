@@ -31,7 +31,7 @@ fn test_agg_exprs() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("cars")])
         .agg([(lit(1) - col("A"))
-            .map(|s| Ok(Some(&s * 2)), GetOutput::same_type())
+            .map(|s| Ok(&s * 2), |_, f| Ok(f.clone()))
             .alias("foo")])
         .collect()?;
     let ca = out.column("foo")?.list()?;
@@ -249,7 +249,7 @@ fn test_binary_agg_context_0() -> PolarsResult<()> {
         .unwrap();
 
     let out = out.column("foo")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.str()?;
     assert_eq!(
         Vec::from(out),
@@ -293,7 +293,7 @@ fn test_binary_agg_context_1() -> PolarsResult<()> {
     // [90, 90]
     // [7, 90]
     let out = out.column("vals")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
@@ -314,7 +314,7 @@ fn test_binary_agg_context_1() -> PolarsResult<()> {
     // [90, 90]
     // [90, 7]
     let out = out.column("vals")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
@@ -344,7 +344,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     // 3 - [3, 4] = [0, -1]
     // 5 - [5, 6] = [0, -1]
     let out = out.column("vals")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
@@ -362,7 +362,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     // [3, 4] - 3 = [0, 1]
     // [5, 6] - 5 = [0, 1]
     let out = out.column("vals")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
@@ -443,23 +443,13 @@ fn take_aggregations() -> PolarsResult<()> {
         .agg([
             // keep the head as it test slice correctness
             col("book")
-                .gather(
-                    col("count")
-                        .arg_sort(SortOptions {
-                            descending: true,
-                            nulls_last: false,
-                            multithreaded: true,
-                            maintain_order: false,
-                            limit: None,
-                        })
-                        .head(Some(2)),
-                )
+                .gather(col("count").arg_sort(true, false).head(Some(2)))
                 .alias("ordered"),
         ])
         .sort(["user"], Default::default())
         .collect()?;
     let s = out.column("ordered")?;
-    let flat = s.explode()?;
+    let flat = s.explode(false)?;
     let flat = flat.str()?;
     let vals = flat.into_no_null_iter().collect::<Vec<_>>();
     assert_eq!(vals, ["a", "b", "c", "a", "a"]);
@@ -484,15 +474,7 @@ fn test_take_consistency() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("A")
-            .arg_sort(SortOptions {
-                descending: true,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .get(lit(0))])
+        .select([col("A").arg_sort(true, false).get(lit(0))])
         .collect()?;
 
     let a = out.column("A")?;
@@ -503,15 +485,7 @@ fn test_take_consistency() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("cars")])
-        .agg([col("A")
-            .arg_sort(SortOptions {
-                descending: true,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .get(lit(0))])
+        .agg([col("A").arg_sort(true, false).get(lit(0))])
         .collect()?;
 
     let out = out.column("A")?;
@@ -523,28 +497,9 @@ fn test_take_consistency() -> PolarsResult<()> {
         .group_by_stable([col("cars")])
         .agg([
             col("A"),
+            col("A").arg_sort(true, false).get(lit(0)).alias("1"),
             col("A")
-                .arg_sort(SortOptions {
-                    descending: true,
-                    nulls_last: false,
-                    multithreaded: true,
-                    maintain_order: false,
-                    limit: None,
-                })
-                .get(lit(0))
-                .alias("1"),
-            col("A")
-                .get(
-                    col("A")
-                        .arg_sort(SortOptions {
-                            descending: true,
-                            nulls_last: false,
-                            multithreaded: true,
-                            maintain_order: false,
-                            limit: None,
-                        })
-                        .get(lit(0)),
-                )
+                .get(col("A").arg_sort(true, false).get(lit(0)))
                 .alias("2"),
         ])
         .collect()?;
@@ -581,10 +536,10 @@ fn test_take_in_groups() -> PolarsResult<()> {
 fn test_anonymous_function_returns_scalar_all_null_20679() {
     use std::sync::Arc;
 
-    fn reduction_function(column: Column) -> PolarsResult<Option<Column>> {
+    fn reduction_function(column: Column) -> PolarsResult<Column> {
         let val = column.get(0)?.into_static();
         let col = Column::new_scalar("".into(), Scalar::new(column.dtype().clone(), val), 1);
-        Ok(Some(col))
+        Ok(col)
     }
 
     let a = Column::new("a".into(), &[0, 0, 1]);
@@ -593,17 +548,15 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
     let df = DataFrame::new(vec![a, b]).unwrap();
 
     let f = move |c: &mut [Column]| reduction_function(std::mem::take(&mut c[0]));
+    let dt = |_: &Schema, fs: &[Field]| Ok(fs[0].clone());
+
+    let f = BaseColumnUdf::new(f, dt);
 
     let expr = Expr::AnonymousFunction {
         input: vec![col("b")],
         function: LazySerde::Deserialized(SpecialEq::new(Arc::new(f))),
-        output_type: Default::default(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            fmt_str: "",
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
+        options: FunctionOptions::aggregation(),
+        fmt_str: Box::new(PlSmallStr::EMPTY),
     };
 
     let grouped_df = df

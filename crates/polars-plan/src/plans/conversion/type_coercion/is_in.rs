@@ -11,23 +11,21 @@ pub(super) enum IsInTypeCoercionResult {
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
-    lp_arena: &Arena<IR>,
-    lp_node: Node,
+    input_schema: &Schema,
     is_contains: bool,
     op: &'static str,
     flat_idx: usize,
     nested_idx: usize,
 ) -> PolarsResult<Option<IsInTypeCoercionResult>> {
-    let input_schema = get_schema(lp_arena, lp_node);
     let (_, type_left) = unpack!(get_aexpr_and_type(
         expr_arena,
         input[flat_idx].node(),
-        &input_schema
+        input_schema
     ));
     let (_, type_other) = unpack!(get_aexpr_and_type(
         expr_arena,
         input[nested_idx].node(),
-        &input_schema
+        input_schema
     ));
 
     let left_nl = type_left.nesting_level();
@@ -79,36 +77,22 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             strict: true,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Categorical(Some(rm), ordering)) if rm.is_global() => {
-            IsInTypeCoercionResult::SelfCast {
-                dtype: DataType::Categorical(None, *ordering),
-                strict: false,
-            }
-        },
-
-        // @NOTE: Local Categorical coercion has to happen in the kernel, which makes it streaming
-        // incompatible.
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(Some(rm), ordering), DataType::String) if rm.is_global() => {
-            IsInTypeCoercionResult::OtherCast {
-                dtype: match &type_other {
-                    DataType::List(_) => {
-                        DataType::List(Box::new(DataType::Categorical(None, *ordering)))
-                    },
-                    #[cfg(feature = "dtype-array")]
-                    DataType::Array(_, width) => {
-                        DataType::Array(Box::new(DataType::Categorical(None, *ordering)), *width)
-                    },
-                    _ => unreachable!(),
-                },
-                strict: false,
-            }
+        (DataType::String, DataType::Categorical(_, _)) => IsInTypeCoercionResult::SelfCast {
+            dtype: type_other_inner.clone(),
+            strict: false,
         },
 
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(_, _), DataType::String) => return Ok(None),
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Categorical(_, _)) => return Ok(None),
+        (DataType::Categorical(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
+            dtype: match &type_other {
+                DataType::List(_) => DataType::List(Box::new(type_left.clone())),
+                #[cfg(feature = "dtype-array")]
+                DataType::Array(_, width) => DataType::Array(Box::new(type_left.clone()), *width),
+                _ => unreachable!(),
+            },
+            strict: false,
+        },
+
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
             IsInTypeCoercionResult::OtherCast {

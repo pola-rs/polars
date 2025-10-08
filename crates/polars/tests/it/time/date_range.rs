@@ -23,7 +23,7 @@ fn test_time_units_9413() {
         None,
     )
     .map(|date_range| date_range.into_series());
-    let result = format!("{:?}", actual);
+    let result = format!("{actual:?}");
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[ms]]
 [
@@ -44,7 +44,7 @@ Series: 'date' [datetime[ms]]
         None,
     )
     .map(|date_range| date_range.into_series());
-    let result = format!("{:?}", actual);
+    let result = format!("{actual:?}");
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[μs]]
 [
@@ -65,7 +65,7 @@ Series: 'date' [datetime[μs]]
         None,
     )
     .map(|date_range| date_range.into_series());
-    let result = format!("{:?}", actual);
+    let result = format!("{actual:?}");
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[ns]]
 [

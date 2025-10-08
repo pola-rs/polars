@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
-from tests.unit.conftest import INTEGER_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -92,6 +92,13 @@ def test_rolling_map_sum_int(dtype: PolarsDataType) -> None:
     expected = pl.Series("A", [None, None, 12, 13, 24], dtype=dtype)
     assert_series_equal(result, expected)
 
+    q = (
+        s.to_frame()
+        .lazy()
+        .select(pl.col("A").rolling_map(function=lambda s: s.sum(), window_size=3))
+    )
+    assert q.collect_schema() == q.collect().schema
+
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_rolling_map_sum_int_cast_to_float(dtype: PolarsDataType) -> None:
@@ -103,6 +110,57 @@ def test_rolling_map_sum_int_cast_to_float(dtype: PolarsDataType) -> None:
 
     expected = pl.Series("A", [None, None, 32.0, None, None], dtype=pl.Float64)
     assert_series_equal(result, expected)
+
+    q = (
+        s.to_frame()
+        .lazy()
+        .select(
+            pl.col("A").rolling_map(
+                function=lambda s: s.sum(), window_size=3, weights=[1.0, 2.0, 3.0]
+            )
+        )
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_rolling_map_sum_float(dtype: PolarsDataType) -> None:
+    s = pl.Series("A", [1, 2, 9, 2, 13], dtype=dtype)
+
+    result = s.rolling_map(function=lambda s: s.sum(), window_size=3)
+
+    expected = pl.Series("A", [None, None, 12.0, 13.0, 24.0], dtype=dtype)
+    assert_series_equal(result, expected)
+
+    q = (
+        s.to_frame()
+        .lazy()
+        .select(pl.col("A").rolling_map(function=lambda s: s.sum(), window_size=3))
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_rolling_map_sum_float_weights(dtype: PolarsDataType) -> None:
+    s = pl.Series("A", [1, 2, 9, 2, 13], dtype=dtype)
+
+    result = s.rolling_map(
+        function=lambda s: s.sum(), window_size=3, weights=[1.0, 2.0, 3.0]
+    )
+
+    expected = pl.Series("A", [None, None, 32.0, 26.0, 52.0], dtype=dtype)
+    assert_series_equal(result, expected)
+
+    q = (
+        s.to_frame()
+        .lazy()
+        .select(
+            pl.col("A").rolling_map(
+                function=lambda s: s.sum(), window_size=3, weights=[1.0, 2.0, 3.0]
+            )
+        )
+    )
+    assert q.collect_schema() == q.collect().schema
 
 
 def test_rolling_map_rolling_sum() -> None:

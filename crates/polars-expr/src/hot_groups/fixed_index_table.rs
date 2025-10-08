@@ -19,6 +19,7 @@ struct Slot {
 pub struct FixedIndexTable<K> {
     slots: Vec<Slot>,
     keys: Vec<K>,
+    num_filled_slots: usize, // Possibly different than keys.len() because of push_unmapped_key.
     shift: u8,
     prng: u64,
 }
@@ -26,6 +27,7 @@ pub struct FixedIndexTable<K> {
 impl<K> FixedIndexTable<K> {
     pub fn new(num_slots: IdxSize) -> Self {
         assert!(num_slots.is_power_of_two());
+        assert!(num_slots > 1);
         let empty_slot = Slot {
             tag: u32::MAX,
             last_access_tag: u32::MAX,
@@ -34,6 +36,7 @@ impl<K> FixedIndexTable<K> {
         Self {
             slots: vec![empty_slot; num_slots as usize],
             shift: 64 - num_slots.trailing_zeros() as u8,
+            num_filled_slots: 0,
             // We add one to the capacity for the null key.
             keys: Vec::with_capacity(1 + num_slots as usize),
             prng: 0,
@@ -61,6 +64,7 @@ impl<K> FixedIndexTable<K> {
         &mut self,
         hash: u64,
         key: Q,
+        force_insert: bool,
         mut eq: E,
         mut insert: I,
         mut evict_insert: V,
@@ -114,7 +118,7 @@ impl<K> FixedIndexTable<K> {
 
             // Check if we can insert into an empty slot.
             let num_keys = self.keys.len() as IdxSize;
-            if (num_keys as usize) < self.slots.len() {
+            if self.num_filled_slots < self.slots.len() {
                 // Check the first slot.
                 let s1 = self.slots.get_unchecked_mut(h1);
                 if s1.key_index >= num_keys {
@@ -122,6 +126,7 @@ impl<K> FixedIndexTable<K> {
                     s1.last_access_tag = tag;
                     s1.key_index = num_keys;
                     self.keys.push_unchecked(insert(key));
+                    self.num_filled_slots += 1;
                     return Some(EvictIdx::new(s1.key_index, false));
                 }
 
@@ -132,6 +137,7 @@ impl<K> FixedIndexTable<K> {
                     s2.last_access_tag = tag;
                     s2.key_index = num_keys;
                     self.keys.push_unchecked(insert(key));
+                    self.num_filled_slots += 1;
                     return Some(EvictIdx::new(s2.key_index, false));
                 }
             }
@@ -140,7 +146,8 @@ impl<K> FixedIndexTable<K> {
             let hr = select_unpredictable(self.prng >> 63 != 0, h1, h2);
             self.prng = self.prng.wrapping_add(hash);
             let slot = self.slots.get_unchecked_mut(hr);
-            if slot.last_access_tag == tag {
+
+            if (slot.last_access_tag == tag) | force_insert {
                 slot.tag = tag;
                 let evict_key = self.keys.get_unchecked_mut(slot.key_index as usize);
                 evict_insert(key, evict_key);

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 
-use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
@@ -113,7 +113,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         )
     }
 
-    // decompress first
+    // Decompress first.
     scratch.clear();
     scratch.try_reserve(buffer_length)?;
     reader
@@ -121,13 +121,30 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         .take(buffer_length as u64)
         .read_to_end(scratch)?;
 
-    let length = output_length
-        .unwrap_or_else(|| i64::from_le_bytes(scratch[..8].try_into().unwrap()) as usize);
+    polars_ensure!(scratch.len() == buffer_length, ComputeError: "Malformed IPC file: expected compressed buffer of len {buffer_length}, got {}", scratch.len());
+
+    let decompressed_len_field = i64::from_le_bytes(scratch[..8].try_into().unwrap());
+    let decompressed_bytes: usize = if decompressed_len_field == -1 {
+        buffer_length - 8
+    } else {
+        decompressed_len_field.try_into().map_err(|_| {
+            polars_err!(ComputeError: "Malformed IPC file: got invalid decompressed length {decompressed_len_field}")
+        })?
+    };
+
+    polars_ensure!(decompressed_bytes.is_multiple_of(size_of::<T>()), ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
+    let real_output_len = decompressed_bytes / size_of::<T>();
+    if let Some(output_length) = output_length {
+        polars_ensure!(output_length == real_output_len, ComputeError: "Malformed IPC file: got unexpected decompressed buffer size {real_output_len}, expected {output_length}");
+    }
+
+    if decompressed_len_field == -1 {
+        return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
+    }
 
     // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-    let mut buffer = vec![T::default(); length];
-
+    let mut buffer = vec![T::default(); real_output_len];
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
 
     let compression = compression
@@ -271,13 +288,31 @@ fn read_compressed_bitmap<R: Read + Seek>(
     reader: &mut R,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<u8>> {
-    #[expect(clippy::slow_vector_initialization)] // Avoid alloc_zeroed, leads to syscall.
-    let mut buffer = Vec::new();
-    buffer.resize(length.div_ceil(8), 0);
-
     scratch.clear();
     scratch.try_reserve(bytes)?;
     reader.by_ref().take(bytes as u64).read_to_end(scratch)?;
+    if scratch.len() != bytes {
+        polars_bail!(ComputeError: "Malformed IPC file: expected compressed buffer of len {bytes}, got {}", scratch.len());
+    }
+
+    let decompressed_len_field = i64::from_le_bytes(scratch[..8].try_into().unwrap());
+    let decompressed_bytes: usize = if decompressed_len_field == -1 {
+        scratch.len() - 8
+    } else {
+        decompressed_len_field.try_into().map_err(|_| {
+            polars_err!(ComputeError: "Malformed IPC file: got invalid decompressed length {decompressed_len_field}")
+        })?
+    };
+
+    polars_ensure!(length.div_ceil(8) == decompressed_bytes, ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
+
+    if decompressed_len_field == -1 {
+        return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
+    }
+
+    #[expect(clippy::slow_vector_initialization)] // Avoid alloc_zeroed, leads to syscall.
+    let mut buffer = Vec::new();
+    buffer.resize(decompressed_bytes, 0);
 
     let compression = compression
         .codec()

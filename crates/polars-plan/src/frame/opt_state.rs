@@ -24,8 +24,9 @@ bitflags! {
         /// Run common-subexpression-elimination. This elides duplicate expressions and caches their
         /// outputs.
         const COMM_SUBEXPR_ELIM = 1 << 9;
-        /// Run nodes that are capably of doing so on the streaming engine.
-        const STREAMING = 1 << 10;
+
+        // const STREAMING = 1 << 10; // Legacy flag for removed old streaming engine.
+
         const NEW_STREAMING = 1 << 11;
         /// Run every node eagerly. This turns off multi-node optimizations.
         const EAGER = 1 << 12;
@@ -33,11 +34,9 @@ bitflags! {
         const ROW_ESTIMATE = 1 << 13;
         /// Replace simple projections with a faster inlined projection that skips the expression engine.
         const FAST_PROJECTION = 1 << 14;
-        /// Collapse slower joins with filters into faster joins.
-        const COLLAPSE_JOINS = 1 << 15;
         /// Check if operations are order dependent and unset maintaining_order if
         /// the order would not be observed.
-        const CHECK_ORDER_OBSERVE = 1 << 16;
+        const CHECK_ORDER_OBSERVE = 1 << 15;
     }
 }
 
@@ -54,10 +53,6 @@ impl OptFlags {
         self.contains(OptFlags::CLUSTER_WITH_COLUMNS)
     }
 
-    pub fn collapse_joins(&self) -> bool {
-        self.contains(OptFlags::COLLAPSE_JOINS)
-    }
-
     pub fn predicate_pushdown(&self) -> bool {
         self.contains(OptFlags::PREDICATE_PUSHDOWN)
     }
@@ -71,9 +66,6 @@ impl OptFlags {
     pub fn slice_pushdown(&self) -> bool {
         self.contains(OptFlags::SLICE_PUSHDOWN)
     }
-    pub fn streaming(&self) -> bool {
-        self.contains(OptFlags::STREAMING)
-    }
     pub fn new_streaming(&self) -> bool {
         self.contains(OptFlags::NEW_STREAMING)
     }
@@ -84,7 +76,7 @@ impl OptFlags {
 
 impl Default for OptFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::STREAMING & !Self::EAGER
+        Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::EAGER
     }
 }
 

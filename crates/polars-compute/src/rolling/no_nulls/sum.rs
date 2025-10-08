@@ -1,138 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use super::super::sum::SumWindow;
 use super::*;
-
-fn sum_kahan<
-    T: NativeType
-        + IsFloat
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Sub<Output = T>
-        + Add<Output = T>,
->(
-    vals: &[T],
-) -> (T, T) {
-    if T::is_float() {
-        let mut sum = T::zeroed();
-        let mut err = T::zeroed();
-
-        for val in vals.iter().copied() {
-            if val.is_finite() {
-                let y = val - err;
-                let new_sum = sum + y;
-                err = (new_sum - sum) - y;
-                sum = new_sum;
-            } else {
-                sum += val
-            }
-        }
-        (sum, err)
-    } else {
-        (vals.iter().copied().sum::<T>(), T::zeroed())
-    }
-}
-
-pub struct SumWindow<'a, T> {
-    slice: &'a [T],
-    sum: T,
-    err: T,
-    last_start: usize,
-    last_end: usize,
-}
-
-impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Output = T>>
-    SumWindow<'_, T>
-{
-    // Kahan summation
-    fn add(&mut self, val: T) {
-        if T::is_float() && val.is_finite() {
-            let y = val - self.err;
-            let new_sum = self.sum + y;
-            self.err = (new_sum - self.sum) - y;
-            self.sum = new_sum;
-        } else {
-            self.sum += val;
-        }
-    }
-
-    fn sub(&mut self, val: T) {
-        if T::is_float() {
-            self.add(T::zeroed() - val)
-        } else {
-            self.sum -= val;
-        }
-    }
-}
-
-impl<
-    'a,
-    T: NativeType
-        + IsFloat
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Sub<Output = T>
-        + Add<Output = T>,
-> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
-{
-    fn new(
-        slice: &'a [T],
-        start: usize,
-        end: usize,
-        _params: Option<RollingFnParams>,
-        _window_size: Option<usize>,
-    ) -> Self {
-        let (sum, err) = sum_kahan(&slice[start..end]);
-        Self {
-            slice,
-            sum,
-            err,
-            last_start: start,
-            last_end: end,
-        }
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // if we exceed the end, we have a completely new window
-        // so we recompute
-        let recompute_sum = if start >= self.last_end {
-            true
-        } else {
-            // remove elements that should leave the window
-            let mut recompute_sum = false;
-            for idx in self.last_start..start {
-                // SAFETY:
-                // we are in bounds
-                let leaving_value = self.slice.get_unchecked(idx);
-
-                if T::is_float() && !leaving_value.is_finite() {
-                    recompute_sum = true;
-                    break;
-                }
-
-                self.sub(*leaving_value);
-            }
-            recompute_sum
-        };
-        self.last_start = start;
-
-        // we traverse all values and compute
-        if recompute_sum {
-            let vals = self.slice.get_unchecked(start..end);
-            let (sum, err) = sum_kahan(vals);
-            self.sum = sum;
-            self.err = err;
-        }
-        // add entering values.
-        else {
-            for idx in self.last_end..end {
-                self.add(*self.slice.get_unchecked(idx))
-            }
-        }
-        self.last_end = end;
-        Some(self.sum)
-    }
-}
 
 pub fn rolling_sum<T>(
     values: &[T],
@@ -150,17 +18,18 @@ where
         + AddAssign
         + SubAssign
         + IsFloat
-        + Num,
+        + Num
+        + PartialOrd,
 {
     match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<SumWindow<_>, _, _>(
+        (true, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
             values,
             window_size,
             min_periods,
             det_offsets_center,
             None,
         ),
-        (false, None) => rolling_apply_agg_window::<SumWindow<_>, _, _>(
+        (false, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
             values,
             window_size,
             min_periods,
@@ -176,6 +45,7 @@ where
                 det_offsets_center,
                 no_nulls::compute_sum_weights,
                 &weights,
+                center,
             )
         },
         (false, Some(weights)) => {
@@ -187,6 +57,7 @@ where
                 det_offsets,
                 no_nulls::compute_sum_weights,
                 &weights,
+                center,
             )
         },
     }

@@ -11,22 +11,24 @@ use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
-use polars::prelude::{AnyValue, PlSmallStr, Series};
+use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
+use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedStr;
+use pyo3::sync::GILOnceCell;
 use pyo3::types::{
-    PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple, PyType,
+    PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList, PyMapping,
+    PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
 };
-use pyo3::{IntoPyObjectExt, intern};
+use pyo3::{IntoPyObjectExt, PyTypeCheck, intern};
 
 use super::datetime::{
     datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
 };
-use super::{ObjectValue, Wrap, decimal_to_digits, struct_dict};
+use super::{ObjectValue, Wrap, struct_dict};
 use crate::error::PyPolarsErr;
 use crate::py_modules::{pl_series, pl_utils};
 use crate::series::PySeries;
@@ -51,14 +53,14 @@ impl<'py> IntoPyObject<'py> for &Wrap<AnyValue<'_>> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<AnyValue<'py>> {
+impl<'py> FromPyObject<'py> for Wrap<AnyValue<'static>> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         py_object_to_any_value(ob, true, true).map(Wrap)
     }
 }
 
 pub(crate) fn any_value_into_py_object<'py>(
-    av: AnyValue,
+    av: AnyValue<'_>,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let utils = pl_utils(py).bind(py);
@@ -67,6 +69,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::UInt16(v) => v.into_bound_py_any(py),
         AnyValue::UInt32(v) => v.into_bound_py_any(py),
         AnyValue::UInt64(v) => v.into_bound_py_any(py),
+        AnyValue::UInt128(v) => v.into_bound_py_any(py),
         AnyValue::Int8(v) => v.into_bound_py_any(py),
         AnyValue::Int16(v) => v.into_bound_py_any(py),
         AnyValue::Int32(v) => v.into_bound_py_any(py),
@@ -78,21 +81,11 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Boolean(v) => v.into_bound_py_any(py),
         AnyValue::String(v) => v.into_bound_py_any(py),
         AnyValue::StringOwned(v) => v.into_bound_py_any(py),
-        AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
-            let s = if arr.is_null() {
-                rev.get(idx)
-            } else {
-                unsafe { arr.deref_unchecked().value(idx as usize) }
-            };
-            s.into_bound_py_any(py)
+        AnyValue::Categorical(cat, map) | AnyValue::Enum(cat, map) => unsafe {
+            map.cat_to_str_unchecked(cat).into_bound_py_any(py)
         },
-        AnyValue::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
-            let s = if arr.is_null() {
-                rev.get(idx)
-            } else {
-                unsafe { arr.deref_unchecked().value(idx as usize) }
-            };
-            s.into_bound_py_any(py)
+        AnyValue::CategoricalOwned(cat, map) | AnyValue::EnumOwned(cat, map) => unsafe {
+            map.cat_to_str_unchecked(cat).into_bound_py_any(py)
         },
         AnyValue::Date(v) => {
             let date = date32_to_date(v);
@@ -128,19 +121,11 @@ pub(crate) fn any_value_into_py_object<'py>(
         },
         AnyValue::Binary(v) => PyBytes::new(py, v).into_bound_py_any(py),
         AnyValue::BinaryOwned(v) => PyBytes::new(py, &v).into_bound_py_any(py),
-        AnyValue::Decimal(v, scale) => {
+        AnyValue::Decimal(v, prec, scale) => {
             let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
-            const N: usize = 3;
-            let mut buf = [0_u128; N];
-            let n_digits = decimal_to_digits(v.abs(), &mut buf);
-            let buf = unsafe {
-                std::slice::from_raw_parts(
-                    buf.as_slice().as_ptr() as *const u8,
-                    N * size_of::<u128>(),
-                )
-            };
-            let digits = PyTuple::new(py, buf.iter().take(n_digits))?;
-            convert.call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
+            let mut buf = DecimalFmtBuffer::new();
+            let s = buf.format_dec128(v, scale, false, false);
+            convert.call1((prec, s))
         },
     }
 }
@@ -187,16 +172,16 @@ impl std::hash::Hash for TypeObjectKey {
     }
 }
 
-type InitFn = for<'py> fn(&Bound<'py, PyAny>, bool) -> PyResult<AnyValue<'py>>;
+type InitFn = fn(&Bound<'_, PyAny>, bool) -> PyResult<AnyValue<'static>>;
 pub(crate) static LUT: Mutex<HashMap<TypeObjectKey, InitFn, PlFixedStateQuality>> =
     Mutex::new(HashMap::with_hasher(PlFixedStateQuality::with_seed(0)));
 
 /// Convert a Python object to an [`AnyValue`].
-pub(crate) fn py_object_to_any_value<'py>(
-    ob: &Bound<'py, PyAny>,
+pub(crate) fn py_object_to_any_value(
+    ob: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
-) -> PyResult<AnyValue<'py>> {
+) -> PyResult<AnyValue<'static>> {
     // Conversion functions.
     fn get_null(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         Ok(AnyValue::Null)
@@ -212,6 +197,10 @@ pub(crate) fn py_object_to_any_value<'py>(
             Ok(AnyValue::Int64(v))
         } else if let Ok(v) = ob.extract::<i128>() {
             Ok(AnyValue::Int128(v))
+        } else if let Ok(v) = ob.extract::<u64>() {
+            Ok(AnyValue::UInt64(v))
+        } else if let Ok(v) = ob.extract::<u128>() {
+            Ok(AnyValue::UInt128(v))
         } else if !strict {
             let f = ob.extract::<f64>()?;
             Ok(AnyValue::Float64(f))
@@ -241,13 +230,13 @@ pub(crate) fn py_object_to_any_value<'py>(
         Ok(AnyValue::StringOwned(ob.extract::<String>()?.into()))
     }
 
-    fn get_bytes<'py>(ob: &Bound<'py, PyAny>, _strict: bool) -> PyResult<AnyValue<'py>> {
+    fn get_bytes(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let value = ob.extract::<Vec<u8>>()?;
         Ok(AnyValue::BinaryOwned(value))
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        const UNIX_EPOCH: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
+        const UNIX_EPOCH: NaiveDate = DateTime::UNIX_EPOCH.naive_utc().date();
         let date = ob.extract::<NaiveDate>()?;
         let elapsed = date.signed_duration_since(UNIX_EPOCH);
         Ok(AnyValue::Date(elapsed.num_days() as i32))
@@ -259,7 +248,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
         if tzinfo.is_none() {
             let datetime = ob.extract::<NaiveDateTime>()?;
-            let delta = datetime - NaiveDateTime::UNIX_EPOCH;
+            let delta = datetime - DateTime::UNIX_EPOCH.naive_utc();
             let timestamp = delta.num_microseconds().unwrap();
             return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
         }
@@ -268,20 +257,20 @@ pub(crate) fn py_object_to_any_value<'py>(
         let (ob, tzinfo) = if let Some(tz) = tzinfo
             .getattr(intern!(py, "zone"))
             .ok()
-            .and_then(|zone| zone.extract::<PyBackedStr>().ok()?.parse::<Tz>().ok())
+            .and_then(|tz| (!tz.is_none()).then_some(tz))
         {
-            let tzinfo = tz.into_pyobject(py)?;
+            let tzinfo = PyTzInfo::timezone(py, tz.downcast_into::<PyString>()?)?;
             (
                 &ob.call_method(intern!(py, "astimezone"), (&tzinfo,), None)?,
                 tzinfo,
             )
         } else {
-            (ob, tzinfo)
+            (ob, tzinfo.downcast_into()?)
         };
 
         let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
             let datetime = ob.extract::<DateTime<Tz>>()?;
-            let tz = datetime.timezone().name().into();
+            let tz = unsafe { TimeZone::from_static(datetime.timezone().name()) };
             if datetime.year() >= 2100 {
                 // chrono-tz does not support dates after 2100
                 // https://github.com/chronotope/chrono-tz/issues/135
@@ -300,7 +289,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         } else {
             let datetime = ob.extract::<DateTime<FixedOffset>>()?;
             let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-            (delta.num_microseconds().unwrap(), "UTC".into())
+            (delta.num_microseconds().unwrap(), TimeZone::UTC)
         };
 
         Ok(AnyValue::DatetimeOwned(
@@ -335,27 +324,17 @@ pub(crate) fn py_object_to_any_value<'py>(
             digits: impl IntoIterator<Item = u8>,
             exp: i32,
         ) -> Option<(i128, usize)> {
-            const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
             let mut v = 0_i128;
-            for (i, d) in digits.into_iter().map(i128::from).enumerate() {
-                if i < 38 {
-                    v = v * 10 + d;
-                } else {
-                    v = v.checked_mul(10).and_then(|v| v.checked_add(d))?;
-                }
+            for d in digits {
+                v = v.checked_mul(10)?.checked_add(d as i128)?;
             }
-            // We only support non-negative scale (=> non-positive exponent).
             let scale = if exp > 0 {
-                // The decimal may be in a non-canonical representation, try to fix it first.
-                v = 10_i128
-                    .checked_pow(exp as u32)
-                    .and_then(|factor| v.checked_mul(factor))?;
+                v = 10_i128.checked_pow(exp as u32)?.checked_mul(v)?;
                 0
             } else {
                 (-exp) as usize
             };
-            // TODO: Do we care for checking if it fits in MAX_ABS_DEC? (if we set precision to None anyway?)
-            (v <= MAX_ABS_DEC).then_some((v, scale))
+            dec128_fits(v, DEC128_MAX_PREC).then_some((v, scale))
         }
 
         // Note: Using Vec<u8> is not the most efficient thing here (input is a tuple)
@@ -372,7 +351,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         if sign > 0 {
             v = -v; // Won't overflow since -i128::MAX > i128::MIN
         }
-        Ok(AnyValue::Decimal(v, scale))
+        Ok(AnyValue::Decimal(v, DEC128_MAX_PREC, scale))
     }
 
     fn get_list(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
@@ -396,43 +375,53 @@ pub(crate) fn py_object_to_any_value<'py>(
                 &DataType::Null,
             )))
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
-            const INFER_SCHEMA_LENGTH: usize = 25;
-
             let list = ob.downcast::<PySequence>()?;
 
-            let mut avs = Vec::with_capacity(INFER_SCHEMA_LENGTH);
+            // Try to find first non-null.
+            let length = list.len()?;
             let mut iter = list.try_iter()?;
-            let mut items = Vec::with_capacity(INFER_SCHEMA_LENGTH);
-            for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
-                items.push(item?);
-                let av = py_object_to_any_value(items.last().unwrap(), strict, true)?;
-                avs.push(av)
-            }
-            let (dtype, n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
-                .map_err(|e| PyTypeError::new_err(e.to_string()))?;
-
-            // This path is only taken if there is no question about the data type.
-            if dtype.is_primitive() && n_dtypes == 1 {
-                get_list_with_constructor(ob, strict)
-            } else {
-                // Push the rest.
-                let length = list.len()?;
-                avs.reserve(length);
-                let mut rest = Vec::with_capacity(length);
-                for item in iter {
-                    rest.push(item?);
-                    let av = py_object_to_any_value(rest.last().unwrap(), strict, true)?;
-                    avs.push(av)
+            let mut avs = Vec::new();
+            for item in &mut iter {
+                let av = py_object_to_any_value(&item?, strict, true)?;
+                let is_null = av.is_null();
+                avs.push(av);
+                if is_null {
+                    break;
                 }
-
-                let s = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, &dtype, strict)
-                    .map_err(|e| {
-                        PyTypeError::new_err(format!(
-                            "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-                        ))
-                    })?;
-                Ok(AnyValue::List(s))
             }
+
+            // Try to use a faster converter.
+            if let Some(av) = avs.last()
+                && !av.is_null()
+                && av.dtype().is_primitive()
+            {
+                // Always use strict, we will filter the error if we're not
+                // strict and try again using a slower converter with supertype.
+                match get_list_with_constructor(ob, true) {
+                    Ok(ret) => return Ok(ret),
+                    Err(e) => {
+                        if strict {
+                            return Err(e);
+                        }
+                    },
+                }
+            }
+
+            // Push the rest of the anyvalues and use slower converter.
+            avs.reserve(length);
+            for item in &mut iter {
+                avs.push(py_object_to_any_value(&item?, strict, true)?);
+            }
+
+            let (dtype, _n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
+                .map_err(|e| PyTypeError::new_err(e.to_string()))?;
+            let s = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, &dtype, strict)
+                .map_err(|e| {
+                    PyTypeError::new_err(format!(
+                        "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                    ))
+                })?;
+            Ok(AnyValue::List(s))
         } else {
             // range will take this branch
             get_list_with_constructor(ob, strict)
@@ -444,7 +433,26 @@ pub(crate) fn py_object_to_any_value<'py>(
         Ok(AnyValue::List(s))
     }
 
-    fn get_struct<'py>(ob: &Bound<'py, PyAny>, strict: bool) -> PyResult<AnyValue<'py>> {
+    fn get_mapping(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        let mapping = ob.downcast::<PyMapping>()?;
+        let len = mapping.len()?;
+        let mut keys = Vec::with_capacity(len);
+        let mut vals = Vec::with_capacity(len);
+
+        for item in mapping.items()?.try_iter()? {
+            let item = item?.downcast_into::<PyTuple>()?;
+            let (key_py, val_py) = (item.get_item(0)?, item.get_item(1)?);
+
+            let key: Cow<str> = key_py.extract()?;
+            let val = py_object_to_any_value(&val_py, strict, true)?;
+
+            keys.push(Field::new(key.as_ref().into(), val.dtype()));
+            vals.push(val);
+        }
+        Ok(AnyValue::StructOwned(Box::new((vals, keys))))
+    }
+
+    fn get_struct(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
         let dict = ob.downcast::<PyDict>().unwrap();
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
@@ -496,51 +504,45 @@ pub(crate) fn py_object_to_any_value<'py>(
             Ok(get_list)
         } else if ob.is_instance_of::<PyDict>() {
             Ok(get_struct)
+        } else if PyMapping::type_check(ob) {
+            Ok(get_mapping)
+        }
+        // note: datetime must be checked *before* date
+        // (as python datetime is an instance of date)
+        else if PyDateTime::type_check(ob) {
+            Ok(get_datetime as InitFn)
+        } else if PyDate::type_check(ob) {
+            Ok(get_date as InitFn)
+        } else if PyTime::type_check(ob) {
+            Ok(get_time as InitFn)
+        } else if PyDelta::type_check(ob) {
+            Ok(get_timedelta as InitFn)
+        } else if ob.is_instance_of::<PyRange>() {
+            Ok(get_list as InitFn)
         } else {
-            let ob_type = ob.get_type();
-            let type_name = ob_type.fully_qualified_name()?.to_string();
-            match type_name.as_str() {
-                // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-                // so need this workaround instead of `isinstance(ob, datetime)`.
-                "datetime.date" => Ok(get_date as InitFn),
-                "datetime.time" => Ok(get_time as InitFn),
-                "datetime.datetime" => Ok(get_datetime as InitFn),
-                "datetime.timedelta" => Ok(get_timedelta as InitFn),
-                "decimal.Decimal" => Ok(get_decimal as InitFn),
-                "range" => Ok(get_list as InitFn),
-                _ => {
-                    // Support NumPy scalars.
-                    if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
-                        return Ok(get_int as InitFn);
-                    } else if ob.extract::<f64>().is_ok() {
-                        return Ok(get_float as InitFn);
-                    }
+            static NDARRAY_TYPE: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+            if let Ok(ndarray_type) = NDARRAY_TYPE.import(py, "numpy", "ndarray") {
+                if ob.is_instance(ndarray_type)? {
+                    // will convert via Series -> mmap_numpy_array
+                    return Ok(get_list as InitFn);
+                }
+            }
+            static DECIMAL_TYPE: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+            if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
+                return Ok(get_decimal as InitFn);
+            }
 
-                    // Support custom subclasses of datetime/date.
-                    let ancestors = ob_type.getattr(intern!(py, "__mro__"))?;
-                    let ancestors_str_iter = ancestors
-                        .try_iter()?
-                        .map(|b| b.unwrap().str().unwrap().to_string());
-                    for c in ancestors_str_iter {
-                        match &*c {
-                            // datetime must be checked before date because
-                            // Python datetime is an instance of date.
-                            "<class 'datetime.datetime'>" => {
-                                return Ok(get_datetime as InitFn);
-                            },
-                            "<class 'datetime.date'>" => return Ok(get_date as InitFn),
-                            "<class 'datetime.timedelta'>" => return Ok(get_timedelta as InitFn),
-                            "<class 'datetime.time'>" => return Ok(get_time as InitFn),
-                            _ => (),
-                        }
-                    }
+            // support NumPy scalars
+            if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
+                return Ok(get_int as InitFn);
+            } else if ob.extract::<f64>().is_ok() {
+                return Ok(get_float as InitFn);
+            }
 
-                    if allow_object {
-                        Ok(get_object as InitFn)
-                    } else {
-                        Err(PyValueError::new_err(format!("Cannot convert {ob}")))
-                    }
-                },
+            if allow_object {
+                Ok(get_object as InitFn)
+            } else {
+                Err(PyValueError::new_err(format!("Cannot convert {ob}")))
             }
         }
     }

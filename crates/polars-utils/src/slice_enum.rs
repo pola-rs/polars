@@ -3,6 +3,7 @@ use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Slice {
     /// Or zero
     Positive {
@@ -29,6 +30,18 @@ impl Slice {
             Slice::Positive { len, .. } => len,
             Slice::Negative { len, .. } => len,
         }
+    }
+
+    /// Returns the offset of a positive slice.
+    ///
+    /// # Panics
+    /// Panics if `self` is [`Slice::Negative`]
+    pub fn positive_offset(&self) -> usize {
+        let Slice::Positive { offset, len: _ } = self.clone() else {
+            panic!("cannot use positive_offset() on a negative slice");
+        };
+
+        offset
     }
 
     /// Returns the end position of the slice (offset + len).
@@ -118,12 +131,30 @@ impl TryFrom<Slice> for (i64, usize) {
     type Error = TryFromIntError;
 
     fn try_from(value: Slice) -> Result<Self, Self::Error> {
-        match value {
-            Slice::Positive { offset, len } => Ok((i64::try_from(offset)?, len)),
+        Ok(match value {
+            Slice::Positive { offset, len } => (i64::try_from(offset)?, len),
             Slice::Negative {
                 offset_from_end,
                 len,
-            } => Ok((-i64::try_from(offset_from_end)?, len)),
+            } => (-i64::try_from(offset_from_end)?, len),
+        })
+    }
+}
+
+impl From<Slice> for (i128, i128) {
+    fn from(value: Slice) -> Self {
+        match value {
+            Slice::Positive { offset, len } => (
+                i128::try_from(offset).unwrap(),
+                i128::try_from(len).unwrap(),
+            ),
+            Slice::Negative {
+                offset_from_end,
+                len,
+            } => (
+                -i128::try_from(offset_from_end).unwrap(),
+                i128::try_from(len).unwrap(),
+            ),
         }
     }
 }

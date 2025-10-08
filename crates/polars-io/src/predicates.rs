@@ -4,7 +4,7 @@ use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
-use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, ParquetScalarRange};
+use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -16,16 +16,24 @@ pub trait PhysicalIoExpr: Send + Sync {
 }
 
 #[derive(Debug, Clone)]
-pub enum SpecializedColumnPredicateExpr {
-    Eq(Scalar),
-    EqMissing(Scalar),
+pub enum SpecializedColumnPredicate {
+    Equal(Scalar),
+
+    Between(Scalar, Scalar),
+
+    EqualOneOf(Box<[Scalar]>),
+
+    StartsWith(Box<[u8]>),
+    EndsWith(Box<[u8]>),
+    StartEndsWith(Box<[u8]>, Box<[u8]>),
 }
 
 #[derive(Clone)]
 pub struct ColumnPredicateExpr {
     column_name: PlSmallStr,
     dtype: DataType,
-    specialized: Option<SpecializedColumnPredicateExpr>,
+    #[cfg(feature = "parquet")]
+    specialized: Option<SpecializedParquetColumnExpr>,
     expr: Arc<dyn PhysicalIoExpr>,
 }
 
@@ -34,24 +42,37 @@ impl ColumnPredicateExpr {
         column_name: PlSmallStr,
         dtype: DataType,
         expr: Arc<dyn PhysicalIoExpr>,
-        specialized: Option<SpecializedColumnPredicateExpr>,
+        specialized: Option<SpecializedColumnPredicate>,
     ) -> Self {
+        use SpecializedColumnPredicate as S;
+        #[cfg(feature = "parquet")]
+        use SpecializedParquetColumnExpr as P;
+        #[cfg(feature = "parquet")]
+        let specialized = specialized.and_then(|s| {
+            Some(match s {
+                S::Equal(s) => P::Equal(cast_to_parquet_scalar(s)?),
+                S::Between(low, high) => {
+                    P::Between(cast_to_parquet_scalar(low)?, cast_to_parquet_scalar(high)?)
+                },
+                S::EqualOneOf(scalars) => P::EqualOneOf(
+                    scalars
+                        .into_iter()
+                        .map(|s| cast_to_parquet_scalar(s).ok_or(()))
+                        .collect::<Result<Box<_>, ()>>()
+                        .ok()?,
+                ),
+                S::StartsWith(s) => P::StartsWith(s),
+                S::EndsWith(s) => P::EndsWith(s),
+                S::StartEndsWith(start, end) => P::StartEndsWith(start, end),
+            })
+        });
+
         Self {
             column_name,
             dtype,
+            #[cfg(feature = "parquet")]
             specialized,
             expr,
-        }
-    }
-
-    pub fn is_eq_scalar(&self) -> bool {
-        self.to_eq_scalar().is_some()
-    }
-    pub fn to_eq_scalar(&self) -> Option<&Scalar> {
-        match &self.specialized {
-            Some(SpecializedColumnPredicateExpr::Eq(sc)) if !sc.is_null() => Some(sc),
-            Some(SpecializedColumnPredicateExpr::EqMissing(sc)) => Some(sc),
-            _ => None,
         }
     }
 }
@@ -92,13 +113,8 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         true_mask.get(0).unwrap_or(false)
     }
 
-    fn to_equals_scalar(&self) -> Option<ParquetScalar> {
-        self.to_eq_scalar()
-            .and_then(|s| cast_to_parquet_scalar(s.clone()))
-    }
-
-    fn to_range_scalar(&self) -> Option<ParquetScalarRange> {
-        None
+    fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {
+        self.specialized.as_ref()
     }
 }
 
@@ -134,10 +150,9 @@ fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
 
         // @TODO: Cast to string
         #[cfg(feature = "dtype-categorical")]
-        A::Categorical(_, _, _)
-        | A::CategoricalOwned(_, _, _)
-        | A::Enum(_, _, _)
-        | A::EnumOwned(_, _, _) => return None,
+        A::Categorical(_, _) | A::CategoricalOwned(_, _) | A::Enum(_, _) | A::EnumOwned(_, _) => {
+            return None;
+        },
 
         A::String(v) => P::String(v.into()),
         A::StringOwned(v) => P::String(v.as_str().into()),
@@ -387,13 +402,8 @@ pub trait SkipBatchPredicate: Send + Sync {
 
 #[derive(Clone)]
 pub struct ColumnPredicates {
-    pub predicates: PlHashMap<
-        PlSmallStr,
-        (
-            Arc<dyn PhysicalIoExpr>,
-            Option<SpecializedColumnPredicateExpr>,
-        ),
-    >,
+    pub predicates:
+        PlHashMap<PlSmallStr, (Arc<dyn PhysicalIoExpr>, Option<SpecializedColumnPredicate>)>,
     pub is_sumwise_complete: bool,
 }
 
@@ -458,7 +468,13 @@ pub struct ScanIOPredicate {
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub column_predicates: Arc<ColumnPredicates>,
+
+    /// Predicate parts only referring to hive columns.
+    pub hive_predicate: Option<Arc<dyn PhysicalIoExpr>>,
+
+    pub hive_predicate_is_full_predicate: bool,
 }
+
 impl ScanIOPredicate {
     pub fn set_external_constant_columns(&mut self, constant_columns: Vec<(PlSmallStr, Scalar)>) {
         if constant_columns.is_empty() {

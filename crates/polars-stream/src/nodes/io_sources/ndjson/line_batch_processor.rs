@@ -12,7 +12,7 @@ use crate::async_primitives::linearizer::Inserter;
 use crate::morsel::SourceToken;
 use crate::nodes::MorselSeq;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 
 /// Parses chunks into DataFrames (or counts rows depending on state).
 pub(super) struct LineBatchProcessor {
@@ -73,10 +73,7 @@ impl LineBatchProcessor {
 
         if needs_total_row_count {
             if verbose {
-                eprintln!(
-                    "[NDJSON LineBatchProcessor {}]: entering row count mode",
-                    worker_idx
-                );
+                eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: entering row count mode");
             }
 
             while let Ok(LineBatch {
@@ -89,7 +86,7 @@ impl LineBatchProcessor {
         }
 
         if verbose {
-            eprintln!("[NDJSON LineBatchProcessor {}]: returning", worker_idx);
+            eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: returning");
         }
 
         Ok(n_rows_processed)

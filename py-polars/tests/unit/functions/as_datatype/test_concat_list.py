@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 import polars as pl
@@ -94,14 +96,12 @@ def test_list_concat_supertype() -> None:
     ].to_list() == [[1, 10000], [2, 20000]]
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_list_concat_4762() -> None:
     df = pl.DataFrame({"x": "a"})
     expected = {"x": [["a", "a"]]}
 
     q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
-    with pl.StringCache():
-        assert q.collect().to_dict(as_series=False) == expected
+    assert q.collect().to_dict(as_series=False) == expected
 
 
 def test_list_concat_rolling_window() -> None:
@@ -185,8 +185,8 @@ def test_cross_join_concat_list_18587() -> None:
     lf3 = lf.select(pl.struct(pl.all()).alias("3"))
 
     result = (
-        lf1.join(lf2, how="cross")
-        .join(lf3, how="cross")
+        lf1.join(lf2, how="cross", maintain_order="left_right")
+        .join(lf3, how="cross", maintain_order="left_right")
         .select(pl.concat_list("1", "2", "3"))
         .collect()
     )
@@ -195,3 +195,24 @@ def test_cross_join_concat_list_18587() -> None:
     expected = [[a, b, c] for a in vals for b in vals for c in vals]
 
     assert result["1"].to_list() == expected
+
+
+def test_datetime_broadcast_concat_list_23102() -> None:
+    df = pl.DataFrame(
+        {"timestamps": [[datetime(2024, 1, 1)], [datetime(2024, 1, 2)]]},
+        schema={"timestamps": pl.List(pl.Datetime())},
+    )
+
+    new_timestamp = pl.lit([datetime(2024, 2, 1)], dtype=pl.List(pl.Datetime()))
+
+    out = df.with_columns(pl.col("timestamps").list.concat(new_timestamp))
+    expected = pl.DataFrame(
+        {
+            "timestamps": [
+                [datetime(2024, 1, 1), datetime(2024, 2, 1)],
+                [datetime(2024, 1, 2), datetime(2024, 2, 1)],
+            ]
+        },
+        schema={"timestamps": pl.List(pl.Datetime())},
+    )
+    assert_frame_equal(out, expected)

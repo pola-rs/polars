@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
+use polars_utils::plpath::PlPath;
 
 #[test]
 #[cfg(feature = "csv")]
@@ -23,7 +24,7 @@ fn iss_7437() -> PolarsResult<()> {
         .collect()?
         .sort(["category"], SortMultipleOptions::default())?;
 
-    let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
+    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
         .finish()?
         .group_by(vec![col("category").alias("category")])
         .agg(vec![])
@@ -56,7 +57,7 @@ fn iss_7436() {
         .unwrap()
         .collect()
         .unwrap();
-    let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
+    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
         .finish()
         .unwrap()
         .select(&[
@@ -156,4 +157,52 @@ fn iss_8419() {
     let df = ctx.execute(query).unwrap().collect().unwrap();
 
     assert!(df.equals(&expected))
+}
+
+#[test]
+fn iss_23134() -> PolarsResult<()> {
+    // Reproduce issue: https://github.com/pola-rs/polars/issues/23134
+    // Applying function to a column of group_by results in a list
+
+    // Create test data
+    let df = df! {
+        "a" => ["a", "a", "b"],
+        "b" => [1, 1, 2]
+    }?;
+
+    let mut ctx = SQLContext::new();
+    ctx.register("test", df.lazy());
+
+    let result1 = ctx
+        .execute("SELECT a, b FROM test GROUP BY a, b")?
+        .collect()?;
+
+    // This should return 2 rows with distinct (a, b) pairs
+    assert_eq!(result1.height(), 2);
+
+    let result2 = ctx
+        .execute("SELECT CONCAT(a, ' kek') as c, b FROM test GROUP BY a, b")?
+        .collect()?;
+
+    // Check the result structure
+    let c_column = result2.column("c")?;
+
+    // BUG: Currently returns List[String] instead of String
+    // The issue is that it returns ["a kek", "a kek"] and ["b kek"] instead of "a kek" and "b kek"
+    assert_eq!(c_column.dtype(), &DataType::String);
+
+    let result3 = ctx
+        .execute("SELECT CONCAT(a, ' kek'), b FROM test GROUP BY a, b")?
+        .collect()?;
+
+    // Check the result structure
+    let columns: Vec<String> = result3
+        .get_column_names()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+    // a and b
+    assert_eq!(columns, vec!["a", "b"]);
+
+    Ok(())
 }

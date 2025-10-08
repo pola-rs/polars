@@ -1,4 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+mod any_all;
+#[cfg(feature = "bitwise")]
+mod bitwise;
 mod convert;
 mod count;
 mod first_last;
@@ -15,6 +18,7 @@ use std::marker::PhantomData;
 use arrow::array::{Array, PrimitiveArray, StaticArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 pub use convert::into_reduction;
+pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_core::prelude::*;
 
 use crate::EvictIdx;
@@ -109,7 +113,7 @@ pub trait GroupedReduction: Any + Send + Sync {
 // Helper traits used in the VecGroupedReduction and VecMaskGroupedReduction to
 // reduce code duplication.
 pub trait Reducer: Send + Sync + Clone + 'static {
-    type Dtype: PolarsDataType<IsLogical = FalseT>;
+    type Dtype: PolarsPhysicalType;
     type Value: Clone + Send + Sync + 'static;
     fn init(&self) -> Self::Value;
     #[inline(always)]
@@ -389,7 +393,7 @@ where
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
-        let values = values.to_physical_repr();
+        let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         self.reducer
             .reduce_ca(&mut self.values[group_idx as usize], ca, seq_id);
@@ -410,7 +414,7 @@ where
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
-        let values = values.to_physical_repr();
+        let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         unsafe {
@@ -508,20 +512,23 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn update_group(
         &mut self,
-        _values: &Column,
+        values: &Column,
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.dtype);
         Ok(())
     }
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        _values: &Column,
-        _subset: &[IdxSize],
+        values: &Column,
+        subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.dtype);
+        assert!(subset.len() == group_idxs.len());
         for g in group_idxs {
             self.num_evictions += g.should_evict() as IdxSize;
         }
@@ -530,10 +537,13 @@ impl GroupedReduction for NullGroupedReduction {
 
     unsafe fn combine_subset(
         &mut self,
-        _other: &dyn GroupedReduction,
-        _subset: &[IdxSize],
-        _group_idxs: &[IdxSize],
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
     ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.dtype == other.dtype);
+        assert!(subset.len() == group_idxs.len());
         Ok(())
     }
 

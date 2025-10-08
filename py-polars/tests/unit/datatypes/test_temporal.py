@@ -177,15 +177,13 @@ def test_series_add_datetime() -> None:
 def test_diff_datetime() -> None:
     df = pl.DataFrame(
         {
-            "timestamp": ["2021-02-01", "2021-03-1", "2850-04-1"],
+            "timestamp": [date(2021, 2, 1), date(2021, 3, 1), date(2850, 4, 1)],
             "guild": [1, 2, 3],
             "char": ["a", "a", "b"],
         }
     )
-    out = (
-        df.with_columns(
-            pl.col("timestamp").str.strptime(pl.Date, format="%Y-%m-%d"),
-        ).with_columns(pl.col("timestamp").diff().over("char", mapping_strategy="join"))
+    out = df.with_columns(
+        pl.col("timestamp").diff().over("char", mapping_strategy="join")
     )["timestamp"]
     assert_series_equal(out[0], out[1])
 
@@ -419,9 +417,7 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    with pytest.deprecated_call(
-        match="`ExprDateTimeNameSpace.with_time_unit` is deprecated"
-    ):
+    with pytest.deprecated_call(match="`dt.with_time_unit` is deprecated"):
         s1 = (
             pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
             .cast(pl.Datetime)
@@ -473,7 +469,7 @@ def test_datetime_comp_tz_aware_invalid() -> None:
     other = datetime(2020, 1, 1)
     with pytest.raises(
         TypeError,
-        match="Datetime time zone None does not match Series timezone 'Asia/Kathmandu'",
+        match="datetime time zone None does not match Series timezone 'Asia/Kathmandu'",
     ):
         _ = a > other
 
@@ -731,24 +727,31 @@ def test_asof_join() -> None:
         1464183000048,
         1464183000048,
     ]
-    assert trades.join_asof(quotes, on="dates", strategy="forward")[
-        "bid_right"
-    ].to_list() == [720.5, 51.99, 720.5, 720.5, 720.5]
+    assert_series_equal(
+        trades.join_asof(quotes, on="dates", strategy="forward")["bid_right"],
+        pl.Series("bid_right", [720.5, 51.99, 720.5, 720.5, 720.5]),
+    )
 
     out = trades.join_asof(quotes, on="dates", by="ticker")
     assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
 
     out = quotes.join_asof(trades, on="dates", by="ticker")
-    assert out["bid_right"].to_list() == [
-        None,
-        51.95,
-        51.95,
-        51.95,
-        720.92,
-        98.0,
-        720.92,
-        51.95,
-    ]
+    assert_series_equal(
+        out["bid_right"],
+        pl.Series(
+            "bid_right",
+            [
+                None,
+                51.95,
+                51.95,
+                51.95,
+                720.92,
+                98.0,
+                720.92,
+                51.95,
+            ],
+        ),
+    )
     assert quotes.join_asof(trades, on="dates", strategy="backward", tolerance="5ms")[
         "bid_right"
     ].to_list() == [51.95, 51.95, None, 51.95, 98.0, 98.0, None, None]
@@ -2115,7 +2118,7 @@ def test_truncate_by_multiple_weeks_diffs() -> None:
             "2w": [timedelta(0), timedelta(days=14)],
             "3w": [timedelta(0), timedelta(days=21)],
         }
-    ).select(pl.all().cast(pl.Duration("ms")))
+    ).select(pl.all().cast(pl.Duration("us")))
     assert_frame_equal(result, expected)
 
 
@@ -2469,3 +2472,50 @@ def test_temporal_downcast_construction_19309() -> None:
         datetime(1970, 1, 1),
         datetime(1970, 1, 1),
     ]
+
+
+def test_timezone_ignore_error(
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dtype = pl.Datetime(time_zone="non-existent")
+
+    capfd.readouterr()
+
+    with pytest.raises(
+        ComputeError,
+        match=(
+            "unable to parse time zone: 'non-existent'"
+            ".*POLARS_IGNORE_TIMEZONE_PARSE_ERROR"
+        ),
+    ):
+        pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")
+        capfd.readouterr()
+
+        df = pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
+
+        assert df.dtypes[0] == dtype
+
+        capture = capfd.readouterr().err
+
+        assert (
+            "WARN: unable to parse time zone: 'non-existent'. Please check the "
+            "Time Zone Database for a list of available time zones."
+        ) in capture
+
+        tbl = df.to_arrow()
+
+        assert tbl.schema[0].type.tz == "non-existent"
+
+        assert_frame_equal(pl.DataFrame(tbl), df)
+
+    with pytest.raises(
+        ComputeError,
+        match="unable to parse time zone: 'non-existent'",
+    ):
+        pl.DataFrame(tbl)

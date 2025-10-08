@@ -122,10 +122,10 @@ fn decimal_serializer<'a>(
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
     let trim_zeros = get_trim_decimal_zeros();
-    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
+    let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
     let f = move |x: Option<&i128>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
-            utf8::write_str(buf, fmt_buf.format(*x, scale, trim_zeros)).unwrap()
+            utf8::write_str(buf, fmt_buf.format_dec128(*x, scale, trim_zeros, false)).unwrap()
         } else {
             buf.extend(b"null")
         }
@@ -276,7 +276,11 @@ fn fixed_size_list_serializer<'a>(
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
-    let mut serializer = new_serializer(array.values().as_ref(), offset, take);
+    let mut serializer = new_serializer(
+        array.values().as_ref(),
+        offset * array.size(),
+        take * array.size(),
+    );
 
     Box::new(BufStreamingIterator::new(
         ZipValidity::new(0..array.len(), array.validity().map(|x| x.iter())),
@@ -422,7 +426,7 @@ fn timestamp_tz_serializer<'a>(
                 materialize_serializer(f, array.iter(), offset, take)
             },
             _ => {
-                panic!("Timezone {} is invalid or not supported", tz);
+                panic!("Timezone {tz} is invalid or not supported");
             },
         },
         #[cfg(not(feature = "timezones"))]
@@ -491,6 +495,20 @@ pub(crate) fn new_serializer<'a>(
             list_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Dictionary(k, v, _) => match (k, &**v) {
+            (IntegerType::UInt8, ArrowDataType::Utf8View) => {
+                let array = array
+                    .as_any()
+                    .downcast_ref::<DictionaryArray<u8>>()
+                    .unwrap();
+                dictionary_utf8view_serializer::<u8>(array, offset, take)
+            },
+            (IntegerType::UInt16, ArrowDataType::Utf8View) => {
+                let array = array
+                    .as_any()
+                    .downcast_ref::<DictionaryArray<u16>>()
+                    .unwrap();
+                dictionary_utf8view_serializer::<u16>(array, offset, take)
+            },
             (IntegerType::UInt32, ArrowDataType::Utf8View) => {
                 let array = array
                     .as_any()
@@ -514,7 +532,7 @@ pub(crate) fn new_serializer<'a>(
                 TimeUnit::Nanosecond => timestamp_ns_to_datetime,
                 TimeUnit::Microsecond => timestamp_us_to_datetime,
                 TimeUnit::Millisecond => timestamp_ms_to_datetime,
-                tu => panic!("Invalid time unit '{:?}' for Datetime.", tu),
+                tu => panic!("Invalid time unit '{tu:?}' for Datetime."),
             };
             timestamp_serializer(
                 array.as_any().downcast_ref().unwrap(),
@@ -535,7 +553,7 @@ pub(crate) fn new_serializer<'a>(
                 TimeUnit::Nanosecond => duration_ns_to_duration,
                 TimeUnit::Microsecond => duration_us_to_duration,
                 TimeUnit::Millisecond => duration_ms_to_duration,
-                tu => panic!("Invalid time unit '{:?}' for Duration.", tu),
+                tu => panic!("Invalid time unit '{tu:?}' for Duration."),
             };
             duration_serializer(
                 array.as_any().downcast_ref().unwrap(),
@@ -547,7 +565,7 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Time64(tu) => {
             let convert = match tu {
                 TimeUnit::Nanosecond => time64ns_to_time,
-                tu => panic!("Invalid time unit '{:?}' for Time.", tu),
+                tu => panic!("Invalid time unit '{tu:?}' for Time."),
             };
             time_serializer(
                 array.as_any().downcast_ref().unwrap(),

@@ -18,18 +18,15 @@ impl Series {
                 ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(rev_map, ord) | DataType::Enum(rev_map, ord)) => {
-                let mut ca = CategoricalChunked::full_null(
-                    name,
-                    matches!(dt, DataType::Enum(_, _)),
-                    size,
-                    *ord,
-                );
-                // ensure we keep the rev-map of a cleared series
-                if let Some(rev_map) = rev_map {
-                    unsafe { ca.set_rev_map(rev_map.clone(), false) }
-                }
-                ca.into_series()
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    CategoricalChunked::<$C>::full_null_with_dtype(
+                        name,
+                        size,
+                        dtype.clone()
+                    )
+                        .into_series()
+                })
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => Int32Chunked::full_null(name, size)
@@ -49,7 +46,7 @@ impl Series {
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => Int128Chunked::full_null(name, size)
-                .into_decimal_unchecked(*precision, scale.unwrap_or(0))
+                .into_decimal_unchecked(*precision, *scale)
                 .into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {

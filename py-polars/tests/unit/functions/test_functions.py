@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import ConcatMethod
@@ -522,6 +523,7 @@ def test_overflow_diff() -> None:
     }
 
 
+@pytest.mark.may_fail_cloud  # reason: unknown type
 def test_fill_null_unknown_output_type() -> None:
     df = pl.DataFrame({"a": [None, 2, 3, 4, 5]})
     assert df.with_columns(
@@ -537,18 +539,17 @@ def test_fill_null_unknown_output_type() -> None:
     }
 
 
-def test_approx_n_unique() -> None:
-    df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
+@pytest.mark.parametrize(("dtype"), [*NUMERIC_DTYPES, *TEMPORAL_DTYPES])
+def test_approx_n_unique(dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"a": pl.arange(100, eager=True).cast(dtype)})
+    cardinality = df.select(pl.col("a").approx_n_unique()).to_series()[0]
+    assert 95 <= cardinality <= 100
 
-    assert_frame_equal(
-        df1.select(pl.approx_n_unique("b")),
-        pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
-    )
 
-    assert_frame_equal(
-        df1.select(pl.col("b").approx_n_unique()),
-        pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
-    )
+def test_approx_n_unique_null() -> None:
+    df = pl.DataFrame({"a": 100 * [None]})
+    cardinality = df.select(pl.col("a").approx_n_unique()).to_series()[0]
+    assert cardinality == 1
 
 
 def test_lazy_functions() -> None:
@@ -664,3 +665,67 @@ def test_escape_regex() -> None:
         match="escape_regex function supports only `str` type, got `int`",
     ):
         pl.escape_regex(3)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("func", ["var", "std"])
+def test_var_std_lit_23156(func: str) -> None:
+    for n in range(100):
+        input = pl.DataFrame({"x": list(range(n))}).select(pl.col("x"), pl.lit(0))
+        out = getattr(input, func)()
+        if n <= 1:
+            assert_series_equal(
+                out["literal"], pl.Series("literal", [None], dtype=pl.Float64)
+            )
+        else:
+            assert_series_equal(
+                out["literal"], pl.Series("literal", [0.0], dtype=pl.Float64)
+            )
+
+
+def test_row_index_expr() -> None:
+    lf = pl.LazyFrame({"x": ["A", "A", "B", "B", "B"]})
+
+    assert_frame_equal(
+        lf.with_columns(pl.row_index(), pl.row_index("another_index")).collect(),
+        pl.DataFrame(
+            {
+                "x": ["A", "A", "B", "B", "B"],
+                "index": [0, 1, 2, 3, 4],
+                "another_index": [0, 1, 2, 3, 4],
+            },
+            schema={
+                "x": pl.String,
+                "index": pl.get_index_type(),
+                "another_index": pl.get_index_type(),
+            },
+        ),
+    )
+
+    assert_frame_equal(
+        (
+            lf.group_by("x")
+            .agg(pl.row_index(), pl.row_index("another_index"))
+            .sort("x")
+            .collect()
+        ),
+        pl.DataFrame(
+            {
+                "x": ["A", "B"],
+                "index": [[0, 1], [0, 1, 2]],
+                "another_index": [[0, 1], [0, 1, 2]],
+            },
+            schema={
+                "x": pl.String,
+                "index": pl.List(pl.get_index_type()),
+                "another_index": pl.List(pl.get_index_type()),
+            },
+        ),
+    )
+
+    assert_frame_equal(
+        lf.select(pl.row_index()).collect(),
+        pl.DataFrame(
+            {"index": [0, 1, 2, 3, 4]},
+            schema={"index": pl.get_index_type()},
+        ),
+    )

@@ -2,9 +2,9 @@
 
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::path::PathBuf;
 
 use polars_error::{PolarsResult, polars_bail, to_compute_err};
+use polars_utils::plpath::PlPath;
 
 use crate::cloud::{
     CloudConfig, CloudOptions, Matcher, extract_prefix_expansion,
@@ -213,11 +213,11 @@ impl GetPages<'_> {
 }
 
 pub(super) async fn expand_paths_hf(
-    paths: &[PathBuf],
+    paths: &[PlPath],
     check_directory_level: bool,
-    cloud_options: Option<&CloudOptions>,
+    cloud_options: &Option<CloudOptions>,
     glob: bool,
-) -> PolarsResult<(usize, Vec<PathBuf>)> {
+) -> PolarsResult<(usize, Vec<PlPath>)> {
     assert!(!paths.is_empty());
 
     let client = reqwest::ClientBuilder::new().http1_only().https_only(true);
@@ -246,7 +246,7 @@ pub(super) async fn expand_paths_hf(
     };
 
     for (path_idx, path) in paths.iter().enumerate() {
-        let path_parts = &HFPathParts::try_from_uri(path.to_str().unwrap())?;
+        let path_parts = &HFPathParts::try_from_uri(path.to_str())?;
         let repo_location = &HFRepoLocation::new(
             &path_parts.bucket,
             &path_parts.repository,
@@ -265,24 +265,24 @@ pub(super) async fn expand_paths_hf(
             None
         };
 
-        if !path_parts.path.ends_with("/") && expansion.is_none() {
-            hive_idx_tracker.update(0, path_idx)?;
-            let file_uri = repo_location.get_file_uri(rel_path);
-            let file_uri = file_uri.as_str();
+        let file_uri = repo_location.get_file_uri(rel_path);
 
+        if !path_parts.path.ends_with("/") && expansion.is_none() {
+            // Confirm that this is a file using a HEAD request.
             if with_concurrency_budget(1, || async {
-                client.head(file_uri).send().await.map_err(to_compute_err)
+                client.head(&file_uri).send().await.map_err(to_compute_err)
             })
             .await?
             .status()
                 == 200
             {
-                out_paths.push(PathBuf::from(file_uri));
+                hive_idx_tracker.update(0, path_idx)?;
+                out_paths.push(PlPath::from_string(file_uri));
                 continue;
             }
         }
 
-        hive_idx_tracker.update(repo_location.get_file_uri(rel_path).len(), path_idx)?;
+        hive_idx_tracker.update(file_uri.len(), path_idx)?;
 
         assert!(stack.is_empty());
         stack.push_back(prefix.into_owned());
@@ -318,7 +318,7 @@ pub(super) async fn expand_paths_hf(
 
             for e in entries.drain(..) {
                 if e.is_file() {
-                    out_paths.push(PathBuf::from(repo_location.get_file_uri(&e.path)));
+                    out_paths.push(PlPath::from_string(repo_location.get_file_uri(&e.path)));
                 } else if e.is_directory() {
                     stack.push_back(e.path);
                 }
@@ -329,7 +329,7 @@ pub(super) async fn expand_paths_hf(
     Ok((hive_idx_tracker.idx, out_paths))
 }
 
-fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode {
+fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode<'_> {
     percent_encoding::percent_encode(bytes, URL_ENCODE_CHAR_SET)
 }
 
@@ -384,7 +384,7 @@ mod tests {
             if out.is_err() {
                 continue;
             }
-            panic!("expected err result for uri {} instead of {:?}", uri, out);
+            panic!("expected err result for uri {uri} instead of {out:?}");
         }
     }
 

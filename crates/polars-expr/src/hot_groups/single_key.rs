@@ -19,7 +19,6 @@ pub struct SingleKeyHashHotGrouper<T: PolarsDataType> {
 
 impl<K, T: PolarsDataType> SingleKeyHashHotGrouper<T>
 where
-    ChunkedArray<T>: IntoSeries,
     for<'a> T: PolarsDataType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq + Send + Sync + 'static,
 {
@@ -37,12 +36,14 @@ where
     fn insert_key<R: BuildHasher>(
         &mut self,
         k: T::Physical<'static>,
+        force_hot: bool,
         random_state: &R,
     ) -> Option<EvictIdx> {
         let h = random_state.tot_hash_one(&k);
         self.table.insert_key(
             h,
             k,
+            force_hot,
             |a, b| a.tot_eq(b),
             |k| k,
             |k, ev_k| self.evicted_keys.push(core::mem::replace(ev_k, k)),
@@ -86,8 +87,7 @@ where
 
 impl<K, T> HotGrouper for SingleKeyHashHotGrouper<T>
 where
-    ChunkedArray<T>: IntoSeries,
-    for<'a> T: PolarsDataType<Physical<'a> = K>,
+    for<'a> T: PolarsPhysicalType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq + Clone + Send + Sync + 'static,
 {
     fn new_empty(&self, max_groups: usize) -> Box<dyn HotGrouper> {
@@ -104,6 +104,7 @@ where
         hot_idxs: &mut Vec<IdxSize>,
         hot_group_idxs: &mut Vec<EvictIdx>,
         cold_idxs: &mut Vec<IdxSize>,
+        force_hot: bool,
     ) {
         let HashKeys::Single(hash_keys) = hash_keys else {
             unreachable!()
@@ -134,7 +135,7 @@ where
                 if hash_keys.null_is_valid {
                     for opt_k in arr.iter() {
                         if let Some(k) = opt_k {
-                            push_g(idx, self.insert_key(k, &hash_keys.random_state));
+                            push_g(idx, self.insert_key(k, force_hot, &hash_keys.random_state));
                         } else {
                             push_g(idx, self.insert_null());
                         }
@@ -143,14 +144,14 @@ where
                 } else {
                     for opt_k in arr.iter() {
                         if let Some(k) = opt_k {
-                            push_g(idx, self.insert_key(k, &hash_keys.random_state));
+                            push_g(idx, self.insert_key(k, force_hot, &hash_keys.random_state));
                         }
                         idx += 1;
                     }
                 }
             } else {
                 for k in arr.values_iter() {
-                    let g = self.insert_key(k, &hash_keys.random_state);
+                    let g = self.insert_key(k, force_hot, &hash_keys.random_state);
                     push_g(idx, g);
                     idx += 1;
                 }

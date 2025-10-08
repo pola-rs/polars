@@ -29,13 +29,17 @@ def test_cse_expr_selection_streaming(monkeypatch: Any) -> None:
         (derived2 * 10).alias("d3"),
     ]
 
-    result = q.select(exprs).collect(comm_subexpr_elim=True, engine="streaming")
+    result = q.select(exprs).collect(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True), engine="streaming"
+    )
     expected = pl.DataFrame(
         {"d1": [1, 4, 9, 16], "d2": [1, 16, 81, 256], "d3": [10, 160, 810, 2560]}
     )
     assert_frame_equal(result, expected)
 
-    result = q.with_columns(exprs).collect(comm_subexpr_elim=True, engine="streaming")
+    result = q.with_columns(exprs).collect(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True), engine="streaming"
+    )
     expected = pl.DataFrame(
         {
             "a": [1, 2, 3, 4],
@@ -66,21 +70,16 @@ def test_cse_expr_group_by() -> None:
         .sort("min")
     )
 
-    assert "__POLARS_CSER" in q.explain(comm_subexpr_elim=True, optimized=True)
-
-    s = q.explain(
-        comm_subexpr_elim=True,
-        optimized=True,
-        engine="old-streaming",  # type: ignore[arg-type]
-        comm_subplan_elim=False,
+    assert "__POLARS_CSER" in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
     )
-    assert s.startswith("STREAMING")
 
     expected = pl.DataFrame(
         {"a": [1, 2, 3, 4], "sum": [1, 4, 9, 16], "min": [1, 4, 9, 16]}
     )
     for streaming in [True, False]:
         out = q.collect(
-            comm_subexpr_elim=True, engine="streaming" if streaming else "in-memory"
+            optimizations=pl.QueryOptFlags(comm_subexpr_elim=True),
+            engine="streaming" if streaming else "in-memory",
         )
         assert_frame_equal(out, expected)

@@ -130,16 +130,20 @@ where
 }
 
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-impl IntoGroupsType for CategoricalChunked {
+impl<T: PolarsCategoricalType> IntoGroupsType for CategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>: IntoGroupsType,
+{
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        Ok(self.group_tuples_perfect(multithreaded, sorted))
+        self.phys.group_tuples(multithreaded, sorted)
     }
 }
 
 impl<T> IntoGroupsType for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast,
+    T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         // sorted path
@@ -147,94 +151,32 @@ where
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
             return Ok(GroupsType::Slice {
                 groups: self.rechunk().create_groups_from_sorted(multithreaded),
-                rolling: false,
+                overlapping: false,
             });
         }
 
         let out = match self.dtype() {
-            DataType::UInt64 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt64Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
-                };
-                num_groups_proxy(ca, multithreaded, sorted)
-            },
-            DataType::UInt32 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt32Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
-                };
-                num_groups_proxy(ca, multithreaded, sorted)
-            },
-            DataType::Int64 => {
-                let BitRepr::Large(ca) = self.to_bit_repr() else {
-                    unreachable!()
-                };
-                num_groups_proxy(&ca, multithreaded, sorted)
-            },
-            DataType::Int32 => {
-                let BitRepr::Small(ca) = self.to_bit_repr() else {
-                    unreachable!()
-                };
-                num_groups_proxy(&ca, multithreaded, sorted)
-            },
-            DataType::Float64 => {
-                // convince the compiler that we are this type.
-                let ca: &Float64Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float64Type>)
-                };
-                num_groups_proxy(ca, multithreaded, sorted)
-            },
             DataType::Float32 => {
-                // convince the compiler that we are this type.
+                // Convince the compiler that we are this type.
                 let ca: &Float32Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float32Type>)
                 };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => {
-                // convince the compiler that we are this type.
-                let ca: &Int128Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int128Type>)
+            DataType::Float64 => {
+                // Convince the compiler that we are this type.
+                let ca: &Float64Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float64Type>)
                 };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
-            DataType::Int8 => {
-                // convince the compiler that we are this type.
-                let ca: &Int8Chunked =
-                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int8Type>) };
-                let s = ca.reinterpret_unsigned();
-                return s.group_tuples(multithreaded, sorted);
-            },
-            #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
-            DataType::UInt8 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt8Chunked =
-                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt8Type>) };
-                num_groups_proxy(ca, multithreaded, sorted)
-            },
-            #[cfg(all(feature = "performant", feature = "dtype-i16", feature = "dtype-u16"))]
-            DataType::Int16 => {
-                // convince the compiler that we are this type.
-                let ca: &Int16Chunked =
-                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int16Type>) };
-                let s = ca.reinterpret_unsigned();
-                return s.group_tuples(multithreaded, sorted);
-            },
-            #[cfg(all(feature = "performant", feature = "dtype-i16", feature = "dtype-u16"))]
-            DataType::UInt16 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt16Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt16Type>)
-                };
-                num_groups_proxy(ca, multithreaded, sorted)
-            },
-            _ => {
-                let ca = unsafe { self.cast_unchecked(&DataType::UInt32).unwrap() };
-                let ca = ca.u32().unwrap();
-                num_groups_proxy(ca, multithreaded, sorted)
+            _ => match self.to_bit_repr() {
+                BitRepr::U8(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                BitRepr::U16(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                BitRepr::U32(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                BitRepr::U64(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                #[cfg(feature = "dtype-u128")]
+                BitRepr::U128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
             },
         };
         try_raise_keyboard_interrupt();
@@ -285,7 +227,7 @@ impl IntoGroupsType for BinaryChunked {
             partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
             return Ok(GroupsType::Slice {
                 groups: out,
-                rolling: false,
+                overlapping: false,
             });
         }
 
@@ -319,7 +261,7 @@ impl IntoGroupsType for BinaryOffsetChunked {
             partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
             return Ok(GroupsType::Slice {
                 groups: out,
-                rolling: false,
+                overlapping: false,
             });
         }
         multithreaded &= POOL.current_num_threads() > 1;
@@ -361,8 +303,19 @@ impl IntoGroupsType for ListChunked {
 impl IntoGroupsType for ArrayChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]
-    fn group_tuples<'a>(&'a self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
-        todo!("grouping FixedSizeList not yet supported")
+    fn group_tuples<'a>(
+        &'a self,
+        mut multithreaded: bool,
+        sorted: bool,
+    ) -> PolarsResult<GroupsType> {
+        multithreaded &= POOL.current_num_threads() > 1;
+        let by = &[self.clone().into_column()];
+        let ca = if multithreaded {
+            encode_rows_vertical_par_unordered(by).unwrap()
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, by).unwrap()
+        };
+        ca.group_tuples(multithreaded, sorted)
     }
 }
 

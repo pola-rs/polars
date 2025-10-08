@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 /// Options for writing CSV files.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvWriterOptions {
     pub include_bom: bool,
     pub include_header: bool,
@@ -29,6 +30,7 @@ impl Default for CsvWriterOptions {
 /// The default is to format times and dates as `chrono` crate formats them.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SerializeOptions {
     /// Used for [`DataType::Date`](polars_core::datatypes::DataType::Date).
     pub date_format: Option<String>,
@@ -40,6 +42,8 @@ pub struct SerializeOptions {
     /// and [`DataType::Float32`](polars_core::datatypes::DataType::Float32).
     pub float_scientific: Option<bool>,
     pub float_precision: Option<usize>,
+    /// Use comma as the decimal separator.
+    pub decimal_comma: bool,
     /// Used as separator.
     pub separator: u8,
     /// Quoting character.
@@ -60,6 +64,7 @@ impl Default for SerializeOptions {
             datetime_format: None,
             float_scientific: None,
             float_precision: None,
+            decimal_comma: false,
             separator: b',',
             quote_char: b'"',
             null: String::new(),
@@ -72,6 +77,7 @@ impl Default for SerializeOptions {
 /// Quote style indicating when to insert quotes around a field.
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum QuoteStyle {
     /// Quote fields only when necessary.
     ///

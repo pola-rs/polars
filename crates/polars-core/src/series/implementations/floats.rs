@@ -12,7 +12,7 @@ macro_rules! impl_dyn_series {
             fn compute_len(&mut self) {
                 self.0.compute_len()
             }
-            fn _field(&self) -> Cow<Field> {
+            fn _field(&self) -> Cow<'_, Field> {
                 Cow::Borrowed(self.0.ref_field())
             }
             fn _dtype(&self) -> &DataType {
@@ -144,7 +144,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "rolling_window")]
             fn rolling_map(
                 &self,
-                _f: &dyn Fn(&Series) -> Series,
+                _f: &dyn Fn(&Series) -> PolarsResult<Series>,
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
@@ -154,7 +154,7 @@ macro_rules! impl_dyn_series {
                 self.0.rename(name);
             }
 
-            fn chunk_lengths(&self) -> ChunkLenIter {
+            fn chunk_lengths(&self) -> ChunkLenIter<'_> {
                 self.0.chunk_lengths()
             }
             fn name(&self) -> &PlSmallStr {
@@ -253,7 +253,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
-            unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+            unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
                 self.0.get_any_value_unchecked(index)
             }
 
@@ -317,6 +317,12 @@ macro_rules! impl_dyn_series {
             fn min_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(ChunkAggSeries::min_reduce(&self.0))
             }
+            fn mean_reduce(&self) -> PolarsResult<Scalar> {
+                let mean = self
+                    .mean()
+                    .map(|m| m as <$pdt as PolarsDataType>::OwnedPhysical);
+                Ok(Scalar::new(self.dtype().clone(), mean.into()))
+            }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(QuantileAggSeries::median_reduce(&self.0))
             }
@@ -335,21 +341,21 @@ macro_rules! impl_dyn_series {
             }
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.and_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
             }
             #[cfg(feature = "bitwise")]
             fn or_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.or_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
             }
             #[cfg(feature = "bitwise")]
             fn xor_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.xor_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -362,6 +368,10 @@ macro_rules! impl_dyn_series {
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
+            }
+
+            fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+                self.0.find_validity_mismatch(other, idxs)
             }
 
             #[cfg(feature = "checked_arithmetic")]

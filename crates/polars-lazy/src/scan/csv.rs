@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
-
+#[cfg(feature = "csv")]
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
@@ -10,6 +10,7 @@ use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::get_reader_bytes;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MemSlice;
+use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
@@ -36,7 +37,7 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
+    pub fn new_paths(paths: Buffer<PlPath>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -51,8 +52,8 @@ impl LazyCsvReader {
         }
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path.as_ref().to_path_buf()].into()))
+    pub fn new(path: PlPath) -> Self {
+        Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
     /// Skip this number of rows after the header location.
@@ -276,13 +277,20 @@ impl LazyCsvReader {
             ScanSources::Paths(paths) => {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
-                let paths = expand_paths(&paths[..], self.glob(), self.cloud_options())?;
+                let paths = expand_paths(
+                    &paths[..],
+                    self.glob(),
+                    &[], // hidden_file_prefix
+                    &mut self.cloud_options,
+                )?;
 
                 let Some(path) = paths.first() else {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(&polars_utils::open_file(path)?)?)?
+                infer_schema(MemSlice::from_file(&polars_utils::open_file(
+                    path.as_ref().as_local_path().unwrap(),
+                )?)?)?
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {
@@ -336,12 +344,18 @@ impl LazyFileListReader for LazyCsvReader {
                 rechunk,
                 cache: self.cache,
                 glob: self.glob,
+                hidden_file_prefix: None,
                 projection: None,
+                column_mapping: None,
+                default_values: None,
                 row_index,
                 pre_slice,
-                cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+                cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                 missing_columns_policy: MissingColumnsPolicy::Raise,
+                extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths: self.include_file_paths,
+                deletion_files: None,
+                table_statistics: None,
             },
         )?
         .build()

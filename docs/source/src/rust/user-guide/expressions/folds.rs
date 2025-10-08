@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([
             fold_exprs(
                 lit(0),
-                |acc, val| (&acc + &val).map(Some),
+                PlanCallback::new(|(acc, val)| &acc + &val),
                 [col("a"), col("b")],
                 false,
                 None,
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{:?}", result);
+    println!("{result:?}");
     // --8<-- [end:mansum]
 
     // --8<-- [start:mansum-explicit]
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             f(f(acc, col("a")), col("b")),
             fold_exprs(
                 lit(0),
-                |acc, val| (&acc + &val).map(Some),
+                PlanCallback::new(|(acc, val)| &acc + &val),
                 [col("a"), col("b")],
                 false,
                 None,
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{:?}", result);
+    println!("{result:?}");
     // --8<-- [end:mansum-explicit]
 
     // --8<-- [start:manprod]
@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([fold_exprs(
             lit(0),
-            |acc, val| (&acc * &val).map(Some),
+            PlanCallback::new(|(acc, val)| &acc * &val),
             [col("a"), col("b")],
             false,
             None,
@@ -65,16 +65,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .alias("prod")])
         .collect()?;
 
-    println!("{:?}", result);
+    println!("{result:?}");
     // --8<-- [end:manprod]
 
     // --8<-- [start:manprod-fixed]
     let result = df
-        .clone()
         .lazy()
         .select([fold_exprs(
             lit(1),
-            |acc, val| (&acc * &val).map(Some),
+            PlanCallback::new(|(acc, val)| &acc * &val),
             [col("a"), col("b")],
             false,
             None,
@@ -82,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .alias("prod")])
         .collect()?;
 
-    println!("{:?}", result);
+    println!("{result:?}");
     // --8<-- [end:manprod-fixed]
 
     // --8<-- [start:conditional]
@@ -92,18 +91,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .filter(fold_exprs(
             lit(true),
-            |acc, val| (&acc & &val).map(Some),
+            PlanCallback::new(|(acc, val)| &acc & &val),
             [col("*").gt(1)],
             false,
             None,
         ))
         .collect()?;
 
-    println!("{:?}", result);
+    println!("{result:?}");
     // --8<-- [end:conditional]
 
     // --8<-- [start:string]
@@ -116,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([concat_str([col("a"), col("b")], "", false)])
         .collect()?;
-    println!("{:?}", result);
+    println!("{result:?}");
     // --8<-- [end:string]
 
     Ok(())

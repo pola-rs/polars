@@ -6,6 +6,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_with_context() -> None:
     df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
     df_b = pl.DataFrame({"c": ["foo", "ham"]})
@@ -23,6 +24,7 @@ def test_with_context() -> None:
 
 
 # https://github.com/pola-rs/polars/issues/5867
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_with_context_ignore_5867() -> None:
     outer = pl.LazyFrame({"OtherCol": [1, 2, 3, 4]})
     with pytest.deprecated_call():
@@ -36,6 +38,7 @@ def test_with_context_ignore_5867() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_predicate_pushdown_with_context_11014() -> None:
     df1 = pl.LazyFrame(
         {
@@ -55,28 +58,13 @@ def test_predicate_pushdown_with_context_11014() -> None:
         out = (
             df1.with_context(df2)
             .filter(pl.col("df1_c1").is_in(pl.col("df2_c1")))
-            .collect(predicate_pushdown=True)
+            .collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
         )
 
     assert out.to_dict(as_series=False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
 
 
-@pytest.mark.xdist_group("streaming")
-def test_streaming_11219() -> None:
-    # https://github.com/pola-rs/polars/issues/11219
-
-    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
-    lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
-    lf_other2 = pl.LazyFrame({"c": ["foo", "ham"]})
-
-    with pytest.deprecated_call():
-        context = lf.with_context([lf_other, lf_other2])
-
-    assert context.select(pl.col("b") + pl.col("c").first()).collect(
-        engine="old-streaming"  # type: ignore[call-overload]
-    ).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
-
-
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_no_cse_in_with_context() -> None:
     df1 = pl.DataFrame(
         {

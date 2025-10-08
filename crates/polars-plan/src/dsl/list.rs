@@ -243,16 +243,17 @@ impl ListNameSpace {
     /// an `upper_bound` of struct fields that will be set.
     /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
     /// will look in the current schema to determine which columns to select.
-    pub fn to_struct(self, args: ListToStructArgs) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::ToStruct(args)))
+    pub fn to_struct(self, names: Arc<[PlSmallStr]>) -> Expr {
+        self.0.map_unary(ListFunction::ToStruct(names))
     }
 
     #[cfg(feature = "is_in")]
     /// Check if the list array contain an element
-    pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
-        self.0
-            .map_binary(FunctionExpr::ListExpr(ListFunction::Contains), other.into())
+    pub fn contains<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::ListExpr(ListFunction::Contains { nulls_equal }),
+            other.into(),
+        )
     }
 
     #[cfg(feature = "list_count")]
@@ -294,5 +295,13 @@ impl ListNameSpace {
     #[cfg(feature = "list_sets")]
     pub fn set_symmetric_difference<E: Into<Expr>>(self, other: E) -> Expr {
         self.set_operation(other.into(), SetOperation::SymmetricDifference)
+    }
+
+    pub fn eval<E: Into<Expr>>(self, other: E) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::List,
+        }
     }
 }

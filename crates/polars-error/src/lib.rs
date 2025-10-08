@@ -13,6 +13,9 @@ pub mod signals;
 
 pub use warning::*;
 
+#[cfg(feature = "python")]
+mod python;
+
 enum ErrorStrategy {
     Panic,
     WithBacktrace,
@@ -99,6 +102,10 @@ pub enum PolarsError {
         error: Box<PolarsError>,
         msg: ErrString,
     },
+    #[cfg(feature = "python")]
+    Python {
+        error: python::PyErrWrap,
+    },
 }
 
 impl Error for PolarsError {}
@@ -127,6 +134,8 @@ impl Display for PolarsError {
             StringCacheMismatch(msg) => write!(f, "string caches don't match: {msg}"),
             StructFieldNotFound(msg) => write!(f, "field not found: {msg}"),
             Context { error, msg } => write!(f, "{error}: {msg}"),
+            #[cfg(feature = "python")]
+            Python { error } => write!(f, "python: {error}"),
         }
     }
 }
@@ -150,7 +159,13 @@ impl From<regex::Error> for PolarsError {
 #[cfg(feature = "object_store")]
 impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
-        std::io::Error::other(format!("object-store error: {err:?}")).into()
+        if let object_store::Error::Generic { store, source } = &err {
+            if let Some(polars_err) = source.as_ref().downcast_ref::<PolarsError>() {
+                return polars_err.wrap_msg(|s| format!("{s} (store: {store})"));
+            }
+        }
+
+        std::io::Error::other(format!("object-store error: {err}")).into()
     }
 }
 
@@ -211,7 +226,7 @@ impl PolarsError {
                 let mut count = 0;
                 while let Some(msg) = messages.pop() {
                     count += 1;
-                    writeln!(&mut bt, "\t[{count}] {}", msg).unwrap();
+                    writeln!(&mut bt, "\t[{count}] {msg}").unwrap();
                 }
                 material_error.wrap_msg(move |msg| {
                     format!("{msg}\n\nThis error occurred with the following context stack:\n{bt}")
@@ -232,7 +247,7 @@ impl PolarsError {
             IO { error, msg } => {
                 let msg = match msg {
                     Some(msg) => func(msg),
-                    None => func(&format!("{}", error)),
+                    None => func(&format!("{error}")),
                 };
                 IO {
                     error: error.clone(),
@@ -249,6 +264,39 @@ impl PolarsError {
             SQLInterface(msg) => SQLInterface(func(msg).into()),
             SQLSyntax(msg) => SQLSyntax(func(msg).into()),
             Context { error, .. } => error.wrap_msg(func),
+            #[cfg(feature = "python")]
+            Python { error } => pyo3::Python::with_gil(|py| {
+                use pyo3::types::{PyAnyMethods, PyStringMethods};
+                use pyo3::{IntoPyObject, PyErr};
+
+                let value = error.value(py);
+
+                let msg = if let Ok(s) = value.str() {
+                    func(&s.to_string_lossy())
+                } else {
+                    func("<exception str() failed>")
+                };
+
+                let cls = value.get_type();
+
+                let out = PyErr::from_type(cls, (msg,));
+
+                let out = if let Ok(out_with_traceback) = (|| {
+                    out.clone_ref(py)
+                        .into_pyobject(py)?
+                        .getattr("with_traceback")
+                        .unwrap()
+                        .call1((value.getattr("__traceback__").unwrap(),))
+                })() {
+                    PyErr::from_value(out_with_traceback)
+                } else {
+                    out
+                };
+
+                Python {
+                    error: python::PyErrWrap(out),
+                }
+            }),
         }
     }
 
@@ -266,6 +314,13 @@ impl PolarsError {
             error: Box::new(self),
         }
     }
+
+    pub fn remove_context(mut self) -> Self {
+        while let Self::Context { error, .. } = self {
+            self = *error;
+        }
+        self
+    }
 }
 
 pub fn map_err<E: Error>(error: E) -> PolarsError {
@@ -277,6 +332,11 @@ macro_rules! polars_err {
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
+        )
+    };
+    ($variant:ident: $fmt:literal $(, $arg:expr)*, hint = $hint:literal) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant(format!(concat_str!($fmt, "\n\nHint: ", $hint), $($arg),*).into())
         )
     };
     ($variant:ident: $err:expr $(,)?) => {
@@ -330,6 +390,11 @@ macro_rules! polars_err {
             InvalidOperation: "{} operation not supported for dtypes `{}`, `{}` and `{}`", $op, $arg1, $arg2, $arg3
         )
     };
+    (opidx = $op:expr, idx = $idx:expr, $arg:expr) => {
+        $crate::polars_err!(
+            InvalidOperation: "`{}` operation not supported for dtype `{}` as argument {}", $op, $arg, $idx
+        )
+    };
     (oos = $($tt:tt)+) => {
         $crate::polars_err!(ComputeError: "out-of-spec: {}", $($tt)+)
     };
@@ -345,7 +410,7 @@ macro_rules! polars_err {
     (bigidx, ctx = $ctx:expr, size = $size:expr) => {
         $crate::polars_err!(ComputeError: "\
 {} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
-consider compiling with bigidx feature (polars-u64-idx package on python)",
+consider compiling with bigidx feature (pip install polars[rt64])",
             $ctx,
             $size,
         )
@@ -382,6 +447,9 @@ on startup."#.trim_start())
     };
     (duplicate = $name:expr) => {
         $crate::polars_err!(Duplicate: "column with name '{}' has more than one occurrence", $name)
+    };
+    (duplicate_field = $name:expr) => {
+        $crate::polars_err!(Duplicate: "multiple fields with name '{}' found", $name)
     };
     (col_not_found = $name:expr) => {
         $crate::polars_err!(ColumnNotFound: "{:?} not found", $name)
@@ -428,6 +496,11 @@ on startup."#.trim_start())
             $objects, $detail, $lhs, $rhs
         )
     };
+    (to_datetime_tz_mismatch) => {
+        $crate::polars_err!(
+            ComputeError: "`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data.\n\nThis was previously allowed but led to unpredictable and erroneous results. Give a format string, set a time zone or perform the operation eagerly on a Series instead of on an Expr."
+        )
+    };
 }
 
 #[macro_export]
@@ -452,6 +525,7 @@ macro_rules! polars_ensure {
 pub fn to_compute_err(err: impl Display) -> PolarsError {
     PolarsError::ComputeError(err.to_string().into())
 }
+
 #[macro_export]
 macro_rules! feature_gated {
     ($($feature:literal);*, $content:expr) => {{

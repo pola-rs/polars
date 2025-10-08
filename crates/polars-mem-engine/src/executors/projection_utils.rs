@@ -30,7 +30,7 @@ fn rolling_evaluate(
 
                 let (_time_key, groups) = df.rolling(None, options)?;
 
-                let groups_key = format!("{:?}", options);
+                let groups_key = format!("{options:?}");
                 // Set the groups so all expressions in partition can use it.
                 // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
                 // rolling expression try to get read access.
@@ -312,11 +312,10 @@ pub(super) fn check_expand_literals(
 
             if duplicate_check && !names.insert(name) {
                 let msg = format!(
-                    "the name '{}' is duplicate\n\n\
+                    "the name '{name}' is duplicate\n\n\
                     It's possible that multiple expressions are returning the same default column \
                     name. If this is the case, try renaming the columns with \
-                    `.alias(\"new_name\")` to avoid duplicate column names.",
-                    name
+                    `.alias(\"new_name\")` to avoid duplicate column names."
                 );
                 return Err(PolarsError::Duplicate(msg.into()));
             }
@@ -345,7 +344,7 @@ pub(super) fn check_expand_literals(
 
                             if verify_scalar && !phys.is_scalar() && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1") {
                                     let identifier = match phys.as_expression() {
-                                        Some(e) => format!("expression: {}", e),
+                                        Some(e) => format!("expression: {e}"),
                                         None => "this Series".to_string(),
                                     };
                                     polars_bail!(ShapeMismatch: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\

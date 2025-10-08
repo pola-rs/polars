@@ -21,6 +21,19 @@ fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
     }
 }
 
+fn sanitize(name: &str) -> Option<&str> {
+    if name.chars().all(|c| match c {
+        ' ' => true,
+        '-' => true,
+        '_' => true,
+        c => c.is_alphanumeric(),
+    }) {
+        Some(name)
+    } else {
+        None
+    }
+}
+
 // convert to a pyarrow expression that can be evaluated with pythons eval
 pub fn predicate_to_pa(
     predicate: Node,
@@ -37,7 +50,10 @@ pub fn predicate_to_pa(
                 None
             }
         },
-        AExpr::Column(name) => Some(format!("pa.compute.field('{}')", name)),
+        AExpr::Column(name) => {
+            let name = sanitize(name)?;
+            Some(format!("pa.compute.field('{name}')"))
+        },
         AExpr::Literal(LiteralValue::Series(s)) => {
             if !args.allow_literal_series || s.is_empty() || s.len() > 100 {
                 None
@@ -45,16 +61,33 @@ pub fn predicate_to_pa(
                 let mut list_repr = String::with_capacity(s.len() * 5);
                 list_repr.push('[');
                 for av in s.rechunk().iter() {
-                    if let AnyValue::Boolean(v) = av {
-                        let s = if v { "True" } else { "False" };
-                        write!(list_repr, "{},", s).unwrap();
-                    } else if let AnyValue::Datetime(v, tu, tz) = av {
-                        let dtm = to_py_datetime(v, &tu, tz);
-                        write!(list_repr, "{dtm},").unwrap();
-                    } else if let AnyValue::Date(v) = av {
-                        write!(list_repr, "to_py_date({v}),").unwrap();
-                    } else {
-                        write!(list_repr, "{av},").unwrap();
+                    match av {
+                        AnyValue::Boolean(v) => {
+                            let s = if v { "True" } else { "False" };
+                            write!(list_repr, "{s},").unwrap();
+                        },
+                        #[cfg(feature = "dtype-datetime")]
+                        AnyValue::Datetime(v, tu, tz) => {
+                            let dtm = to_py_datetime(v, &tu, tz);
+                            write!(list_repr, "{dtm},").unwrap();
+                        },
+                        #[cfg(feature = "dtype-date")]
+                        AnyValue::Date(v) => {
+                            write!(list_repr, "to_py_date({v}),").unwrap();
+                        },
+                        AnyValue::String(s) => {
+                            let _ = sanitize(s)?;
+                            write!(list_repr, "{av},").unwrap();
+                        },
+                        // Hard to sanitize
+                        AnyValue::Binary(_) | AnyValue::List(_) => return None,
+                        #[cfg(feature = "dtype-array")]
+                        AnyValue::Array(_, _) => return None,
+                        #[cfg(feature = "dtype-struct")]
+                        AnyValue::Struct(_, _, _) => return None,
+                        _ => {
+                            write!(list_repr, "{av},").unwrap();
+                        },
                     }
                 }
                 // pop last comma
@@ -67,7 +100,10 @@ pub fn predicate_to_pa(
             let av = lv.to_any_value()?;
             let dtype = av.dtype();
             match av.as_borrowed() {
-                AnyValue::String(s) => Some(format!("'{s}'")),
+                AnyValue::String(s) => {
+                    let s = sanitize(s)?;
+                    Some(format!("'{s}'"))
+                },
                 AnyValue::Boolean(val) => {
                     // python bools are capitalized
                     if val {
@@ -84,6 +120,12 @@ pub fn predicate_to_pa(
                 },
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
+                // Hard to sanitize
+                AnyValue::Binary(_) | AnyValue::List(_) => None,
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(_, _) => None,
+                #[cfg(feature = "dtype-struct")]
+                AnyValue::Struct(_, _, _) => None,
                 // Activate once pyarrow supports them
                 // #[cfg(feature = "dtype-time")]
                 // AnyValue::Time(v) => {
@@ -116,7 +158,7 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
             input,
             ..
         } => {
@@ -129,7 +171,7 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_between")]
         AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
             input,
             ..
         } => {
@@ -161,11 +203,11 @@ pub fn predicate_to_pa(
             let input = predicate_to_pa(input, expr_arena, args)?;
 
             match function {
-                FunctionExpr::Boolean(BooleanFunction::Not) => Some(format!("~({input})")),
-                FunctionExpr::Boolean(BooleanFunction::IsNull) => {
+                IRFunctionExpr::Boolean(IRBooleanFunction::Not) => Some(format!("~({input})")),
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNull) => {
                     Some(format!("({input}).is_null()"))
                 },
-                FunctionExpr::Boolean(BooleanFunction::IsNotNull) => {
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => {
                     Some(format!("~({input}).is_null()"))
                 },
                 _ => None,

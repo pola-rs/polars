@@ -81,7 +81,7 @@ impl PolarsMonthStart for DatetimeChunked {
             },
         };
         Ok(self
-            .0
+            .phys
             .try_apply_nonnull_values_generic(|t| {
                 roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)
             })?
@@ -92,7 +92,7 @@ impl PolarsMonthStart for DatetimeChunked {
 impl PolarsMonthStart for DateChunked {
     fn month_start(&self, _tz: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        let ret = self.0.try_apply_nonnull_values_generic(|t| {
+        let ret = self.phys.try_apply_nonnull_values_generic(|t| {
             let bwd = roll_backward(
                 MSECS_IN_DAY * t as i64,
                 None,

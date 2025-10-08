@@ -163,7 +163,15 @@ impl<T> SharedStorage<T> {
         }
     }
 
-    pub fn from_internal_arrow_array(ptr: *const T, len: usize, arr: InternalArrowArray) -> Self {
+    /// # Safety
+    /// The range [ptr, ptr+len) needs to be valid and aligned for T.
+    /// ptr may not be null.
+    pub unsafe fn from_internal_arrow_array(
+        ptr: *const T,
+        len: usize,
+        arr: InternalArrowArray,
+    ) -> Self {
+        assert!(!ptr.is_null() && ptr.is_aligned());
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
             ptr: ptr.cast_mut(),
@@ -321,18 +329,20 @@ impl<T> SharedStorage<T> {
 }
 
 impl<T: Pod> SharedStorage<T> {
-    fn try_transmute<U: Pod>(self) -> Result<SharedStorage<U>, Self> {
+    pub fn try_transmute<U: Pod>(self) -> Result<SharedStorage<U>, Self> {
         let inner = self.inner();
 
         // The length of the array in bytes must be a multiple of the target size.
         // We can skip this check if the size of U divides the size of T.
-        if size_of::<T>() % size_of::<U>() != 0 && inner.length_in_bytes % size_of::<U>() != 0 {
+        if !size_of::<T>().is_multiple_of(size_of::<U>())
+            && !inner.length_in_bytes.is_multiple_of(size_of::<U>())
+        {
             return Err(self);
         }
 
         // The pointer must be properly aligned for U.
         // We can skip this check if the alignment of U divides the alignment of T.
-        if align_of::<T>() % align_of::<U>() != 0 && !inner.ptr.cast::<U>().is_aligned() {
+        if !align_of::<T>().is_multiple_of(align_of::<U>()) && !inner.ptr.cast::<U>().is_aligned() {
             return Err(self);
         }
 

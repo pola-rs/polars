@@ -63,6 +63,18 @@ def test_arr_sum(
     assert s.arr.sum().to_list() == expected_sum
 
 
+@pytest.mark.may_fail_cloud
+def test_array_lengths_zwa() -> None:
+    assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
+    assert pl.Series("a", [None, []], pl.Array(pl.Null, 0)).arr.len().to_list() == [
+        None,
+        0,
+    ]
+    assert pl.Series("a", [None], pl.Array(pl.Null, 0)).arr.len().to_list() == [None]
+
+    assert pl.Series("a", [], pl.Array(pl.Null, 0)).arr.len().to_list() == []
+
+
 def test_array_lengths() -> None:
     df = pl.DataFrame(
         [
@@ -76,18 +88,63 @@ def test_array_lengths() -> None:
     )
     assert_frame_equal(out, expected_df)
 
-    assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
-    assert pl.Series("a", [None, []], pl.Array(pl.Null, 0)).arr.len().to_list() == [
-        None,
-        0,
-    ]
-    assert pl.Series("a", [None], pl.Array(pl.Null, 0)).arr.len().to_list() == [None]
-
-    assert pl.Series("a", [], pl.Array(pl.Null, 0)).arr.len().to_list() == []
     assert pl.Series("a", [], pl.Array(pl.Null, 1)).arr.len().to_list() == []
     assert pl.Series(
         "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.Int32, 3)
     ).arr.len().to_list() == [3, None, 3]
+
+
+@pytest.mark.parametrize(
+    ("as_array"),
+    [True, False],
+)
+def test_arr_slice(as_array: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "arr": [[1, 2, 3], [10, 2, 1]],
+        },
+        schema={"arr": pl.Array(pl.Int64, 3)},
+    )
+
+    assert df.select([pl.col("arr").arr.slice(0, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[1], [10]]}
+    assert df.select([pl.col("arr").arr.slice(1, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2], [2]]}
+    assert df.select([pl.col("arr").arr.slice(-1, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[3], [1]]}
+    assert df.select([pl.col("arr").arr.slice(-2, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2], [2]]}
+    assert df.select([pl.col("arr").arr.slice(-2, 2, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2, 3], [2, 1]]}
+    return
+
+
+@pytest.mark.parametrize(
+    ("as_array"),
+    [True, False],
+)
+def test_arr_slice_on_series(as_array: bool) -> None:
+    vals = [[1, 2, 3, 4], [10, 2, 1, 2]]
+    s = pl.Series("a", vals, dtype=pl.Array(pl.Int64, 4))
+    assert s.arr.head(2, as_array=as_array).to_list() == [[1, 2], [10, 2]]
+    assert s.arr.tail(2, as_array=as_array).to_list() == [[3, 4], [1, 2]]
+    assert s.arr.tail(10, as_array=as_array).to_list() == vals
+    assert s.arr.head(10, as_array=as_array).to_list() == vals
+    assert s.arr.slice(1, 2, as_array=as_array).to_list() == [[2, 3], [2, 1]]
+    assert s.arr.slice(-5, 2, as_array=as_array).to_list() == [[1], [10]]
+    # TODO: there is a bug in list.slice that does not allow negative values for head
+    if as_array:
+        assert s.arr.tail(-1, as_array=as_array).to_list() == [[2, 3, 4], [2, 1, 2]]
+        assert s.arr.tail(-2, as_array=as_array).to_list() == [[3, 4], [1, 2]]
+        assert s.arr.tail(-3, as_array=as_array).to_list() == [[4], [2]]
+        assert s.arr.head(-1, as_array=as_array).to_list() == [[1, 2, 3], [10, 2, 1]]
+        assert s.arr.head(-2, as_array=as_array).to_list() == [[1, 2], [10, 2]]
+        assert s.arr.head(-3, as_array=as_array).to_list() == [[1], [10]]
 
 
 def test_arr_unique() -> None:
@@ -548,4 +605,25 @@ def test_array_shift_self_broadcast_22124() -> None:
             ],
             pl.Array(pl.String, 3),
         ),
+    )
+
+
+def test_arr_contains() -> None:
+    s = pl.Series([[1, 2, None], [None, None, None], None], dtype=pl.Array(pl.Int64, 3))
+
+    assert_series_equal(
+        s.arr.contains(None, nulls_equal=False),
+        pl.Series([None, None, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.arr.contains(None, nulls_equal=True),
+        pl.Series([True, True, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.arr.contains(1, nulls_equal=False),
+        pl.Series([True, False, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.arr.contains(1, nulls_equal=True),
+        pl.Series([True, False, None], dtype=pl.Boolean),
     )

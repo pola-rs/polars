@@ -229,7 +229,7 @@ pub trait ListNameSpaceImpl: AsList {
         dispersion::std_with_nulls(ca, ddof)
     }
 
-    fn lst_var(&self, ddof: u8) -> Series {
+    fn lst_var(&self, ddof: u8) -> PolarsResult<Series> {
         let ca = self.as_list();
         dispersion::var_with_nulls(ca, ddof)
     }
@@ -489,7 +489,7 @@ pub trait ListNameSpaceImpl: AsList {
                         list_ca.inner_dtype(),
                     )
                 } else {
-                    let s = list_ca.explode()?;
+                    let s = list_ca.explode(false)?;
                     idx_ca
                         .into_iter()
                         .map(|opt_idx| {
@@ -503,7 +503,7 @@ pub trait ListNameSpaceImpl: AsList {
                 Ok(out.into_series())
             },
             (_, 1) => {
-                let idx_ca = idx_ca.explode()?;
+                let idx_ca = idx_ca.explode(false)?;
 
                 use DataType as D;
                 match idx_ca.dtype() {
@@ -696,23 +696,9 @@ pub trait ListNameSpaceImpl: AsList {
             match s.dtype() {
                 DataType::List(inner_type) => {
                     inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
-                    #[cfg(feature = "dtype-categorical")]
-                    if matches!(
-                        &inner_super_type,
-                        DataType::Categorical(_, _) | DataType::Enum(_, _)
-                    ) {
-                        inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
-                    }
                 },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
-                    #[cfg(feature = "dtype-categorical")]
-                    if matches!(
-                        &inner_super_type,
-                        DataType::Categorical(_, _) | DataType::Enum(_, _)
-                    ) {
-                        inner_super_type = merge_dtypes(&inner_super_type, dt)?;
-                    }
                 },
             }
         }
@@ -728,11 +714,16 @@ pub trait ListNameSpaceImpl: AsList {
             cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
             let to_append = other
                 .iter()
-                .flat_map(|s| {
+                .filter_map(|s| {
                     let lst = s.list().unwrap();
-                    lst.get_as_series(0)
+                    // SAFETY: previous rhs_cast ensures the type is correct
+                    unsafe {
+                        lst.get_as_series(0)
+                            .map(|s| s.from_physical_unchecked(&inner_super_type).unwrap())
+                    }
                 })
                 .collect::<Vec<_>>();
+
             // there was a None, so all values will be None
             if to_append.len() != other_len {
                 return Ok(ListChunked::full_null_with_dtype(

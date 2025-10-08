@@ -1,9 +1,10 @@
 use std::borrow::Cow;
-use std::sync::OnceLock;
 
 use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::chunked_array::from_iterator_par::try_list_from_par_iter;
+use polars_core::chunked_array::from_iterator_par::{
+    ChunkedCollectParIterExt, try_list_from_par_iter,
+};
 use polars_core::prelude::*;
 use rayon::prelude::*;
 
@@ -17,17 +18,14 @@ pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,
     function: SpecialEq<Arc<dyn ColumnsUdf>>,
     expr: Expr,
-    collect_groups: ApplyOptions,
-    function_returns_scalar: bool,
+    flags: FunctionFlags,
     function_operates_on_scalar: bool,
-    allow_rename: bool,
-    pass_name_to_apply: bool,
     input_schema: SchemaRef,
     allow_threading: bool,
     check_lengths: bool,
-    allow_group_aware: bool,
+
+    /// Output field of the expression excluding potential aggregation.
     output_field: Field,
-    inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl ApplyExpr {
@@ -39,34 +37,25 @@ impl ApplyExpr {
         options: FunctionOptions,
         allow_threading: bool,
         input_schema: SchemaRef,
-        output_field: Field,
-        returns_scalar: bool,
+        non_aggregated_output_field: Field,
+        function_operates_on_scalar: bool,
     ) -> Self {
-        #[cfg(debug_assertions)]
-        if matches!(options.collect_groups, ApplyOptions::ElementWise)
-            && options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-        {
-            panic!(
-                "expr {:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive",
-                expr
-            )
-        }
+        debug_assert!(
+            !options.is_length_preserving()
+                || !options.flags.contains(FunctionFlags::RETURNS_SCALAR),
+            "expr {expr:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive",
+        );
 
         Self {
             inputs,
             function,
             expr,
-            collect_groups: options.collect_groups,
-            function_returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
-            function_operates_on_scalar: returns_scalar,
-            allow_rename: options.flags.contains(FunctionFlags::ALLOW_RENAME),
-            pass_name_to_apply: options.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY),
+            flags: options.flags,
+            function_operates_on_scalar,
             input_schema,
             allow_threading,
             check_lengths: options.check_lengths(),
-            allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
-            output_field,
-            inlined_eval: Default::default(),
+            output_field: non_aggregated_output_field,
         }
     }
 
@@ -90,8 +79,8 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let c = if self.function_returns_scalar {
-            let out = ca.explode().unwrap();
+        let c = if self.flags.returns_scalar() {
+            let out = ca.explode(false).unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
             ac.update_groups = UpdateGroups::No;
@@ -101,23 +90,18 @@ impl ApplyExpr {
             ca.into_series().into()
         };
 
-        ac.with_values_and_args(c, true, None, false, self.function_returns_scalar)?;
+        ac.with_values_and_args(c, true, None, false, self.flags.returns_scalar())?;
 
         Ok(ac)
     }
 
-    fn get_input_schema(&self, _df: &DataFrame) -> Cow<Schema> {
+    fn get_input_schema(&self, _df: &DataFrame) -> Cow<'_, Schema> {
         Cow::Borrowed(self.input_schema.as_ref())
     }
 
     /// Evaluates and flattens `Option<Column>` to `Column`.
     fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
-        if let Some(out) = self.function.call_udf(inputs)? {
-            Ok(out)
-        } else {
-            let field = self.to_field(self.input_schema.as_ref()).unwrap();
-            Ok(Column::full_null(field.name().clone(), 1, field.dtype()))
-        }
+        self.function.call_udf(inputs)
     }
     fn apply_single_group_aware<'a>(
         &self,
@@ -135,13 +119,17 @@ impl ApplyExpr {
         }
 
         let name = s.name().clone();
-        let agg = ac.aggregated();
+        let agg = match ac.agg_state() {
+            AggState::AggregatedScalar(_) => s.as_list().into_column(),
+            _ => ac.aggregated(),
+        };
+
         // Collection of empty list leads to a null dtype. See: #3687.
         if agg.is_empty() {
             // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
-            let input = Column::full_null(PlSmallStr::EMPTY, 0, input_dtype);
+            let input = Column::full_null(name.clone(), 0, input_dtype);
 
             let output = self.eval_and_flatten(&mut [input])?;
             let ca = ListChunked::full(name, output.as_materialized_series(), 0);
@@ -151,20 +139,25 @@ impl ApplyExpr {
         let f = |opt_s: Option<Series>| match opt_s {
             None => Ok(None),
             Some(mut s) => {
-                if self.pass_name_to_apply {
+                if self.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY) {
                     s.rename(name.clone());
                 }
-                Ok(self
-                    .function
-                    .call_udf(&mut [Column::from(s)])?
-                    .map(|c| c.as_materialized_series().clone()))
+                Ok(Some(
+                    self.function
+                        .call_udf(&mut [Column::from(s)])?
+                        .take_materialized_series(),
+                ))
             },
         };
 
         let ca: ListChunked = if self.allow_threading {
             let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
             {
-                Some(self.output_field.dtype.clone())
+                let mut dtype = self.output_field.dtype.clone();
+                if !self.is_scalar() {
+                    dtype = dtype.implode();
+                }
+                Some(dtype)
             } else {
                 None
             };
@@ -173,18 +166,17 @@ impl ApplyExpr {
             let iter = lst.par_iter().map(f);
 
             if let Some(dtype) = dtype {
-                // TODO! uncomment this line and remove debug_assertion after a while.
-                // POOL.install(|| {
-                //     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, DataType::List(Box::new(dtype)))
-                // })?
-                let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
-
-                if self.function_returns_scalar {
-                    debug_assert_eq!(&DataType::List(Box::new(dtype)), out.dtype());
+                // @NOTE: Since the output type for scalars does an implicit explode, we need to
+                // patch up the type here to also be a list.
+                let out_dtype = if self.is_scalar() {
+                    DataType::List(Box::new(dtype))
                 } else {
-                    debug_assert_eq!(&dtype, out.dtype());
-                }
+                    dtype
+                };
 
+                let out: ListChunked = POOL.install(|| {
+                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, out_dtype)
+                })?;
                 out
             } else {
                 POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
@@ -229,6 +221,7 @@ impl ApplyExpr {
         ac.with_values_and_args(c, aggregated, Some(&self.expr), true, self.is_scalar())?;
         Ok(ac)
     }
+
     fn apply_multiple_group_aware<'a>(
         &self,
         mut acs: Vec<AggregationContext<'a>>,
@@ -242,7 +235,7 @@ impl ApplyExpr {
         // then unpack the lists and finally create iterators from this list chunked arrays.
         let mut iters = acs
             .iter_mut()
-            .map(|ac| ac.iter_groups(self.pass_name_to_apply))
+            .map(|ac| ac.iter_groups(self.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY)))
             .collect::<Vec<_>>();
 
         // Length of the items to iterate over.
@@ -263,9 +256,9 @@ impl ApplyExpr {
                 let out = self
                     .function
                     .call_udf(&mut container)
-                    .map(|r| r.map(|c| c.as_materialized_series().clone()))?;
+                    .map(|c| c.take_materialized_series())?;
 
-                builder.append_opt_series(out.as_ref())?
+                builder.append_series(&out)?
             }
             builder.finish()
         } else {
@@ -279,9 +272,11 @@ impl ApplyExpr {
                             Some(s) => container.push(s.deep_clone().into()),
                         }
                     }
-                    self.function
-                        .call_udf(&mut container)
-                        .map(|r| r.map(|c| c.as_materialized_series().clone()))
+                    Ok(Some(
+                        self.function
+                            .call_udf(&mut container)?
+                            .take_materialized_series(),
+                    ))
                 })
                 .collect::<PolarsResult<ListChunked>>()?
                 .with_name(field.name.clone())
@@ -329,30 +324,12 @@ impl PhysicalExpr for ApplyExpr {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
-        if self.allow_rename {
+        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
             self.eval_and_flatten(&mut inputs)
         } else {
             let in_name = inputs[0].name().clone();
             Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
         }
-    }
-
-    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
-        // For predicate evaluation at I/O of:
-        // `lit("2024-01-01").str.strptime()`
-
-        self.inlined_eval
-            .get_or_init(|| {
-                let depth_limit = depth_limit.checked_sub(1)?;
-                let mut inputs = self
-                    .inputs
-                    .iter()
-                    .map(|x| x.evaluate_inline_impl(depth_limit).filter(|s| s.len() == 1))
-                    .collect::<Option<Vec<_>>>()?;
-
-                self.eval_and_flatten(&mut inputs).ok()
-            })
-            .clone()
     }
 
     #[allow(clippy::ptr_arg)]
@@ -362,38 +339,19 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        polars_ensure!(
-            self.allow_group_aware,
-            expr = self.expr,
-            ComputeError: "this expression cannot run in the group_by context",
-        );
         if self.inputs.len() == 1 {
-            let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
+            let ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match self.collect_groups {
-                ApplyOptions::ApplyList => {
-                    let c = self.eval_and_flatten(&mut [ac.aggregated()])?;
-                    ac.with_values(c, true, Some(&self.expr))?;
-                    Ok(ac)
-                },
-                ApplyOptions::GroupWise => self.apply_single_group_aware(ac),
-                ApplyOptions::ElementWise => self.apply_single_elementwise(ac),
+            match self.flags.is_elementwise() {
+                false => self.apply_single_group_aware(ac),
+                true => self.apply_single_elementwise(ac),
             }
         } else {
-            let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
+            let acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match self.collect_groups {
-                ApplyOptions::ApplyList => {
-                    let mut c = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
-                    let c = self.eval_and_flatten(&mut c)?;
-                    // take the first aggregation context that as that is the input series
-                    let mut ac = acs.swap_remove(0);
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_values(c, true, Some(&self.expr))?;
-                    Ok(ac)
-                },
-                ApplyOptions::GroupWise => self.apply_multiple_group_aware(acs, df),
-                ApplyOptions::ElementWise => {
+            match self.flags.is_elementwise() {
+                false => self.apply_multiple_group_aware(acs, df),
+                true => {
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
                     let mut has_not_agg = false;
@@ -421,18 +379,19 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema, Context::Default)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ElementWise) {
+        if self.inputs.len() == 1 && self.flags.is_elementwise() {
             Some(self)
         } else {
             None
         }
     }
     fn is_scalar(&self) -> bool {
-        self.function_returns_scalar || self.function_operates_on_scalar
+        self.flags.returns_scalar()
+            || (self.function_operates_on_scalar && self.flags.is_length_preserving())
     }
 }
 
@@ -460,7 +419,6 @@ fn apply_multiple_elementwise<'a>(
                 args.extend_from_slice(&other);
                 Ok(function
                     .call_udf(&mut args)?
-                    .unwrap()
                     .as_materialized_series()
                     .clone())
             })?;
@@ -469,7 +427,7 @@ fn apply_multiple_elementwise<'a>(
             Ok(ac)
         },
         first_as => {
-            let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
+            let check_lengths = check_lengths && !matches!(first_as, AggState::LiteralScalar(_));
             let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal())
                 && acs.iter().any(|ac| ac.is_aggregated());
             let mut c = acs
@@ -487,14 +445,20 @@ fn apply_multiple_elementwise<'a>(
                 .collect::<Vec<_>>();
 
             let input_len = c[0].len();
-            let c = function.call_udf(&mut c)?.unwrap();
+            let c = function.call_udf(&mut c)?;
             if check_lengths {
                 check_map_output_len(input_len, c.len(), expr)?;
             }
 
+            let all_literal = acs
+                .iter()
+                .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
+
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
-            ac.with_values_and_args(c, aggregated, None, true, returns_scalar)?;
+
+            // TODO - add condition that for F(lit) => lit, F must be pure (deterministic & no side-effects)
+            ac.with_values_and_args(c, aggregated, None, all_literal, returns_scalar)?;
             Ok(ac)
         },
     }
@@ -510,7 +474,7 @@ impl PartitionedAggregation for ApplyExpr {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
         let s = a.evaluate_partitioned(df, groups, state)?;
 
-        if self.allow_rename {
+        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
             self.eval_and_flatten(&mut [s])
         } else {
             let in_name = s.name().clone();

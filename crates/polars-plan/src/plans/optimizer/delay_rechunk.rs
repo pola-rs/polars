@@ -31,7 +31,7 @@ impl OptimizationRule for DelayRechunk {
 
                 use IR::*;
                 let mut input_node = None;
-                for (node, lp) in (&*lp_arena).iter(*input) {
+                for (node, lp) in lp_arena.iter(*input) {
                     match lp {
                         Scan { .. } => {
                             input_node = Some(node);

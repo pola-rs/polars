@@ -8,6 +8,7 @@ use crate::series::ops::SeriesSealed;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 #[derive(Default)]
 pub enum RoundMode {
@@ -176,7 +177,7 @@ pub trait RoundSeries: SeriesSealed {
             let threshold = multiplier / 2;
 
             let res = match mode {
-                RoundMode::HalfToEven => ca.apply_values(|v| {
+                RoundMode::HalfToEven => ca.physical().apply_values(|v| {
                     let rem_big = v % (2 * multiplier);
                     let is_v_floor_even = rem_big.abs() < multiplier;
                     let rem = if is_v_floor_even {
@@ -195,7 +196,7 @@ pub trait RoundSeries: SeriesSealed {
                     };
                     v - rem + round_offset
                 }),
-                RoundMode::HalfAwayFromZero => ca.apply_values(|v| {
+                RoundMode::HalfAwayFromZero => ca.physical().apply_values(|v| {
                     let rem = v % multiplier;
                     let round_offset = if rem.abs() >= threshold {
                         if v < 0 { -multiplier } else { multiplier }
@@ -210,7 +211,8 @@ pub trait RoundSeries: SeriesSealed {
                 .into_series());
         }
 
-        polars_bail!(InvalidOperation: "round can only be used on numeric types (f32, f64, or decimal)");
+        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "round can only be used on numeric types" );
+        Ok(s.clone())
     }
 
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
@@ -223,6 +225,7 @@ pub trait RoundSeries: SeriesSealed {
             let scale = ca.scale() as u32;
 
             let s = ca
+                .physical()
                 .apply_values(|v| {
                     if v == 0 {
                         return 0;
@@ -305,6 +308,7 @@ pub trait RoundSeries: SeriesSealed {
             let multiplier = 10i128.pow(decimal_delta);
 
             let ca = ca
+                .physical()
                 .apply_values(|v| {
                     let rem = v % multiplier;
                     let round_offset = if v < 0 { multiplier + rem } else { rem };
@@ -344,6 +348,7 @@ pub trait RoundSeries: SeriesSealed {
             let multiplier = 10i128.pow(decimal_delta);
 
             let ca = ca
+                .physical()
                 .apply_values(|v| {
                     let rem = v % multiplier;
                     let round_offset = if v < 0 { -rem } else { multiplier - rem };

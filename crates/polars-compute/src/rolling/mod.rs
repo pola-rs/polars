@@ -1,8 +1,10 @@
+mod mean;
 mod min_max;
 pub mod moment;
 pub mod no_nulls;
 pub mod nulls;
 pub mod quantile_filter;
+mod sum;
 pub(super) mod window;
 use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
@@ -10,11 +12,13 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
+pub use mean::MeanWindow;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use polars_utils::float::IsFloat;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
+pub use sum::SumWindow;
 use window::*;
 
 type Start = usize;
@@ -25,6 +29,7 @@ type Len = usize;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum QuantileMethod {
     #[default]
@@ -41,6 +46,7 @@ pub type QuantileInterpolOptions = QuantileMethod;
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RollingFnParams {
     Quantile(RollingQuantileParams),
     Var(RollingVarParams),
@@ -102,12 +108,14 @@ where
 // Parameters allowed for rolling operations.
 #[derive(Clone, Copy, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RollingVarParams {
     pub ddof: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RollingQuantileParams {
     pub prob: f64,
     pub method: QuantileMethod,
