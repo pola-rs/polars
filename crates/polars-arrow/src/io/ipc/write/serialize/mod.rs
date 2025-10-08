@@ -14,7 +14,6 @@ use crate::{match_integer_type, with_match_primitive_type_full};
 mod binary;
 mod binview;
 mod boolean;
-mod dictionary;
 mod fixed_size_binary;
 mod fixed_sized_list;
 mod list;
@@ -26,7 +25,6 @@ mod union;
 use binary::*;
 use binview::*;
 use boolean::*;
-pub(super) use dictionary::*;
 use fixed_size_binary::*;
 use fixed_sized_list::*;
 use list::*;
@@ -141,15 +139,16 @@ pub fn write(
             compression,
         ),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            write_dictionary::<$T>(
-                array.as_any().downcast_ref().unwrap(),
+            let arr: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
+
+            write(
+                arr.keys() as &dyn Array,
                 buffers,
                 arrow_data,
                 nodes,
                 offset,
                 is_little_endian,
                 compression,
-                true,
             );
         }),
         Union => {
