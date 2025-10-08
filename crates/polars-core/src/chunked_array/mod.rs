@@ -632,6 +632,14 @@ impl ListChunked {
 
     pub fn has_masked_out_values(&self) -> bool {
         for arr in self.downcast_iter() {
+            if arr.is_empty() {
+                continue;
+            }
+
+            if *arr.offsets().first() != 0 || *arr.offsets().last() != arr.values().len() as i64 {
+                return true;
+            }
+
             let Some(validity) = arr.validity() else {
                 continue;
             };

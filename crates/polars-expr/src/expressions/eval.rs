@@ -32,6 +32,7 @@ pub struct EvalExpr {
     is_scalar: bool,
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
+    evaluation_is_fallible: bool,
 }
 
 impl EvalExpr {
@@ -46,6 +47,7 @@ impl EvalExpr {
         is_scalar: bool,
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
+        evaluation_is_fallible: bool,
     ) -> Self {
         Self {
             input,
@@ -57,6 +59,7 @@ impl EvalExpr {
             is_scalar,
             evaluation_is_scalar,
             evaluation_is_elementwise,
+            evaluation_is_fallible,
         }
     }
 
@@ -76,10 +79,11 @@ impl EvalExpr {
             return Ok(Column::full_null(name, ca.len(), dtype));
         }
 
-        let has_masked_out_elements = ca.has_nulls() && ca.has_masked_out_values();
+        let may_fail_on_masked_out_elements =
+            self.evaluation_is_fallible && ca.has_masked_out_values();
 
         // Fast path: fully elementwise expression without masked out values.
-        if self.evaluation_is_elementwise && !has_masked_out_elements {
+        if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
             let mut column = self.evaluation.evaluate(&df, state)?;
             if column.len() == 1 && df.height() != 1 {
                 column = column.new_from_index(0, df.height());
@@ -94,9 +98,13 @@ impl EvalExpr {
             return Ok(column);
         }
 
+        dbg!(&ca);
+
         let validity = ca.rechunk_validity();
 
         let offsets = ca.offsets()?;
+
+        dbg!(&validity);
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
@@ -114,6 +122,7 @@ impl EvalExpr {
                 .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
                 .collect()
         };
+        dbg!(&groups);
         let groups = GroupsType::Slice {
             groups,
             overlapping: false,
@@ -197,8 +206,10 @@ impl EvalExpr {
             return Ok(Column::full_null(name, ca.len(), dtype));
         }
 
+        let may_fail_on_masked_out_elements = self.evaluation_is_fallible && ca.has_nulls();
+
         // Fast path: fully elementwise expression without masked out values.
-        if self.evaluation_is_elementwise && !ca.has_nulls() {
+        if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
             let mut column = self.evaluation.evaluate(&df, state)?;
             if column.len() == 1 && df.height() != 1 {
                 column = column.new_from_index(0, df.height());
@@ -399,6 +410,9 @@ impl PhysicalExpr for EvalExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
+        dbg!(&df);
+        dbg!(&self.expr);
+        dbg!(&input);
         match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;
