@@ -1,28 +1,24 @@
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use arrow::array::{Array, ListArray};
 use polars_core::POOL;
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
-use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    AnyValue, ChunkCast, ChunkExplode, ChunkNestingUtils, Column, CompatLevel, Field,
-    GroupPositions, GroupsType, IntoColumn, ListBuilderTrait, ListChunked,
+    AnyValue, ChunkCast, ChunkExplode, Column, Field, GroupPositions, GroupsType, IntoColumn,
+    ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
-use polars_core::utils::CustomIterTools;
 use polars_plan::dsl::{EvalVariant, Expr};
-use polars_plan::plans::ExprPushdownGroup;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::{AggState, AggregationContext, PhysicalExpr};
+use super::{AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
 
 #[derive(Clone)]
@@ -34,34 +30,8 @@ pub struct EvalExpr {
     allow_threading: bool,
     output_field: Field,
     is_scalar: bool,
-    pd_group: ExprPushdownGroup,
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
-}
-
-fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
-    let mut start = offsets[0];
-    let end = *offsets.last().unwrap();
-    if IdxSize::try_from(end - start).is_err() {
-        return None;
-    }
-    let groups = offsets
-        .iter()
-        .skip(1)
-        .map(|end| {
-            let offset = start as IdxSize;
-            let len = (*end - start) as IdxSize;
-            start = *end;
-            [offset, len]
-        })
-        .collect();
-    Some(
-        GroupsType::Slice {
-            groups,
-            overlapping: false,
-        }
-        .into_sliceable(),
-    )
 }
 
 impl EvalExpr {
@@ -74,7 +44,6 @@ impl EvalExpr {
         allow_threading: bool,
         output_field: Field,
         is_scalar: bool,
-        pd_group: ExprPushdownGroup,
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
     ) -> Self {
@@ -86,7 +55,6 @@ impl EvalExpr {
             allow_threading,
             output_field,
             is_scalar,
-            pd_group,
             evaluation_is_scalar,
             evaluation_is_elementwise,
         }
