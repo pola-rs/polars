@@ -8552,7 +8552,7 @@ Consider using {self}.implode() instead"""
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 4, 4, 2, 9]})
+        >>> df = pl.DataFrame({"a": [1, 4, 4, 1, 9]})
         >>> df.select(pl.col("a").rolling_rank(3, method="average"))
         shape: (5,)
         Series: '' [f64]
@@ -8560,7 +8560,7 @@ Consider using {self}.implode() instead"""
             null
             null
             2.5
-            2.0
+            1.0
             3.0
         ]
         """

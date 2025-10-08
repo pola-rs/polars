@@ -7598,14 +7598,14 @@ class Series:
 
         Examples
         --------
-        >>> pl.Series([1, 4, 4, 2, 9]).rolling_rank(3, method="average")
+        >>> pl.Series([1, 4, 4, 1, 9]).rolling_rank(3, method="average")
         shape: (5,)
         Series: '' [f64]
         [
             null
             null
             2.5
-            2.0
+            1.0
             3.0
         ]
         """
