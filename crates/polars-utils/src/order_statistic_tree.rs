@@ -5,13 +5,15 @@
 //!   * <https://doi.org/10.1017/S0956796811000104>
 //!   * <https://doi.org/10.1137/1.9781611976007.13>
 //!
-//! Each of the nodes in the tree contains a linked list of values to store
+//! Each of the nodes in the tree contains a UnitVec of values to store
 //! multiple values with the same key.
 
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
 use slotmap::{Key, SlotMap, new_key_type};
+
+use crate::UnitVec;
 
 const DELTA: usize = 3;
 const GAMMA: usize = 2;
@@ -27,20 +29,8 @@ new_key_type! {
 }
 
 #[derive(Debug)]
-struct ValueNode<T> {
-    value: T,
-    next: ValueKey,
-}
-
-#[derive(Debug)]
-struct ValueList<T> {
-    head: ValueNode<T>,
-    len: usize,
-}
-
-#[derive(Debug)]
 struct TreeNode<T> {
-    values: ValueList<T>,
+    values: UnitVec<T>,
     left: TreeKey,
     right: TreeKey,
     weight: u32,
@@ -50,7 +40,6 @@ struct TreeNode<T> {
 #[derive(Debug)]
 pub struct OrderStatisticTree<T> {
     tree_nodes: SlotMap<TreeKey, TreeNode<T>>,
-    value_nodes: SlotMap<ValueKey, ValueNode<T>>,
     root: TreeKey,
     compare: CompareFn<T>,
 }
@@ -60,7 +49,6 @@ impl<T> OrderStatisticTree<T> {
     pub fn new(compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             tree_nodes: SlotMap::with_key(),
-            value_nodes: SlotMap::with_key(),
             root: TreeKey::null(),
             compare,
         }
@@ -70,7 +58,6 @@ impl<T> OrderStatisticTree<T> {
     pub fn with_capacity(capacity: usize, compare: CompareFn<T>) -> Self {
         OrderStatisticTree {
             tree_nodes: SlotMap::with_capacity_and_key(capacity),
-            value_nodes: SlotMap::with_key(),
             root: TreeKey::null(),
             compare,
         }
@@ -94,7 +81,6 @@ impl<T> OrderStatisticTree<T> {
     #[inline]
     pub fn clear(&mut self) {
         self.tree_nodes.clear();
-        self.value_nodes.clear();
         self.root = Key::null();
     }
 
@@ -116,42 +102,8 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn new_singleton_value_list(&mut self, value: T) -> ValueList<T> {
-        ValueList {
-            head: ValueNode {
-                value,
-                next: ValueKey::null(),
-            },
-            len: 1,
-        }
-    }
-
-    #[must_use]
-    fn value_list_push(&mut self, vl: ValueList<T>, value: T) -> ValueList<T> {
-        ValueList {
-            head: ValueNode {
-                value,
-                next: self.value_nodes.insert(vl.head),
-            },
-            len: vl.len + 1,
-        }
-    }
-
-    #[must_use]
-    fn value_list_pop(&mut self, vl: ValueList<T>) -> (T, ValueList<T>) {
-        debug_assert!(vl.len > 0);
-        debug_assert!(!vl.head.next.is_null());
-        let new_head = self.value_nodes.remove(vl.head.next).unwrap();
-        let new_vl = ValueList {
-            head: new_head,
-            len: vl.len - 1,
-        };
-        (vl.head.value, new_vl)
-    }
-
-    #[must_use]
-    fn new_tree_node(&mut self, left: TreeKey, values: ValueList<T>, right: TreeKey) -> TreeKey {
-        let num_elems = self.num_elems(left) + self.num_elems(right) + values.len;
+    fn new_tree_node(&mut self, left: TreeKey, values: UnitVec<T>, right: TreeKey) -> TreeKey {
+        let num_elems = self.num_elems(left) + self.num_elems(right) + values.len();
         let weight = self.tree_weight(left) + self.tree_weight(right) + 1;
         let tn = TreeNode {
             values,
@@ -165,8 +117,9 @@ impl<T> OrderStatisticTree<T> {
 
     #[must_use]
     fn new_leaf(&mut self, value: T) -> TreeKey {
-        let vl = self.new_singleton_value_list(value);
-        self.new_tree_node(TreeKey::null(), vl, TreeKey::null())
+        let mut uv = UnitVec::new();
+        uv.push(value);
+        self.new_tree_node(TreeKey::null(), uv, TreeKey::null())
     }
 
     #[must_use]
@@ -190,16 +143,12 @@ impl<T> OrderStatisticTree<T> {
         let right_elems = self.num_elems(tn.right);
 
         if idx < left_elems {
-            return self._get(idx, tn.left);
+            self._get(idx, tn.left)
         } else if idx >= own_elems - right_elems {
-            return self._get(idx - (own_elems - right_elems), tn.right);
+            self._get(idx - (own_elems - right_elems), tn.right)
+        } else {
+            tn.values.get(idx - left_elems)
         }
-
-        let mut vn = &tn.values.head;
-        for _ in 0..(idx - left_elems) {
-            vn = &self.value_nodes[vn.next];
-        }
-        Some(&vn.value)
     }
 
     #[inline]
@@ -213,18 +162,21 @@ impl<T> OrderStatisticTree<T> {
             return self.new_leaf(value);
         }
 
-        let tn = self.drop_tree_node(tree);
-        let vn = &tn.values.head;
-        match (self.compare)(&value, &vn.value) {
+        let tn = &self.tree_nodes[tree];
+        match (self.compare)(&value, &tn.values[0]) {
             Ordering::Less => {
+                let tn = self.drop_tree_node(tree);
                 let left = self._insert(value, tn.left);
                 self.balance_r(left, tn.values, tn.right)
             },
             Ordering::Equal => {
-                let values = self.value_list_push(tn.values, value);
-                self.new_tree_node(tn.left, values, tn.right)
+                let tn = &mut self.tree_nodes[tree];
+                tn.values.push(value);
+                tn.num_elems += 1;
+                tree
             },
             Ordering::Greater => {
+                let tn = self.drop_tree_node(tree);
                 let right = self._insert(value, tn.right);
                 self.balance_l(tn.left, tn.values, right)
             },
@@ -244,23 +196,28 @@ impl<T> OrderStatisticTree<T> {
             return (None, tree);
         }
 
-        let tn = self.drop_tree_node(tree);
-        let vn = &tn.values.head;
-        match (self.compare)(value, &vn.value) {
+        let tn = &self.tree_nodes[tree];
+        match (self.compare)(value, &tn.values[0]) {
             Ordering::Less => {
+                let tn = self.drop_tree_node(tree);
                 let (deleted, left) = self._remove(value, tn.left);
                 (deleted, self.balance_l(left, tn.values, tn.right))
             },
             Ordering::Greater => {
+                let tn = self.drop_tree_node(tree);
                 let (deleted, right) = self._remove(value, tn.right);
                 (deleted, self.balance_r(tn.left, tn.values, right))
             },
-            Ordering::Equal if !vn.next.is_null() => {
-                let (stored_value, new_vl) = self.value_list_pop(tn.values);
-                let new_tn = self.new_tree_node(tn.left, new_vl, tn.right);
-                (Some(stored_value), new_tn)
+            Ordering::Equal if tn.values.len() > 1 => {
+                let tn = &mut self.tree_nodes[tree];
+                let popped_value = tn.values.pop().unwrap();
+                tn.num_elems -= 1;
+                (Some(popped_value), tree)
             },
-            Ordering::Equal => (Some(tn.values.head.value), self.glue(tn.left, tn.right)),
+            Ordering::Equal => {
+                let mut tn = self.drop_tree_node(tree);
+                (Some(tn.values.pop().unwrap()), self.glue(tn.left, tn.right))
+            },
         }
     }
 
@@ -280,7 +237,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn remove_min(&mut self, tree: TreeKey) -> (Option<ValueList<T>>, TreeKey) {
+    fn remove_min(&mut self, tree: TreeKey) -> (Option<UnitVec<T>>, TreeKey) {
         debug_assert!(!tree.is_null());
         let tn = self.drop_tree_node(tree);
         if tn.left.is_null() {
@@ -291,7 +248,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn remove_max(&mut self, tree: TreeKey) -> (Option<ValueList<T>>, TreeKey) {
+    fn remove_max(&mut self, tree: TreeKey) -> (Option<UnitVec<T>>, TreeKey) {
         debug_assert!(!tree.is_null());
         let tn = self.drop_tree_node(tree);
         if tn.right.is_null() {
@@ -311,8 +268,7 @@ impl<T> OrderStatisticTree<T> {
             return false;
         }
         let tn = &self.tree_nodes[tree];
-        let vn = &tn.values.head;
-        match (self.compare)(value, &vn.value) {
+        match (self.compare)(value, &tn.values[0]) {
             Ordering::Less => self._contains(value, tn.left),
             Ordering::Equal => true,
             Ordering::Greater => self._contains(value, tn.right),
@@ -320,7 +276,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn balance_l(&mut self, left: TreeKey, values: ValueList<T>, right: TreeKey) -> TreeKey {
+    fn balance_l(&mut self, left: TreeKey, values: UnitVec<T>, right: TreeKey) -> TreeKey {
         if self.pair_is_balanced(left, right) {
             return self.new_tree_node(left, values, right);
         }
@@ -328,7 +284,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn rotate_l(&mut self, left: TreeKey, values: ValueList<T>, right: TreeKey) -> TreeKey {
+    fn rotate_l(&mut self, left: TreeKey, values: UnitVec<T>, right: TreeKey) -> TreeKey {
         let r = &self.tree_nodes[right];
         if self.is_single(r.left, r.right) {
             self.single_l(left, values, right)
@@ -338,14 +294,14 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn single_l(&mut self, left: TreeKey, values: ValueList<T>, right: TreeKey) -> TreeKey {
+    fn single_l(&mut self, left: TreeKey, values: UnitVec<T>, right: TreeKey) -> TreeKey {
         let r = self.drop_tree_node(right);
         let new_left = self.new_tree_node(left, values, r.left);
         self.new_tree_node(new_left, r.values, r.right)
     }
 
     #[must_use]
-    fn double_l(&mut self, left: TreeKey, value: ValueList<T>, right: TreeKey) -> TreeKey {
+    fn double_l(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
         let r = self.drop_tree_node(right);
         let rl = self.drop_tree_node(r.left);
         let new_left = self.new_tree_node(left, value, rl.left);
@@ -354,7 +310,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn balance_r(&mut self, left: TreeKey, value: ValueList<T>, right: TreeKey) -> TreeKey {
+    fn balance_r(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
         if self.pair_is_balanced(right, left) {
             return self.new_tree_node(left, value, right);
         }
@@ -362,7 +318,7 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn rotate_r(&mut self, left: TreeKey, value: ValueList<T>, right: TreeKey) -> TreeKey {
+    fn rotate_r(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
         let l = &self.tree_nodes[left];
         if self.is_single(l.right, l.left) {
             self.single_r(left, value, right)
@@ -372,14 +328,14 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[must_use]
-    fn single_r(&mut self, left: TreeKey, value: ValueList<T>, right: TreeKey) -> TreeKey {
+    fn single_r(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
         let l = self.drop_tree_node(left);
         let new_right = self.new_tree_node(l.right, value, right);
         self.new_tree_node(l.left, l.values, new_right)
     }
 
     #[must_use]
-    fn double_r(&mut self, left: TreeKey, value: ValueList<T>, right: TreeKey) -> TreeKey {
+    fn double_r(&mut self, left: TreeKey, value: UnitVec<T>, right: TreeKey) -> TreeKey {
         let l = self.drop_tree_node(left);
         let lr = self.drop_tree_node(l.right);
         let new_right = self.new_tree_node(lr.right, value, right);
@@ -425,8 +381,7 @@ impl<T> OrderStatisticTree<T> {
             return Err(0);
         }
         let tn = &self.tree_nodes[tree];
-        let vn = &tn.values.head;
-        match (self.compare)(value, &vn.value) {
+        match (self.compare)(value, &tn.values[0]) {
             Ordering::Less => self._rank_lower(value, tn.left),
             Ordering::Equal => Ok(self.num_elems(tn.left)),
             Ordering::Greater => self
@@ -446,8 +401,7 @@ impl<T> OrderStatisticTree<T> {
             return Err(self.num_elems(tree));
         }
         let tn = &self.tree_nodes[tree];
-        let vn = &tn.values.head;
-        match (self.compare)(value, &vn.value) {
+        match (self.compare)(value, &tn.values[0]) {
             Ordering::Less => self._rank_upper(value, tn.left),
             Ordering::Equal => Ok(self.num_elems(tree) - self.num_elems(tn.right) - 1),
             Ordering::Greater => self
@@ -467,8 +421,7 @@ impl<T> OrderStatisticTree<T> {
             return Err(0);
         }
         let tn = &self.tree_nodes[tree];
-        let vn = &tn.values.head;
-        match (self.compare)(value, &vn.value) {
+        match (self.compare)(value, &tn.values[0]) {
             Ordering::Less => self._rank_unique(value, tn.left),
             Ordering::Equal => Ok(self.tree_weight(tn.left)),
             Ordering::Greater => self
@@ -488,10 +441,9 @@ impl<T> OrderStatisticTree<T> {
             return 0;
         }
         let tn = &self.tree_nodes[tree];
-        let vn = &tn.values.head;
-        match (self.compare)(value, &vn.value) {
+        match (self.compare)(value, &tn.values[0]) {
             Ordering::Less => self._count(value, tn.left),
-            Ordering::Equal => tn.values.len,
+            Ordering::Equal => tn.values.len(),
             Ordering::Greater => self._count(value, tn.right),
         }
     }
