@@ -480,11 +480,20 @@ impl<T> OrderStatisticTree<T> {
 
     #[inline]
     pub fn count(&self, value: &T) -> usize {
-        let Ok(lo) = self.rank_lower(value) else {
+        self._count(value, self.root)
+    }
+
+    fn _count(&self, value: &T, tree: TreeKey) -> usize {
+        if tree.is_null() {
             return 0;
-        };
-        let hi = self.rank_upper(value).unwrap();
-        hi + 1 - lo
+        }
+        let tn = &self.tree_nodes[tree];
+        let vn = &tn.values.head;
+        match (self.compare)(value, &vn.value) {
+            Ordering::Less => self._count(value, tn.left),
+            Ordering::Equal => tn.values.len,
+            Ordering::Greater => self._count(value, tn.right),
+        }
     }
 }
 
