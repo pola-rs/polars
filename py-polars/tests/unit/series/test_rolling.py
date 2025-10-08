@@ -75,7 +75,7 @@ def test_series_rolling_quantile_by(values: pl.Series, by_col: pl.Series) -> Non
 
 def test_series_rolling_rank_by(values: pl.Series, by_col: pl.Series) -> None:
     actual = values.rolling_rank_by(by_col, "2i", method="average")
-    expected = pl.Series([1.0, 1.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0])
+    expected = pl.Series([2.0, 2.0, 2.0, 2.0, 1.0, 1.0, 3.0, 3.0])
     assert_series_equal(actual, expected)
 
 
