@@ -1,4 +1,4 @@
-use polars_compute::decimal::{DEC128_MAX_PREC, dec128_verify_prec_scale};
+use polars_compute::decimal::dec128_verify_prec_scale;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
