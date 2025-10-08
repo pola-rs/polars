@@ -1170,7 +1170,7 @@ def test_cspe_recursive_24744() -> None:
     lf_j2 = convoluted_inner_join(lf_left=lf_j1, lf_right=lf_a)
     lf_j3 = convoluted_inner_join(lf_left=lf_j2, lf_right=lf_a).sort("x")
 
-    assert lf_j3.explain().count("CACHE") == 16
+    assert lf_j3.explain().count("CACHE") == 14
     assert_frame_equal(
         lf_j3.collect(),
         lf_j3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
