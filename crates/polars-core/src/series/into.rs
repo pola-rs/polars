@@ -46,7 +46,14 @@ impl ToArrowConverter {
                     .collect::<Vec<_>>();
 
                 StructArray::new(
-                    dtype.to_arrow(self.compat_level),
+                    ArrowDataType::Struct(
+                        fields
+                            .iter()
+                            .map(|x| x.name())
+                            .zip(values.iter().map(|x| x.dtype()))
+                            .map(|(name, dtype)| ArrowField::new(name.clone(), dtype.clone(), true))
+                            .collect(),
+                    ),
                     arr.len(),
                     values,
                     arr.validity().cloned(),
@@ -57,9 +64,8 @@ impl ToArrowConverter {
                 let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
                 let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
-                let dtype = dtype.to_arrow(self.compat_level);
                 let arr = ListArray::<i64>::new(
-                    dtype,
+                    ListArray::<i64>::default_datatype(new_values.dtype().clone()),
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
@@ -73,10 +79,12 @@ impl ToArrowConverter {
                 let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
                 let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
-                let dtype =
-                    FixedSizeListArray::default_datatype(inner.to_arrow(self.compat_level), *width);
-                let arr =
-                    FixedSizeListArray::new(dtype, arr.len(), new_values, arr.validity().cloned());
+                let arr = FixedSizeListArray::new(
+                    FixedSizeListArray::default_datatype(new_values.dtype().clone(), *width),
+                    arr.len(),
+                    new_values,
+                    arr.validity().cloned(),
+                );
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
