@@ -1562,3 +1562,29 @@ def test_group_by_cum_sum_key_24489() -> None:
     out = df.group_by((pl.col.x > 1).cum_sum()).agg().collect()
     expected = pl.DataFrame({"x": [0, 1]}, schema={"x": pl.UInt32})
     assert_frame_equal(out, expected, check_row_order=False)
+
+
+def test_group_by_categorical_min_max_18394() -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["a", "a", "b", "b", "c", "c"],
+            "degree": ["low", "high", "high", "mid", "mid", "low"],
+        }
+    ).with_columns(pl.col("degree").cast(pl.Enum(["low", "mid", "high"])))
+    out = df.group_by("id").agg(
+        min_degree=pl.col("degree").min(),
+        max_degree=pl.col("degree").max(),
+    )
+    expected = pl.DataFrame(
+        {
+            "id": ["a", "b", "c"],
+            "min_degree": ["low", "mid", "low"],
+            "max_degree": ["high", "high", "mid"],
+        },
+        schema={
+            "id": pl.String,
+            "min_degree": pl.Enum(["low", "mid", "high"]),
+            "max_degree": pl.Enum(["low", "mid", "high"]),
+        },
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
