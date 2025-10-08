@@ -13,7 +13,7 @@ impl StringChunked {
     /// using the `cast` method.
     pub fn to_decimal_infer(&self, infer_length: usize) -> PolarsResult<Series> {
         let mut scale = 0;
-        let mut prec = 0;
+        let mut prec_past_scale = 0;
         let mut iter = self.into_iter();
         let mut valid_count = 0;
         while let Some(Some(v)) = iter.next() {
@@ -21,11 +21,14 @@ impl StringChunked {
             if bytes.first() == Some(&b'-') || bytes.first() == Some(&b'+') {
                 bytes = &bytes[1..];
             }
+            while bytes.first() == Some(&b'0') {
+                bytes = &bytes[1..];
+            }
             if let Some(separator) = bytes.iter().position(|b| *b == b'.') {
                 scale = scale.max(bytes.len() - 1 - separator);
-                prec = prec.max(bytes.len() - 1);
+                prec_past_scale = prec_past_scale.max(separator);
             } else {
-                prec = prec.max(bytes.len());
+                prec_past_scale = prec_past_scale.max(bytes.len());
             }
 
             valid_count += 1;
@@ -34,7 +37,7 @@ impl StringChunked {
             }
         }
 
-        self.to_decimal(prec, scale)
+        self.to_decimal(prec_past_scale + scale, scale)
     }
 
     pub fn to_decimal(&self, prec: usize, scale: usize) -> PolarsResult<Series> {
@@ -50,7 +53,7 @@ mod test {
         use super::*;
         let vals = [
             "1.0",
-            "wrong",
+            "bad",
             "225.0",
             "3.00045",
             "-4.0",
@@ -59,7 +62,7 @@ mod test {
         ];
         let s = StringChunked::from_slice(PlSmallStr::from_str("test"), &vals);
         let s = s.to_decimal_infer(6).unwrap();
-        assert_eq!(s.dtype(), &DataType::Decimal(6, 5));
+        assert_eq!(s.dtype(), &DataType::Decimal(8, 5));
         assert_eq!(s.len(), 7);
         assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 6, 5));
         assert_eq!(s.get(1).unwrap(), AnyValue::Null);
