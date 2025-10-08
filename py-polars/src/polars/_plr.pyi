@@ -1749,6 +1749,16 @@ class PyExpr:
         min_periods: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
+    def rolling_rank_by(
+        self,
+        by: PyExpr,
+        window_size: str,
+        method: RankMethod,
+        *,
+        seed: int | None = None,
+        min_samples: int = 1,
+        closed: ClosedInterval,
+    ) -> PyExpr: ...
     def rolling_skew(
         self,
         window_size: int,

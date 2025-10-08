@@ -6,7 +6,7 @@ use polars_utils::order_statistic_tree::OrderStatisticTree;
 use super::super::rank::*;
 use super::*;
 
-struct RankWindow<'a, T, Out, P> {
+pub struct RankWindow<'a, T, Out, P> {
     slice: &'a [T],
     validity: &'a Bitmap,
     last_start: usize,

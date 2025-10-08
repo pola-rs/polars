@@ -1126,6 +1126,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     },
                     VarBy => map_as_slice!(rolling_by::rolling_var_by, options.clone()),
                     StdBy => map_as_slice!(rolling_by::rolling_std_by, options.clone()),
+                    RankBy => map_as_slice!(rolling_by::rolling_rank_by, options.clone()),
                 }
             },
             #[cfg(feature = "hist")]

@@ -818,6 +818,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     IR::QuantileBy => R::QuantileBy,
                     IR::VarBy => R::VarBy,
                     IR::StdBy => R::StdBy,
+                    IR::RankBy => R::RankBy,
                 },
                 options,
             }

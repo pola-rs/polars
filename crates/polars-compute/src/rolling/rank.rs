@@ -7,7 +7,7 @@ use rand::{Rng, SeedableRng};
 
 use super::*;
 
-pub(super) trait RankPolicy<T, Out>: Debug
+pub trait RankPolicy<T, Out>: Debug
 where
     T: NativeType,
     Out: NativeType,
@@ -17,7 +17,7 @@ where
 }
 
 #[derive(Debug)]
-pub(super) struct RankPolicyAverage;
+pub struct RankPolicyAverage;
 
 impl<T: NativeType> RankPolicy<T, f64> for RankPolicyAverage {
     fn new(_params: &RollingFnParams) -> Self {
@@ -31,7 +31,7 @@ impl<T: NativeType> RankPolicy<T, f64> for RankPolicyAverage {
 }
 
 #[derive(Debug)]
-pub(super) struct RankPolicyMin;
+pub struct RankPolicyMin;
 
 impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyMin {
     fn new(_params: &RollingFnParams) -> Self {
@@ -43,7 +43,7 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyMin {
 }
 
 #[derive(Debug)]
-pub(super) struct RankPolicyMax;
+pub struct RankPolicyMax;
 
 impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyMax {
     fn new(_params: &RollingFnParams) -> Self {
@@ -55,7 +55,7 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyMax {
 }
 
 #[derive(Debug)]
-pub(super) struct RankPolicyDense;
+pub struct RankPolicyDense;
 
 impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyDense {
     fn new(_params: &RollingFnParams) -> Self {
@@ -67,7 +67,7 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyDense {
 }
 
 #[derive(Debug)]
-pub(super) struct RankPolicyRandom {
+pub struct RankPolicyRandom {
     rng: SmallRng,
 }
 

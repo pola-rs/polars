@@ -7467,6 +7467,30 @@ Consider using {self}.implode() instead"""
             )
         )
 
+    @unstable()
+    def rolling_rank_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        method: RankMethod = "average",
+        *,
+        seed: int | None = None,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Expr:
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by_pyexpr = parse_into_expression(by)
+        return wrap_expr(
+            self._pyexpr.rolling_rank_by(
+                by_pyexpr,
+                window_size,
+                method,
+                seed,
+                min_samples,
+                closed,
+            )
+        )
+
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,

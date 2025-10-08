@@ -1167,6 +1167,11 @@ impl Expr {
         self.rolling_quantile_by(by, QuantileMethod::Linear, 0.5, options)
     }
 
+    #[cfg(feature = "rolling_window_by")]
+    pub fn rolling_rank_by(self, by: Expr, options: RollingOptionsDynamicWindow) -> Expr {
+        self.finish_rolling_by(by, options, RollingFunctionBy::RankBy)
+    }
+
     /// Apply a rolling minimum.
     ///
     /// See: [`RollingAgg::rolling_min`]

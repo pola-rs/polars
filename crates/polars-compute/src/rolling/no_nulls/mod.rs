@@ -11,7 +11,7 @@ mod mean;
 mod min_max;
 mod moment;
 mod quantile;
-mod rank;
+pub mod rank;
 mod sum;
 
 pub use mean::*;

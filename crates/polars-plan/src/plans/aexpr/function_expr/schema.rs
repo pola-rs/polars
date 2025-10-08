@@ -94,13 +94,25 @@ impl IRFunctionExpr {
                 }
             },
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy { function_by, .. } => {
+            RollingExprBy {
+                function_by,
+                options,
+                ..
+            } => {
                 use IRRollingFunctionBy::*;
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
                     MeanBy | QuantileBy | StdBy => mapper.moment_dtype(),
                     VarBy => mapper.var_dtype(),
                     SumBy => mapper.sum_dtype(),
+                    RankBy => match options.fn_params {
+                        Some(RollingFnParams::Rank {
+                            method: RollingRankMethod::Average,
+                            ..
+                        }) => mapper.with_dtype(DataType::Float64),
+                        Some(RollingFnParams::Rank { .. }) => mapper.with_dtype(IDX_DTYPE),
+                        _ => unreachable!("should be Some(RollingFnParams::Rank)"),
+                    },
                 }
             },
             Rechunk => mapper.with_same_dtype(),

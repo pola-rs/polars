@@ -7456,6 +7456,19 @@ class Series:
         """  # noqa: W505
 
     @unstable()
+    def rolling_rank_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        method: RankMethod = "average",
+        *,
+        seed: int | None = None,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Series:
+        pass  # TODO [amber] docstring
+
+    @unstable()
     def rolling_rank(
         self,
         window_size: int,

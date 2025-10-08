@@ -728,6 +728,7 @@ pub(super) fn convert_functions(
                     R::QuantileBy => IR::QuantileBy,
                     R::VarBy => IR::VarBy,
                     R::StdBy => IR::StdBy,
+                    R::RankBy => IR::RankBy,
                 },
                 options,
             }
