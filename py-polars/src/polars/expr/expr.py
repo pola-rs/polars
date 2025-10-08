@@ -7478,6 +7478,11 @@ Consider using {self}.implode() instead"""
         min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
+        """
+        Compute a rolling rank based on another column.
+
+        TODO: [amber]
+        """
         window_size = _prepare_rolling_by_window_args(window_size)
         by_pyexpr = parse_into_expression(by)
         return wrap_expr(

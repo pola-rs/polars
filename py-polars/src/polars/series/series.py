@@ -7466,7 +7466,11 @@ class Series:
         min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Series:
-        pass  # TODO [amber] docstring
+        """
+        Compute a rolling rank based on another column.
+
+        TODO: [amber]
+        """
 
     @unstable()
     def rolling_rank(
