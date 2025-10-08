@@ -74,7 +74,7 @@ impl ToArrowConverter {
                 let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
                 let dtype =
-                    FixedSizeListArray::default_datatype(dtype.to_arrow(self.compat_level), *width);
+                    FixedSizeListArray::default_datatype(inner.to_arrow(self.compat_level), *width);
                 let arr =
                     FixedSizeListArray::new(dtype, arr.len(), new_values, arr.validity().cloned());
                 Box::new(arr)
