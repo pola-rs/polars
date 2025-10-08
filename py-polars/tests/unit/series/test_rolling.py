@@ -73,6 +73,12 @@ def test_series_rolling_quantile_by(values: pl.Series, by_col: pl.Series) -> Non
     assert_series_equal(actual, expected)
 
 
+def test_series_rolling_rank_by(values: pl.Series, by_col: pl.Series) -> None:
+    actual = values.rolling_rank_by(by_col, "2i", method="average")
+    expected = pl.Series([1.0, 1.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0])
+    assert_series_equal(actual, expected)
+
+
 def test_series_rolling_min_by_temporal(
     values: pl.Series, by_col_temporal: pl.Series
 ) -> None:
@@ -134,4 +140,12 @@ def test_series_rolling_quantile_by_temporal(
 ) -> None:
     actual = values.rolling_quantile_by(by_col_temporal, "2h", quantile=0.5)
     expected = pl.Series([6.0, 9.0, 9.0, 5.0, 8.0, 8.0, 4.0, 7.0])
+    assert_series_equal(actual, expected)
+
+
+def test_series_rolling_rank_by_temporal(
+    values: pl.Series, by_col_temporal: pl.Series
+) -> None:
+    actual = values.rolling_rank_by(by_col_temporal, "2h", method="average")
+    expected = pl.Series([1.0, 2.0, 1.0, 2.0, 2.0, 1.0, 2.0, 2.0])
     assert_series_equal(actual, expected)

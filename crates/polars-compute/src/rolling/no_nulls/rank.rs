@@ -63,13 +63,13 @@ where
         debug_assert!(self.last_start <= new_start);
         debug_assert!(self.last_end <= new_end);
 
+        for i in self.last_end..new_end {
+            self.ost.insert(unsafe { self.slice.get_unchecked(i) });
+        }
         for i in self.last_start..new_start {
             self.ost
                 .remove(&unsafe { self.slice.get_unchecked(i) })
                 .expect("previously added value is missing");
-        }
-        for i in self.last_end..new_end {
-            self.ost.insert(unsafe { self.slice.get_unchecked(i) });
         }
         self.last_start = new_start;
         self.last_end = new_end;

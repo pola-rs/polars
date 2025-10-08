@@ -71,6 +71,7 @@ def test_rolling_kernels_and_rolling(
         pl.col("values")
         .rolling_quantile_by("dt", period, quantile=0.2, closed=closed)
         .alias("quantile"),
+        pl.col("values").rolling_rank_by("dt", period, closed=closed).alias("rank"),
     )
     out2 = (
         example_df.set_sorted("dt")
@@ -82,6 +83,7 @@ def test_rolling_kernels_and_rolling(
                 pl.col("values").mean().alias("mean"),
                 pl.col("values").std().alias("std"),
                 pl.col("values").quantile(quantile=0.2).alias("quantile"),
+                pl.col("values").rank().last().alias("rank"),
             ]
         )
     )
@@ -243,6 +245,7 @@ def test_rolling_kurtosis() -> None:
         ("rolling_max_by", [None, 1, 2, 3, 4, 5], pl.Int64),
         ("rolling_std_by", [None, None, None, None, None, None], pl.Float64),
         ("rolling_var_by", [None, None, None, None, None, None], pl.Float64),
+        ("rolling_rank_by", [None, 1.0, 1.0, 1.0, 1.0, 1.0], pl.Float64),
     ],
 )
 def test_rolling_crossing_dst(

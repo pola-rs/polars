@@ -7494,7 +7494,7 @@ Consider using {self}.implode() instead"""
                 min_samples,
                 closed,
             )
-        )
+        )  # noqa: W505
 
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
