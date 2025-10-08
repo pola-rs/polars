@@ -5490,7 +5490,7 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_type: Literal["frame"],
+        return_type: Literal["frame", "self"],
     ) -> DataFrame: ...
 
     @deprecate_renamed_parameter("return_as_string", "return_type", version="1.35.0")
@@ -5499,7 +5499,7 @@ class DataFrame:
         *,
         max_items_per_column: int = 10,
         max_colname_length: int = 50,
-        return_type: Literal["frame", "string"] | None = None,
+        return_type: Literal["frame", "self", "string"] | None = None,
     ) -> str | DataFrame | None:
         """
         Return a dense preview of the DataFrame.
@@ -5523,6 +5523,7 @@ class DataFrame:
             Modify the return format:
 
             - `None` (default): Print the output to stdout and return `None`.
+            - `"self"`: Print the output to stdout and return the same frame.
             - `"frame"`: Return the output as a DataFrame.
             - `"string"`: Return the output as a string.
 
@@ -5585,8 +5586,8 @@ class DataFrame:
             return_frame = False
         else:
             return_frame = return_type == "frame"
-            if not return_frame and return_type != "string":
-                msg = f"invalid value for `return_type`: {return_type!r}; expected 'string', 'frame', or None"
+            if not return_frame and return_type not in ("self", "string"):
+                msg = f"invalid `return_type`; found {return_type!r}, expected one of 'string', 'frame', 'self', or None"
                 raise ValueError(msg)
 
         # always print at most this number of values (mainly ensures that
@@ -5638,6 +5639,9 @@ class DataFrame:
                 return s
 
             print(s, end=None)
+
+            if return_type == "self":
+                return self
             return None
 
     def describe(
