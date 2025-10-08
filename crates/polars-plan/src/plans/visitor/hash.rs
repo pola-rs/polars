@@ -490,7 +490,8 @@ impl HashableEqLP<'_> {
                     options: or,
                 },
             ) => {
-                ol == or
+                ol.args == or.args
+                    && ol.options == or.options
                     && expr_irs_eq(ll, lr, self.expr_arena)
                     && expr_irs_eq(rl, rr, self.expr_arena)
             },
@@ -569,6 +570,11 @@ impl HashableEqLP<'_> {
                         l == r
                     })
             },
+            (IR::MergeSorted { key: l, .. }, IR::MergeSorted { key: r, .. }) => l == r,
+            (IR::Cache { .. }, IR::Cache { .. }) => false,
+            (IR::Sink { .. }, IR::Sink { .. }) => false,
+            (IR::SinkMultiple { .. }, IR::SinkMultiple { .. }) => false,
+            (IR::Invalid, IR::Invalid) => unreachable!(),
             _ => false,
         }
     }
