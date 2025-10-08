@@ -5522,10 +5522,10 @@ class DataFrame:
         return_type
             Modify the return format:
 
-            - `None` (default): Print the output to stdout and return `None`.
-            - `"self"`: Print the output to stdout and return the same frame.
-            - `"frame"`: Return the output as a DataFrame.
-            - `"string"`: Return the output as a string.
+            - `None` (default): Print the glimpse output to stdout, returning `None`.
+            - `"self"`: Print the glimpse output to stdout, returning the *original* frame.
+            - `"frame"`: Return the glimpse output as a new DataFrame.
+            - `"string"`: Return the glimpse output as a string.
 
         See Also
         --------
@@ -5545,9 +5545,9 @@ class DataFrame:
         ...     }
         ... )
 
-        Print glimpse-formatted output to stdout:
+        Print glimpse-formatted output to stdout, returning `None`:
 
-        >>> df.glimpse()
+        >>> res = df.glimpse()
         Rows: 3
         Columns: 6
         $ a  <f64> 1.0, 2.8, 3.0
@@ -5556,14 +5556,16 @@ class DataFrame:
         $ d  <str> null, 'b', 'c'
         $ e  <str> 'usd', 'eur', null
         $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
+        >>> res is None
+        True
 
-        Return the output as a string:
+        Return the glimpse output as a string:
 
         >>> res = df.glimpse(return_type="string")
         >>> isinstance(res, str)
         True
 
-        Return the output as a DataFrame:
+        Return the glimpse output as a DataFrame:
 
         >>> df.glimpse(return_type="frame")
         shape: (6, 3)
@@ -5579,7 +5581,30 @@ class DataFrame:
         │ e      ┆ str   ┆ ["'usd'", "'eur'", null]        │
         │ f      ┆ date  ┆ ["2020-01-01", "2021-01-02", "… │
         └────────┴───────┴─────────────────────────────────┘
-        """
+
+        Print glimpse-formatted output to stdout, returning the *original* frame:
+
+        >>> res = df.glimpse(return_type="self")
+        Rows: 3
+        Columns: 6
+        $ a  <f64> 1.0, 2.8, 3.0
+        $ b  <i64> 4, 5, null
+        $ c <bool> True, False, True
+        $ d  <str> null, 'b', 'c'
+        $ e  <str> 'usd', 'eur', null
+        $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
+        >>> res
+        shape: (3, 6)
+        ┌─────┬──────┬───────┬──────┬──────┬────────────┐
+        │ a   ┆ b    ┆ c     ┆ d    ┆ e    ┆ f          │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
+        │ f64 ┆ i64  ┆ bool  ┆ str  ┆ str  ┆ date       │
+        ╞═════╪══════╪═══════╪══════╪══════╪════════════╡
+        │ 1.0 ┆ 4    ┆ true  ┆ null ┆ usd  ┆ 2020-01-01 │
+        │ 2.8 ┆ 5    ┆ false ┆ b    ┆ eur  ┆ 2021-01-02 │
+        │ 3.0 ┆ null ┆ true  ┆ c    ┆ null ┆ 2022-01-01 │
+        └─────┴──────┴───────┴──────┴──────┴────────────┘
+        """  # noqa: W505
         # handle boolean value from now-deprecated `return_as_string` parameter
         if isinstance(return_type, bool) or return_type is None:  # type: ignore[redundant-expr]
             return_type = "string" if return_type else None  # type: ignore[redundant-expr]
