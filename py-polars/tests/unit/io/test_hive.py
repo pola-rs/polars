@@ -999,9 +999,8 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
 
     # ensure we have a trailing "/"
     uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
-    uri = "file://" + uri
 
-    lf = pl.scan_parquet(uri, hive_schema={"a": pl.UInt8})
+    lf = pl.scan_parquet(f"file://{uri}", hive_schema={"a": pl.UInt8})
 
     assert_frame_equal(
         lf.collect(),
@@ -1010,6 +1009,19 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
             pl.Series("a", [1], dtype=pl.UInt8),
         ),
     )
+
+    if sys.platform != "win32":
+        # https://github.com/pola-rs/polars/issues/24506
+        # `file:` URI with `//hostname` component omitted
+        lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
+
+        assert_frame_equal(
+            lf.collect(),
+            pl.select(
+                pl.Series("x", [1]),
+                pl.Series("a", [1], dtype=pl.UInt8),
+            ),
+        )
 
 
 @pytest.mark.write_disk

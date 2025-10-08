@@ -184,6 +184,9 @@ pub struct CastColumnsPolicy {
     /// DataType::Null to any
     pub null_upcast: bool,
 
+    /// DataType::Categorical to string
+    pub categorical_to_string: bool,
+
     pub missing_struct_fields: MissingColumnsPolicy,
     pub extra_struct_fields: ExtraColumnsPolicy,
 }
@@ -198,6 +201,7 @@ impl CastColumnsPolicy {
         datetime_microseconds_downcast: false,
         datetime_convert_timezone: false,
         null_upcast: true,
+        categorical_to_string: false,
         missing_struct_fields: MissingColumnsPolicy::Raise,
         extra_struct_fields: ExtraColumnsPolicy::Raise,
     };
@@ -219,11 +223,38 @@ pub enum ExtraColumnsPolicy {
     Ignore,
 }
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ColumnMapping {
     Iceberg(IcebergSchemaRef),
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct TableStatistics(pub Arc<DataFrame>);
+
+impl PartialEq for TableStatistics {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for TableStatistics {}
+
+impl Hash for TableStatistics {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ptr(&self.0) as *const () as usize);
+    }
+}
+
+impl std::ops::Deref for TableStatistics {
+    type Target = Arc<DataFrame>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 /// Scan arguments shared across different scan types.
@@ -240,6 +271,8 @@ pub struct UnifiedScanArgs {
     pub rechunk: bool,
     pub cache: bool,
     pub glob: bool,
+    /// Files with these prefixes will not be read.
+    pub hidden_file_prefix: Option<Arc<[PlSmallStr]>>,
 
     pub projection: Option<Arc<[PlSmallStr]>>,
     pub column_mapping: Option<ColumnMapping>,
@@ -255,6 +288,7 @@ pub struct UnifiedScanArgs {
     pub include_file_paths: Option<PlSmallStr>,
 
     pub deletion_files: Option<DeletionFilesList>,
+    pub table_statistics: Option<TableStatistics>,
 }
 
 impl Default for UnifiedScanArgs {
@@ -266,6 +300,7 @@ impl Default for UnifiedScanArgs {
             rechunk: false,
             cache: false,
             glob: true,
+            hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
             default_values: None,
@@ -276,6 +311,7 @@ impl Default for UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::default(),
             include_file_paths: None,
             deletion_files: None,
+            table_statistics: None,
         }
     }
 }

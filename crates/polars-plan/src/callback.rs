@@ -5,7 +5,7 @@ use polars_error::PolarsResult;
 
 use crate::dsl::SpecialEq;
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, strum_macros::IntoStaticStr)]
 pub enum PlanCallback<Args, Out> {
     #[cfg(feature = "python")]
     Python(SpecialEq<Arc<polars_utils::python_function::PythonFunction>>),
@@ -15,7 +15,7 @@ pub enum PlanCallback<Args, Out> {
 impl<Args, Out> fmt::Debug for PlanCallback<Args, Out> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("PlanCallback::")?;
-        std::mem::discriminant(self).fmt(f)
+        f.write_str(<&'static str>::from(self))
     }
 }
 
@@ -101,6 +101,7 @@ pub trait PlanCallbackOut: Sized {
 
 #[cfg(feature = "python")]
 mod _python {
+    use polars_utils::pl_str::PlSmallStr;
     use pyo3::types::{PyAnyMethods, PyTuple};
     use pyo3::*;
 
@@ -116,6 +117,24 @@ mod _python {
             impl super::PlanCallbackOut for $type {
                 fn from_pyany<'py>(pyany: Py<PyAny>, py: Python<'py>) -> PyResult<Self> {
                     pyany.bind(py).extract::<Self>()
+                }
+            }
+            )+
+        };
+    }
+
+    macro_rules! impl_pycb_type_to_from {
+        ($($type:ty => $transformed:ty),+) => {
+            $(
+            impl super::PlanCallbackArgs for $type {
+                fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+                    Ok(<$transformed>::from(self).into_pyobject(py)?.into_any().unbind())
+                }
+            }
+
+            impl super::PlanCallbackOut for $type {
+                fn from_pyany<'py>(pyany: Py<PyAny>, py: Python<'py>) -> PyResult<Self> {
+                    pyany.bind(py).extract::<$transformed>().map(Into::into)
                 }
             }
             )+
@@ -195,8 +214,12 @@ mod _python {
     }
 
     impl_pycb_type! {
+        bool,
         usize,
         String
+    }
+    impl_pycb_type_to_from! {
+        PlSmallStr => String
     }
     impl_registrycb_type! {
         (polars_core::series::Series, series, series),

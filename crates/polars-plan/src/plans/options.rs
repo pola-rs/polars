@@ -119,6 +119,16 @@ bitflags!(
             const PRESERVES_NULL_FIRST_INPUT = 1 << 8;
             /// NULLs on any input are propagated to the output.
             const PRESERVES_NULL_ALL_INPUTS = 1 << 9;
+
+            /// Indicates that this expression does not observe the ordering of its input(s).
+            const NON_ORDER_OBSERVING = 1 << 10;
+
+            /// Indicates that the ordering of the inputs to this expression is not observable
+            /// in its output.
+            const TERMINATES_INPUT_ORDER = 1 << 11;
+
+            /// Indicates that this expression does not produce any ordering into its output.
+            const NON_ORDER_PRODUCING = 1 << 12;
         }
 );
 
@@ -137,6 +147,31 @@ impl FunctionFlags {
 
     pub fn is_length_preserving(self) -> bool {
         self.contains(Self::LENGTH_PRESERVING)
+    }
+
+    pub fn propagates_order(self) -> bool {
+        self.contains(Self::NON_ORDER_PRODUCING)
+    }
+
+    pub fn is_output_unordered(self) -> bool {
+        self.contains(Self::TERMINATES_INPUT_ORDER | Self::NON_ORDER_PRODUCING)
+    }
+
+    pub fn observes_input_order(self) -> bool {
+        let non_order_observing =
+            self.contains(Self::NON_ORDER_OBSERVING) | self.contains(Self::ROW_SEPARABLE);
+
+        !non_order_observing
+    }
+
+    pub fn terminates_input_order(self) -> bool {
+        self.contains(Self::TERMINATES_INPUT_ORDER) | self.contains(Self::RETURNS_SCALAR)
+    }
+
+    pub fn non_order_producing(self) -> bool {
+        self.contains(Self::NON_ORDER_PRODUCING)
+            | self.contains(Self::RETURNS_SCALAR)
+            | self.is_elementwise()
     }
 
     pub fn returns_scalar(self) -> bool {
@@ -251,6 +286,11 @@ impl FunctionOptions {
 
     pub fn with_casting_rules(mut self, casting_rules: CastingRules) -> FunctionOptions {
         self.cast_options = Some(casting_rules);
+        self
+    }
+
+    pub fn flag(mut self, flags: FunctionFlags) -> FunctionOptions {
+        self.flags |= flags;
         self
     }
 

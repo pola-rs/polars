@@ -211,7 +211,7 @@ def test_collapse_joins() -> None:
     assert "INNER JOIN" in e
     assert "FILTER" not in e
     assert_frame_equal(
-        inner_join.collect(optimizations=pl.QueryOptFlags(collapse_joins=False)),
+        inner_join.collect(optimizations=pl.QueryOptFlags.none()),
         inner_join.collect(),
         check_row_order=False,
     )
@@ -221,7 +221,7 @@ def test_collapse_joins() -> None:
     assert "INNER JOIN" in e
     assert "FILTER" not in e
     assert_frame_equal(
-        inner_join.collect(optimizations=pl.QueryOptFlags(collapse_joins=False)),
+        inner_join.collect(optimizations=pl.QueryOptFlags.none()),
         inner_join.collect(),
         check_row_order=False,
     )
@@ -231,7 +231,7 @@ def test_collapse_joins() -> None:
     assert "INNER JOIN" in e
     assert "FILTER" not in e
     assert_frame_equal(
-        double_inner_join.collect(optimizations=pl.QueryOptFlags(collapse_joins=False)),
+        double_inner_join.collect(optimizations=pl.QueryOptFlags.none()),
         double_inner_join.collect(),
         check_row_order=False,
     )
@@ -241,7 +241,7 @@ def test_collapse_joins() -> None:
     assert "NESTED LOOP JOIN" in e
     assert "FILTER" not in e
     assert_frame_equal(
-        dont_mix.collect(optimizations=pl.QueryOptFlags(collapse_joins=False)),
+        dont_mix.collect(optimizations=pl.QueryOptFlags.none()),
         dont_mix.collect(),
         check_row_order=False,
     )
@@ -253,7 +253,7 @@ def test_collapse_joins() -> None:
     assert "CROSS JOIN" not in e
     assert "FILTER" not in e
     assert_frame_equal(
-        iejoin.collect(optimizations=pl.QueryOptFlags(collapse_joins=False)),
+        iejoin.collect(optimizations=pl.QueryOptFlags.none()),
         iejoin.collect(),
         check_row_order=False,
     )
@@ -265,7 +265,7 @@ def test_collapse_joins() -> None:
     assert "NESTED LOOP JOIN" not in e
     assert "FILTER" not in e
     assert_frame_equal(
-        iejoin.collect(optimizations=pl.QueryOptFlags(collapse_joins=False)),
+        iejoin.collect(optimizations=pl.QueryOptFlags.none()),
         iejoin.collect(),
         check_row_order=False,
     )
@@ -300,7 +300,7 @@ def test_collapse_joins_combinations() -> None:
                 # create the exact same dataframe.
                 optimized = cross.filter(e).sort(pl.all()).collect()
                 unoptimized = cross.filter(e).collect(
-                    optimizations=pl.QueryOptFlags(collapse_joins=False)
+                    optimizations=pl.QueryOptFlags.none()
                 )
 
                 try:
@@ -314,9 +314,7 @@ def test_collapse_joins_combinations() -> None:
                     print()
                     print("Unoptimized")
                     print(
-                        cross.filter(e).explain(
-                            optimizations=pl.QueryOptFlags(collapse_joins=False)
-                        )
+                        cross.filter(e).explain(optimizations=pl.QueryOptFlags.none())
                     )
                     print(unoptimized)
                     print()
@@ -385,3 +383,29 @@ def test_fused_correct_name() -> None:
         opts,
     )
     assert_frame_equal(opts, pl.DataFrame({"a": [2, 6, 12]}))
+
+
+def test_slice_pushdown_within_concat_24734() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame({"x": [0, 1, 2, 3, 4]}).head(2),
+            pl.LazyFrame(schema={"x": pl.Int64}),
+        ]
+    )
+
+    plan = q.explain()
+    assert "SLICE" not in plan
+
+    assert_frame_equal(q, pl.LazyFrame({"x": [0, 1]}))
+
+    q = pl.concat(
+        [
+            pl.LazyFrame({"x": [0, 1, 2, 3, 4]}).select(pl.col("x").reverse()),
+            pl.LazyFrame(schema={"x": pl.Int64}),
+        ]
+    ).slice(1, 2)
+
+    plan = q.explain()
+    assert plan.index("SLICE[offset: 0, len: 3]") > plan.index("PLAN 0:")
+
+    assert_frame_equal(q, pl.LazyFrame({"x": [3, 2]}))

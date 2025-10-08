@@ -161,32 +161,37 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype",
+    ("dtype", "expected_dtype"),
     [
-        pl.Float32,
-        pl.Int32,
-        pl.Int64,
+        (pl.Float64, pl.Float64),
+        (pl.Float32, pl.Float32),
+        (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
     ],
 )
-def test_log_broadcast_upcasting(dtype: pl.DataType) -> None:
+def test_log_broadcast_upcasting(
+    dtype: pl.DataType, expected_dtype: pl.DataType
+) -> None:
     a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
     b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
-    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=pl.Float64)
+    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=expected_dtype)
 
-    assert_series_equal(a.log(b.cast(pl.Float64)), expected)
-    assert_series_equal(a.cast(pl.Float64).log(b), expected)
+    assert_series_equal(a.log(b), expected)
 
 
 @pytest.mark.parametrize(
     ("dtype_a", "dtype_base", "dtype_out"),
     [
-        (pl.UInt8, pl.UInt8, pl.Float64),
-        (pl.Int32, pl.Int32, pl.Float64),
-        (pl.Decimal(21, 3), pl.Decimal(21, 3), pl.Float64),
         (pl.Float32, pl.Float32, pl.Float32),
-        (pl.Float32, pl.Float64, pl.Float64),
+        (pl.Float32, pl.Float64, pl.Float32),
         (pl.Float64, pl.Float32, pl.Float64),
         (pl.Float64, pl.Float64, pl.Float64),
+        (pl.Float32, pl.Int32, pl.Float32),
+        (pl.Float64, pl.Int32, pl.Float64),
+        (pl.Int32, pl.Float32, pl.Float32),
+        (pl.Int32, pl.Float64, pl.Float64),
+        (pl.Decimal(21, 3), pl.Decimal(21, 3), pl.Float64),
+        (pl.Int32, pl.Int32, pl.Float64),
     ],
 )
 def test_log(
@@ -198,12 +203,13 @@ def test_log(
     base = pl.Series("base", [3, 3, 9, 3, 9], dtype=dtype_base)
     lf = pl.LazyFrame([a, base])
 
-    # log
-    result = lf.select(pl.col("a").log("base"))
+    result = lf.select(pl.col("a").log(pl.col("base")))
     expected = pl.DataFrame({"a": pl.Series([0, 1, 1, 3, 2], dtype=dtype_out)})
 
     assert_frame_equal(result.collect(), expected)
-    assert result.collect_schema() == expected.schema
+    assert result.collect_schema() == expected.schema, (
+        f"{result.collect_schema()} != {expected.schema}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -680,7 +686,7 @@ def test_repr_short_expression() -> None:
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
-    expected = "<Expr ['cs.all().len().prefix(length-l…'] at "
+    expected = "<Expr ['cs.all().len().name.prefix(len…'] at "
     assert result == expected
 
 

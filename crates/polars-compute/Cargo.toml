@@ -29,6 +29,8 @@ strength_reduce = { workspace = true }
 strum_macros = { workspace = true }
 
 [dev-dependencies]
+bigdecimal = { workspace = true }
+num-bigint = { workspace = true }
 rand = { workspace = true }
 
 arrow = { workspace = true, features = ["proptest"] }
@@ -54,6 +56,7 @@ approx_unique = []
 dtype-array = []
 dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
 dtype-i128 = []
+dtype-u128 = []
 dsl-schema = ["dep:schemars"]
 
 [lints]

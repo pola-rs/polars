@@ -1,4 +1,4 @@
-use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
+use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray, StructArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
@@ -7,6 +7,7 @@ use arrow::datatypes::{
 use arrow::types::{NativeType, days_ms, i256};
 use ethnum::I256;
 use polars_compute::cast::CastOptionsImpl;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::utils::filter::Filter;
 use super::{
@@ -18,9 +19,9 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::types::int96_to_i64_ns;
 use crate::read::ParquetError;
-use crate::read::deserialize::binview;
 use crate::read::deserialize::categorical::CategoricalDecoder;
 use crate::read::deserialize::utils::PageDecoder;
+use crate::read::deserialize::{binary, binview};
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
 /// `dtype` with a maximum of `num_rows` elements.
@@ -184,6 +185,53 @@ pub fn page_iter_to_array(
                     let validity = array.validity().cloned();
                     Ok(
                         PrimitiveArray::<days_ms>::try_new(dtype.clone(), values.into(), validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
+
+            (nested, array, ptm)
+        },
+        (PhysicalType::FixedLenByteArray(12), Interval(IntervalUnit::MonthDayMillis)) => {
+            // @TODO: Make a separate decoder for this
+
+            const N_BYTES: usize = 12;
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::FixedSizeBinary(N_BYTES),
+                fixed_size_binary::BinaryDecoder { size: N_BYTES },
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let out = array
+                .into_iter()
+                .map(|arr| convert_interval_bytes_to_month_day_nano_struct(arr).boxed())
+                .collect();
+
+            (nested, out, ptm)
+        },
+        (PhysicalType::FixedLenByteArray(16), UInt128) => {
+            let n = 16;
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::FixedSizeBinary(n),
+                fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let (_, values, validity) = array.into_inner();
+                    let values = values.try_transmute().expect(
+                        "this should work since the parquet decoder has alignment constraints",
+                    );
+                    Ok(
+                        PrimitiveArray::<u128>::try_new(dtype.clone(), values, validity)?
                             .to_boxed(),
                     )
                 })
@@ -441,8 +489,17 @@ pub fn page_iter_to_array(
             init_nested,
         )?
         .collect_boxed(filter)?,
+        // Decoder for BinaryOffset
+        (PhysicalType::ByteArray, LargeBinary) => PageDecoder::new(
+            &field.name,
+            pages,
+            dtype,
+            binary::BinaryDecoder,
+            init_nested,
+        )?
+        .collect_boxed(filter)?,
         // Don't compile this code with `i32` as we don't use this in polars
-        (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
+        (PhysicalType::ByteArray, LargeUtf8) => {
             let is_string = matches!(dtype, LargeUtf8);
             PageDecoder::new(
                 &field.name,
@@ -690,4 +747,67 @@ fn timestamp(
         )?
         .collect_boxed(filter),
     }
+}
+
+/// Converts directly from Parquet INTERVAL to Struct.
+fn convert_interval_bytes_to_month_day_nano_struct(
+    month_day_millis_bytes: FixedSizeBinaryArray,
+) -> StructArray {
+    const ROW_WIDTH: usize = 12;
+
+    let bytes: &[u8] = month_day_millis_bytes.values();
+    let output_length = bytes.len() / ROW_WIDTH;
+
+    assert_eq!(bytes.len(), output_length * ROW_WIDTH);
+
+    let (months_out, days_out, nanoseconds_out): (Vec<i32>, Vec<i32>, Vec<i64>) = (0
+        ..output_length)
+        .map(|i| {
+            let bytes: [u8; ROW_WIDTH] =
+                unsafe { bytes.get_unchecked(i * ROW_WIDTH..(i + 1) * ROW_WIDTH) }
+                    .try_into()
+                    .unwrap();
+
+            let months: i32 = i32::from_le_bytes(bytes[..4].try_into().unwrap());
+            let days: i32 = i32::from_le_bytes(bytes[4..8].try_into().unwrap());
+            let nanoseconds: i64 = (i32::from_le_bytes(bytes[8..12].try_into().unwrap()) as i64)
+                .checked_mul(1_000_000i64) // Convert milliseconds to nanoseconds.
+                .unwrap();
+
+            (months, days, nanoseconds)
+        })
+        .collect();
+
+    let struct_fields = vec![
+        Field::new(
+            PlSmallStr::from_static("months"),
+            ArrowDataType::Int32,
+            true,
+        ),
+        Field::new(PlSmallStr::from_static("days"), ArrowDataType::Int32, true),
+        Field::new(
+            PlSmallStr::from_static("nanoseconds"),
+            ArrowDataType::Duration(TimeUnit::Nanosecond),
+            true,
+        ),
+    ];
+
+    let struct_value_arrays = vec![
+        PrimitiveArray::<i32>::from_vec(months_out).boxed(),
+        PrimitiveArray::<i32>::from_vec(days_out).boxed(),
+        PrimitiveArray::<i64>::try_new(
+            ArrowDataType::Duration(TimeUnit::Nanosecond),
+            nanoseconds_out.into(),
+            None,
+        )
+        .unwrap()
+        .boxed(),
+    ];
+
+    StructArray::new(
+        ArrowDataType::Struct(struct_fields),
+        output_length,
+        struct_value_arrays,
+        month_day_millis_bytes.validity().cloned(),
+    )
 }

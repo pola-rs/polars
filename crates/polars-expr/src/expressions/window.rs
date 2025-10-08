@@ -22,12 +22,11 @@ pub struct WindowExpr {
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
-    /// A function Expr. i.e. Mean, Median, Max, etc.
-    pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) mapping: WindowMapping,
     pub(crate) expr: Expr,
     pub(crate) has_different_group_sources: bool,
+    pub(crate) output_field: Field,
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -599,8 +598,8 @@ impl PhysicalExpr for WindowExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.function.to_field(input_schema)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {

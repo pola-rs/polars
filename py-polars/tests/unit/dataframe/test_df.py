@@ -1268,6 +1268,10 @@ def test_from_generator_or_iterable() -> None:
         for i in range(n):
             yield (str(i) if strkey else i), 1 * i, 2**i, 3**i
 
+    def gen_named(n: int, *, strkey: bool = True) -> Iterator[Any]:
+        for i in range(n):
+            yield {"a": (str(i) if strkey else i), "b": 1 * i, "c": 2**i, "d": 3**i}
+
     # iterable object
     class Rows:
         def __init__(self, n: int, *, strkey: bool = True) -> None:
@@ -1349,6 +1353,15 @@ def test_from_generator_or_iterable() -> None:
         pl.DataFrame(schema=["a", "b", "c", "d"]),
     )
 
+    # schema overrides
+    assert_frame_equal(
+        pl.DataFrame(
+            data=gen_named(1),
+            schema_overrides={"a": pl.Float64(), "c": pl.Float64()},
+        ),
+        pl.DataFrame([{"a": 0.0, "b": 0, "c": 1.0, "d": 1}]),
+    )
+
 
 def test_from_rows() -> None:
     df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]], orient="row")
@@ -1404,7 +1417,7 @@ def test_from_rows() -> None:
         ],
     ],
 )
-def test_from_rows_of_dicts(records: list[dict[str, Any]]) -> None:
+def test_from_rows_of_dicts(records: Sequence[Mapping[str, Any]]) -> None:
     for df_init in (pl.from_dicts, pl.DataFrame):
         df1 = df_init(records).remove(pl.col("id").is_null())
         assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]

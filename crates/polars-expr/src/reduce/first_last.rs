@@ -22,7 +22,11 @@ fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn Gr
             dtype,
             BoolFirstLastReducer::<P>(PhantomData),
         )),
-        _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
+        _ if dtype.is_primitive_numeric()
+            || dtype.is_temporal()
+            || dtype.is_decimal()
+            || dtype.is_categorical() =>
+        {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VGR::new(dtype, NumFirstLastReducer::<P, $T>(PhantomData)))
             })
@@ -127,7 +131,8 @@ where
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         let ca: ChunkedArray<T> = v.into_iter().map(|(x, _s)| x).collect_ca(PlSmallStr::EMPTY);
-        ca.into_series().cast(dtype)
+        let s = ca.into_series();
+        unsafe { s.from_physical_unchecked(dtype) }
     }
 }
 
@@ -291,6 +296,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.in_dtype);
         if !values.is_empty() {
             let seq_id = seq_id + 1; // We use 0 for 'no value'.
             if P::should_replace(seq_id, self.seqs[group_idx as usize]) {
@@ -308,6 +314,8 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.in_dtype);
+        assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // We use 0 for 'no value'.
         for (i, g) in subset.iter().zip(group_idxs) {
             let grp_val = self.values.get_unchecked_mut(g.idx());
@@ -332,6 +340,8 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idxs: &[IdxSize],
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.in_dtype == other.in_dtype);
+        assert!(subset.len() == group_idxs.len());
         for (i, g) in group_idxs.iter().enumerate() {
             let si = *subset.get_unchecked(i) as usize;
             if P::should_replace(

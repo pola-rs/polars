@@ -335,6 +335,10 @@ impl Column {
     pub fn try_u64(&self) -> Option<&UInt64Chunked> {
         self.as_materialized_series().try_u64()
     }
+    #[cfg(feature = "dtype-u128")]
+    pub fn try_u128(&self) -> Option<&UInt128Chunked> {
+        self.as_materialized_series().try_u128()
+    }
     pub fn try_f32(&self) -> Option<&Float32Chunked> {
         self.as_materialized_series().try_f32()
     }
@@ -428,6 +432,10 @@ impl Column {
     }
     pub fn u64(&self) -> PolarsResult<&UInt64Chunked> {
         self.as_materialized_series().u64()
+    }
+    #[cfg(feature = "dtype-u128")]
+    pub fn u128(&self) -> PolarsResult<&UInt128Chunked> {
+        self.as_materialized_series().u128()
     }
     pub fn f32(&self) -> PolarsResult<&Float32Chunked> {
         self.as_materialized_series().f32()
@@ -751,7 +759,7 @@ impl Column {
                     &GroupsType::Slice {
                         // @NOTE: this group is always valid since s is non-empty.
                         groups: vec![[0, 1]],
-                        rolling: false,
+                        overlapping: false,
                     },
                 );
 
@@ -1596,7 +1604,7 @@ impl Column {
             },
         }
     }
-    pub fn mean_reduce(&self) -> Scalar {
+    pub fn mean_reduce(&self) -> PolarsResult<Scalar> {
         match self {
             Column::Series(s) => s.mean_reduce(),
             Column::Partitioned(s) => s.as_materialized_series().mean_reduce(),

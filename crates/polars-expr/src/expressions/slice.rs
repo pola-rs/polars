@@ -2,6 +2,7 @@ use AnyValue::Null;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, slice_offsets};
+use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use super::*;
@@ -69,7 +70,7 @@ fn slice_groups_idx(offset: i64, length: usize, mut first: IdxSize, idx: &[IdxSi
         first = *f;
     }
     // This is a clone of the vec, which is unfortunate. Maybe we have a `sliceable` unitvec one day.
-    (first, idx[offset..offset + len].into())
+    (first, IdxVec::from_slice(&idx[offset..offset + len]))
 }
 
 fn slice_groups_slice(offset: i64, length: usize, first: IdxSize, len: IdxSize) -> [IdxSize; 2] {
@@ -153,7 +154,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            rolling: false,
+                            overlapping: false,
                         }
                     },
                 }
@@ -191,7 +192,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            rolling: false,
+                            overlapping: false,
                         }
                     },
                 }
@@ -229,7 +230,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            rolling: false,
+                            overlapping: false,
                         }
                     },
                 }
@@ -274,7 +275,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            rolling: false,
+                            overlapping: false,
                         }
                     },
                 }

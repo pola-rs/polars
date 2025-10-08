@@ -33,9 +33,10 @@ fn pyobject_to_first_path_and_scan_sources(
 ) -> PyResult<(Option<PlPath>, ScanSources)> {
     use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
     Ok(match get_python_scan_source_input(obj, false)? {
-        PythonScanSourceInput::Path(path) => {
-            (Some(path.clone()), ScanSources::Paths([path].into()))
-        },
+        PythonScanSourceInput::Path(path) => (
+            Some(path.clone()),
+            ScanSources::Paths(FromIterator::from_iter([path])),
+        ),
         PythonScanSourceInput::File(file) => (None, ScanSources::Files([file.into()].into())),
         PythonScanSourceInput::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
     })
@@ -521,7 +522,6 @@ impl PyLazyFrame {
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
         cluster_with_columns: bool,
-        collapse_joins: bool,
         _eager: bool,
         _check_order: bool,
         #[allow(unused_variables)] new_streaming: bool,
@@ -534,7 +534,6 @@ impl PyLazyFrame {
             .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
-            .with_collapse_joins(collapse_joins)
             .with_check_order(_check_order)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
@@ -978,9 +977,28 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn filter(&self, predicate: PyExpr) -> Self {
+    #[pyo3(signature = (function, maintain_order, chunk_size))]
+    pub fn sink_batches(
+        &self,
+        py: Python<'_>,
+        function: PyObject,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+    ) -> PyResult<PyLazyFrame> {
         let ldf = self.ldf.read().clone();
-        ldf.filter(predicate.inner).into()
+        py.enter_polars(|| {
+            ldf.sink_batches(
+                PlanCallback::new_python(PythonObject(function)),
+                maintain_order,
+                chunk_size,
+            )
+        })
+        .map(Into::into)
+        .map_err(Into::into)
+    }
+
+    fn filter(&self, predicate: PyExpr) -> Self {
+        self.ldf.read().clone().filter(predicate.inner).into()
     }
 
     fn remove(&self, predicate: PyExpr) -> Self {
@@ -1548,8 +1566,12 @@ impl PyLazyFrame {
         Ok(schema_dict)
     }
 
-    fn unnest(&self, columns: PySelector) -> Self {
-        self.ldf.read().clone().unnest(columns.inner).into()
+    fn unnest(&self, columns: PySelector, separator: Option<&str>) -> Self {
+        self.ldf
+            .read()
+            .clone()
+            .unnest(columns.inner, separator.map(PlSmallStr::from_str))
+            .into()
     }
 
     fn count(&self) -> Self {

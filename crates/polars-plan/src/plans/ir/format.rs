@@ -529,6 +529,12 @@ impl Display for ExprIRDisplay<'_> {
                 let evaluation = self.with_root(evaluation);
                 match variant {
                     EvalVariant::List => write!(f, "{expr}.list.eval({evaluation})"),
+                    EvalVariant::Array { as_list: false } => {
+                        write!(f, "{expr}.array.eval({evaluation})")
+                    },
+                    EvalVariant::Array { as_list: true } => {
+                        write!(f, "{expr}.array.eval({evaluation}, as_list=true)")
+                    },
                     EvalVariant::Cumulative { min_samples } => write!(
                         f,
                         "{expr}.cumulative_eval({evaluation}, min_samples={min_samples})"
@@ -789,14 +795,57 @@ pub fn write_ir_non_recursive(
         IR::Sort {
             input: _,
             by_column,
-            slice: _,
-            sort_options: _,
+            slice,
+            sort_options,
         } => {
-            let by_column = ExprIRSliceDisplay {
-                exprs: by_column,
-                expr_arena,
-            };
-            write!(f, "{:indent$}SORT BY {by_column}", "")
+            write!(f, "{:indent$}", "")?;
+
+            f.write_str("SORT BY ")?;
+
+            if slice.is_some()
+                || sort_options.maintain_order
+                || sort_options.descending.iter().any(|v| *v)
+                || sort_options.nulls_last.iter().any(|v| *v)
+            {
+                f.write_char('[')?;
+
+                let mut comma = false;
+                if let Some((o, l)) = slice {
+                    write!(f, "slice: ({o}, {l})")?;
+                    comma = true;
+                }
+                if sort_options.maintain_order {
+                    if comma {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str("maintain_order: true")?;
+                    comma = true;
+                }
+                if sort_options.descending.iter().any(|v| *v) {
+                    if comma {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "descending: {:?}", sort_options.descending.as_slice())?;
+                    comma = true;
+                }
+                if sort_options.nulls_last.iter().any(|v| *v) {
+                    if comma {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "nulls_last: {:?}", sort_options.nulls_last.as_slice())?;
+                }
+
+                f.write_str("] ")?;
+            }
+
+            write!(
+                f,
+                "{}",
+                ExprIRSliceDisplay {
+                    exprs: by_column,
+                    expr_arena,
+                }
+            )
         },
         IR::Cache { input: _, id } => write!(f, "{:indent$}CACHE[id: {id}]", ""),
         IR::GroupBy {
@@ -887,6 +936,7 @@ pub fn write_ir_non_recursive(
         IR::Sink { input: _, payload } => {
             let name = match payload {
                 SinkTypeIR::Memory => "SINK (memory)",
+                SinkTypeIR::Callback { .. } => "SINK (callback)",
                 SinkTypeIR::File { .. } => "SINK (file)",
                 SinkTypeIR::Partition { .. } => "SINK (partition)",
             };

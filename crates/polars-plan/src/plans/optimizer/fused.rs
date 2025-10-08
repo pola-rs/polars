@@ -28,8 +28,12 @@ fn check_eligible(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
 ) -> PolarsResult<bool> {
-    let field_left = expr_arena.get(*left).to_field(schema, expr_arena)?;
-    let type_right = expr_arena.get(*right).get_dtype(schema, expr_arena)?;
+    let field_left = expr_arena
+        .get(*left)
+        .to_field(&ToFieldContext::new(expr_arena, schema))?;
+    let type_right = expr_arena
+        .get(*right)
+        .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
     let type_left = &field_left.dtype;
     // Exclude literals for now as these will not benefit from fused operations downstream #9857
     // This optimization would also interfere with the `col -> lit` type-coercion rules

@@ -178,6 +178,12 @@ impl fmt::Debug for Expr {
                 variant,
             } => match variant {
                 EvalVariant::List => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                EvalVariant::Array { as_list: false } => {
+                    write!(f, "{input:?}.array.eval({evaluation:?})")
+                },
+                EvalVariant::Array { as_list: true } => {
+                    write!(f, "{input:?}.array.eval({evaluation:?}, as_list=true)")
+                },
                 EvalVariant::Cumulative { min_samples } => write!(
                     f,
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
@@ -190,13 +196,24 @@ impl fmt::Debug for Expr {
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
             KeepName(e) => write!(f, "{e:?}.name.keep()"),
             RenameAlias { expr, function } => match function {
-                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.prefix({s})"),
-                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.suffix({s})"),
-                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.to_lowercase()"),
-                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.to_uppercase()"),
-                #[cfg(feature = "python")]
-                RenameAliasFn::Python(_) => write!(f, "{expr:?}.rename_alias()"),
-                RenameAliasFn::Rust(_) => write!(f, "{expr:?}.rename_alias()"),
+                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.name.prefix({s})"),
+                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.name.suffix({s})"),
+                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.name.to_lowercase()"),
+                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.name.to_uppercase()"),
+                RenameAliasFn::Map(_) => write!(f, "{expr:?}.name.map()"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: false,
+                } => write!(f, "{expr:?}.replace(\"{pattern}\", \"{value}\")"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: true,
+                } => write!(
+                    f,
+                    "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
+                ),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]

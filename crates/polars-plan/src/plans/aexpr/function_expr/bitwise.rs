@@ -7,6 +7,7 @@ use strum_macros::IntoStaticStr;
 use super::{ColumnsUdf, SpecialEq};
 use crate::map;
 use crate::plans::aexpr::function_expr::{FieldsMapper, FunctionOptions};
+use crate::prelude::FunctionFlags;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, IntoStaticStr)]
@@ -70,13 +71,7 @@ impl From<IRBitwiseFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 impl IRBitwiseFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         mapper.try_map_dtype(|dtype| {
-            let is_valid = match dtype {
-                DataType::Boolean => true,
-                dt if dt.is_integer() => true,
-                dt if dt.is_float() => true,
-                _ => false,
-            };
-
+            let is_valid = dtype.is_bool() || dtype.is_integer();
             if !is_valid {
                 polars_bail!(InvalidOperation: "dtype {} not supported in '{}' operation", dtype, self);
             }
@@ -104,7 +99,8 @@ impl IRBitwiseFunction {
             | B::LeadingZeros
             | B::TrailingOnes
             | B::TrailingZeros => FunctionOptions::elementwise(),
-            B::And | B::Or | B::Xor => FunctionOptions::aggregation(),
+            B::And | B::Or | B::Xor => FunctionOptions::aggregation()
+                .with_flags(|f| f | FunctionFlags::NON_ORDER_OBSERVING),
         }
     }
 }

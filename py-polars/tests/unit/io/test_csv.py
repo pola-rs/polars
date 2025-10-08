@@ -258,12 +258,12 @@ def test_csv_missing_utf8_is_empty_string() -> None:
 
 def test_csv_int_types() -> None:
     f = io.StringIO(
-        "u8,i8,u16,i16,u32,i32,u64,i64,i128\n"
-        "0,0,0,0,0,0,0,0,0\n"
-        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808,-170141183460469231731687303715884105728\n"
-        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807,170141183460469231731687303715884105727\n"
-        "01,01,01,01,01,01,01,01,01\n"
-        "01,-01,01,-01,01,-01,01,-01,01\n"
+        "u8,i8,u16,i16,u32,i32,u64,i64,u128,i128\n"
+        "0,0,0,0,0,0,0,0,0,0\n"
+        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808,0,-170141183460469231731687303715884105728\n"
+        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807,340282366920938463463374607431768211455,170141183460469231731687303715884105727\n"
+        "01,01,01,01,01,01,01,01,01,01\n"
+        "01,-01,01,-01,01,-01,01,-01,01,-01\n"
     )
     df = pl.read_csv(
         f,
@@ -276,6 +276,7 @@ def test_csv_int_types() -> None:
             "i32": pl.Int32,
             "u64": pl.UInt64,
             "i64": pl.Int64,
+            "u128": pl.UInt128,
             "i128": pl.Int128,
         },
     )
@@ -295,13 +296,23 @@ def test_csv_int_types() -> None:
                     [0, -9223372036854775808, 9223372036854775807, 1, -1],
                     dtype=pl.Int64,
                 ),
+                "u128": pl.Series(
+                    [
+                        0,
+                        0,
+                        340282366920938463463374607431768211455,
+                        1,
+                        1,
+                    ],
+                    dtype=pl.UInt128,
+                ),
                 "i128": pl.Series(
                     [
                         0,
                         -170141183460469231731687303715884105728,
                         170141183460469231731687303715884105727,
                         1,
-                        1,
+                        -1,
                     ],
                     dtype=pl.Int128,
                 ),
@@ -2239,11 +2250,30 @@ def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     assert_frame_equal(df, expected)
 
 
-def test_csv_float_decimal() -> None:
+def test_read_csv_float_type_decimal_comma() -> None:
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
     read = pl.read_csv(floats, decimal_comma=True, separator=";")
     assert read.dtypes == [pl.Float64] * 2
     assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
+
+
+def test_read_csv_decimal_type_decimal_comma_24414() -> None:
+    schema = pl.Schema({"a": pl.Decimal(scale=3), "b": pl.Decimal(scale=2)})
+
+    csv_dot = b"a,b\n12.239,1.233\n13.908,87.32"
+    out_dot = pl.read_csv(csv_dot, schema=schema)
+
+    csv = b"a;b\n12,239;1,233\n13,908;87,32"
+    out = pl.read_csv(csv, decimal_comma=True, separator=";", schema=schema)
+    assert_frame_equal(out_dot, out)
+
+    csv = b"a;b\n 12,239;1,233\n   13,908;87,32"
+    out = pl.read_csv(csv, decimal_comma=True, separator=";", schema=schema)
+    assert_frame_equal(out_dot, out)
+
+    csv = b'a,b\n"12,239","1,233"\n"13,908","87,32"'
+    out = pl.read_csv(csv, decimal_comma=True, schema=schema)
+    assert_frame_equal(out_dot, out)
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
@@ -2677,7 +2707,7 @@ x"y,b,c
         (";", "never", None, None, True, b"123,75;60,0;9\n"),
     ],
 )
-def test_write_csv_decimal_comma(
+def test_write_csv_float_type_decimal_comma(
     separator: str,
     quote_style: CsvQuoteStyle | None,
     scientific: bool | None,
@@ -2749,6 +2779,93 @@ def test_write_csv_decimal_comma(
             quote_style=quote_style,
             float_precision=precision,
             float_scientific=scientific,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        buf.seek(0)
+        out = pl.scan_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        ).collect()
+        assert_frame_equal(df, out)
+
+
+@pytest.mark.parametrize(
+    (
+        "separator",
+        "quote_style",
+        "decimal_comma",
+        "expected",
+    ),
+    [
+        (",", None, False, b"123.75,60.0,9\n"),
+        (",", None, True, b'"123,75","60,0",9\n'),
+        (";", None, False, b"123.75;60.0;9\n"),
+        (";", None, True, b"123,75;60,0;9\n"),
+        (",", "always", True, b'"123,75","60,0","9"\n'),
+        (",", "necessary", True, b'"123,75","60,0",9\n'),
+        (",", "non_numeric", True, b'"123,75","60,0",9\n'),
+        (",", "never", True, b"123,75,60,0,9\n"),  # mal-formed
+        (";", "always", True, b'"123,75";"60,0";"9"\n'),
+        (";", "necessary", True, b"123,75;60,0;9\n"),
+    ],
+)
+def test_write_csv_decimal_type_decimal_comma(
+    separator: str,
+    quote_style: CsvQuoteStyle | None,
+    decimal_comma: bool,
+    expected: bytes,
+) -> None:
+    schema = {
+        "a": pl.Decimal(scale=2),
+        "b": pl.Decimal(scale=1),
+        "c": pl.Decimal(scale=0),
+    }
+
+    df = pl.DataFrame(
+        data={
+            "a": [123.75],
+            "b": [60.0],
+            "c": [9],
+        },
+        schema=schema,
+    )
+
+    buf = io.BytesIO()
+    df.write_csv(
+        buf,
+        separator=separator,
+        quote_style=quote_style,
+        decimal_comma=decimal_comma,
+        include_header=False,
+    )
+    buf.seek(0)
+    assert buf.read() == expected
+
+    # Round-trip testing: assert df == read_csv(write_csv(df))
+    # eager
+    round_trip = not (quote_style == "never" and decimal_comma and separator == ",")
+    if round_trip:
+        print("BOO")
+        buf.seek(0)
+        df.write_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        buf.seek(0)
+        out = pl.read_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        )
+        assert_frame_equal(df, out)
+
+        # lazy
+        buf.seek(0)
+        df.lazy().sink_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
             decimal_comma=decimal_comma,
             include_header=True,
         )

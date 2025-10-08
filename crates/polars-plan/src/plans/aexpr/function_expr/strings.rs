@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
 use arrow::legacy::utils::CustomIterTools;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
@@ -191,7 +193,7 @@ impl IRStringFunction {
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal { scale } => mapper.with_dtype(DataType::Decimal(None, Some(*scale))),
+            ToDecimal { scale } => mapper.with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
             #[cfg(feature = "string_encoding")]
             HexEncode => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
@@ -956,6 +958,7 @@ where
         .zip(val)
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
             (Some(src), Some(val)) => Some(f(src, val)),
+            (Some(src), None) => Some(Cow::from(src)),
             _ => None,
         })
         .collect_trusted();
@@ -980,9 +983,9 @@ fn replace_n<'a>(
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(
-                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
-            )?;
+            let Some(val) = val.get(0) else {
+                return Ok(ca.clone());
+            };
             let literal = literal || is_literal_pat(pat);
 
             match literal {
@@ -1201,7 +1204,7 @@ pub(super) fn base64_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn to_decimal(s: &Column, scale: usize) -> PolarsResult<Column> {
     let ca = s.str()?;
-    ca.to_decimal(scale).map(Column::from)
+    ca.to_decimal(DEC128_MAX_PREC, scale).map(Column::from)
 }
 
 #[cfg(feature = "extract_jsonpath")]

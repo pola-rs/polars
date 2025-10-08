@@ -54,6 +54,7 @@ jobs:
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
           uv pip install -U typing-extensions
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose --index-strategy=unsafe-best-match
+          uv pip install --no-deps -e .
 
       - name: Set up Rust
         run: rustup show
@@ -69,19 +70,11 @@ jobs:
 
       - name: Build Polars release build
         working-directory: py-polars
-        run: maturin build --profile nodebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+        run: maturin build --manifest-path runtime/Cargo.toml --profile nodebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Install Polars release build
         run: |
           pip install --force-reinstall target/wheels/polars*.whl
-
-          # This workflow builds and installs a wheel, meaning there is no polars.abi3.so under
-          # py-polars/. This causes a binary not found error if a test tries to import polars in
-          # a Python executed using `subprocess.check_output([sys.executable])`. Fix this by
-          # symlinking the binary.
-          ln -sv \
-            $(python -c "import importlib; print(importlib.util.find_spec('polars').submodule_search_locations[0] + '/polars.abi3.so')") \
-            py-polars/polars/polars.abi3.so
 
       - name: Set wheel size
         run: |

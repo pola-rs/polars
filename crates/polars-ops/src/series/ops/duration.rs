@@ -22,7 +22,12 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
     let mut nanoseconds = s[7].clone();
 
     let is_scalar = |s: &Column| s.len() == 1;
-    let is_zero_scalar = |s: &Column| is_scalar(s) && s.get(0).unwrap() == AnyValue::Int64(0);
+    let is_zero = |av: AnyValue<'_>| match av {
+        v if v.is_integer() => v == AnyValue::Int64(0),
+        v if v.is_float() => v == AnyValue::Float64(0.0),
+        _ => false,
+    };
+    let is_zero_scalar = |s: &Column| is_scalar(s) && is_zero(s.get(0).unwrap());
 
     // Process subseconds
     let max_len = s.iter().map(|s| s.len()).max().unwrap();
@@ -75,16 +80,16 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         duration = (duration + seconds * multiplier)?;
     }
     if !is_zero_scalar(minutes) {
-        duration = (duration + minutes * multiplier * 60)?;
+        duration = (duration + minutes * (multiplier * 60))?;
     }
     if !is_zero_scalar(hours) {
-        duration = (duration + hours * multiplier * 60 * 60)?;
+        duration = (duration + hours * (multiplier * 60 * 60))?;
     }
     if !is_zero_scalar(days) {
-        duration = (duration + days * multiplier * SECONDS_IN_DAY)?;
+        duration = (duration + days * (multiplier * SECONDS_IN_DAY))?;
     }
     if !is_zero_scalar(weeks) {
-        duration = (duration + weeks * multiplier * SECONDS_IN_DAY * 7)?;
+        duration = (duration + weeks * (multiplier * SECONDS_IN_DAY * 7))?;
     }
 
     duration.cast(&DataType::Duration(time_unit))

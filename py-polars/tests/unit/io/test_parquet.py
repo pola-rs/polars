@@ -603,7 +603,7 @@ def test_decimal_parquet(tmp_path: Path) -> None:
         }
     )
 
-    df = df.with_columns(pl.col("bar").cast(pl.Decimal))
+    df = df.with_columns(pl.col("bar").cast(pl.Decimal(scale=3)))
 
     df.write_parquet(path, statistics=True)
     out = pl.scan_parquet(path).filter(foo=2).collect().to_dict(as_series=False)
@@ -1608,6 +1608,8 @@ def test_predicate_filtering(
         min_size=1,
         max_size=10,
         excluded_dtypes=[
+            pl.Int128,
+            pl.UInt128,
             pl.Decimal,
             pl.Categorical,
             pl.Enum,
@@ -3347,7 +3349,7 @@ def test_field_overwrites_metadata() -> None:
     assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"
 
 
-def multiple_test_sorting_columns() -> None:
+def test_multiple_sorting_columns() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 1, 2, 2, 2],
@@ -3544,3 +3546,17 @@ def test_str_plain_is_in_more_than_4_values_24167() -> None:
         lf.collect(),
         lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
     )
+
+
+def test_binary_offset_roundtrip() -> None:
+    f = io.BytesIO()
+    pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    ).select(pl.col.a._row_encode()).sink_parquet(f)
+
+    f.seek(0)
+    lf = pl.scan_parquet(f)
+
+    assert "binary[offset]" in str(lf.collect())

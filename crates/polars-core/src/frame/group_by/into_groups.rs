@@ -151,7 +151,7 @@ where
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
             return Ok(GroupsType::Slice {
                 groups: self.rechunk().create_groups_from_sorted(multithreaded),
-                rolling: false,
+                overlapping: false,
             });
         }
 
@@ -175,8 +175,8 @@ where
                 BitRepr::U16(ca) => num_groups_proxy(&ca, multithreaded, sorted),
                 BitRepr::U32(ca) => num_groups_proxy(&ca, multithreaded, sorted),
                 BitRepr::U64(ca) => num_groups_proxy(&ca, multithreaded, sorted),
-                #[cfg(feature = "dtype-i128")]
-                BitRepr::I128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                #[cfg(feature = "dtype-u128")]
+                BitRepr::U128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
             },
         };
         try_raise_keyboard_interrupt();
@@ -227,7 +227,7 @@ impl IntoGroupsType for BinaryChunked {
             partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
             return Ok(GroupsType::Slice {
                 groups: out,
-                rolling: false,
+                overlapping: false,
             });
         }
 
@@ -261,7 +261,7 @@ impl IntoGroupsType for BinaryOffsetChunked {
             partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
             return Ok(GroupsType::Slice {
                 groups: out,
-                rolling: false,
+                overlapping: false,
             });
         }
         multithreaded &= POOL.current_num_threads() > 1;

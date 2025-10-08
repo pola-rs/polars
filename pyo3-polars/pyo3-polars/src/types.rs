@@ -456,6 +456,10 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 let class = pl.getattr(intern!(py, "UInt64")).unwrap();
                 class.call0()
             },
+            DataType::UInt128 => {
+                let class = pl.getattr(intern!(py, "UInt128")).unwrap();
+                class.call0()
+            },
             DataType::Float32 => {
                 let class = pl.getattr(intern!(py, "Float32")).unwrap();
                 class.call0()
@@ -598,6 +602,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,
                     "UInt64" => DataType::UInt64,
+                    "UInt128" => DataType::UInt128,
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     "Boolean" => DataType::Boolean,
@@ -618,7 +623,9 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
                     #[cfg(feature = "dtype-decimal")]
-                    "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
+                    "Decimal" => {
+                        return Err(PyTypeError::new_err("Decimal without specifying precision and scale is not a valid Polars data type".to_string()));
+                    },
                     "List" => DataType::List(Box::new(DataType::Null)),
                     #[cfg(feature = "dtype-array")]
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
@@ -644,6 +651,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
+            "UInt128" => DataType::UInt128,
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Boolean" => DataType::Boolean,
@@ -681,7 +689,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
                 let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
-                DataType::Decimal(precision, Some(scale))
+                DataType::Decimal(precision, scale)
             },
             "List" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();

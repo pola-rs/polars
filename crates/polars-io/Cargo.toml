@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
+polars-compute = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
@@ -48,8 +49,6 @@ simdutf8 = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
-tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
-url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -82,6 +81,7 @@ csv = ["atoi_simd", "polars-core/rows", "itoa", "ryu", "fast-float2", "simdutf8"
 decompress = ["flate2/zlib-rs", "zstd"]
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
+dtype-u128 = ["polars-core/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-i128 = ["polars-core/dtype-i128"]
@@ -112,7 +112,6 @@ async = [
   "async-trait",
   "futures",
   "tokio",
-  "tokio-util",
   "polars-error/regex",
   "polars-parquet?/async",
 ]
@@ -120,7 +119,6 @@ cloud = [
   "object_store",
   "async",
   "polars-error/object_store",
-  "url",
   "serde_json",
   "serde",
   "file_cache",
