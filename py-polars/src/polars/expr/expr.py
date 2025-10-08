@@ -7548,7 +7548,7 @@ Consider using {self}.implode() instead"""
         Returns
         -------
         Expr
-            A Expr of data :class:`.Float64` if `method` is `"average"` or,
+            An Expr of data :class:`.Float64` if `method` is `"average"` or,
             the index size (see :func:`.get_index_type()`) otherwise.
         """
         window_size = _prepare_rolling_by_window_args(window_size)
@@ -8547,7 +8547,7 @@ Consider using {self}.implode() instead"""
         Returns
         -------
         Expr
-            A Expr of data :class:`.Float64` if `method` is `"average"` or,
+            An Expr of data :class:`.Float64` if `method` is `"average"` or,
             the index size (see :func:`.get_index_type()`) otherwise.
 
         Examples
