@@ -53,7 +53,7 @@ mod test {
         use super::*;
         let vals = [
             "1.0",
-            "wrong",
+            "bad",
             "225.0",
             "3.00045",
             "-4.0",
@@ -62,7 +62,7 @@ mod test {
         ];
         let s = StringChunked::from_slice(PlSmallStr::from_str("test"), &vals);
         let s = s.to_decimal_infer(6).unwrap();
-        assert_eq!(s.dtype(), &DataType::Decimal(6, 5));
+        assert_eq!(s.dtype(), &DataType::Decimal(8, 5));
         assert_eq!(s.len(), 7);
         assert_eq!(s.get(0).unwrap(), AnyValue::Decimal(100000, 6, 5));
         assert_eq!(s.get(1).unwrap(), AnyValue::Null);
