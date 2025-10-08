@@ -30,6 +30,8 @@ use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use super::client_options::PlClientOptions;
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "file_cache")]
@@ -87,6 +89,10 @@ pub struct CloudOptions {
     /// Note: In most cases you will want to access this via [`CloudOptions::initialized_credential_provider`]
     /// rather than directly.
     pub(crate) credential_provider: Option<PlCredentialProvider>,
+    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+    /// Note: This is mainly used by Rust users. Python client options go through `CloudConfig`
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
+    pub(crate) client_options: Option<PlClientOptions>,
 }
 
 impl Default for CloudOptions {
@@ -104,6 +110,8 @@ impl CloudOptions {
             config: None,
             #[cfg(feature = "cloud")]
             credential_provider: None,
+            #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+            client_options: None,
         });
 
         &DEFAULT
@@ -190,18 +198,6 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
     }
 }
 
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-pub(super) fn get_client_options() -> ClientOptions {
-    ClientOptions::new()
-        // We set request timeout super high as the timeout isn't reset at ACK,
-        // but starts from the moment we start downloading a body.
-        // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-        .with_timeout_disabled()
-        // Concurrency can increase connection latency, so set to None, similar to default.
-        .with_connect_timeout_disabled()
-        .with_allow_http(true)
-}
-
 #[cfg(feature = "aws")]
 fn read_config(
     builder: &mut AmazonS3Builder,
@@ -251,6 +247,17 @@ impl CloudOptions {
         self
     }
 
+    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+    pub fn with_client_options(mut self, client_options: PlClientOptions) -> Self {
+        self.client_options = Some(client_options);
+        self
+    }
+
+    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+    pub fn client_options(&self) -> PlClientOptions {
+        self.client_options.clone().unwrap_or_default()
+    }
+
     /// Set the configuration for AWS connections. This is the preferred API from rust.
     #[cfg(feature = "aws")]
     pub fn with_aws<I: IntoIterator<Item = (AmazonS3ConfigKey, impl Into<String>)>>(
@@ -276,7 +283,7 @@ impl CloudOptions {
             self.initialized_credential_provider(clear_cached_credentials)?;
 
         let mut builder = AmazonS3Builder::from_env()
-            .with_client_options(get_client_options())
+            .with_client_options(self.client_options().into())
             .with_url(url);
 
         if let Some(credential_provider) = &opt_credential_provider {
@@ -442,7 +449,7 @@ impl CloudOptions {
         // The credential provider `self.credentials` is prioritized if it is set. We also need
         // `from_env()` as it may source environment configured storage account name.
         let mut builder =
-            MicrosoftAzureBuilder::from_env().with_client_options(get_client_options());
+            MicrosoftAzureBuilder::from_env().with_client_options(self.client_options().into());
 
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
@@ -504,7 +511,7 @@ impl CloudOptions {
             GoogleCloudStorageBuilder::new()
         };
 
-        let mut builder = builder.with_client_options(get_client_options());
+        let mut builder = builder.with_client_options(self.client_options().into());
 
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
@@ -535,7 +542,7 @@ impl CloudOptions {
         let out = object_store::http::HttpBuilder::new()
             .with_url(url)
             .with_client_options({
-                let mut opts = super::get_client_options();
+                let mut opts: ClientOptions = self.client_options().into();
                 if let Some(CloudConfig::Http { headers }) = &self.config {
                     opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
                         headers.as_slice(),
