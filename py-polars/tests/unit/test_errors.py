@@ -514,11 +514,6 @@ def test_cast_err_column_value_highlighting(
         test_df.with_columns(pl.all().cast(type))
 
 
-def test_lit_agg_err() -> None:
-    with pytest.raises(ComputeError, match=r"cannot aggregate a literal"):
-        pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
-
-
 def test_invalid_group_by_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(

@@ -10,11 +10,14 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars import Expr
 from polars.exceptions import ColumnNotFoundError
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from typing import Callable
+
     from polars._typing import PolarsDataType
 
 
@@ -1555,6 +1558,56 @@ def test_group_by_first_nondet_24278() -> None:
     fst_value = q.collect().to_series().sum()
     for _ in range(10):
         assert q.collect().to_series().sum() == fst_value
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_agg_on_lit(maintain_order: bool) -> None:
+    fs: list[Callable[[Expr], Expr]] = [
+        Expr.min,
+        Expr.max,
+        Expr.mean,
+        Expr.sum,
+        Expr.len,
+        Expr.count,
+        Expr.first,
+        Expr.last,
+        Expr.n_unique,
+        Expr.implode,
+        Expr.std,
+        Expr.var,
+        lambda e: e.quantile(0.5),
+        Expr.nan_min,
+        Expr.nan_max,
+        Expr.skew,
+        Expr.null_count,
+        Expr.product,
+    ]
+
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        pl.select(
+            [pl.lit(pl.Series("a", [1, 2]))]
+            + [f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)]
+        ),
+        check_row_order=maintain_order,
+    )
+
+    df = pl.DataFrame({"a": [1, 2], "b": [None, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        pl.select(
+            [pl.lit(pl.Series("a", [1, 2]))]
+            + [f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)]
+        ),
+        check_row_order=maintain_order,
+    )
 
 
 def test_group_by_cum_sum_key_24489() -> None:
