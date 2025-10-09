@@ -114,14 +114,14 @@ T = True
         ),
     ],
 )
-@pytest.mark.parametrize("swap_op", [True, False])
+@pytest.mark.parametrize("swap_args", [True, False])
 def test_binary_bitwise_kleene_24809(
     op_impl: Any,
-    swap_op: bool,
+    swap_args: bool,
     truth_table: dict[bool, list[bool]],
 ) -> None:
     def op(lhs: Any, rhs: Any) -> Any:
-        return op_impl(rhs, lhs) if swap_op else op_impl(lhs, rhs)
+        return op_impl(rhs, lhs) if swap_args else op_impl(lhs, rhs)
 
     rhs = pl.Series([F, U, T], dtype=pl.Boolean)
 
