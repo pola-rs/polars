@@ -262,13 +262,13 @@ class Series:
     _s: PySeries = None  # type: ignore[assignment]
     _accessors: ClassVar[set[str]] = {
         "arr",
+        "bin",
         "cat",
         "dt",
         "list",
-        "str",
-        "bin",
-        "struct",
         "plot",
+        "str",
+        "struct",
     }
 
     def __init__(
