@@ -4,6 +4,7 @@ use polars_utils::arena::{Arena, Node};
 
 use super::*;
 use crate::reduce::any_all::{new_all_reduction, new_any_reduction};
+#[cfg(feature = "approx_unique")]
 use crate::reduce::approx_n_unique::new_approx_n_unique_reduction;
 #[cfg(feature = "bitwise")]
 use crate::reduce::bitwise::{
@@ -94,6 +95,7 @@ pub fn into_reduction(
             (count, input)
         },
 
+        #[cfg(feature = "approx_unique")]
         AExpr::Function {
             input: inner_exprs,
             function: IRFunctionExpr::ApproxNUnique,

@@ -1,5 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 mod any_all;
+#[cfg(feature = "approx_unique")]
 mod approx_n_unique;
 #[cfg(feature = "bitwise")]
 mod bitwise;
