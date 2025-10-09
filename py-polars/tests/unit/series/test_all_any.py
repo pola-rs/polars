@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import operator
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -74,3 +77,105 @@ def test_all_kleene(data: list[bool | None], expected: bool | None) -> None:
 def test_all_wrong_dtype() -> None:
     with pytest.raises(SchemaError, match="expected `Boolean`"):
         pl.Series([0, 1, 0]).all()
+
+
+F = False
+U = None
+T = True
+
+
+@pytest.mark.parametrize(
+    ("op_impl", "truth_table"),
+    [
+        # https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics
+        (
+            operator.and_,
+            {  #   [F, U, T]
+                F: [F, F, F],
+                U: [F, U, U],
+                T: [F, U, T],
+            },
+        ),
+        (
+            operator.or_,
+            {  #   [F, U, T]
+                F: [F, U, T],
+                U: [U, U, T],
+                T: [T, T, T],
+            },
+        ),
+        (
+            operator.xor,
+            {  #   [F, U, T]
+                F: [F, U, T],
+                U: [U, U, U],
+                T: [T, U, F],
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize("swap_op", [True, False])
+def test_bitwise_kleene_24809(
+    op_impl: Any,
+    swap_op: bool,
+    truth_table: dict[bool, list[bool]],
+) -> None:
+    def op(l: Any, r: Any) -> Any:
+        return op_impl(r, l) if swap_op else op_impl(l, r)
+
+    rhs = pl.Series([F, U, T], dtype=pl.Boolean)
+
+    class _:
+        def f(scalar: bool) -> list[bool]:
+            lhs = pl.lit(scalar, dtype=pl.Boolean)
+            return pl.select(op(lhs, rhs)).to_series().to_list()
+
+        assert {
+            F: f(F),
+            U: f(U),
+            T: f(T),
+        } == truth_table
+
+    class _:  # type: ignore[no-redef]
+        def f(scalar: bool) -> list[bool]:
+            lhs = pl.Series([scalar], dtype=pl.Boolean)
+            return pl.select(op(lhs, rhs)).to_series().to_list()
+
+        assert {
+            F: f(F),
+            U: f(U),
+            T: f(T),
+        } == truth_table
+
+    class _:  # type: ignore[no-redef]
+        def f(scalar: bool) -> list[bool]:
+            lhs = pl.Series([scalar, scalar, scalar], dtype=pl.Boolean)
+            return op(lhs, rhs).to_list()
+
+        assert {
+            F: f(F),
+            U: f(U),
+            T: f(T),
+        } == truth_table
+
+    class _:  # type: ignore[no-redef]
+        def f(scalar: bool) -> list[bool]:
+            lhs = pl.lit(pl.Series([scalar]))
+            return pl.select(op(lhs, rhs)).to_series().to_list()
+
+        assert {
+            F: f(F),
+            U: f(U),
+            T: f(T),
+        } == truth_table
+
+    class _:  # type: ignore[no-redef]
+        def f(scalar: bool) -> list[bool]:
+            lhs = pl.lit(pl.Series([scalar, scalar, scalar]))
+            return pl.select(op(lhs, rhs)).to_series().to_list()
+
+        assert {
+            F: f(F),
+            U: f(U),
+            T: f(T),
+        } == truth_table
