@@ -14,7 +14,7 @@ We consider security-sensitive bugs any bug which:
 Note that segfaults are typically an indicator there is a vector for arbitrary code execution, but
 we do not consider segfaults caused by a stack which grew too large to be security vulnerabilities.
 If you do encounter a segfault please verify (if you are able to) whether this is caused by overly
-deep recursion before reporting a potential a security vulnerability.
+deep recursion before reporting a potential security vulnerability.
 
 Not in scope are:
 

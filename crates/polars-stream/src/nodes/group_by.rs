@@ -18,7 +18,6 @@ use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
 use crate::async_executor;
-use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -117,7 +116,7 @@ impl GroupBySinkState {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        receivers: Vec<Receiver<Morsel>>,
+        receivers: Vec<PortReceiver>,
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {

@@ -821,3 +821,10 @@ def test_decimal_agg() -> None:
         ddf.group_by("g").agg(**agg_exprs).cast(pl.Float64),
         check_row_order=False,
     )
+
+
+def test_string_to_decimal_combined_prec_scale_24801() -> None:
+    values = ["0.01", "10.0"]
+    s = pl.Series(values).str.to_decimal()
+    assert s.dtype == pl.Decimal(precision=4, scale=2)
+    assert s.to_list() == [D(v) for v in values]

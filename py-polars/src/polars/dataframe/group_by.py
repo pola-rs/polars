@@ -106,8 +106,9 @@ class GroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
+            .with_row_index()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
-            .agg(F.first().agg_groups().alias(temp_col))
+            .agg(F.first().alias(temp_col))
             .collect(optimizations=QueryOptFlags.none())
         )
 
@@ -803,6 +804,7 @@ class RollingGroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
+            .with_row_index()
             .rolling(
                 index_column=self.time_column,
                 period=self.period,
@@ -810,7 +812,7 @@ class RollingGroupBy:
                 closed=self.closed,
                 group_by=self.group_by,
             )
-            .agg(F.first().agg_groups().alias(temp_col))
+            .agg(F.first().alias(temp_col))
             .collect(optimizations=QueryOptFlags.none())
         )
 
@@ -951,6 +953,7 @@ class DynamicGroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
+            .with_row_index()
             .group_by_dynamic(
                 index_column=self.time_column,
                 every=self.every,
@@ -962,7 +965,7 @@ class DynamicGroupBy:
                 group_by=self.group_by,
                 start_by=self.start_by,
             )
-            .agg(F.first().agg_groups().alias(temp_col))
+            .agg(F.first().alias(temp_col))
             .collect(optimizations=QueryOptFlags.none())
         )
 

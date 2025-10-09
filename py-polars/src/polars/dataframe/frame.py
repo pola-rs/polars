@@ -4310,7 +4310,9 @@ class DataFrame:
 
             # base class for ADBC connections
             if not isinstance(conn, driver_manager.dbapi.Connection):
-                msg = f"unrecognised connection type {connection!r}"
+                msg = (
+                    f"unrecognised connection type {qualified_type_name(connection)!r}"
+                )
                 raise TypeError(msg)
 
             driver_manager_str_version = getattr(driver_manager, "__version__", "0.0")
@@ -4470,7 +4472,9 @@ class DataFrame:
             elif isinstance(connection, Connectable):
                 sa_object = connection
             else:
-                msg = f"unrecognised connection type {connection!r}"
+                msg = (
+                    f"unrecognised connection type {qualified_type_name(connection)!r}"
+                )
                 raise TypeError(msg)
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
@@ -4496,7 +4500,7 @@ class DataFrame:
             msg = f"engine {engine!r} is not supported"
             raise ValueError(msg)
         else:
-            msg = f"unrecognised connection type {connection!r}"
+            msg = f"unrecognised connection type {qualified_type_name(connection)!r}"
             raise TypeError(msg)
 
     @unstable()
@@ -11940,6 +11944,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        separator: str | None = None,
     ) -> DataFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -11953,6 +11958,9 @@ class DataFrame:
             Name of the struct column(s) that should be unnested.
         *more_columns
             Additional columns to unnest, specified as positional arguments.
+        separator
+            Rename output column names as combination of the struct column name,
+            name separator and field name.
 
         Examples
         --------
@@ -11986,12 +11994,36 @@ class DataFrame:
         │ foo    ┆ 1   ┆ a   ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "before": ["foo", "bar"],
+        ...         "t_a": [1, 2],
+        ...         "t_b": ["a", "b"],
+        ...         "t_c": [True, None],
+        ...         "t_d": [[1, 2], [3]],
+        ...         "after": ["baz", "womp"],
+        ...     }
+        ... ).select(
+        ...     "before",
+        ...     pl.struct(pl.col("^t_.$").name.map(lambda t: t[2:])).alias("t"),
+        ...     "after",
+        ... )
+        >>> df.unnest("t", separator="::")
+        shape: (2, 6)
+        ┌────────┬──────┬──────┬──────┬───────────┬───────┐
+        │ before ┆ t::a ┆ t::b ┆ t::c ┆ t::d      ┆ after │
+        │ ---    ┆ ---  ┆ ---  ┆ ---  ┆ ---       ┆ ---   │
+        │ str    ┆ i64  ┆ str  ┆ bool ┆ list[i64] ┆ str   │
+        ╞════════╪══════╪══════╪══════╪═══════════╪═══════╡
+        │ foo    ┆ 1    ┆ a    ┆ true ┆ [1, 2]    ┆ baz   │
+        │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
+        └────────┴──────┴──────┴──────┴───────────┴───────┘
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
             self.lazy()
-            .unnest(columns, *more_columns)
+            .unnest(columns, *more_columns, separator=separator)
             .collect(optimizations=QueryOptFlags._eager())
         )
 
