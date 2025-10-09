@@ -97,32 +97,18 @@ impl<T> OrderStatisticTree<T> {
         self.nodes[tree].weight as usize
     }
 
-    fn update_weights(&mut self, tree: Key) {
-        debug_assert!(!tree.is_null());
-        let n = &self.nodes[tree];
-        let weight = (self.tree_weight(n.left) + self.tree_weight(n.right) + 1)
-            .try_into()
-            .unwrap();
-        let num_elems = (self.num_elems(n.left) + self.num_elems(n.right) + n.values.len())
-            .try_into()
-            .unwrap();
-        let n = &mut self.nodes[tree];
-        n.weight = weight;
-        n.num_elems = num_elems;
-    }
-
     #[must_use]
     fn new_tree_node(&mut self, left: Key, values: UnitVec<T>, right: Key) -> Key {
+        let weight = self.tree_weight(left) + self.tree_weight(right) + 1;
+        let num_elems = self.num_elems(left) + self.num_elems(right) + values.len();
         let n = Node {
             values,
             left,
             right,
-            weight: Default::default(),
-            num_elems: Default::default(),
+            weight: weight as u32,
+            num_elems: num_elems as u32,
         };
-        let tree = self.nodes.insert(n);
-        self.update_weights(tree);
-        tree
+        self.nodes.insert(n)
     }
 
     #[must_use]
@@ -163,34 +149,38 @@ impl<T> OrderStatisticTree<T> {
 
     #[inline]
     pub fn insert(&mut self, value: T) {
-        self.root = self._insert(value, self.root);
+        (self.root, _) = self._insert(value, self.root);
     }
 
     #[must_use]
-    fn _insert(&mut self, value: T, tree: Key) -> Key {
+    fn _insert(&mut self, value: T, tree: Key) -> (Key, bool) {
         if tree.is_null() {
-            return self.new_leaf(value);
+            return (self.new_leaf(value), true);
         }
 
         let n = &self.nodes[tree];
         match (self.compare)(&value, &n.values[0]) {
             Ordering::Less => {
-                let left = self._insert(value, n.left);
-                self.nodes[tree].left = left;
-                self.update_weights(tree);
-                self.balance_r(tree)
+                let (left, node_added) = self._insert(value, n.left);
+                let n = &mut self.nodes[tree];
+                n.left = left;
+                n.weight += node_added as u32;
+                n.num_elems += 1;
+                (self.balance_r(tree), node_added)
             },
             Ordering::Equal => {
                 let n = &mut self.nodes[tree];
                 n.values.push(value);
                 n.num_elems += 1;
-                tree
+                (tree, false)
             },
             Ordering::Greater => {
-                let right = self._insert(value, n.right);
-                self.nodes[tree].right = right;
-                self.update_weights(tree);
-                self.balance_l(tree)
+                let (right, node_added) = self._insert(value, n.right);
+                let n = &mut self.nodes[tree];
+                n.right = right;
+                n.weight += node_added as u32;
+                n.num_elems += 1;
+                (self.balance_l(tree), node_added)
             },
         }
     }
@@ -198,41 +188,47 @@ impl<T> OrderStatisticTree<T> {
     #[inline]
     pub fn remove(&mut self, value: &T) -> Option<T> {
         let deleted;
-        (deleted, self.root) = self._remove(value, self.root);
+        (deleted, self.root, _) = self._remove(value, self.root);
         deleted
     }
 
     #[must_use]
-    fn _remove(&mut self, value: &T, tree: Key) -> (Option<T>, Key) {
+    fn _remove(&mut self, value: &T, tree: Key) -> (Option<T>, Key, bool) {
         if tree.is_null() {
-            return (None, tree);
+            return (None, tree, false);
         }
 
         let n = &self.nodes[tree];
         match (self.compare)(value, &n.values[0]) {
             Ordering::Less => {
-                let (deleted, left) = self._remove(value, n.left);
+                let (deleted, left, node_removed) = self._remove(value, n.left);
                 let n = &mut self.nodes[tree];
                 n.left = left;
-                self.update_weights(tree);
-                (deleted, self.balance_l(tree))
+                n.weight -= node_removed as u32;
+                n.num_elems -= deleted.is_some() as u32;
+                (deleted, self.balance_l(tree), node_removed)
             },
             Ordering::Greater => {
-                let (deleted, right) = self._remove(value, n.right);
+                let (deleted, right, node_removed) = self._remove(value, n.right);
                 let n = &mut self.nodes[tree];
                 n.right = right;
-                self.update_weights(tree);
-                (deleted, self.balance_r(tree))
+                n.weight -= node_removed as u32;
+                n.num_elems -= deleted.is_some() as u32;
+                (deleted, self.balance_r(tree), node_removed)
             },
             Ordering::Equal if n.values.len() > 1 => {
                 let n = &mut self.nodes[tree];
                 let popped_value = n.values.pop().unwrap();
                 n.num_elems -= 1;
-                (Some(popped_value), tree)
+                (Some(popped_value), tree, false)
             },
             Ordering::Equal => {
                 let mut n = self.drop_tree_node(tree);
-                (Some(n.values.pop().unwrap()), self.glue(n.left, n.right))
+                (
+                    Some(n.values.pop().unwrap()),
+                    self.glue(n.left, n.right),
+                    true,
+                )
             },
         }
     }
@@ -245,38 +241,42 @@ impl<T> OrderStatisticTree<T> {
             left
         } else if self.tree_weight(left) > self.tree_weight(right) {
             let (deleted, left) = self.remove_max(left);
-            let tree = self.new_tree_node(left, deleted.unwrap(), right);
+            let tree = self.new_tree_node(left, deleted, right);
             self.balance_r(tree)
         } else {
             let (deleted, right) = self.remove_min(right);
-            let tree = self.new_tree_node(left, deleted.unwrap(), right);
+            let tree = self.new_tree_node(left, deleted, right);
             self.balance_l(tree)
         }
     }
 
     #[must_use]
-    fn remove_min(&mut self, tree: Key) -> (Option<UnitVec<T>>, Key) {
+    fn remove_min(&mut self, tree: Key) -> (UnitVec<T>, Key) {
         debug_assert!(!tree.is_null());
         if self.nodes[tree].left.is_null() {
             let n = self.drop_tree_node(tree);
-            return (Some(n.values), n.right);
+            return (n.values, n.right);
         }
         let (deleted, left) = self.remove_min(self.nodes[tree].left);
-        self.nodes[tree].left = left;
-        self.update_weights(tree);
+        let n = &mut self.nodes[tree];
+        n.left = left;
+        n.weight -= 1;
+        n.num_elems -= deleted.len() as u32;
         (deleted, self.balance_l(tree))
     }
 
     #[must_use]
-    fn remove_max(&mut self, tree: Key) -> (Option<UnitVec<T>>, Key) {
+    fn remove_max(&mut self, tree: Key) -> (UnitVec<T>, Key) {
         debug_assert!(!tree.is_null());
         if self.nodes[tree].right.is_null() {
             let n = self.drop_tree_node(tree);
-            return (Some(n.values), n.left);
+            return (n.values, n.left);
         }
         let (deleted, right) = self.remove_max(self.nodes[tree].right);
-        self.nodes[tree].right = right;
-        self.update_weights(tree);
+        let n = &mut self.nodes[tree];
+        n.right = right;
+        n.weight -= 1;
+        n.num_elems -= deleted.len() as u32;
         (deleted, self.balance_r(tree))
     }
 
