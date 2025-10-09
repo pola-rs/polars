@@ -673,15 +673,21 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::First(n) => Agg {
+            IRAggExpr::First {
+                input,
+                ignore_nulls,
+            } => Agg {
                 name: "first".into_py_any(py)?,
-                arguments: vec![n.0],
-                options: py.None(),
+                arguments: vec![input.0],
+                options: ignore_nulls.into_py_any(py)?,
             },
-            IRAggExpr::Last(n) => Agg {
+            IRAggExpr::Last {
+                input,
+                ignore_nulls,
+            } => Agg {
                 name: "last".into_py_any(py)?,
-                arguments: vec![n.0],
-                options: py.None(),
+                arguments: vec![input.0],
+                options: ignore_nulls.into_py_any(py)?,
             },
             IRAggExpr::Mean(n) => Agg {
                 name: "mean".into_py_any(py)?,

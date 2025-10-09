@@ -35,8 +35,14 @@ pub enum AggExpr {
     },
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
-    First(Arc<Expr>),
-    Last(Arc<Expr>),
+    First {
+        input: Arc<Expr>,
+        ignore_nulls: bool,
+    },
+    Last {
+        input: Arc<Expr>,
+        ignore_nulls: bool,
+    },
     Mean(Arc<Expr>),
     Implode(Arc<Expr>),
     Count {
@@ -62,8 +68,8 @@ impl AsRef<Expr> for AggExpr {
             Max { input, .. } => input,
             Median(e) => e,
             NUnique(e) => e,
-            First(e) => e,
-            Last(e) => e,
+            First { input, .. } => input,
+            Last { input, .. } => input,
             Mean(e) => e,
             Implode(e) => e,
             Count { input, .. } => input,

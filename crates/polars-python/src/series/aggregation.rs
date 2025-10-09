@@ -110,12 +110,18 @@ impl PySeries {
         scalar_to_py(py.enter_polars(|| self.series.read().sum_reduce()), py)
     }
 
-    fn first<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars_ok(|| self.series.read().first()), py)
+    fn first<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(
+            py.enter_polars_ok(|| self.series.read().first(ignore_nulls)),
+            py,
+        )
     }
 
-    fn last<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars_ok(|| self.series.read().last()), py)
+    fn last<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(
+            py.enter_polars_ok(|| self.series.read().last(ignore_nulls)),
+            py,
+        )
     }
 
     #[cfg(feature = "approx_unique")]

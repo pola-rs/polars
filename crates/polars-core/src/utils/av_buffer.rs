@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::BitmapBuilder;
@@ -6,10 +7,10 @@ use polars_compute::decimal::DecimalFmtBuffer;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
 
-use super::*;
 use crate::chunked_array::builder::NullChunkedBuilder;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub enum AnyValueBuffer<'a> {

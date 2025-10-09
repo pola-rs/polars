@@ -175,7 +175,7 @@
 //!     )
 //!     .group_by([col("b")])
 //!     .agg(
-//!         vec![col("b").first().alias("first_b"), col("c").first().alias("first_c")]
+//!         vec![col("b").first(false).alias("first_b"), col("c").first(false).alias("first_c")]
 //!      )
 //!     .select(&[col("b"), col("c_first")])
 //! }
@@ -191,7 +191,7 @@
 //!     df_a.lazy()
 //!     .group_by([col("b")])
 //!     .agg(
-//!         vec![col("*").first()]
+//!         vec![col("*").first(false)]
 //!      )
 //! }
 //! ```
