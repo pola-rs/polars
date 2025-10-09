@@ -22,6 +22,7 @@ const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
+#[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DslPlan {
@@ -267,11 +268,14 @@ impl DslPlan {
         writer.write_all(&le_major)?;
         writer.write_all(&le_minor)?;
         writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
-        pl_serialize::serialize_dsl(writer, self)
+        let serializable_plan = serializable_plan::SerializableDslPlan::from(self);
+        pl_serialize::serialize_dsl(writer, &serializable_plan)
     }
 
     #[cfg(feature = "serde")]
     pub fn deserialize_versioned<R: Read>(mut reader: R) -> PolarsResult<Self> {
+        use crate::dsl::serializable_plan::SerializableDslPlan;
+
         const MAGIC_LEN: usize = DSL_MAGIC_BYTES.len();
         let mut version_magic = [0u8; MAGIC_LEN + 4];
         reader
@@ -333,8 +337,10 @@ impl DslPlan {
             );
         }
 
-        pl_serialize::deserialize_dsl(reader)
-            .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
+        let serializable_plan: SerializableDslPlan =
+            polars_utils::pl_serialize::deserialize_dsl(reader)
+                .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))?;
+        serializable_plan.try_into()
     }
 
     #[cfg(feature = "dsl-schema")]
