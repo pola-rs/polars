@@ -231,7 +231,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                 inner_fn @ (IRFunctionExpr::Boolean(
                     IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
                 )
-                | IRFunctionExpr::NullCount),
+                | IRFunctionExpr::NullCount
+                | IRFunctionExpr::ApproxNUnique),
             options,
         } => {
             assert!(inner_exprs.len() == 1);

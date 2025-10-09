@@ -1728,7 +1728,8 @@ fn lower_exprs_with_ctx(
                     IRFunctionExpr::Boolean(
                         IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
                     )
-                    | IRFunctionExpr::NullCount,
+                    | IRFunctionExpr::NullCount
+                    | IRFunctionExpr::ApproxNUnique,
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
