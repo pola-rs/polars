@@ -958,6 +958,7 @@ where
         .zip(val)
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
             (Some(src), Some(val)) => Some(f(src, val)),
+            (Some(src), None) => Some(Cow::from(src)),
             _ => None,
         })
         .collect_trusted();
@@ -982,9 +983,9 @@ fn replace_n<'a>(
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(
-                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
-            )?;
+            let Some(val) = val.get(0) else {
+                return Ok(ca.clone());
+            };
             let literal = literal || is_literal_pat(pat);
 
             match literal {

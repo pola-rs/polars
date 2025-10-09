@@ -7,7 +7,7 @@ from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
-from polars._utils.various import parse_version
+from polars._utils.various import parse_version, qualified_type_name
 from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT
 from polars.exceptions import (
@@ -46,8 +46,10 @@ _INVALID_QUERY_TYPES = {
     "CREATE",
     "DELETE",
     "DROP",
+    "GRANT",
     "INSERT",
     "REPLACE",
+    "REVOKE",
     "UPDATE",
     "UPSERT",
     "USE",
@@ -203,28 +205,47 @@ class ConnectionExecutor:
         from polars import DataFrame
 
         try:
-            for driver, driver_properties in ARROW_DRIVER_REGISTRY.items():
-                if re.match(f"^{driver}$", self.driver_name):
-                    if ver := driver_properties["minimum_version"]:
-                        self._check_module_version(self.driver_name, ver)
-
-                    if iter_batches and (
-                        driver_properties["exact_batch_size"] and not batch_size
-                    ):
-                        msg = f"Cannot set `iter_batches` for {self.driver_name} without also setting a non-zero `batch_size`"
-                        raise ValueError(msg)  # noqa: TRY301
-
-                    frames = (
-                        self._apply_overrides(batch, (schema_overrides or {}))
-                        if isinstance(batch, DataFrame)
-                        else from_arrow(batch, schema_overrides=schema_overrides)
-                        for batch in self._fetch_arrow(
-                            driver_properties,
-                            iter_batches=iter_batches,
-                            batch_size=batch_size,
-                        )
+            # all ADBC drivers have the same method names
+            driver = (
+                "adbc" if self.driver_name.startswith("adbc_") else self.driver_name
+            )
+            driver_properties_list = ARROW_DRIVER_REGISTRY.get(driver, [])
+            for i, driver_properties in enumerate(driver_properties_list, start=1):
+                if ver := driver_properties["minimum_version"]:
+                    # for ADBC drivers, the minimum version constraint is on the driver
+                    # manager rather than the driver itself
+                    driver_to_check = (
+                        "adbc_driver_manager" if driver == "adbc" else self.driver_name
                     )
-                    return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]
+                    # if the minimum version constraint is not met, try additional
+                    # driver properties with lower constraints
+                    try:
+                        self._check_module_version(driver_to_check, ver)
+                    except ModuleUpgradeRequiredError:
+                        if i < len(driver_properties_list):
+                            continue
+                        raise
+
+                if iter_batches and (
+                    driver_properties["exact_batch_size"] and not batch_size
+                ):
+                    msg = (
+                        f"Cannot set `iter_batches` for {self.driver_name} "
+                        "without also setting a non-zero `batch_size`"
+                    )
+                    raise ValueError(msg)  # noqa: TRY301
+
+                frames = (
+                    self._apply_overrides(batch, (schema_overrides or {}))
+                    if isinstance(batch, DataFrame)
+                    else from_arrow(batch, schema_overrides=schema_overrides)
+                    for batch in self._fetch_arrow(
+                        driver_properties,
+                        iter_batches=iter_batches,
+                        batch_size=batch_size,
+                    )
+                )
+                return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]
         except Exception as err:
             # eg: valid turbodbc/snowflake connection, but no arrow support
             # compiled in to the underlying driver (or on this connection)
@@ -425,7 +446,10 @@ class ConnectionExecutor:
             # can execute directly (given cursor, sqlalchemy connection, etc)
             return conn
 
-        msg = f"""Unrecognised connection type "{conn!r}"; no 'execute' or 'cursor' method"""
+        msg = (
+            f"Unrecognised connection type {qualified_type_name(conn)!r}; no "
+            "'execute' or 'cursor' method"
+        )
         raise TypeError(msg)
 
     async def _sqlalchemy_async_execute(self, query: TextClause, **options: Any) -> Any:
