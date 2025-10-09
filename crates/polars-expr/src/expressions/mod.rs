@@ -586,7 +586,12 @@ impl<'a> AggregationContext<'a> {
 
     /// Do the group indices reference all values in the aggregation state.
     fn groups_cover_all_values(&mut self) -> bool {
-        if self.original_len || self.is_literal() {
+        if self.original_len
+            || matches!(
+                self.state,
+                AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
+            )
+        {
             return true;
         }
 
@@ -605,13 +610,14 @@ impl<'a> AggregationContext<'a> {
                 groups,
                 overlapping: true,
             } => {
-                let mut seen = MutableBitmap::from_len_zeroed(num_values);
+                // @NOTE: Slice groups are sorted by their `start` value.
+                let mut offset = 0;
+                let mut covers_all = true;
                 for [start, length] in groups {
-                    for i in 0..*length {
-                        unsafe { seen.set_unchecked((*start + i) as usize, true) };
-                    }
+                    covers_all &= *start <= offset;
+                    offset = start + length;
                 }
-                seen.unset_bits() == 0
+                covers_all && offset == num_values as IdxSize
             },
 
             // If we don't have overlapping data, we can just do a count.
