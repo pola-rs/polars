@@ -1581,6 +1581,7 @@ def test_group_by_agg_on_lit(maintain_order: bool) -> None:
         Expr.skew,
         Expr.null_count,
         Expr.product,
+        lambda e: pl.corr(e, e),
     ]
 
     df = pl.DataFrame({"a": [1, 2], "b": [1, 1]})
