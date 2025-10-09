@@ -728,6 +728,13 @@ impl PhysicalExpr for AggQuantileExpr {
 
         let quantile = self.get_quantile(df, state)?;
 
+        if let AggState::LiteralScalar(c) = &mut ac.state {
+            *c = c
+                .quantile_reduce(quantile, self.method)?
+                .into_column(keep_name);
+            return Ok(ac);
+        }
+
         // SAFETY:
         // groups are in bounds
         let mut agg = unsafe {
