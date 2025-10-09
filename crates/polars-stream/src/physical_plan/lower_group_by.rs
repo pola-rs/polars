@@ -73,6 +73,7 @@ fn build_group_by_fallback(
     Ok(PhysStream::first(phys_sm.insert(group_by_node)))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn try_replace_agg_input_uniq(
     expr: Node,
     outer_name: Option<PlSmallStr>,
