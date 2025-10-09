@@ -23,6 +23,7 @@ pub struct ApplyExpr {
     input_schema: SchemaRef,
     allow_threading: bool,
     check_lengths: bool,
+    is_fallible: bool,
 
     /// Output field of the expression excluding potential aggregation.
     output_field: Field,
@@ -39,6 +40,7 @@ impl ApplyExpr {
         input_schema: SchemaRef,
         non_aggregated_output_field: Field,
         function_operates_on_scalar: bool,
+        is_fallible: bool,
     ) -> Self {
         debug_assert!(
             !options.is_length_preserving()
@@ -56,6 +58,7 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             output_field: non_aggregated_output_field,
+            is_fallible,
         }
     }
 
@@ -458,14 +461,15 @@ impl PhysicalExpr for ApplyExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         if self.inputs.len() == 1 {
-            let ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
+            let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match self.flags.is_elementwise() {
-                false => self.apply_single_group_aware(ac),
-                true => self.apply_single_elementwise(ac),
+            if self.flags.is_elementwise() && (!self.is_fallible || ac.groups_cover_all_values()) {
+                self.apply_single_elementwise(ac)
+            } else {
+                self.apply_single_group_aware(ac)
             }
         } else {
-            let acs = self.prepare_multiple_inputs(df, groups, state)?;
+            let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
             match self.flags.is_elementwise() {
                 false => self.apply_multiple_group_aware(acs, df),
@@ -561,6 +565,11 @@ impl PhysicalExpr for ApplyExpr {
                         self.apply_multiple_group_aware(acs, df)
                     } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
                         // Compatible but calling aggregated() is too expensive
+                        self.apply_multiple_group_aware(acs, df)
+                    } else if self.is_fallible
+                        && acs.iter_mut().any(|ac| !ac.groups_cover_all_values())
+                    {
+                        // Fallible expression and there are elements that are masked out.
                         self.apply_multiple_group_aware(acs, df)
                     } else {
                         self.apply_multiple_elementwise(acs, elementwise_must_aggregate)

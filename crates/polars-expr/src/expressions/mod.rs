@@ -25,6 +25,7 @@ pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
 use arrow::array::ArrayRef;
+use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
@@ -563,6 +564,15 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    fn flat_naive_length(&self) -> usize {
+        match &self.state {
+            AggState::NotAggregated(c) => c.len(),
+            AggState::AggregatedList(c) => c.list().unwrap().inner_length(),
+            AggState::AggregatedScalar(c) => c.len(),
+            AggState::LiteralScalar(_) => 1,
+        }
+    }
+
     /// Take the series.
     pub(crate) fn take(&mut self) -> Column {
         let c = match &mut self.state {
@@ -572,6 +582,50 @@ impl<'a> AggregationContext<'a> {
             AggState::LiteralScalar(c) => c,
         };
         std::mem::take(c)
+    }
+
+    /// Do the group indices reference all values in the aggregation state.
+    fn groups_cover_all_values(&mut self) -> bool {
+        if self.original_len
+            || matches!(
+                self.state,
+                AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
+            )
+        {
+            return true;
+        }
+
+        let num_values = self.flat_naive_length();
+        match self.groups().as_ref().as_ref() {
+            GroupsType::Idx(groups) => {
+                let mut seen = MutableBitmap::from_len_zeroed(num_values);
+                for (_, g) in groups {
+                    for i in g.iter() {
+                        unsafe { seen.set_unchecked(*i as usize, true) };
+                    }
+                }
+                seen.unset_bits() == 0
+            },
+            GroupsType::Slice {
+                groups,
+                overlapping: true,
+            } => {
+                // @NOTE: Slice groups are sorted by their `start` value.
+                let mut offset = 0;
+                let mut covers_all = true;
+                for [start, length] in groups {
+                    covers_all &= *start <= offset;
+                    offset = start + length;
+                }
+                covers_all && offset == num_values as IdxSize
+            },
+
+            // If we don't have overlapping data, we can just do a count.
+            GroupsType::Slice {
+                groups,
+                overlapping: false,
+            } => groups.iter().map(|[_, l]| *l as usize).sum::<usize>() == num_values,
+        }
     }
 }
 

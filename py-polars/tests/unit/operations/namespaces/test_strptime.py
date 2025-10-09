@@ -906,3 +906,18 @@ def test_eager_inference_on_expr(length: int) -> None:
         match="`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data",
     ):
         s.to_frame().select(pl.col("a").str.strptime(pl.Datetime))
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_strptime_in_group_by(maintain_order: bool) -> None:
+    df = pl.DataFrame({"g": [1, 2], "a": ["AAA", "2025-01-01"]})
+
+    assert_frame_equal(
+        df.group_by("g", maintain_order=maintain_order).agg(
+            pl.col.a.filter(pl.col.a != "AAA").str.to_date("%Y-%m-%d").min()
+        ),
+        pl.DataFrame({"g": [1, 2], "a": [None, "2025-01-01"]}).with_columns(
+            pl.col.a.str.to_date("%Y-%m-%d")
+        ),
+        check_row_order=maintain_order,
+    )
