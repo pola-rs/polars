@@ -1111,6 +1111,9 @@ def by_index(
     *indices
         One or more column indices (or range objects).
         Negative indexing is supported.
+    require_all
+        By default, all specified indices must be valid; if any index is out of bounds,
+        an error is raised. If set to `False`, out-of-bounds indices are ignored
 
     Notes
     -----

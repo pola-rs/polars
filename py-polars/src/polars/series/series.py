@@ -1742,7 +1742,6 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-
             * If set to `True` (default), null values are ignored. If there
               are no non-null values, the output is `False`.
             * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -1785,7 +1784,6 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-
             * If set to `True` (default), null values are ignored. If there
               are no non-null values, the output is `True`.
             * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -4013,6 +4011,8 @@ class Series:
 
         Parameters
         ----------
+        other
+            A Series or collection to search in.
         nulls_equal : bool, default False
             If True, treat null as a distinct value. Null values will not propagate.
 
@@ -4525,6 +4525,8 @@ class Series:
 
         Parameters
         ----------
+        other
+            A literal or expression value to compare with.
         abs_tol
             Absolute tolerance. This is the maximum allowed absolute difference between
             two values. Must be non-negative.
