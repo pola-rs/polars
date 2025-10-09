@@ -83,8 +83,7 @@ impl AggState {
 }
 
 // lazy update strategy
-#[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
@@ -621,7 +620,7 @@ impl<'a> AggregationContext<'a> {
         match &self.state {
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
             AggState::AggregatedScalar(c) => {
-                assert_eq!(self.update_groups, UpdateGroups::No);
+                assert!(self.update_groups, UpdateGroups::No);
                 self.groups = Cow::Owned(
                     GroupsType::Slice {
                         groups: (0..c.len() as IdxSize).map(|i| [i, 1]).collect(),
