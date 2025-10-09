@@ -120,13 +120,13 @@ def test_binary_bitwise_kleene_24809(
     swap_op: bool,
     truth_table: dict[bool, list[bool]],
 ) -> None:
-    def op(l: Any, r: Any) -> Any:
-        return op_impl(r, l) if swap_op else op_impl(l, r)
+    def op(lhs: Any, rhs: Any) -> Any:
+        return op_impl(rhs, lhs) if swap_op else op_impl(lhs, rhs)
 
     rhs = pl.Series([F, U, T], dtype=pl.Boolean)
 
     class _:
-        def f(scalar: bool) -> list[bool]:
+        def f(scalar: bool | None) -> Any:  # type: ignore[misc]
             lhs = pl.lit(scalar, dtype=pl.Boolean)
             return pl.select(op(lhs, rhs)).to_series().to_list()
 
@@ -137,7 +137,7 @@ def test_binary_bitwise_kleene_24809(
         } == truth_table
 
     class _:  # type: ignore[no-redef]
-        def f(scalar: bool) -> list[bool]:
+        def f(scalar: bool | None) -> Any:  # type: ignore[misc]
             lhs = pl.Series([scalar], dtype=pl.Boolean)
             return pl.select(op(lhs, rhs)).to_series().to_list()
 
@@ -148,7 +148,7 @@ def test_binary_bitwise_kleene_24809(
         } == truth_table
 
     class _:  # type: ignore[no-redef]
-        def f(scalar: bool) -> list[bool]:
+        def f(scalar: bool | None) -> Any:  # type: ignore[misc]
             lhs = pl.Series([scalar, scalar, scalar], dtype=pl.Boolean)
             return op(lhs, rhs).to_list()
 
@@ -159,7 +159,7 @@ def test_binary_bitwise_kleene_24809(
         } == truth_table
 
     class _:  # type: ignore[no-redef]
-        def f(scalar: bool) -> list[bool]:
+        def f(scalar: bool | None) -> Any:  # type: ignore[misc]
             lhs = pl.lit(pl.Series([scalar]))
             return pl.select(op(lhs, rhs)).to_series().to_list()
 
@@ -170,7 +170,7 @@ def test_binary_bitwise_kleene_24809(
         } == truth_table
 
     class _:  # type: ignore[no-redef]
-        def f(scalar: bool) -> list[bool]:
+        def f(scalar: bool | None) -> Any:  # type: ignore[misc]
             lhs = pl.lit(pl.Series([scalar, scalar, scalar]))
             return pl.select(op(lhs, rhs)).to_series().to_list()
 
