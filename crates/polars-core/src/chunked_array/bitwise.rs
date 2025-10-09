@@ -1,4 +1,4 @@
-use std::ops::{BitAnd, BitOr, BitXor, Not};
+use std::ops::{BitAnd, BitOr, BitXor};
 
 use arrow::compute;
 use arrow::compute::bitwise;
@@ -115,8 +115,8 @@ impl BitXor for &BooleanChunked {
             _ => None,
         } {
             match scalar {
-                None => BooleanChunked::full_null(self.name().clone(), other_ca.len()),
                 Some(false) => other_ca.clone(),
+                None => BooleanChunked::full_null(self.name().clone(), other_ca.len()),
                 Some(true) => !other_ca,
             }
         } else {
