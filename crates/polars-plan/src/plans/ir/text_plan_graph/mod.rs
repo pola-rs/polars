@@ -376,7 +376,7 @@ impl TextPlanGraphGenerator<'_> {
                     JoinType::Cross => {
                         let predicate: Option<PlSmallStr> = options.as_ref().map(|x| {
                             let JoinTypeOptionsIR::CrossAndFilter { predicate } = x else {
-                                panic!("{:?}", x)
+                                panic!("{x:?}")
                             };
 
                             format_pl_smallstr!("{}", predicate.display(self.expr_arena))
