@@ -25,6 +25,7 @@ pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
 use arrow::array::ArrayRef;
+use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
@@ -563,6 +564,15 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    fn flat_naive_length(&self) -> usize {
+        match &self.state {
+            AggState::NotAggregated(c) => c.len(),
+            AggState::AggregatedList(c) => c.list().unwrap().inner_length(),
+            AggState::AggregatedScalar(c) => c.len(),
+            AggState::LiteralScalar(_) => 1,
+        }
+    }
+
     /// Take the series.
     pub(crate) fn take(&mut self) -> Column {
         let c = match &mut self.state {
@@ -572,6 +582,35 @@ impl<'a> AggregationContext<'a> {
             AggState::LiteralScalar(c) => c,
         };
         std::mem::take(c)
+    }
+
+    fn uses_all_values(&mut self) -> bool {
+        if self.original_len || self.is_literal() {
+            return true;
+        }
+
+        let mut seen = MutableBitmap::from_len_zeroed(self.flat_naive_length());
+        match self.groups().as_ref().as_ref() {
+            GroupsType::Idx(groups) => {
+                for (_, g) in groups {
+                    for i in g.iter() {
+                        unsafe { seen.set_unchecked(*i as usize, true) };
+                    }
+                }
+            },
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+            } => {
+                for [start, length] in groups {
+                    for i in 0..*length {
+                        unsafe { seen.set_unchecked((*start + i) as usize, true) };
+                    }
+                }
+            },
+        }
+
+        seen.unset_bits() == 0
     }
 }
 

@@ -503,6 +503,7 @@ fn create_physical_expr_inner(
                 schema.clone(),
                 output_field,
                 is_scalar,
+                true,
             )))
         },
         Eval {
@@ -581,6 +582,7 @@ fn create_physical_expr_inner(
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
+            let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
@@ -591,6 +593,7 @@ fn create_physical_expr_inner(
                 schema.clone(),
                 output_field,
                 is_scalar,
+                is_fallible,
             )))
         },
         Slice {
@@ -629,6 +632,7 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.clone(),
                 output_field,
+                false,
                 false,
             )))
         },
