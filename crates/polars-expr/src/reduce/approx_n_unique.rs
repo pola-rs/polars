@@ -9,43 +9,23 @@ use super::*;
 pub fn new_approx_n_unique_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
     // TODO: Move the error checks up and make this function infallible
     use DataType::*;
-    use VecGroupedReduction as VGR;
+    use {ApproxNUniqueReducer as R, VecGroupedReduction as VGR};
     Ok(match dtype {
-        Boolean => Box::new(VGR::new(
-            dtype,
-            ApproxNUniqueReducer::<BooleanType>::default(),
-        )),
+        Boolean => Box::new(VGR::new(dtype, R::<BooleanType>::default())),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, ApproxNUniqueReducer::<$T>::default()))
+                Box::new(VGR::new(dtype, R::<$T>::default()))
             })
         },
+        String => Box::new(VGR::new(dtype, R::<StringType>::default())),
+        Binary => Box::new(VGR::new(dtype, R::<BinaryType>::default())),
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(
-            dtype,
-            ApproxNUniqueReducer::<Int128Type>::default(),
-        )),
-        String => Box::new(VGR::new(
-            dtype,
-            ApproxNUniqueReducer::<StringType>::default(),
-        )),
-        Binary => Box::new(VGR::new(
-            dtype,
-            ApproxNUniqueReducer::<BinaryType>::default(),
-        )),
+        Decimal(_, _) => Box::new(VGR::new(dtype, R::<Int128Type>::default())),
+        #[cfg(feature = "dtype-categorical")]
         DataType::Enum(_, _) | DataType::Categorical(_, _) => match dtype.cat_physical().unwrap() {
-            CategoricalPhysical::U8 => Box::new(VGR::new(
-                dtype,
-                ApproxNUniqueReducer::<UInt8Type>::default(),
-            )),
-            CategoricalPhysical::U16 => Box::new(VGR::new(
-                dtype,
-                ApproxNUniqueReducer::<UInt16Type>::default(),
-            )),
-            CategoricalPhysical::U32 => Box::new(VGR::new(
-                dtype,
-                ApproxNUniqueReducer::<UInt32Type>::default(),
-            )),
+            CategoricalPhysical::U8 => Box::new(VGR::new(dtype, R::<UInt8Type>::default())),
+            CategoricalPhysical::U16 => Box::new(VGR::new(dtype, R::<UInt16Type>::default())),
+            CategoricalPhysical::U32 => Box::new(VGR::new(dtype, R::<UInt32Type>::default())),
         },
         Null => Box::new(super::NullGroupedReduction::new(Scalar::new_idxsize(1))),
         _ => {
