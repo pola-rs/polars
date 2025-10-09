@@ -8554,15 +8554,18 @@ Consider using {self}.implode() instead"""
         --------
         >>> df = pl.DataFrame({"a": [1, 4, 4, 1, 9]})
         >>> df.select(pl.col("a").rolling_rank(3, method="average"))
-        shape: (5,)
-        Series: '' [f64]
-        [
-            null
-            null
-            2.5
-            1.0
-            3.0
-        ]
+            shape: (5, 1)
+            ┌──────┐
+            │ a    │
+            │ ---  │
+            │ f64  │
+            ╞══════╡
+            │ null │
+            │ null │
+            │ 2.5  │
+            │ 1.0  │
+            │ 3.0  │
+            └──────┘
         """
         return wrap_expr(
             self._pyexpr.rolling_rank(
