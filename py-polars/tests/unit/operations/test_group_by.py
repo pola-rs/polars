@@ -1615,3 +1615,52 @@ def test_group_by_cum_sum_key_24489() -> None:
     out = df.group_by((pl.col.x > 1).cum_sum()).agg().collect()
     expected = pl.DataFrame({"x": [0, 1]}, schema={"x": pl.UInt32})
     assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_double_aggregations(maintain_order: bool) -> None:
+    fs: list[Callable[[pl.Expr], pl.Expr]] = [
+        Expr.min,
+        Expr.max,
+        Expr.mean,
+        Expr.sum,
+        Expr.len,
+        Expr.count,
+        Expr.first,
+        Expr.last,
+        Expr.n_unique,
+        Expr.implode,
+        Expr.std,
+        Expr.var,
+        lambda e: e.quantile(0.5),
+        Expr.nan_min,
+        Expr.nan_max,
+        Expr.skew,
+        Expr.null_count,
+        Expr.product,
+        lambda e: pl.corr(e, e),
+    ]
+
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b.first()).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        check_row_order=maintain_order,
+    )
+
+    df = pl.DataFrame({"a": [1, 2], "b": [None, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b.first()).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        check_row_order=maintain_order,
+    )

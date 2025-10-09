@@ -102,6 +102,9 @@ pub struct AggregationContext<'a> {
     /// Can be in one of two states
     /// 1. already aggregated as list
     /// 2. flat (still needs the grouptuples to aggregate)
+    ///
+    /// When aggregation state is LiteralScalar or AggregatedScalar, the group values are not
+    /// related to the state data anymore. The number of groups is still accurate.
     state: AggState,
     /// group tuples for AggState
     groups: Cow<'a, GroupPositions>,
@@ -402,22 +405,6 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
-    pub(crate) fn _implode_no_agg(&mut self) {
-        match self.state.clone() {
-            AggState::NotAggregated(_) => {
-                let _ = self.aggregated();
-                let AggState::AggregatedList(s) = self.state.clone() else {
-                    unreachable!()
-                };
-                self.state = AggState::AggregatedScalar(s);
-            },
-            AggState::AggregatedList(s) => {
-                self.state = AggState::AggregatedScalar(s);
-            },
-            _ => unreachable!("should only be called in non-agg/list-agg state by aggregation.rs"),
-        }
-    }
-
     /// Aggregate into `ListChunked`.
     pub fn aggregated_as_list<'b>(&'b mut self) -> Cow<'b, ListChunked> {
         self.aggregated();
@@ -625,6 +612,35 @@ impl<'a> AggregationContext<'a> {
                 groups,
                 overlapping: false,
             } => groups.iter().map(|[_, l]| *l as usize).sum::<usize>() == num_values,
+        }
+    }
+
+    /// Fixes groups for `AggregatedScalar` and `LiteralScalar` so that they point to valid
+    /// data elements in the `AggState` values.
+    fn set_groups_for_undefined_agg_states(&mut self) {
+        match &self.state {
+            AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
+            AggState::AggregatedScalar(c) => {
+                assert_eq!(self.update_groups, UpdateGroups::No);
+                self.groups = Cow::Owned(
+                    GroupsType::Slice {
+                        groups: (0..c.len() as IdxSize).map(|i| [i, 1]).collect(),
+                        overlapping: false,
+                    }
+                    .into_sliceable(),
+                );
+            },
+            AggState::LiteralScalar(c) => {
+                assert_eq!(c.len(), 1);
+                assert_eq!(self.update_groups, UpdateGroups::No);
+                self.groups = Cow::Owned(
+                    GroupsType::Slice {
+                        groups: vec![[0, 1]; self.groups.len()],
+                        overlapping: true,
+                    }
+                    .into_sliceable(),
+                );
+            },
         }
     }
 }
