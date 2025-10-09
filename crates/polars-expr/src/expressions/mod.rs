@@ -620,7 +620,7 @@ impl<'a> AggregationContext<'a> {
         match &self.state {
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
             AggState::AggregatedScalar(c) => {
-                assert!(self.update_groups, UpdateGroups::No);
+                assert_eq!(self.update_groups, UpdateGroups::No);
                 self.groups = Cow::Owned(
                     GroupsType::Slice {
                         groups: (0..c.len() as IdxSize).map(|i| [i, 1]).collect(),
