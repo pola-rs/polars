@@ -10,6 +10,7 @@
 
 use std::cmp::Ordering;
 use std::fmt::Debug;
+use std::ops::RangeInclusive;
 
 use slotmap::{Key as SlotMapKey, SlotMap, new_key_type};
 
@@ -404,42 +405,28 @@ impl<T> OrderStatisticTree<T> {
     }
 
     #[inline]
-    pub fn rank_lower(&self, bound: &T) -> Result<usize, usize> {
-        self._rank_lower(bound, self.root)
+    pub fn rank_range(&self, bound: &T) -> Result<RangeInclusive<usize>, usize> {
+        self._rank_range(bound, self.root)
     }
 
-    fn _rank_lower(&self, value: &T, tree: Key) -> Result<usize, usize> {
+    fn _rank_range(&self, value: &T, tree: Key) -> Result<RangeInclusive<usize>, usize> {
         if tree.is_null() {
             return Err(0);
         }
         let n = unsafe { self.nodes.get_unchecked(tree) };
         match (self.compare)(value, &n.values[0]) {
-            Ordering::Less => self._rank_lower(value, n.left),
-            Ordering::Equal => Ok(self.num_elems(n.left)),
-            Ordering::Greater => self
-                ._rank_lower(value, n.right)
-                .map(|rank| self.num_elems(tree) - self.num_elems(n.right) + rank)
-                .map_err(|rank| self.num_elems(tree) - self.num_elems(n.right) + rank),
-        }
-    }
-
-    #[inline]
-    pub fn rank_upper(&self, bound: &T) -> Result<usize, usize> {
-        self._rank_upper(bound, self.root)
-    }
-
-    fn _rank_upper(&self, value: &T, tree: Key) -> Result<usize, usize> {
-        if tree.is_null() {
-            return Err(self.num_elems(tree));
-        }
-        let n = unsafe { self.nodes.get_unchecked(tree) };
-        match (self.compare)(value, &n.values[0]) {
-            Ordering::Less => self._rank_upper(value, n.left),
-            Ordering::Equal => Ok(self.num_elems(tree) - self.num_elems(n.right) - 1),
-            Ordering::Greater => self
-                ._rank_upper(value, n.right)
-                .map(|rank| self.num_elems(tree) - self.num_elems(n.right) + rank)
-                .map_err(|rank| self.num_elems(tree) - self.num_elems(n.right) + rank),
+            Ordering::Less => self._rank_range(value, n.left),
+            Ordering::Equal => {
+                let lo = self.num_elems(n.left);
+                let hi = lo + n.values.len() - 1;
+                Ok(lo..=hi)
+            },
+            Ordering::Greater => {
+                let update_rank = |r| self.num_elems(tree) - self.num_elems(n.right) + r;
+                self._rank_range(value, n.right)
+                    .map(|rank| update_rank(*rank.start())..=update_rank(*rank.end()))
+                    .map_err(update_rank)
+            },
         }
     }
 
@@ -580,21 +567,17 @@ mod test {
         }
         items.sort();
         for item in 0..100 {
-            let rank_lower = ost.rank_lower(&item);
-            let rank_upper = ost.rank_upper(&item);
+            let rank = ost.rank_range(&item);
 
-            let expected_rank_lower;
-            let expected_rank_upper;
-            if items.contains(&item) {
-                expected_rank_lower = Ok(items.iter().filter(|&x| *x < item).count());
-                expected_rank_upper = Ok(items.iter().filter(|&x| *x <= item).count() - 1);
+            let expected_rank = if items.contains(&item) {
+                let expected_rank_lower = items.iter().filter(|&x| *x < item).count();
+                let expected_rank_upper = items.iter().filter(|&x| *x <= item).count() - 1;
+                Ok(expected_rank_lower..=expected_rank_upper)
             } else {
-                expected_rank_lower = Err(items.iter().filter(|&x| *x < item).count());
-                expected_rank_upper = Err(items.iter().filter(|&x| *x <= item).count());
-            }
+                Err(items.iter().filter(|&x| *x < item).count())
+            };
 
-            assert_eq!(rank_lower, expected_rank_lower);
-            assert_eq!(rank_upper, expected_rank_upper);
+            assert_eq!(rank, expected_rank);
         }
         Ok(())
     }
@@ -636,8 +619,7 @@ mod test {
         assert_eq!(ost.unique_len(), 0);
         assert!(ost.is_balanced());
         assert!(!ost.contains(&1));
-        assert_eq!(ost.rank_lower(&1), Err(0));
-        assert_eq!(ost.rank_upper(&1), Err(0));
+        assert_eq!(ost.rank_range(&1), Err(0));
         assert_eq!(ost.rank_unique(&1), Err(0));
     }
 
