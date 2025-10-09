@@ -463,7 +463,7 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            if self.flags.is_elementwise() && (!self.is_fallible || ac.uses_all_values()) {
+            if self.flags.is_elementwise() && (!self.is_fallible || ac.groups_cover_all_values()) {
                 self.apply_single_elementwise(ac)
             } else {
                 self.apply_single_group_aware(ac)
@@ -566,7 +566,7 @@ impl PhysicalExpr for ApplyExpr {
                     } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
                         // Compatible but calling aggregated() is too expensive
                         self.apply_multiple_group_aware(acs, df)
-                    } else if self.is_fallible && acs.iter_mut().any(|ac| !ac.uses_all_values()) {
+                    } else if self.is_fallible && acs.iter_mut().any(|ac| !ac.groups_cover_all_values()) {
                         // Fallible expression and there are elements that are masked out.
                         self.apply_multiple_group_aware(acs, df)
                     } else {

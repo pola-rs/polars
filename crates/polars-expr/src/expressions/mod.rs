@@ -584,33 +584,42 @@ impl<'a> AggregationContext<'a> {
         std::mem::take(c)
     }
 
-    fn uses_all_values(&mut self) -> bool {
+    /// Do the group indices reference all values in the aggregation state.
+    fn groups_cover_all_values(&mut self) -> bool {
         if self.original_len || self.is_literal() {
             return true;
         }
 
-        let mut seen = MutableBitmap::from_len_zeroed(self.flat_naive_length());
+        let num_values = self.flat_naive_length();
         match self.groups().as_ref().as_ref() {
             GroupsType::Idx(groups) => {
+                let mut seen = MutableBitmap::from_len_zeroed(num_values);
                 for (_, g) in groups {
                     for i in g.iter() {
                         unsafe { seen.set_unchecked(*i as usize, true) };
                     }
                 }
+                seen.unset_bits() == 0
             },
             GroupsType::Slice {
                 groups,
-                overlapping: _,
+                overlapping: true,
             } => {
+                let mut seen = MutableBitmap::from_len_zeroed(num_values);
                 for [start, length] in groups {
                     for i in 0..*length {
                         unsafe { seen.set_unchecked((*start + i) as usize, true) };
                     }
                 }
+                seen.unset_bits() == 0
             },
-        }
 
-        seen.unset_bits() == 0
+            // If we don't have overlapping data, we can just do a count.
+            GroupsType::Slice {
+                groups,
+                overlapping: false,
+            } => groups.iter().map(|[_, l]| *l as usize).sum::<usize>() == num_values,
+        }
     }
 }
 
