@@ -240,6 +240,24 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
     assert_frame_equal(result, expected)
 
 
+def test_arr_sum(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.sum().name.suffix("_sum"),
+        pl.col("float").arr.sum().name.suffix("_sum"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_sum", [15], dtype=pl.Int64),
+            pl.Series("float_sum", [15.0], dtype=pl.Float64),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
 def test_arr_mean(data_dispersion: pl.DataFrame) -> None:
     df = data_dispersion
 
@@ -427,3 +445,23 @@ def test_sort() -> None:
     tc([[2], [1]], [[1], [2]], 1)
     tc([[2, 1]], [[2, 1]], 2)
     tc([[2, 1], [1, 2]], [[1, 2], [2, 1]], 2)
+
+
+def test_array_sum_with_nulls() -> None:
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int32),
+        (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.UInt32),
+        (pl.UInt64, pl.UInt64),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ]:
+        s = pl.Series("a", [[1, 2, 3], None, [4, None, 6]], pl.Array(dt_in, 3))
+        result = s.arr.sum()
+        expected = pl.Series("a", [6, None, 10], dt_out)
+        assert_series_equal(result, expected)

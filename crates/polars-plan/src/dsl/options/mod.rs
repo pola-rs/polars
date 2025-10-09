@@ -87,7 +87,9 @@ impl Hash for JoinTypeOptionsIR {
         match self {
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => opt.hash(state),
-            CrossAndFilter { predicate } => predicate.node().hash(state),
+            CrossAndFilter { predicate } => {
+                predicate.node().hash(state);
+            },
         }
     }
 }

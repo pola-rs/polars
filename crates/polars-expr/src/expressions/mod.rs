@@ -139,12 +139,36 @@ impl<'a> AggregationContext<'a> {
                         self.groups = Cow::Owned(
                             GroupsType::Slice {
                                 groups,
-                                rolling: false,
+                                overlapping: false,
                             }
                             .into_sliceable(),
                         )
                     },
-                    // sliced groups are already in correct order
+                    // sliced groups are already in correct order,
+                    // Update offsets in the case of overlapping groups
+                    // e.g. [0,2], [1,3], [2,4] becomes [0,2], [2,3], [5,4]
+                    GroupsType::Slice {
+                        overlapping: true,
+                        groups,
+                    } => {
+                        // unroll
+                        let groups = groups
+                            .iter()
+                            .map(|g| {
+                                let len = g[1];
+                                let new = [offset, g[1]];
+                                offset += len;
+                                new
+                            })
+                            .collect();
+                        self.groups = Cow::Owned(
+                            GroupsType::Slice {
+                                groups,
+                                overlapping: false,
+                            }
+                            .into_sliceable(),
+                        )
+                    },
                     GroupsType::Slice { .. } => {},
                 }
                 self.update_groups = UpdateGroups::No;
@@ -261,7 +285,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups = Cow::Owned(
                     GroupsType::Slice {
                         groups,
-                        rolling: false,
+                        overlapping: false,
                     }
                     .into_sliceable(),
                 );
@@ -288,7 +312,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups = Cow::Owned(
                     GroupsType::Slice {
                         groups,
-                        rolling: false,
+                        overlapping: false,
                     }
                     .into_sliceable(),
                 );
@@ -518,13 +542,15 @@ impl<'a> AggregationContext<'a> {
         match &self.state {
             AggState::NotAggregated(c) => Cow::Borrowed(c),
             AggState::AggregatedList(c) => {
-                #[cfg(debug_assertions)]
-                {
-                    // panic so we find cases where we accidentally explode overlapping groups
-                    // we don't want this as this can create a lot of data
-                    if let GroupsType::Slice { rolling: true, .. } = self.groups.as_ref().as_ref() {
-                        panic!(
-                            "implementation error, polars should not hit this branch for overlapping groups"
+                if cfg!(debug_assertions) {
+                    // Warning, so we find cases where we accidentally explode overlapping groups
+                    // We don't want this as this can create a lot of data
+                    if let GroupsType::Slice {
+                        overlapping: true, ..
+                    } = self.groups.as_ref().as_ref()
+                    {
+                        polars_warn!(
+                            "performance - an aggregated list with overlapping groups may consume excessive memory"
                         )
                     }
                 }

@@ -23,10 +23,7 @@ impl AExpr {
 
             Literal(v) => v.is_scalar(),
 
-            Eval { variant, .. } => match variant {
-                EvalVariant::List => true,
-                EvalVariant::Cumulative { min_samples: _ } => false,
-            },
+            Eval { variant, .. } => variant.is_elementwise(),
 
             BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
@@ -273,7 +270,8 @@ impl ExprPushdownGroup {
 
                         let ambiguous_is_fallible = !ambiguous_arg_is_infallible_scalar;
 
-                        strptime_options.strict || ambiguous_is_fallible
+                        !matches!(expr_arena.get(input[0].node()), AExpr::Literal(_))
+                            && (strptime_options.strict || ambiguous_is_fallible)
                     },
                     AExpr::Cast {
                         expr,

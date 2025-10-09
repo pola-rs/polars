@@ -58,8 +58,8 @@ jobs:
 
       - name: Check runtime versions
         env:
-          POLARS_PYPROJECT_TOML: py-polars/polars/pyproject.toml
-          POLARS_CARGO_TOML: py-polars/Cargo.toml
+          POLARS_PYPROJECT_TOML: py-polars/pyproject.toml
+          POLARS_CARGO_TOML: py-polars/runtime/Cargo.toml
         run: |
           set -e
 
@@ -78,7 +78,7 @@ jobs:
       - name: Update features in PLR
         if: matrix.architecture == 'x86-64'
         env:
-          PLR_PATH: py-polars/polars/_plr.py
+          PLR_PATH: py-polars/src/polars/_plr.py
         run: |
           set -e
 
@@ -90,7 +90,6 @@ jobs:
 
       - name: Build sdist and wheel
         run: |
-          mv py-polars/polars/pyproject.toml py-polars/pyproject.toml
           uv build py-polars --out-dir dist
 
       - name: Upload base package
@@ -139,15 +138,14 @@ jobs:
         if: matrix.package != 'polars-runtime-64'
         run: |
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
-          mv py-polars/_polars_runtime_64 py-polars/_$SNAKE_CASE
+          mv py-polars/runtime/_polars_runtime_64 py-polars/runtime/_$SNAKE_CASE
       - name: Update runtime package and module names
         run: |
-          # Remove local development include
-          tomlq -i -t "del(.tool.maturin.include[1])" py-polars/pyproject.toml
+          cp rust-toolchain.toml py-polars/runtime
 
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
-          tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-          tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/Cargo.toml
+          tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/runtime/pyproject.toml
+          tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/runtime/Cargo.toml
           sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
       - name: Set runtime repr in plr
         run: |
@@ -155,14 +153,14 @@ jobs:
       - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
-          tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+          tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/runtime/Cargo.toml
 
       - name: Create source distribution
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: >
-            --manifest-path py-polars/Cargo.toml
+            --manifest-path py-polars/runtime/Cargo.toml
             --out dist
           maturin-version: 1.8.3
 
@@ -303,15 +301,12 @@ jobs:
         if: matrix.package != 'polars-runtime-64'
         run: |
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
-          mv py-polars/_polars_runtime_64 py-polars/_$SNAKE_CASE
+          mv py-polars/runtime/_polars_runtime_64 py-polars/runtime/_$SNAKE_CASE
       - name: Update runtime package and module names
         run: |
-          # Remove local development include
-          tomlq -i -t "del(.tool.maturin.include[1])" py-polars/pyproject.toml
-
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
-          tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-          tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/Cargo.toml
+          tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/runtime/pyproject.toml
+          tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/runtime/Cargo.toml
           sed $SED_INPLACE "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
       - name: Set runtime repr in plr
         run: |
@@ -319,7 +314,7 @@ jobs:
       - name: Update 64-bit runtime to bigidx
         if: matrix.package == 'polars-runtime-64'
         run: |
-          tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+          tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/runtime/Cargo.toml
 
       - name: Determine CPU features for x86-64
         id: features
@@ -382,7 +377,7 @@ jobs:
         #   TomlError: Unknown character "46" at row 1, col 2, pos 1:
         #   1> ../rust-toolchain.toml
         if: matrix.os == 'windows-11-arm'
-        run: cp rust-toolchain.toml py-polars/
+        run: cp rust-toolchain.toml py-polars/runtime
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
@@ -391,7 +386,7 @@ jobs:
           target: ${{ steps.target.outputs.target }}
           args: >
             --profile dist-release
-            --manifest-path py-polars/Cargo.toml
+            --manifest-path py-polars/runtime/Cargo.toml
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
           maturin-version: 1.8.3
@@ -444,9 +439,8 @@ jobs:
 
       - name: Get version from Cargo.toml
         id: version
-        working-directory: py-polars
         run: |
-          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' Cargo.toml)
+          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' py-polars/runtime/Cargo.toml)
           if [[ "$VERSION" == *"-"* ]]; then
             IS_PRERELEASE=true
           else

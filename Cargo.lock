@@ -3131,7 +3131,6 @@ dependencies = [
  "ryu",
  "schemars",
  "serde",
- "skiplist",
  "strength_reduce",
  "strum_macros 0.27.1",
  "version_check",
@@ -3678,6 +3677,7 @@ dependencies = [
  "memmap2",
  "num-traits",
  "polars-error",
+ "proptest",
  "pyo3",
  "rand 0.9.1",
  "raw-cpuid",
@@ -3803,7 +3803,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.34.0-beta.4"
+version = "1.34.0"
 dependencies = [
  "either",
  "libc",
@@ -4762,16 +4762,6 @@ name = "siphasher"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
-
-[[package]]
-name = "skiplist"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f354fd282d3177c2951004953e2fdc4cb342fa159bbee8b829852b6a081c8ea1"
-dependencies = [
- "rand 0.9.1",
- "thiserror 2.0.12",
-]
 
 [[package]]
 name = "slab"
