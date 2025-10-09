@@ -115,7 +115,7 @@ T = True
     ],
 )
 @pytest.mark.parametrize("swap_op", [True, False])
-def test_bitwise_kleene_24809(
+def test_binary_bitwise_kleene_24809(
     op_impl: Any,
     swap_op: bool,
     truth_table: dict[bool, list[bool]],
