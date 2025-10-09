@@ -7465,6 +7465,103 @@ Consider using {self}.implode() instead"""
             )
         )
 
+    @unstable()
+    def rolling_rank_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        method: RankMethod = "average",
+        *,
+        seed: int | None = None,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Expr:
+        """
+        Compute a rolling rank based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic
+            temporal size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        method : {'average', 'min', 'max', 'dense', 'random'}
+            The method used to assign ranks to tied elements.
+            The following methods are available (default is 'average'):
+
+            - 'average' : The average of the ranks that would have been assigned to
+              all the tied values is assigned to each value.
+            - 'min' : The minimum of the ranks that would have been assigned to all
+              the tied values is assigned to each value. (This is also referred to
+              as "competition" ranking.)
+            - 'max' : The maximum of the ranks that would have been assigned to all
+              the tied values is assigned to each value.
+            - 'dense' : Like 'min', but the rank of the next highest element is
+              assigned the rank immediately after those assigned to the tied
+              elements.
+            - 'random' : Choose a random rank for each value in a tie.
+        seed
+            Random seed used when `method='random'`. If set to None (default), a
+            random seed is generated for each rolling rank operation.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Returns
+        -------
+        Expr
+            An Expr of data :class:`.Float64` if `method` is `"average"` or,
+            the index size (see :func:`.get_index_type()`) otherwise.
+        """
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by_pyexpr = parse_into_expression(by)
+        return wrap_expr(
+            self._pyexpr.rolling_rank_by(
+                by_pyexpr,
+                window_size,
+                method,
+                seed,
+                min_samples,
+                closed,
+            )
+        )
+
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,
@@ -8392,6 +8489,89 @@ Consider using {self}.implode() instead"""
                 weights,
                 min_samples,
                 center=center,
+            )
+        )
+
+    @unstable()
+    def rolling_rank(
+        self,
+        window_size: int,
+        method: RankMethod = "average",
+        *,
+        seed: int | None = None,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Expr:
+        """
+        Compute a rolling rank.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        A window of length `window_size` will traverse the array. The values
+        that fill this window will be ranked according to the `method`
+        parameter. The resulting values will be the rank of the value that is
+        at the end of the sliding window.
+
+        Parameters
+        ----------
+        window_size
+            Integer size of the rolling window.
+        method : {'average', 'min', 'max', 'dense', 'random'}
+            The method used to assign ranks to tied elements.
+            The following methods are available (default is 'average'):
+
+            - 'average' : The average of the ranks that would have been assigned to
+              all the tied values is assigned to each value.
+            - 'min' : The minimum of the ranks that would have been assigned to all
+              the tied values is assigned to each value. (This is also referred to
+              as "competition" ranking.)
+            - 'max' : The maximum of the ranks that would have been assigned to all
+              the tied values is assigned to each value.
+            - 'dense' : Like 'min', but the rank of the next highest element is
+              assigned the rank immediately after those assigned to the tied
+              elements.
+            - 'random' : Choose a random rank for each value in a tie.
+        seed
+            Random seed used when `method='random'`. If set to None (default), a
+            random seed is generated for each rolling rank operation.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
+
+        Returns
+        -------
+        Expr
+            An Expr of data :class:`.Float64` if `method` is `"average"` or,
+            the index size (see :func:`.get_index_type()`) otherwise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 4, 4, 1, 9]})
+        >>> df.select(pl.col("a").rolling_rank(3, method="average"))
+            shape: (5, 1)
+            ┌──────┐
+            │ a    │
+            │ ---  │
+            │ f64  │
+            ╞══════╡
+            │ null │
+            │ null │
+            │ 2.5  │
+            │ 1.0  │
+            │ 3.0  │
+            └──────┘
+        """
+        return wrap_expr(
+            self._pyexpr.rolling_rank(
+                window_size,
+                method,
+                seed,
+                min_samples,
+                center,
             )
         )
 

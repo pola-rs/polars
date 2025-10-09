@@ -14,7 +14,7 @@ use super::*;
 
 // Use an aggregation window that maintains the state.
 // Fastpath if values were known to already be sorted by time.
-pub(crate) fn rolling_apply_agg_window_sorted<'a, Agg, T, O>(
+pub(crate) fn rolling_apply_agg_window_sorted<'a, Agg, T, O, Out>(
     values: &'a [T],
     offsets: O,
     min_periods: usize,
@@ -22,9 +22,10 @@ pub(crate) fn rolling_apply_agg_window_sorted<'a, Agg, T, O>(
 ) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T, Out>,
     O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
-    T: Debug + IsFloat + NativeType,
+    T: Debug + NativeType,
+    Out: Debug + NativeType,
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
@@ -54,7 +55,7 @@ where
                 }
             })
         })
-        .collect::<PolarsResult<PrimitiveArray<T>>>()?;
+        .collect::<PolarsResult<PrimitiveArray<Out>>>()?;
 
     Ok(Box::new(out))
 }
@@ -75,7 +76,7 @@ fn instantiate_bitmap_if_null_and_set_false_at_idx(
 }
 
 // Use an aggregation window that maintains the state
-pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
+pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O, Out>(
     values: &'a [T],
     offsets: O,
     min_periods: usize,
@@ -84,9 +85,10 @@ pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
 ) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T, Out>,
     O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
-    T: Debug + IsFloat + NativeType,
+    T: Debug + NativeType,
+    Out: Debug + NativeType,
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
@@ -136,7 +138,7 @@ where
         Ok::<(), PolarsError>(())
     })?;
 
-    let out = PrimitiveArray::<T>::from_vec(out).with_validity(validity.map(|x| x.into()));
+    let out = PrimitiveArray::<Out>::from_vec(out).with_validity(validity.map(|x| x.into()));
 
     Ok(Box::new(out))
 }
@@ -162,14 +164,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::MinWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<no_nulls::MinWindow<_>, _, _, _>(
             values,
             offset_iter,
             min_periods,
             None,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(
+        rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _, _>(
             values,
             offset_iter,
             min_periods,
@@ -200,14 +202,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::MaxWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<no_nulls::MaxWindow<_>, _, _, _>(
             values,
             offset_iter,
             min_periods,
             None,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(
+        rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _, _>(
             values,
             offset_iter,
             min_periods,
@@ -247,14 +249,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<SumWindow<T, T>, _, _>(
+        rolling_apply_agg_window_sorted::<SumWindow<T, T>, _, _, _>(
             values,
             offset_iter,
             min_periods,
             None,
         )
     } else {
-        rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
+        rolling_apply_agg_window::<SumWindow<T, T>, _, _, _>(
             values,
             offset_iter,
             min_periods,
@@ -285,14 +287,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<MeanWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<MeanWindow<_>, _, _, _>(
             values,
             offset_iter,
             min_periods,
             None,
         )
     } else {
-        rolling_apply_agg_window::<MeanWindow<_>, _, _>(
+        rolling_apply_agg_window::<MeanWindow<_>, _, _, _>(
             values,
             offset_iter,
             min_periods,
@@ -323,14 +325,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::MomentWindow<_, VarianceMoment>, _, _>(
+        rolling_apply_agg_window_sorted::<no_nulls::MomentWindow<_, VarianceMoment>, _, _, _>(
             values,
             offset_iter,
             min_periods,
             params,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::MomentWindow<_, VarianceMoment>, _, _>(
+        rolling_apply_agg_window::<no_nulls::MomentWindow<_, VarianceMoment>, _, _, _>(
             values,
             offset_iter,
             min_periods,
@@ -361,19 +363,122 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::QuantileWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<no_nulls::QuantileWindow<_>, _, _, _>(
             values,
             offset_iter,
             min_periods,
             params,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::QuantileWindow<_>, _, _>(
+        rolling_apply_agg_window::<no_nulls::QuantileWindow<_>, _, _, _>(
             values,
             offset_iter,
             min_periods,
             params,
             sorting_indices,
         )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn rolling_rank<T>(
+    values: &[T],
+    period: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    min_periods: usize,
+    tu: TimeUnit,
+    tz: Option<&TimeZone>,
+    params: Option<RollingFnParams>,
+    sorting_indices: Option<&[IdxSize]>,
+) -> PolarsResult<ArrayRef>
+where
+    T: Debug + NativeType,
+{
+    use polars_compute::rolling::no_nulls::rank::*;
+
+    let method = if let Some(RollingFnParams::Rank { method, .. }) = params {
+        method
+    } else {
+        unreachable!("expected RollingFnParams::Rank");
+    };
+
+    let offset_iter = match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
+        _ => group_by_values_iter(period, time, closed_window, tu, None),
+    }?;
+
+    if sorting_indices.is_none() {
+        match method {
+            RollingRankMethod::Average => rolling_apply_agg_window_sorted::<
+                RankWindowAvg<T>,
+                _,
+                _,
+                _,
+            >(values, offset_iter, min_periods, params),
+            RollingRankMethod::Min => rolling_apply_agg_window_sorted::<RankWindowMin<T>, _, _, _>(
+                values,
+                offset_iter,
+                min_periods,
+                params,
+            ),
+            RollingRankMethod::Max => rolling_apply_agg_window_sorted::<RankWindowMax<T>, _, _, _>(
+                values,
+                offset_iter,
+                min_periods,
+                params,
+            ),
+            RollingRankMethod::Dense => rolling_apply_agg_window_sorted::<
+                RankWindowDense<T>,
+                _,
+                _,
+                _,
+            >(values, offset_iter, min_periods, params),
+            RollingRankMethod::Random => rolling_apply_agg_window_sorted::<
+                RankWindowRandom<T>,
+                _,
+                _,
+                _,
+            >(values, offset_iter, min_periods, params),
+        }
+    } else {
+        match method {
+            RollingRankMethod::Average => rolling_apply_agg_window::<RankWindowAvg<T>, _, _, _>(
+                values,
+                offset_iter,
+                min_periods,
+                params,
+                sorting_indices,
+            ),
+            RollingRankMethod::Min => rolling_apply_agg_window::<RankWindowMin<T>, _, _, _>(
+                values,
+                offset_iter,
+                min_periods,
+                params,
+                sorting_indices,
+            ),
+            RollingRankMethod::Max => rolling_apply_agg_window::<RankWindowMax<T>, _, _, _>(
+                values,
+                offset_iter,
+                min_periods,
+                params,
+                sorting_indices,
+            ),
+            RollingRankMethod::Dense => rolling_apply_agg_window::<RankWindowDense<T>, _, _, _>(
+                values,
+                offset_iter,
+                min_periods,
+                params,
+                sorting_indices,
+            ),
+            RollingRankMethod::Random => rolling_apply_agg_window::<RankWindowRandom<T>, _, _, _>(
+                values,
+                offset_iter,
+                min_periods,
+                params,
+                sorting_indices,
+            ),
+        }
     }
 }
