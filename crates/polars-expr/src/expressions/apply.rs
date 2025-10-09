@@ -566,7 +566,9 @@ impl PhysicalExpr for ApplyExpr {
                     } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
                         // Compatible but calling aggregated() is too expensive
                         self.apply_multiple_group_aware(acs, df)
-                    } else if self.is_fallible && acs.iter_mut().any(|ac| !ac.groups_cover_all_values()) {
+                    } else if self.is_fallible
+                        && acs.iter_mut().any(|ac| !ac.groups_cover_all_values())
+                    {
                         // Fallible expression and there are elements that are masked out.
                         self.apply_multiple_group_aware(acs, df)
                     } else {
