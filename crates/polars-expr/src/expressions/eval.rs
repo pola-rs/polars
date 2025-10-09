@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::LazyCell;
 use std::sync::Arc;
 
 use polars_core::POOL;
@@ -79,8 +80,8 @@ impl EvalExpr {
             return Ok(Column::full_null(name, ca.len(), dtype));
         }
 
-        let may_fail_on_masked_out_elements =
-            self.evaluation_is_fallible && ca.has_masked_out_values();
+        let has_masked_out_values = LazyCell::new(|| ca.has_masked_out_values());
+        let may_fail_on_masked_out_elements = self.evaluation_is_fallible && *has_masked_out_values;
 
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
@@ -98,13 +99,8 @@ impl EvalExpr {
             return Ok(column);
         }
 
-        dbg!(&ca);
-
         let validity = ca.rechunk_validity();
-
         let offsets = ca.offsets()?;
-
-        dbg!(&validity);
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
@@ -122,7 +118,6 @@ impl EvalExpr {
                 .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
                 .collect()
         };
-        dbg!(&groups);
         let groups = GroupsType::Slice {
             groups,
             overlapping: false,
@@ -206,22 +201,21 @@ impl EvalExpr {
             return Ok(Column::full_null(name, ca.len(), dtype));
         }
 
+        let validity = ca.rechunk_validity();
         let may_fail_on_masked_out_elements = self.evaluation_is_fallible && ca.has_nulls();
 
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
+            assert!(!self.evaluation_is_scalar);
+
             let mut column = self.evaluation.evaluate(&df, state)?;
             if column.len() == 1 && df.height() != 1 {
                 column = column.new_from_index(0, df.height());
             }
             assert_eq!(column.len(), ca.len() * ca.width());
 
-            if is_agg && self.evaluation_is_scalar {
-                return Ok(column);
-            }
-
             let dtype = column.dtype().clone();
-            let out = ArrayChunked::from_aligned_values(
+            let mut out = ArrayChunked::from_aligned_values(
                 self.output_field.name.clone(),
                 &dtype,
                 ca.width(),
@@ -229,14 +223,16 @@ impl EvalExpr {
                 ca.len(),
             );
 
+            if let Some(validity) = validity {
+                out.set_validity(&validity);
+            }
+
             return Ok(if as_list {
                 out.to_list().into_column()
             } else {
                 out.clone().into_column()
             });
         }
-
-        let validity = ca.rechunk_validity();
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
@@ -410,9 +406,6 @@ impl PhysicalExpr for EvalExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        dbg!(&df);
-        dbg!(&self.expr);
-        dbg!(&input);
         match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;
