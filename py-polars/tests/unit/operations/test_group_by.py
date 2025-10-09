@@ -1562,3 +1562,28 @@ def test_group_by_cum_sum_key_24489() -> None:
     out = df.group_by((pl.col.x > 1).cum_sum()).agg().collect()
     expected = pl.DataFrame({"x": [0, 1]}, schema={"x": pl.UInt32})
     assert_frame_equal(out, expected, check_row_order=False)
+
+
+def test_group_by_length_preserving_on_scalar() -> None:
+    df = pl.DataFrame({"a": [[1], [2], [3]]})
+    df = df.group_by(pl.lit(1, pl.Int64)).agg(
+        a=pl.col.a.first().reverse(),
+        b=pl.col.a.first(),
+        c=pl.col.a.reverse(),
+        d=pl.lit(1, pl.Int64).reverse(),
+        e=pl.lit(1, pl.Int64).unique(),
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "literal": [1],
+                "a": [[1]],
+                "b": [[1]],
+                "c": [[[3], [2], [1]]],
+                "d": [1],
+                "e": [[1]],
+            }
+        ),
+    )
