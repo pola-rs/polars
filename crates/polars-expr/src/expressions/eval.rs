@@ -283,8 +283,8 @@ impl EvalExpr {
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
-            let name = self.output_field_with_ctx.name.clone();
-            let dtype = self.non_aggregated_output_dtype.inner_dtype().unwrap();
+            let name = self.output_field.name.clone();
+            let dtype = self.output_field.dtype().inner_dtype().unwrap();
 
             return Ok(if as_list {
                 ListChunked::full_null_with_dtype(name, ca.len(), dtype).into_column()
@@ -300,7 +300,7 @@ impl EvalExpr {
 
             let dtype = column.dtype().clone();
             let out = ArrayChunked::from_aligned_values(
-                self.output_field_with_ctx.name.clone(),
+                self.output_field.name.clone(),
                 &dtype,
                 ca.width(),
                 column.take_materialized_series().into_chunks(),
@@ -366,7 +366,7 @@ impl EvalExpr {
                 let values = flat_naive;
                 let dtype = values.dtype().clone();
                 let mut out = ArrayChunked::from_aligned_values(
-                    self.output_field_with_ctx.name.clone(),
+                    self.output_field.name.clone(),
                     &dtype,
                     ca.width(),
                     values.as_materialized_series().chunks().clone(),
@@ -396,9 +396,7 @@ impl EvalExpr {
         Ok(if as_list {
             ca.into_owned().into_column()
         } else {
-            ca.cast(&self.non_aggregated_output_dtype)
-                .unwrap()
-                .into_column()
+            ca.cast(self.output_field.dtype()).unwrap().into_column()
         })
     }
 
