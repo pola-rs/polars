@@ -18,6 +18,7 @@ pub enum IRRollingFunction {
     Quantile,
     Var,
     Std,
+    Rank,
     #[cfg(feature = "moment")]
     Skew,
     #[cfg(feature = "moment")]
@@ -43,6 +44,7 @@ impl Display for IRRollingFunction {
             Quantile => "quantile",
             Var => "var",
             Std => "std",
+            Rank => "rank",
             #[cfg(feature = "moment")]
             Skew => "skew",
             #[cfg(feature = "moment")]
@@ -111,6 +113,13 @@ pub(super) fn rolling_std(s: &Column, options: RollingOptionsFixedWindow) -> Pol
     // @scalar-opt
     s.as_materialized_series()
         .rolling_std(options)
+        .map(Column::from)
+}
+
+pub(super) fn rolling_rank(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_rank(options)
         .map(Column::from)
 }
 

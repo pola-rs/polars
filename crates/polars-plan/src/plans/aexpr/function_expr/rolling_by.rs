@@ -12,6 +12,7 @@ pub enum IRRollingFunctionBy {
     QuantileBy,
     VarBy,
     StdBy,
+    RankBy,
 }
 
 impl Display for IRRollingFunctionBy {
@@ -26,6 +27,7 @@ impl Display for IRRollingFunctionBy {
             QuantileBy => "rolling_quantile_by",
             VarBy => "rolling_var_by",
             StdBy => "rolling_std_by",
+            RankBy => "rolling_rank_by",
         };
 
         write!(f, "{name}")
@@ -105,5 +107,15 @@ pub(super) fn rolling_std_by(
     // @scalar-opt
     s[0].as_materialized_series()
         .rolling_std_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
+}
+
+pub(super) fn rolling_rank_by(
+    s: &[Column],
+    options: RollingOptionsDynamicWindow,
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s[0].as_materialized_series()
+        .rolling_rank_by(s[1].as_materialized_series(), options)
         .map(Column::from)
 }

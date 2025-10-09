@@ -155,4 +155,8 @@ impl PyExpr {
     fn arr_explode(&self) -> Self {
         self.inner.clone().arr().explode().into()
     }
+
+    fn arr_eval(&self, expr: PyExpr, as_list: bool) -> Self {
+        self.inner.clone().arr().eval(expr.inner, as_list).into()
+    }
 }

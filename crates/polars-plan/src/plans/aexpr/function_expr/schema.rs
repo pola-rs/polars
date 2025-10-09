@@ -57,7 +57,7 @@ impl IRFunctionExpr {
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper
-                .ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?
+                .ensure_satisfies(|_, dtype| dtype.is_numeric(), "sign")?
                 .with_same_dtype(),
             FillNull => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
@@ -68,6 +68,14 @@ impl IRFunctionExpr {
                     Mean | Quantile | Std => mapper.moment_dtype(),
                     Var => mapper.var_dtype(),
                     Sum => mapper.sum_dtype(),
+                    Rank => match options.fn_params {
+                        Some(RollingFnParams::Rank {
+                            method: RollingRankMethod::Average,
+                            ..
+                        }) => mapper.with_dtype(DataType::Float64),
+                        Some(RollingFnParams::Rank { .. }) => mapper.with_dtype(IDX_DTYPE),
+                        _ => unreachable!("should be Some(RollingFnParams::Rank)"),
+                    },
                     #[cfg(feature = "cov")]
                     CorrCov { .. } => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
@@ -86,13 +94,25 @@ impl IRFunctionExpr {
                 }
             },
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy { function_by, .. } => {
+            RollingExprBy {
+                function_by,
+                options,
+                ..
+            } => {
                 use IRRollingFunctionBy::*;
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
                     MeanBy | QuantileBy | StdBy => mapper.moment_dtype(),
                     VarBy => mapper.var_dtype(),
                     SumBy => mapper.sum_dtype(),
+                    RankBy => match options.fn_params {
+                        Some(RollingFnParams::Rank {
+                            method: RollingRankMethod::Average,
+                            ..
+                        }) => mapper.with_dtype(DataType::Float64),
+                        Some(RollingFnParams::Rank { .. }) => mapper.with_dtype(IDX_DTYPE),
+                        _ => unreachable!("should be Some(RollingFnParams::Rank)"),
+                    },
                 }
             },
             Rechunk => mapper.with_same_dtype(),
@@ -244,7 +264,6 @@ impl IRFunctionExpr {
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),
-            UpperBound | LowerBound => mapper.with_same_dtype(),
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),

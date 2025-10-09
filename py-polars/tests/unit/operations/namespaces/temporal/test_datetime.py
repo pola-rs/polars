@@ -183,7 +183,7 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
 @pytest.mark.parametrize(
     ("time_zone", "offset", "expected"),
     [
-        (None, "1d", True),
+        (None, "+1d", True),
         ("Europe/London", "1d", False),
         ("UTC", "1d", True),
         (None, "1m", True),
@@ -191,7 +191,7 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
         ("UTC", "1m", True),
         (None, "1w", True),
         ("Europe/London", "1w", False),
-        ("UTC", "1w", True),
+        ("UTC", "+1w", True),
         (None, "1h", True),
         ("Europe/London", "1h", True),
         ("UTC", "1h", True),
@@ -214,35 +214,38 @@ def test_offset_by_sortedness(
     assert not result.flags["SORTED_DESC"]
 
 
-def test_offset_by_invalid_duration() -> None:
-    with pytest.raises(
-        InvalidOperationError, match="expected leading integer in the duration string"
-    ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("P")
-
-
-def test_offset_by_missing_unit() -> None:
+@pytest.mark.parametrize("offset", ["?", "xx", "P1D", "~10d"])
+def test_offset_by_invalid_duration(offset: str) -> None:
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '1'",
+        match="expected leading integer in the duration string",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1")
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by(offset)
 
+
+@pytest.mark.parametrize("offset", ["++1d", "+1d+1m+1s", "--1d", "-1d-1m-1s"])
+def test_offset_by_invalid_duration_unary_ops(offset: str) -> None:
+    op = "+" if "+" in offset else "-"
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '1mo23d4'",
+        match=rf"duration string can only have a single '\{op}' sign",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1mo23d4")
+        pl.Series([datetime(2025, 10, 3, 11, 42)]).dt.offset_by(offset)
 
+
+@pytest.mark.parametrize("offset", ["1", "1mo23d4", "-2d1", "12時30分45秒"])
+def test_offset_by_missing_or_invalid_unit(offset: str) -> None:
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '-2d1'",
+        match=f"expected a valid unit to follow integer in the duration string '{offset}'",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("-2d1")
+        pl.Series([datetime(2025, 10, 6, 13, 45)]).dt.offset_by(offset)
 
+
+def test_offset_by_missing_unit_in_expr() -> None:
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '1d2'",
+        match="expected a valid unit to follow integer in the duration string '1d2'",
     ):
         pl.DataFrame(
             {"a": [datetime(2022, 3, 20, 5, 7)] * 2, "b": ["1d", "1d2"]}

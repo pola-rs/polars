@@ -110,7 +110,7 @@ pub fn binview_to_decimal(
     PrimitiveArray::<i128>::from_trusted_len_iter(
         array
             .iter()
-            .map(|val| val.and_then(|val| str_to_dec128(val, precision, scale))),
+            .map(|val| val.and_then(|val| str_to_dec128(val, precision, scale, false))),
     )
     .to(ArrowDataType::Decimal(precision, scale))
 }

@@ -1,4 +1,6 @@
 use arrow::array::MutableBinaryViewArray;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::str_to_dec128;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
 use polars_core::prelude::*;
@@ -12,7 +14,7 @@ use polars_time::prelude::string::infer::{
 use polars_utils::vec::PushUnchecked;
 
 use super::options::CsvEncoding;
-use super::parser::{is_whitespace, skip_whitespace};
+use super::parser::{could_be_whitespace_fast, skip_whitespace};
 use super::utils::escape_field;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
@@ -117,46 +119,34 @@ where
     #[inline]
     fn parse_bytes(
         &mut self,
-        bytes: &[u8],
+        mut bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
         _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
+        if !bytes.is_empty() && needs_escaping {
+            bytes = &bytes[1..bytes.len() - 1];
+        }
+
+        if !bytes.is_empty() && could_be_whitespace_fast(bytes[0]) {
+            bytes = skip_whitespace(bytes);
+        }
+
         if bytes.is_empty() {
-            self.append_null()
-        } else {
-            let bytes = if needs_escaping {
-                &bytes[1..bytes.len() - 1]
-            } else {
-                bytes
-            };
+            self.append_null();
+            return Ok(());
+        }
 
-            // legacy comment (remember this if you decide to use Results again):
-            // its faster to work on options.
-            // if we need to throw an error, we parse again to be able to throw the error
-
-            match T::parse(bytes) {
-                Some(value) => self.append_value(value),
-                None => {
-                    // try again without whitespace
-                    if !bytes.is_empty() && is_whitespace(bytes[0]) {
-                        let bytes = skip_whitespace(bytes);
-                        return self.parse_bytes(
-                            bytes,
-                            ignore_errors,
-                            false, // escaping was already done
-                            _missing_is_null,
-                            None,
-                        );
-                    }
-                    polars_ensure!(
-                        bytes.is_empty() || ignore_errors,
-                        ComputeError: "remaining bytes non-empty",
-                    );
+        match T::parse(bytes) {
+            Some(value) => self.append_value(value),
+            None => {
+                if ignore_errors {
                     self.append_null()
-                },
-            };
+                } else {
+                    polars_bail!(ComputeError: "invalid primitive value found during CSV parsing")
+                }
+            },
         }
         Ok(())
     }
@@ -364,6 +354,72 @@ impl ParsedBuffer for BooleanChunkedBuilder {
     }
 }
 
+#[cfg(feature = "dtype-decimal")]
+pub struct DecimalField {
+    builder: PrimitiveChunkedBuilder<Int128Type>,
+    precision: usize,
+    scale: usize,
+    decimal_comma: bool,
+}
+
+#[cfg(feature = "dtype-decimal")]
+impl DecimalField {
+    fn new(
+        name: PlSmallStr,
+        capacity: usize,
+        precision: usize,
+        scale: usize,
+        decimal_comma: bool,
+    ) -> Self {
+        let builder = PrimitiveChunkedBuilder::<Int128Type>::new(name, capacity);
+        Self {
+            builder,
+            precision,
+            scale,
+            decimal_comma,
+        }
+    }
+}
+
+#[cfg(feature = "dtype-decimal")]
+impl ParsedBuffer for DecimalField {
+    #[inline]
+    fn parse_bytes(
+        &mut self,
+        mut bytes: &[u8],
+        ignore_errors: bool,
+        needs_escaping: bool,
+        _missing_is_null: bool,
+        _time_unit: Option<TimeUnit>,
+    ) -> PolarsResult<()> {
+        if !bytes.is_empty() && needs_escaping {
+            bytes = &bytes[1..bytes.len() - 1];
+        }
+
+        if !bytes.is_empty() && could_be_whitespace_fast(bytes[0]) {
+            bytes = skip_whitespace(bytes);
+        }
+
+        if bytes.is_empty() {
+            self.builder.append_null();
+            return Ok(());
+        }
+
+        match str_to_dec128(bytes, self.precision, self.scale, self.decimal_comma) {
+            Some(value) => self.builder.append_value(value),
+            None => {
+                if ignore_errors {
+                    self.builder.append_null()
+                } else {
+                    polars_bail!(ComputeError: "invalid decimal value found during CSV parsing")
+                }
+            },
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 pub struct DatetimeField<T: PolarsNumericType> {
     compiled: Option<DatetimeInfer<T>>,
@@ -545,6 +601,14 @@ pub fn init_buffers(
                         Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity))
                     }
                 },
+                #[cfg(feature = "dtype-decimal")]
+                &DataType::Decimal(precision, scale) => Buffer::Decimal(DecimalField::new(
+                    name,
+                    capacity,
+                    precision,
+                    scale,
+                    decimal_comma,
+                )),
                 &DataType::String => {
                     Buffer::Utf8(Utf8Field::new(name, capacity, quote_char, encoding))
                 },
@@ -615,6 +679,8 @@ pub enum Buffer {
     UInt128(PrimitiveChunkedBuilder<UInt128Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
+    #[cfg(feature = "dtype-decimal")]
+    Decimal(DecimalField),
     /// Stores the Utf8 fields and the total string length seen for that column
     Utf8(Utf8Field),
     #[cfg(feature = "dtype-datetime")]
@@ -659,6 +725,19 @@ impl Buffer {
             Buffer::Float64(v) => v.finish().into_series(),
             Buffer::DecimalFloat32(v, _) => v.finish().into_series(),
             Buffer::DecimalFloat64(v, _) => v.finish().into_series(),
+            #[cfg(feature = "dtype-decimal")]
+            Buffer::Decimal(DecimalField {
+                builder,
+                precision,
+                scale,
+                ..
+            }) => unsafe {
+                builder
+                    .finish()
+                    .into_series()
+                    .from_physical_unchecked(&DataType::Decimal(precision, scale))
+                    .unwrap()
+            },
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime {
                 buf,
@@ -714,6 +793,8 @@ impl Buffer {
             Buffer::UInt128(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
+            #[cfg(feature = "dtype-decimal")]
+            Buffer::Decimal(buf) => buf.builder.append_null(),
             Buffer::DecimalFloat32(v, _) => v.append_null(),
             Buffer::DecimalFloat64(v, _) => v.append_null(),
             Buffer::Utf8(v) => {
@@ -757,6 +838,10 @@ impl Buffer {
             Buffer::UInt128(_) => DataType::UInt128,
             Buffer::Float32(_) | Buffer::DecimalFloat32(_, _) => DataType::Float32,
             Buffer::Float64(_) | Buffer::DecimalFloat64(_, _) => DataType::Float64,
+            #[cfg(feature = "dtype-decimal")]
+            Buffer::Decimal(DecimalField {
+                precision, scale, ..
+            }) => DataType::Decimal(*precision, *scale),
             Buffer::Utf8(_) => DataType::String,
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
@@ -913,6 +998,15 @@ impl Buffer {
                     None,
                 )
             },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(buf) => <DecimalField as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
             Utf8(buf) => <Utf8Field as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,

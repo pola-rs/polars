@@ -33,9 +33,10 @@ fn pyobject_to_first_path_and_scan_sources(
 ) -> PyResult<(Option<PlPath>, ScanSources)> {
     use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
     Ok(match get_python_scan_source_input(obj, false)? {
-        PythonScanSourceInput::Path(path) => {
-            (Some(path.clone()), ScanSources::Paths([path].into()))
-        },
+        PythonScanSourceInput::Path(path) => (
+            Some(path.clone()),
+            ScanSources::Paths(FromIterator::from_iter([path])),
+        ),
         PythonScanSourceInput::File(file) => (None, ScanSources::Files([file.into()].into())),
         PythonScanSourceInput::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
     })
@@ -1565,8 +1566,12 @@ impl PyLazyFrame {
         Ok(schema_dict)
     }
 
-    fn unnest(&self, columns: PySelector) -> Self {
-        self.ldf.read().clone().unnest(columns.inner).into()
+    fn unnest(&self, columns: PySelector, separator: Option<&str>) -> Self {
+        self.ldf
+            .read()
+            .clone()
+            .unnest(columns.inner, separator.map(PlSmallStr::from_str))
+            .into()
     }
 
     fn count(&self) -> Self {

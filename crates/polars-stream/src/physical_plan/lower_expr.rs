@@ -1246,6 +1246,28 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: IRFunctionExpr::GatherEvery { n, offset },
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let value_key = unique_column_name();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::GatherEvery { input, n, offset };
+
+                let output_schema = ctx.phys_sm[input.node].output_schema.clone();
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: ref function @ (IRFunctionExpr::PeakMin | IRFunctionExpr::PeakMax),
                 options: _,
             } => {
@@ -1435,7 +1457,7 @@ fn lower_exprs_with_ctx(
                 evaluation,
                 variant,
             } => match variant {
-                EvalVariant::List => {
+                EvalVariant::List | EvalVariant::Array { as_list: _ } => {
                     let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                     let eval_expr = AExpr::Eval {
                         expr: trans_expr[0],
@@ -1705,7 +1727,8 @@ fn lower_exprs_with_ctx(
                 function:
                     IRFunctionExpr::Boolean(
                         IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
-                    ),
+                    )
+                    | IRFunctionExpr::NullCount,
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
