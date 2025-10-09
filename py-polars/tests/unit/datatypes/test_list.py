@@ -340,22 +340,32 @@ def test_list_sum_and_dtypes() -> None:
             },
         )
 
-        summed_a = df.select("a").explode("a").sum()
-        assert summed_a.dtypes == [dt_out]
-        assert summed_a.item() == 32
-        assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
-        assert df.select(pl.col("a").list.sum()).to_dict(as_series=False) == {
-            "a": [1, 6, 10, 15]
-        }
+        assert_frame_equal(
+            df.select("a").explode("a").sum(),
+            pl.DataFrame(pl.Series("a", [32], dtype=dt_out)),
+            check_dtypes=True,
+            check_exact=True,
+        )
+        assert_series_equal(
+            df.get_column("a").list.sum(),
+            pl.Series("a", [1, 6, 10, 15], dtype=dt_out),
+            check_dtypes=True,
+            check_exact=True,
+        )
 
         # include nulls in the list
-        summed_b = df.select("b").explode("b").sum()
-        assert summed_b.dtypes == [dt_out]
-        assert summed_b.item() == 19
-        assert df.select(pl.col("b").list.sum()).dtypes == [dt_out]
-        assert df.select(pl.col("b").list.sum()).to_dict(as_series=False) == {
-            "b": [0, 3, 6, 10]
-        }
+        assert_frame_equal(
+            df.select("b").explode("b").sum(),
+            pl.DataFrame(pl.Series("b", [19], dtype=dt_out)),
+            check_dtypes=True,
+            check_exact=True,
+        )
+        assert_series_equal(
+            df.get_column("b").list.sum(),
+            pl.Series("b", [0, 3, 6, 10], dtype=dt_out),
+            check_dtypes=True,
+            check_exact=True,
+        )
 
     assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
