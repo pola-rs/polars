@@ -206,6 +206,7 @@ pub(super) fn convert_functions(
         F::StringExpr(string_function) => {
             use {IRStringFunction as IS, StringFunction as S};
             I::StringExpr(match string_function {
+                S::Format { format, insertions } => IS::Format { format, insertions },
                 #[cfg(feature = "concat_str")]
                 S::ConcatHorizontal {
                     delimiter,

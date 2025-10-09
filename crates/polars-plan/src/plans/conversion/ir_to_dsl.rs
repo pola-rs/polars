@@ -383,6 +383,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::StringExpr(f) => {
             use {IRStringFunction as IB, StringFunction as B};
             F::StringExpr(match f {
+                IB::Format { format, insertions } => B::Format { format, insertions },
                 #[cfg(feature = "concat_str")]
                 IB::ConcatHorizontal {
                     delimiter,
