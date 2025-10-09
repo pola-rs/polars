@@ -767,6 +767,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("bitwise expr"));
                 },
                 IRFunctionExpr::StringExpr(strfun) => match strfun {
+                    IRStringFunction::Format { .. } => {
+                        return Err(PyNotImplementedError::new_err("bitwise expr"));
+                    },
                     IRStringFunction::ConcatHorizontal {
                         delimiter,
                         ignore_nulls,
