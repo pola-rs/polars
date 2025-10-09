@@ -687,6 +687,9 @@ def nth(*indices: int | Sequence[int], strict: bool = True) -> Expr:
     ----------
     indices
         One or more indices representing the columns to retrieve.
+    strict
+        By default, all specified indices must be valid; if any index is out of bounds,
+        an error is raised. If set to `False`, out-of-bounds indices are ignored.
 
     Examples
     --------
@@ -1639,12 +1642,13 @@ def cum_reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
     return_dtype
         Output datatype.
         If not set, the dtype will be inferred based on the dtype of the input
         expressions.
-    include_init
-        Include the initial accumulator state as struct field.
 
     Examples
     --------

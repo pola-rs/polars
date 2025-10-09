@@ -484,7 +484,6 @@ class Expr:
         Parameters
         ----------
         ignore_nulls
-
             * If set to `True` (default), null values are ignored. If there
               are no non-null values, the output is `False`.
             * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -544,7 +543,6 @@ class Expr:
         Parameters
         ----------
         ignore_nulls
-
             * If set to `True` (default), null values are ignored. If there
               are no non-null values, the output is `True`.
             * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -4549,7 +4547,6 @@ Consider using {self}.implode() instead"""
         pass_name
             Pass the Series name to the custom function (this is more expensive).
         returns_scalar
-
             .. deprecated:: 1.32.0
                 Is ignored and will be removed in 2.0.
         strategy : {'thread_local', 'threading'}
@@ -5991,6 +5988,8 @@ Consider using {self}.implode() instead"""
 
         Parameters
         ----------
+        other
+            A literal or expression value to compare with.
         abs_tol
             Absolute tolerance. This is the maximum allowed absolute difference between
             two values. Must be non-negative.

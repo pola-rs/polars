@@ -31,7 +31,7 @@ _COL_LIMIT = 5  # max number of generated cols
 
 
 @st.composite
-def series(
+def series(  # noqa: D417
     draw: DrawFn,
     /,
     *,
@@ -295,7 +295,7 @@ def dataframes(
 
 
 @st.composite
-def dataframes(
+def dataframes(  # noqa: D417
     draw: DrawFn,
     /,
     cols: int | column | Sequence[column] | None = None,
