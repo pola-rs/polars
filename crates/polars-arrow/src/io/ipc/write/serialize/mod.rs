@@ -139,17 +139,17 @@ pub fn write(
             compression,
         ),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            let arr: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
+            let array: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
+            let keys_array: &PrimitiveArray<$T> = array.keys().as_any().downcast_ref().unwrap();
 
-            write(
-                arr.keys() as &dyn Array,
+            write_primitive::<$T>(
+                keys_array,
                 buffers,
                 arrow_data,
-                nodes,
                 offset,
                 is_little_endian,
-                compression,
-            );
+                compression
+            )
         }),
         Union => {
             write_union(
