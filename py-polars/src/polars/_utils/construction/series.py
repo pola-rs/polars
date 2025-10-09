@@ -241,10 +241,12 @@ def sequence_to_pyseries(
         time_unit = getattr(dtype, "time_unit", None)
         time_zone = getattr(dtype, "time_zone", None)
 
-        if time_unit is None or values_dtype == Date:
-            s = wrap_s(py_series)
-        else:
+        if dtype.is_temporal() and values_dtype == String and dtype != Duration:
+            s = wrap_s(py_series).str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
+        elif time_unit is not None and values_dtype != Date:
             s = wrap_s(py_series).dt.cast_time_unit(time_unit)
+        else:
+            s = wrap_s(py_series)
 
         if (values_dtype == Date) & (dtype == Datetime):
             s = s.cast(Datetime(time_unit or "us"))
