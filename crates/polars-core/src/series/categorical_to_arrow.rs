@@ -2,6 +2,7 @@ use std::any::Any;
 
 use arrow::array::builder::ArrayBuilder;
 use arrow::types::NativeType;
+use num_traits::AsPrimitive;
 use polars_compute::cast::cast_unchecked;
 
 use crate::prelude::*;
@@ -122,7 +123,8 @@ impl CategoricalArrayToArrowConverter {
         compat_level: CompatLevel,
     ) -> Box<dyn Array>
     where
-        T: DictionaryKey + NativeType + std::hash::Hash + Eq + TryFrom<usize> + Into<CatSize>,
+        T: DictionaryKey + NativeType + std::hash::Hash + Eq,
+        usize: AsPrimitive<T>,
     {
         let (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) = dtype else {
             unreachable!()
@@ -145,8 +147,7 @@ impl CategoricalArrayToArrowConverter {
                     .map(|x| {
                         x.map(|x: &T| {
                             let idx: usize = key_remap.insert_full(*x).0;
-                            // Safety: Indexset of T cannot return an index exceeding T::MAX.
-                            unsafe { T::try_from(idx).unwrap_unchecked() }
+                            <usize as AsPrimitive<T>>::as_(idx)
                         })
                     })
                     .collect()
