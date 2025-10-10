@@ -143,7 +143,6 @@ impl CategoricalArrayToArrowConverter {
                     .iter()
                     .map(|x| {
                         x.map(|x: &T| {
-                            // Correctness: `input_mapping`
                             let idx: usize = key_remap.insert_full(*x).0;
                             // Safety: Indexset of T cannot return an index exceeding T::MAX.
                             unsafe { T::try_from(idx).unwrap_unchecked() }
