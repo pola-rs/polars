@@ -148,7 +148,8 @@ impl CategoricalArrayToArrowConverter {
                         x.map(|x: &T| {
                             let idx: usize = key_remap.insert_full(*x).0;
                             // Indexset of T cannot return an index exceeding T::MAX.
-                            <usize as AsPrimitive<T>>::as_(idx)
+                            let out: T = idx.as_();
+                            out
                         })
                     })
                     .collect()
