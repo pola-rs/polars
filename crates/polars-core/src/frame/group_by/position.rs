@@ -384,6 +384,8 @@ impl GroupsType {
         }
     }
 
+    /// Checks if groups are of equal length. The caller is responsible for
+    /// updating the groups by calling `groups()` prior to calling this method.
     pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
         if std::ptr::eq(self, other) {
             return Ok(());
