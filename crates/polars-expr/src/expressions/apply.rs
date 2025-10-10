@@ -82,7 +82,7 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let c = if self.flags.returns_scalar() {
+        let c = if self.is_scalar() {
             let out = ca.explode(false).unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
@@ -93,7 +93,7 @@ impl ApplyExpr {
             ca.into_series().into()
         };
 
-        ac.with_values_and_args(c, true, None, false, self.flags.returns_scalar())?;
+        ac.with_values_and_args(c, true, None, false, self.is_scalar())?;
 
         Ok(ac)
     }
@@ -111,15 +111,6 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = ac.get_values();
-
-        #[allow(clippy::nonminimal_bool)]
-        {
-            polars_ensure!(
-                !(matches!(ac.agg_state(), AggState::AggregatedScalar(_)) && !s.dtype().is_list() ) ,
-                expr = self.expr,
-                ComputeError: "cannot aggregate, the column is already aggregated",
-            );
-        }
 
         let name = s.name().clone();
         let agg = match ac.agg_state() {
@@ -156,11 +147,7 @@ impl ApplyExpr {
         let ca: ListChunked = if self.allow_threading {
             let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
             {
-                let mut dtype = self.output_field.dtype.clone();
-                if !self.is_scalar() {
-                    dtype = dtype.implode();
-                }
-                Some(dtype)
+                Some(self.output_field.dtype.clone().implode())
             } else {
                 None
             };
@@ -169,16 +156,8 @@ impl ApplyExpr {
             let iter = lst.par_iter().map(f);
 
             if let Some(dtype) = dtype {
-                // @NOTE: Since the output type for scalars does an implicit explode, we need to
-                // patch up the type here to also be a list.
-                let out_dtype = if self.is_scalar() {
-                    DataType::List(Box::new(dtype))
-                } else {
-                    dtype
-                };
-
                 let out: ListChunked = POOL.install(|| {
-                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, out_dtype)
+                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, dtype)
                 })?;
                 out
             } else {
