@@ -3,6 +3,8 @@ pub(super) mod iterator;
 
 use std::borrow::Cow;
 
+use polars_utils::itertools::Itertools;
+
 use crate::prelude::*;
 
 impl ListChunked {
@@ -189,31 +191,58 @@ impl ListChunked {
     }
 
     pub fn with_inner_values(&self, values: &Series) -> ListChunked {
-        // @Performance: Chunking here is not necessary, copied from `apply_to_inner`.
+        if cfg!(debug_assertions) {
+            assert_eq!(values.len(), self.inner_length());
+        }
 
-        // generated Series will have wrong length otherwise.
-        let ca = self.rechunk();
-        let arr = ca.downcast_as_array();
+        // Align the chunks of the lists inner values and the values series.
+        fn align_inner_chunks<'a>(ca: &'_ ListChunked, values: &'a Series) -> Series {
+            if ca.chunks().len() == values.chunks().len()
+                && ca
+                    .downcast_iter()
+                    .map(|arr| arr.values().len())
+                    .zip(values.chunks().iter().map(|arr| arr.len()))
+                    .all_equal()
+            {
+                return values.clone();
+            }
 
-        assert_eq!(arr.values().len(), values.len());
+            let mut values = values.rechunk();
+            let chunks = unsafe { values.chunks_mut() };
+            let mut arr = chunks.pop().unwrap();
+            chunks.extend(ca.downcast_iter().map(|ca_arr| {
+                let chunk;
+                (chunk, arr) = arr.split_at_boxed(ca_arr.values().len());
+                chunk
+            }));
+            assert!(arr.is_empty());
+            values
+        }
 
-        let values = values.rechunk();
-        let out = values.chunks()[0].clone();
+        let values = align_inner_chunks(self, values);
+        let values_dtype = values.dtype().clone();
 
-        let inner_dtype = LargeListArray::default_datatype(out.dtype().clone());
-        let arr = LargeListArray::new(
-            inner_dtype,
-            (*arr.offsets()).clone(),
-            out,
-            arr.validity().cloned(),
-        );
+        let chunks = self
+            .downcast_iter()
+            .zip(values.into_chunks())
+            .map(|(ca_arr, v_arr)| {
+                debug_assert_eq!(ca_arr.values().len(), v_arr.len());
+                LargeListArray::new(
+                    LargeListArray::default_datatype(v_arr.dtype().clone()),
+                    (ca_arr.offsets()).clone(),
+                    v_arr,
+                    ca_arr.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect::<Vec<_>>();
 
         // SAFETY: arr's inner dtype is derived from out dtype.
         unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
-                ca.name().clone(),
-                vec![Box::new(arr)],
-                DataType::List(Box::new(values.dtype().clone())),
+                self.name().clone(),
+                chunks,
+                DataType::List(Box::new(values_dtype)),
             )
         }
     }
