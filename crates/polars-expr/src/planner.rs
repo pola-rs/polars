@@ -3,6 +3,7 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
 
+use crate::dispatch::function_expr_to_udf;
 use crate::expressions as phys_expr;
 use crate::expressions::*;
 
@@ -574,7 +575,7 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function.clone().into(),
+                function_expr_to_udf(function.clone()),
                 node_to_expr(expression, expr_arena),
                 *options,
                 state.allow_threading,
