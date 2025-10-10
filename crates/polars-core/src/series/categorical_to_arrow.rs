@@ -131,12 +131,11 @@ impl CategoricalArrayToArrowConverter {
 
         let keys_arr: PrimitiveArray<T> = match self {
             Self::Categorical { mapping, key_remap } => {
-                // Required for persisted remap correctness.
-                assert_eq!(input_mapping_ptr, Arc::as_ptr(mapping));
-
                 let key_remap: &mut PlIndexSet<T> = key_remap.as_any_mut().downcast_mut().unwrap();
 
-                if !persist_remap {
+                if persist_remap {
+                    assert_eq!(input_mapping_ptr, Arc::as_ptr(mapping));
+                } else {
                     key_remap.clear()
                 }
 
