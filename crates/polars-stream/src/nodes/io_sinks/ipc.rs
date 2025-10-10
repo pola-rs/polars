@@ -46,6 +46,9 @@ pub struct IpcSinkNode {
     io_tx: Option<tokio::sync::mpsc::Sender<IpcBatch>>,
     io_task: Option<AbortOnDropHandle<PolarsResult<()>>>,
     /// Arrow converters per-column.
+    ///
+    /// Categorical arrays that share the same underlying mapping will share the
+    /// same dictionary in the IPC file if they are under the same top-level column.
     arrow_converters: Option<Vec<ToArrowConverter>>,
 }
 
@@ -293,6 +296,8 @@ impl SinkNode for IpcSinkNode {
                                 }
                             }
 
+                            // Finished consuming all incoming morsels. Now construct the full
+                            // dictionaries per categorical mapping of this column.
                             if !arrow_converter.categorical_converter.converters.is_empty() {
                                 let mut encoded_dictionaries: UnitVec<EncodedData> =
                                     UnitVec::with_capacity(
