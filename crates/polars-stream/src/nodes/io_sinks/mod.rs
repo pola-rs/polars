@@ -68,17 +68,45 @@ impl SinkInputPort {
     }
 }
 
+enum SendBufferedMorsel {
+    /// Sender<(seq_id, column_idx, _)>
+    Distributor(distributor_channel::Sender<(usize, usize, Column)>),
+    /// Vec<Sender<(seq_id, _)>>
+    PerColumn(Vec<tokio::sync::mpsc::Sender<(usize, Column)>>),
+}
+
+impl SendBufferedMorsel {
+    async fn send(&mut self, seq_id: usize, df: DataFrame) -> Result<(), ()> {
+        match self {
+            Self::Distributor(dist_tx) => {
+                for (i, col) in df.take_columns().into_iter().enumerate() {
+                    dist_tx.send((seq_id, i, col)).await.map_err(|_| ())?
+                }
+            },
+            Self::PerColumn(txs) => {
+                debug_assert_eq!(txs.len(), df.width());
+
+                for (tx, col) in txs.iter_mut().zip(df.take_columns()) {
+                    tx.send((seq_id, col)).await.map_err(|_| ())?
+                }
+            },
+        }
+
+        Ok(())
+    }
+}
+
 /// Spawn a task that linearizes and buffers morsels until a given a maximum chunk size is reached
 /// and then distributes the columns amongst worker tasks.
 fn buffer_and_distribute_columns_task(
     mut recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
-    mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
+    mut send_morsel: SendBufferedMorsel,
     chunk_size: usize,
     schema: SchemaRef,
     metrics: Arc<Mutex<Option<WriteMetrics>>>,
 ) -> JoinHandle<PolarsResult<()>> {
     spawn(TaskPriority::High, async move {
-        let mut seq = 0usize;
+        let mut seq_id: usize = 0;
         let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
         let mut metrics_ = metrics.lock().unwrap().take();
@@ -98,12 +126,11 @@ fn buffer_and_distribute_columns_task(
                     let df;
                     (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
 
-                    for (i, column) in df.take_columns().into_iter().enumerate() {
-                        if dist_tx.send((seq, i, column)).await.is_err() {
-                            return Ok(());
-                        }
+                    if send_morsel.send(seq_id, df).await.is_err() {
+                        return Ok(());
                     }
-                    seq += 1;
+
+                    seq_id += 1;
                 }
                 drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
                 // morsel has started encoding in its entirety. This still
@@ -124,11 +151,8 @@ fn buffer_and_distribute_columns_task(
 
         // Flush the remaining rows.
         assert!(buffer.height() <= chunk_size);
-        for (i, column) in buffer.take_columns().into_iter().enumerate() {
-            if dist_tx.send((seq, i, column)).await.is_err() {
-                return Ok(());
-            }
-        }
+
+        let _ = send_morsel.send(seq_id, buffer).await;
 
         PolarsResult::Ok(())
     })
