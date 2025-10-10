@@ -1,4 +1,5 @@
 import pytest
+
 import polars as pl
 from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
