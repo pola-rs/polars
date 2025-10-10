@@ -197,7 +197,7 @@ impl CategoricalArrayToArrowConverter {
             },
 
             Self::Enum { frozen, .. } => {
-                let array = frozen.categories();
+                let array: &Utf8ViewArray = frozen.categories();
 
                 if compat_level.0 != CompatLevel::oldest() {
                     array.to_boxed()
