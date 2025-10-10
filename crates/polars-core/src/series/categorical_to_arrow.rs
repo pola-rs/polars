@@ -48,6 +48,7 @@ impl CategoricalToArrowConverter {
         })
     }
 
+    /// Initializes categorical converters for all categorical mappings present in this dtype.
     pub fn initialize(&mut self, dtype: &DataType) {
         use DataType::*;
 
@@ -103,7 +104,7 @@ pub enum CategoricalArrayToArrowConverter {
         mapping: Arc<CategoricalMapping>,
         key_remap: CategoricalKeyRemap,
     },
-    /// Enum keys are not remapped, but we still have this variant to expose
+    /// Enum keys are not remapped, but we still track this variant to support
     /// the `build_values_array()` function.
     Enum {
         mapping: Arc<CategoricalMapping>,

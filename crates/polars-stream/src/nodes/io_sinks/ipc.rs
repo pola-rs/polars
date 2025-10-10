@@ -128,14 +128,14 @@ impl SinkNode for IpcSinkNode {
             .map(|((dtype, arrow_converter), dictionary_id_offset)| {
                 IpcFieldConverter {
                     get_dictionary_id: |mapping: &Arc<CategoricalMapping>| {
-                        let key = Arc::as_ptr(mapping) as *const () as usize;
-                        let key_index = arrow_converter
+                        let converter_key: usize = Arc::as_ptr(mapping) as *const () as _;
+                        let converter_index: usize = arrow_converter
                             .categorical_converter
                             .converters
-                            .get_index_of(&key)
+                            .get_index_of(&converter_key)
                             .unwrap();
 
-                        i64::try_from(dictionary_id_offset + key_index).unwrap()
+                        i64::try_from(dictionary_id_offset + converter_index).unwrap()
                     },
                 }
                 .dtype_to_ipc_field(dtype)
