@@ -185,6 +185,7 @@ impl SinkNode for IpcSinkNode {
         let channel_capacity = state.num_pipelines.div_ceil(self.input_schema.len().max(1));
 
         // Buffer task -> Encode tasks
+        #[expect(clippy::type_complexity)]
         let (col_txs, col_rxs): (
             // (seq_id, column)
             Vec<tokio::sync::mpsc::Sender<(usize, Column)>>,
@@ -478,12 +479,12 @@ where
                 dictionary_id: Some((self.get_dictionary_id)(mapping)),
             },
             List(inner) => IpcField {
-                fields: vec![self.dtype_to_ipc_field(&inner)],
+                fields: vec![self.dtype_to_ipc_field(inner)],
                 dictionary_id: None,
             },
             #[cfg(feature = "dtype-array")]
             Array(inner, _width) => IpcField {
-                fields: vec![self.dtype_to_ipc_field(&inner)],
+                fields: vec![self.dtype_to_ipc_field(inner)],
                 dictionary_id: None,
             },
             Struct(fields) => IpcField {
