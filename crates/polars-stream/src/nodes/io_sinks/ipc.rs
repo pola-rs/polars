@@ -194,8 +194,10 @@ impl SinkNode for IpcSinkNode {
             .map(|_| tokio::sync::mpsc::channel(channel_capacity))
             .unzip();
         // Encode tasks -> Collect task
-        let (mut lin_rx, lin_txs) =
-            Linearizer::new(state.num_pipelines, *DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
+        let (mut lin_rx, lin_txs) = Linearizer::new(
+            self.input_schema.len(),
+            *DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+        );
         // Collect task -> IO task
         let io_tx = self
             .io_tx
