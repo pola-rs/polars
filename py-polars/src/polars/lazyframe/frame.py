@@ -1307,6 +1307,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             .. deprecated:: 1.30.0
                 Use the `optimizations` parameters.
+        streaming
+            Unused parameter, kept for backward compatibility.
+
+           ... deprecated:: 1.30.0
+                Use the `engine` parameter instead.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
@@ -1498,6 +1503,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Select the stage to display. Currently only the streaming engine has a
             separate physical stage, for the other engines both IR and physical are the
             same.
+        optimizations
+            The set of the optimizations considered during query optimization.
 
 
         Examples

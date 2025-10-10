@@ -44,6 +44,7 @@ from polars._utils.various import (
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
+    Duration,
     Enum,
     String,
     Struct,
@@ -324,7 +325,11 @@ def _post_apply_columns(
         elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
             column_casts.append(F.col(col).cast(struct, strict=strict)._pyexpr)
         elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
-            column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
+            if dtype.is_temporal() and dtype != Duration and pydf_dtype == String:
+                temporal_cast = F.col(col).str.strptime(dtype, strict=strict)._pyexpr  # type: ignore[arg-type]
+                column_casts.append(temporal_cast)
+            else:
+                column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
 
     if column_casts or column_subset:
         pyldf = pydf.lazy()

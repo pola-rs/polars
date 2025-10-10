@@ -2470,6 +2470,9 @@ class ExprStringNameSpace:
             Positive integer or expression which is the base of the string
             we are parsing.
             Default: 10.
+        dtype
+            Integer data type to cast the result to.
+            Default: Int64.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.

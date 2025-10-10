@@ -206,6 +206,7 @@ pub(super) fn convert_functions(
         F::StringExpr(string_function) => {
             use {IRStringFunction as IS, StringFunction as S};
             I::StringExpr(match string_function {
+                S::Format { format, insertions } => IS::Format { format, insertions },
                 #[cfg(feature = "concat_str")]
                 S::ConcatHorizontal {
                     delimiter,
@@ -693,6 +694,7 @@ pub(super) fn convert_functions(
                     R::Quantile => IR::Quantile,
                     R::Var => IR::Var,
                     R::Std => IR::Std,
+                    R::Rank => IR::Rank,
                     #[cfg(feature = "moment")]
                     R::Skew => IR::Skew,
                     #[cfg(feature = "moment")]
@@ -727,6 +729,7 @@ pub(super) fn convert_functions(
                     R::QuantileBy => IR::QuantileBy,
                     R::VarBy => IR::VarBy,
                     R::StdBy => IR::StdBy,
+                    R::RankBy => IR::RankBy,
                 },
                 options,
             }

@@ -767,6 +767,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("bitwise expr"));
                 },
                 IRFunctionExpr::StringExpr(strfun) => match strfun {
+                    IRStringFunction::Format { .. } => {
+                        return Err(PyNotImplementedError::new_err("bitwise expr"));
+                    },
                     IRStringFunction::ConcatHorizontal {
                         delimiter,
                         ignore_nulls,
@@ -1179,6 +1182,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                     IRRollingFunctionBy::StdBy => {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
+                    },
+                    IRRollingFunctionBy::RankBy => {
+                        return Err(PyNotImplementedError::new_err("rolling rank by"));
                     },
                 },
                 IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),

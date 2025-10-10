@@ -514,11 +514,6 @@ def test_cast_err_column_value_highlighting(
         test_df.with_columns(pl.all().cast(type))
 
 
-def test_lit_agg_err() -> None:
-    with pytest.raises(ComputeError, match=r"cannot aggregate a literal"):
-        pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
-
-
 def test_invalid_group_by_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
@@ -762,3 +757,24 @@ def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
         pl.DataFrame({"x": [None, None, None]}),
         check_dtypes=False,
     )
+
+
+def test_raies_on_mismatch_column_length_24500() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [10, 10, 10, 20, 20, 20],
+            "b": [2, 2, 99, 3, 3, 3],
+            "c": [3, 3, 3, 2, 2, 99],
+        }
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match="expressions must have matching group lengths",
+    ):
+        df.group_by("a").agg(
+            pl.struct(
+                pl.col("b").head(pl.col("b").first()),
+                pl.col("c").head(pl.col("c").first()),
+            )
+        )

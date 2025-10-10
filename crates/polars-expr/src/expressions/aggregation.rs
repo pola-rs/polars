@@ -165,8 +165,10 @@ impl PhysicalExpr for AggregationExpr {
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
-        // Literals cannot be aggregated except for implode.
-        polars_ensure!(!matches!(ac.agg_state(), AggState::LiteralScalar(_)), ComputeError: "cannot aggregate a literal");
+        if let AggState::LiteralScalar(c) = &mut ac.state {
+            *c = self.evaluate(df, state)?;
+            return Ok(ac);
+        }
 
         if let AggregatedScalar(_) = ac.agg_state() {
             match self.agg_type.groupby {
@@ -725,6 +727,13 @@ impl PhysicalExpr for AggQuantileExpr {
         let keep_name = ac.get_values().name().clone();
 
         let quantile = self.get_quantile(df, state)?;
+
+        if let AggState::LiteralScalar(c) = &mut ac.state {
+            *c = c
+                .quantile_reduce(quantile, self.method)?
+                .into_column(keep_name);
+            return Ok(ac);
+        }
 
         // SAFETY:
         // groups are in bounds
