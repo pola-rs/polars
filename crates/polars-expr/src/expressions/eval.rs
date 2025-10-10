@@ -10,8 +10,8 @@ use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    AnyValue, ChunkCast, ChunkNestingUtils, Column, CompatLevel, DataType, Field, GroupPositions,
-    GroupsType, IntoColumn, ListBuilderTrait, ListChunked,
+    AnyValue, ChunkCast, ChunkNestingUtils, Column, CompatLevel, Field, GroupPositions, GroupsType,
+    IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -32,11 +32,7 @@ pub struct EvalExpr {
     variant: EvalVariant,
     expr: Expr,
     allow_threading: bool,
-    //  `output_field_with_ctx`` accounts for the aggregation context, if any
-    // It will 'auto-implode/expplode' if needed.
-    output_field_with_ctx: Field,
-    // `non_aggregated_output_dtype`` ignores any aggregation context
-    non_aggregated_output_dtype: DataType,
+    output_field: Field,
     is_scalar: bool,
     pd_group: ExprPushdownGroup,
     evaluation_is_scalar: bool,
@@ -76,8 +72,7 @@ impl EvalExpr {
         variant: EvalVariant,
         expr: Expr,
         allow_threading: bool,
-        output_field_with_ctx: Field,
-        non_aggregated_output_dtype: DataType,
+        output_field: Field,
         is_scalar: bool,
         pd_group: ExprPushdownGroup,
         evaluation_is_scalar: bool,
@@ -89,8 +84,7 @@ impl EvalExpr {
             variant,
             expr,
             allow_threading,
-            output_field_with_ctx,
-            non_aggregated_output_dtype,
+            output_field,
             is_scalar,
             pd_group,
             evaluation_is_scalar,
@@ -105,8 +99,8 @@ impl EvalExpr {
     ) -> PolarsResult<Column> {
         if lst.chunks().is_empty() {
             return Ok(Column::new_empty(
-                self.output_field_with_ctx.name.clone(),
-                &self.non_aggregated_output_dtype,
+                self.output_field.name.clone(),
+                &self.output_field.dtype.clone(),
             ));
         }
 
@@ -115,7 +109,8 @@ impl EvalExpr {
             .map_or(Cow::Borrowed(lst), Cow::Owned);
 
         let output_arrow_dtype = self
-            .non_aggregated_output_dtype
+            .output_field
+            .dtype
             .clone()
             .to_arrow(CompatLevel::newest());
         let output_arrow_dtype_physical = output_arrow_dtype.underlying_physical_type();
@@ -160,9 +155,9 @@ impl EvalExpr {
                 .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?
         };
 
-        let out_inner_dt = self.non_aggregated_output_dtype.inner_dtype().unwrap();
+        let out_inner_dt = self.output_field.dtype.inner_dtype().unwrap();
         Ok(unsafe {
-            ListChunked::from_chunks(self.output_field_with_ctx.name.clone(), chunks)
+            ListChunked::from_chunks(self.output_field.name.clone(), chunks)
                 .from_physical_unchecked(out_inner_dt.clone())
                 .unwrap()
         }
@@ -188,10 +183,7 @@ impl EvalExpr {
                             }
                         })
                     })
-                    .collect_ca_with_dtype(
-                        PlSmallStr::EMPTY,
-                        self.non_aggregated_output_dtype.clone(),
-                    )
+                    .collect_ca_with_dtype(PlSmallStr::EMPTY, self.output_field.dtype.clone())
             });
             err = m_err.into_inner().unwrap();
             ca
@@ -222,8 +214,8 @@ impl EvalExpr {
         ca.rename(lst.name().clone());
 
         // Cast may still be required in some cases, e.g. for an empty frame when running single-threaded
-        if ca.dtype() != &self.non_aggregated_output_dtype {
-            ca.cast(&self.non_aggregated_output_dtype).map(Column::from)
+        if ca.dtype() != &self.output_field.dtype {
+            ca.cast(&self.output_field.dtype).map(Column::from)
         } else {
             Ok(ca.into_column())
         }
@@ -257,9 +249,7 @@ impl EvalExpr {
             },
             _ => ac.aggregated(),
         };
-        Ok(out
-            .with_name(self.output_field_with_ctx.name.clone())
-            .into_column())
+        Ok(out.with_name(self.output_field.name.clone()).into_column())
     }
 
     fn evaluate_on_list_chunked(
@@ -293,8 +283,8 @@ impl EvalExpr {
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
-            let name = self.output_field_with_ctx.name.clone();
-            let dtype = self.non_aggregated_output_dtype.inner_dtype().unwrap();
+            let name = self.output_field.name.clone();
+            let dtype = self.output_field.dtype().inner_dtype().unwrap();
 
             return Ok(if as_list {
                 ListChunked::full_null_with_dtype(name, ca.len(), dtype).into_column()
@@ -310,7 +300,7 @@ impl EvalExpr {
 
             let dtype = column.dtype().clone();
             let out = ArrayChunked::from_aligned_values(
-                self.output_field_with_ctx.name.clone(),
+                self.output_field.name.clone(),
                 &dtype,
                 ca.width(),
                 column.take_materialized_series().into_chunks(),
@@ -376,7 +366,7 @@ impl EvalExpr {
                 let values = flat_naive;
                 let dtype = values.dtype().clone();
                 let mut out = ArrayChunked::from_aligned_values(
-                    self.output_field_with_ctx.name.clone(),
+                    self.output_field.name.clone(),
                     &dtype,
                     ca.width(),
                     values.as_materialized_series().chunks().clone(),
@@ -406,9 +396,7 @@ impl EvalExpr {
         Ok(if as_list {
             ca.into_owned().into_column()
         } else {
-            ca.cast(&self.non_aggregated_output_dtype)
-                .unwrap()
-                .into_column()
+            ca.cast(self.output_field.dtype()).unwrap().into_column()
         })
     }
 
@@ -471,9 +459,9 @@ impl EvalExpr {
         };
 
         Series::from_any_values_and_dtype(
-            self.output_field_with_ctx.name().clone(),
+            self.output_field.name().clone(),
             &avs,
-            &self.non_aggregated_output_dtype,
+            self.output_field.dtype(),
             true,
         )
     }
@@ -519,9 +507,9 @@ impl PhysicalExpr for EvalExpr {
             }),
             EvalVariant::Cumulative { min_samples } => {
                 let mut builder = AnonymousOwnedListBuilder::new(
-                    self.output_field_with_ctx.name().clone(),
+                    self.output_field.name().clone(),
                     input.groups().len(),
-                    Some(self.non_aggregated_output_dtype.clone()),
+                    Some(self.output_field.dtype.clone()),
                 );
                 for group in input.iter_groups(false) {
                     match group {
@@ -541,7 +529,7 @@ impl PhysicalExpr for EvalExpr {
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
-        Ok(self.output_field_with_ctx.clone())
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {

@@ -162,6 +162,7 @@ impl PhysicalExpr for AggregationExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
