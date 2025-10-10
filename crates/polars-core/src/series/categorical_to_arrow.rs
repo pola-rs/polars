@@ -131,11 +131,11 @@ impl CategoricalArrayToArrowConverter {
 
         let keys_arr: PrimitiveArray<T> = match self {
             Self::Categorical { mapping, key_remap } => {
+                assert_eq!(input_mapping_ptr, Arc::as_ptr(mapping));
+
                 let key_remap: &mut PlIndexSet<T> = key_remap.as_any_mut().downcast_mut().unwrap();
 
-                if persist_remap {
-                    assert_eq!(input_mapping_ptr, Arc::as_ptr(mapping));
-                } else {
+                if !persist_remap {
                     key_remap.clear()
                 }
 
@@ -143,6 +143,7 @@ impl CategoricalArrayToArrowConverter {
                     .iter()
                     .map(|x| {
                         x.map(|x: &T| {
+                            // Correctness: `input_mapping`
                             let idx: usize = key_remap.insert_full(*x).0;
                             // Safety: Indexset of T cannot return an index exceeding T::MAX.
                             unsafe { T::try_from(idx).unwrap_unchecked() }
