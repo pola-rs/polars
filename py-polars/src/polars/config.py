@@ -1302,7 +1302,7 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame(
         ...     {"abc": [1.0, 2.5, 3.5, 5.0], "xyz": [True, False, True, False]}
         ... )
-        >>> with pl.Config(tbl_rows=2):
+        >>> with pl.Config(set_tbl_rows=2):
         ...     print(df)
         shape: (4, 2)
         ┌─────┬───────┐
