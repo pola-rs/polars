@@ -52,8 +52,7 @@ impl ComputeNode for SimpleProjectionNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
                     let morsel = morsel.try_map(|df| {
-                        // TODO: can this be unchecked?
-                        let check_duplicates = true;
+                        let check_duplicates = cfg!(debug_assertions);
                         df._select_with_schema_impl(
                             slf.columns.as_slice(),
                             &slf.input_schema,
