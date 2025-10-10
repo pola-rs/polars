@@ -127,7 +127,7 @@ impl CategoricalArrayToArrowConverter {
             unreachable!()
         };
 
-        let input_mapping_ptr = Arc::as_ptr(mapping);
+        let input_mapping_ptr: *const CategoricalMapping = Arc::as_ptr(mapping);
 
         let keys_arr: PrimitiveArray<T> = match self {
             Self::Categorical { mapping, key_remap } => {
