@@ -586,12 +586,10 @@ impl<'a> AggregationContext<'a> {
 
     /// Do the group indices reference all values in the aggregation state.
     fn groups_cover_all_values(&mut self) -> bool {
-        if self.original_len
-            || matches!(
-                self.state,
-                AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
-            )
-        {
+        if matches!(
+            self.state,
+            AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
+        ) {
             return true;
         }
 
