@@ -1143,11 +1143,7 @@ fn resolve_group_by(
 
     // Initialize schema from keys
     let mut output_schema = expressions_to_schema(&keys, input_schema, |duplicate_name: &str| {
-        polars_err!(
-            Duplicate:
-            "group_by keys contained duplicate output name '{}'",
-            duplicate_name
-        )
+        format!("group_by keys contained duplicate output name '{duplicate_name}'")
     })?;
     let mut key_names: PlHashSet<PlSmallStr> = output_schema.iter_names().cloned().collect();
 
