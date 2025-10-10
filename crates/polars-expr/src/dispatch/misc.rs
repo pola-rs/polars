@@ -1,12 +1,6 @@
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
-#[cfg(feature = "replace")]
 use polars_core::prelude::*;
-use polars_core::prelude::{
-    AnyValue, ChunkFilter, Column, FillNullStrategy, IDX_DTYPE, IntoColumn, SortOptions,
-};
-#[cfg(feature = "timezones")]
-use polars_core::prelude::{NonExistent, TimeZone};
 use polars_core::scalar::Scalar;
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::{IsSorted, Series};
