@@ -199,7 +199,7 @@ impl CategoricalArrayToArrowConverter {
             Self::Enum { frozen, .. } => {
                 let array = frozen.categories();
 
-                if compat_level.0 >= 1 {
+                if compat_level.0 != CompatLevel::oldest() {
                     array.to_boxed()
                 } else {
                     // Note: Could store a once-init Utf8Array on the frozen categories to avoid
