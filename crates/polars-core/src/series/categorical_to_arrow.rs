@@ -175,6 +175,11 @@ impl CategoricalArrayToArrowConverter {
         }
     }
 
+    /// Build the values array of the dictionary:
+    /// * If `Self` is `::Categorical`, this builds according to the current `key_remap` state:
+    ///   * If `persist_remap` is `true`, this state will hold all the keys this converter has encountered.
+    ///     It will otherwise hold only the keys seen from the last `array_to_arrow()` call.
+    /// * If `Self` is `::Enum`, this returns the full set of values present in the Enum's `FrozenCategories`.
     pub fn build_values_array(&self, compat_level: CompatLevel) -> Box<dyn Array> {
         match self {
             Self::Categorical { mapping, key_remap } => match key_remap {
