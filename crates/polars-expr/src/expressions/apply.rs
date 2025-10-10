@@ -110,16 +110,10 @@ impl ApplyExpr {
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let s = ac.get_values();
+        // Fix up groups for AggregatedScalar, so that we can pretend they are just normal groups.
+        ac.set_groups_for_undefined_agg_states();
 
-        #[allow(clippy::nonminimal_bool)]
-        {
-            polars_ensure!(
-                !(matches!(ac.agg_state(), AggState::AggregatedScalar(_)) && !s.dtype().is_list() ) ,
-                expr = self.expr,
-                ComputeError: "cannot aggregate, the column is already aggregated",
-            );
-        }
+        let s = ac.get_values();
 
         let name = s.name().clone();
         let agg = match ac.agg_state() {
@@ -154,33 +148,15 @@ impl ApplyExpr {
         };
 
         let ca: ListChunked = if self.allow_threading {
-            let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
-            {
-                let mut dtype = self.output_field.dtype.clone();
-                if !self.is_scalar() {
-                    dtype = dtype.implode();
-                }
-                Some(dtype)
-            } else {
-                None
-            };
-
             let lst = agg.list().unwrap();
             let iter = lst.par_iter().map(f);
 
-            if let Some(dtype) = dtype {
-                // @NOTE: Since the output type for scalars does an implicit explode, we need to
-                // patch up the type here to also be a list.
-                let out_dtype = if self.is_scalar() {
-                    DataType::List(Box::new(dtype))
-                } else {
-                    dtype
-                };
-
-                let out: ListChunked = POOL.install(|| {
-                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, out_dtype)
-                })?;
-                out
+            if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null() {
+                let dtype = self.output_field.dtype.clone();
+                let dtype = dtype.implode();
+                POOL.install(|| {
+                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, dtype)
+                })?
             } else {
                 POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
             }

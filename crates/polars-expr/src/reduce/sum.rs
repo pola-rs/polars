@@ -56,7 +56,9 @@ pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReducti
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
         Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
-        Null => Box::new(super::NullGroupedReduction::new(DataType::Null)),
+        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
+            DataType::Null,
+        ))),
         String => {
             polars_bail!(
                 op = "`sum`",

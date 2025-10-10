@@ -225,33 +225,6 @@ def test_err_bubbling_up_to_lit() -> None:
         df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg,operator]
 
 
-def test_error_on_double_agg() -> None:
-    for e in [
-        "mean",
-        "max",
-        "min",
-        "sum",
-        "std",
-        "var",
-        "n_unique",
-        "last",
-        "first",
-        "median",
-        "skew",  # this one is comes from Apply
-    ]:
-        with pytest.raises(ComputeError, match="the column is already aggregated"):
-            (
-                pl.DataFrame(
-                    {
-                        "a": [1, 1, 1, 2, 2],
-                        "b": [1, 2, 3, 4, 5],
-                    }
-                )
-                .group_by("a")
-                .agg([getattr(pl.col("b").min(), e)()])
-            )
-
-
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
