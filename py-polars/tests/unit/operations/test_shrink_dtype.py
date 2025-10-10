@@ -1,7 +1,6 @@
 import pytest
 
 import polars as pl
-
 from polars.testing import assert_series_equal
 
 
@@ -55,19 +54,20 @@ def test_shrink_dtype() -> None:
 
 
 @pytest.mark.parametrize(
-    ("value", "before", "after") ,
+    ("value", "before", "after"),
     [
         (2**100, pl.Int128, pl.Int128),
         (2**63, pl.Int128, pl.Int128),
-        (-2**63 - 1, pl.Int128, pl.Int128),
+        (-(2**63) - 1, pl.Int128, pl.Int128),
         (2**63 - 1, pl.Int128, pl.Int64),
-        (-2**63, pl.Int128, pl.Int64),
-
+        (-(2**63), pl.Int128, pl.Int64),
         (2**100, pl.UInt128, pl.UInt128),
         (2**64, pl.UInt128, pl.UInt128),
         (2**64 - 1, pl.UInt128, pl.UInt64),
-    ]
+    ],
 )
-def test_shrink_dtype_large_24827(value: int, before: pl.DataType, after: pl.DataType) -> None:
+def test_shrink_dtype_large_24827(
+    value: int, before: pl.DataType, after: pl.DataType
+) -> None:
     s = pl.Series([value], dtype=before)
     assert_series_equal(s.shrink_dtype(), s.cast(after))
