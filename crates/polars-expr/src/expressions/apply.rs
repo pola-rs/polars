@@ -110,16 +110,10 @@ impl ApplyExpr {
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let s = ac.get_values();
+        // Fix up groups for AggregatedScalar, so that we can pretend they are just normal groups.
+        ac.set_groups_for_undefined_agg_states();
 
-        #[allow(clippy::nonminimal_bool)]
-        {
-            polars_ensure!(
-                !(matches!(ac.agg_state(), AggState::AggregatedScalar(_)) && !s.dtype().is_list() ) ,
-                expr = self.expr,
-                ComputeError: "cannot aggregate, the column is already aggregated",
-            );
-        }
+        let s = ac.get_values();
 
         let name = s.name().clone();
         let agg = match ac.agg_state() {

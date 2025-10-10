@@ -171,14 +171,9 @@ impl PhysicalExpr for AggregationExpr {
             return Ok(ac);
         }
 
-        if let AggregatedScalar(_) = ac.agg_state() {
-            match self.agg_type.groupby {
-                GroupByMethod::Implode => {},
-                _ => {
-                    polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type.groupby);
-                },
-            }
-        }
+        // AggregatedScalar has no defined group structure. We fix it up here, so that we can
+        // reliably call `agg_*` functions with the groups.
+        ac.set_groups_for_undefined_agg_states();
 
         // SAFETY:
         // groups must always be in bounds.
@@ -270,12 +265,10 @@ impl PhysicalExpr for AggregationExpr {
                     } else {
                         // TODO: optimize this/and write somewhere else.
                         match ac.agg_state() {
-                            AggState::LiteralScalar(s) | AggState::AggregatedScalar(s) => {
-                                AggregatedScalar(Column::new(
-                                    keep_name,
-                                    [(s.len() as IdxSize - s.null_count() as IdxSize)],
-                                ))
-                            },
+                            AggState::LiteralScalar(_) => unreachable!(),
+                            AggState::AggregatedScalar(c) => AggregatedScalar(
+                                c.is_not_null().cast(&IDX_DTYPE).unwrap().into_column(),
+                            ),
                             AggState::AggregatedList(s) => {
                                 let ca = s.list()?;
                                 let out: IdxCa = ca
@@ -349,33 +342,11 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = s.agg_n_unique(&groups);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
-                GroupByMethod::Implode => {
-                    // If the aggregation is already in an aggregate flat state (AggregatedScalar), for instance by
-                    // a mean() aggregation, we simply wrap into a list and maintain the AggregatedScalar state
-                    //
-                    // If it is not, we traverse the groups and create a list per group.
-                    let c = match ac.agg_state() {
-                        // mean agg:
-                        // -> f64 -> list<f64>
-                        AggregatedScalar(c) => c
-                            .cast(&DataType::List(Box::new(c.dtype().clone())))
-                            .unwrap(),
-                        // Auto-imploded
-                        AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
-                            ac._implode_no_agg();
-                            return Ok(ac);
-                        },
-                        _ => {
-                            let agg = ac.aggregated();
-                            agg.as_list().into_column()
-                        },
-                    };
-                    match ac.agg_state() {
-                        // An imploded scalar remains a scalar
-                        AggregatedScalar(_) => AggregatedScalar(c.with_name(keep_name)),
-                        _ => AggState::AggregatedList(c.with_name(keep_name)),
-                    }
-                },
+                GroupByMethod::Implode => AggregatedScalar(match ac.agg_state() {
+                    AggState::LiteralScalar(_) => unreachable!(), // handled above
+                    AggState::AggregatedScalar(c) => c.as_list().into_column(),
+                    AggState::NotAggregated(_) | AggState::AggregatedList(_) => ac.aggregated(),
+                }),
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
                     column.rename(keep_name);
@@ -724,6 +695,11 @@ impl PhysicalExpr for AggQuantileExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+
+        // AggregatedScalar has no defined group structure. We fix it up here, so that we can
+        // reliably call `agg_quantile` functions with the groups.
+        ac.set_groups_for_undefined_agg_states();
+
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
