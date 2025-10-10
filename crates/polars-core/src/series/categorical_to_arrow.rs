@@ -202,8 +202,8 @@ impl CategoricalArrayToArrowConverter {
                 if compat_level.0 >= 1 {
                     array.to_boxed()
                 } else {
-                    // Note: Could be optimized to share the same converted array for older compat
-                    // levels.
+                    // Note: Could store a once-init Utf8Array on the frozen categories to avoid
+                    // building this multiple times for the oldest compat level.
                     cast_unchecked(array, &ArrowDataType::LargeUtf8).unwrap()
                 }
             },
