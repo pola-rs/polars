@@ -297,7 +297,7 @@ impl SinkNode for IpcSinkNode {
                             }
 
                             // Finished consuming all incoming morsels. Now construct the full
-                            // dictionaries per categorical mapping of this column.
+                            // dictionaries for the categorical mappings present in this column.
                             if !arrow_converter.categorical_converter.converters.is_empty() {
                                 let mut encoded_dictionaries: UnitVec<EncodedData> =
                                     UnitVec::with_capacity(
