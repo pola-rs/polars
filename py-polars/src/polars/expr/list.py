@@ -1241,15 +1241,15 @@ class ExprListNameSpace:
         └──────────────┴────────────┘
         >>> df.with_columns(no_nulls=pl.col.a.list.agg(pl.element().drop_nulls()))
         shape: (3, 2)
-        ┌──────────────┬────────────┐
-        │ a            ┆ no_nulls   │
-        │ ---          ┆ ---        │
-        │ list[i64]    ┆ list[i64]  │
-        ╞══════════════╪════════════╡
-        │ [1, null]    ┆ [1]        │
-        │ [42, 13]     ┆ [42, 13]   │
-        │ [null, null] ┆ []         │
-        └──────────────┴────────────┘
+        ┌──────────────┬───────────┐
+        │ a            ┆ no_nulls  │
+        │ ---          ┆ ---       │
+        │ list[i64]    ┆ list[i64] │
+        ╞══════════════╪═══════════╡
+        │ [1, null]    ┆ [1]       │
+        │ [42, 13]     ┆ [42, 13]  │
+        │ [null, null] ┆ []        │
+        └──────────────┴───────────┘
         """
         return wrap_expr(self._pyexpr.list_agg(expr._pyexpr))
 
