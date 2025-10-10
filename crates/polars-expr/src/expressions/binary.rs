@@ -128,14 +128,14 @@ impl BinaryExpr {
         mut ac_r: AggregationContext<'a>,
         aggregated: bool,
     ) -> PolarsResult<AggregationContext<'a>> {
-        // At this stage, we do not have both AggregatedList and NotAggregated ACs
+        // At this stage, there is no combination of AggregatedList and NotAggregated ACs.
 
         // Check group lengths in case of all AggList
         if [&ac_l, &ac_r]
             .iter()
             .all(|ac| matches!(ac.state, AggState::AggregatedList(_)))
         {
-            ac_l.groups.check_lengths(&ac_r.groups)?;
+            ac_l.groups().check_lengths(ac_r.groups())?;
         }
 
         // The first non-LiteralScalar AC will be used as the base AC to retain the context
@@ -174,8 +174,6 @@ impl BinaryExpr {
 
                 let out = apply_operator_owned(lhs, rhs, self.op)?;
 
-                // Make sure ac_l is a non_literal AC so we retain correct group info, e.g.
-                // in the case of (LiteralScalar, NotAggregated with mutated groups)
                 if ac_l.is_literal() {
                     std::mem::swap(&mut ac_l, &mut ac_r);
                 }
@@ -197,11 +195,13 @@ impl BinaryExpr {
         debug_assert!(ac_l.is_literal() && ac_r.is_literal());
         polars_ensure!(ac_l.groups.len() == ac_r.groups.len(),
             ComputeError: "lhs and rhs should have same number of groups");
+
         let left_c = ac_l.get_values().rechunk().into_column();
         let right_c = ac_r.get_values().rechunk().into_column();
         let res_c = apply_operator(&left_c, &right_c, self.op)?;
         polars_ensure!(res_c.len() == 1,
             ComputeError: "binary operation on literals expected 1 value, found {}", res_c.len());
+
         ac_l.with_literal(res_c);
         Ok(ac_l)
     }
@@ -291,66 +291,73 @@ impl PhysicalExpr for BinaryExpr {
         let mut ac_r = result_b?;
 
         // Aggregate NotAggregated into AggregatedList, but only if strictly required AND
-        // when there is no risk of memory explosion. See ApplyExpr for additional context
-        // TODO - extend rolling to group_by_dynamic
-        let has_agg_list = [&ac_l, &ac_r]
-            .iter()
-            .any(|ac| matches!(ac.state, AggState::AggregatedList(_)));
-        let not_agg_has_rolling = [&ac_l, &ac_r]
-            .iter()
-            .any(|ac| matches!(ac.state, AggState::NotAggregated(_)) && ac.groups.is_overlapping());
+        // when there is no risk of memory explosion.
+        // See ApplyExpr for additional context
+        let mut has_agg_list = false;
+        let mut has_agg_scalar = false;
+        let mut has_not_agg = false;
+        let mut has_not_agg_with_overlapping_groups = false;
+        let mut not_agg_groups_may_diverge = false;
 
-        let not_agg_groups_may_diverge = [&ac_l, &ac_r]
-            .iter()
-            .filter(|ac| matches!(ac.state, AggState::NotAggregated(_)))
-            .map(|ac| ac.groups.as_ref())
-            .collect::<Vec<_>>()
-            .windows(2)
-            .any(|w| !std::ptr::eq(w[0], w[1]));
-
-        for ac in [&mut ac_l, &mut ac_r] {
-            if matches!(ac.state, AggState::NotAggregated(_)) {
-                if !not_agg_has_rolling && (has_agg_list || not_agg_groups_may_diverge) {
-                    ac.aggregated();
-                }
+        let mut previous: Option<&AggregationContext<'_>> = None;
+        for ac in [&ac_l, &ac_r] {
+            match ac.state {
+                AggState::AggregatedList(_) => {
+                    has_agg_list = true;
+                },
+                AggState::AggregatedScalar(_) => has_agg_scalar = true,
+                AggState::NotAggregated(_) => {
+                    has_not_agg = true;
+                    if let Some(p) = previous {
+                        not_agg_groups_may_diverge |=
+                            !std::ptr::eq(p.groups.as_ref(), ac.groups.as_ref());
+                    }
+                    previous = Some(ac);
+                    if ac.groups.is_overlapping() {
+                        has_not_agg_with_overlapping_groups = true;
+                    }
+                },
+                _ => {},
             }
         }
 
+        let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
+        let elementwise_must_aggregate =
+            has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
+        let mut aggregated = has_agg_list || has_agg_scalar;
+
+        // Arithmetic on Decimal is fallible
+        let has_decimal_dtype =
+            ac_l.get_values().dtype().is_decimal() || ac_r.get_values().dtype().is_decimal();
+        let is_fallible = has_decimal_dtype && self.op.is_arithmetic();
+
         // Dispatch
-        // TODO - consolidate into 4 branches:
-        // all_lit, aggscalar incompatible, compatible but expensive, other)
-        match (ac_l.agg_state(), ac_r.agg_state()) {
-            (AggState::LiteralScalar(_), AggState::LiteralScalar(_)) => {
-                self.apply_all_literal(ac_l, ac_r)
-            },
-            (AggState::LiteralScalar(s), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::LiteralScalar(s)) => match s.len() {
-                1 => self.apply_elementwise(ac_l, ac_r, false),
-                _ => self.apply_group_aware(ac_l, ac_r),
-            },
-            (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
-                if not_agg_groups_may_diverge && not_agg_has_rolling {
-                    self.apply_group_aware(ac_l, ac_r)
-                } else {
-                    self.apply_elementwise(ac_l, ac_r, false)
+        // See ApplyExpr for reference logic, except that we do any required
+        // aggregation inline. All BinaryExprs are elementwise.
+        if all_literal {
+            // Fast path
+            self.apply_all_literal(ac_l, ac_r)
+        } else if has_agg_scalar && (has_agg_list || has_not_agg) {
+            // Not compatible
+            self.apply_group_aware(ac_l, ac_r)
+        } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
+            // Compatible but calling aggregated() is too expensive
+            self.apply_group_aware(ac_l, ac_r)
+        } else if is_fallible
+            && (!ac_l.groups_cover_all_values() || !ac_r.groups_cover_all_values())
+        {
+            // Fallible expression and there are elements that are masked out.
+            self.apply_group_aware(ac_l, ac_r)
+        } else {
+            if elementwise_must_aggregate {
+                for ac in [&mut ac_l, &mut ac_r] {
+                    if matches!(ac.state, AggState::NotAggregated(_)) {
+                        ac.aggregated();
+                    }
                 }
-            },
-            (
-                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_),
-                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_),
-            ) => self.apply_elementwise(ac_l, ac_r, true),
-            (AggState::AggregatedScalar(_), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::AggregatedScalar(_)) => {
-                self.apply_group_aware(ac_l, ac_r)
-            },
-            (AggState::AggregatedList(_), AggState::AggregatedList(_)) => {
-                self.apply_elementwise(ac_l, ac_r, true)
-            },
-            (
-                AggState::AggregatedList(_) | AggState::LiteralScalar(_),
-                AggState::AggregatedList(_) | AggState::LiteralScalar(_),
-            ) => self.apply_elementwise(ac_l, ac_r, true),
-            _ => self.apply_group_aware(ac_l, ac_r),
+                aggregated = true;
+            }
+            self.apply_elementwise(ac_l, ac_r, aggregated)
         }
     }
 
