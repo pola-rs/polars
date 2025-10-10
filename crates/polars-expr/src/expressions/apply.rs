@@ -106,11 +106,13 @@ impl ApplyExpr {
     fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
         self.function.call_udf(inputs)
     }
+
     fn apply_single_group_aware<'a>(
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = ac.get_values();
+        let name = s.name().clone();
 
         #[allow(clippy::nonminimal_bool)]
         {
@@ -121,7 +123,37 @@ impl ApplyExpr {
             );
         }
 
-        let name = s.name().clone();
+        let f = |opt_s: Option<Series>| match opt_s {
+            None => Ok(None),
+            Some(mut s) => {
+                if self.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY) {
+                    s.rename(name.clone());
+                }
+                Ok(Some(
+                    self.function
+                        .call_udf(&mut [Column::from(s)])?
+                        .take_materialized_series(),
+                ))
+            },
+        };
+
+        // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
+        // memory explosion.
+        // TODO: add parallel iterator path, and use this path for up to all NotAggregated
+        // states, pending benchmarking
+        if matches!(ac.agg_state(), AggState::NotAggregated(_))
+            && let GroupsType::Slice { rolling: true, .. } = ac.groups.as_ref().as_ref()
+        {
+            let ca: ChunkedArray<_> = ac
+                .iter_groups_lazy(false)
+                .map(|opt| opt.map(|s| s.as_ref().clone()))
+                .map(f)
+                .collect::<PolarsResult<_>>()?;
+
+            return self.finish_apply_groups(ac, ca.with_name(name));
+        }
+
+        // At this point, calling aggregated() will not lead to memory explosion.
         let agg = match ac.agg_state() {
             AggState::AggregatedScalar(_) => s.as_list().into_column(),
             _ => ac.aggregated(),
@@ -138,20 +170,6 @@ impl ApplyExpr {
             let ca = ListChunked::full(name, output.as_materialized_series(), 0);
             return self.finish_apply_groups(ac, ca);
         }
-
-        let f = |opt_s: Option<Series>| match opt_s {
-            None => Ok(None),
-            Some(mut s) => {
-                if self.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY) {
-                    s.rename(name.clone());
-                }
-                Ok(Some(
-                    self.function
-                        .call_udf(&mut [Column::from(s)])?
-                        .take_materialized_series(),
-                ))
-            },
-        };
 
         let ca: ListChunked = if self.allow_threading {
             let lst = agg.list().unwrap();
