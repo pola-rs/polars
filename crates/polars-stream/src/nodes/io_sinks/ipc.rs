@@ -449,7 +449,9 @@ impl SinkNode for IpcSinkNode {
     }
 }
 
-/// Cumulative sum, indicates total number of dictionaries in the columns to the left of the current one.
+/// Cumulative sum, excluding the current element.
+///
+/// Indicates total number of dictionaries in the columns to the left of the current one.
 fn dictionary_id_offsets_iter(
     arrow_converters: &[ToArrowConverter],
 ) -> impl Iterator<Item = usize> {
