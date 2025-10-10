@@ -6,6 +6,7 @@ use polars_compute::cast::cast_unchecked;
 
 use crate::prelude::*;
 
+/// Categorical converter that prunes unused categories.
 pub struct CategoricalToArrowConverter {
     /// Converters keyed by the Arc address of `Arc<CategoricalMapping>`.
     pub converters: PlIndexMap<usize, CategoricalArrayToArrowConverter>,
@@ -16,6 +17,11 @@ pub struct CategoricalToArrowConverter {
 }
 
 impl CategoricalToArrowConverter {
+    /// # Panics
+    /// Panics if:
+    /// * `keys_arr` is not of a `Categorical` or `Enum` type
+    /// * The arc address of the `Arc<CategoricalMapping>` is not present within `self.converters`
+    ///   (likely due to forgetting to call `initialize()` on this converter).
     pub fn array_to_arrow(
         &mut self,
         keys_arr: &dyn Array,
@@ -107,13 +113,6 @@ pub enum CategoricalArrayToArrowConverter {
 }
 
 impl CategoricalArrayToArrowConverter {
-    fn get_categorical_mapping(&self) -> &CategoricalMapping {
-        match self {
-            Self::Categorical { mapping, .. } => mapping,
-            Self::Enum { mapping, .. } => mapping,
-        }
-    }
-
     fn array_to_arrow<T>(
         &mut self,
         keys_arr: &PrimitiveArray<T>,
@@ -180,20 +179,20 @@ impl CategoricalArrayToArrowConverter {
 
     pub fn build_values_array(&self, compat_level: CompatLevel) -> Box<dyn Array> {
         match self {
-            Self::Categorical {
-                mapping: _,
-                key_remap,
-            } => match key_remap {
+            Self::Categorical { mapping, key_remap } => match key_remap {
                 CategoricalKeyRemap::U8(keys) => self.build_values_array_from_keys(
                     keys.iter().map(|x: &u8| *x as CatSize),
+                    mapping,
                     compat_level,
                 ),
                 CategoricalKeyRemap::U16(keys) => self.build_values_array_from_keys(
                     keys.iter().map(|x: &u16| *x as CatSize),
+                    mapping,
                     compat_level,
                 ),
                 CategoricalKeyRemap::U32(keys) => self.build_values_array_from_keys(
                     keys.iter().map(|x: &u32| *x as CatSize),
+                    mapping,
                     compat_level,
                 ),
             },
@@ -215,13 +214,12 @@ impl CategoricalArrayToArrowConverter {
     fn build_values_array_from_keys<I>(
         &self,
         keys_iter: I,
+        mapping: &CategoricalMapping,
         compat_level: CompatLevel,
     ) -> Box<dyn Array>
     where
         I: ExactSizeIterator<Item = CatSize>,
     {
-        let mapping = self.get_categorical_mapping();
-
         if compat_level != CompatLevel::oldest() {
             let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
             builder.reserve(keys_iter.len());
