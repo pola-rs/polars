@@ -42,8 +42,7 @@ pub struct IpcSinkNode {
     sink_options: SinkOptions,
     cloud_options: Option<CloudOptions>,
 
-    /// This is mpsc as each column encode worker may need to send in dictionary
-    /// batches at the end.
+    /// mpsc - each column encode worker may need to send in dictionary batche(s).
     io_tx: Option<tokio::sync::mpsc::Sender<IpcBatch>>,
     io_task: Option<AbortOnDropHandle<PolarsResult<()>>>,
     arrow_converters: Option<Vec<ToArrowConverter>>,

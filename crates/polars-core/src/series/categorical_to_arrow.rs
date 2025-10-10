@@ -105,7 +105,8 @@ pub enum CategoricalArrayToArrowConverter {
         mapping: Arc<CategoricalMapping>,
         key_remap: CategoricalKeyRemap,
     },
-    /// Note, enum keys are not remapped.
+    /// Enum keys are not remapped, but we still have this variant to expose
+    /// the `build_values_array()` function.
     Enum {
         mapping: Arc<CategoricalMapping>,
         frozen: Arc<FrozenCategories>,
@@ -132,7 +133,7 @@ impl CategoricalArrayToArrowConverter {
 
         let keys_arr: PrimitiveArray<T> = match self {
             Self::Categorical { mapping, key_remap } => {
-                // Note: Important for persisted remap correctness.
+                // Required for persisted remap correctness.
                 assert_eq!(input_mapping_ptr, Arc::as_ptr(mapping));
 
                 let key_remap: &mut PlIndexSet<T> = key_remap.as_any_mut().downcast_mut().unwrap();
