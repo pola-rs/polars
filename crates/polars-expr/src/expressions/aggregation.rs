@@ -342,7 +342,7 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Implode => AggregatedScalar(match ac.agg_state() {
-                    AggState::LiteralScalar(_) => unreachable!(),
+                    AggState::LiteralScalar(_) => unreachable!(), // handled above
                     AggState::AggregatedScalar(c) => c.as_list().into_column(),
                     AggState::NotAggregated(_) | AggState::AggregatedList(_) => ac.aggregated(),
                 }),
