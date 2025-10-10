@@ -1284,9 +1284,13 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.append(other_pyexpr, upcast))
 
+    @deprecated("`rechunk` is deprecated.")
     def rechunk(self) -> Expr:
         """
         Create a single chunk of memory for this Series.
+
+        .. versionchanged:: 1.35.0
+            The `rechunk` is deprecated and no longer affects chunking.
 
         Examples
         --------
@@ -1309,7 +1313,7 @@ class Expr:
         │ 2      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.rechunk())
+        return self
 
     def drop_nulls(self) -> Expr:
         """
