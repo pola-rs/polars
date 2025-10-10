@@ -115,6 +115,8 @@ impl SinkNode for IpcSinkNode {
             })
             .collect();
 
+        // Note: `arrow_converters` must not be mutated after this point. This is to ensure that
+        // the dictionary IDs used by the encoders matches those assigned to the fields here.
         let ipc_fields: Vec<IpcField> = self
             .input_schema
             .iter_values()
