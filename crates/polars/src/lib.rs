@@ -417,6 +417,8 @@ pub mod prelude;
 #[cfg(feature = "sql")]
 pub mod sql;
 
+#[doc(hidden)]
+pub use polars_compute;
 pub use polars_core::{
     apply_method_all_arrow_series, chunked_array, datatypes, df, error, frame, functions, series,
     testing,
