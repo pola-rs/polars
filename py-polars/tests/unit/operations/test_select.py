@@ -77,5 +77,7 @@ def test_select_named_inputs_reserved() -> None:
 
 
 def test_select_duplicate_name() -> None:
-    with pytest.raises(DuplicateError, match="projection contained duplicate name 'x'"):
+    with pytest.raises(
+        DuplicateError, match="projections contained duplicate output name 'x'"
+    ):
         pl.LazyFrame({"x": 1}).select("x", "x").collect()
