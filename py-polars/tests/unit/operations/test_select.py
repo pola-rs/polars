@@ -1,4 +1,6 @@
+import pytest
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
 
 
@@ -71,3 +73,8 @@ def test_select_named_inputs_reserved() -> None:
     result = pl.select(inputs=1.0, structify=pl.lit("x"))
     expected = pl.DataFrame({"inputs": [1.0], "structify": ["x"]})
     assert_frame_equal(result, expected)
+
+
+def test_select_duplicate_name() -> None:
+    with pytest.raises(DuplicateError, match="projection contained duplicate name 'x'"):
+        pl.LazyFrame({"x": 1}).select("x", "x").collect()

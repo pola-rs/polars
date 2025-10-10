@@ -225,16 +225,24 @@ pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item 
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> PolarsResult<Schema> {
+pub fn expressions_to_schema<E>(
+    expr: &[Expr],
+    schema: &Schema,
+    duplicate_err_func: E,
+) -> PolarsResult<Schema>
+where
+    E: Fn(&str) -> PolarsError,
+{
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
-    expr.iter()
-        .map(|expr| {
-            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
 
+    Schema::try_from_iter_check_duplicates(
+        expr.iter().map(|expr| {
+            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
             field.dtype = field.dtype.materialize_unknown(true)?;
             Ok(field)
-        })
-        .collect()
+        }),
+        duplicate_err_func,
+    )
 }
 
 pub fn aexpr_to_leaf_names_iter(

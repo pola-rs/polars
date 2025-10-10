@@ -826,7 +826,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                     };
-                    let schema = Arc::new(expressions_to_schema(&exprs, &input_schema)?);
+                    let schema = Arc::new(expressions_to_schema(
+                        &exprs,
+                        &input_schema,
+                        |duplicate_name: &str| {
+                            polars_err!(
+                                Duplicate:
+                                "'{}'",
+                                duplicate_name
+                            )
+                        },
+                    )?);
                     let eirs = to_expr_irs(
                         exprs,
                         &mut ExprToIRContext::new_with_opt_eager(
@@ -1138,7 +1148,13 @@ fn resolve_group_by(
     let mut keys = rewrite_projections(keys, &PlHashSet::default(), input_schema, opt_flags)?;
 
     // Initialize schema from keys
-    let mut output_schema = expressions_to_schema(&keys, input_schema)?;
+    let mut output_schema = expressions_to_schema(&keys, input_schema, |duplicate_name: &str| {
+        polars_err!(
+            Duplicate:
+            "group_by keys contained duplicate output name '{}'",
+            duplicate_name
+        )
+    })?;
     let mut key_names: PlHashSet<PlSmallStr> = output_schema.iter_names().cloned().collect();
 
     #[allow(unused_mut)]
