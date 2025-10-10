@@ -86,7 +86,6 @@ pub fn read_record_batch<R: Read + Seek>(
     version: arrow_format::ipc::MetadataVersion,
     reader: &mut R,
     block_offset: u64,
-    file_size: u64,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     assert_eq!(fields.len(), ipc_schema.fields.len());
@@ -100,26 +99,6 @@ pub fn read_record_batch<R: Read + Seek>(
         .map(|v| v.iter().map(|v| v as usize).collect::<VecDeque<usize>>())
         .unwrap_or_else(VecDeque::new);
     let mut buffers: VecDeque<arrow_format::ipc::BufferRef> = buffers.iter().collect();
-
-    // check that the sum of the sizes of all buffers is <= than the size of the file
-    let buffers_size = buffers
-        .iter()
-        .map(|buffer| {
-            let buffer_size: u64 = buffer
-                .length()
-                .try_into()
-                .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-            Ok(buffer_size)
-        })
-        .sum::<PolarsResult<u64>>()?;
-    if buffers_size > file_size {
-        return Err(polars_err!(
-            oos = OutOfSpecKind::InvalidBuffersLength {
-                buffers_size,
-                file_size,
-            }
-        ));
-    }
 
     let field_nodes = batch
         .nodes()
@@ -275,7 +254,6 @@ pub fn read_dictionary<R: Read + Seek>(
     dictionaries: &mut Dictionaries,
     reader: &mut R,
     block_offset: u64,
-    file_size: u64,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<()> {
     if batch
@@ -322,7 +300,6 @@ pub fn read_dictionary<R: Read + Seek>(
         arrow_format::ipc::MetadataVersion::V5,
         reader,
         block_offset,
-        file_size,
         scratch,
     )?;
 
