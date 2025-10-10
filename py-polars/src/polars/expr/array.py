@@ -989,6 +989,11 @@ class ExprArrayNameSpace:
         │ 8   ┆ 5   ┆ [2.0, 1.0]    │
         │ 3   ┆ 2   ┆ [2.0, 1.0]    │
         └─────┴─────┴───────────────┘
+
+        See Also
+        --------
+        polars.Expr.arr.agg: Evaluate any expression and automatically explode.
+        polars.Expr.list.eval: Same for the List datatype.
         """
         return wrap_expr(self._pyexpr.arr_eval(expr._pyexpr, as_list=as_list))
 
@@ -1028,5 +1033,10 @@ class ExprArrayNameSpace:
         │ [42, 13]      ┆ [42, 13]  │
         │ [null, null]  ┆ []        │
         └───────────────┴───────────┘
+
+        See Also
+        --------
+        polars.Expr.arr.eval: Evaluate any expression without automatic explode.
+        polars.Expr.list.agg: Same for the List datatype.
         """
         return wrap_expr(self._pyexpr.arr_agg(expr._pyexpr))
