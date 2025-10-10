@@ -75,9 +75,7 @@ impl EvalExpr {
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
-            let dtype = self.output_field.dtype.inner_dtype().unwrap();
-
-            return Ok(Column::full_null(name, ca.len(), dtype));
+            return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
 
         let has_masked_out_values = LazyCell::new(|| ca.has_masked_out_values());
@@ -196,9 +194,7 @@ impl EvalExpr {
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
-            let dtype = self.output_field.dtype().inner_dtype().unwrap();
-
-            return Ok(Column::full_null(name, ca.len(), dtype));
+            return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
 
         let validity = ca.rechunk_validity();
@@ -325,9 +321,7 @@ impl EvalExpr {
             Ok(if as_list {
                 ca.into_owned().into_column()
             } else {
-                ca.cast(&self.non_aggregated_output_dtype)
-                    .unwrap()
-                    .into_column()
+                ca.cast(self.output_field.dtype()).unwrap().into_column()
             })
         }
     }
