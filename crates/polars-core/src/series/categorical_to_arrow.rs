@@ -93,9 +93,7 @@ impl CategoricalToArrowConverter {
                     self.initialize(field.dtype())
                 }
             },
-            _ => {
-                debug_assert!(!dtype.is_nested())
-            },
+            _ => assert!(!dtype.is_nested()),
         }
     }
 }
