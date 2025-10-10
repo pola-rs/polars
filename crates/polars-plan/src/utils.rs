@@ -228,10 +228,10 @@ pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item 
 pub fn expressions_to_schema<E>(
     expr: &[Expr],
     schema: &Schema,
-    duplicate_err_func: E,
+    duplicate_err_msg_func: E,
 ) -> PolarsResult<Schema>
 where
-    E: Fn(&str) -> PolarsError,
+    E: Fn(&str) -> String,
 {
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
 
@@ -241,7 +241,15 @@ where
             field.dtype = field.dtype.materialize_unknown(true)?;
             Ok(field)
         }),
-        duplicate_err_func,
+        |duplicate_name: &str| {
+            polars_err!(
+                Duplicate:
+                "{}. It's possible that multiple expressions are returning the same default column name. \
+                If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
+                duplicate column names.",
+                duplicate_err_msg_func(duplicate_name)
+            )
+        },
     )
 }
 

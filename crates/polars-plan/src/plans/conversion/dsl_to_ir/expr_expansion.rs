@@ -9,11 +9,7 @@ pub fn prepare_projection(
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, &PlHashSet::new(), schema, opt_flags)?;
     let schema = expressions_to_schema(&exprs, schema, |duplicate_name: &str| {
-        polars_err!(
-            Duplicate:
-            "projection contained duplicate name '{}'",
-            duplicate_name
-        )
+        format!("projections contained duplicate output name '{duplicate_name}'")
     })?;
     Ok((exprs, schema))
 }

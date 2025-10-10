@@ -829,13 +829,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let schema = Arc::new(expressions_to_schema(
                         &exprs,
                         &input_schema,
-                        |duplicate_name: &str| {
-                            polars_err!(
-                                Duplicate:
-                                "'{}'",
-                                duplicate_name
-                            )
-                        },
+                        |duplicate_name: &str| duplicate_name.to_string(),
                     )?);
                     let eirs = to_expr_irs(
                         exprs,
