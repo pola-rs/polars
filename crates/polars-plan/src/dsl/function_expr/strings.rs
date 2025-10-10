@@ -104,7 +104,6 @@ pub enum StringFunction {
     ToDecimal {
         scale: usize,
     },
-    #[cfg(feature = "nightly")]
     Titlecase,
     Uppercase,
     #[cfg(feature = "string_pad")]
@@ -205,7 +204,6 @@ impl Display for StringFunction {
                     "split"
                 }
             },
-            #[cfg(feature = "nightly")]
             Titlecase => "titlecase",
             #[cfg(feature = "dtype-decimal")]
             ToDecimal { .. } => "to_decimal",

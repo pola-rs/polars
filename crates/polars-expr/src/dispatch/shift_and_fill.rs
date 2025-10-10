@@ -1,19 +1,8 @@
 use polars_core::downcast_as_macro_arg_physical;
-#[cfg(any(
-    feature = "object",
-    feature = "dtype-struct",
-    feature = "dtype-categorical"
-))]
-use polars_core::error::PolarsResult;
-use polars_core::error::{polars_bail, polars_ensure, polars_warn};
-#[cfg(any(
-    feature = "object",
-    feature = "dtype-struct",
-    feature = "dtype-categorical"
-))]
-use polars_core::prelude::Column;
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_warn};
 use polars_core::prelude::{
-    AnyValue, ChunkShiftFill, ChunkedArray, DataType, FromData, IntoColumn, PolarsNumericType,
+    AnyValue, ChunkShiftFill, ChunkedArray, Column, DataType, FromData, IntoColumn,
+    PolarsNumericType,
 };
 
 fn shift_and_fill_numeric<T>(ca: &ChunkedArray<T>, n: i64, fill_value: AnyValue) -> ChunkedArray<T>

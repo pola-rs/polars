@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, handle_casting_failures};
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
@@ -80,7 +81,6 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
         Reverse => map!(strings::reverse),
         Uppercase => map!(uppercase),
         Lowercase => map!(lowercase),
-        #[cfg(feature = "nightly")]
         Titlecase => map!(strings::titlecase),
         StripChars => map_as_slice!(strings::strip_chars),
         StripCharsStart => map_as_slice!(strings::strip_chars_start),
@@ -202,10 +202,11 @@ fn lowercase(s: &Column) -> PolarsResult<Column> {
     Ok(ca.to_lowercase().into_column())
 }
 
-#[cfg(feature = "nightly")]
-pub(super) fn titlecase(s: &Column) -> PolarsResult<Column> {
-    let ca = s.str()?;
-    Ok(ca.to_titlecase().into_column())
+pub(super) fn titlecase(_s: &Column) -> PolarsResult<Column> {
+    feature_gated!("nightly", {
+        let ca = _s.str()?;
+        Ok(ca.to_titlecase().into_column())
+    })
 }
 
 pub(super) fn len_chars(s: &Column) -> PolarsResult<Column> {

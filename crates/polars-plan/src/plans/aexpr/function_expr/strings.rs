@@ -111,7 +111,6 @@ pub enum IRStringFunction {
     ToDecimal {
         scale: usize,
     },
-    #[cfg(feature = "nightly")]
     Titlecase,
     Uppercase,
     #[cfg(feature = "string_pad")]
@@ -188,7 +187,6 @@ impl IRStringFunction {
                 _ => mapper.with_dtype(dtype.clone()),
             },
             Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
-            #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal { scale } => mapper.with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
@@ -271,7 +269,6 @@ impl IRStringFunction {
             #[cfg(feature = "temporal")]
             S::Strptime(_, _) => FunctionOptions::elementwise_with_infer(),
             S::Split(_) => FunctionOptions::elementwise(),
-            #[cfg(feature = "nightly")]
             S::Titlecase => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-decimal")]
             S::ToDecimal { .. } => FunctionOptions::elementwise(),
@@ -382,7 +379,6 @@ impl Display for IRStringFunction {
                     "split"
                 }
             },
-            #[cfg(feature = "nightly")]
             Titlecase => "titlecase",
             #[cfg(feature = "dtype-decimal")]
             ToDecimal { .. } => "to_decimal",

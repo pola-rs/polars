@@ -16,7 +16,6 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-#[cfg(feature = "dtype-struct")]
 use polars_plan::plans::RowEncodingVariant;
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
