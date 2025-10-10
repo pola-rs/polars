@@ -497,8 +497,6 @@ impl<T: NativeType> Array for PrimitiveArray<T> {
 impl<T: NativeType> Splitable for PrimitiveArray<T> {
     #[inline(always)]
     fn check_bound(&self, offset: usize) -> bool {
-        dbg!(offset);
-        dbg!(self.len());
         offset <= self.len()
     }
 

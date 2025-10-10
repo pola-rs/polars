@@ -196,7 +196,7 @@ impl ListChunked {
         }
 
         // Align the chunks of the lists inner values and the values series.
-        fn align_inner_chunks<'a>(ca: &'_ ListChunked, values: &'a Series) -> Series {
+        fn align_inner_chunks(ca: &'_ ListChunked, values: &'_ Series) -> Series {
             if ca.chunks().len() == values.chunks().len()
                 && ca
                     .downcast_iter()

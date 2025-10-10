@@ -85,17 +85,11 @@ impl EvalExpr {
         if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
             let mut column = self.evaluation.evaluate(&df, state)?;
 
-            dbg!(&column);
-            dbg!(&ca.get_inner());
-
             // Since `lit` is marked as elementwise, this may lead to problems.
             if column.len() == 1 && df.height() != 1 {
                 column = column.new_from_index(0, df.height());
             }
 
-            dbg!(&column);
-            dbg!(is_agg);
-            dbg!(self.evaluation_is_scalar);
             if !is_agg || !self.evaluation_is_scalar {
                 column = ca
                     .with_inner_values(column.as_materialized_series())
@@ -162,8 +156,6 @@ impl EvalExpr {
             };
 
             if groups_are_unchanged {
-                dbg!(&flat_naive);
-                dbg!(&ca.get_inner());
                 let values = flat_naive.as_materialized_series();
                 return Ok(ca.with_inner_values(values).into_column());
             }
