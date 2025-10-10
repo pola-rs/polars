@@ -45,7 +45,7 @@ pub struct IpcSinkNode {
     /// mpsc - each column encode worker may need to send in dictionary batche(s).
     io_tx: Option<tokio::sync::mpsc::Sender<IpcBatch>>,
     io_task: Option<AbortOnDropHandle<PolarsResult<()>>>,
-    /// Each column has its own arrow converter for conversion to be done in parallel.
+    /// Arrow converters per-column.
     arrow_converters: Option<Vec<ToArrowConverter>>,
 }
 
