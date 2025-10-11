@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["infer_udf_output_dtype","try_infer_udf_output_dtype"],"struct":["UserDefinedFunction"]};
