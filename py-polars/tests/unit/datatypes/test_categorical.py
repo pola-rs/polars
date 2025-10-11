@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import io
 import operator
+import pickle
 from typing import Callable
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -845,3 +848,164 @@ def test_categorical_min_max() -> None:
     q_alt = lf.max()
     result_alt = q_alt.collect()
     assert result_alt.to_dict(as_series=False) == result.to_dict(as_series=False)
+
+
+def test_categorical_io_roundtrip() -> None:
+    # Ensure dictionary IDs are offsetted correctly when there are nested columns
+    # containing multiple categoricals.
+    lf = pl.LazyFrame(
+        {
+            "column_1": [{"field_1": "A", "field_2": "B", "field_3": "C"}],
+            "column_2": [{"field_1": "D", "field_2": "E"}],
+            "column_3": [["F"]],
+        },
+        schema={
+            "column_1": pl.Struct(
+                {
+                    "field_1": pl.Categorical(pl.Categories.random()),
+                    "field_2": pl.Categorical(pl.Categories.random()),
+                    "field_3": pl.Categorical(pl.Categories.random()),
+                }
+            ),
+            "column_2": pl.Struct(
+                {
+                    "field_1": pl.Categorical(pl.Categories.random()),
+                    "field_2": pl.Categorical(pl.Categories.random()),
+                }
+            ),
+            "column_3": pl.List(pl.Categorical(pl.Categories.random())),
+        },
+    )
+
+    lf.sink_ipc(f := io.BytesIO())
+    assert_frame_equal(pl.scan_ipc(f), lf)
+
+    lf.sink_parquet(f := io.BytesIO())
+    assert_frame_equal(pl.scan_parquet(f), lf)
+
+    assert_frame_equal(pickle.loads(pickle.dumps(lf)), lf)
+
+
+def test_enum_io_roundtrip_maintains_physical_keys() -> None:
+    # Ensure that enum always preserves the physical IDs and full dictionary.
+    enum_values = ["A", "B", "C", "D", "E"]
+    enum_dtype = pl.Enum(enum_values)
+
+    lf = pl.LazyFrame(
+        {"x": ["E", "D"]},
+        schema={"x": enum_dtype},
+    )
+
+    arrow_arr = lf.collect().to_arrow().combine_chunks().column(0).chunk(0)
+
+    assert arrow_arr.dictionary.to_pylist() == enum_values
+    assert arrow_arr.indices.to_pylist() == [4, 3]
+
+    lf.sink_ipc(f := io.BytesIO())
+
+    with pa.ipc.open_file(f) as reader:
+        arrow_arr = reader.read_all().combine_chunks().column(0).chunk(0)
+
+        assert arrow_arr.dictionary.to_pylist() == enum_values
+        assert arrow_arr.indices.to_pylist() == [4, 3]
+
+    lf.sink_parquet(f := io.BytesIO())
+
+    arrow_arr = pq.read_table(f).column(0).chunk(0)
+    assert arrow_arr.dictionary.to_pylist() == enum_values
+    assert arrow_arr.indices.to_pylist() == [4, 3]
+
+
+def test_categorical_serialization_prunes_unused_categories_24034() -> None:
+    cat_dtype = pl.Categorical(pl.Categories.random())
+
+    lf = pl.LazyFrame(
+        {
+            "a": [
+                "A",
+                "NCq8ezUWt0iQ9SOLrHxTvs1bVwolh+KDJMAIR7duY/jGca6FfEyZ425gP3mnkpXB",
+                "BiTL7QO3luFo+cwmSdvz5RxMXkC046jbGYgp/WE9Zerhq1UsanDKyV8tfAPIHN2J",
+                "WaiLGqOjPnvb6phKI5cAmoXUQxduSzskyg+Re1NJE3rFlTH/B2fM90YZC8D4w7tV",
+                "gq73f/2hXDKVIoB14LkW9S6cRHpOFuZeTmbdM0tz+wJQvCsirUa5nl8jyxEPAYGN",
+                "AMr1pyWL5dmIfEubBUNQG8RC70gnJkPT4v/wlzoOh+sKjx2HZ3tqD6SXiaYceVF9",
+                "S3gkGMQ26fYoXC0pt1mVZTKJUwrLPqdulajW7b9Fsh8A4BRizvyeO+N5/xHEnIcD",
+                "lz8DLeq5uIMP7itV9bk/H+RgvNGF4a0EKBXpSZUnmsQho26AjyxO3WwJTfc1CYrd",
+                "wbA+haRgVrFy9BiCZ1G/YcIDK25UlNQ76Se0mXoTvdHPx4fLMnWskutOjqz38JpE",
+                "qrla24TG5vSuEVOYpR0hbeMLBF1zsXoW6yj+nAPi/k3JxDUmcH7KZ8tdQIw9fCgN",
+                "H/F07XlKYbfxRcwk9zE1ao2jnWe6PN8Q+AODJt3BCMhIySLr4TdspuZVgvGUiqm5",
+                "wlm6Up2rTq+V8EjQDthFcNCyAbRSYOMuakGJdxKe/LI9si40ogWXZ731H5PvBnfz",
+                "3J7jif1pdQ4IxmyXE+rclh8kNtAHRn9Z6DVqP52w/aezMFKGUYOBuTosLCg0vSWb",
+                "1DOUAdcJjV8BoZgLpRCblQH9h+w3nMP6xvi0S2yemYa5Tk4KNsfG7qEFzru/IWXt",
+                "YjHPu4bXW7zeBF+2c6mV1gxZMkfRy9dEqQK/h3OGLvJU5SIDrptNlsnTwi80aoCA",
+                "EX/NxFoj3Gs98rBdDuRe61OYPv+t5cMZwIKl7TynAaqimVz0fWULkQJ2gSbh4HpC",
+                "vobW7cPVBLXH0y94jgAamz+r6lChSIfq3OZQU251MuTietJ/GnFsNx8wRYEKpDdk",
+            ]
+        },
+        schema={"a": cat_dtype},
+    )
+
+    value_repeat_100 = 100 * ["A"]
+
+    lf_repeat_100 = pl.LazyFrame(
+        {"a": value_repeat_100},
+        schema={"a": cat_dtype},
+    )
+
+    lf.sink_ipc(f := io.BytesIO())
+    lf_repeat_100.sink_ipc(f_repeat_100 := io.BytesIO())
+    ipc_bytes = f.getvalue()
+    ipc_repeat_100_bytes = f_repeat_100.getvalue()
+
+    lf.collect().write_ipc_stream(f := io.BytesIO())
+    lf_repeat_100.collect().write_ipc_stream(f_repeat_100 := io.BytesIO())
+    ipc_stream_bytes = f.getvalue()
+    ipc_stream_repeat_100_bytes = f_repeat_100.getvalue()
+
+    lf.sink_parquet(f := io.BytesIO())
+    lf_repeat_100.sink_parquet(f_repeat_100 := io.BytesIO())
+    parquet_bytes = f.getvalue()
+    parquet_repeat_100_bytes = f_repeat_100.getvalue()
+
+    pickle.dump(lf, f := io.BytesIO())
+    pickle.dump(lf_repeat_100, f_repeat_100 := io.BytesIO())
+    pickle_bytes = f.getvalue()
+    pickle_repeat_100_bytes = f_repeat_100.getvalue()
+
+    # Assert roundtrip
+    assert_frame_equal(pl.scan_ipc(ipc_repeat_100_bytes), lf_repeat_100)
+    assert_frame_equal(
+        pl.read_ipc_stream(ipc_stream_repeat_100_bytes), lf_repeat_100.collect()
+    )
+    assert_frame_equal(pl.scan_parquet(parquet_repeat_100_bytes), lf_repeat_100)
+    assert_frame_equal(pickle.loads(pickle_repeat_100_bytes), lf_repeat_100)
+
+    # Check encoded dictionaries
+    with pa.ipc.open_file(ipc_repeat_100_bytes) as reader:
+        arrow_arr = reader.read_all().combine_chunks().column(0).chunk(0)
+        assert arrow_arr.dictionary.to_pylist() == ["A"]
+
+    with pa.ipc.open_stream(ipc_stream_repeat_100_bytes) as reader:
+        arrow_arr = reader.read_all().combine_chunks().column(0).chunk(0)
+        assert arrow_arr.dictionary.to_pylist() == ["A"]
+
+    assert pq.read_table(io.BytesIO(parquet_repeat_100_bytes)).combine_chunks().column(
+        0
+    ).chunk(0).dictionary.to_pylist() == ["A"]
+
+    # Check output file sizes
+    ipc_size_ratio = len(ipc_repeat_100_bytes) / len(ipc_bytes)
+    ipc_stream_size_ratio = len(ipc_stream_repeat_100_bytes) / len(ipc_stream_bytes)
+    parquet_size_ratio = len(parquet_repeat_100_bytes) / len(parquet_bytes)
+    pickle_size_ratio = len(pickle_repeat_100_bytes) / len(pickle_bytes)
+
+    # Size ratios
+    #                       | v1.34.0 | Fixed branch |
+    # ipc_size_ratio        | 1.13    | 0.59         |
+    # ipc_stream_size_ratio | 1.15    | 0.53         |
+    # parquet_size_ratio    | 0.99    | 0.31         |
+    # pickle_size_ratio     | 1.13    | 0.59         |
+
+    assert ipc_size_ratio <= 0.8
+    assert ipc_stream_size_ratio <= 0.8
+    assert parquet_size_ratio <= 0.5
+    assert pickle_size_ratio <= 0.8

@@ -20,13 +20,30 @@ impl Series {
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/categoricals, etc.
     pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
-        ToArrowConverter { compat_level }
-            .array_to_arrow(self.chunks().get(chunk_idx).unwrap().as_ref(), self.dtype())
+        ToArrowConverter {
+            compat_level,
+            #[cfg(feature = "dtype-categorical")]
+            categorical_converter: {
+                let mut categorical_converter =
+                    crate::series::categorical_to_arrow::CategoricalToArrowConverter {
+                        converters: Default::default(),
+                        persist_remap: false,
+                        output_keys_only: false,
+                    };
+
+                categorical_converter.initialize(self.dtype());
+
+                categorical_converter
+            },
+        }
+        .array_to_arrow(self.chunks().get(chunk_idx).unwrap().as_ref(), self.dtype())
     }
 }
 
 pub struct ToArrowConverter {
     pub compat_level: CompatLevel,
+    #[cfg(feature = "dtype-categorical")]
+    pub categorical_converter: crate::series::categorical_to_arrow::CategoricalToArrowConverter,
 }
 
 impl ToArrowConverter {
@@ -88,16 +105,9 @@ impl ToArrowConverter {
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                    let arr: &PrimitiveArray<<$C as PolarsCategoricalType>::Native> = array.as_any().downcast_ref().unwrap();
-                    unsafe {
-                        let new_phys = ChunkedArray::from_chunks(PlSmallStr::EMPTY, vec![arr.to_boxed()]);
-                        let new = CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(new_phys, dt.clone());
-                        new.to_arrow(self.compat_level).boxed()
-                    }
-                })
-            },
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => self
+                .categorical_converter
+                .array_to_arrow(array, dtype, self.compat_level),
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
                 cast_default(array, &DataType::Date.to_arrow(self.compat_level)).unwrap()

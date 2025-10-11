@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use arrow::datatypes::Metadata;
+use arrow::io::ipc::IpcField;
 use arrow::io::ipc::write::{self, EncodedData, WriteOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -90,12 +91,16 @@ impl<W: Write> IpcWriter<W> {
         self
     }
 
-    pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+    pub fn batched(
+        self,
+        schema: &Schema,
+        ipc_fields: Vec<IpcField>,
+    ) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, self.compat_level, "ipc")?;
         let mut writer = write::FileWriter::new(
             self.writer,
             Arc::new(schema),
-            None,
+            Some(ipc_fields),
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),
             },
@@ -184,8 +189,14 @@ impl<W: Write> BatchedWriter<W> {
         dictionaries: &[EncodedData],
         message: &EncodedData,
     ) -> PolarsResult<()> {
-        self.writer.write_encoded(dictionaries, message)?;
-        Ok(())
+        self.writer.write_encoded(dictionaries, message)
+    }
+
+    pub fn write_encoded_dictionaries(
+        &mut self,
+        encoded_dictionaries: &[EncodedData],
+    ) -> PolarsResult<()> {
+        self.writer.write_encoded_dictionaries(encoded_dictionaries)
     }
 
     /// Writes the footer of the IPC file.
