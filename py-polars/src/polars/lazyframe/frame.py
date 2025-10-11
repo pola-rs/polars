@@ -1307,6 +1307,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             .. deprecated:: 1.30.0
                 Use the `optimizations` parameters.
+        streaming
+            Unused parameter, kept for backward compatibility.
+
+           ... deprecated:: 1.30.0
+                Use the `engine` parameter instead.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
@@ -1498,6 +1503,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Select the stage to display. Currently only the streaming engine has a
             separate physical stage, for the other engines both IR and physical are the
             same.
+        optimizations
+            The set of the optimizations considered during query optimization.
 
 
         Examples
@@ -7816,6 +7823,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        separator: str | None = None,
     ) -> LazyFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -7829,6 +7837,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Name of the struct column(s) that should be unnested.
         *more_columns
             Additional columns to unnest, specified as positional arguments.
+        separator
+            Rename output column names as combination of the struct column name,
+            name separator and field name.
 
         Examples
         --------
@@ -7862,11 +7873,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ foo    ┆ 1   ┆ a   ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
+        >>> df = pl.LazyFrame(
+        ...     {
+        ...         "before": ["foo", "bar"],
+        ...         "t_a": [1, 2],
+        ...         "t_b": ["a", "b"],
+        ...         "t_c": [True, None],
+        ...         "t_d": [[1, 2], [3]],
+        ...         "after": ["baz", "womp"],
+        ...     }
+        ... ).select(
+        ...     "before",
+        ...     pl.struct(pl.col("^t_.$").name.map(lambda t: t[2:])).alias("t"),
+        ...     "after",
+        ... )
+        >>> df.unnest("t", separator="::").collect()
+        shape: (2, 6)
+        ┌────────┬──────┬──────┬──────┬───────────┬───────┐
+        │ before ┆ t::a ┆ t::b ┆ t::c ┆ t::d      ┆ after │
+        │ ---    ┆ ---  ┆ ---  ┆ ---  ┆ ---       ┆ ---   │
+        │ str    ┆ i64  ┆ str  ┆ bool ┆ list[i64] ┆ str   │
+        ╞════════╪══════╪══════╪══════╪═══════════╪═══════╡
+        │ foo    ┆ 1    ┆ a    ┆ true ┆ [1, 2]    ┆ baz   │
+        │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
+        └────────┴──────┴──────┴──────┴───────────┴───────┘
         """
         subset = parse_list_into_selector(columns) | parse_list_into_selector(
             more_columns
         )
-        return self._from_pyldf(self._ldf.unnest(subset._pyselector))
+        return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
         """

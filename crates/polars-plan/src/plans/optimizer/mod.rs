@@ -46,8 +46,6 @@ pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
-#[cfg(feature = "cse")]
-use crate::plans::optimizer::cse::prune_unused_caches;
 use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;
@@ -140,9 +138,7 @@ pub fn optimize(
                 eprintln!("found multiple sources; run comm_subplan_elim")
             }
 
-            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-
-            prune_unused_caches(lp_arena, cid2c);
+            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
 
             lp_top = lp;
             members.has_cache |= changed;

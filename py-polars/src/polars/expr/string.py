@@ -1956,7 +1956,7 @@ class ExprStringNameSpace:
         value
             String that will replace the matched substring.
         literal
-            Treat `pattern` as a literal string.
+            Treat `pattern` as a literal string, not a regex.
         n
             Number of matches to replace.
 
@@ -2074,7 +2074,7 @@ class ExprStringNameSpace:
         value
             String that will replace the matched substring.
         literal
-            Treat `pattern` as a literal string.
+            Treat `pattern` as a literal string, not a regex.
 
         See Also
         --------
@@ -2470,6 +2470,9 @@ class ExprStringNameSpace:
             Positive integer or expression which is the base of the string
             we are parsing.
             Default: 10.
+        dtype
+            Integer data type to cast the result to.
+            Default: Int64.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.

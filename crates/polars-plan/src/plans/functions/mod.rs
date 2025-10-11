@@ -46,6 +46,7 @@ pub enum FunctionIR {
 
     Unnest {
         columns: Arc<[PlSmallStr]>,
+        separator: Option<PlSmallStr>,
     },
     Rechunk,
     Explode {
@@ -115,7 +116,10 @@ impl Hash for FunctionIR {
                 cloud_options.hash(state);
                 alias.hash(state);
             },
-            FunctionIR::Unnest { columns } => columns.hash(state),
+            FunctionIR::Unnest { columns, separator } => {
+                columns.hash(state);
+                separator.hash(state);
+            },
             FunctionIR::Rechunk => {},
             FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
             #[cfg(feature = "pivot")]
@@ -188,7 +192,7 @@ impl FunctionIR {
     pub(crate) fn additional_projection_pd_columns(&self) -> Cow<'_, [PlSmallStr]> {
         use FunctionIR::*;
         match self {
-            Unnest { columns } => Cow::Borrowed(columns.as_ref()),
+            Unnest { columns, .. } => Cow::Borrowed(columns.as_ref()),
             Explode { columns, .. } => Cow::Borrowed(columns.as_ref()),
             _ => Cow::Borrowed(&[]),
         }
@@ -215,8 +219,11 @@ impl FunctionIR {
                 df.as_single_chunk_par();
                 Ok(df)
             },
-            Unnest { columns: _columns } => {
-                feature_gated!("dtype-struct", df.unnest(_columns.iter().cloned()))
+            Unnest { columns, separator } => {
+                feature_gated!(
+                    "dtype-struct",
+                    df.unnest(columns.iter().cloned(), separator.as_deref())
+                )
             },
             Explode { columns, .. } => df.explode(columns.iter().cloned()),
             #[cfg(feature = "pivot")]
@@ -290,7 +297,7 @@ impl Display for FunctionIR {
         use FunctionIR::*;
         match self {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            Unnest { columns } => {
+            Unnest { columns, .. } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")

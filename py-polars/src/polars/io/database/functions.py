@@ -3,10 +3,11 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from polars._dependencies import import_optional
+from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.unstable import issue_unstable_warning
-from polars._utils.various import qualified_type_name
+from polars._utils.various import parse_version, qualified_type_name
 from polars.datatypes import N_INFER_DEFAULT
+from polars.exceptions import ModuleUpgradeRequiredError
 from polars.io.database._cursor_proxies import ODBCCursorProxy
 from polars.io.database._executor import ConnectionExecutor
 
@@ -264,6 +265,27 @@ def read_database(
             msg = "unable to identify string connection as valid ODBC (no driver)"
             raise ValueError(msg)
 
+    # adbc_driver_manager must be >= 1.7.0 to support passing Python sequences into
+    # parameterised queries (via execute_options) without PyArrow installed
+    if (
+        execute_options is not None
+        and not _PYARROW_AVAILABLE
+        and type(connection).__module__.split(".", 1)[0].startswith("adbc")
+    ):
+        adbc_version_no_pyarrow_required = "1.7.0"
+        adbc_driver_manager = import_optional("adbc_driver_manager")
+        adbc_str_version = getattr(adbc_driver_manager, "__version__", "0.0")
+        if not parse_version(adbc_str_version) >= parse_version(
+            adbc_version_no_pyarrow_required
+        ):
+            msg = (
+                "pyarrow is required for adbc-driver-manager < "
+                f"{adbc_version_no_pyarrow_required} when using parameterized queries (via "
+                f"`execute_options`), found {adbc_str_version}.\nEither upgrade "
+                "`adbc-driver-manager` (suggested) or install `pyarrow`"
+            )
+            raise ModuleUpgradeRequiredError(msg)
+
     # return frame from arbitrary connections using the executor abstraction
     with ConnectionExecutor(connection) as cx:
         return cx.execute(
@@ -399,8 +421,9 @@ def read_database_uri(
     For `connectorx`, ensure that you have `connectorx>=0.3.2`. The documentation
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
-    For `adbc` you will need to have installed `pyarrow` and the ADBC driver associated
-    with the backend you are connecting to, eg: `adbc-driver-postgresql`.
+    For `adbc` you will need to have installed the ADBC driver associated with the
+    backend you are connecting to, eg: `adbc-driver-postgresql`. For versions of
+    `adbc-driver-manager` < 1.7.0, `pyarrow` is also required.
 
     If your password contains special characters, you will need to escape them.
     This will usually require the use of a URL-escaping function, for example:
@@ -500,7 +523,7 @@ def read_database_uri(
         )
     elif engine == "adbc":
         if not isinstance(query, str):
-            msg = "only a single SQL query string is accepted for adbc"
+            msg = f"only a single SQL query string is accepted for adbc, got a {qualified_type_name(query)!r} type"
             raise ValueError(msg)
         if pre_execution_query:
             msg = "the 'adbc' engine does not support use of `pre_execution_query`"

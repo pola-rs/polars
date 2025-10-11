@@ -20,6 +20,10 @@ polars_utils::regex_cache::cached_regex! {
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum IRStringFunction {
+    Format {
+        format: PlSmallStr,
+        insertions: Arc<[usize]>,
+    },
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {
         delimiter: PlSmallStr,
@@ -145,6 +149,7 @@ impl IRStringFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRStringFunction::*;
         match self {
+            Format { .. } => mapper.with_dtype(DataType::String),
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } | ConcatHorizontal { .. } => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
@@ -234,6 +239,7 @@ impl IRStringFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRStringFunction as S;
         match self {
+            S::Format { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "concat_str")]
             S::ConcatHorizontal { .. } => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
@@ -313,6 +319,7 @@ impl Display for IRStringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use IRStringFunction::*;
         let s = match self {
+            Format { .. } => "format",
             #[cfg(feature = "regex")]
             Contains { .. } => "contains",
             CountMatches(_) => "count_matches",
@@ -408,6 +415,9 @@ impl From<IRStringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: IRStringFunction) -> Self {
         use IRStringFunction::*;
         match func {
+            Format { format, insertions } => {
+                map_as_slice!(strings::format, format.as_str(), insertions.as_ref())
+            },
             #[cfg(feature = "regex")]
             Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
             CountMatches(literal) => {
@@ -958,6 +968,7 @@ where
         .zip(val)
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
             (Some(src), Some(val)) => Some(f(src, val)),
+            (Some(src), None) => Some(Cow::from(src)),
             _ => None,
         })
         .collect_trusted();
@@ -982,9 +993,9 @@ fn replace_n<'a>(
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(
-                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
-            )?;
+            let Some(val) = val.get(0) else {
+                return Ok(ca.clone());
+            };
             let literal = literal || is_literal_pat(pat);
 
             match literal {
@@ -1092,6 +1103,10 @@ fn replace_all<'a>(
             ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
         ),
     }
+}
+
+pub(super) fn format(s: &mut [Column], format: &str, insertions: &[usize]) -> PolarsResult<Column> {
+    polars_ops::series::str_format(s, format, insertions)
 }
 
 #[cfg(feature = "regex")]

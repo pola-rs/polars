@@ -2,6 +2,8 @@ mod dot;
 mod format;
 pub mod inputs;
 mod schema;
+#[cfg(feature = "ir_text_plan_graph")]
+pub mod text_plan_graph;
 pub(crate) mod tree_format;
 
 use std::borrow::Cow;
