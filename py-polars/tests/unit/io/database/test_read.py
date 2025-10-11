@@ -247,6 +247,24 @@ class ExceptionTestParams(NamedTuple):
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
+                connect_using=lambda path: sqlite3.connect(
+                    path, detect_types=True
+                ).cursor(),
+                expected_dtypes={
+                    "id": pl.UInt8,
+                    "name": pl.String,
+                    "value": pl.Float32,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.UInt8, "value": pl.Float32},
+                batch_size=1,
+            ),
+            id="cursor: sqlite3 (batched)",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
                 connect_using=lambda path: create_engine(
                     f"sqlite:///{path}",
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
@@ -334,6 +352,25 @@ class ExceptionTestParams(NamedTuple):
                 reason="adbc_driver_sqlite not available on Windows",
             ),
             id="cursor: adbc (fetchall)",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: adbc_sqlite_connect(path).cursor(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+                batch_size=1,
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="cursor: adbc (fetchall, batched)",
         ),
     ],
 )
@@ -436,6 +473,24 @@ def test_read_database(
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
+                connect_using=lambda path: sqlite3.connect(
+                    path, detect_types=True
+                ).cursor(),
+                expected_dtypes={
+                    "id": pl.Int32,
+                    "name": pl.String,
+                    "value": pl.Float32,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.Int32, "value": pl.Float32},
+                batch_size=1,
+            ),
+            id="cursor: sqlite3",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
                 connect_using=lambda path: create_engine(
                     f"sqlite:///{path}",
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
@@ -450,6 +505,26 @@ def test_read_database(
                 batch_size=1,
             ),
             id="conn: sqlalchemy",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: create_engine(
+                    f"sqlite:///{path}",
+                    connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
+                )
+                .raw_connection()
+                .cursor(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                batch_size=1,
+            ),
+            id="cursor: sqlalchemy",
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -472,6 +547,24 @@ def test_read_database(
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
+                connect_using=lambda path: adbc_sqlite_connect(path).cursor(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="cursor: adbc",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
                 connect_using=adbc_sqlite_connect,
                 expected_dtypes={
                     "id": pl.Int64,
@@ -487,6 +580,25 @@ def test_read_database(
                 reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc (ignore batch_size)",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: adbc_sqlite_connect(path).cursor(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+                batch_size=1,
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="cursor: adbc (ignore batch_size)",
         ),
     ],
 )
