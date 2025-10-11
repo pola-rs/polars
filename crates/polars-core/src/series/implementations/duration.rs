@@ -395,6 +395,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }

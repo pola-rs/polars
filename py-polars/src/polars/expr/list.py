@@ -1189,8 +1189,7 @@ class ExprListNameSpace:
         Parameters
         ----------
         expr
-            Expression to run. Note that you can select an element with `pl.first()`, or
-            `pl.col()`
+            Expression to run. Note that you can select an element with `pl.element()`.
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
@@ -1214,8 +1213,55 @@ class ExprListNameSpace:
         │ 8   ┆ 5   ┆ [2.0, 1.0] │
         │ 3   ┆ 2   ┆ [2.0, 1.0] │
         └─────┴─────┴────────────┘
+
+        See Also
+        --------
+        polars.Expr.list.agg: Evaluate any expression and automatically explode.
+        polars.Expr.arr.eval: Same for the Array datatype.
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
+
+    def agg(self, expr: Expr) -> Expr:
+        """
+        Run any polars aggregation expression against the lists' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[1, None], [42, 13], [None, None]]})
+        >>> df.with_columns(null_count=pl.col.a.list.agg(pl.element().null_count()))
+        shape: (3, 2)
+        ┌──────────────┬────────────┐
+        │ a            ┆ null_count │
+        │ ---          ┆ ---        │
+        │ list[i64]    ┆ u32        │
+        ╞══════════════╪════════════╡
+        │ [1, null]    ┆ 1          │
+        │ [42, 13]     ┆ 0          │
+        │ [null, null] ┆ 2          │
+        └──────────────┴────────────┘
+        >>> df.with_columns(no_nulls=pl.col.a.list.agg(pl.element().drop_nulls()))
+        shape: (3, 2)
+        ┌──────────────┬───────────┐
+        │ a            ┆ no_nulls  │
+        │ ---          ┆ ---       │
+        │ list[i64]    ┆ list[i64] │
+        ╞══════════════╪═══════════╡
+        │ [1, null]    ┆ [1]       │
+        │ [42, 13]     ┆ [42, 13]  │
+        │ [null, null] ┆ []        │
+        └──────────────┴───────────┘
+
+        See Also
+        --------
+        polars.Expr.list.eval: Evaluates expressions without automatically exploding.
+        polars.Expr.arr.agg: Same for the Array datatype.
+        """
+        return wrap_expr(self._pyexpr.list_agg(expr._pyexpr))
 
     def filter(self, predicate: Expr) -> Expr:
         """

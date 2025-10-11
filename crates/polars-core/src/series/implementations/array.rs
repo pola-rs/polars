@@ -1,6 +1,8 @@
 use std::any::Any;
 use std::borrow::Cow;
 
+use arrow::bitmap::Bitmap;
+
 use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
 use super::{IsSorted, StatisticsFlags, private};
@@ -183,6 +185,10 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
         self.0.take_unchecked(indices).into_series()
+    }
+
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
     }
 
     fn len(&self) -> usize {

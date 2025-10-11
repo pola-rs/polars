@@ -98,3 +98,80 @@ def test_eval_changing_length(nulls: list[bool]) -> None:
             nulls,
         ),
     )
+
+
+def set_validity(s: pl.Series, validity: list[bool]) -> pl.Series:
+    return s.zip_with(pl.Series(validity), pl.Series([None], dtype=s.dtype))
+
+
+@pytest.mark.parametrize(
+    "sum_expr",
+    [pl.element().sum(), pl.element().unique().sum(), pl.element().fill_null(1).sum()],
+)
+def test_arr_agg_sum(sum_expr: pl.Expr) -> None:
+    assert_series_equal(
+        pl.Series("a", [], pl.Array(pl.Int64, 2)).arr.agg(sum_expr),
+        pl.Series("a", [], pl.Int64),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [[0, 1, 2], [1, 3, 5]], pl.Array(pl.Int64, 3)).arr.agg(sum_expr),
+        pl.Series("a", [3, 9]),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [[], []], pl.Array(pl.Int64, 0)).arr.agg(sum_expr),
+        pl.Series("a", [0, 0]),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [None, [1, 3, 5]], pl.Array(pl.Int64, 3)).arr.agg(sum_expr),
+        pl.Series("a", [None, 9]),
+    )
+
+    assert_series_equal(
+        set_validity(
+            pl.Series("a", [[1, 2, 3], [3, 4, 5], [1, 3, 5]], pl.Array(pl.Int64, 3)),
+            [True, False, True],
+        ).arr.agg(sum_expr),
+        pl.Series("a", [6, None, 9]),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_scalar"),
+    [
+        (pl.element().null_count(), True),
+        (pl.element().rank().null_count(), True),
+        (pl.element().rank(), False),
+        (pl.element() + pl.lit(1), False),
+        (pl.element().filter(pl.element() != 0), False),
+        (pl.element().drop_nulls(), False),
+        (pl.element().n_unique(), True),
+    ],
+)
+def test_arr_agg_parametric(expr: pl.Expr, is_scalar: bool) -> None:
+    def test_case(s: pl.Series) -> None:
+        out = s.arr.agg(expr)
+
+        for i, v in enumerate(s):
+            if v is None:
+                assert out[i] is None
+                continue
+
+            assert isinstance(v, pl.Series)
+
+            v = v.rename("")
+            v = v.to_frame().select(expr).to_series()
+
+            if not is_scalar:
+                v = v.implode()
+
+            assert_series_equal(out.rename("").slice(i, 1), v)
+
+    test_case(pl.Series("a", [], pl.Array(pl.Int64, 2)))
+    test_case(pl.Series("a", [[]], pl.Array(pl.Int64, 0)))
+    test_case(pl.Series("a", [[7], [0]], pl.Array(pl.Int64, 1)))
+    test_case(pl.Series("a", [[8], [0], None], pl.Array(pl.Int64, 1)))
+    test_case(pl.Series("a", [None, [0], None], pl.Array(pl.Int64, 1)))
+    test_case(pl.Series("a", [[1, 2, 3], [4, 5, 6]], pl.Array(pl.Int64, 3)))

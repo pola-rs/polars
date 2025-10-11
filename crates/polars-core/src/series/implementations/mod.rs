@@ -28,6 +28,7 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 
+use arrow::bitmap::Bitmap;
 use polars_compute::rolling::QuantileMethod;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 
@@ -300,6 +301,10 @@ macro_rules! impl_dyn_series {
 
             unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
                 self.0.take_unchecked(indices).into_series()
+            }
+
+            fn deposit(&self, validity: &Bitmap) -> Series {
+                self.0.deposit(validity).into_series()
             }
 
             fn len(&self) -> usize {

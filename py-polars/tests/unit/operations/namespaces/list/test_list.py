@@ -578,7 +578,8 @@ def test_list_gather() -> None:
     ]
 
 
-def test_list_function_group_awareness() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_list_function_group_awareness(maintain_order: bool) -> None:
     df = pl.DataFrame(
         {
             "a": [100, 103, 105, 106, 105, 104, 103, 106, 100, 102],
@@ -586,22 +587,28 @@ def test_list_function_group_awareness() -> None:
         }
     )
 
-    assert df.group_by("group").agg(
-        [
-            pl.col("a").get(0).alias("get_scalar"),
-            pl.col("a").gather([0]).alias("take_no_implode"),
-            pl.col("a").implode().list.get(0).alias("implode_get"),
-            pl.col("a").implode().list.gather([0]).alias("implode_take"),
-            pl.col("a").implode().list.slice(0, 3).alias("implode_slice"),
-        ]
-    ).sort("group").to_dict(as_series=False) == {
-        "group": [0, 1, 2],
-        "get_scalar": [100, 105, 100],
-        "take_no_implode": [[100], [105], [100]],
-        "implode_get": [100, 105, 100],
-        "implode_take": [[100], [105], [100]],
-        "implode_slice": [[100, 103], [105, 106, 105], [100, 102]],
-    }
+    assert_frame_equal(
+        df.group_by("group", maintain_order=maintain_order).agg(
+            [
+                pl.col("a").get(0).alias("get_scalar"),
+                pl.col("a").gather([0]).alias("take_no_implode"),
+                pl.col("a").implode().list.get(0).alias("implode_get"),
+                pl.col("a").implode().list.gather([0]).alias("implode_take"),
+                pl.col("a").implode().list.slice(0, 3).alias("implode_slice"),
+            ]
+        ),
+        pl.DataFrame(
+            {
+                "group": [0, 1, 2],
+                "get_scalar": [100, 105, 100],
+                "take_no_implode": [[100], [105], [100]],
+                "implode_get": [100, 105, 100],
+                "implode_take": [[100], [105], [100]],
+                "implode_slice": [[100, 103], [105, 106, 105], [100, 102]],
+            }
+        ),
+        check_row_order=maintain_order,
+    )
 
 
 def test_list_get_logical_types() -> None:

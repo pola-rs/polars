@@ -212,6 +212,11 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), indices.len()).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        assert_eq!(validity.set_bits(), 0);
+        self.clone().into_series()
+    }
+
     fn len(&self) -> usize {
         self.length as usize
     }
