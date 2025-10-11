@@ -1,11 +1,8 @@
 use std::fmt;
-use std::sync::Arc;
 
 use polars_core::prelude::*;
 use strum_macros::IntoStaticStr;
 
-use super::{ColumnsUdf, SpecialEq};
-use crate::map;
 use crate::plans::aexpr::function_expr::{FieldsMapper, FunctionOptions};
 use crate::prelude::FunctionFlags;
 
@@ -26,46 +23,6 @@ pub enum IRBitwiseFunction {
     And,
     Or,
     Xor,
-}
-
-impl fmt::Display for IRBitwiseFunction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        use IRBitwiseFunction as B;
-
-        let s = match self {
-            B::CountOnes => "count_ones",
-            B::CountZeros => "count_zeros",
-            B::LeadingOnes => "leading_ones",
-            B::LeadingZeros => "leading_zeros",
-            B::TrailingOnes => "trailing_ones",
-            B::TrailingZeros => "trailing_zeros",
-
-            B::And => "and",
-            B::Or => "or",
-            B::Xor => "xor",
-        };
-
-        f.write_str(s)
-    }
-}
-
-impl From<IRBitwiseFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
-    fn from(func: IRBitwiseFunction) -> Self {
-        use IRBitwiseFunction as B;
-
-        match func {
-            B::CountOnes => map!(count_ones),
-            B::CountZeros => map!(count_zeros),
-            B::LeadingOnes => map!(leading_ones),
-            B::LeadingZeros => map!(leading_zeros),
-            B::TrailingOnes => map!(trailing_ones),
-            B::TrailingZeros => map!(trailing_zeros),
-
-            B::And => map!(reduce_and),
-            B::Or => map!(reduce_or),
-            B::Xor => map!(reduce_xor),
-        }
-    }
 }
 
 impl IRBitwiseFunction {
@@ -105,38 +62,23 @@ impl IRBitwiseFunction {
     }
 }
 
-fn count_ones(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::count_ones)
-}
+impl fmt::Display for IRBitwiseFunction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        use IRBitwiseFunction as B;
 
-fn count_zeros(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::count_zeros)
-}
+        let s = match self {
+            B::CountOnes => "count_ones",
+            B::CountZeros => "count_zeros",
+            B::LeadingOnes => "leading_ones",
+            B::LeadingZeros => "leading_zeros",
+            B::TrailingOnes => "trailing_ones",
+            B::TrailingZeros => "trailing_zeros",
 
-fn leading_ones(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::leading_ones)
-}
+            B::And => "and",
+            B::Or => "or",
+            B::Xor => "xor",
+        };
 
-fn leading_zeros(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::leading_zeros)
-}
-
-fn trailing_ones(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::trailing_ones)
-}
-
-fn trailing_zeros(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::trailing_zeros)
-}
-
-fn reduce_and(c: &Column) -> PolarsResult<Column> {
-    c.and_reduce().map(|v| v.into_column(c.name().clone()))
-}
-
-fn reduce_or(c: &Column) -> PolarsResult<Column> {
-    c.or_reduce().map(|v| v.into_column(c.name().clone()))
-}
-
-fn reduce_xor(c: &Column) -> PolarsResult<Column> {
-    c.xor_reduce().map(|v| v.into_column(c.name().clone()))
+        f.write_str(s)
+    }
 }

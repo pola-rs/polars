@@ -7,7 +7,6 @@ use super::utils::{
     ensure_range_bounds_contain_exactly_one_value, temporal_ranges_impl_broadcast,
     temporal_series_to_i64_scalar,
 };
-use crate::plans::aexpr::function_expr::FieldsMapper;
 
 const CAPACITY_FACTOR: usize = 5;
 
@@ -221,29 +220,4 @@ pub(super) fn datetime_ranges(
 
     let to_type = DataType::List(Box::new(dtype));
     out.cast(&to_type)
-}
-
-impl FieldsMapper<'_> {
-    pub(super) fn map_to_datetime_range_dtype(
-        &self,
-        time_unit: Option<&TimeUnit>,
-        time_zone: Option<&TimeZone>,
-    ) -> PolarsResult<DataType> {
-        let data_dtype = self.map_to_supertype()?.dtype;
-
-        let (data_tu, data_tz) = if let DataType::Datetime(tu, tz) = data_dtype {
-            (tu, tz)
-        } else {
-            (TimeUnit::Microseconds, None)
-        };
-
-        let tu = match time_unit {
-            Some(tu) => *tu,
-            None => data_tu,
-        };
-
-        let tz = time_zone.cloned().or(data_tz);
-
-        Ok(DataType::Datetime(tu, tz))
-    }
 }

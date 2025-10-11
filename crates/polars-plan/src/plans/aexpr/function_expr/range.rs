@@ -1,13 +1,3 @@
-#[cfg(feature = "dtype-date")]
-mod date_range;
-#[cfg(feature = "dtype-datetime")]
-mod datetime_range;
-mod int_range;
-mod linear_space;
-#[cfg(feature = "dtype-time")]
-mod time_range;
-mod utils;
-
 use std::fmt::{Display, Formatter};
 
 use polars_core::prelude::*;
@@ -16,10 +6,8 @@ use polars_ops::series::ClosedInterval;
 use polars_time::{ClosedWindow, Duration};
 
 use super::{FunctionOptions, IRFunctionExpr};
-use crate::dsl::SpecialEq;
-use crate::map_as_slice;
 use crate::plans::aexpr::function_expr::FieldsMapper;
-use crate::prelude::{ColumnsUdf, FunctionFlags};
+use crate::prelude::FunctionFlags;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -219,77 +207,33 @@ impl Display for IRRangeFunction {
     }
 }
 
-impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
-    fn from(func: IRRangeFunction) -> Self {
-        use IRRangeFunction::*;
-        match func {
-            IntRange { step, dtype } => {
-                map_as_slice!(int_range::int_range, step, dtype.clone())
-            },
-            IntRanges { dtype } => {
-                map_as_slice!(int_range::int_ranges, dtype.clone())
-            },
-            LinearSpace { closed } => {
-                map_as_slice!(linear_space::linear_space, closed)
-            },
-            LinearSpaces {
-                closed,
-                array_width,
-            } => {
-                map_as_slice!(linear_space::linear_spaces, closed, array_width)
-            },
-            #[cfg(feature = "dtype-date")]
-            DateRange { interval, closed } => {
-                map_as_slice!(date_range::date_range, interval, closed)
-            },
-            #[cfg(feature = "dtype-date")]
-            DateRanges { interval, closed } => {
-                map_as_slice!(date_range::date_ranges, interval, closed)
-            },
-            #[cfg(feature = "dtype-datetime")]
-            DatetimeRange {
-                interval,
-                closed,
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(
-                    datetime_range::datetime_range,
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
-            },
-            #[cfg(feature = "dtype-datetime")]
-            DatetimeRanges {
-                interval,
-                closed,
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(
-                    datetime_range::datetime_ranges,
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
-            },
-            #[cfg(feature = "dtype-time")]
-            TimeRange { interval, closed } => {
-                map_as_slice!(time_range::time_range, interval, closed)
-            },
-            #[cfg(feature = "dtype-time")]
-            TimeRanges { interval, closed } => {
-                map_as_slice!(time_range::time_ranges, interval, closed)
-            },
-        }
-    }
-}
-
 impl From<IRRangeFunction> for IRFunctionExpr {
     fn from(value: IRRangeFunction) -> Self {
         Self::Range(value)
+    }
+}
+
+impl FieldsMapper<'_> {
+    pub fn map_to_datetime_range_dtype(
+        &self,
+        time_unit: Option<&TimeUnit>,
+        time_zone: Option<&TimeZone>,
+    ) -> PolarsResult<DataType> {
+        let data_dtype = self.map_to_supertype()?.dtype;
+
+        let (data_tu, data_tz) = if let DataType::Datetime(tu, tz) = data_dtype {
+            (tu, tz)
+        } else {
+            (TimeUnit::Microseconds, None)
+        };
+
+        let tu = match time_unit {
+            Some(tu) => *tu,
+            None => data_tu,
+        };
+
+        let tz = time_zone.cloned().or(data_tz);
+
+        Ok(DataType::Datetime(tu, tz))
     }
 }

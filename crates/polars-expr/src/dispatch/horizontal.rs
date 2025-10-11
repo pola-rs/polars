@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{Column, DataType, IntoColumn};
 use polars_core::series::Series;
 use polars_core::utils::try_get_supertype;
-use polars_error::{PolarsResult, polars_bail, polars_ensure};
-
-use crate::callback::PlanCallback;
+use polars_plan::callback::PlanCallback;
 
 pub fn fold(
     c: &[Column],

@@ -1,6 +1,9 @@
 use polars_core::downcast_as_macro_arg_physical;
-
-use super::*;
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_warn};
+use polars_core::prelude::{
+    AnyValue, ChunkShiftFill, ChunkedArray, Column, DataType, FromData, IntoColumn,
+    PolarsNumericType,
+};
 
 fn shift_and_fill_numeric<T>(ca: &ChunkedArray<T>, n: i64, fill_value: AnyValue) -> ChunkedArray<T>
 where
@@ -19,6 +22,7 @@ where
 fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsResult<Column> {
     use arrow::array::BooleanArray;
     use arrow::bitmap::BitmapBuilder;
+    use polars_core::prelude::BooleanChunked;
 
     let mask: BooleanChunked = if n > 0 {
         let len = s.len();

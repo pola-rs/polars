@@ -71,7 +71,8 @@ fn retrieve_error_msg(lib: &Library) -> String {
     }
 }
 
-pub(super) unsafe fn call_plugin(
+#[doc(hidden)]
+pub unsafe fn call_plugin(
     s: &[Column],
     lib: &str,
     symbol: &str,

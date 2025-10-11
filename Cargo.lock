@@ -3237,6 +3237,7 @@ version = "0.51.0"
 dependencies = [
  "bitflags",
  "hashbrown 0.15.4",
+ "libloading",
  "num-traits",
  "polars-arrow",
  "polars-compute",
@@ -3251,6 +3252,7 @@ dependencies = [
  "rand 0.9.1",
  "rayon",
  "recursive",
+ "regex",
 ]
 
 [[package]]
