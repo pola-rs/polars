@@ -8,8 +8,10 @@ use arrow::bitmap::bitmask::nth_set_bit_u32;
 use polars_dtype::categorical::{CategoricalMapping, Categories, FrozenCategories};
 use proptest::prelude::*;
 
+#[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::prelude::{Int32Chunked, Int64Chunked, Int128Chunked, NamedFrom, Series, TimeUnit};
+#[cfg(feature = "dtype-categorical")]
 use crate::series::{Categorical8Type, DataType, IntoSeries};
 
 // A global, thread-safe counter that will be used to ensure unique column names when the Series are created
