@@ -78,4 +78,3 @@ jobs:
           pip install seaborn
           "$HOME/py-polars-cache/create-plots.py"
           touch "$HOME/py-polars-cache/upload-probe"
-          "$HOME/py-polars-cache/cache-build.sh" "$PWD/polars"

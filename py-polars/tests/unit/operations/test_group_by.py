@@ -10,11 +10,14 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars import Expr
 from polars.exceptions import ColumnNotFoundError
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from typing import Callable
+
     from polars._typing import PolarsDataType
 
 
@@ -1557,6 +1560,57 @@ def test_group_by_first_nondet_24278() -> None:
         assert q.collect().to_series().sum() == fst_value
 
 
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_agg_on_lit(maintain_order: bool) -> None:
+    fs: list[Callable[[Expr], Expr]] = [
+        Expr.min,
+        Expr.max,
+        Expr.mean,
+        Expr.sum,
+        Expr.len,
+        Expr.count,
+        Expr.first,
+        Expr.last,
+        Expr.n_unique,
+        Expr.implode,
+        Expr.std,
+        Expr.var,
+        lambda e: e.quantile(0.5),
+        Expr.nan_min,
+        Expr.nan_max,
+        Expr.skew,
+        Expr.null_count,
+        Expr.product,
+        lambda e: pl.corr(e, e),
+    ]
+
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        pl.select(
+            [pl.lit(pl.Series("a", [1, 2]))]
+            + [f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)]
+        ),
+        check_row_order=maintain_order,
+    )
+
+    df = pl.DataFrame({"a": [1, 2], "b": [None, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        pl.select(
+            [pl.lit(pl.Series("a", [1, 2]))]
+            + [f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)]
+        ),
+        check_row_order=maintain_order,
+    )
+
+
 def test_group_by_cum_sum_key_24489() -> None:
     df = pl.LazyFrame({"x": [1, 2]})
     out = df.group_by((pl.col.x > 1).cum_sum()).agg().collect()
@@ -1564,7 +1618,56 @@ def test_group_by_cum_sum_key_24489() -> None:
     assert_frame_equal(out, expected, check_row_order=False)
 
 
-def test_group_by_categorical_min_max_enum_18394() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_double_aggregations(maintain_order: bool) -> None:
+    fs: list[Callable[[pl.Expr], pl.Expr]] = [
+        Expr.min,
+        Expr.max,
+        Expr.mean,
+        Expr.sum,
+        Expr.len,
+        Expr.count,
+        Expr.first,
+        Expr.last,
+        Expr.n_unique,
+        Expr.implode,
+        Expr.std,
+        Expr.var,
+        lambda e: e.quantile(0.5),
+        Expr.nan_min,
+        Expr.nan_max,
+        Expr.skew,
+        Expr.null_count,
+        Expr.product,
+        lambda e: pl.corr(e, e),
+    ]
+
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b.first()).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        check_row_order=maintain_order,
+    )
+
+    df = pl.DataFrame({"a": [1, 2], "b": [None, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b.first()).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        check_row_order=maintain_order,
+    )
+
+
+def test_group_by_enum_min_max_18394() -> None:
     df = pl.DataFrame(
         {
             "id": ["a", "a", "b", "b", "c", "c"],
@@ -1590,7 +1693,7 @@ def test_group_by_categorical_min_max_enum_18394() -> None:
     assert_frame_equal(out, expected, check_row_order=False)
 
 
-def test_group_by_categorical_min_max_cat_18394() -> None:
+def test_group_by_categorical_min_max_18394() -> None:
     dtype = pl.Categorical(pl.Categories.random())
     df = pl.DataFrame(
         {

@@ -1741,6 +1741,23 @@ class PyExpr:
         min_periods: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
+    def rolling_rank(
+        self,
+        window_size: int,
+        method: RankMethod,
+        seed: int | None = None,
+        min_periods: int | None = None,
+        center: bool = False,
+    ) -> PyExpr: ...
+    def rolling_rank_by(
+        self,
+        by: PyExpr,
+        window_size: str,
+        method: RankMethod,
+        seed: int | None,
+        min_samples: int,
+        closed: ClosedWindow,
+    ) -> PyExpr: ...
     def rolling_skew(
         self,
         window_size: int,
@@ -1864,6 +1881,8 @@ class PyExpr:
         self, patterns: PyExpr, ascii_case_insensitive: bool, overlapping: bool
     ) -> PyExpr: ...
     def str_escape_regex(self) -> PyExpr: ...
+    @staticmethod
+    def str_format(f_string: str, exprs: list[PyExpr]) -> PyExpr: ...
 
     # struct
     def struct_field_by_index(self, index: int) -> PyExpr: ...

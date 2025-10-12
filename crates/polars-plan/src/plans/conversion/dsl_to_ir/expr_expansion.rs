@@ -8,7 +8,9 @@ pub fn prepare_projection(
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, &PlHashSet::new(), schema, opt_flags)?;
-    let schema = expressions_to_schema(&exprs, schema)?;
+    let schema = expressions_to_schema(&exprs, schema, |duplicate_name: &str| {
+        format!("projections contained duplicate output name '{duplicate_name}'")
+    })?;
     Ok((exprs, schema))
 }
 

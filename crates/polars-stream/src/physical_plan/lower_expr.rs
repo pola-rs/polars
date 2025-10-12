@@ -1723,6 +1723,16 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(trans_expr);
             },
 
+            #[cfg(feature = "approx_unique")]
+            AExpr::Function {
+                function: IRFunctionExpr::ApproxNUnique,
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
+
             AExpr::Function {
                 function:
                     IRFunctionExpr::Boolean(

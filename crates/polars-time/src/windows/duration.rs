@@ -817,6 +817,9 @@ impl Duration {
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
                 let duration = nsecs_to_unit(self.nsecs);
+                if duration == 0 {
+                    return Ok(t);
+                }
                 self.truncate_subweekly(
                     t,
                     tz,

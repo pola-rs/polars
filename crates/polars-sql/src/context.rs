@@ -1292,7 +1292,10 @@ impl SQLContext {
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
         let schema_before = self.get_frame_schema(&mut lf)?;
-        let group_by_keys_schema = expressions_to_schema(group_by_keys, &schema_before)?;
+        let group_by_keys_schema =
+            expressions_to_schema(group_by_keys, &schema_before, |duplicate_name: &str| {
+                format!("group_by keys contained duplicate output name '{duplicate_name}'")
+            })?;
 
         // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
@@ -1359,7 +1362,10 @@ impl SQLContext {
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
-        let projection_schema = expressions_to_schema(projections, &schema_before)?;
+        let projection_schema =
+            expressions_to_schema(projections, &schema_before, |duplicate_name: &str| {
+                format!("group_by aggregations contained duplicate output name '{duplicate_name}'")
+            })?;
 
         // A final projection to get the proper order and any deferred transforms/aliases.
         let final_projection = projection_schema

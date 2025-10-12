@@ -4,7 +4,7 @@ import re
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-from polars._dependencies import import_optional
+from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.various import parse_version
 from polars.convert import from_arrow
 from polars.exceptions import ModuleUpgradeRequiredError
@@ -73,10 +73,44 @@ def _read_sql_adbc(
     schema_overrides: SchemaDict | None,
     execute_options: dict[str, Any] | None = None,
 ) -> DataFrame:
+    module_name = _get_adbc_module_name_from_uri(connection_uri)
+    # import the driver first, to ensure a good error message if not installed
+    _import_optional_adbc_driver(module_name, dbapi_submodule=False)
+    adbc_driver_manager = import_optional("adbc_driver_manager")
+    adbc_str_version = getattr(adbc_driver_manager, "__version__", "0.0")
+    adbc_version = parse_version(adbc_str_version)
+
+    # adbc_driver_manager must be >= 1.7.0 to support passing Python sequences into
+    # parameterised queries (via execute_options) without PyArrow installed
+    adbc_version_no_pyarrow_required = "1.7.0"
+    has_required_adbc_version = adbc_version >= parse_version(
+        adbc_version_no_pyarrow_required
+    )
+
+    if (
+        execute_options is not None
+        and not _PYARROW_AVAILABLE
+        and not has_required_adbc_version
+    ):
+        msg = (
+            "pyarrow is required for adbc-driver-manager < "
+            f"{adbc_version_no_pyarrow_required} when using parameterized queries (via "
+            f"`execute_options`), found {adbc_str_version}.\nEither upgrade "
+            "`adbc-driver-manager` (suggested) or install `pyarrow`"
+        )
+        raise ModuleUpgradeRequiredError(msg)
+
+    # From adbc_driver_manager version 1.6.0 Cursor.fetch_arrow() was introduced,
+    # returning an object implementing the Arrow PyCapsule interface. This should be
+    # used regardless of whether PyArrow is available.
+    fetch_method_name = (
+        "fetch_arrow" if adbc_version >= (1, 6, 0) else "fetch_arrow_table"
+    )
+
     with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
         cursor.execute(query, **(execute_options or {}))
-        tbl = cursor.fetch_arrow_table()
-    return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
+        tbl = getattr(cursor, fetch_method_name)()
+        return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
 def _get_adbc_driver_name_from_uri(connection_uri: str) -> str:
@@ -142,3 +176,23 @@ def _open_adbc_connection(connection_uri: str) -> Any:
         connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
 
     return adbc_driver.connect(connection_uri)
+
+
+def _is_adbc_snowflake_conn(conn: Any) -> bool:
+    import adbc_driver_manager
+
+    # If PyArrow is available, prefer using the built in method
+    if _PYARROW_AVAILABLE:
+        return "snowflake" in conn.adbc_get_info()["vendor_name"].lower()
+    # Otherwise, use a workaround checking a Snowflake specific ADBC option
+    try:
+        adbc_driver_snowflake = import_optional("adbc_driver_snowflake")
+
+        return (
+            "snowflake"
+            in conn.adbc_database.get_option(
+                adbc_driver_snowflake.DatabaseOptions.HOST.value
+            ).lower()
+        )
+    except (ImportError, adbc_driver_manager.Error):
+        return False

@@ -175,10 +175,9 @@ impl PyDataFrame {
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        let mut df = self.df.write();
-        let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
-        py.enter_polars_ok(|| dfr.as_single_chunk_par())?;
-        let df = RwLockWriteGuard::downgrade(df);
-        dataframe_to_stream(&df, py)
+        py.enter_polars_ok(|| {
+            self.df.write().as_single_chunk_par();
+        })?;
+        dataframe_to_stream(&self.df.read(), py)
     }
 }

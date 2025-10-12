@@ -365,6 +365,16 @@ impl GroupsType {
         }
     }
 
+    pub fn is_overlapping(&self) -> bool {
+        matches!(
+            self,
+            GroupsType::Slice {
+                overlapping: true,
+                ..
+            }
+        )
+    }
+
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
         match self {
             GroupsType::Idx(mut groups) => std::mem::take(&mut groups.first),
@@ -490,6 +500,16 @@ impl GroupsType {
     pub fn into_sliceable(self) -> GroupPositions {
         let len = self.len();
         slice_groups(Arc::new(self), 0, len)
+    }
+
+    pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
+        if std::ptr::eq(self, other) {
+            return Ok(());
+        }
+        polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
+            a.len() == b.len()
+        }), ComputeError: "expressions must have matching group lengths");
+        Ok(())
     }
 }
 

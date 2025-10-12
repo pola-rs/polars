@@ -421,8 +421,9 @@ def read_database_uri(
     For `connectorx`, ensure that you have `connectorx>=0.3.2`. The documentation
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
-    For `adbc` you will need to have installed `pyarrow` and the ADBC driver associated
-    with the backend you are connecting to, eg: `adbc-driver-postgresql`.
+    For `adbc` you will need to have installed the ADBC driver associated with the
+    backend you are connecting to, eg: `adbc-driver-postgresql`. For versions of
+    `adbc-driver-manager` < 1.7.0, `pyarrow` is also required.
 
     If your password contains special characters, you will need to escape them.
     This will usually require the use of a URL-escaping function, for example:
@@ -522,7 +523,7 @@ def read_database_uri(
         )
     elif engine == "adbc":
         if not isinstance(query, str):
-            msg = "only a single SQL query string is accepted for adbc"
+            msg = f"only a single SQL query string is accepted for adbc, got a {qualified_type_name(query)!r} type"
             raise ValueError(msg)
         if pre_execution_query:
             msg = "the 'adbc' engine does not support use of `pre_execution_query`"

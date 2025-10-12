@@ -462,18 +462,26 @@ where
         I: IntoIterator<Item = F>,
         F: Into<(PlSmallStr, D)>,
     {
+        Self::try_from_iter_check_duplicates(
+            iter.into_iter().map(PolarsResult::Ok),
+            |name: &str| polars_err!(Duplicate: "duplicate name when building schema '{}'", &name),
+        )
+    }
+
+    pub fn try_from_iter_check_duplicates<I, F, E>(iter: I, err_func: E) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = PolarsResult<F>>,
+        F: Into<(PlSmallStr, D)>,
+        E: Fn(&str) -> PolarsError,
+    {
         let iter = iter.into_iter();
         let mut slf = Self::with_capacity(iter.size_hint().1.unwrap_or(0));
 
         for v in iter {
-            let (name, d) = v.into();
+            let (name, d) = v?.into();
 
             if slf.contains(&name) {
-                return Err(err_msg(&name));
-
-                fn err_msg(name: &str) -> PolarsError {
-                    polars_err!(Duplicate: "duplicate name when building schema '{}'", &name)
-                }
+                return Err(err_func(&name));
             }
 
             slf.fields.insert(name, d);

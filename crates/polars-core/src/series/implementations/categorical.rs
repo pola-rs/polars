@@ -291,6 +291,11 @@ macro_rules! impl_cat_series {
                 self.0.physical().n_unique()
             }
 
+            #[cfg(feature = "approx_unique")]
+            fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+                Ok(self.0.physical().approx_n_unique())
+            }
+
             #[cfg(feature = "algorithm_group_by")]
             fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 self.0.physical().arg_unique()

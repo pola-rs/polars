@@ -27,6 +27,7 @@ pub mod idx_mapper;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;
+pub mod order_statistic_tree;
 pub mod parma;
 pub mod pl_str;
 pub mod plpath;

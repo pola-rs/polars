@@ -255,11 +255,13 @@ class ArrayNameSpace:
             The starting index of the slice.
         length
             The length of the slice.
+        as_array
+            Return the result as a Series of data type :class:`.Array`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Array`.
+            Series of data type :class:`.List` or :class:`.Array` if `as_array=True`.
 
         Examples
         --------
