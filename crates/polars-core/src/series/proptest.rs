@@ -104,15 +104,19 @@ pub fn series_strategy(options: Rc<SeriesArbitraryOptions>) -> impl Strategy<Val
             _ if selection == S::BINARY => {
                 series_binary_strategy(options.series_length_range.clone()).boxed()
             },
+            #[cfg(feature = "dtype-time")]
             _ if selection == S::TIME => {
                 series_time_strategy(options.series_length_range.clone()).boxed()
             },
+            #[cfg(feature = "dtype-datetime")]
             _ if selection == S::DATETIME => {
                 series_datetime_strategy(options.series_length_range.clone()).boxed()
             },
+            #[cfg(feature = "dtype-date")]
             _ if selection == S::DATE => {
                 series_date_strategy(options.series_length_range.clone()).boxed()
             },
+            #[cfg(feature = "dtype-duration")]
             _ if selection == S::DURATION => {
                 series_duration_strategy(options.series_length_range.clone()).boxed()
             },
@@ -203,6 +207,7 @@ fn series_binary_strategy(
         .prop_map(|binaries| Series::new(next_column_name().into(), binaries))
 }
 
+#[cfg(feature = "dtype-time")]
 fn series_time_strategy(
     series_length_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = Series> {
@@ -217,6 +222,7 @@ fn series_time_strategy(
     })
 }
 
+#[cfg(feature = "dtype-datetime")]
 fn series_datetime_strategy(
     series_length_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = Series> {
@@ -231,6 +237,7 @@ fn series_datetime_strategy(
     })
 }
 
+#[cfg(feature = "dtype-date")]
 fn series_date_strategy(
     series_length_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = Series> {
@@ -245,6 +252,7 @@ fn series_date_strategy(
     })
 }
 
+#[cfg(feature = "dtype-duration")]
 fn series_duration_strategy(
     series_length_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = Series> {
