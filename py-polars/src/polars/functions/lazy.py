@@ -61,8 +61,24 @@ def field(name: str | list[str]) -> Expr:
     """
     Select a field in the current `struct.with_fields` scope.
 
+    Parameters
+    ----------
     name
         Name of the field(s) to select.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [{"x": 5, "y": 2}, {"x": 3, "y": 4}]})
+    >>> df.select(pl.col("a").struct.with_fields(pl.field("x") ** 2))
+    shape: (2, 1)
+    ┌───────────┐
+    │ first     │
+    │ ---       │
+    │ struct[2] │
+    ╞═══════════╡
+    │ {25,2}    │
+    │ {9,4}     │
+    └───────────┘
     """
     if isinstance(name, str):
         name = [name]
