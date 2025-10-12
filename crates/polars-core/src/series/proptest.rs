@@ -332,12 +332,11 @@ fn series_enum_strategy(
             let frozen_categories =
                 FrozenCategories::new(possible_categories.iter().map(|s| s.as_str())).unwrap();
             let mapping = frozen_categories.mapping().clone();
-            let enum_dtype = DataType::Enum(frozen_categories, mapping);
 
             // Using Categorical8Type (u8 backing) which supports up to 256 unique categories
             let mut builder = CategoricalChunkedBuilder::<Categorical8Type>::new(
                 next_column_name().into(),
-                enum_dtype,
+                DataType::Enum(frozen_categories, mapping),
             );
 
             for category in sampled_categories {
