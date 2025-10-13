@@ -65,6 +65,7 @@ serde = [
   "polars-utils/serde",
   "polars-compute/serde",
   "either/serde",
+  "slotmap/serde",
 ]
 parquet = ["polars-io/parquet", "polars-parquet"]
 async = ["polars-io/async", "futures"]

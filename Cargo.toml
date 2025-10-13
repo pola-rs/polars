@@ -87,7 +87,7 @@ serde_stacker = "0.1.12"
 sha2 = "0.10"
 simd-json = { version = "0.15", features = ["known-key"] }
 simdutf8 = "0.1.4"
-slotmap = { version = "1", features = ["serde"] }
+slotmap = "1"
 sqlparser = "0.53"
 stacker = "0.1"
 streaming-iterator = "0.1.9"
