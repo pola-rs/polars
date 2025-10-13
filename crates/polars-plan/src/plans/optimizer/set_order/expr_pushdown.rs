@@ -224,13 +224,11 @@ fn get_observable_orders_impl(
             // @NOTE: This aggregation makes very little sense. We do the most pessimistic thing
             // possible here.
             IRAggExpr::AggGroups(node) => {
-                let input_ordering = rec!(*node);
-
-                if input_ordering.has_frame_ordering() {
+                if rec!(*node).has_frame_ordering() {
                     return Err(FrameOrderObserved);
                 }
 
-                input_ordering | O::Independent
+                O::Independent
             },
         },
 
