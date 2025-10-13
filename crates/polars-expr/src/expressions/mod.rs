@@ -104,9 +104,9 @@ pub struct AggregationContext<'a> {
     ///
     /// When aggregation state is LiteralScalar or AggregatedScalar, the group values are not
     /// related to the state data anymore. The number of groups is still accurate.
-    state: AggState,
+    pub(crate) state: AggState,
     /// group tuples for AggState
-    groups: Cow<'a, GroupPositions>,
+    pub(crate) groups: Cow<'a, GroupPositions>,
     /// This is used to determined if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed

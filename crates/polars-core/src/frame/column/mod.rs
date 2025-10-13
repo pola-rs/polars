@@ -1909,6 +1909,11 @@ impl Column {
             .deposit(validity)
             .into_column()
     }
+
+    pub fn rechunk_validity(&self) -> Option<Bitmap> {
+        // @scalar-opt
+        self.as_materialized_series().rechunk_validity()
+    }
 }
 
 impl Default for Column {
