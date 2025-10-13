@@ -395,6 +395,8 @@ pub trait SeriesTrait:
         None
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series;
+
     /// Find the indices of elements where the null masks are different recursively.
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
 

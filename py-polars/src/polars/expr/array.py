@@ -989,5 +989,54 @@ class ExprArrayNameSpace:
         │ 8   ┆ 5   ┆ [2.0, 1.0]    │
         │ 3   ┆ 2   ┆ [2.0, 1.0]    │
         └─────┴─────┴───────────────┘
+
+        See Also
+        --------
+        polars.Expr.arr.agg: Evaluate any expression and automatically explode.
+        polars.Expr.list.eval: Same for the List datatype.
         """
         return wrap_expr(self._pyexpr.arr_eval(expr._pyexpr, as_list=as_list))
+
+    def agg(self, expr: Expr) -> Expr:
+        """
+        Run any polars aggregation expression against the arrays' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`.
+
+        Examples
+        --------
+        >>> df = pl.Series(
+        ...     "a", [[1, None], [42, 13], [None, None]], pl.Array(pl.Int64, 2)
+        ... ).to_frame()
+        >>> df.with_columns(null_count=pl.col.a.arr.agg(pl.element().null_count()))
+        shape: (3, 2)
+        ┌───────────────┬────────────┐
+        │ a             ┆ null_count │
+        │ ---           ┆ ---        │
+        │ array[i64, 2] ┆ u32        │
+        ╞═══════════════╪════════════╡
+        │ [1, null]     ┆ 1          │
+        │ [42, 13]      ┆ 0          │
+        │ [null, null]  ┆ 2          │
+        └───────────────┴────────────┘
+        >>> df.with_columns(no_nulls=pl.col.a.arr.agg(pl.element().drop_nulls()))
+        shape: (3, 2)
+        ┌───────────────┬───────────┐
+        │ a             ┆ no_nulls  │
+        │ ---           ┆ ---       │
+        │ array[i64, 2] ┆ list[i64] │
+        ╞═══════════════╪═══════════╡
+        │ [1, null]     ┆ [1]       │
+        │ [42, 13]      ┆ [42, 13]  │
+        │ [null, null]  ┆ []        │
+        └───────────────┴───────────┘
+
+        See Also
+        --------
+        polars.Expr.arr.eval: Evaluate any expression without automatic explode.
+        polars.Expr.list.agg: Same for the List datatype.
+        """
+        return wrap_expr(self._pyexpr.arr_agg(expr._pyexpr))

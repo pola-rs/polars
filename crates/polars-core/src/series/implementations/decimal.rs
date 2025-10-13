@@ -318,6 +318,14 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }

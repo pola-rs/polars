@@ -529,12 +529,14 @@ impl Display for ExprIRDisplay<'_> {
                 let evaluation = self.with_root(evaluation);
                 match variant {
                     EvalVariant::List => write!(f, "{expr}.list.eval({evaluation})"),
+                    EvalVariant::ListAgg => write!(f, "{expr}.list.agg({evaluation})"),
                     EvalVariant::Array { as_list: false } => {
                         write!(f, "{expr}.array.eval({evaluation})")
                     },
                     EvalVariant::Array { as_list: true } => {
                         write!(f, "{expr}.array.eval({evaluation}, as_list=true)")
                     },
+                    EvalVariant::ArrayAgg => write!(f, "{expr}.array.agg({evaluation})"),
                     EvalVariant::Cumulative { min_samples } => write!(
                         f,
                         "{expr}.cumulative_eval({evaluation}, min_samples={min_samples})"
