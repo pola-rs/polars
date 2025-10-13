@@ -6,7 +6,9 @@ use polars_core::prelude::{
     StringChunked,
 };
 use polars_core::series::Series;
-use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
+use polars_ops::prelude::BinaryNameSpaceImpl;
+#[cfg(feature = "strings")]
+use polars_ops::prelude::StringNameSpaceImpl;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRCategoricalFunction;
 
