@@ -93,7 +93,7 @@ pub fn adjust_for_with_columns_context(
 ///
 /// If within the expression tree an expression observes a `Frame` ordering, this instead returns
 /// `Err(FrameOrderObserved)`.
-pub fn get_observable_orders(
+pub fn get_frame_observing(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> Result<ExprOutputOrder, FrameOrderObserved> {
@@ -115,18 +115,18 @@ impl ExprOutputOrderResolver {
         aexpr: &AExpr,
         expr_arena: &Arena<AExpr>,
     ) -> Result<ExprOutputOrder, FrameOrderObserved> {
-        get_observable_orders_impl(self, aexpr, expr_arena)
+        get_frame_observing_impl(self, aexpr, expr_arena)
     }
 }
 
 #[recursive::recursive]
-fn get_observable_orders_impl(
+fn get_frame_observing_impl(
     slf: &ExprOutputOrderResolver,
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> Result<ExprOutputOrder, FrameOrderObserved> {
     macro_rules! rec {
-        ($expr:expr) => {{ get_observable_orders_impl(slf, expr_arena.get($expr), expr_arena)? }};
+        ($expr:expr) => {{ get_frame_observing_impl(slf, expr_arena.get($expr), expr_arena)? }};
     }
 
     macro_rules! zip {
