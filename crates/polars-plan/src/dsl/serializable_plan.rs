@@ -1,4 +1,5 @@
 use polars_utils::unique_id::UniqueId;
+use recursive::recursive;
 use serde::{Deserialize, Serialize};
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
@@ -159,6 +160,7 @@ impl From<&DslPlan> for SerializableDslPlan {
     }
 }
 
+#[recursive]
 fn convert_dsl_plan_to_serializable_plan(
     plan: &DslPlan,
     arenas: &mut SerializeArenas,
@@ -357,6 +359,7 @@ impl TryFrom<&SerializableDslPlan> for DslPlan {
     }
 }
 
+#[recursive]
 fn try_convert_serializable_plan_to_dsl_plan(
     node_key: DslPlanKey,
     ser_dsl_plan: &SerializableDslPlan,
