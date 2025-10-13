@@ -357,7 +357,8 @@ impl DslPlan {
             );
         }
 
-        polars_utils::pl_serialize::deserialize_dsl(reader)
+        pl_serialize::deserialize_dsl(reader)
+            .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
     }
 
     #[cfg(feature = "dsl-schema")]
