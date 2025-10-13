@@ -1667,7 +1667,6 @@ def test_double_aggregations(maintain_order: bool) -> None:
     )
 
 
-@pytest.mark.parametrize("maintain_order", [False, True])
 def test_group_by_length_preserving_on_scalar() -> None:
     df = pl.DataFrame({"a": [[1], [2], [3]]})
     df = df.group_by(pl.lit(1, pl.Int64)).agg(
