@@ -835,7 +835,6 @@ def test_fallible_decimal_aggregated_with_filter(maintain_order: bool) -> None:
     df = pl.DataFrame(
         {"g": [10, 10, 20, 10], "a": [D("1.0"), D("0.0"), D("2.0"), D("1.0")]}
     )
-    print(df)
     q = (
         df.lazy()
         .group_by("g", maintain_order=maintain_order)
