@@ -38,7 +38,7 @@ mod random;
 mod scan_sources;
 mod selector;
 #[cfg(feature = "serde")]
-pub mod serializable_plan;
+mod serializable_plan;
 mod statistics;
 #[cfg(feature = "strings")]
 pub mod string;
