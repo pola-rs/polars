@@ -6,7 +6,12 @@ use crate::plans::set_order::expr_pushdown::{
 };
 
 /// Returns whether the output of this `AExpr` contains any observable ordering.
-pub fn is_output_ordered(aexpr: &AExpr, arena: &Arena<AExpr>, frame_ordered: bool) -> bool {
+pub fn is_output_ordered(
+    aexpr: &AExpr,
+    arena: &Arena<AExpr>,
+    // Whether the input DataFrame is ordered
+    frame_ordered: bool,
+) -> bool {
     use ExprOutputOrder as O;
 
     match ExprOutputOrderResolver::new(if frame_ordered {
