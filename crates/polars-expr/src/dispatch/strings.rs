@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, handle_casting_failures};
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
