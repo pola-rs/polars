@@ -7,7 +7,7 @@ use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::{Offset, Offsets};
 use arrow::types::{NativeType, f16};
 #[cfg(feature = "dtype-decimal")]
-use num_traits::{Float, AsPrimitive};
+use num_traits::{AsPrimitive, Float};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::vec::PushUnchecked;
