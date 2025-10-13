@@ -203,6 +203,7 @@ fn lowercase(s: &Column) -> PolarsResult<Column> {
     Ok(ca.to_lowercase().into_column())
 }
 
+#[cfg(feature = "nightly")]
 pub(super) fn titlecase(_s: &Column) -> PolarsResult<Column> {
     feature_gated!("nightly", {
         let ca = _s.str()?;
