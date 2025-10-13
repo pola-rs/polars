@@ -9,6 +9,7 @@ use polars_core::prelude::*;
 use rayon::prelude::*;
 
 use super::*;
+use crate::dispatch::GroupsUdf;
 use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
 };
@@ -17,6 +18,7 @@ use crate::expressions::{
 pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,
     function: SpecialEq<Arc<dyn ColumnsUdf>>,
+    groups_function: Option<SpecialEq<Arc<dyn GroupsUdf>>>,
     expr: Expr,
     flags: FunctionFlags,
     function_operates_on_scalar: bool,
@@ -34,6 +36,7 @@ impl ApplyExpr {
     pub(crate) fn new(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
         function: SpecialEq<Arc<dyn ColumnsUdf>>,
+        groups_function: Option<SpecialEq<Arc<dyn GroupsUdf>>>,
         expr: Expr,
         options: FunctionOptions,
         allow_threading: bool,
@@ -51,6 +54,7 @@ impl ApplyExpr {
         Self {
             inputs,
             function,
+            groups_function,
             expr,
             flags: options.flags,
             function_operates_on_scalar,
@@ -434,6 +438,11 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
+        // Some function have specialized implementation.
+        if let Some(groups_function) = self.groups_function.as_ref() {
+            return groups_function.evaluate_on_groups(&self.inputs, df, groups, state);
+        }
+
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
