@@ -82,7 +82,7 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let c = if self.flags.returns_scalar() {
+        let c = if self.is_scalar() {
             let out = ca.explode(false).unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
@@ -93,7 +93,7 @@ impl ApplyExpr {
             ca.into_series().into()
         };
 
-        ac.with_values_and_args(c, true, None, false, self.flags.returns_scalar())?;
+        ac.with_values_and_args(c, true, None, false, self.is_scalar())?;
 
         Ok(ac)
     }
@@ -113,13 +113,11 @@ impl ApplyExpr {
         // Fix up groups for AggregatedScalar, so that we can pretend they are just normal groups.
         ac.set_groups_for_undefined_agg_states();
 
-        let s = ac.get_values();
-
-        let name = s.name().clone();
         let agg = match ac.agg_state() {
-            AggState::AggregatedScalar(_) => s.as_list().into_column(),
+            AggState::AggregatedScalar(s) => s.as_list().into_column(),
             _ => ac.aggregated(),
         };
+        let name = agg.name().clone();
 
         // Collection of empty list leads to a null dtype. See: #3687.
         if agg.is_empty() {
