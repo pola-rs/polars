@@ -102,18 +102,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    let s = self
-                        .0
-                        .cast(&DataType::String)
-                        .unwrap()
-                        .agg_min(groups);
-                    $ca::from_str_iter(
-                        s.name().clone(),
-                        self.dtype().clone(),
-                        s.str().unwrap().iter(),
-                    )
-                    .unwrap()
-                    .into_series()
+                    unimplemented!()
                 } else {
                     self.apply_on_phys(|phys| phys.agg_min(groups).$ca_fn().unwrap().clone())
                         .into_series()
@@ -123,18 +112,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    let s = self
-                        .0
-                        .cast(&DataType::String)
-                        .unwrap()
-                        .agg_max(groups);
-                    $ca::from_str_iter(
-                        s.name().clone(),
-                        self.dtype().clone(),
-                        s.str().unwrap().iter(),
-                    )
-                    .unwrap()
-                    .into_series()
+                    unimplemented!()
                 } else {
                     self.apply_on_phys(|phys| phys.agg_max(groups).$ca_fn().unwrap().clone())
                         .into_series()

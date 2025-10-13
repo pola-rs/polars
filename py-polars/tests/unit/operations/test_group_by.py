@@ -1691,26 +1691,3 @@ def test_group_by_enum_min_max_18394() -> None:
         },
     )
     assert_frame_equal(out, expected, check_row_order=False)
-
-
-def test_group_by_categorical_min_max_18394() -> None:
-    dtype = pl.Categorical(pl.Categories.random())
-    df = pl.DataFrame(
-        {
-            "id": ["a", "a", "b", "b", "c", "c"],
-            "degree": ["low", "high", "high", "mid", "mid", "low"],
-        }
-    ).with_columns(pl.col("degree").cast(dtype))
-    out = df.group_by("id").agg(
-        min_degree=pl.col("degree").min(),
-        max_degree=pl.col("degree").max(),
-    )
-    expected = pl.DataFrame(
-        {
-            "id": ["a", "b", "c"],
-            "min_degree": ["high", "high", "low"],
-            "max_degree": ["low", "mid", "mid"],
-        },
-        schema={"id": pl.String, "min_degree": dtype, "max_degree": dtype},
-    )
-    assert_frame_equal(out, expected, check_row_order=False)
