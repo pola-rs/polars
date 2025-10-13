@@ -92,7 +92,9 @@ pub fn null_count<'a>(
                 .into_par_iter()
                 .map(|(_, idx)| {
                     idx.iter()
-                        .map(|i| IdxSize::from(unsafe { validity.get_bit_unchecked(*i as usize) }))
+                        .map(|i| {
+                            IdxSize::from(!unsafe { validity.get_bit_unchecked(*i as usize) })
+                        })
                         .sum::<IdxSize>()
                 })
                 .collect(),
@@ -103,7 +105,7 @@ pub fn null_count<'a>(
                 .into_par_iter()
                 .map(|[start, length]| {
                     unsafe { validity.sliced_unchecked(*start as usize, *length as usize) }
-                        .set_bits() as IdxSize
+                        .unset_bits() as IdxSize
                 })
                 .collect(),
         };
