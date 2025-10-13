@@ -12,6 +12,22 @@ new_key_type! {
     pub(crate) struct DslPlanKey;
 }
 
+/// A representation of DslPlan that does not contain any `Arc` pointers, and
+/// instead uses indices to refer to DataFrames and other DslPlan nodes.
+///
+/// This data structure mirrors the `DslPlan` enum, but uses `DataFrameKey` and
+/// `DslPlanKey` to refer to DataFrames and other DslPlan nodes, respectively.
+/// We it like this, because serde does not support the keeping of a global
+/// state during (de)serialization.  Instead, we do a manual conversion to a
+/// serde-compatible representation, and then let serde handle the rest.
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub(crate) struct SerializableDslPlan {
+    pub(crate) root: DslPlanKey,
+    pub(crate) dataframes: SlotMap<DataFrameKey, DataFrame>,
+    pub(crate) dsl_plans: SlotMap<DslPlanKey, SerializableDslPlanNode>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum SerializableDslPlanNode {
     #[cfg(feature = "python")]
@@ -119,16 +135,6 @@ pub(crate) enum SerializableDslPlanNode {
         dsl: DslPlanKey,
         version: u32,
     },
-}
-
-/// A representation of DslPlan that does not contain any `Arc` pointers, and
-/// instead uses indices to refer to DataFrames and other DslPlan nodes.
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub(crate) struct SerializableDslPlan {
-    pub(crate) root: DslPlanKey,
-    pub(crate) dataframes: SlotMap<DataFrameKey, DataFrame>,
-    pub(crate) dsl_plans: SlotMap<DslPlanKey, SerializableDslPlanNode>,
 }
 
 #[derive(Debug, Default)]
