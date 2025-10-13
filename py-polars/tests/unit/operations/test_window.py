@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars._typing import WindowMappingStrategy
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -698,3 +703,18 @@ def test_window_fold_22493() -> None:
                 .alias("prod"),
             )
         )
+
+
+@pytest.mark.parametrize(
+    "mapping_strategy",
+    ["group_to_rows", "join", "explode"],
+)
+@pytest.mark.parametrize(
+    "query", [pl.col.x.sum().gather([0, 0, 0]), pl.col.x.implode().gather([0, 0, 0])]
+)
+def test_aggregate_gather_over_dtype_24632(
+    mapping_strategy: WindowMappingStrategy, query: pl.Expr
+) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    q = df.lazy().select(query.over(1, mapping_strategy=mapping_strategy))
+    assert q.collect_schema() == q.collect().schema
