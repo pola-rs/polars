@@ -72,7 +72,7 @@ def field(name: str | list[str]) -> Expr:
     >>> df.select(pl.col("a").struct.with_fields(pl.field("x") ** 2))
     shape: (2, 1)
     ┌───────────┐
-    │ first     │
+    │ a         │
     │ ---       │
     │ struct[2] │
     ╞═══════════╡
