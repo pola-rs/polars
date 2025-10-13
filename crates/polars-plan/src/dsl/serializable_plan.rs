@@ -1,14 +1,18 @@
 use polars_utils::unique_id::UniqueId;
 use serde::{Deserialize, Serialize};
+use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use super::*;
 
-type DataFrameKey = usize;
-type DslPlanKey = usize;
+new_key_type! {
+    /// A key type for identifying DataFrame nodes in a serialized DSL plan.
+    pub(crate) struct DataFrameKey;
 
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    /// A key type for identifying DslPlan nodes in a serialized DSL plan.
+    pub(crate) struct DslPlanKey;
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum SerializableDslPlanNode {
     #[cfg(feature = "python")]
     PythonScan {
@@ -117,41 +121,41 @@ pub(crate) enum SerializableDslPlanNode {
     },
 }
 
+/// A representation of DslPlan that does not contain any `Arc` pointers, and
+/// instead uses indices to refer to DataFrames and other DslPlan nodes.
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub(crate) struct SerializableDslPlan {
-    pub(crate) dataframes: Vec<DataFrame>,
-    pub(crate) dsl_plans: Vec<SerializableDslPlanNode>,
+    pub(crate) root: DslPlanKey,
+    pub(crate) dataframes: SlotMap<DataFrameKey, DataFrame>,
+    pub(crate) dsl_plans: SlotMap<DslPlanKey, SerializableDslPlanNode>,
 }
 
-struct Arenas {
-    dataframe_arena: Vec<DataFrame>,
-    dataframe_key_table: PlHashMap<*const DataFrame, DataFrameKey>,
-    dsl_plan_arena: Vec<SerializableDslPlanNode>,
-    dsl_plan_key_table: PlHashMap<*const DslPlan, DslPlanKey>,
+#[derive(Debug, Default)]
+struct SerializeArenas {
+    dataframes: SlotMap<DataFrameKey, DataFrame>,
+    dataframes_keys_table: PlIndexMap<*const DataFrame, DataFrameKey>,
+    dsl_plans: SlotMap<DslPlanKey, SerializableDslPlanNode>,
+    dsl_plans_keys_table: PlIndexMap<*const DslPlan, DslPlanKey>,
 }
 
 impl From<&DslPlan> for SerializableDslPlan {
     fn from(plan: &DslPlan) -> Self {
-        let mut arenas = Arenas {
-            dataframe_arena: Vec::new(),
-            dataframe_key_table: PlHashMap::default(),
-            dsl_plan_arena: Vec::new(),
-            dsl_plan_key_table: PlHashMap::default(),
-        };
+        let mut arenas = SerializeArenas::default();
         let root_dsl_plan = convert_dsl_plan_to_serializable_plan(plan, &mut arenas);
-        arenas.dsl_plan_arena.push(root_dsl_plan);
+
+        let root_key = arenas.dsl_plans.insert(root_dsl_plan);
         SerializableDslPlan {
-            dsl_plans: arenas.dsl_plan_arena,
-            dataframes: arenas.dataframe_arena,
+            root: root_key,
+            dataframes: arenas.dataframes,
+            dsl_plans: arenas.dsl_plans,
         }
     }
 }
 
 fn convert_dsl_plan_to_serializable_plan(
     plan: &DslPlan,
-    arenas: &mut Arenas,
+    arenas: &mut SerializeArenas,
 ) -> SerializableDslPlanNode {
     use {DslPlan as DP, SerializableDslPlanNode as SP};
 
@@ -309,74 +313,65 @@ fn convert_dsl_plan_to_serializable_plan(
     }
 }
 
-fn dataframe_key(df: &Arc<DataFrame>, arenas: &mut Arenas) -> DataFrameKey {
+fn dataframe_key(df: &Arc<DataFrame>, arenas: &mut SerializeArenas) -> DataFrameKey {
     let ptr = Arc::as_ptr(df);
-    if let Some(key) = arenas.dataframe_key_table.get(&ptr) {
+    if let Some(key) = arenas.dataframes_keys_table.get(&ptr) {
         *key
     } else {
-        let key = arenas.dataframe_arena.len();
-        arenas.dataframe_arena.push((**df).clone());
-        arenas.dataframe_key_table.insert(ptr, key);
+        let key = arenas.dataframes.insert((**df).clone());
+        arenas.dataframes_keys_table.insert(ptr, key);
         key
     }
 }
 
-fn dsl_plan_key(plan: &Arc<DslPlan>, arenas: &mut Arenas) -> DslPlanKey {
+fn dsl_plan_key(plan: &Arc<DslPlan>, areas: &mut SerializeArenas) -> DslPlanKey {
     let ptr = Arc::as_ptr(plan);
-    if let Some(key) = arenas.dsl_plan_key_table.get(&ptr) {
+    if let Some(key) = areas.dsl_plans_keys_table.get(&ptr) {
         *key
     } else {
-        let serializable = convert_dsl_plan_to_serializable_plan(plan, arenas);
-        let key = arenas.dsl_plan_arena.len();
-        arenas.dsl_plan_arena.push(serializable);
-        arenas.dsl_plan_key_table.insert(ptr, key);
+        let ser_plan = convert_dsl_plan_to_serializable_plan(plan, areas);
+        let key = areas.dsl_plans.insert(ser_plan);
+        areas.dsl_plans_keys_table.insert(ptr, key);
         key
     }
 }
 
-impl TryFrom<SerializableDslPlan> for DslPlan {
+#[derive(Debug, Default)]
+struct DeserializeArenas {
+    dataframes: SecondaryMap<DataFrameKey, Arc<DataFrame>>,
+    dsl_plans: SecondaryMap<DslPlanKey, Arc<DslPlan>>,
+}
+
+impl TryFrom<&SerializableDslPlan> for DslPlan {
     type Error = PolarsError;
 
-    fn try_from(ser_dsl_plan: SerializableDslPlan) -> Result<Self, Self::Error> {
-        let dataframes = ser_dsl_plan
-            .dataframes
-            .into_iter()
-            .map(Arc::new)
-            .collect::<Vec<_>>();
-        let mut dsl_plans = ser_dsl_plan.dsl_plans;
-        let dsl_plan_root = dsl_plans.pop().ok_or(polars_err!(
-            ComputeError: "Serialized DSL plan contains no nodes"
-        ))?;
-        let mut de_dsl_plans: Vec<Arc<DslPlan>> = Vec::with_capacity(dsl_plans.len());
-        for node in dsl_plans.iter() {
-            de_dsl_plans.push(Arc::new(try_convert_serializable_plan_to_dsl_plan(
-                node,
-                &dataframes,
-                &de_dsl_plans,
-            )?));
-        }
-        try_convert_serializable_plan_to_dsl_plan(&dsl_plan_root, &dataframes, &de_dsl_plans)
+    fn try_from(ser_dsl_plan: &SerializableDslPlan) -> Result<Self, Self::Error> {
+        let mut arenas = DeserializeArenas::default();
+        try_convert_serializable_plan_to_dsl_plan(ser_dsl_plan.root, ser_dsl_plan, &mut arenas)
     }
 }
 
 fn try_convert_serializable_plan_to_dsl_plan(
-    node: &SerializableDslPlanNode,
-    dataframes: &[Arc<DataFrame>],
-    dsl_plans: &[Arc<DslPlan>],
+    node_key: DslPlanKey,
+    ser_dsl_plan: &SerializableDslPlan,
+    arenas: &mut DeserializeArenas,
 ) -> Result<DslPlan, PolarsError> {
     use {DslPlan as DP, SerializableDslPlanNode as SP};
 
+    let node = ser_dsl_plan.dsl_plans.get(node_key).ok_or(polars_err!(
+        ComputeError: "Could not find DslPlan node at index {:?} in serialized plan", node_key
+    ))?;
     match node {
         #[cfg(feature = "python")]
         SP::PythonScan { options } => Ok(DP::PythonScan {
             options: options.clone(),
         }),
         SP::Filter { input, predicate } => Ok(DP::Filter {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             predicate: predicate.clone(),
         }),
         SP::Cache { input, id } => Ok(DP::Cache {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             id: *id,
         }),
         SP::Scan {
@@ -390,7 +385,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             cached_ir: Default::default(),
         }),
         SP::DataFrameScan { df, schema } => Ok(DP::DataFrameScan {
-            df: get_dataframe(*df, dataframes)?,
+            df: get_dataframe(*df, ser_dsl_plan, arenas)?,
             schema: schema.clone(),
         }),
         SP::Select {
@@ -399,7 +394,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             options,
         } => Ok(DP::Select {
             expr: expr.clone(),
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             options: *options,
         }),
         SP::GroupBy {
@@ -410,7 +405,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             options,
             apply,
         } => Ok(DP::GroupBy {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             keys: keys.clone(),
             aggs: aggs.clone(),
             maintain_order: *maintain_order,
@@ -425,8 +420,8 @@ fn try_convert_serializable_plan_to_dsl_plan(
             predicates,
             options,
         } => Ok(DP::Join {
-            input_left: get_dsl_plan(*input_left, dsl_plans)?,
-            input_right: get_dsl_plan(*input_right, dsl_plans)?,
+            input_left: get_dsl_plan(*input_left, ser_dsl_plan, arenas)?,
+            input_right: get_dsl_plan(*input_right, ser_dsl_plan, arenas)?,
             left_on: left_on.clone(),
             right_on: right_on.clone(),
             predicates: predicates.clone(),
@@ -437,7 +432,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             exprs,
             options,
         } => Ok(DP::HStack {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             exprs: exprs.clone(),
             options: *options,
         }),
@@ -447,17 +442,17 @@ fn try_convert_serializable_plan_to_dsl_plan(
             per_column,
             extra_columns,
         } => Ok(DP::MatchToSchema {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             match_schema: match_schema.clone(),
             per_column: per_column.clone(),
             extra_columns: *extra_columns,
         }),
         SP::PipeWithSchema { input, callback } => Ok(DP::PipeWithSchema {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             callback: callback.clone(),
         }),
         SP::Distinct { input, options } => Ok(DP::Distinct {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             options: options.clone(),
         }),
         SP::Sort {
@@ -466,18 +461,18 @@ fn try_convert_serializable_plan_to_dsl_plan(
             slice,
             sort_options,
         } => Ok(DP::Sort {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             by_column: by_column.clone(),
             slice: *slice,
             sort_options: sort_options.clone(),
         }),
         SP::Slice { input, offset, len } => Ok(DP::Slice {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             offset: *offset,
             len: *len,
         }),
         SP::MapFunction { input, function } => Ok(DP::MapFunction {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             function: function.clone(),
         }),
         SP::Union { inputs, args } => Ok(DP::Union {
@@ -489,11 +484,11 @@ fn try_convert_serializable_plan_to_dsl_plan(
             options: *options,
         }),
         SP::ExtContext { input, contexts } => Ok(DP::ExtContext {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             contexts: contexts.clone(),
         }),
         SP::Sink { input, payload } => Ok(DP::Sink {
-            input: get_dsl_plan(*input, dsl_plans)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             payload: payload.clone(),
         }),
         SP::SinkMultiple { inputs } => Ok(DP::SinkMultiple {
@@ -505,37 +500,51 @@ fn try_convert_serializable_plan_to_dsl_plan(
             input_right,
             key,
         } => Ok(DP::MergeSorted {
-            input_left: get_dsl_plan(*input_left, dsl_plans)?,
-            input_right: get_dsl_plan(*input_right, dsl_plans)?,
+            input_left: get_dsl_plan(*input_left, ser_dsl_plan, arenas)?,
+            input_right: get_dsl_plan(*input_right, ser_dsl_plan, arenas)?,
             key: key.clone(),
         }),
         SP::IR {
             dsl: dsl_key,
             version,
         } => Ok(DP::IR {
-            dsl: get_dsl_plan(*dsl_key, dsl_plans)?,
+            dsl: get_dsl_plan(*dsl_key, ser_dsl_plan, arenas)?,
             version: *version,
             node: Default::default(),
         }),
     }
 }
 
-fn get_dataframe(key: usize, dataframes: &[Arc<DataFrame>]) -> Result<Arc<DataFrame>, PolarsError> {
-    Ok(dataframes
-        .get(key)
-        .ok_or(polars_err!(
-            ComputeError: "Could not find DataFrame node at index {} in serialized plan", key
-        ))?
-        .clone())
+fn get_dataframe(
+    key: DataFrameKey,
+    ser_dsl_plan: &SerializableDslPlan,
+    arenas: &mut DeserializeArenas,
+) -> Result<Arc<DataFrame>, PolarsError> {
+    if let Some(df) = arenas.dataframes.get(key) {
+        Ok(df.clone())
+    } else {
+        let df = ser_dsl_plan.dataframes.get(key).ok_or(polars_err!(
+            ComputeError: "Could not find DataFrame at index {:?} in serialized plan", key
+        ))?;
+        let arc_df = Arc::new(df.clone());
+        arenas.dataframes.insert(key, arc_df.clone());
+        Ok(arc_df)
+    }
 }
 
-fn get_dsl_plan(key: usize, dsl_plans: &[Arc<DslPlan>]) -> Result<Arc<DslPlan>, PolarsError> {
-    Ok(dsl_plans
-        .get(key)
-        .ok_or(polars_err!(
-            ComputeError: "Could not find DslPlan node at index {} in serialized plan", key
-        ))?
-        .clone())
+fn get_dsl_plan(
+    key: DslPlanKey,
+    ser_dsl_plan: &SerializableDslPlan,
+    arenas: &mut DeserializeArenas,
+) -> Result<Arc<DslPlan>, PolarsError> {
+    if let Some(dsl_plan) = arenas.dsl_plans.get(key) {
+        Ok(dsl_plan.clone())
+    } else {
+        let dsl_plan = try_convert_serializable_plan_to_dsl_plan(key, ser_dsl_plan, arenas)?;
+        let arc_dsl_plan = Arc::new(dsl_plan);
+        arenas.dsl_plans.insert(key, arc_dsl_plan.clone());
+        Ok(arc_dsl_plan)
+    }
 }
 
 #[cfg(test)]
