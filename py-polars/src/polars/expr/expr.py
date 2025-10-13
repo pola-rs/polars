@@ -3558,8 +3558,7 @@ class Expr:
 
         Mapping strategy `join` joins the values by group.
 
-        >>> df.with_columns(c_pairs=pl.col("c").head(2).over("a",
-        mapping_strategy="join"))
+        >>> df.with_columns(c_pairs=pl.col("c").head(2).over("a", mapping_strategy="join"))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────────┐
         │ a   ┆ b   ┆ c   ┆ c_pairs   │
@@ -3575,8 +3574,7 @@ class Expr:
 
         Mapping strategy `explode` maps the values to new rows, changing the shape.
 
-        >>> df.select(c_first_2=pl.col("c").head(2).over("a",
-        mapping_strategy="explode"))
+        >>> df.select(c_first_2=pl.col("c").head(2).over("a", mapping_strategy="explode"))
         shape: (4, 1)
         ┌───────────┐
         │ c_first_2 │
