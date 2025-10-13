@@ -208,6 +208,7 @@ impl Default for DslPlan {
     }
 }
 
+#[cfg(feature = "serde")]
 impl serde::Serialize for DslPlan {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -219,6 +220,7 @@ impl serde::Serialize for DslPlan {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'a> serde::Deserialize<'a> for DslPlan {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
