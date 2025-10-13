@@ -204,11 +204,9 @@ fn lowercase(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "nightly")]
-pub(super) fn titlecase(_s: &Column) -> PolarsResult<Column> {
-    feature_gated!("nightly", {
-        let ca = _s.str()?;
-        Ok(ca.to_titlecase().into_column())
-    })
+pub(super) fn titlecase(s: &Column) -> PolarsResult<Column> {
+    let ca = s.str()?;
+    Ok(ca.to_titlecase().into_column())
 }
 
 pub(super) fn len_chars(s: &Column) -> PolarsResult<Column> {
