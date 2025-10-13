@@ -76,12 +76,7 @@ impl ExprOutputOrder {
 pub fn zip(
     orders: impl IntoIterator<Item = Result<ExprOutputOrder, FrameOrderObserved>>,
 ) -> Result<ExprOutputOrder, FrameOrderObserved> {
-    use ExprOutputOrder as O;
-    let mut orders = orders.into_iter();
-    let Some(output_order) = orders.next() else {
-        return Ok(O::Independent);
-    };
-    let mut output_order = output_order?;
+    let mut output_order = ExprOutputOrder::None;
     for order in orders {
         output_order = output_order.zip_with(order?)?;
     }
@@ -94,17 +89,44 @@ pub fn adjust_for_with_columns_context(
     order?.zip_with(ExprOutputOrder::Frame)
 }
 
-/// Determine whether the output observes the order of the expressions input frame.
+/// Returns the observable orderings in the output of this `AExpr`.
 ///
-/// This answers the question:
-/// > Given that my output is (un)ordered, can my input be unordered?
+/// If within the expression tree an expression observes a `Frame` ordering, this instead returns
+/// `Err(FrameOrderObserved)`.
+pub fn get_observable_orders(
+    aexpr: &AExpr,
+    expr_arena: &Arena<AExpr>,
+) -> Result<ExprOutputOrder, FrameOrderObserved> {
+    ExprOutputOrderResolver::new(ExprOutputOrder::Frame)
+        .resolve_observable_orderings(aexpr, expr_arena)
+}
+
+pub(super) struct ExprOutputOrderResolver {
+    column_ordering: ExprOutputOrder,
+}
+
+impl ExprOutputOrderResolver {
+    pub(super) fn new(column_ordering: ExprOutputOrder) -> Self {
+        Self { column_ordering }
+    }
+
+    pub(super) fn resolve_observable_orderings(
+        &self,
+        aexpr: &AExpr,
+        expr_arena: &Arena<AExpr>,
+    ) -> Result<ExprOutputOrder, FrameOrderObserved> {
+        get_observable_orders_impl(self, aexpr, expr_arena)
+    }
+}
+
 #[recursive::recursive]
-pub fn get_frame_observing(
+fn get_observable_orders_impl(
+    slf: &ExprOutputOrderResolver,
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> Result<ExprOutputOrder, FrameOrderObserved> {
     macro_rules! rec {
-        ($expr:expr) => {{ get_frame_observing(expr_arena.get($expr), expr_arena)? }};
+        ($expr:expr) => {{ get_observable_orders_impl(slf, expr_arena.get($expr), expr_arena)? }};
     }
 
     macro_rules! zip {
@@ -123,7 +145,7 @@ pub fn get_frame_observing(
         // col(a).explode() * col(b).explode()
         AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
-        AExpr::Column(_) => O::Frame,
+        AExpr::Column(_) => slf.column_ordering,
         AExpr::Literal(lv) if lv.is_scalar() => O::None,
         AExpr::Literal(_) => O::Independent,
 
@@ -201,7 +223,15 @@ pub fn get_frame_observing(
 
             // @NOTE: This aggregation makes very little sense. We do the most pessimistic thing
             // possible here.
-            IRAggExpr::AggGroups(_) => return Err(FrameOrderObserved),
+            IRAggExpr::AggGroups(node) => {
+                let input_ordering = rec!(*node);
+
+                if input_ordering.has_frame_ordering() {
+                    return Err(FrameOrderObserved);
+                }
+
+                input_ordering | O::Independent
+            },
         },
 
         AExpr::Gather {
