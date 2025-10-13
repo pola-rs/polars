@@ -1667,6 +1667,31 @@ def test_double_aggregations(maintain_order: bool) -> None:
     )
 
 
+def test_group_by_length_preserving_on_scalar() -> None:
+    df = pl.DataFrame({"a": [[1], [2], [3]]})
+    df = df.group_by(pl.lit(1, pl.Int64)).agg(
+        a=pl.col.a.first().reverse(),
+        b=pl.col.a.first(),
+        c=pl.col.a.reverse(),
+        d=pl.lit(1, pl.Int64).reverse(),
+        e=pl.lit(1, pl.Int64).unique(),
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "literal": [1],
+                "a": [[1]],
+                "b": [[1]],
+                "c": [[[3], [2], [1]]],
+                "d": [1],
+                "e": [[1]],
+            }
+        ),
+    )
+
+
 def test_group_by_enum_min_max_18394() -> None:
     df = pl.DataFrame(
         {

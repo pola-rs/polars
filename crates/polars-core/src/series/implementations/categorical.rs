@@ -222,6 +222,11 @@ macro_rules! impl_cat_series {
                 unsafe { self.apply_on_phys(|cats| cats.take_unchecked(indices)).into_series() }
             }
 
+            fn deposit(&self, validity: &Bitmap) -> Series {
+                unsafe { self.apply_on_phys(|cats| cats.deposit(validity)) }
+                    .into_series()
+            }
+
             fn len(&self) -> usize {
                 self.0.len()
             }

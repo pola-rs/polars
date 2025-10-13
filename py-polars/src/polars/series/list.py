@@ -962,6 +962,37 @@ class ListNameSpace:
         ]
         """
 
+    def agg(self, expr: Expr) -> Series:
+        """
+
+        Run any polars aggregation expression against the list' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, None], [42, 13], [None, None]])
+        >>> s.list.agg(pl.element().null_count())
+        shape: (3,)
+        Series: 'a' [u32]
+        [
+            1
+            0
+            2
+        ]
+        >>> s.list.agg(pl.element().drop_nulls())
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [1]
+            [42, 13]
+            []
+        ]
+        """
+
     def filter(self, predicate: Expr) -> Series:
         """
         Filter elements in each list by a boolean expression, returning a new Series of lists.
