@@ -34,7 +34,7 @@ tokio = { workspace = true, features = ["sync"] }
 
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
-polars-expr = { workspace = true }
+polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
 polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct"] }
 polars-parquet = { workspace = true }

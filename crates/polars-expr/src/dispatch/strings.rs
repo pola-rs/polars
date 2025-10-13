@@ -81,6 +81,7 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
         Reverse => map!(strings::reverse),
         Uppercase => map!(uppercase),
         Lowercase => map!(lowercase),
+        #[cfg(feature = "nightly")]
         Titlecase => map!(strings::titlecase),
         StripChars => map_as_slice!(strings::strip_chars),
         StripCharsStart => map_as_slice!(strings::strip_chars_start),

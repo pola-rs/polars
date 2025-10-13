@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 description = "Physical expression implementation of the Polars project."
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [dependencies]
 arrow = { workspace = true }
 bitflags = { workspace = true }
@@ -90,7 +93,7 @@ diff = ["polars-plan/diff"]
 pct_change = ["polars-plan/pct_change"]
 interpolate = ["polars-plan/interpolate"]
 interpolate_by = ["polars-plan/interpolate_by"]
-timezones = ["polars-plan/timezones"]
+timezones = ["regex", "polars-plan/timezones"]
 unique_counts = ["polars-plan/unique_counts"]
 repeat_by = ["polars-plan/repeat_by"]
 mode = ["polars-plan/mode"]
@@ -112,7 +115,7 @@ log = ["polars-plan/log"]
 fused = ["polars-plan/fused"]
 ffi_plugin = ["polars-plan/ffi_plugin", "libloading"]
 regex = ["polars-plan/regex", "dep:regex"]
-extract_groups = ["polars-plan/extract_groups"]
+extract_groups = ["regex", "polars-plan/extract_groups"]
 find_many = ["polars-ops/find_many", "polars-plan/find_many"]
 json = ["polars-plan/json", "polars-json"]
 extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath"]
