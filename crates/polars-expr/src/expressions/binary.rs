@@ -139,16 +139,12 @@ impl BinaryExpr {
         }
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
-            (_, AggState::AggregatedList(s))
-            | (AggState::AggregatedList(s), _) => {
-
+            (_, AggState::AggregatedList(s)) | (AggState::AggregatedList(s), _) => {
                 let ca = s.list().unwrap();
-                let [col_l, col_r] = [&ac_l, &ac_r]
-                    .map(|ac| ac.flat_naive().into_owned());
+                let [col_l, col_r] = [&ac_l, &ac_r].map(|ac| ac.flat_naive().into_owned());
 
                 let out = ca.apply_to_inner(&|_| {
-                    apply_operator(&col_l, &col_r, self.op)
-                        .map(|c| c.take_materialized_series())
+                    apply_operator(&col_l, &col_r, self.op).map(|c| c.take_materialized_series())
                 })?;
                 let out = out.into_column();
 
