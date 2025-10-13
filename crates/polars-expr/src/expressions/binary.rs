@@ -138,23 +138,16 @@ impl BinaryExpr {
             ac_l.groups().check_lengths(ac_r.groups())?;
         }
 
-        // The first non-LiteralScalar AC will be used as the base AC to retain the context
-        let left_is_literal = ac_l.is_literal();
+        match (ac_l.agg_state(), ac_r.agg_state()) {
+            (_, AggState::AggregatedList(s))
+            | (AggState::AggregatedList(s), _) => {
 
-        match if !left_is_literal {
-            ac_l.agg_state()
-        } else {
-            ac_r.agg_state()
-        } {
-            AggState::AggregatedList(s) => {
                 let ca = s.list().unwrap();
-                let cols = [&ac_l, &ac_r]
-                    .iter()
-                    .map(|ac| ac.flat_naive().into_owned())
-                    .collect::<Vec<_>>();
+                let [col_l, col_r] = [&ac_l, &ac_r]
+                    .map(|ac| ac.flat_naive().into_owned());
 
                 let out = ca.apply_to_inner(&|_| {
-                    apply_operator(&cols[0], &cols[1], self.op)
+                    apply_operator(&col_l, &col_r, self.op)
                         .map(|c| c.take_materialized_series())
                 })?;
                 let out = out.into_column();
