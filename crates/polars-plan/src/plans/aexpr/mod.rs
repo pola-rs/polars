@@ -366,7 +366,7 @@ impl AExpr {
 
     /// Is the top-level expression fallible based on the data values.
     pub fn is_fallible_top_level(&self, arena: &Arena<AExpr>) -> bool {
-        #[expect(clippy::collapsible_match, clippy::match_like_matches_macro)]
+        #[allow(clippy::collapsible_match, clippy::match_like_matches_macro)]
         match self {
             AExpr::Function {
                 input, function, ..

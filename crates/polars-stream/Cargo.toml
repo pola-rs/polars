@@ -34,7 +34,7 @@ tokio = { workspace = true, features = ["sync"] }
 
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
-polars-expr = { workspace = true }
+polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
 polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct"] }
 polars-parquet = { workspace = true }
@@ -44,7 +44,7 @@ polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "arg_where"
 version_check = { workspace = true }
 
 [features]
-nightly = []
+nightly = ["polars-expr/nightly"]
 approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique"]
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-mem-engine/merge_sorted"]
