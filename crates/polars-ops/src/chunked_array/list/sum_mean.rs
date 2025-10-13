@@ -70,11 +70,20 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
 
 pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
-    // TODO: add fast path for smaller ints?
     let mut out = match inner_dtype {
         Boolean => {
             let out: IdxCa =
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<IdxSize>().unwrap()));
+            out.into_series()
+        },
+        UInt8 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
+            out.into_series()
+        },
+        UInt16 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
             out.into_series()
         },
         UInt32 => {
@@ -85,6 +94,16 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
         UInt64 => {
             let out: UInt64Chunked =
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<u64>().unwrap()));
+            out.into_series()
+        },
+        Int8 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
+            out.into_series()
+        },
+        Int16 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
             out.into_series()
         },
         Int32 => {

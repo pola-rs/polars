@@ -61,8 +61,24 @@ def field(name: str | list[str]) -> Expr:
     """
     Select a field in the current `struct.with_fields` scope.
 
+    Parameters
+    ----------
     name
         Name of the field(s) to select.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [{"x": 5, "y": 2}, {"x": 3, "y": 4}]})
+    >>> df.select(pl.col("a").struct.with_fields(pl.field("x") ** 2))
+    shape: (2, 1)
+    ┌───────────┐
+    │ a         │
+    │ ---       │
+    │ struct[2] │
+    ╞═══════════╡
+    │ {25,2}    │
+    │ {9,4}     │
+    └───────────┘
     """
     if isinstance(name, str):
         name = [name]
@@ -687,6 +703,9 @@ def nth(*indices: int | Sequence[int], strict: bool = True) -> Expr:
     ----------
     indices
         One or more indices representing the columns to retrieve.
+    strict
+        By default, all specified indices must be valid; if any index is out of bounds,
+        an error is raised. If set to `False`, out-of-bounds indices are ignored.
 
     Examples
     --------
@@ -1639,12 +1658,13 @@ def cum_reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
     return_dtype
         Output datatype.
         If not set, the dtype will be inferred based on the dtype of the input
         expressions.
-    include_init
-        Include the initial accumulator state as struct field.
 
     Examples
     --------
@@ -2680,12 +2700,14 @@ def row_index(name: str = "index") -> pl.Expr:
     The length of the returned sequence will match the context length, and the
     datatype will match the one returned by `get_index_dtype()`.
 
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
+    .. versionadded:: 1.32.0
 
     If you would like to generate sequences with custom offsets / length /
     step size / datatypes, it is recommended to use `int_range` instead.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------

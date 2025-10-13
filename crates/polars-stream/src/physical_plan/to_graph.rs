@@ -582,6 +582,15 @@ fn to_graph_rec<'a>(
             )
         },
 
+        GatherEvery { input, n, offset } => {
+            let (n, offset) = (*n, *offset);
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::gather_every::GatherEveryNode::new(n, offset)?,
+                [(input_key, input.port)],
+            )
+        },
+
         Rle(input) => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;

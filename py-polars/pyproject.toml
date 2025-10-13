@@ -9,7 +9,7 @@ readme = "README.md"
 authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
-version = "1.34.0b5"
+version = "1.34.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 
@@ -32,7 +32,7 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
-dependencies = ["polars-runtime-32 == 1.34.0b5"]
+dependencies = ["polars-runtime-32 == 1.34.0"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -42,8 +42,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # Runtimes
-rt64 = ["polars-runtime-64 == 1.34.0b5"]
-rtcompat = ["polars-runtime-compat == 1.34.0b5"]
+rt64 = ["polars-runtime-64 == 1.34.0"]
+rtcompat = ["polars-runtime-compat == 1.34.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.0.1a1"]
@@ -161,6 +161,7 @@ select = [
   "B", # flake8-bugbear
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
+  "D417", # undocumented-param
   "E", # pycodestyle
   "EM", # flake8-errmsg
   "F", # pyflakes

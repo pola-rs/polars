@@ -262,3 +262,39 @@ def test_list_eval_struct_in_group_by_23846() -> None:
     expected = pl.Series("x", [[5, 5], [5]])
     assert_series_equal(q.collect().to_series().sort(), expected.sort())
     assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("filter_flag", [True, False])
+@pytest.mark.parametrize(
+    "col",
+    [
+        [],
+        [1, 2, 3],
+        [[1, 2], [3]],
+    ],
+)
+def test_cumulative_eval_on_empty_list_schema_24635(
+    col: list[Any], filter_flag: bool
+) -> None:
+    df = pl.DataFrame({"n": col})
+
+    # over
+    q = (
+        df.lazy()
+        # Force empty with a filter that removes everything
+        .filter(pl.lit(filter_flag))
+        .select(pl.col("n").cumulative_eval(pl.element().last()).over(1))
+    )
+    expected = df.head(df.height if filter_flag else 0)
+    assert_frame_equal(q.collect(), expected)
+    assert q.collect_schema() == q.collect().schema
+
+    # group_by
+    q = (
+        df.lazy()
+        # Force empty with a filter that removes everything
+        .filter(pl.lit(filter_flag))
+        .group_by([1])
+        .agg(pl.col("n").cumulative_eval(pl.element().last()))
+    )
+    assert q.collect_schema() == q.collect().schema

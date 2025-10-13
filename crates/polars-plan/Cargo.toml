@@ -86,7 +86,7 @@ strings = ["polars-core/strings", "polars-ops/strings"]
 future = []
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
-dtype-u128 = ["polars-core/dtype-u128"]
+dtype-u128 = ["polars-core/dtype-u128", "polars-ops/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
@@ -125,6 +125,11 @@ dsl-schema = [
   "polars-utils/dsl-schema",
   "polars-compute/dsl-schema",
 ]
+ir_text_plan_graph = [
+  "dep:serde_json",
+  "ir_serde",
+  "serde",
+]
 
 # operations
 bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
@@ -142,7 +147,7 @@ asof_join = ["polars-time", "polars-ops/asof_join"]
 iejoin = ["polars-ops/iejoin"]
 concat_str = []
 business = ["polars-ops/business"]
-range = []
+range = ["dtype-array"]
 mode = ["polars-ops/mode"]
 cum_agg = ["polars-ops/cum_agg"]
 interpolate = ["polars-ops/interpolate"]

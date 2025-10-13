@@ -21,7 +21,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::is_scalar_ae;
+pub use scalar::{is_length_preserving_ae, is_scalar_ae};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 mod properties;
@@ -284,9 +284,8 @@ impl AExpr {
             },
             AExpr::Agg(_) | AExpr::Len => true,
             AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Eval { expr, variant, .. } => match variant {
-                EvalVariant::List => is_scalar_ae(*expr, arena),
-                EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
+            AExpr::Eval { expr, variant, .. } => {
+                variant.is_length_preserving() && is_scalar_ae(*expr, arena)
             },
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
@@ -296,6 +295,132 @@ impl AExpr {
             | AExpr::Column(_)
             | AExpr::Filter { .. }
             | AExpr::Slice { .. } => false,
+        }
+    }
+
+    #[recursive::recursive]
+    pub fn is_length_preserving(&self, arena: &Arena<AExpr>) -> bool {
+        fn broadcasting_input_length_preserving(
+            n: impl IntoIterator<Item = Node>,
+            arena: &Arena<AExpr>,
+        ) -> bool {
+            let mut num_items = 0;
+            let mut num_length_preserving = 0;
+            let mut num_scalar_or_length_preserving = 0;
+
+            for n in n {
+                num_items += 1;
+
+                if is_length_preserving_ae(n, arena) {
+                    num_length_preserving += 1;
+                    num_scalar_or_length_preserving += 1;
+                } else if is_scalar_ae(n, arena) {
+                    num_scalar_or_length_preserving += 1;
+                }
+            }
+
+            num_length_preserving > 0 && num_scalar_or_length_preserving == num_items
+        }
+
+        match self {
+            AExpr::Column(_) => true,
+
+            AExpr::Literal(_) | AExpr::Agg(_) | AExpr::Len => false,
+            AExpr::Function { options, input, .. }
+            | AExpr::AnonymousFunction { options, input, .. } => {
+                if options.flags.is_elementwise() {
+                    broadcasting_input_length_preserving(input.iter().map(|e| e.node()), arena)
+                } else if options.flags.is_length_preserving() {
+                    input.iter().all(|e| e.is_length_preserving(arena))
+                } else {
+                    false
+                }
+            },
+            AExpr::BinaryExpr { left, right, .. } => {
+                broadcasting_input_length_preserving([*left, *right], arena)
+            },
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => broadcasting_input_length_preserving([*predicate, *truthy, *falsy], arena),
+            AExpr::Cast { expr, .. } => is_length_preserving_ae(*expr, arena),
+            AExpr::Eval { expr, variant, .. } => {
+                variant.is_length_preserving() && is_length_preserving_ae(*expr, arena)
+            },
+            AExpr::Sort { expr, .. } => is_length_preserving_ae(*expr, arena),
+            AExpr::Gather {
+                expr: _,
+                idx,
+                returns_scalar,
+            } => !returns_scalar && is_length_preserving_ae(*idx, arena),
+            AExpr::SortBy { expr, by, .. } => broadcasting_input_length_preserving(
+                std::iter::once(*expr).chain(by.iter().copied()),
+                arena,
+            ),
+            AExpr::Window { function, .. } => is_length_preserving_ae(*function, arena),
+
+            AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
+        }
+    }
+
+    /// Is the top-level expression fallible based on the data values.
+    pub fn is_fallible_top_level(&self, arena: &Arena<AExpr>) -> bool {
+        #[expect(clippy::collapsible_match, clippy::match_like_matches_macro)]
+        match self {
+            AExpr::Function {
+                input, function, ..
+            } => match function {
+                IRFunctionExpr::ListExpr(f) => match f {
+                    IRListFunction::Get(false) => true,
+                    #[cfg(feature = "list_gather")]
+                    IRListFunction::Gather(false) => true,
+                    _ => false,
+                },
+                #[cfg(feature = "dtype-array")]
+                IRFunctionExpr::ArrayExpr(f) => match f {
+                    IRArrayFunction::Get(false) => true,
+                    _ => false,
+                },
+                #[cfg(all(feature = "strings", feature = "temporal"))]
+                IRFunctionExpr::StringExpr(f) => match f {
+                    IRStringFunction::Strptime(_, strptime_options) => {
+                        debug_assert!(input.len() <= 2);
+
+                        let ambiguous_arg_is_infallible_scalar = input
+                            .get(1)
+                            .map(|x| arena.get(x.node()))
+                            .is_some_and(|ae| match ae {
+                                AExpr::Literal(lv) => {
+                                    lv.extract_str().is_some_and(|ambiguous| match ambiguous {
+                                        "earliest" | "latest" | "null" => true,
+                                        "raise" => false,
+                                        v => {
+                                            if cfg!(debug_assertions) {
+                                                panic!("unhandled parameter to ambiguous: {v}")
+                                            }
+                                            false
+                                        },
+                                    })
+                                },
+                                _ => false,
+                            });
+
+                        let ambiguous_is_fallible = !ambiguous_arg_is_infallible_scalar;
+
+                        !matches!(arena.get(input[0].node()), AExpr::Literal(_))
+                            && (strptime_options.strict || ambiguous_is_fallible)
+                    },
+                    _ => false,
+                },
+                _ => false,
+            },
+            AExpr::Cast {
+                expr,
+                dtype: _,
+                options: CastOptions::Strict,
+            } => !matches!(arena.get(*expr), AExpr::Literal(_)),
+            _ => false,
         }
     }
 }

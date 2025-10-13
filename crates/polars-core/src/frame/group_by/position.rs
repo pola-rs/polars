@@ -256,8 +256,11 @@ pub enum GroupsType {
     Slice {
         // the groups slices
         groups: GroupsSlice,
-        // indicates if we do a rolling group_by
-        rolling: bool,
+        // Indicates if the groups may overlap, as is typically the case with `rolling`
+        // or `dynamic_group_by`.
+        // Example use cases: avoid memory explosion when calling aggregation; unroll groups
+        // when exploding an aggregated list with overlapping groups.
+        overlapping: bool,
     },
 }
 
@@ -360,6 +363,16 @@ impl GroupsType {
             GroupsType::Idx(groups) => groups.is_sorted_flag(),
             GroupsType::Slice { .. } => true,
         }
+    }
+
+    pub fn is_overlapping(&self) -> bool {
+        matches!(
+            self,
+            GroupsType::Slice {
+                overlapping: true,
+                ..
+            }
+        )
     }
 
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
@@ -487,6 +500,16 @@ impl GroupsType {
     pub fn into_sliceable(self) -> GroupPositions {
         let len = self.len();
         slice_groups(Arc::new(self), 0, len)
+    }
+
+    pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
+        if std::ptr::eq(self, other) {
+            return Ok(());
+        }
+        polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
+            a.len() == b.len()
+        }), ComputeError: "expressions must have matching group lengths");
+        Ok(())
     }
 }
 
@@ -669,7 +692,9 @@ impl GroupPositions {
     pub fn unroll(mut self) -> GroupPositions {
         match self.sliced.deref_mut() {
             GroupsType::Idx(_) => self,
-            GroupsType::Slice { rolling: false, .. } => self,
+            GroupsType::Slice {
+                overlapping: false, ..
+            } => self,
             GroupsType::Slice { groups, .. } => {
                 // SAFETY: sliced is a shallow partial clone of original.
                 // A new owning Vec is required per GH issue #21859
@@ -685,10 +710,23 @@ impl GroupPositions {
 
                 GroupsType::Slice {
                     groups,
-                    rolling: false,
+                    overlapping: false,
                 }
                 .into_sliceable()
             },
+        }
+    }
+
+    pub fn as_unrolled_slice(&self) -> Option<&GroupsSlice> {
+        match &*self.sliced {
+            GroupsType::Idx(_) => None,
+            GroupsType::Slice {
+                overlapping: true, ..
+            } => None,
+            GroupsType::Slice {
+                groups,
+                overlapping: false,
+            } => Some(groups),
         }
     }
 }
@@ -718,7 +756,10 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
                 groups.is_sorted_flag(),
             )))
         },
-        GroupsType::Slice { groups, rolling } => {
+        GroupsType::Slice {
+            groups,
+            overlapping,
+        } => {
             let groups = unsafe {
                 let groups = slice_slice(groups, offset, len);
                 let ptr = groups.as_ptr() as *mut _;
@@ -727,7 +768,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
 
             ManuallyDrop::new(GroupsType::Slice {
                 groups,
-                rolling: *rolling,
+                overlapping: *overlapping,
             })
         },
     }

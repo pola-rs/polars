@@ -503,6 +503,7 @@ fn create_physical_expr_inner(
                 schema.clone(),
                 output_field,
                 is_scalar,
+                true,
             )))
         },
         Eval {
@@ -512,21 +513,11 @@ fn create_physical_expr_inner(
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
+            let evaluation_is_elementwise = is_elementwise_rec(*evaluation, expr_arena);
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
 
-            let non_aggregated_output_field = expr_arena
-                .get(expression)
-                .to_field(&ToFieldContext::new(expr_arena, schema))?;
-            let output_field_with_ctx =
-                if matches!(ctxt, Context::Aggregation) && !is_scalar_ae(expression, expr_arena) {
-                    let mut f = non_aggregated_output_field.clone();
-                    f.coerce(non_aggregated_output_field.dtype().clone().implode());
-                    f
-                } else {
-                    non_aggregated_output_field.clone()
-                };
-            let non_aggregated_output_field = expr_arena
+            let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input_field = expr_arena
@@ -539,7 +530,17 @@ fn create_physical_expr_inner(
             let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let evaluation = create_physical_expr_inner(
                 *evaluation,
-                Context::Default,
+                // @Hack. Since EvalVariant::Array uses `evaluate_on_groups` to determine the
+                // output and that expects to be outputting a list, we need to pretend like we are
+                // aggregating here.
+                //
+                // EvalVariant::List also has this problem but that has a List datatype, so that
+                // goes wrong by pure change and some black magic.
+                if matches!(variant, EvalVariant::Array { .. }) && !evaluation_is_elementwise {
+                    Context::Aggregation
+                } else {
+                    Context::Default
+                },
                 expr_arena,
                 &Arc::new(eval_schema),
                 state,
@@ -551,11 +552,11 @@ fn create_physical_expr_inner(
                 *variant,
                 node_to_expr(expression, expr_arena),
                 state.allow_threading,
-                output_field_with_ctx,
-                non_aggregated_output_field.dtype,
+                output_field,
                 is_scalar,
                 pd_group,
                 evaluation_is_scalar,
+                evaluation_is_elementwise,
             )))
         },
         Function {
@@ -569,6 +570,7 @@ fn create_physical_expr_inner(
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
+            let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
@@ -579,6 +581,7 @@ fn create_physical_expr_inner(
                 schema.clone(),
                 output_field,
                 is_scalar,
+                is_fallible,
             )))
         },
         Slice {
@@ -617,6 +620,7 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.clone(),
                 output_field,
+                false,
                 false,
             )))
         },

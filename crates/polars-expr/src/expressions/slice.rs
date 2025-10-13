@@ -154,7 +154,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            rolling: false,
+                            overlapping: false,
                         }
                     },
                 }
@@ -192,7 +192,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            rolling: false,
+                            overlapping: false,
                         }
                     },
                 }
@@ -230,7 +230,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            rolling: false,
+                            overlapping: false,
                         }
                     },
                 }
@@ -275,7 +275,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            rolling: false,
+                            overlapping: false,
                         }
                     },
                 }

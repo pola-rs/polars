@@ -2124,3 +2124,12 @@ def test_str_replace_n_zero_23570() -> None:
 
     out = df.with_columns(pl.col("a").str.replace("abc", pl.col("b"), n=0))
     assert_frame_equal(out, expected)
+
+
+def test_str_replace_null_19601() -> None:
+    df = pl.DataFrame({"key": ["1", "2"], "1": ["---", None]})
+
+    assert_frame_equal(
+        df.select(result=pl.col("key").str.replace("1", pl.col("1"))),
+        pl.DataFrame({"result": ["---", "2"]}),
+    )

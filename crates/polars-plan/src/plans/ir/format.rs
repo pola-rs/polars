@@ -200,11 +200,7 @@ impl<'a> IRDisplay<'a> {
                 let right_on = self.display_expr_slice(right_on);
 
                 // Fused cross + filter (show as nested loop join)
-                if let Some(JoinTypeOptionsIR::CrossAndFilter {
-                    predicate,
-                    maintain_order: _,
-                }) = &options.options
-                {
+                if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                     let predicate = self.display_expr(predicate);
                     let name = "NESTED LOOP";
                     write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
@@ -533,6 +529,12 @@ impl Display for ExprIRDisplay<'_> {
                 let evaluation = self.with_root(evaluation);
                 match variant {
                     EvalVariant::List => write!(f, "{expr}.list.eval({evaluation})"),
+                    EvalVariant::Array { as_list: false } => {
+                        write!(f, "{expr}.array.eval({evaluation})")
+                    },
+                    EvalVariant::Array { as_list: true } => {
+                        write!(f, "{expr}.array.eval({evaluation}, as_list=true)")
+                    },
                     EvalVariant::Cumulative { min_samples } => write!(
                         f,
                         "{expr}.cumulative_eval({evaluation}, min_samples={min_samples})"
@@ -881,11 +883,7 @@ pub fn write_ir_non_recursive(
             };
 
             // Fused cross + filter (show as nested loop join)
-            if let Some(JoinTypeOptionsIR::CrossAndFilter {
-                predicate,
-                maintain_order: _,
-            }) = &options.options
-            {
+            if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                 let predicate = predicate.display(expr_arena);
                 write!(f, "{:indent$}NESTED_LOOP JOIN ON {predicate}", "")?;
             } else {

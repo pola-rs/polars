@@ -4235,7 +4235,8 @@ class DataFrame:
               method (though this will eventually be phased out in favor of a native
               solution).
             * Setting `engine` to "adbc" inserts using the ADBC cursor's `adbc_ingest`
-              method.
+              method. Note that when passing an instantiated connection object, PyArrow
+              is required for SQLite and Snowflake drivers.
 
         Examples
         --------
@@ -4295,6 +4296,7 @@ class DataFrame:
             from polars.io.database._utils import (
                 _get_adbc_module_name_from_uri,
                 _import_optional_adbc_driver,
+                _is_adbc_snowflake_conn,
                 _open_adbc_connection,
             )
 
@@ -4308,7 +4310,9 @@ class DataFrame:
 
             # base class for ADBC connections
             if not isinstance(conn, driver_manager.dbapi.Connection):
-                msg = f"unrecognised connection type {connection!r}"
+                msg = (
+                    f"unrecognised connection type {qualified_type_name(connection)!r}"
+                )
                 raise TypeError(msg)
 
             driver_manager_str_version = getattr(driver_manager, "__version__", "0.0")
@@ -4342,15 +4346,31 @@ class DataFrame:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
 
-                adbc_module_name = (
-                    _get_adbc_module_name_from_uri(connection)
-                    if isinstance(connection, str)
-                    else connection_module_root
-                )
-                adbc_driver = _import_optional_adbc_driver(
-                    adbc_module_name, dbapi_submodule=False
-                )
-                adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                # We can reliably introspect the underlying driver from a URI
+                # We can also introspect instantiated connections when PyArrow is
+                # installed. Otherwise, the underlying driver is unknown
+                # Ref: https://github.com/apache/arrow-adbc/issues/2828
+                if isinstance(connection, str):
+                    adbc_module_name = _get_adbc_module_name_from_uri(connection)
+                elif _PYARROW_AVAILABLE:
+                    adbc_module_name = (
+                        f"adbc_driver_{conn.adbc_get_info()['vendor_name'].lower()}"
+                    )
+                else:
+                    adbc_module_name = "Unknown"
+
+                if adbc_module_name != "Unknown":
+                    adbc_driver = _import_optional_adbc_driver(
+                        adbc_module_name, dbapi_submodule=False
+                    )
+                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                else:
+                    adbc_driver = "Unknown"
+                    # If we can't introspect the driver, guess that it has the same
+                    # version as the driver manager. This is what happens by default
+                    # when installed
+                    adbc_driver_str_version = driver_manager_str_version
+
                 adbc_driver_version = parse_version(adbc_driver_str_version)
 
                 if adbc_module_name.split("_")[-1] == "sqlite":
@@ -4366,9 +4386,27 @@ class DataFrame:
                         cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
                         mode = "create"
 
+                # For Snowflake, we convert to PyArrow until string_view columns can be
+                # written. Ref: https://github.com/apache/arrow-adbc/issues/3420
+                is_snowflake_driver = (
+                    "snowflake" in adbc_module_name
+                    if _PYARROW_AVAILABLE
+                    else _is_adbc_snowflake_conn(conn)
+                )
+                if is_snowflake_driver and not _PYARROW_AVAILABLE:
+                    msg = (
+                        "write_database with Snowflake driver requires 'pyarrow'.\n"
+                        "Please install using the command `pip install pyarrow`."
+                    )
+                    raise ModuleNotFoundError(msg)
+
                 # As of adbc_driver_manager 1.6.0, adbc_ingest can take a Polars
                 # DataFrame via the PyCapsule interface
-                data = self if driver_manager_version >= (1, 6) else self.to_arrow()
+                data = (
+                    self
+                    if (driver_manager_version >= (1, 6)) and not is_snowflake_driver
+                    else self.to_arrow()
+                )
 
                 # use of schema-qualified table names was released in
                 # adbc-driver-manager 0.7.0 and is working without bugs from driver
@@ -4383,7 +4421,11 @@ class DataFrame:
                         **(engine_options or {}),
                     )
                 elif db_schema is not None:
-                    adbc_driver_pypi_name = adbc_module_name.replace("_", "-")
+                    adbc_driver_pypi_name = (
+                        adbc_module_name.replace("_", "-")
+                        if adbc_module_name != "Unknown"
+                        else "adbc-driver-<driver>"
+                    )
                     msg = (
                         "use of schema-qualified table names requires "
                         "adbc-driver-manager version >= 0.7.0, found "
@@ -4430,7 +4472,9 @@ class DataFrame:
             elif isinstance(connection, Connectable):
                 sa_object = connection
             else:
-                msg = f"unrecognised connection type {connection!r}"
+                msg = (
+                    f"unrecognised connection type {qualified_type_name(connection)!r}"
+                )
                 raise TypeError(msg)
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
@@ -4456,7 +4500,7 @@ class DataFrame:
             msg = f"engine {engine!r} is not supported"
             raise ValueError(msg)
         else:
-            msg = f"unrecognised connection type {connection!r}"
+            msg = f"unrecognised connection type {qualified_type_name(connection)!r}"
             raise TypeError(msg)
 
     @unstable()
@@ -6678,7 +6722,7 @@ class DataFrame:
         Notes
         -----
         The resulting column does not have any special properties. It is a regular
-        column of type `UInt32` (or `UInt64` in `polars-u64-idx`).
+        column of type `UInt32` (or `UInt64` in `polars[rt64]`).
 
         Examples
         --------
@@ -11900,6 +11944,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        separator: str | None = None,
     ) -> DataFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -11913,6 +11958,9 @@ class DataFrame:
             Name of the struct column(s) that should be unnested.
         *more_columns
             Additional columns to unnest, specified as positional arguments.
+        separator
+            Rename output column names as combination of the struct column name,
+            name separator and field name.
 
         Examples
         --------
@@ -11946,12 +11994,36 @@ class DataFrame:
         │ foo    ┆ 1   ┆ a   ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "before": ["foo", "bar"],
+        ...         "t_a": [1, 2],
+        ...         "t_b": ["a", "b"],
+        ...         "t_c": [True, None],
+        ...         "t_d": [[1, 2], [3]],
+        ...         "after": ["baz", "womp"],
+        ...     }
+        ... ).select(
+        ...     "before",
+        ...     pl.struct(pl.col("^t_.$").name.map(lambda t: t[2:])).alias("t"),
+        ...     "after",
+        ... )
+        >>> df.unnest("t", separator="::")
+        shape: (2, 6)
+        ┌────────┬──────┬──────┬──────┬───────────┬───────┐
+        │ before ┆ t::a ┆ t::b ┆ t::c ┆ t::d      ┆ after │
+        │ ---    ┆ ---  ┆ ---  ┆ ---  ┆ ---       ┆ ---   │
+        │ str    ┆ i64  ┆ str  ┆ bool ┆ list[i64] ┆ str   │
+        ╞════════╪══════╪══════╪══════╪═══════════╪═══════╡
+        │ foo    ┆ 1    ┆ a    ┆ true ┆ [1, 2]    ┆ baz   │
+        │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
+        └────────┴──────┴──────┴──────┴───────────┴───────┘
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
             self.lazy()
-            .unnest(columns, *more_columns)
+            .unnest(columns, *more_columns, separator=separator)
             .collect(optimizations=QueryOptFlags._eager())
         )
 

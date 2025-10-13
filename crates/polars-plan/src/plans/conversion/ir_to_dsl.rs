@@ -383,6 +383,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::StringExpr(f) => {
             use {IRStringFunction as IB, StringFunction as B};
             F::StringExpr(match f {
+                IB::Format { format, insertions } => B::Format { format, insertions },
                 #[cfg(feature = "concat_str")]
                 IB::ConcatHorizontal {
                     delimiter,
@@ -785,6 +786,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     IR::Quantile => R::Quantile,
                     IR::Var => R::Var,
                     IR::Std => R::Std,
+                    IR::Rank => R::Rank,
                     #[cfg(feature = "moment")]
                     IR::Skew => R::Skew,
                     #[cfg(feature = "moment")]
@@ -817,6 +819,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     IR::QuantileBy => R::QuantileBy,
                     IR::VarBy => R::VarBy,
                     IR::StdBy => R::StdBy,
+                    IR::RankBy => R::RankBy,
                 },
                 options,
             }
@@ -912,8 +915,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Floor => F::Floor,
         #[cfg(feature = "round_series")]
         IF::Ceil => F::Ceil,
-        IF::UpperBound => F::UpperBound,
-        IF::LowerBound => F::LowerBound,
         #[cfg(feature = "fused")]
         IF::Fused(f) => {
             assert_eq!(input.len(), 3);

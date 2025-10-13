@@ -138,6 +138,10 @@ impl ListChunked {
         }
     }
 
+    pub fn inner_length(&self) -> usize {
+        self.downcast_iter().map(|c| c.values().len()).sum()
+    }
+
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
     pub fn apply_to_inner(
         &self,
