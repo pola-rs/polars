@@ -1665,3 +1665,54 @@ def test_double_aggregations(maintain_order: bool) -> None:
         ),
         check_row_order=maintain_order,
     )
+
+
+def test_group_by_length_preserving_on_scalar() -> None:
+    df = pl.DataFrame({"a": [[1], [2], [3]]})
+    df = df.group_by(pl.lit(1, pl.Int64)).agg(
+        a=pl.col.a.first().reverse(),
+        b=pl.col.a.first(),
+        c=pl.col.a.reverse(),
+        d=pl.lit(1, pl.Int64).reverse(),
+        e=pl.lit(1, pl.Int64).unique(),
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "literal": [1],
+                "a": [[1]],
+                "b": [[1]],
+                "c": [[[3], [2], [1]]],
+                "d": [1],
+                "e": [[1]],
+            }
+        ),
+    )
+
+
+def test_group_by_enum_min_max_18394() -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["a", "a", "b", "b", "c", "c"],
+            "degree": ["low", "high", "high", "mid", "mid", "low"],
+        }
+    ).with_columns(pl.col("degree").cast(pl.Enum(["low", "mid", "high"])))
+    out = df.group_by("id").agg(
+        min_degree=pl.col("degree").min(),
+        max_degree=pl.col("degree").max(),
+    )
+    expected = pl.DataFrame(
+        {
+            "id": ["a", "b", "c"],
+            "min_degree": ["low", "mid", "low"],
+            "max_degree": ["high", "high", "mid"],
+        },
+        schema={
+            "id": pl.String,
+            "min_degree": pl.Enum(["low", "mid", "high"]),
+            "max_degree": pl.Enum(["low", "mid", "high"]),
+        },
+    )
+    assert_frame_equal(out, expected, check_row_order=False)

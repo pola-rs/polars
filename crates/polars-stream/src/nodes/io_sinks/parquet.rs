@@ -30,6 +30,7 @@ use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::execute::StreamingExecutionState;
+use crate::nodes::io_sinks::SendBufferedMorsel;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
 use crate::utils::task_handles_ext::AbortOnDropHandle;
@@ -204,7 +205,7 @@ impl SinkNode for ParquetSinkNode {
         // Buffer task.
         join_handles.push(buffer_and_distribute_columns_task(
             recv_port_rx,
-            dist_tx,
+            SendBufferedMorsel::Distributor(dist_tx),
             write_options
                 .row_group_size
                 .unwrap_or(DEFAULT_ROW_GROUP_SIZE),

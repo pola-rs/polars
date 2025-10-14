@@ -9,6 +9,7 @@ use polars_core::prelude::*;
 use rayon::prelude::*;
 
 use super::*;
+use crate::dispatch::GroupsUdf;
 use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
 };
@@ -17,6 +18,7 @@ use crate::expressions::{
 pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,
     function: SpecialEq<Arc<dyn ColumnsUdf>>,
+    groups_function: Option<SpecialEq<Arc<dyn GroupsUdf>>>,
     expr: Expr,
     flags: FunctionFlags,
     function_operates_on_scalar: bool,
@@ -34,6 +36,7 @@ impl ApplyExpr {
     pub(crate) fn new(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
         function: SpecialEq<Arc<dyn ColumnsUdf>>,
+        groups_function: Option<SpecialEq<Arc<dyn GroupsUdf>>>,
         expr: Expr,
         options: FunctionOptions,
         allow_threading: bool,
@@ -51,6 +54,7 @@ impl ApplyExpr {
         Self {
             inputs,
             function,
+            groups_function,
             expr,
             flags: options.flags,
             function_operates_on_scalar,
@@ -82,7 +86,7 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let c = if self.flags.returns_scalar() {
+        let c = if self.is_scalar() {
             let out = ca.explode(false).unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
@@ -93,7 +97,7 @@ impl ApplyExpr {
             ca.into_series().into()
         };
 
-        ac.with_values_and_args(c, true, None, false, self.flags.returns_scalar())?;
+        ac.with_values_and_args(c, true, None, false, self.is_scalar())?;
 
         Ok(ac)
     }
@@ -113,13 +117,11 @@ impl ApplyExpr {
         // Fix up groups for AggregatedScalar, so that we can pretend they are just normal groups.
         ac.set_groups_for_undefined_agg_states();
 
-        let s = ac.get_values();
-
-        let name = s.name().clone();
         let agg = match ac.agg_state() {
-            AggState::AggregatedScalar(_) => s.as_list().into_column(),
+            AggState::AggregatedScalar(s) => s.as_list().into_column(),
             _ => ac.aggregated(),
         };
+        let name = agg.name().clone();
 
         // Collection of empty list leads to a null dtype. See: #3687.
         if agg.is_empty() {
@@ -436,6 +438,11 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
+        // Some function have specialized implementation.
+        if let Some(groups_function) = self.groups_function.as_ref() {
+            return groups_function.evaluate_on_groups(&self.inputs, df, groups, state);
+        }
+
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
