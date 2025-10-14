@@ -80,6 +80,24 @@ impl AggState {
     fn is_scalar(&self) -> bool {
         matches!(self, Self::AggregatedScalar(_))
     }
+
+    pub fn name(&self) -> &PlSmallStr {
+        match self {
+            AggState::AggregatedList(s)
+            | AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.name(),
+        }
+    }
+
+    pub fn flat_dtype(&self) -> &DataType {
+        match self {
+            AggState::AggregatedList(s) => s.dtype().inner_dtype().unwrap(),
+            AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.dtype(),
+        }
+    }
 }
 
 // lazy update strategy
@@ -402,6 +420,16 @@ impl<'a> AggregationContext<'a> {
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
         self
+    }
+
+    /// Ensure that each group is represented by contiguous values in memory.
+    pub fn normalize_values(&mut self) {
+        self.set_original_len(false);
+        self.groups();
+        let values = self.flat_naive();
+        let values = unsafe { values.agg_list(&self.groups) };
+        self.state = AggState::AggregatedList(values);
+        self.with_update_groups(UpdateGroups::WithGroupsLen);
     }
 
     /// Aggregate into `ListChunked`.
