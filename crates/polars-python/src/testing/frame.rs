@@ -1,4 +1,6 @@
-use polars_testing::asserts::{DataFrameEqualOptions, assert_dataframe_equal};
+use polars_testing::asserts::{
+    DataFrameEqualOptions, assert_dataframe_equal, assert_dataframe_schema_equal,
+};
 use pyo3::prelude::*;
 
 use crate::PyDataFrame;
@@ -31,4 +33,19 @@ pub fn assert_dataframe_equal_py(
     };
 
     assert_dataframe_equal(left_df, right_df, options).map_err(|e| PyPolarsErr::from(e).into())
+}
+
+#[pyfunction]
+#[pyo3(signature = (left, right, check_dtypes, check_column_order))]
+pub fn assert_dataframe_schema_equal_py(
+    left: &PyDataFrame,
+    right: &PyDataFrame,
+    check_dtypes: bool,
+    check_column_order: bool,
+) -> PyResult<()> {
+    let left_df = &left.df.read();
+    let right_df = &right.df.read();
+
+    assert_dataframe_schema_equal(left_df, right_df, check_dtypes, check_column_order)
+        .map_err(|e| PyPolarsErr::from(e).into())
 }
