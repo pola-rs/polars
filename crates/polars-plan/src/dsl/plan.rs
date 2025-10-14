@@ -7,6 +7,7 @@ use polars_utils::arena::Node;
 use polars_utils::pl_serialize;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::*;
