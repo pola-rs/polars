@@ -178,7 +178,7 @@ fn create_physical_expr_inner(
             state.set_window();
             let phys_function = create_physical_expr_inner(
                 function,
-                Context::Aggregation,
+                Context::Default,
                 expr_arena,
                 schema,
                 state,
@@ -189,7 +189,7 @@ fn create_physical_expr_inner(
                     PolarsResult::Ok((
                         create_physical_expr_inner(
                             node,
-                            Context::Aggregation,
+                            Context::Default,
                             expr_arena,
                             schema,
                             state,
@@ -208,7 +208,7 @@ fn create_physical_expr_inner(
                     // TODO! Order by
                     let group_by = create_physical_expressions_from_nodes(
                         partition_by,
-                        Context::Aggregation,
+                        Context::Default,
                         expr_arena,
                         schema,
                         state,
