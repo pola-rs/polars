@@ -111,6 +111,7 @@ impl IRAggExpr {
             A::NUnique(_) |
             A::First(_) |
             A::Last(_) |
+            A::Single(_) |
             A::Mean(_) |
             A::Implode(_) |
             A::Sum(_) |

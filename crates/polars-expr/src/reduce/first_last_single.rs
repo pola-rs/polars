@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use polars_core::frame::row::AnyValueBufferTrusted;
@@ -12,6 +13,10 @@ pub fn new_first_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
 
 pub fn new_last_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     new_reduction_with_policy::<Last>(dtype)
+}
+
+pub fn new_single_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
+    new_reduction_with_policy::<Single>(dtype)
 }
 
 fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn GroupedReduction> {
@@ -42,6 +47,9 @@ fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn Gr
 trait Policy: Send + Sync + 'static {
     fn index(len: usize) -> usize;
     fn should_replace(new: u64, old: u64) -> bool;
+    fn is_single() -> bool {
+        false
+    }
 }
 
 struct First;
@@ -68,9 +76,8 @@ impl Policy for Last {
     }
 }
 
-#[allow(dead_code)]
-struct Arbitrary;
-impl Policy for Arbitrary {
+struct Single;
+impl Policy for Single {
     fn index(_len: usize) -> usize {
         0
     }
@@ -78,9 +85,20 @@ impl Policy for Arbitrary {
     fn should_replace(_new: u64, old: u64) -> bool {
         old == 0
     }
+
+    fn is_single() -> bool {
+        true
+    }
 }
 
 struct NumFirstLastReducer<P, T>(PhantomData<(P, T)>);
+
+#[derive(Clone, Debug)]
+struct Value<T: Clone> {
+    value: Option<T>,
+    seq: u64,
+    count: u64,
+}
 
 impl<P, T> Clone for NumFirstLastReducer<P, T> {
     fn clone(&self) -> Self {
@@ -94,10 +112,14 @@ where
     T: PolarsNumericType,
 {
     type Dtype = T;
-    type Value = (Option<T::Native>, u64);
+    type Value = Value<T::Native>;
 
     fn init(&self) -> Self::Value {
-        (None, 0)
+        Value {
+            value: None,
+            seq: 0,
+            count: 0,
+        }
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -105,22 +127,27 @@ where
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        if P::should_replace(b.1, a.1) {
-            *a = *b;
+        if P::should_replace(b.seq, a.seq) {
+            *a = b.clone();
         }
+        a.count += b.count;
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, seq_id: u64) {
-        if P::should_replace(seq_id, a.1) {
-            *a = (b, seq_id);
+        if P::should_replace(seq_id, a.seq) {
+            a.value = b;
+            a.seq = seq_id;
         }
+        a.count += b.is_some() as u64;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
-        if !ca.is_empty() && P::should_replace(seq_id, v.1) {
+        if !ca.is_empty() && P::should_replace(seq_id, v.seq) {
             let val = ca.get(P::index(ca.len()));
-            *v = (val, seq_id);
+            v.value = val;
+            v.seq = seq_id;
         }
+        v.count += ca.len() as u64;
     }
 
     fn finish(
@@ -130,7 +157,22 @@ where
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        let ca: ChunkedArray<T> = v.into_iter().map(|(x, _s)| x).collect_ca(PlSmallStr::EMPTY);
+        if P::is_single() {
+            if v.iter().any(|v| v.count == 0) {
+                return Err(polars_err!(ComputeError:
+                    "aggregation 'single' expected a single value, got an empty group"
+                ));
+            }
+            if let Some(Value { count: n, .. }) = v.iter().find(|v| v.count > 1) {
+                return Err(polars_err!(ComputeError:
+                    "aggregation 'single' expected a single value, got a group with {n} values"
+                ));
+            }
+        }
+        let ca: ChunkedArray<T> = v
+            .into_iter()
+            .map(|red_val| red_val.value)
+            .collect_ca(PlSmallStr::EMPTY);
         let s = ca.into_series();
         unsafe { s.from_physical_unchecked(dtype) }
     }
@@ -382,3 +424,81 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         self
     }
 }
+
+// #[derive(Clone)]
+// struct SingleReducer<R: Reducer> {
+//     inner: R,
+// }
+
+// #[derive(Clone)]
+// struct SingleValue<T> {
+//     value: (Option<T>, u64),
+//     got_too_many: bool,
+// }
+
+// impl<R: Reducer<Value = (Option<T>, u64)>, T: Clone + Send + Sync + 'static> Reducer
+//     for SingleReducer<R>
+// {
+//     type Dtype = R::Dtype;
+//     type Value = SingleValue<T>;
+
+//     fn init(&self) -> Self::Value {
+//         SingleValue {
+//             value: self.inner.init(),
+//             got_too_many: false,
+//         }
+//     }
+
+//     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+//         self.inner.cast_series(s)
+//     }
+
+//     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+//         if a.got_too_many || b.got_too_many || (a.value.0.is_some() && b.value.0.is_some()) {
+//             a.got_too_many = true;
+//         } else {
+//             self.inner.combine(&mut a.value, &b.value)
+//         }
+//     }
+
+//     fn reduce_one(
+//         &self,
+//         a: &mut Self::Value,
+//         b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
+//         seq_id: u64,
+//     ) {
+//         if a.got_too_many || (a.value.0.is_some() && b.is_some()) {
+//             a.got_too_many = true;
+//         } else {
+//             self.inner.reduce_one(&mut a.value, b, seq_id)
+//         }
+//     }
+
+//     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
+//         if v.got_too_many || (v.value.0.is_some() && !ca.is_empty()) {
+//             v.got_too_many = true;
+//         } else {
+//             self.inner.reduce_ca(v, ca, seq_id)
+//         }
+//     }
+
+//     fn finish(
+//         &self,
+//         v: Vec<Self::Value>,
+//         m: Option<Bitmap>,
+//         dtype: &DataType,
+//     ) -> PolarsResult<Series> {
+//         if v.iter().all(|x| x.value.0.is_none()) {
+//             return Err(polars_err!(
+//                 ComputeError: "Single reduction got no non-null values in any group [amber]"
+//             ));
+//         }
+//         if v.iter().any(|x| x.got_too_many) {
+//             return Err(polars_err!(
+//                 ComputeError: "Single reduction got no non-null values in any group [amber]"
+//             ));
+//         }
+//         let v = v.into_iter().map(|x| x.value).collect::<Vec<_>>();
+//         self.inner.finish(v, m, dtype)
+//     }
+// }

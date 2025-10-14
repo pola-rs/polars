@@ -312,6 +312,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::Last(_)
+                | IRAggExpr::Single(_)
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Var(..)
