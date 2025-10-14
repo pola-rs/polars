@@ -1,9 +1,14 @@
 use std::sync::Arc;
 
-use polars_core::prelude::Column;
+use polars_core::error::PolarsResult;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{Column, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::{IRFunctionExpr, IRPowFunction};
 use polars_utils::IdxSize;
+
+use crate::prelude::{AggregationContext, PhysicalExpr};
+use crate::state::ExecutionState;
 
 #[macro_export]
 macro_rules! wrap {
@@ -101,6 +106,7 @@ mod cat;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
+mod groups_dispatch;
 mod horizontal;
 mod list;
 mod misc;
@@ -514,4 +520,41 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             map_as_slice!(misc::row_decode, fs.clone(), variants.clone())
         },
     }
+}
+
+pub trait GroupsUdf: Send + Sync + 'static {
+    fn evaluate_on_groups<'a>(
+        &self,
+        inputs: &[Arc<dyn PhysicalExpr>],
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>>;
+}
+
+pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Arc<dyn GroupsUdf>>> {
+    macro_rules! wrap_groups {
+        ($f:expr$(, $arg:expr)*) => {{
+            struct Wrap;
+            impl GroupsUdf for Wrap {
+                fn evaluate_on_groups<'a>(
+                    &self,
+                    inputs: &[Arc<dyn PhysicalExpr>],
+                    df: &DataFrame,
+                    groups: &'a GroupPositions,
+                    state: &ExecutionState,
+                ) -> PolarsResult<AggregationContext<'a>> {
+                    $f(inputs, df, groups, state$(, $arg)*)
+                }
+            }
+
+            SpecialEq::new(Arc::new(Wrap) as Arc<dyn GroupsUdf>)
+        }};
+    }
+    use IRFunctionExpr as F;
+    Some(match func {
+        F::Reverse => wrap_groups!(groups_dispatch::reverse),
+
+        _ => return None,
+    })
 }

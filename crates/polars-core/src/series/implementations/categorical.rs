@@ -37,7 +37,7 @@ impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
 }
 
 macro_rules! impl_cat_series {
-    ($ca: ident, $pdt:ty) => {
+    ($ca: ident, $pdt:ty, $ca_fn:ident) => {
         impl private::PrivateSeries for SeriesWrap<$ca> {
             fn compute_len(&mut self) {
                 self.0.physical_mut().compute_len()
@@ -97,6 +97,26 @@ macro_rules! impl_cat_series {
             ) -> PolarsResult<()> {
                 self.0.physical().vec_hash_combine(build_hasher, hashes)?;
                 Ok(())
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
+                if self.0.uses_lexical_ordering() {
+                    unimplemented!()
+                } else {
+                    self.apply_on_phys(|phys| phys.agg_min(groups).$ca_fn().unwrap().clone())
+                        .into_series()
+                }
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
+                if self.0.uses_lexical_ordering() {
+                    unimplemented!()
+                } else {
+                    self.apply_on_phys(|phys| phys.agg_max(groups).$ca_fn().unwrap().clone())
+                        .into_series()
+                }
             }
 
             #[cfg(feature = "algorithm_group_by")]
@@ -325,6 +345,6 @@ macro_rules! impl_cat_series {
     }
 }
 
-impl_cat_series!(Categorical8Chunked, Categorical8Type);
-impl_cat_series!(Categorical16Chunked, Categorical16Type);
-impl_cat_series!(Categorical32Chunked, Categorical32Type);
+impl_cat_series!(Categorical8Chunked, Categorical8Type, u8);
+impl_cat_series!(Categorical16Chunked, Categorical16Type, u16);
+impl_cat_series!(Categorical32Chunked, Categorical32Type, u32);
