@@ -8,7 +8,11 @@ from hypothesis import given
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
-from polars.testing import assert_frame_equal, assert_frame_not_equal, assert_frame_schema_equal 
+from polars.testing import (
+    assert_frame_equal,
+    assert_frame_not_equal,
+    assert_frame_schema_equal,
+)
 from polars.testing.parametric import dataframes
 
 nan = float("nan")
@@ -422,6 +426,7 @@ def test_assert_dataframe_equal_all_nulls_fails_when_checking_dtypes() -> None:
     with pytest.raises(AssertionError, match="dtypes do not match"):
         assert_frame_equal(x, y, check_dtypes=True)
 
+
 def test_assert_frame_schema_equal_column_mismatch_order() -> None:
     df1 = pl.DataFrame({"b": [3, 4], "a": [1, 2]})
     df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
@@ -430,6 +435,7 @@ def test_assert_frame_schema_equal_column_mismatch_order() -> None:
 
     assert_frame_schema_equal(df1, df2, check_column_order=False)
 
+
 def test_assert_frame_schema_equal_dtypes_mismatch() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
     df1 = pl.DataFrame(data, schema={"a": pl.Int8, "b": pl.Int16})
@@ -437,6 +443,7 @@ def test_assert_frame_schema_equal_dtypes_mismatch() -> None:
 
     with pytest.raises(AssertionError, match="dtypes do not match"):
         assert_frame_schema_equal(df1, df2, check_column_order=False)
+
 
 def test_tracebackhide(testdir: pytest.Testdir) -> None:
     testdir.makefile(
@@ -493,4 +500,3 @@ def test_frame_schema_fail():
     assert "AssertionError: DataFrames are equal" in stdout
     assert "AssertionError: inputs are different (unexpected input types)" in stdout
     assert "AssertionError: DataFrames are different (dtypes do not match)" in stdout
-

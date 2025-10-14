@@ -10,6 +10,8 @@ from polars.testing.asserts.utils import raise_assertion_error
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import assert_dataframe_equal_py, assert_dataframe_schema_equal_py
+
+
 def _assert_correct_input_type(
     left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
 ) -> bool:
@@ -232,6 +234,7 @@ def assert_frame_not_equal(
 def assert_frame_schema_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
+    *,
     check_column_order: bool = True,
     check_dtypes: bool = True,
 ) -> None:
@@ -260,14 +263,13 @@ def assert_frame_schema_equal(
     >>> df1 = pl.DataFrame({"b": [3, 4], "a": [1, 2]})
     >>> df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
 
-    >>> assert_frame_schema_equal(df1,df2)
+    >>> assert_frame_schema_equal(df1, df2)
     Traceback (most recent call last)
     ...
     AssertionError: DataFrames are different (columns are not in the same order)
     [left]: ["b", "a"]
     [right]: ["a", "b"]
     """
-
     lazy = _assert_correct_input_type(left, right)
 
     # Rust back-end function expects DataFrames so LazyFrames must be collected
