@@ -4,7 +4,7 @@ use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 use polars_utils::slice::load_padded_le_u64;
 
 use super::iterator::FastU56BitmapIter;
-use super::utils::{BitmapIter, count_zeros, fmt};
+use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt};
 use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
@@ -141,7 +141,7 @@ pub fn nth_set_bit_u64(w: u64, n: u64) -> Option<u64> {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Copy)]
 pub struct BitMask<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -362,20 +362,67 @@ impl<'a> BitMask<'a> {
 
     #[inline]
     pub fn get(&self, idx: usize) -> bool {
-        let byte_idx = (self.offset + idx) / 8;
-        let byte_shift = (self.offset + idx) % 8;
-
         if idx < self.len {
             // SAFETY: we know this is in-bounds.
-            let byte = unsafe { *self.bytes.get_unchecked(byte_idx) };
-            (byte >> byte_shift) & 1 == 1
+            unsafe { self.get_bit_unchecked(idx) }
         } else {
             false
         }
     }
 
-    pub fn iter(&self) -> BitmapIter<'_> {
+    #[inline]
+    /// Get a bit at a certain idx.
+    ///
+    /// # Safety
+    ///
+    /// `idx` should be smaller than `len`
+    pub unsafe fn get_bit_unchecked(&self, idx: usize) -> bool {
+        let byte_idx = (self.offset + idx) / 8;
+        let byte_shift = (self.offset + idx) % 8;
+
+        // SAFETY: we know this is in-bounds.
+        let byte = unsafe { *self.bytes.get_unchecked(byte_idx) };
+        (byte >> byte_shift) & 1 == 1
+    }
+
+    pub fn iter(self) -> BitmapIter<'a> {
         BitmapIter::new(self.bytes, self.offset, self.len)
+    }
+
+    /// Returns the number of zero bits from the start before a one bit is seen
+    pub fn leading_zeros(self) -> usize {
+        utils::leading_zeros(self.bytes, self.offset, self.len)
+    }
+    /// Returns the number of one bits from the start before a zero bit is seen
+    pub fn leading_ones(self) -> usize {
+        utils::leading_ones(self.bytes, self.offset, self.len)
+    }
+    /// Returns the number of zero bits from the back before a one bit is seen
+    pub fn trailing_zeros(self) -> usize {
+        utils::trailing_zeros(self.bytes, self.offset, self.len)
+    }
+    /// Returns the number of one bits from the back before a zero bit is seen
+    pub fn trailing_ones(self) -> usize {
+        utils::trailing_ones(self.bytes, self.offset, self.len)
+    }
+
+    /// Checks whether two [`Bitmap`]s have shared set bits.
+    ///
+    /// This is an optimized version of `(self & other) != 0000..`.
+    pub fn intersects_with(self, other: Self) -> bool {
+        self.num_intersections_with(other) != 0
+    }
+
+    /// Calculates the number of shared set bits between two [`Bitmap`]s.
+    pub fn num_intersections_with(self, other: Self) -> usize {
+        super::num_intersections_with(self, other)
+    }
+
+    /// Returns an iterator over bits in bit chunks [`BitChunk`].
+    ///
+    /// This iterator is useful to operate over multiple bits via e.g. bitwise.
+    pub fn chunks<T: BitChunk>(self) -> BitChunks<'a, T> {
+        BitChunks::new(self.bytes, self.offset, self.len)
     }
 }
 

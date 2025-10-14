@@ -4,7 +4,7 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
-use polars_plan::plans::{IRFunctionExpr, IRPowFunction};
+use polars_plan::plans::{IRBooleanFunction, IRFunctionExpr, IRPowFunction};
 use polars_utils::IdxSize;
 
 use crate::prelude::{AggregationContext, PhysicalExpr};
@@ -534,8 +534,8 @@ pub trait GroupsUdf: Send + Sync + 'static {
 
 pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Arc<dyn GroupsUdf>>> {
     macro_rules! wrap_groups {
-        ($f:expr$(, $arg:expr)*) => {{
-            struct Wrap;
+        ($f:expr$(, ($arg:expr, $n:ident:$ty:ty))*) => {{
+            struct Wrap($($ty),*);
             impl GroupsUdf for Wrap {
                 fn evaluate_on_groups<'a>(
                     &self,
@@ -544,16 +544,26 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
                     groups: &'a GroupPositions,
                     state: &ExecutionState,
                 ) -> PolarsResult<AggregationContext<'a>> {
-                    $f(inputs, df, groups, state$(, $arg)*)
+                    let Wrap($($n),*) = self;
+                    $f(inputs, df, groups, state$(, *$n)*)
                 }
             }
 
-            SpecialEq::new(Arc::new(Wrap) as Arc<dyn GroupsUdf>)
+            SpecialEq::new(Arc::new(Wrap($($arg),*)) as Arc<dyn GroupsUdf>)
         }};
     }
     use IRFunctionExpr as F;
     Some(match func {
+        F::NullCount => wrap_groups!(groups_dispatch::null_count),
         F::Reverse => wrap_groups!(groups_dispatch::reverse),
+        F::Boolean(IRBooleanFunction::Any { ignore_nulls }) => {
+            let ignore_nulls = *ignore_nulls;
+            wrap_groups!(groups_dispatch::any, (ignore_nulls, v: bool))
+        },
+        F::Boolean(IRBooleanFunction::All { ignore_nulls }) => {
+            let ignore_nulls = *ignore_nulls;
+            wrap_groups!(groups_dispatch::all, (ignore_nulls, v: bool))
+        },
 
         _ => return None,
     })
