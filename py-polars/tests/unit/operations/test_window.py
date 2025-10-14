@@ -809,3 +809,27 @@ def test_clear_cache_on_stacked_filters_24806() -> None:
     out = df.filter(predicate).filter(predicate).collect()
     expected = pl.DataFrame({"x": [2]})
     assert_frame_equal(out, expected)
+@pytest.mark.parametrize(
+    "expr", [pl.col.a, pl.col.a.first(), pl.col.b, pl.col.b.first()]
+)
+@pytest.mark.parametrize(
+    "over",
+    [
+        pl.lit(42),
+        pl.col.g,
+        pl.col.g.first(),
+        [pl.col.g, pl.lit(42)],
+        [pl.lit(42), pl.col.g],
+        [pl.col.g, pl.col.h],
+        [pl.col.g.first(), pl.col.h],
+    ],
+)
+
+
+def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["x", "y", "z"], "g": [10, 10, 20], "h": [10, 10, 20]}
+    )
+
+    out = df.select(expr.over(over))
+    assert out.shape == (3, 1)
