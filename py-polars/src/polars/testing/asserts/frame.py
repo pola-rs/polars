@@ -259,12 +259,10 @@ def assert_frame_schema_equal(
     --------
     >>> import polars as pl
     >>> from polars.testing import assert_frame_schema_equal
-
     >>> df1 = pl.DataFrame({"b": [3, 4], "a": [1, 2]})
     >>> df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-
     >>> assert_frame_schema_equal(df1, df2)
-    Traceback (most recent call last)
+    Traceback (most recent call last):
     ...
     AssertionError: DataFrames are different (columns are not in the same order)
     [left]: ["b", "a"]
