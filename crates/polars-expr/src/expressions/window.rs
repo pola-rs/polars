@@ -488,7 +488,11 @@ impl PhysicalExpr for WindowExpr {
                 Ok(out.into_column())
             },
             Explode => {
-                let out = ac.aggregated().explode(false)?;
+                let out = if self.phys_function.is_scalar() {
+                    ac.get_values().clone()
+                } else {
+                    ac.aggregated().explode(false)?
+                };
                 Ok(out.into_column())
             },
             Map => {
