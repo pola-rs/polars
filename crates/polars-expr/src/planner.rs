@@ -176,13 +176,8 @@ fn create_physical_expr_inner(
             let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
             let function = *function;
             state.set_window();
-            let phys_function = create_physical_expr_inner(
-                function,
-                Context::Default,
-                expr_arena,
-                schema,
-                state,
-            )?;
+            let phys_function =
+                create_physical_expr_inner(function, Context::Default, expr_arena, schema, state)?;
 
             let order_by = order_by
                 .map(|(node, options)| {
