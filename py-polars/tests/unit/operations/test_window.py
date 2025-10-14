@@ -764,6 +764,8 @@ def test_aggregate_gather_over_dtype_24632(
         (pl.col.x.implode().reverse(), "explode", [[1, 2], [3]]),
     ],
 )
+
+
 def test_mapping_strategy_scalar_matrix(
     expr: pl.Expr, mapping_strategy: WindowMappingStrategy, result: list[int] | None
 ) -> None:
@@ -801,3 +803,9 @@ def test_shape_mismatch(expr: pl.Expr) -> None:
     q = df.lazy().select(expr.over(pl.col.g))
     with pytest.raises(ShapeError):
         q.collect()
+def test_clear_cache_on_stacked_filters_24806() -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    predicate = (pl.col.x > 1).over(9)
+    out = df.filter(predicate).filter(predicate).collect()
+    expected = pl.DataFrame({"x": [2]})
+    assert_frame_equal(out, expected)

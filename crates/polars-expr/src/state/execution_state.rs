@@ -25,8 +25,10 @@ impl WindowCache {
     pub(crate) fn clear(&self) {
         let mut g = self.groups.write().unwrap();
         g.clear();
-        let mut g = self.join_tuples.write().unwrap();
-        g.clear();
+        let mut t = self.join_tuples.write().unwrap();
+        t.clear();
+        let mut i = self.map_idx.write().unwrap();
+        i.clear();
     }
 
     pub fn get_groups(&self, key: &str) -> Option<GroupPositions> {
