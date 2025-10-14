@@ -828,3 +828,19 @@ def test_string_to_decimal_combined_prec_scale_24801() -> None:
     s = pl.Series(values).str.to_decimal()
     assert s.dtype == pl.Decimal(precision=4, scale=2)
     assert s.to_list() == [D(v) for v in values]
+
+
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_fallible_decimal_aggregated_with_filter(maintain_order: bool) -> None:
+    df = pl.DataFrame(
+        {"g": [10, 10, 20, 10], "a": [D("1.0"), D("0.0"), D("2.0"), D("1.0")]}
+    )
+    q = (
+        df.lazy()
+        .group_by("g", maintain_order=maintain_order)
+        .agg(div=D("1.0") / pl.col.a.filter(pl.col.a != D("0.0")))
+    )
+    # must not raise an error
+    out = q.collect()
+    expected = pl.DataFrame({"g": [10, 20], "div": [[D("1.0"), D("1.0")], [D("0.5")]]})
+    assert_frame_equal(out, expected, check_row_order=maintain_order)
