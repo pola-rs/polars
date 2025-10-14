@@ -721,7 +721,7 @@ def test_aggregate_gather_over_dtype_24632(
     assert q.collect_schema() == q.collect().schema
 
 
-@pytest.mark.may_fail_auto_streaming # reason: issue
+@pytest.mark.may_fail_auto_streaming  # reason: issue
 # https://github.com/pola-rs/polars/issues/24865
 @pytest.mark.parametrize(
     ("expr", "mapping_strategy", "result"),
@@ -783,7 +783,7 @@ def test_mapping_strategy_scalar_matrix(
         assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming # reason: issue
+@pytest.mark.may_fail_auto_streaming  # reason: issue
 # https://github.com/pola-rs/polars/issues/24865
 @pytest.mark.parametrize(
     "expr",
