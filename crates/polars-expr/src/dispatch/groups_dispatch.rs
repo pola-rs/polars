@@ -74,20 +74,21 @@ pub fn null_count<'a>(
         return Ok(ac);
     }
 
-    let values = ac.get_values();
+    ac.groups();
+    let values = ac.flat_naive();
     let name = values.name().clone();
     let Some(validity) = values.rechunk_validity() else {
         ac.state = AggState::AggregatedScalar(Column::new_scalar(
             name,
             (0 as IdxSize).into(),
-            ac.groups.len(),
+            groups.len(),
         ));
         return Ok(ac);
     };
 
     POOL.install(|| {
         let validity = BitMask::from_bitmap(&validity);
-        let null_count: Vec<IdxSize> = match &**ac.groups().as_ref() {
+        let null_count: Vec<IdxSize> = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
                 .map(|(_, idx)| {
@@ -141,7 +142,8 @@ pub fn any<'a>(
     }
 
     ac.groups();
-    let values = ac.get_values().bool()?;
+    let values = ac.flat_naive();
+    let values = values.bool()?;
     let out = unsafe { values.agg_any(ac.groups.as_ref(), ignore_nulls) };
     ac.state = AggState::AggregatedScalar(out.into_column());
 
@@ -175,8 +177,9 @@ pub fn all<'a>(
     }
 
     ac.groups();
-    let values = ac.get_values().bool()?;
-    let out = unsafe { values.agg_all(ac.groups.as_ref(), ignore_nulls) };
+    let values = ac.flat_naive();
+    let values = values.bool()?;
+    let out = unsafe { values.agg_all(groups.as_ref(), ignore_nulls) };
     ac.state = AggState::AggregatedScalar(out.into_column());
 
     Ok(ac)
