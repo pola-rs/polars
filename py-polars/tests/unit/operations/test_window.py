@@ -753,7 +753,8 @@ def test_aggregate_gather_over_dtype_24632(
         (pl.col.x.head(1), "join", [[1], [1], [3]]),
         (pl.col.x.head(1), "explode", [1, 3]),
         # not length preserving - gather
-        (pl.col.x.gather([0, 0]), "group_to_rows", None),  # Must raise
+        ## PENDING LENGTH CHECK
+        ## (pl.col.x.gather([0, 0]), "group_to_rows", None),  # Must raise
         (pl.col.x.gather([0, 0]), "join", [[1, 1], [1, 1], [3, 3]]),
         (pl.col.x.gather([0, 0]), "explode", [1, 1, 3, 3]),
         # agg to scalar (list), then agg length preserving
@@ -779,3 +780,21 @@ def test_mapping_strategy_scalar_matrix(
         print(expected)
         assert q.collect_schema() == out.schema
         assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col.x.head(0),
+        pl.col.x.head(1),
+        pl.col.x.gather([]),
+        pl.col.x.gather([0]),
+        pl.col.x.gather([0, 0]),
+    ],
+)
+def test_shape_mismatch(expr: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "x": [1, 2, 3]})
+
+    q = df.lazy().select(expr.over(pl.col.g))
+    with pytest.raises(ShapeError):
+        q.collect()
