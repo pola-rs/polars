@@ -292,6 +292,7 @@ def test_multiscan_row_index(
         pl.exceptions.DuplicateError, match="'index' has more than one occurrence"
     ):
         scan(g).with_row_index().with_row_index().collect()
+
     assert_frame_equal(
         scan(g)
         .with_row_index()
