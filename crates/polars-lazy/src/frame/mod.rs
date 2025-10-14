@@ -2030,8 +2030,12 @@ impl LazyFrame {
         let name = name.into();
 
         match &self.logical_plan {
-            v @ DslPlan::Scan { scan_type, .. }
-                if !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
+            v @ DslPlan::Scan {
+                scan_type,
+                unified_scan_args,
+                ..
+            } if unified_scan_args.row_index.is_none()
+                && !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
             {
                 let DslPlan::Scan {
                     sources,

@@ -288,6 +288,26 @@ def test_multiscan_row_index(
         ),
     )
 
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="'index' has more than one occurrence"
+    ):
+        scan(g).with_row_index().with_row_index().collect()
+    assert_frame_equal(
+        scan(g)
+        .with_row_index()
+        .with_row_index("index_1", offset=1)
+        .with_row_index("index_2", offset=2)
+        .collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index_2", [2, 3, 4, 5, 6, 7], get_index_type()),
+                pl.Series("index_1", [1, 2, 3, 4, 5, 6], get_index_type()),
+                pl.Series("index", [0, 1, 2, 3, 4, 5], get_index_type()),
+                col,
+            ]
+        ),
+    )
+
 
 @pytest.mark.parametrize(
     ("scan", "write", "ext"),
