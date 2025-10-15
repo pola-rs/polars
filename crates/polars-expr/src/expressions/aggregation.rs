@@ -131,7 +131,12 @@ impl PhysicalExpr for AggregationExpr {
                 s.tail(Some(1))
             }),
             GroupByMethod::Single => Ok(match s.len() {
-                1 => s.head(Some(1)),
+                0 => {
+                    return Err(polars_err!(ComputeError:
+                        "aggregation 'single' expected a single value, got none"
+                    ));
+                },
+                1 => s.slice(0, 1),
                 n => {
                     return Err(polars_err!(ComputeError:
                         "aggregation 'single' expected a single value, got {n} values"

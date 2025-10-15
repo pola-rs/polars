@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -939,3 +941,66 @@ def test_invalid_agg_dtypes_should_raise(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
         df.lazy().select(expr).collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        allow_null=False,
+        excluded_dtypes=[
+            pl.Struct,
+        ],
+    )
+)
+def test_single(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).single())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+@given(
+    df=dataframes(
+        max_size=0,
+        allow_null=False,
+        excluded_dtypes=[
+            pl.Struct,
+        ],
+    )
+)
+def test_single_empty(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all().single())
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"aggregation 'single' expected a single value, got none",
+    ):
+        q.collect()
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"aggregation 'single' expected a single value, got none",
+    ):
+        q.collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=2,
+        allow_null=False,
+        excluded_dtypes=[
+            pl.Struct,
+        ],
+    )
+)
+def test_single_too_many(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).single())
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=rf"aggregation 'single' expected a single value, got {df.height} values",
+    ):
+        q.collect()
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=rf"aggregation 'single' expected a single value, got {df.height} values",
+    ):
+        q.collect(engine="streaming")

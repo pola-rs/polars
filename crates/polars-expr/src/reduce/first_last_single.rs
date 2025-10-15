@@ -93,7 +93,7 @@ impl Policy for Single {
 
 struct NumFirstLastReducer<P, T>(PhantomData<(P, T)>);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct Value<T: Clone> {
     value: Option<T>,
     seq: u64,
@@ -115,11 +115,7 @@ where
     type Value = Value<T::Native>;
 
     fn init(&self) -> Self::Value {
-        Value {
-            value: None,
-            seq: 0,
-            count: 0,
-        }
+        Value::default()
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -128,7 +124,8 @@ where
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
         if P::should_replace(b.seq, a.seq) {
-            *a = b.clone();
+            a.value = b.value;
+            a.seq = b.seq;
         }
         a.count += b.count;
     }
@@ -158,16 +155,7 @@ where
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         if P::is_single() {
-            if v.iter().any(|v| v.count == 0) {
-                return Err(polars_err!(ComputeError:
-                    "aggregation 'single' expected a single value, got an empty group"
-                ));
-            }
-            if let Some(Value { count: n, .. }) = v.iter().find(|v| v.count > 1) {
-                return Err(polars_err!(ComputeError:
-                    "aggregation 'single' expected a single value, got a group with {n} values"
-                ));
-            }
+            check_single_value(&v)?;
         }
         let ca: ChunkedArray<T> = v
             .into_iter()
@@ -201,10 +189,10 @@ where
     P: Policy,
 {
     type Dtype = BinaryType;
-    type Value = (Option<Vec<u8>>, u64);
+    type Value = Value<Vec<u8>>;
 
     fn init(&self) -> Self::Value {
-        (None, 0)
+        Value::default()
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -212,24 +200,27 @@ where
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        if P::should_replace(b.1, a.1) {
-            a.0.clone_from(&b.0);
-            a.1 = b.1;
+        if P::should_replace(b.seq, a.seq) {
+            a.value.clone_from(&b.value);
+            a.seq = b.seq;
         }
+        a.count += b.count;
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>, seq_id: u64) {
-        if P::should_replace(seq_id, a.1) {
-            replace_opt_bytes(&mut a.0, b);
-            a.1 = seq_id;
+        if P::should_replace(seq_id, a.seq) {
+            replace_opt_bytes(&mut a.value, b);
+            a.seq = seq_id;
         }
+        a.count += b.is_some() as u64;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
-        if !ca.is_empty() && P::should_replace(seq_id, v.1) {
-            replace_opt_bytes(&mut v.0, ca.get(P::index(ca.len())));
-            v.1 = seq_id;
+        if !ca.is_empty() && P::should_replace(seq_id, v.seq) {
+            replace_opt_bytes(&mut v.value, ca.get(P::index(ca.len())));
+            v.seq = seq_id;
         }
+        v.count += ca.len() as u64;
     }
 
     fn finish(
@@ -239,7 +230,13 @@ where
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        let ca: BinaryChunked = v.into_iter().map(|(x, _s)| x).collect_ca(PlSmallStr::EMPTY);
+        if P::is_single() {
+            check_single_value(&v)?;
+        }
+        let ca: BinaryChunked = v
+            .into_iter()
+            .map(|Value { value, .. }| value)
+            .collect_ca(PlSmallStr::EMPTY);
         ca.into_series().cast(dtype)
     }
 }
@@ -257,30 +254,34 @@ where
     P: Policy,
 {
     type Dtype = BooleanType;
-    type Value = (Option<bool>, u64);
+    type Value = Value<bool>;
 
     fn init(&self) -> Self::Value {
-        (None, 0)
+        Value::default()
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        if P::should_replace(b.1, a.1) {
-            *a = *b;
+        if P::should_replace(b.seq, a.seq) {
+            a.value = b.value;
+            a.seq = b.seq;
         }
+        a.count += b.count;
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>, seq_id: u64) {
-        if P::should_replace(seq_id, a.1) {
-            a.0 = b;
-            a.1 = seq_id;
+        if P::should_replace(seq_id, a.seq) {
+            a.value = b;
+            a.seq = seq_id;
         }
+        a.count += b.is_some() as u64;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
-        if !ca.is_empty() && P::should_replace(seq_id, v.1) {
-            v.0 = ca.get(P::index(ca.len()));
-            v.1 = seq_id;
+        if !ca.is_empty() && P::should_replace(seq_id, v.seq) {
+            v.value = ca.get(P::index(ca.len()));
+            v.seq = seq_id;
         }
+        v.count += ca.len() as u64;
     }
 
     fn finish(
@@ -290,7 +291,13 @@ where
         _dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        let ca: BooleanChunked = v.into_iter().map(|(x, _s)| x).collect_ca(PlSmallStr::EMPTY);
+        if P::is_single() {
+            check_single_value(&v)?;
+        }
+        let ca: BooleanChunked = v
+            .into_iter()
+            .map(|Value { value, .. }| value)
+            .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }
 }
@@ -299,8 +306,10 @@ pub struct GenericFirstLastGroupedReduction<P> {
     in_dtype: DataType,
     values: Vec<AnyValue<'static>>,
     seqs: Vec<u64>,
+    counts: Vec<u64>,
     evicted_values: Vec<AnyValue<'static>>,
     evicted_seqs: Vec<u64>,
+    evicted_counts: Vec<u64>,
     policy: PhantomData<fn() -> P>,
 }
 
@@ -310,8 +319,10 @@ impl<P> GenericFirstLastGroupedReduction<P> {
             in_dtype,
             values: Vec::new(),
             seqs: Vec::new(),
+            counts: Vec::new(),
             evicted_values: Vec::new(),
             evicted_seqs: Vec::new(),
+            evicted_counts: Vec::new(),
             policy: PhantomData,
         }
     }
@@ -325,11 +336,13 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
     fn reserve(&mut self, additional: usize) {
         self.values.reserve(additional);
         self.seqs.reserve(additional);
+        self.counts.reserve(additional);
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, AnyValue::Null);
         self.seqs.resize(num_groups as usize, 0);
+        self.counts.resize(num_groups as usize, 0);
     }
 
     fn update_group(
@@ -345,6 +358,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                 self.values[group_idx as usize] = values.get(P::index(values.len()))?.into_static();
                 self.seqs[group_idx as usize] = seq_id;
             }
+            self.counts[group_idx as usize] += values.len() as u64;
         }
         Ok(())
     }
@@ -371,6 +385,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                 *grp_val = values.get_unchecked(*i as usize).into_static();
                 *grp_seq = seq_id;
             }
+            self.counts[g.idx()] += 1;
         }
         Ok(())
     }
@@ -394,6 +409,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                     other.values.get_unchecked(si).clone();
                 *self.seqs.get_unchecked_mut(*g as usize) = *other.seqs.get_unchecked(si);
             }
+            *self.counts.get_unchecked_mut(*g as usize) += other.counts[si];
         }
         Ok(())
     }
@@ -403,16 +419,26 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
             in_dtype: self.in_dtype.clone(),
             values: core::mem::take(&mut self.evicted_values),
             seqs: core::mem::take(&mut self.evicted_seqs),
+            counts: core::mem::take(&mut self.evicted_counts),
             evicted_values: Vec::new(),
             evicted_seqs: Vec::new(),
+            evicted_counts: Vec::new(),
             policy: PhantomData,
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         self.seqs.clear();
+        if P::is_single() {
+            for count in self.counts.iter() {
+                if *count != 1 {
+                    return Err(single_count_err(*count));
+                }
+            }
+        }
         unsafe {
             let mut buf = AnyValueBufferTrusted::new(&self.in_dtype, self.values.len());
+
             for v in core::mem::take(&mut self.values) {
                 buf.add_unchecked_owned_physical(&v);
             }
@@ -422,5 +448,27 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+fn check_single_value<T: Clone>(v: &[Value<T>]) -> PolarsResult<()> {
+    if let Some(Value { count: n, .. }) = v.iter().find(|v| v.count != 1) {
+        Err(single_count_err(*n))
+    } else {
+        Ok(())
+    }
+}
+
+fn single_count_err(n: u64) -> PolarsError {
+    if n == 0 {
+        polars_err!(ComputeError:
+            "aggregation 'single' expected a single value, got none"
+        )
+    } else if n > 1 {
+        polars_err!(ComputeError:
+            "aggregation 'single' expected a single value, got {n} values"
+        )
+    } else {
+        unreachable!()
     }
 }
