@@ -364,6 +364,7 @@ impl PyLazyFrame {
     ) -> PyResult<Self> {
         #[cfg(feature = "cloud")]
         use cloud::credential_provider::PlCredentialProvider;
+        use polars_utils::slice_enum::Slice;
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
             offset,
@@ -376,14 +377,15 @@ impl PyLazyFrame {
             try_parse_dates: try_parse_hive_dates,
         };
 
-        let mut args = ScanArgsIpc {
-            n_rows,
+        let mut unified_scan_args = UnifiedScanArgs {
+            pre_slice: n_rows.map(|len| Slice::Positive { offset: 0, len }),
             cache,
             rechunk,
             row_index,
             cloud_options: None,
             hive_options,
             include_file_paths: include_file_paths.map(|x| x.into()),
+            ..Default::default()
         };
 
         let sources = sources.0;
@@ -401,7 +403,7 @@ impl PyLazyFrame {
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
             }
-            args.cloud_options = Some(
+            unified_scan_args.cloud_options = Some(
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
@@ -410,7 +412,8 @@ impl PyLazyFrame {
             );
         }
 
-        let lf = LazyFrame::scan_ipc_sources(sources, args).map_err(PyPolarsErr::from)?;
+        let lf = LazyFrame::scan_ipc_sources(sources, Default::default(), unified_scan_args)
+            .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
     }
 
