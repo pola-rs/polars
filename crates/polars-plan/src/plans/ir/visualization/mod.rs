@@ -47,8 +47,8 @@ struct IRVisualizationDataGenerator<'a> {
     queue: VecDeque<Node>,
     nodes_list: Vec<IRNodeInfo>,
     edges: Vec<Edge>,
-    /// During traversal we will encounter the same cache nodes multiple times, but we only want
-    /// to push a single entry for each cache ID.
+    /// During traversal we will encounter the same cache ID multiple times, but we only want
+    /// to push a single entry per cache ID.
     cache_node_to_position: PlHashMap<UniqueId, usize>,
 }
 
