@@ -708,9 +708,9 @@ class ExprListNameSpace:
         >>> df = pl.DataFrame({"a": [[3, 2], [1], [2]]})
         >>> df.select(pl.col("a").list.single())
         Traceback (most recent call last):
-        ... ComputeError: cannot unpack single value from list of length 2
+        ... ComputeError: aggregation 'single' expected a single value, got 2 values
         """
-        return wrap_expr(self._pyexpr.list_single())
+        return self.agg(F.element().single())
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """

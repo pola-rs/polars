@@ -22,7 +22,6 @@ pub enum IRListFunction {
     Slice,
     Shift,
     Get(bool),
-    Single,
     #[cfg(feature = "list_gather")]
     Gather(bool),
     #[cfg(feature = "list_gather")]
@@ -75,7 +74,6 @@ impl IRListFunction {
             Slice => mapper.ensure_is_list()?.with_same_dtype(),
             Shift => mapper.ensure_is_list()?.with_same_dtype(),
             Get(_) => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
-            Single => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
             #[cfg(feature = "list_gather")]
             Gather(_) => mapper.ensure_is_list()?.with_same_dtype(),
             #[cfg(feature = "list_gather")]
@@ -188,7 +186,6 @@ impl IRListFunction {
             | L::Slice
             | L::Shift
             | L::Get(_)
-            | L::Single
             | L::Length
             | L::Max
             | L::Min
@@ -243,7 +240,6 @@ impl Display for IRListFunction {
             Slice => "slice",
             Shift => "shift",
             Get(_) => "get",
-            Single => "single",
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
             #[cfg(feature = "list_gather")]

@@ -21,7 +21,6 @@ pub enum ListFunction {
     Slice,
     Shift,
     Get(bool),
-    Single,
     #[cfg(feature = "list_gather")]
     Gather(bool),
     #[cfg(feature = "list_gather")]
@@ -81,7 +80,6 @@ impl Display for ListFunction {
             Slice => "slice",
             Shift => "shift",
             Get(_) => "get",
-            Single => "single",
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
             #[cfg(feature = "list_gather")]

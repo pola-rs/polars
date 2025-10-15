@@ -34,7 +34,6 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
         Slice => wrap!(slice),
         Shift => map_as_slice!(shift),
         Get(null_on_oob) => wrap!(get, null_on_oob),
-        Single => map!(single),
         #[cfg(feature = "list_gather")]
         Gather(null_on_oob) => map_as_slice!(gather, null_on_oob),
         #[cfg(feature = "list_gather")]
@@ -253,11 +252,6 @@ pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Column> {
     let index = index.i64().unwrap();
 
     polars_ops::prelude::lst_get(ca, index, null_on_oob)
-}
-
-pub(super) fn single(s: &Column) -> PolarsResult<Column> {
-    let list = s.list()?;
-    list.lst_single().map(Column::from)
 }
 
 #[cfg(feature = "list_gather")]

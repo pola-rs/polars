@@ -70,10 +70,6 @@ impl PyExpr {
             .into()
     }
 
-    fn list_single(&self) -> Self {
-        self.inner.clone().list().single().into()
-    }
-
     fn list_join(&self, separator: PyExpr, ignore_nulls: bool) -> Self {
         self.inner
             .clone()

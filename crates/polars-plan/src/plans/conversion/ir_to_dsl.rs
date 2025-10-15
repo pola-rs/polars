@@ -349,7 +349,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IL::Slice => L::Slice,
                 IL::Shift => L::Shift,
                 IL::Get(v) => L::Get(v),
-                IL::Single => L::Single,
                 #[cfg(feature = "list_gather")]
                 IL::Gather(v) => L::Gather(v),
                 #[cfg(feature = "list_gather")]
