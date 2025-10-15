@@ -35,7 +35,7 @@ pub fn generate_visualization_data<'a>(
 
     IRVisualizationData {
         title,
-        num_roots: roots.len(),
+        num_roots: roots.len().try_into().unwrap(),
         nodes: nodes_list,
         edges,
     }

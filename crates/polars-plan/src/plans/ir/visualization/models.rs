@@ -10,7 +10,7 @@ use polars_utils::unique_id::UniqueId;
 pub struct IRVisualizationData {
     pub title: PlSmallStr,
     /// Number of nodes from the start of `nodes` that are root nodes.
-    pub num_roots: usize,
+    pub num_roots: u64,
     pub nodes: Vec<IRNodeInfo>,
     pub edges: Vec<Edge>,
 }
