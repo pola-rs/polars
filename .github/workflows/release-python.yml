@@ -146,14 +146,11 @@ jobs:
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
           tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/runtime/pyproject.toml
           tomlq -i -t ".lib.name = \"_$SNAKE_CASE\"" py-polars/runtime/Cargo.toml
+          tomlq -i -t 'del(.dependencies.polars.features[] | select(. == "bigidx"))' py-polars/runtime/Cargo.toml
           sed -i "s/pub fn _polars_runtime_64/pub fn _$SNAKE_CASE/" crates/polars-python/src/c_api/mod.rs
       - name: Set runtime repr in plr
         run: |
           sed -i "s/^pub static RUNTIME_REPR: \&str = \"unknown\";$/pub static RUNTIME_REPR: \&str = \"rt$(echo '${{ matrix.package }}' | cut -d '-' -f 3)\";/g" crates/polars-python/src/c_api/mod.rs
-      - name: Update 64-bit runtime to bigidx
-        if: matrix.package == 'polars-runtime-64'
-        run: |
-          tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/runtime/Cargo.toml
 
       - name: Create source distribution
         uses: PyO3/maturin-action@v1
