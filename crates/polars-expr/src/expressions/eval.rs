@@ -14,9 +14,11 @@ use polars_core::prelude::{
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
+use polars_plan::constants::PL_ELEMENT_NAME;
 use polars_plan::dsl::{EvalVariant, Expr};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
@@ -66,7 +68,10 @@ impl EvalExpr {
         state: &ExecutionState,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
+        let df = ca
+            .get_inner()
+            .with_name(PL_ELEMENT_NAME.clone())
+            .into_frame();
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -187,7 +192,10 @@ impl EvalExpr {
         as_list: bool,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
+        let df = ca
+            .get_inner()
+            .with_name(PL_ELEMENT_NAME.clone())
+            .into_frame();
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -366,7 +374,7 @@ impl EvalExpr {
 
         let groups = groups.into_sliceable();
 
-        let df = input.clone().with_name(PlSmallStr::EMPTY).into_frame();
+        let df = input.clone().with_name(PL_ELEMENT_NAME.clone()).into_frame();
         let agg = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
         let (mut out, _) = agg.get_final_aggregation();
 

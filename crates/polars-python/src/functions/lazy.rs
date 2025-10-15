@@ -115,6 +115,11 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+#[pyfunction]
+pub fn element() -> PyExpr {
+    dsl::element().into()
+}
+
 fn lfs_to_plans(lfs: Vec<PyLazyFrame>) -> Vec<DslPlan> {
     lfs.into_iter()
         .map(|lf| lf.ldf.into_inner().logical_plan)
