@@ -809,6 +809,8 @@ def test_clear_cache_on_stacked_filters_24806() -> None:
     out = df.filter(predicate).filter(predicate).collect()
     expected = pl.DataFrame({"x": [2]})
     assert_frame_equal(out, expected)
+
+
 @pytest.mark.parametrize(
     "expr", [pl.col.a, pl.col.a.first(), pl.col.b, pl.col.b.first()]
 )
@@ -824,8 +826,6 @@ def test_clear_cache_on_stacked_filters_24806() -> None:
         [pl.col.g.first(), pl.col.h],
     ],
 )
-
-
 def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3], "b": ["x", "y", "z"], "g": [10, 10, 20], "h": [10, 10, 20]}
