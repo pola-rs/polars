@@ -785,17 +785,6 @@ fn expand_expression_rec(
             evaluation,
             variant,
         } => {
-            // Perform this before schema resolution so that we can better error messages.
-            for e in evaluation.as_ref().into_iter() {
-                if let Expr::Column(name) = e {
-                    polars_ensure!(
-                        name.is_empty(),
-                        ComputeError:
-                        "named columns are not allowed in `eval` functions; consider using `element`"
-                    );
-                }
-            }
-
             let mut tmp = Vec::with_capacity(1);
             expand_expression_rec(expr, ignored_selector_columns, schema, &mut tmp, opt_flags)?;
 

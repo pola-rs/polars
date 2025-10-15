@@ -11,6 +11,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unique_id::UniqueId;
 
 use super::NodeTimer;
+use crate::prelude::{AggState, AggregationContext};
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 
@@ -118,6 +119,8 @@ pub struct ExecutionState {
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
+    /// External aggregations that can be provided by name.
+    pub ext_named_groups: Arc<PlHashMap<PlSmallStr, AggState>>,
     node_timer: Option<NodeTimer>,
     stop: Arc<RelaxedCell<bool>>,
 }
@@ -135,6 +138,7 @@ impl ExecutionState {
             branch_idx: 0,
             flags: RelaxedCell::from(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
+            ext_named_groups: Default::default(),
             node_timer: None,
             stop: Arc::new(RelaxedCell::from(false)),
         }
@@ -199,6 +203,7 @@ impl ExecutionState {
             branch_idx: self.branch_idx,
             flags: self.flags.clone(),
             ext_contexts: self.ext_contexts.clone(),
+            ext_named_groups: self.ext_named_groups.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
         }

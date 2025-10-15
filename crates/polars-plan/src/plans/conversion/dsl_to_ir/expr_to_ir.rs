@@ -1,5 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
+use crate::constants::PL_ELEMENT_NAME;
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -416,18 +417,9 @@ pub(super) fn to_aexpr_impl(
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
-            // Perform this before schema resolution so that we can better error messages.
-            for e in evaluation.as_ref().into_iter() {
-                if let Expr::Column(name) = e {
-                    polars_ensure!(
-                        name.is_empty(),
-                        ComputeError:
-                        "named columns are not allowed in `eval` functions; consider using `element`"
-                    );
-                }
-            }
+            let mut evaluation_schema = ctx.schema.clone();
+            evaluation_schema.insert(PlSmallStr::EMPTY, element_dtype.clone());
 
-            let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let mut evaluation_ctx = ExprToIRContext {
                 with_fields: None,
                 schema: &evaluation_schema,

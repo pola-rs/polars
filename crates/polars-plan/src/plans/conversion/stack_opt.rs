@@ -144,7 +144,8 @@ impl ConversionOptimizer {
                     .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
 
                 let element_dtype = variant.element_dtype(&expr)?;
-                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+                let mut schema = schema.clone();
+                schema.insert(PlSmallStr::EMPTY, element_dtype.clone());
                 self.schemas.push(schema);
                 self.scratch.push((*evaluation, self.schemas.len()));
             }
