@@ -310,33 +310,4 @@ impl Series {
         };
         s.restore_logical(out)
     }
-
-    #[doc(hidden)]
-    pub unsafe fn agg_single(&self, groups: &GroupsType) -> Series {
-        // Prevent a rechunk for every individual group.
-        let s = if groups.len() > 1 {
-            self.rechunk()
-        } else {
-            self.clone()
-        };
-
-        let out = match groups {
-            GroupsType::Idx(groups) => {
-                let indices = groups
-                    .all()
-                    .iter()
-                    .map(|idx| if idx.len() == 1 { Some(idx[0]) } else { None })
-                    .collect_ca(PlSmallStr::EMPTY);
-                s.take_unchecked(&indices)
-            },
-            GroupsType::Slice { groups, .. } => {
-                let indices = groups
-                    .iter()
-                    .map(|&[first, len]| if len == 1 { Some(first) } else { None })
-                    .collect_ca(PlSmallStr::EMPTY);
-                s.take_unchecked(&indices)
-            },
-        };
-        s.restore_logical(out)
-    }
 }

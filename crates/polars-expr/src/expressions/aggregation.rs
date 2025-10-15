@@ -357,14 +357,14 @@ impl PhysicalExpr for AggregationExpr {
                             && n == 0
                         {
                             return Err(polars_err!(ComputeError:
-                                "aggregation 'single' expected a single value, got an empty group"
+                                "aggregation 'single' expected a single value, got none"
                             ));
                         }
                         if let Some(n) = gc
                             && n > 1
                         {
                             return Err(polars_err!(ComputeError:
-                                "aggregation 'single' expected a single value, got a group with {n} values"
+                                "aggregation 'single' expected a single value, got {n} values"
                             ));
                         }
                     }

@@ -438,7 +438,6 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         }
         unsafe {
             let mut buf = AnyValueBufferTrusted::new(&self.in_dtype, self.values.len());
-
             for v in core::mem::take(&mut self.values) {
                 buf.add_unchecked_owned_physical(&v);
             }
