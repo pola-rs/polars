@@ -54,8 +54,9 @@ struct IRVisualizationDataGenerator<'a> {
 
 impl IRVisualizationDataGenerator<'_> {
     fn generate(mut self) -> (Vec<IRNodeInfo>, Vec<Edge>) {
-        // Note, intentionally a queue to traverse in insertion order, the `cache_node_to_position`
-        // mapping assumes this.
+        // Note, intentionally a queue to traverse in insertion order, this is needed for correctness of:
+        // * `cache_node_to_position` tracking
+        // * `num_roots` counter
         while let Some(node) = self.queue.pop_front() {
             let ir = self.ir_arena.get(node);
             let mut ir_node_info = self.get_ir_node_info(ir);
