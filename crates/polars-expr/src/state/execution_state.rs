@@ -23,12 +23,14 @@ pub struct WindowCache {
 
 impl WindowCache {
     pub(crate) fn clear(&self) {
-        let mut g = self.groups.write().unwrap();
-        g.clear();
-        let mut t = self.join_tuples.write().unwrap();
-        t.clear();
-        let mut i = self.map_idx.write().unwrap();
-        i.clear();
+        let Self {
+            groups,
+            join_tuples,
+            map_idx,
+        } = self;
+        groups.write().unwrap().clear();
+        join_tuples.write().unwrap().clear();
+        map_idx.write().unwrap().clear();
     }
 
     pub fn get_groups(&self, key: &str) -> Option<GroupPositions> {
