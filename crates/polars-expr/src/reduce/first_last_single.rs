@@ -376,16 +376,18 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         for (i, g) in subset.iter().zip(group_idxs) {
             let grp_val = self.values.get_unchecked_mut(g.idx());
             let grp_seq = self.seqs.get_unchecked_mut(g.idx());
+            let grp_count = self.counts.get_unchecked_mut(g.idx());
             if g.should_evict() {
                 self.evicted_values
                     .push(core::mem::replace(grp_val, AnyValue::Null));
                 self.evicted_seqs.push(core::mem::replace(grp_seq, 0));
+                self.evicted_counts.push(core::mem::replace(grp_count, 0));
             }
             if P::should_replace(seq_id, *grp_seq) {
                 *grp_val = values.get_unchecked(*i as usize).into_static();
                 *grp_seq = seq_id;
             }
-            self.counts[g.idx()] += 1;
+            *self.counts.get_unchecked_mut(g.idx()) += 1;
         }
         Ok(())
     }
@@ -409,7 +411,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                     other.values.get_unchecked(si).clone();
                 *self.seqs.get_unchecked_mut(*g as usize) = *other.seqs.get_unchecked(si);
             }
-            *self.counts.get_unchecked_mut(*g as usize) += other.counts[si];
+            *self.counts.get_unchecked_mut(*g as usize) += *other.counts.get_unchecked(si);
         }
         Ok(())
     }
