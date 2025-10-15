@@ -374,7 +374,10 @@ impl EvalExpr {
 
         let groups = groups.into_sliceable();
 
-        let df = input.clone().with_name(PL_ELEMENT_NAME.clone()).into_frame();
+        let df = input
+            .clone()
+            .with_name(PL_ELEMENT_NAME.clone())
+            .into_frame();
         let agg = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
         let (mut out, _) = agg.get_final_aggregation();
 
