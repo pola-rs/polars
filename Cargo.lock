@@ -3502,6 +3502,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "slotmap",
  "strum_macros 0.27.1",
  "version_check",
 ]
@@ -4778,6 +4779,7 @@ version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbff4acf519f630b3a3ddcfaea6c06b42174d9a44bc70c620e9ed1649d58b82a"
 dependencies = [
+ "serde",
  "version_check",
 ]
 
