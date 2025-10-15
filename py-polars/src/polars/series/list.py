@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -567,6 +568,26 @@ class ListNameSpace:
             1
             null
             2
+        ]
+        """
+
+    @unstable()
+    def single(self) -> Series:
+        """
+        Get the single value of the sublists.
+
+        This errors if the sublist does not contain exactly one element.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1], [4], [6]])
+        >>> s.list.single()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            4
+            6
         ]
         """
 

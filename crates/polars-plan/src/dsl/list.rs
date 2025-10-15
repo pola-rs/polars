@@ -143,6 +143,11 @@ impl ListNameSpace {
         )
     }
 
+    pub fn single(self) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Single))
+    }
+
     /// Get items in every sublist by multiple indexes.
     ///
     /// # Arguments

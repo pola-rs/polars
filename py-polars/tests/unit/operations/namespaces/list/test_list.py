@@ -49,6 +49,12 @@ def test_list_arr_get() -> None:
     expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
     assert_frame_equal(out_df, expected_df)
 
+    # Single
+    a = pl.Series("a", [[1], [4], [6]])
+    expected = pl.Series("a", [1, 4, 6])
+    out = a.list.single()
+    assert_series_equal(out, expected)
+
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
 
     with pytest.raises(ComputeError, match="get index is out of bounds"):

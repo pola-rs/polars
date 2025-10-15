@@ -384,6 +384,18 @@ pub trait ListNameSpaceImpl: AsList {
         unsafe { s.from_physical_unchecked(ca.inner_dtype()) }
     }
 
+    fn lst_single(&self) -> PolarsResult<Series> {
+        let ca = self.as_list();
+        if let Some(Some(n)) = ca
+            .downcast_iter()
+            .map(|arr| arr.offsets().lengths().find(|n| *n != 1))
+            .next()
+        {
+            polars_bail!(ComputeError: "cannot unpack single value from list of length {n}");
+        }
+        self.lst_get(0, false)
+    }
+
     #[cfg(feature = "list_gather")]
     fn lst_gather_every(&self, n: &IdxCa, offset: &IdxCa) -> PolarsResult<Series> {
         let list_ca = self.as_list();

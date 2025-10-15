@@ -3443,6 +3443,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.last())
 
+    @unstable()
     def single(self) -> Expr:
         """
         Get the single value.

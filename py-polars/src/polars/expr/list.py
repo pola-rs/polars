@@ -8,6 +8,7 @@ import polars._reexport as pl
 from polars import exceptions
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
+from polars._utils.unstable import unstable
 from polars._utils.various import issue_warning
 from polars._utils.wrap import wrap_expr
 
@@ -682,6 +683,34 @@ class ExprListNameSpace:
         └───────────┴──────┘
         """
         return self.get(-1, null_on_oob=True)
+
+    @unstable()
+    def single(self) -> Expr:
+        """
+        Get the single value of the sublists.
+
+        This errors if the sublist length is not exactly one.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[3], [1], [2]]})
+        >>> df.with_columns(single=pl.col("a").list.single())
+        shape: (3, 2)
+        ┌───────────┬────────┐
+        │ a         ┆ single │
+        │ ---       ┆ ---    │
+        │ list[i64] ┆ i64    │
+        ╞═══════════╪════════╡
+        │ [3]       ┆ 3      │
+        │ [1]       ┆ 1      │
+        │ [2]       ┆ 2      │
+        └───────────┴────────┘
+        >>> df = pl.DataFrame({"a": [[3, 2], [1], [2]]})
+        >>> df.select(pl.col("a").list.single())
+        Traceback (most recent call last):
+        ... ComputeError: cannot unpack single value from list of length 2
+        """
+        return wrap_expr(self._pyexpr.list_single())
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """

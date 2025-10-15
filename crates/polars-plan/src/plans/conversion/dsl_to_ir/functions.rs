@@ -167,6 +167,7 @@ pub(super) fn convert_functions(
                 L::Slice => IL::Slice,
                 L::Shift => IL::Shift,
                 L::Get(v) => IL::Get(v),
+                L::Single => IL::Single,
                 #[cfg(feature = "list_gather")]
                 L::Gather(v) => IL::Gather(v),
                 #[cfg(feature = "list_gather")]
