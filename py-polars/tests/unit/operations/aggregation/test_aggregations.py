@@ -949,6 +949,7 @@ def test_invalid_agg_dtypes_should_raise(
         max_size=1,
         allow_null=False,
         excluded_dtypes=[
+            # TODO(amber): This is broken, but also for .first()
             pl.Struct,
         ],
     )
@@ -963,9 +964,6 @@ def test_single(df: pl.DataFrame) -> None:
     df=dataframes(
         max_size=0,
         allow_null=False,
-        excluded_dtypes=[
-            pl.Struct,
-        ],
     )
 )
 def test_single_empty(df: pl.DataFrame) -> None:
@@ -986,9 +984,6 @@ def test_single_empty(df: pl.DataFrame) -> None:
     df=dataframes(
         min_size=2,
         allow_null=False,
-        excluded_dtypes=[
-            pl.Struct,
-        ],
     )
 )
 def test_single_too_many(df: pl.DataFrame) -> None:
