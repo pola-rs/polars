@@ -550,7 +550,6 @@ fn create_physical_expr_inner(
                 evaluation,
                 *variant,
                 node_to_expr(expression, expr_arena),
-                state.allow_threading,
                 output_field,
                 is_scalar,
                 evaluation_is_scalar,
