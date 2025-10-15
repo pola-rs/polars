@@ -17,6 +17,8 @@ use crate::prelude::*;
 pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
     fn(s: &[Column], output_dtype: Option<DataType>, lambda: &Py<PyAny>) -> PolarsResult<Column>,
 > = None;
+
+#[allow(clippy::type_complexity)]
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &Py<PyAny>) -> PolarsResult<DataFrame>,
 > = None;
