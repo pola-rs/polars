@@ -521,6 +521,11 @@ fn create_physical_expr_inner(
             pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
             let evaluation_is_fallible = matches!(pd_group, ExprPushdownGroup::Fallible);
 
+            let has_ext_columns = aexpr_to_leaf_names_iter(*evaluation, expr_arena)
+                .filter(|n| n.is_empty())
+                .count()
+                > 0;
+
             let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
@@ -531,7 +536,8 @@ fn create_physical_expr_inner(
                 create_physical_expr_inner(*expr, Context::Default, expr_arena, schema, state)?;
 
             let element_dtype = variant.element_dtype(&input_field.dtype)?;
-            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let mut eval_schema = schema.as_ref().clone();
+            eval_schema.insert(PlSmallStr::EMPTY, element_dtype.clone());
             let evaluation = create_physical_expr_inner(
                 *evaluation,
                 // @Hack. Since EvalVariant::Array uses `evaluate_on_groups` to determine the
@@ -561,6 +567,7 @@ fn create_physical_expr_inner(
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
                 evaluation_is_fallible,
+                has_ext_columns,
             )))
         },
         Function {

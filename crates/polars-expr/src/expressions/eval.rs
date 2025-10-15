@@ -10,7 +10,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
     AnyValue, ChunkCast, ChunkExplode, Column, Field, GroupPositions, GroupsType, IntoColumn,
-    ListBuilderTrait, ListChunked,
+    ListBuilderTrait, ListChunked, PlHashMap,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -19,7 +19,7 @@ use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::{AggregationContext, PhysicalExpr};
+use super::{AggState, AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
 
 #[derive(Clone)]
@@ -34,6 +34,7 @@ pub struct EvalExpr {
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
     evaluation_is_fallible: bool,
+    uses_ext_columns: bool,
 }
 
 impl EvalExpr {
@@ -49,6 +50,7 @@ impl EvalExpr {
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
         evaluation_is_fallible: bool,
+        uses_ext_columns: bool,
     ) -> Self {
         Self {
             input,
@@ -61,6 +63,7 @@ impl EvalExpr {
             evaluation_is_scalar,
             evaluation_is_elementwise,
             evaluation_is_fallible,
+            uses_ext_columns,
         }
     }
 
@@ -69,6 +72,7 @@ impl EvalExpr {
         ca: &ListChunked,
         state: &ExecutionState,
         is_agg: bool,
+        ext_df: &DataFrame,
     ) -> PolarsResult<Column> {
         let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
 
@@ -78,11 +82,14 @@ impl EvalExpr {
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
 
-        let has_masked_out_values = LazyCell::new(|| ca.has_masked_out_values());
-        let may_fail_on_masked_out_elements = self.evaluation_is_fallible && *has_masked_out_values;
+        let has_masked_out_values = ca.has_masked_out_values();
+        let may_fail_on_masked_out_elements = self.evaluation_is_fallible && has_masked_out_values;
 
         // Fast path: fully elementwise expression without masked out values.
-        if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
+        if self.evaluation_is_elementwise
+            && !self.uses_ext_columns
+            && !may_fail_on_masked_out_elements
+        {
             let mut column = self.evaluation.evaluate(&df, state)?;
 
             // Since `lit` is marked as elementwise, this may lead to problems.
@@ -124,7 +131,17 @@ impl EvalExpr {
         };
         let groups = Cow::Owned(groups.into_sliceable());
 
-        let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
+        let mut state = Cow::Borrowed(state);
+        if self.uses_ext_columns {
+            state.to_mut().ext_named_groups =
+                Arc::new(PlHashMap::from_iter(ext_df.column_iter().map(|c| {
+                    (c.name().clone(), AggState::AggregatedScalar(c.clone()))
+                })));
+        }
+
+        let mut ac = self
+            .evaluation
+            .evaluate_on_groups(&df, &groups, state.as_ref())?;
 
         ac.groups(); // Update the groups.
 
@@ -405,11 +422,11 @@ impl PhysicalExpr for EvalExpr {
         match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;
-                self.evaluate_on_list_chunked(lst, state, false)
+                self.evaluate_on_list_chunked(lst, state, false, df)
             },
             EvalVariant::ListAgg => {
                 let lst = input.list()?;
-                self.evaluate_on_list_chunked(lst, state, true)
+                self.evaluate_on_list_chunked(lst, state, true, df)
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
                 self.evaluate_on_array_chunked(input.array()?, state, as_list, false)
@@ -433,11 +450,12 @@ impl PhysicalExpr for EvalExpr {
         match self.variant {
             EvalVariant::List => {
                 let out =
-                    self.evaluate_on_list_chunked(input.get_values().list()?, state, false)?;
+                    self.evaluate_on_list_chunked(input.get_values().list()?, state, false, df)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::ListAgg => {
-                let out = self.evaluate_on_list_chunked(input.get_values().list()?, state, true)?;
+                let out =
+                    self.evaluate_on_list_chunked(input.get_values().list()?, state, true, df)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
