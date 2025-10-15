@@ -336,9 +336,9 @@ def test_list_arr_empty() -> None:
 
 def test_list_argminmax() -> None:
     s = pl.Series("a", [[1, 2], [3, 2, 1]])
-    expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
+    expected = pl.Series("a", [0, 2], dtype=pl.get_index_type())
     assert_series_equal(s.list.arg_min(), expected)
-    expected = pl.Series("a", [1, 0], dtype=pl.UInt32)
+    expected = pl.Series("a", [1, 0], dtype=pl.get_index_type())
     assert_series_equal(s.list.arg_max(), expected)
 
 
@@ -824,14 +824,15 @@ def test_list_to_array_wrong_dtype() -> None:
 def test_list_lengths() -> None:
     s = pl.Series([[1, 2, None], [5]])
     result = s.list.len()
-    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    expected = pl.Series([3, 1], dtype=pl.get_index_type())
     assert_series_equal(result, expected)
 
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
-    assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.UInt32))
+    assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.get_index_type()))
     df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=pl.UInt32)
+        df.select(pl.col("a").list.len())["a"],
+        pl.Series("a", [2, 3], dtype=pl.get_index_type()),
     )
 
     assert_series_equal(
@@ -840,7 +841,7 @@ def test_list_lengths() -> None:
             .then(pl.Series([[1, 1], [1, 1]]))
             .list.len()
         ).to_series(),
-        pl.Series([2, None], dtype=pl.UInt32),
+        pl.Series([2, None], dtype=pl.get_index_type()),
     )
 
     assert_series_equal(
@@ -849,7 +850,7 @@ def test_list_lengths() -> None:
             .then(pl.Series([[1, 1], [1, 1]]))
             .list.len()
         ).to_series(),
-        pl.Series([None, None], dtype=pl.UInt32),
+        pl.Series([None, None], dtype=pl.get_index_type()),
     )
 
 
@@ -940,7 +941,7 @@ def test_list_n_unique() -> None:
 
     out = df.select(n_unique=pl.col("a").list.n_unique())
     expected = pl.DataFrame(
-        {"n_unique": [2, 1, 1, None, 0]}, schema={"n_unique": pl.UInt32}
+        {"n_unique": [2, 1, 1, None, 0]}, schema={"n_unique": pl.get_index_type()}
     )
     assert_frame_equal(out, expected)
 
@@ -969,7 +970,7 @@ def test_list_get_with_null() -> None:
 
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
-    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
+    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.get_index_type()
 
 
 def test_list_concat_struct_19279() -> None:

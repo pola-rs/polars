@@ -1934,7 +1934,7 @@ def test_group_by_agg_n_unique_empty_group_idx_path() -> None:
     expected = pl.DataFrame(
         {
             "key": [1, 2],
-            "n_unique": pl.Series([3, 0], dtype=pl.UInt32),
+            "n_unique": pl.Series([3, 0], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(out, expected)
@@ -1954,7 +1954,7 @@ def test_group_by_agg_n_unique_empty_group_slice_path() -> None:
     expected = pl.DataFrame(
         {
             "key": [1, 2],
-            "n_unique": pl.Series([0, 0], dtype=pl.UInt32),
+            "n_unique": pl.Series([0, 0], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(out, expected)
@@ -1992,7 +1992,7 @@ def test_with_row_index_bad_offset() -> None:
     with pytest.raises(
         ValueError, match="cannot be greater than the maximum index value"
     ):
-        df.with_row_index(offset=2**32)
+        df.with_row_index(offset=2**64)
 
 
 def test_with_row_index_bad_offset_lazy() -> None:
@@ -2003,7 +2003,7 @@ def test_with_row_index_bad_offset_lazy() -> None:
     with pytest.raises(
         ValueError, match="cannot be greater than the maximum index value"
     ):
-        lf.with_row_index(offset=2**32)
+        lf.with_row_index(offset=2**64)
 
 
 def test_with_row_count_deprecated() -> None:
@@ -2095,7 +2095,7 @@ def test_group_by_order_dispatch(name: str | None) -> None:
     name = "len" if name is None else name
     expected = pl.DataFrame(
         data={"x": ["b", "a"], name: [2, 1]},
-        schema_overrides={name: pl.UInt32},
+        schema_overrides={name: pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
     assert_frame_equal(lazy_result.collect(), expected)
@@ -3177,7 +3177,8 @@ def test_window_deadlock() -> None:
 def test_sum_empty_column_names() -> None:
     df = pl.DataFrame({"x": [], "y": []}, schema={"x": pl.Boolean, "y": pl.Boolean})
     expected = pl.DataFrame(
-        {"x": [0], "y": [0]}, schema={"x": pl.UInt32, "y": pl.UInt32}
+        {"x": [0], "y": [0]},
+        schema={"x": pl.get_index_type(), "y": pl.get_index_type()},
     )
     assert_frame_equal(df.sum(), expected)
 

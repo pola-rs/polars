@@ -419,7 +419,9 @@ def test_various() -> None:
     a.sort(in_place=True)
     assert_series_equal(a, pl.Series("a", [1, 2, 4]))
     a = pl.Series("a", [2, 1, 1, 4, 4, 4])
-    assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
+    assert_series_equal(
+        a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=pl.get_index_type())
+    )
 
     assert_series_equal(a.gather([2, 3]), pl.Series("a", [1, 4]))
 
@@ -1442,11 +1444,11 @@ def test_gather_every() -> None:
 
 def test_arg_sort() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
-    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
+    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=pl.get_index_type())
 
     assert_series_equal(s.arg_sort(), expected)
 
-    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
+    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=pl.get_index_type())
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
@@ -2197,7 +2199,9 @@ def test_search_sorted(
     assert single_s == single_expected
 
     multiple_s = s.search_sorted(multiple)
-    assert_series_equal(multiple_s, pl.Series(multiple_expected, dtype=pl.UInt32))
+    assert_series_equal(
+        multiple_s, pl.Series(multiple_expected, dtype=pl.get_index_type())
+    )
 
 
 def test_series_from_pandas_with_dtype() -> None:

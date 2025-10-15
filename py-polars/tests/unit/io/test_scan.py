@@ -786,7 +786,7 @@ def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
         out,
         pl.DataFrame(
             {"index": [0, 1, 2], "a": [1, 2, 3]},
-            schema={"index": pl.UInt32, "a": pl.Int64},
+            schema={"index": pl.get_index_type(), "a": pl.Int64},
         ),
     )
 
@@ -820,7 +820,7 @@ def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
         lf.collect(engine="streaming"),
         pl.DataFrame(
             {"calories": "45", "index": 0},
-            schema={"calories": pl.String, "index": pl.UInt32},
+            schema={"calories": pl.String, "index": pl.get_index_type()},
         ),
     )
 

@@ -2992,7 +2992,7 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     expect = pl.DataFrame(
         [
-            pl.Series("index", [0, 1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.UInt32),
+            pl.Series("index", [0, 1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.get_index_type()),
             pl.Series("a", [1, 2, 2, 3, 3, 4, 4, 5, 5], dtype=pl.Int64),
             pl.Series("b", [1, 2, 2, 3, 3, 4, 4, None, None], dtype=pl.Int64),
             pl.Series(
