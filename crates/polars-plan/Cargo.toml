@@ -127,10 +127,14 @@ dsl-schema = [
   "polars-utils/dsl-schema",
   "polars-compute/dsl-schema",
 ]
-ir_text_plan_graph = [
+ir_visualization = [
   "dep:serde_json",
   "ir_serde",
   "serde",
+]
+ir_visualization_schema = [
+  "ir_visualization",
+  "dsl-schema",
 ]
 
 # operations
