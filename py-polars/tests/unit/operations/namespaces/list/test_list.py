@@ -1133,6 +1133,7 @@ def test_list_filter_null() -> None:
 
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
+@pytest.mar.may_fail_coverage  # reason: time check
 def test_list_struct_field_perf() -> None:
     base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
     df = base_df

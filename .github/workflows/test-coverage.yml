@@ -140,7 +140,7 @@ jobs:
         run: >
           pytest
           -n auto
-          -m "not release and not benchmark and not docs"
+          -m "not release and not benchmark and not docs and not may_fail_cov"
           -k 'not test_polars_import'
           --cov --cov-report xml:main.xml --cov-fail-under=0
 
@@ -152,7 +152,7 @@ jobs:
         run: >
           pytest
           -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
+          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only and not may_fail_cov"
           -k 'not test_polars_import'
           --cov --cov-report xml:main.xml --cov-fail-under=0
 
@@ -164,7 +164,7 @@ jobs:
         run: >
           pytest tests/unit/io/
           -n auto
-          -m "not release and not benchmark and not docs"
+          -m "not release and not benchmark and not docs and not may_fail_cov"
           --cov --cov-report xml:async.xml --cov-fail-under=0
 
       - name: Report Rust coverage

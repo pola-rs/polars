@@ -250,8 +250,9 @@ markers = [
   "release: Tests that should be run on a Polars release build.",
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
-  "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
-  "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_auto_streaming: Tests that may fail when automatically using the streaming engine for all lazy queries.",
+  "may_fail_cloud: Tests that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_cov: Tests that may fail during coverage check.",
 ]
 filterwarnings = [
   # Fail on warnings
