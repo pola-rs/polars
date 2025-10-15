@@ -104,7 +104,7 @@ impl EnterPolarsExt for Python<'_> {
         E: Ungil + Send + Into<PyPolarsErr>,
     {
         let timeout = schedule_polars_timeout();
-        let ret = self.allow_threads(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
+        let ret = self.detach(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
         cancel_polars_timeout(timeout);
         match ret {
             Ok(Ok(ret)) => Ok(ret),
