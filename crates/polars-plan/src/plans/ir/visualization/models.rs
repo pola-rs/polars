@@ -7,16 +7,15 @@ use polars_utils::unique_id::UniqueId;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Debug)]
-pub struct TextPlanGraph {
+pub struct IRVisualizationData {
     pub title: PlSmallStr,
-    /// Number of roots
-    pub roots: usize,
-    pub nodes: Vec<TpgNode>,
+    /// Number of nodes from the start of `nodes` that are root nodes.
+    pub num_roots: usize,
+    pub nodes: Vec<IRNodeInfo>,
     pub edges: Vec<Edge>,
-    pub legend: Option<Vec<PlSmallStr>>,
 }
 
-impl TextPlanGraph {
+impl IRVisualizationData {
     pub fn to_json(&self) -> polars_error::PolarsResult<String> {
         serde_json::to_string(self).map_err(polars_error::to_compute_err)
     }
@@ -25,11 +24,10 @@ impl TextPlanGraph {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Default)]
-pub struct TpgNode {
+pub struct IRNodeInfo {
     pub id: u64,
     pub title: PlSmallStr,
-    pub properties: IRTpgProperties,
-    pub tags: u128,
+    pub properties: IRNodeProperties,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -58,7 +56,7 @@ impl Edge {
 #[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Default, strum_macros::IntoStaticStr)]
-pub enum IRTpgProperties {
+pub enum IRNodeProperties {
     Cache {
         id: UniqueId,
     },

@@ -2,9 +2,9 @@ mod dot;
 mod format;
 pub mod inputs;
 mod schema;
-#[cfg(feature = "ir_text_plan_graph")]
-pub mod text_plan_graph;
 pub(crate) mod tree_format;
+#[cfg(feature = "ir_visualization")]
+pub mod visualization;
 
 use std::borrow::Cow;
 use std::fmt;
