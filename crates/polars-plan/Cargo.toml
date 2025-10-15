@@ -130,6 +130,10 @@ ir_visualization = [
   "ir_serde",
   "serde",
 ]
+ir_visualization_schema = [
+  "ir_visualization",
+  "dsl-schema"
+]
 
 # operations
 bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]

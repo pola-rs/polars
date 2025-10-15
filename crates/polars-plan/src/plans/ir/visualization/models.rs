@@ -5,7 +5,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
 #[derive(Debug)]
 pub struct IRVisualizationData {
     pub title: PlSmallStr,
@@ -22,7 +22,7 @@ impl IRVisualizationData {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Default)]
 pub struct IRNodeInfo {
     pub id: u64,
@@ -31,7 +31,7 @@ pub struct IRNodeInfo {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Default)]
 pub struct Edge {
     pub source: u64,
@@ -54,7 +54,7 @@ impl Edge {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(tag = "type"))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Default, strum_macros::IntoStaticStr)]
 pub enum IRNodeProperties {
     Cache {
