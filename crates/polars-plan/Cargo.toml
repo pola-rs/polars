@@ -132,7 +132,7 @@ ir_visualization = [
 ]
 ir_visualization_schema = [
   "ir_visualization",
-  "dsl-schema"
+  "dsl-schema",
 ]
 
 # operations
