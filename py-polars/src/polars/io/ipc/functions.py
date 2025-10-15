@@ -67,7 +67,7 @@ def read_ipc(
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance). If `fsspec` is installed, it will be used
+        function, or a `BytesIO` instance). If `fsspec` is installed, it might be used
         to open remote files. For file-like objects, the stream position may not be
         updated accordingly after reading.
     columns
@@ -257,7 +257,7 @@ def read_ipc_stream(
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance). If `fsspec` is installed, it will be used
+        function, or a `BytesIO` instance). If `fsspec` is installed, it might be used
         to open remote files. For file-like objects, the stream position may not be
         updated accordingly after reading.
     columns

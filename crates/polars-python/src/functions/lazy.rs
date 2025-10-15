@@ -148,7 +148,7 @@ pub fn collect_all_with_callback(
     lfs: Vec<PyLazyFrame>,
     engine: Wrap<Engine>,
     optflags: PyOptFlags,
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     py: Python<'_>,
 ) {
     let plans = lfs
@@ -165,7 +165,7 @@ pub fn collect_all_with_callback(
                 .collect::<Vec<PyDataFrame>>()
         });
 
-    Python::with_gil(|py| match result {
+    Python::attach(|py| match result {
         Ok(dfs) => {
             lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
         },
@@ -248,7 +248,7 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 #[pyfunction]
 pub fn cum_fold(
     acc: PyExpr,
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
     return_dtype: Option<PyDataTypeExpr>,
@@ -269,7 +269,7 @@ pub fn cum_fold(
 
 #[pyfunction]
 pub fn cum_reduce(
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
     return_dtype: Option<PyDataTypeExpr>,
@@ -415,7 +415,7 @@ pub fn duration(
 #[pyfunction]
 pub fn fold(
     acc: PyExpr,
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
     return_dtype: Option<PyDataTypeExpr>,
@@ -491,7 +491,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
 #[pyo3(signature = (pyexpr, lambda, output_type, is_elementwise, returns_scalar))]
 pub fn map_expr(
     pyexpr: Vec<PyExpr>,
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     output_type: Option<PyDataTypeExpr>,
     is_elementwise: bool,
     returns_scalar: bool,
@@ -506,7 +506,7 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
 
 #[pyfunction]
 pub fn reduce(
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
     return_dtype: Option<PyDataTypeExpr>,

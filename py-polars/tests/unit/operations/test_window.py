@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars._typing import WindowMappingStrategy
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -698,3 +704,100 @@ def test_window_fold_22493() -> None:
                 .alias("prod"),
             )
         )
+
+
+@pytest.mark.parametrize(
+    "mapping_strategy",
+    ["group_to_rows", "join", "explode"],
+)
+@pytest.mark.parametrize(
+    "query", [pl.col.x.sum().gather([0, 0, 0]), pl.col.x.implode().gather([0, 0, 0])]
+)
+def test_aggregate_gather_over_dtype_24632(
+    mapping_strategy: WindowMappingStrategy, query: pl.Expr
+) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    q = df.lazy().select(query.over(1, mapping_strategy=mapping_strategy))
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.may_fail_auto_streaming  # reason: issue
+# https://github.com/pola-rs/polars/issues/24865
+@pytest.mark.parametrize(
+    ("expr", "mapping_strategy", "result"),
+    [
+        # baseline
+        (pl.col.x, "group_to_rows", [1, 2, 3]),
+        (pl.col.x, "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x, "explode", [1, 2, 3]),
+        # no agg, length-preserving
+        (pl.col.x.reverse(), "group_to_rows", [2, 1, 3]),
+        (pl.col.x.reverse(), "join", [[2, 1], [2, 1], [3]]),
+        (pl.col.x.reverse(), "explode", [2, 1, 3]),
+        # agg to scalar
+        (pl.col.x.first(), "group_to_rows", [1, 1, 3]),
+        (pl.col.x.first(), "join", [1, 1, 3]),
+        (pl.col.x.first(), "explode", [1, 3]),
+        # agg to scalar (list)
+        (pl.col.x.implode(), "group_to_rows", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode(), "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode(), "explode", [[1, 2], [3]]),
+        # mix of no agg and agg to scalar
+        (pl.col.x.first() + pl.col.y, "group_to_rows", [5, 6, 9]),
+        (pl.col.x.first() + pl.col.y, "join", [[5, 6], [5, 6], [9]]),
+        (pl.col.x.first() + pl.col.y, "explode", [5, 6, 9]),
+        # mix of no agg and agg to scalar, re-ordered
+        (pl.col.x + pl.col.y.first(), "group_to_rows", [5, 6, 9]),
+        (pl.col.x + pl.col.y.first(), "join", [[5, 6], [5, 6], [9]]),
+        (pl.col.x + pl.col.y.first(), "explode", [5, 6, 9]),
+        # not length preserving - head
+        (pl.col.x.head(1), "group_to_rows", None),  # Must raise
+        (pl.col.x.head(1), "join", [[1], [1], [3]]),
+        (pl.col.x.head(1), "explode", [1, 3]),
+        # not length preserving - gather
+        (pl.col.x.gather([0, 0]), "group_to_rows", None),  # Must raise
+        (pl.col.x.gather([0, 0]), "join", [[1, 1], [1, 1], [3, 3]]),
+        (pl.col.x.gather([0, 0]), "explode", [1, 1, 3, 3]),
+        # agg to scalar (list), then agg length preserving
+        (pl.col.x.implode().reverse(), "group_to_rows", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode().reverse(), "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode().reverse(), "explode", [[1, 2], [3]]),
+    ],
+)
+def test_mapping_strategy_scalar_matrix(
+    expr: pl.Expr, mapping_strategy: WindowMappingStrategy, result: list[int] | None
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "x": [1, 2, 3], "y": [4, 5, 6]})
+
+    q = df.lazy().select(expr.over(pl.col.g, mapping_strategy=mapping_strategy))
+    expected = pl.DataFrame({"x": result})
+
+    if not result:
+        with pytest.raises(ShapeError):
+            q.collect()
+    else:
+        out = q.collect()
+        print(out)
+        print(expected)
+        assert q.collect_schema() == out.schema
+        assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming  # reason: issue
+# https://github.com/pola-rs/polars/issues/24865
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col.x.head(0),
+        pl.col.x.head(1),
+        pl.col.x.gather([]),
+        pl.col.x.gather([0]),
+        pl.col.x.gather([0, 0]),
+    ],
+)
+def test_shape_mismatch(expr: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "x": [1, 2, 3]})
+
+    q = df.lazy().select(expr.over(pl.col.g))
+    with pytest.raises(ShapeError):
+        q.collect()

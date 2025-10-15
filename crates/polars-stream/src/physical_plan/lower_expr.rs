@@ -1457,7 +1457,10 @@ fn lower_exprs_with_ctx(
                 evaluation,
                 variant,
             } => match variant {
-                EvalVariant::List | EvalVariant::Array { as_list: _ } => {
+                EvalVariant::List
+                | EvalVariant::ListAgg
+                | EvalVariant::Array { as_list: _ }
+                | EvalVariant::ArrayAgg => {
                     let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                     let eval_expr = AExpr::Eval {
                         expr: trans_expr[0],

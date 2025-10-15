@@ -386,7 +386,7 @@ impl CloudOptions {
         let opt_credential_provider = match opt_credential_provider {
             #[cfg(feature = "python")]
             Some(PlCredentialProvider::Python(object)) => {
-                if pyo3::Python::with_gil(|py| {
+                if pyo3::Python::attach(|py| {
                     let Ok(func_object) = object
                         .unwrap_as_provider_ref()
                         .getattr(py, "_can_use_as_provider")

@@ -609,6 +609,7 @@ fn test_group_by_2() -> PolarsResult<()> {
     let expected = LazyFrame::scan_ipc(
         PlPath::new("../../examples/datasets/foods1.ipc"),
         Default::default(),
+        Default::default(),
     )?
     .select(&[col("*")])
     .group_by(vec![col("category")])

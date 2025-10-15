@@ -10,20 +10,20 @@ use polars_utils::unique_id::UniqueId;
 use crate::dsl::{
     GroupbyOptions, HConcatOptions, JoinOptionsIR, JoinTypeOptionsIR, UnifiedScanArgs, UnionOptions,
 };
-use crate::plans::text_plan_graph::models::{Edge, IRTpgProperties};
+use crate::plans::visualization::models::{Edge, IRNodeProperties};
 use crate::plans::{AExpr, ExprIR, FileInfo, IR};
 use crate::prelude::{DistinctOptionsIR, ProjectionOptions};
 
 pub mod models;
-use models::{TextPlanGraph, TpgNode};
+use models::{IRNodeInfo, IRVisualizationData};
 
-pub fn generate_text_plan_graph<'a>(
+pub fn generate_visualization_data<'a>(
     title: PlSmallStr,
     roots: &[Node],
     ir_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
-) -> TextPlanGraph {
-    let (nodes_list, edges) = TextPlanGraphGenerator {
+) -> IRVisualizationData {
+    let (nodes_list, edges) = IRVisualizationDataGenerator {
         ir_arena,
         expr_arena,
         queue: VecDeque::from_iter(roots.iter().copied()),
@@ -33,36 +33,36 @@ pub fn generate_text_plan_graph<'a>(
     }
     .generate();
 
-    TextPlanGraph {
+    IRVisualizationData {
         title,
-        roots: roots.len(),
+        num_roots: roots.len().try_into().unwrap(),
         nodes: nodes_list,
         edges,
-        legend: None,
     }
 }
 
-struct TextPlanGraphGenerator<'a> {
+struct IRVisualizationDataGenerator<'a> {
     ir_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
     queue: VecDeque<Node>,
-    nodes_list: Vec<TpgNode>,
+    nodes_list: Vec<IRNodeInfo>,
     edges: Vec<Edge>,
+    /// During traversal we will encounter the same cache ID multiple times, but we only want
+    /// to push a single entry per cache ID.
     cache_node_to_position: PlHashMap<UniqueId, usize>,
 }
 
-impl TextPlanGraphGenerator<'_> {
-    fn generate(mut self) -> (Vec<TpgNode>, Vec<Edge>) {
-        // Note, intentionally a queue to traverse in insertion order, the `cache_node_to_position`
-        // mapping assumes this.
+impl IRVisualizationDataGenerator<'_> {
+    fn generate(mut self) -> (Vec<IRNodeInfo>, Vec<Edge>) {
+        // Use a queue to traverse in insertion order - the ID assignment relies on this.
         while let Some(node) = self.queue.pop_front() {
             let ir = self.ir_arena.get(node);
-            let mut tpg_node = self.get_tpg_node(ir);
+            let mut ir_node_info = self.get_ir_node_info(ir);
             let current_node_position: u64 = self.nodes_list.len().try_into().unwrap();
-            tpg_node.id = current_node_position;
+            ir_node_info.id = current_node_position;
 
             for input_node in ir.inputs() {
-                // +1 is for the current node we haven't inserted yet.
+                // +1 is for the current `ir_node_info` that we haven't inserted yet.
                 let input_node_position = 1 + self.nodes_list.len() + self.queue.len();
 
                 if let IR::Cache { id, input: _ } = self.ir_arena.get(input_node) {
@@ -80,19 +80,19 @@ impl TextPlanGraphGenerator<'_> {
                     .push(Edge::new(current_node_position, input_node_position));
             }
 
-            self.nodes_list.push(tpg_node);
+            self.nodes_list.push(ir_node_info);
         }
 
         assert!(self.queue.is_empty());
         (self.nodes_list, self.edges)
     }
 
-    fn get_tpg_node(&self, ir: &IR) -> TpgNode {
+    fn get_ir_node_info(&self, ir: &IR) -> IRNodeInfo {
         match ir {
             IR::Cache { input: _, id } => {
-                let properties = IRTpgProperties::Cache { id: *id };
+                let properties = IRNodeProperties::Cache { id: *id };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -103,12 +103,12 @@ impl TextPlanGraphGenerator<'_> {
                 schema,
                 output_schema: _,
             } => {
-                let properties = IRTpgProperties::DataFrameScan {
+                let properties = IRNodeProperties::DataFrameScan {
                     n_rows: df.height().try_into().unwrap(),
                     schema_names: schema.iter_names_cloned().collect(),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -124,14 +124,14 @@ impl TextPlanGraphGenerator<'_> {
                         slice,
                     },
             } => {
-                let properties = IRTpgProperties::Distinct {
+                let properties = IRNodeProperties::Distinct {
                     subset: subset.as_deref().map(|x| x.to_vec()),
                     maintain_order: *maintain_order,
                     keep_strategy: *keep_strategy,
                     slice: convert_opt_slice(slice),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -142,12 +142,12 @@ impl TextPlanGraphGenerator<'_> {
                 contexts,
                 schema,
             } => {
-                let properties = IRTpgProperties::ExtContext {
+                let properties = IRNodeProperties::ExtContext {
                     num_contexts: contexts.len().try_into().unwrap(),
                     schema_names: schema.iter_names_cloned().collect(),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -157,11 +157,11 @@ impl TextPlanGraphGenerator<'_> {
                 input: _,
                 predicate,
             } => {
-                let properties = IRTpgProperties::Filter {
+                let properties = IRNodeProperties::Filter {
                     predicate: format_pl_smallstr!("{}", predicate.display(self.expr_arena)),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -206,7 +206,7 @@ impl TextPlanGraphGenerator<'_> {
                             unreachable!()
                         };
 
-                        IRTpgProperties::DynamicGroupBy {
+                        IRNodeProperties::DynamicGroupBy {
                             index_column: index_column.clone(),
                             every: format_pl_smallstr!("{}", every),
                             period: format_pl_smallstr!("{}", period),
@@ -231,7 +231,7 @@ impl TextPlanGraphGenerator<'_> {
                             unreachable!()
                         };
 
-                        IRTpgProperties::RollingGroupBy {
+                        IRNodeProperties::RollingGroupBy {
                             keys,
                             aggs,
                             index_column: index_column.clone(),
@@ -242,7 +242,7 @@ impl TextPlanGraphGenerator<'_> {
                             plan_callback,
                         }
                     },
-                    _ => IRTpgProperties::GroupBy {
+                    _ => IRNodeProperties::GroupBy {
                         keys,
                         aggs,
                         maintain_order,
@@ -251,7 +251,7 @@ impl TextPlanGraphGenerator<'_> {
                     },
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -262,13 +262,13 @@ impl TextPlanGraphGenerator<'_> {
                 schema,
                 options: HConcatOptions { parallel },
             } => {
-                let properties = IRTpgProperties::HConcat {
+                let properties = IRNodeProperties::HConcat {
                     num_inputs: inputs.len().try_into().unwrap(),
                     schema_names: schema.iter_names_cloned().collect(),
                     parallel: *parallel,
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -285,22 +285,22 @@ impl TextPlanGraphGenerator<'_> {
                         should_broadcast,
                     },
             } => {
-                let properties = IRTpgProperties::HStack {
+                let properties = IRNodeProperties::HStack {
                     exprs: expr_list(exprs, self.expr_arena),
                     run_parallel: *run_parallel,
                     duplicate_check: *duplicate_check,
                     should_broadcast: *should_broadcast,
                 };
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
                 }
             },
             IR::Invalid => {
-                let properties = IRTpgProperties::Invalid;
+                let properties = IRNodeProperties::Invalid;
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -351,7 +351,7 @@ impl TextPlanGraphGenerator<'_> {
                         assert_eq!(left_on.len(), 1);
                         assert_eq!(right_on.len(), 1);
 
-                        IRTpgProperties::AsOfJoin {
+                        IRNodeProperties::AsOfJoin {
                             left_on: format_pl_smallstr!("{}", left_on[0].display(self.expr_arena)),
                             right_on: format_pl_smallstr!(
                                 "{}",
@@ -382,14 +382,14 @@ impl TextPlanGraphGenerator<'_> {
                             format_pl_smallstr!("{}", predicate.display(self.expr_arena))
                         });
 
-                        IRTpgProperties::CrossJoin {
+                        IRNodeProperties::CrossJoin {
                             maintain_order: *maintain_order,
                             slice: convert_opt_slice(slice),
                             predicate,
                             suffix: suffix.clone(),
                         }
                     },
-                    _ => IRTpgProperties::Join {
+                    _ => IRNodeProperties::Join {
                         how: format_pl_smallstr!("{}", how),
                         left_on: expr_list(left_on, self.expr_arena),
                         right_on: expr_list(right_on, self.expr_arena),
@@ -404,18 +404,18 @@ impl TextPlanGraphGenerator<'_> {
                     },
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
                 }
             },
             IR::MapFunction { input: _, function } => {
-                let properties = IRTpgProperties::MapFunction {
+                let properties = IRNodeProperties::MapFunction {
                     function: format_pl_smallstr!("{}", function),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -466,7 +466,7 @@ impl TextPlanGraphGenerator<'_> {
                         .collect()
                     });
 
-                let properties = IRTpgProperties::Scan {
+                let properties = IRNodeProperties::Scan {
                     scan_type: PlSmallStr::from_static(scan_type.as_ref().into()),
                     num_sources: sources.len().try_into().unwrap(),
                     first_source: sources.first().map(|x| x.to_include_path_name().into()),
@@ -501,7 +501,7 @@ impl TextPlanGraphGenerator<'_> {
                         .map(|x| x.df().schema().iter_names_cloned().collect()),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -518,47 +518,47 @@ impl TextPlanGraphGenerator<'_> {
                         should_broadcast,
                     },
             } => {
-                let properties = IRTpgProperties::Select {
+                let properties = IRNodeProperties::Select {
                     exprs: expr_list(expr, self.expr_arena),
                     run_parallel: *run_parallel,
                     duplicate_check: *duplicate_check,
                     should_broadcast: *should_broadcast,
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
                 }
             },
             IR::SimpleProjection { input: _, columns } => {
-                let properties = IRTpgProperties::SimpleProjection {
+                let properties = IRNodeProperties::SimpleProjection {
                     columns: columns.iter_names_cloned().collect(),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
                 }
             },
             IR::Sink { input: _, payload } => {
-                let properties = IRTpgProperties::Sink {
+                let properties = IRNodeProperties::Sink {
                     payload: format_pl_smallstr!("{:?}", payload),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
                 }
             },
             IR::SinkMultiple { inputs } => {
-                let properties = IRTpgProperties::SinkMultiple {
+                let properties = IRNodeProperties::SinkMultiple {
                     num_inputs: inputs.len().try_into().unwrap(),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -570,12 +570,12 @@ impl TextPlanGraphGenerator<'_> {
                 len,
             } => {
                 #[cfg_attr(feature = "bigidx", expect(clippy::useless_conversion))]
-                let properties = IRTpgProperties::Slice {
+                let properties = IRNodeProperties::Slice {
                     offset: (*offset).into(),
                     len: (*len).into(),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -594,7 +594,7 @@ impl TextPlanGraphGenerator<'_> {
                         limit,
                     },
             } => {
-                let properties = IRTpgProperties::Sort {
+                let properties = IRNodeProperties::Sort {
                     by_exprs: expr_list(by_column, self.expr_arena),
                     slice: convert_opt_slice(slice),
                     descending: descending.clone(),
@@ -605,7 +605,7 @@ impl TextPlanGraphGenerator<'_> {
                     limit: limit.map(|x| x.into()),
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -624,7 +624,7 @@ impl TextPlanGraphGenerator<'_> {
                         maintain_order,
                     },
             } => {
-                let properties = IRTpgProperties::Union {
+                let properties = IRNodeProperties::Union {
                     maintain_order: *maintain_order,
                     parallel: *parallel,
                     rechunk: *rechunk,
@@ -633,7 +633,7 @@ impl TextPlanGraphGenerator<'_> {
                     flattened_by_opt: *flattened_by_opt,
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -645,9 +645,9 @@ impl TextPlanGraphGenerator<'_> {
                 input_right: _,
                 key,
             } => {
-                let properties = IRTpgProperties::MergeSorted { key: key.clone() };
+                let properties = IRNodeProperties::MergeSorted { key: key.clone() };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -670,7 +670,7 @@ impl TextPlanGraphGenerator<'_> {
             } => {
                 use crate::plans::PythonPredicate;
 
-                let properties = IRTpgProperties::PythonScan {
+                let properties = IRNodeProperties::PythonScan {
                     scan_source_type: python_source.clone(),
                     n_rows: n_rows.map(|x| x.try_into().unwrap()),
                     projection: with_columns.as_deref().map(list_str_cloned),
@@ -686,7 +686,7 @@ impl TextPlanGraphGenerator<'_> {
                     validate_schema: *validate_schema,
                 };
 
-                TpgNode {
+                IRNodeInfo {
                     title: properties.variant_name(),
                     properties,
                     ..Default::default()
@@ -696,7 +696,7 @@ impl TextPlanGraphGenerator<'_> {
     }
 }
 
-impl IRTpgProperties {
+impl IRNodeProperties {
     fn variant_name(&self) -> PlSmallStr {
         PlSmallStr::from_static(<&'static str>::from(self))
     }

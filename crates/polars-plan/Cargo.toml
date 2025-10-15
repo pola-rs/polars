@@ -12,7 +12,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 doctest = false
 
 [dependencies]
-libloading = { version = "0.8.0", optional = true }
+libloading = { workspace = true, optional = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-error = { workspace = true }
@@ -44,6 +44,7 @@ schemars = { workspace = true, features = ["either"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+slotmap = { workspace = true }
 strum_macros = { workspace = true }
 
 [build-dependencies]
@@ -64,6 +65,7 @@ serde = [
   "polars-utils/serde",
   "polars-compute/serde",
   "either/serde",
+  "slotmap/serde",
 ]
 parquet = ["polars-io/parquet", "polars-parquet"]
 async = ["polars-io/async", "futures"]
@@ -125,10 +127,14 @@ dsl-schema = [
   "polars-utils/dsl-schema",
   "polars-compute/dsl-schema",
 ]
-ir_text_plan_graph = [
+ir_visualization = [
   "dep:serde_json",
   "ir_serde",
   "serde",
+]
+ir_visualization_schema = [
+  "ir_visualization",
+  "dsl-schema",
 ]
 
 # operations
@@ -147,7 +153,7 @@ asof_join = ["polars-time", "polars-ops/asof_join"]
 iejoin = ["polars-ops/iejoin"]
 concat_str = []
 business = ["polars-ops/business"]
-range = []
+range = ["dtype-array"]
 mode = ["polars-ops/mode"]
 cum_agg = ["polars-ops/cum_agg"]
 interpolate = ["polars-ops/interpolate"]

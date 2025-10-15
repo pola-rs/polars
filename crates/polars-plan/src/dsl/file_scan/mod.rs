@@ -291,6 +291,7 @@ pub struct UnifiedScanArgs {
     pub table_statistics: Option<TableStatistics>,
 }
 
+// Manual default, we have `glob: true` by default.
 impl Default for UnifiedScanArgs {
     fn default() -> Self {
         Self {

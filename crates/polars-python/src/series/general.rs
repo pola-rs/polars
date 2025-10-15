@@ -115,7 +115,7 @@ impl PySeries {
     }
 
     /// Get a value by index.
-    fn get_index(&self, py: Python<'_>, index: usize) -> PyResult<PyObject> {
+    fn get_index(&self, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
         let s = self.series.read();
         let av = match s.get(index) {
             Ok(v) => v,
@@ -135,7 +135,7 @@ impl PySeries {
     }
 
     /// Get a value by index, allowing negative indices.
-    fn get_index_signed(&self, py: Python<'_>, index: isize) -> PyResult<PyObject> {
+    fn get_index_signed(&self, py: Python<'_>, index: isize) -> PyResult<Py<PyAny>> {
         let index = if index < 0 {
             match self.len().checked_sub(index.unsigned_abs()) {
                 Some(v) => v,
@@ -371,7 +371,7 @@ impl PySeries {
         ))
     }
 
-    fn __setstate__(&self, py: Python<'_>, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
         use pyo3::pybacked::PyBackedBytes;
         match state.extract::<PyBackedBytes>(py) {
@@ -408,8 +408,8 @@ impl PySeries {
         py.enter_polars_series(|| self.series.read().cast_with_options(&dtype.0, options))
     }
 
-    fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
-        Python::with_gil(|py| {
+    fn get_chunks(&self) -> PyResult<Vec<Py<PyAny>>> {
+        Python::attach(|py| {
             let wrap_s = py_modules::polars(py).getattr(py, "wrap_s").unwrap();
             flatten_series(&self.series.read())
                 .into_iter()
@@ -517,7 +517,7 @@ impl PySeries {
         &self,
         py: Python<'_>,
         width_strat: Wrap<ListToStructWidthStrategy>,
-        name_gen: Option<PyObject>,
+        name_gen: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         py.enter_polars(|| {
             let get_index_name =
