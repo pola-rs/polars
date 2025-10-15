@@ -220,7 +220,7 @@ def test_window_cached_keys_sorted_update_4183() -> None:
     )
     expected = pl.DataFrame(
         {"count": [2, 2, 1], "rank": [1, 2, 1]},
-        schema={"count": pl.UInt32, "rank": pl.UInt32},
+        schema={"count": pl.get_index_type(), "rank": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -404,7 +404,7 @@ def test_window_filtered_false_15483() -> None:
             "group": ["A", "A"],
             "value": [None, None],
         },
-        schema_overrides={"value": pl.UInt32},
+        schema_overrides={"value": pl.get_index_type()},
     )
     assert_frame_equal(out, expected)
 

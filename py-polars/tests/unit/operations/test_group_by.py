@@ -690,7 +690,7 @@ def test_group_by_multiple_column_reference() -> None:
         ("mean", [], [1.0, None], pl.Float64),
         ("median", [], [1.0, None], pl.Float64),
         ("min", [], [1, None], pl.Int64),
-        ("n_unique", [], [1, 0], pl.UInt32),
+        ("n_unique", [], [1, 0], pl.get_index_type()),
         ("quantile", [0.5], [1.0, None], pl.Float64),
     ],
 )
@@ -1064,8 +1064,8 @@ def test_group_by_schema_err() -> None:
         (
             {"x": [True]},
             pl.col("x").sum(),
-            {"x": pl.UInt32},
-            {"x": pl.UInt32},
+            {"x": pl.get_index_type()},
+            {"x": pl.get_index_type()},
         ),
         (
             {"a": [[1, 2]]},
