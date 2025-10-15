@@ -708,8 +708,9 @@ class ExprListNameSpace:
         >>> df = pl.DataFrame({"a": [[3, 2], [1], [2]]})
         >>> df.select(pl.col("a").list.single())
         Traceback (most recent call last):
-        ... ComputeError: aggregation 'single' expected a single value, got 2 values
-        """
+        ...
+        polars.exceptions.ComputeError: aggregation 'single' expected a single value, got 2 values
+        """  # noqa: W505
         return self.agg(F.element().single())
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
