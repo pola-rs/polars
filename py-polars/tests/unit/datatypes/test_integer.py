@@ -27,5 +27,5 @@ def test_int_negate_operation() -> None:
 
 def test_compare_zero_with_uint64_16798() -> None:
     df = pl.Series("a", [(1 << 63), 0], dtype=pl.UInt64).to_frame()
-    assert df.select(pl.col("a") >= 0).item(0, 0)
-    assert df.select(pl.col("a") == 0).item(0, 0) is False
+    assert df.select(pl.col("a") >= 0)[0, 0]
+    assert df.select(pl.col("a") == 0)[0, 0] is False

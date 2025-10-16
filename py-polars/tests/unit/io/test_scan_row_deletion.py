@@ -97,7 +97,7 @@ def test_scan_row_deletions(
         hive_partitioning=False,
     ).with_row_index(offset=row_index_offset)
 
-    assert q.select(pl.len()).collect().item() == 18
+    assert q.select(pl.len()).collect().single() == 18
 
     assert_frame_equal(
         q.collect(),
@@ -389,7 +389,7 @@ def test_scan_row_deletion_skips_file_with_all_rows_deleted(
     # Baseline: The metadata is readable but the row groups are not
 
     assert q.collect_schema() == {"physical_index": pl.UInt32}
-    assert q.select(pl.len()).collect().item() == 5
+    assert q.select(pl.len()).collect().single() == 5
 
     with pytest.raises(pl.exceptions.ComputeError, match="Invalid thrift"):
         q.collect()

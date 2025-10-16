@@ -230,5 +230,5 @@ def test_max_min(
     lower: int | float | time,
 ) -> None:
     df = pl.select(min=dtype.min(), max=dtype.max())
-    assert df.to_series(0).item() == lower
-    assert df.to_series(1).item() == upper
+    assert df.to_series(0).single() == lower
+    assert df.to_series(1).single() == upper

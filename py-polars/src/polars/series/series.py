@@ -1341,7 +1341,7 @@ class Series:
     def __contains__(self, item: Any) -> bool:
         if item is None:
             return self.has_nulls()
-        return self.implode().list.contains(item).item()
+        return self.implode().list.contains(item).single()
 
     def __iter__(self) -> Generator[Any]:
         if self.dtype in (List, Array):
@@ -1609,7 +1609,7 @@ class Series:
         return self.to_frame()._repr_html_(_from_series=True)
 
     @deprecated(
-        "`Series.item` is deprecated; "
+        "`Series.item()` is deprecated; "
         "for unpacking a single value out of a dataframe as a scalar, use `Series.single()`; "
         "for element retrieval, use `Series[index]` instead; "
     )
@@ -1623,7 +1623,7 @@ class Series:
         Examples
         --------
         >>> s1 = pl.Series("a", [1])
-        >>> s1.item()
+        >>> s1.single()
         1
         >>> s2 = pl.Series("a", [9, 8, 7])
         >>> s2.cum_sum().item(-1)
@@ -1649,7 +1649,7 @@ class Series:
         """
         if len(self) != 1:
             msg = (
-                "can only call '.item()' if the Series is of length 1,"
+                "can only call '.single()' if the Series is of length 1,"
                 f" or an explicit index is provided (Series is of length {len(self)})"
             )
             raise ValueError(msg)
@@ -2204,7 +2204,7 @@ class Series:
         >>> s.nan_max()
         nan
         """
-        return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
+        return self.to_frame().select_seq(F.col(self.name).nan_max()).single()
 
     def nan_min(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -2223,7 +2223,7 @@ class Series:
         >>> s.nan_min()
         nan
         """
-        return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
+        return self.to_frame().select_seq(F.col(self.name).nan_min()).single()
 
     def std(self, ddof: int = 1) -> float | timedelta | None:
         """
@@ -2775,7 +2775,7 @@ class Series:
             self.to_frame()
             .select_seq(F.col(self.name).entropy(base, normalize=normalize))
             .to_series()
-            .item()
+            .single()
         )
 
     @unstable()
@@ -3736,7 +3736,7 @@ class Series:
         elif _check_for_numpy(element) and isinstance(element, np.ndarray):
             return df.to_series()
         else:
-            return df.item()
+            return df.single()
 
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
@@ -5136,7 +5136,7 @@ class Series:
         >>> s.index_of(55) is None
         True
         """
-        return F.select(F.lit(self).index_of(element)).item()
+        return F.select(F.lit(self).index_of(element)).single()
 
     def clear(self, n: int = 0) -> Series:
         """

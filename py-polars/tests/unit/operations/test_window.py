@@ -510,7 +510,7 @@ def test_window_chunked_std_17102() -> None:
 
     df = pl.concat([c1, c2], rechunk=False)
     out = df.select(pl.col("B").std().over("A").alias("std"))
-    assert out.unique().item() == 0.7071067811865476
+    assert out.unique().single() == 0.7071067811865476
 
 
 def test_window_17308() -> None:
@@ -548,8 +548,10 @@ def test_order_by_sorted_keys_18943() -> None:
 
 def test_nested_window_keys() -> None:
     df = pl.DataFrame({"x": 1, "y": "two"})
-    assert df.select(pl.col("y").first().over(pl.struct("x").implode())).item() == "two"
-    assert df.select(pl.col("y").first().over(pl.struct("x"))).item() == "two"
+    assert (
+        df.select(pl.col("y").first().over(pl.struct("x").implode())).single() == "two"
+    )
+    assert df.select(pl.col("y").first().over(pl.struct("x"))).single() == "two"
 
 
 def test_window_21692() -> None:

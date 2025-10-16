@@ -161,7 +161,7 @@ def test_against_np_busday_count(
                 "start", "end", week_mask=week_mask, holidays=holidays
             )
         )["n"]
-        .item()
+        .single()
     )
     expected = np.busday_count(start, end, weekmask=week_mask, holidays=holidays)
     if start > end and parse_version(np.__version__) < (1, 25):

@@ -993,7 +993,7 @@ def test_expand_more_than_one_22567() -> None:
     assert (
         pl.select(x=1, y=2)
         .select(cs.by_name("x").as_expr() + cs.by_name("y").as_expr())
-        .item()
+        .single()
         == 3
     )
 
@@ -1028,25 +1028,25 @@ def test_selector_arith_dtypes_12850() -> None:
     assert (
         pl.DataFrame({"a": [2.0], "b": [1]})
         .select(cs.float().as_expr() - cs.integer().as_expr())
-        .item()
+        .single()
         == 1.0
     )
     assert (
         pl.DataFrame({"a": [2.0], "b": [1]})
         .select(cs.float().as_expr() + cs.integer().as_expr())
-        .item()
+        .single()
         == 3.0
     )
     assert (
         pl.DataFrame({"a": [2.0], "b": [1]})
         .select(cs.float().as_expr() - cs.last().as_expr())
-        .item()
+        .single()
         == 1.0
     )
     assert (
         pl.DataFrame({"a": [2.0], "b": [1]})
         .select(cs.float().as_expr() - cs.by_name("b").as_expr())
-        .item()
+        .single()
         == 1.0
     )
 

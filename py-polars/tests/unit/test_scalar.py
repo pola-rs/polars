@@ -62,7 +62,7 @@ def test_scalar_len_20046() -> None:
         )
         .select(pl.len())
         .collect()
-        .item()
+        .single()
         == 3
     )
 
@@ -71,7 +71,7 @@ def test_scalar_len_20046() -> None:
         pl.col("a").alias("b"),
     )
 
-    assert q.select(pl.len()).collect().item() == 3
+    assert q.select(pl.len()).collect().single() == 3
 
 
 def test_scalar_identification_function_expr_in_binary() -> None:

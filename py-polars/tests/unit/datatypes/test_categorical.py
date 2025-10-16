@@ -466,7 +466,7 @@ def test_categorical_asof_join_by_arg() -> None:
 
 
 def test_categorical_list_get_item() -> None:
-    out = pl.Series([["a"]]).cast(pl.List(pl.Categorical)).item()
+    out = pl.Series([["a"]]).cast(pl.List(pl.Categorical)).single()
     assert isinstance(out, pl.Series)
     assert out.dtype == pl.Categorical
 
@@ -538,7 +538,7 @@ def test_fast_unique_flag_from_arrow() -> None:
     ).with_columns([pl.col("colB").cast(pl.Categorical)])
 
     filtered = df.to_arrow().filter([True, False, True, True, False, True, True, True])
-    assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4  # type: ignore[union-attr]
+    assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).single() == 4  # type: ignore[union-attr]
 
 
 def test_construct_with_null() -> None:

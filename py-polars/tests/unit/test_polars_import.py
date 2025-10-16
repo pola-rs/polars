@@ -20,7 +20,7 @@ def _import_time_from_frame(tm: pl.DataFrame) -> int:
     return int(
         tm.filter(pl.col("import").str.strip_chars() == "polars")
         .select("cumulative_time")
-        .item()
+        .single()
     )
 
 

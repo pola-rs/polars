@@ -160,7 +160,7 @@ def test_is_in_struct() -> None:
 
 
 def test_is_in_null_prop() -> None:
-    assert pl.Series([None], dtype=pl.Float32).is_in(pl.Series([42])).item() is None
+    assert pl.Series([None], dtype=pl.Float32).is_in(pl.Series([42])).single() is None
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Float32})).is_in(
         pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Float32}))
     ).to_list() == [False, None]
@@ -171,7 +171,7 @@ def test_is_in_null_prop() -> None:
 
 
 def test_is_in_9070() -> None:
-    assert not pl.Series([1]).is_in(pl.Series([1.99])).item()
+    assert not pl.Series([1]).is_in(pl.Series([1.99])).single()
 
 
 def test_is_in_float_list_10764() -> None:

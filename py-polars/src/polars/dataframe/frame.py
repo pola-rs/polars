@@ -1648,7 +1648,7 @@ class DataFrame:
         return self.schema
 
     @deprecated(
-        "`DataFrame.item` is deprecated; "
+        "`DataFrame.item()` is deprecated; "
         "for unpacking a single value out of a dataframe as a scalar, use `DataFrame.single()`; "
         "for element retrieval, use `Dataframe[row, col]` instead; "
     )

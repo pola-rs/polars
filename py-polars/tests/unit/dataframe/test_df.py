@@ -1061,7 +1061,7 @@ def test_is_nan_null_series() -> None:
 
 def test_len() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3]})
-    assert cast("int", df.select(pl.col("nrs").len()).item()) == 3
+    assert cast("int", df.select(pl.col("nrs").len()).single()) == 3
     assert len(pl.DataFrame()) == 0
 
 
@@ -2543,10 +2543,10 @@ def test_fill_null_limits() -> None:
 
 def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.col("A").lower_bound())
-    assert res_expr.item() == -9223372036854775808
+    assert res_expr.single() == -9223372036854775808
 
     res_expr = fruits_cars.select(pl.col("B").upper_bound())
-    assert res_expr.item() == 9223372036854775807
+    assert res_expr.single() == 9223372036854775807
 
     with pytest.raises(ComputeError):
         fruits_cars.select(pl.col("fruits").upper_bound())
@@ -2921,7 +2921,7 @@ def test_init_vs_strptime_consistency(
         pl.Datetime("us", dtype_time_zone)
     )
     assert result_init.dtype == pl.Datetime("us", expected_time_zone)
-    assert result_init.item() == expected_item
+    assert result_init.single() == expected_item
     assert_series_equal(result_init, result_strptime)
 
 
@@ -2929,12 +2929,12 @@ def test_init_vs_strptime_consistency_converts() -> None:
     result = pl.Series(
         [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
         dtype=pl.Datetime("us", "US/Pacific"),
-    ).item()
+    ).single()
     assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
     result = (
         pl.Series(["2020-01-01 00:00-08:00"])
         .str.strptime(pl.Datetime("us", "US/Pacific"))
-        .item()
+        .single()
     )
     assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
 
@@ -3103,7 +3103,7 @@ def test_round() -> None:
 
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
-    assert df.select(pl.col("a").dot(pl.col("b"))).item() == 12.96
+    assert df.select(pl.col("a").dot(pl.col("b"))).single() == 12.96
 
 
 def test_unstack() -> None:

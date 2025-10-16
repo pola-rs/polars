@@ -77,7 +77,7 @@ def test_explain_query(test_frame: pl.LazyFrame) -> None:
             ctx.execute("EXPLAIN SELECT * FROM frame")
             .select(pl.col("Logical Plan").str.join())
             .collect()
-            .item()
+            .single()
         )
         assert (
             re.search(

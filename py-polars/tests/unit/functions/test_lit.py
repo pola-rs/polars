@@ -145,9 +145,9 @@ def test_lit_enum_input_16668(EnumBase: tuple[type, ...]) -> None:
         pl.lit(value),
         pl.lit(value.value),  # type: ignore[attr-defined]
     ):
-        assert pl.select(lit_value).item() == expected
-        assert df.filter(state=value).item() == expected
-        assert df.filter(state=lit_value).item() == expected
+        assert pl.select(lit_value).single() == expected
+        assert df.filter(state=value).single() == expected
+        assert df.filter(state=lit_value).single() == expected
 
     assert df.filter(pl.col("state") == State.QLD).is_empty()
     assert df.filter(pl.col("state") != State.QLD).height == 2
@@ -174,11 +174,11 @@ def test_lit_enum_input_non_string(EnumBase: tuple[type, ...]) -> None:
 
     result = pl.lit(value)
     assert pl.select(result).dtypes[0] == pl.Int32
-    assert pl.select(result).item() == 1
+    assert pl.select(result).single() == 1
 
     result = pl.lit(value, dtype=pl.Int8)
     assert pl.select(result).dtypes[0] == pl.Int8
-    assert pl.select(result).item() == 1
+    assert pl.select(result).single() == 1
 
 
 @given(value=datetimes("ns"))
@@ -215,7 +215,7 @@ def test_lit_decimal() -> None:
 
     expr = pl.lit(value)
     df = pl.select(expr)
-    result = df.item()
+    result = df.single()
 
     assert df.dtypes[0] == pl.Decimal(None, 1)
     assert result == value
@@ -226,7 +226,7 @@ def test_lit_string_float() -> None:
 
     expr = pl.lit(value, dtype=pl.Utf8)
     df = pl.select(expr)
-    result = df.item()
+    result = df.single()
 
     assert df.dtypes[0] == pl.String
     assert result == str(value)
@@ -236,11 +236,11 @@ def test_lit_string_float() -> None:
 @given(s=series(min_size=1, max_size=1, allow_null=False, allowed_dtypes=pl.Decimal))
 def test_lit_decimal_parametric(s: pl.Series) -> None:
     scale = s.dtype.scale  # type: ignore[attr-defined]
-    value = s.item()
+    value = s.single()
 
     expr = pl.lit(value)
     df = pl.select(expr)
-    result = df.item()
+    result = df.single()
 
     assert df.dtypes[0] == pl.Decimal(None, scale)
     assert result == value

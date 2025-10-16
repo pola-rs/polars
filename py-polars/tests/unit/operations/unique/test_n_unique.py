@@ -76,4 +76,4 @@ def test_n_unique_array() -> None:
     )
     assert df["arr"].dtype == pl.Array
     assert df.select(pl.col("arr")).n_unique() == 3
-    assert df.select(pl.col("arr").n_unique()).item() == 3
+    assert df.select(pl.col("arr").n_unique()).single() == 3

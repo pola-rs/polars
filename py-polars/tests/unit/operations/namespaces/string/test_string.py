@@ -327,7 +327,7 @@ def test_str_find_invalid_regex() -> None:
         df.with_columns(pl.col("txt").str.find(rx_invalid, strict=True))
 
     res = df.with_columns(pl.col("txt").str.find(rx_invalid, strict=False))
-    assert res.item() is None
+    assert res.single() is None
 
 
 def test_str_find_escaped_chars() -> None:
@@ -1058,7 +1058,7 @@ def test_contains_any(
         expected
         == df["text"]
         .str.contains_any(pattern, ascii_case_insensitive=case_insensitive)
-        .item()
+        .single()
     )
     # expr
     assert (
@@ -1067,7 +1067,7 @@ def test_contains_any(
             pl.col("text").str.contains_any(
                 pattern, ascii_case_insensitive=case_insensitive
             )
-        )["text"].item()
+        )["text"].single()
     )
     # frame filter
     assert int(expected) == len(
@@ -1282,7 +1282,7 @@ def test_replace_many(
         expected
         == df["text"]
         .str.replace_many(pattern, replacement, ascii_case_insensitive=case_insensitive)
-        .item()
+        .single()
     )
     # expr
     assert (
@@ -1293,7 +1293,7 @@ def test_replace_many(
                 replacement,
                 ascii_case_insensitive=case_insensitive,
             )
-        ).item()
+        ).single()
     )
 
 
@@ -1339,7 +1339,7 @@ def test_replace_many_mapping(
         expected
         == df["text"]
         .str.replace_many(mapping, ascii_case_insensitive=case_insensitive)
-        .item()
+        .single()
     )
     # expr
     assert (
@@ -1349,7 +1349,7 @@ def test_replace_many_mapping(
                 mapping,
                 ascii_case_insensitive=case_insensitive,
             )
-        ).item()
+        ).single()
     )
 
 

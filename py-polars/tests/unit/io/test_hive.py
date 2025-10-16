@@ -349,8 +349,8 @@ def test_hive_partition_directory_scan(
     ]  # fmt: skip
 
     for df in dfs:
-        a = df.item(0, "a")
-        b = df.item(0, "b")
+        a = df[0, "a"]
+        b = df[0, "b"]
         path = tmp_path / f"a={a}/b={b}/data.bin"
         path.parent.mkdir(exist_ok=True, parents=True)
         write_func(df.drop("a", "b"), path)
@@ -777,7 +777,7 @@ def test_hive_partition_filter_null_23005(tmp_path: Path) -> None:
                 pl.any_horizontal(pl.col("date1", "date2").is_null())
                 & pl.col("path").str.contains("__HIVE_DEFAULT_PARTITION__")
             ).sum()
-        ).item()
+        ).single()
         == 2
     )
 

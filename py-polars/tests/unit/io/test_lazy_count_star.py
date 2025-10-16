@@ -43,7 +43,7 @@ def assert_fast_count(
         assert project_logs == {"project: 0"}
 
     assert result.schema == {expected_name: pl.get_index_type()}
-    assert result.item() == expected_count
+    assert result.single() == expected_count
 
     # Test effect of the environment variable
     monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "0")
@@ -114,8 +114,10 @@ a,b
     assert pl.scan_csv(data).collect().height == 3
     assert pl.scan_csv(data, comment_prefix="#").collect().height == 3
 
-    assert pl.scan_csv(data).select(pl.len()).collect().item() == 3
-    assert pl.scan_csv(data, comment_prefix="#").select(pl.len()).collect().item() == 3
+    assert pl.scan_csv(data).select(pl.len()).collect().single() == 3
+    assert (
+        pl.scan_csv(data, comment_prefix="#").select(pl.len()).collect().single() == 3
+    )
 
 
 @pytest.mark.write_disk
@@ -229,7 +231,7 @@ def test_count_projection_pd(
     project_logs = set(re.findall(r"project: \d+", capture))
 
     assert project_logs == {"project: 0"}
-    assert result.item() == 3
+    assert result.single() == 3
 
 
 def test_csv_scan_skip_lines_len_22889(

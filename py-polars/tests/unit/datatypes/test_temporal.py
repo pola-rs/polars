@@ -1312,7 +1312,7 @@ def test_replace_time_zone_from_to(
     time_unit: TimeUnit,
 ) -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(time_unit))
-    result = ts.dt.replace_time_zone(from_tz).dt.replace_time_zone(to_tz).item()
+    result = ts.dt.replace_time_zone(from_tz).dt.replace_time_zone(to_tz).single()
     expected = datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo)
     assert result == expected
 
@@ -1321,7 +1321,7 @@ def test_strptime_with_tz() -> None:
     result = (
         pl.Series(["2020-01-01 03:00:00"])
         .str.strptime(pl.Datetime("us", "Africa/Monrovia"))
-        .item()
+        .single()
     )
     assert result == datetime(2020, 1, 1, 3, tzinfo=ZoneInfo("Africa/Monrovia"))
 
@@ -1388,11 +1388,11 @@ def test_convert_time_zone_lazy_schema() -> None:
 
 def test_convert_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    result = ts.dt.convert_time_zone("Asia/Kathmandu").item()
+    result = ts.dt.convert_time_zone("Asia/Kathmandu").single()
     expected = datetime(2020, 1, 1, 5, 45, tzinfo=ZoneInfo("Asia/Kathmandu"))
     assert result == expected
     result = (
-        ts.dt.replace_time_zone("UTC").dt.convert_time_zone("Asia/Kathmandu").item()
+        ts.dt.replace_time_zone("UTC").dt.convert_time_zone("Asia/Kathmandu").single()
     )
     assert result == expected
 
@@ -1495,7 +1495,7 @@ def test_replace_time_zone_ambiguous_with_ambiguous(
     ambiguous: Ambiguous, expected: datetime
 ) -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
-    result = ts.dt.replace_time_zone("Europe/Brussels", ambiguous=ambiguous).item()
+    result = ts.dt.replace_time_zone("Europe/Brussels", ambiguous=ambiguous).single()
     assert result == expected
 
 
@@ -1693,7 +1693,7 @@ def test_single_ambiguous_null() -> None:
         pl.col("ts").dt.replace_time_zone(
             "Europe/London", ambiguous=pl.col("ambiguous")
         )
-    )["ts"].item()
+    )["ts"].single()
     assert result is None
 
 
@@ -1702,7 +1702,7 @@ def test_unlocalize() -> None:
     tz_aware = tz_naive.dt.replace_time_zone("UTC").dt.convert_time_zone(
         "Europe/Brussels"
     )
-    result = tz_aware.dt.replace_time_zone(None).item()
+    result = tz_aware.dt.replace_time_zone(None).single()
     assert result == datetime(2020, 1, 1, 4)
 
 
@@ -1847,7 +1847,7 @@ def test_tz_aware_with_timezone_directive(
 ) -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
     tz_aware = tz_naive.dt.replace_time_zone(time_zone)
-    result = tz_aware.dt.to_string(directive).item()
+    result = tz_aware.dt.to_string(directive).single()
     assert result == expected
 
 
@@ -2192,7 +2192,7 @@ def test_truncate_non_existent_14957() -> None:
 def test_cast_time_to_duration() -> None:
     assert pl.Series([time(hour=0, minute=0, second=2)]).cast(
         pl.Duration
-    ).item() == timedelta(seconds=2)
+    ).single() == timedelta(seconds=2)
 
 
 def test_tz_aware_day_weekday() -> None:
@@ -2293,21 +2293,21 @@ def test_infer_iso8601_datetime(iso8601_format_datetime: str) -> None:
         .replace("%9f", "123456789")
     )
     parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
-    assert parsed.dt.year().item() == 2134
-    assert parsed.dt.month().item() == 12
-    assert parsed.dt.day().item() == 13
+    assert parsed.dt.year().single() == 2134
+    assert parsed.dt.month().single() == 12
+    assert parsed.dt.day().single() == 13
     if "%H" in iso8601_format_datetime:
-        assert parsed.dt.hour().item() == 1
+        assert parsed.dt.hour().single() == 1
     if "%M" in iso8601_format_datetime:
-        assert parsed.dt.minute().item() == 12
+        assert parsed.dt.minute().single() == 12
     if "%S" in iso8601_format_datetime:
-        assert parsed.dt.second().item() == 34
+        assert parsed.dt.second().single() == 34
     if "%9f" in iso8601_format_datetime:
-        assert parsed.dt.nanosecond().item() == 123456789
+        assert parsed.dt.nanosecond().single() == 123456789
     if "%6f" in iso8601_format_datetime:
-        assert parsed.dt.nanosecond().item() == 123456000
+        assert parsed.dt.nanosecond().single() == 123456000
     if "%3f" in iso8601_format_datetime:
-        assert parsed.dt.nanosecond().item() == 123000000
+        assert parsed.dt.nanosecond().single() == 123000000
 
 
 def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) -> None:
@@ -2325,21 +2325,21 @@ def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) 
         .replace("%#z", "+01:00")
     )
     parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
-    assert parsed.dt.year().item() == 2134
-    assert parsed.dt.month().item() == 12
-    assert parsed.dt.day().item() == 13
+    assert parsed.dt.year().single() == 2134
+    assert parsed.dt.month().single() == 12
+    assert parsed.dt.day().single() == 13
     if "%H" in iso8601_tz_aware_format_datetime:
-        assert parsed.dt.hour().item() == 1
+        assert parsed.dt.hour().single() == 1
     if "%M" in iso8601_tz_aware_format_datetime:
-        assert parsed.dt.minute().item() == 12
+        assert parsed.dt.minute().single() == 12
     if "%S" in iso8601_tz_aware_format_datetime:
-        assert parsed.dt.second().item() == 34
+        assert parsed.dt.second().single() == 34
     if "%9f" in iso8601_tz_aware_format_datetime:
-        assert parsed.dt.nanosecond().item() == 123456789
+        assert parsed.dt.nanosecond().single() == 123456789
     if "%6f" in iso8601_tz_aware_format_datetime:
-        assert parsed.dt.nanosecond().item() == 123456000
+        assert parsed.dt.nanosecond().single() == 123456000
     if "%3f" in iso8601_tz_aware_format_datetime:
-        assert parsed.dt.nanosecond().item() == 123000000
+        assert parsed.dt.nanosecond().single() == 123000000
     assert parsed.dtype == pl.Datetime("ns", "UTC")
 
 
@@ -2351,9 +2351,9 @@ def test_infer_iso8601_date(iso8601_format_date: str) -> None:
         .replace("%d", "13")
     )
     parsed = pl.Series([time_string]).str.strptime(pl.Date)
-    assert parsed.dt.year().item() == 2134
-    assert parsed.dt.month().item() == 12
-    assert parsed.dt.day().item() == 13
+    assert parsed.dt.year().single() == 2134
+    assert parsed.dt.month().single() == 12
+    assert parsed.dt.day().single() == 13
 
 
 def test_year_null_backed_by_out_of_range_15313() -> None:
@@ -2438,7 +2438,7 @@ def test_weekday_vs_stdlib_datetime(
         pl.Series([value], dtype=pl.Datetime(time_unit))
         .dt.replace_time_zone(time_zone, non_existent="null", ambiguous="null")
         .dt.weekday()
-        .item()
+        .single()
     )
     if result is not None:
         expected = value.isoweekday()
@@ -2449,7 +2449,7 @@ def test_weekday_vs_stdlib_datetime(
     value=st.dates(),
 )
 def test_weekday_vs_stdlib_date(value: date) -> None:
-    result = pl.Series([value]).dt.weekday().item()
+    result = pl.Series([value]).dt.weekday().single()
     expected = value.isoweekday()
     assert result == expected
 

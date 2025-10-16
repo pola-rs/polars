@@ -222,7 +222,7 @@ def test_right_join_schema_maintained_22516() -> None:
         .collect()
     )
 
-    assert lazy_join.item() == eager_join.item()
+    assert lazy_join.single() == eager_join.single()
 
 
 def test_join() -> None:
@@ -1737,7 +1737,7 @@ def test_select_after_join_where_20831() -> None:
         pl.Series("d", [None, None, 7, 8, 8, 8]).to_frame(),
     )
 
-    assert q.select(pl.len()).collect().item() == 6
+    assert q.select(pl.len()).collect().single() == 6
 
     q = (
         left.join(right, how="cross")
@@ -1750,7 +1750,7 @@ def test_select_after_join_where_20831() -> None:
         pl.Series("d", [None, None, 7, 8, 8, 8]).to_frame(),
     )
 
-    assert q.select(pl.len()).collect().item() == 6
+    assert q.select(pl.len()).collect().single() == 6
 
 
 @pytest.mark.parametrize(
@@ -1871,7 +1871,7 @@ def test_select_len_after_semi_anti_join_21343() -> None:
 
     q = lhs.join(rhs, on="a", how="anti").select(pl.len())
 
-    assert q.collect().item() == 0
+    assert q.collect().single() == 0
 
 
 def test_multi_leftjoin_empty_right_21701() -> None:
@@ -3662,7 +3662,7 @@ def test_join_rewrite_null_preserving_exprs(
         .select(expr_func(pl.first()))
         .select(pl.first().is_null() | ~pl.first())
         .to_series()
-        .item()
+        .single()
     )
 
     q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(

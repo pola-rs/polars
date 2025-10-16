@@ -602,7 +602,7 @@ def test_datetime_range_fast_slow_paths(
     unit: str,
     start: datetime,
 ) -> None:
-    end = pl.select(pl.lit(start).dt.offset_by(f"{n * size}{unit}")).item()
+    end = pl.select(pl.lit(start).dt.offset_by(f"{n * size}{unit}")).single()
     result_slow = pl.datetime_range(
         start,
         end,

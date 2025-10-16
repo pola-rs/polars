@@ -463,7 +463,7 @@ def test_streaming_group_by_binary_15116() -> None:
 
 def test_streaming_group_by_convert_15380(partition_limit: int) -> None:
     assert (
-        pl.DataFrame({"a": [1] * partition_limit}).group_by(b="a").len()["len"].item()
+        pl.DataFrame({"a": [1] * partition_limit}).group_by(b="a").len()["len"].single()
         == partition_limit
     )
 

@@ -62,7 +62,7 @@ def test_to_torch_tensor(df: pl.DataFrame) -> None:
     t2 = df.to_torch("tensor")
 
     assert list(t1.shape) == [4, 3]
-    assert (t1 == t2).all().item() is True
+    assert (t1 == t2).all().single() is True
 
 
 def test_to_torch_dict(df: pl.DataFrame) -> None:

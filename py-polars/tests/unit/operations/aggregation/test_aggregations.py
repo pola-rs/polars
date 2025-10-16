@@ -282,8 +282,8 @@ def test_sum_empty_and_null_set() -> None:
         {"a": [None, None, None], "b": [1, 1, 1]},
         schema={"a": pl.Float32, "b": pl.Int64},
     )
-    assert df.select(pl.sum("a")).item() == 0.0
-    assert df.group_by("b").agg(pl.sum("a"))["a"].item() == 0.0
+    assert df.select(pl.sum("a")).single() == 0.0
+    assert df.group_by("b").agg(pl.sum("a"))["a"].single() == 0.0
 
 
 def test_horizontal_sum_null_to_identity() -> None:

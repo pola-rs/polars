@@ -122,8 +122,8 @@ def test_bool(field: Any) -> None:
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 @pytest.mark.parametrize("field", FIELD_COMBS_ARGS)
 def test_int(dtype: pl.DataType, field: Any) -> None:
-    min = pl.select(x=dtype.min()).item()  # type: ignore[attr-defined]
-    max = pl.select(x=dtype.max()).item()  # type: ignore[attr-defined]
+    min = pl.select(x=dtype.min()).single()  # type: ignore[attr-defined]
+    max = pl.select(x=dtype.max()).single()  # type: ignore[attr-defined]
 
     roundtrip_series_re([], dtype, **field)
     roundtrip_series_re([0], dtype, **field)

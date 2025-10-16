@@ -157,7 +157,7 @@ def test_decimal_cast_no_scale() -> None:
 
 
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
-    assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
+    assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).single() == D("10.0")
 
 
 def test_string_to_decimal() -> None:

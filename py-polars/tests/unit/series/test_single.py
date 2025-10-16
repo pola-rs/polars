@@ -7,19 +7,27 @@ import pytest
 import polars as pl
 
 
-def test_series_item() -> None:
+def test_series_single() -> None:
     s = pl.Series("a", [1])
-    assert s.item() == 1
+    assert s.single() == 1
+    with pytest.warns(DeprecationWarning):
+        assert s.item() == 1
 
 
-def test_series_item_empty() -> None:
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_series_single_empty() -> None:
     s = pl.Series("a", [])
+    with pytest.raises(ValueError):
+        s.single()
     with pytest.raises(ValueError):
         s.item()
 
 
-def test_series_item_incorrect_shape() -> None:
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_series_single_incorrect_shape() -> None:
     s = pl.Series("a", [1, 2])
+    with pytest.raises(ValueError):
+        s.single()
     with pytest.raises(ValueError):
         s.item()
 
@@ -30,17 +38,20 @@ def s() -> pl.Series:
 
 
 @pytest.mark.parametrize(("index", "expected"), [(0, 1), (1, 2), (-1, 2), (-2, 1)])
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_series_item_with_index(index: int, expected: int, s: pl.Series) -> None:
     assert s.item(index) == expected
 
 
 @pytest.mark.parametrize("index", [-10, 10])
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_df_item_out_of_bounds(index: int, s: pl.Series) -> None:
     with pytest.raises(IndexError, match="out of bounds"):
         s.item(index)
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_series_item_out_of_range_date() -> None:
     s = pl.Series([datetime.date(9999, 12, 31)]).dt.offset_by("1d")
     with pytest.raises(ValueError, match="out of range"):
-        s.item()
+        s.single()

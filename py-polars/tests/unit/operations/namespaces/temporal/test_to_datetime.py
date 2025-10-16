@@ -109,7 +109,7 @@ def test_to_datetime(datetimes: datetime, fmt: str) -> None:
     input = datetimes.strftime(fmt)
     expected = datetime.strptime(input, fmt)
     try:
-        result = pl.Series([input]).str.to_datetime(format=fmt).item()
+        result = pl.Series([input]).str.to_datetime(format=fmt).single()
     # If there's an exception, check that it's either:
     # - something which polars can't parse at all: missing day or month
     # - something on which polars intentionally raises
@@ -196,7 +196,7 @@ def test_to_datetime_aware_values_aware_dtype() -> None:
 def test_to_datetime_two_digit_year_17213(
     inputs: str, format: str, expected: date
 ) -> None:
-    result = pl.Series([inputs]).str.to_date(format=format).item()
+    result = pl.Series([inputs]).str.to_date(format=format).single()
     assert result == expected
 
 

@@ -39,7 +39,7 @@ def test_month_start_datetime(
     time_zone: str | None,
 ) -> None:
     ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
-    result = ser.dt.month_start().item()
+    result = ser.dt.month_start().single()
     assert result == expected.replace(tzinfo=tzinfo)
 
 
@@ -52,7 +52,7 @@ def test_month_start_datetime(
 )
 def test_month_start_date(dt: date, expected: date) -> None:
     ser = pl.Series([dt])
-    result = ser.dt.month_start().item()
+    result = ser.dt.month_start().single()
     assert result == expected
 
 
@@ -84,7 +84,7 @@ def test_month_end_datetime(
     time_zone: str | None,
 ) -> None:
     ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
-    result = ser.dt.month_end().item()
+    result = ser.dt.month_end().single()
     assert result == expected.replace(tzinfo=tzinfo)
 
 
@@ -97,7 +97,7 @@ def test_month_end_datetime(
 )
 def test_month_end_date(dt: date, expected: date) -> None:
     ser = pl.Series([dt])
-    result = ser.dt.month_end().item()
+    result = ser.dt.month_end().single()
     assert result == expected
 
 

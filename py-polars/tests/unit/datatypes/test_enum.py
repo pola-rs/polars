@@ -547,8 +547,8 @@ def test_enum_cse_eq() -> None:
         .collect()
     )
 
-    assert out["dt1"].item() == "a"
-    assert out["dt2"].item() == "a"
+    assert out["dt1"].single() == "a"
+    assert out["dt2"].single() == "a"
     assert out["dt1"].dtype == pl.Enum(["a", "b"])
     assert out["dt2"].dtype == pl.Enum(["a", "c"])
     assert out["dt1"].dtype != out["dt2"].dtype
@@ -566,8 +566,8 @@ def test_category_comparison_subset() -> None:
         .collect()
     )
 
-    assert out["dt1"].item() == "a"
-    assert out["dt2"].item() == "a"
+    assert out["dt1"].single() == "a"
+    assert out["dt2"].single() == "a"
     assert out["dt1"].dtype == pl.Enum(["a"])
     assert out["dt2"].dtype == pl.Enum(["a", "b"])
     assert out["dt1"].dtype != out["dt2"].dtype

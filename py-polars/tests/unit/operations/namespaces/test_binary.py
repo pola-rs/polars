@@ -167,8 +167,8 @@ def test_compare_decode_between_lazy_and_eager_6814(encoding: TransferEncoding) 
 def test_binary_size(sz: int, unit: SizeUnit, expected: int | float) -> None:
     df = pl.DataFrame({"data": [b"\x00" * sz]}, schema={"data": pl.Binary})
     for sz in (
-        df.select(sz=pl.col("data").bin.size(unit)).item(),  # expr
-        df["data"].bin.size(unit).item(),  # series
+        df.select(sz=pl.col("data").bin.size(unit)).single(),  # expr
+        df["data"].bin.size(unit).single(),  # series
     ):
         assert sz == expected
 

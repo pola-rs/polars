@@ -328,7 +328,7 @@ def test_single_element_broadcast(
     expected = df.select("x").head(
         df.select(
             pl.max_horizontal(mask_expr.len(), truthy_expr.len(), falsy_expr.len())
-        ).item()
+        ).single()
     )
     assert_frame_equal(result, expected)
 
