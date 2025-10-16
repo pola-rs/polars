@@ -556,20 +556,16 @@ def test_add_aggstates_with_sort_in_binary_expr_24504(
     assert q.collect_schema() == out.schema
 
     # check output against non_aggregated expression evaluation
-    print(f"df\n{df}")
     grouped = df.group_by("g", maintain_order=maintain_order)
     out_non_agg = pl.DataFrame({})
     for df_group in grouped:
         df = df_group[1]
-        print(f"df pre expr:\n{df}", flush=True)
         if lhs[1] and rhs[1]:
             df = df.head(1)
             df = df.select(["g", expr])
         else:
             df = df.select(["g", expr.implode()]).head(1)
-        print(f"df post expr:{df}\n")
         out_non_agg = out_non_agg.vstack(df)
-        print(f"out_non_agg:\n{out_non_agg}")
 
     assert_frame_equal(out, out_non_agg, check_row_order=maintain_order)
 

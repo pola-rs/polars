@@ -6,6 +6,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node).clone();
 
     match expr {
+        AExpr::Element => Expr::Element,
         AExpr::Explode { expr, skip_empty } => Expr::Explode {
             input: Arc::new(node_to_expr(expr, expr_arena)),
             skip_empty,

@@ -12,6 +12,7 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
+            Element => f.write_str("element()"),
             Window {
                 function,
                 partition_by,

@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_plan::constants::PL_ELEMENT_NAME;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -303,6 +304,11 @@ fn create_physical_expr_inner(
             node_to_expr(expression, expr_arena),
             schema.clone(),
         ))),
+        Element => Ok(Arc::new(ColumnExpr::new(
+            PL_ELEMENT_NAME.clone(),
+            node_to_expr(expression, expr_arena),
+            schema.clone(),
+        ))),
         Sort { expr, options } => {
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
@@ -526,7 +532,8 @@ fn create_physical_expr_inner(
                 create_physical_expr_inner(*expr, Context::Default, expr_arena, schema, state)?;
 
             let element_dtype = variant.element_dtype(&input_field.dtype)?;
-            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let mut eval_schema = schema.as_ref().clone();
+            eval_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
             let evaluation = create_physical_expr_inner(
                 *evaluation,
                 // @Hack. Since EvalVariant::Array uses `evaluate_on_groups` to determine the
