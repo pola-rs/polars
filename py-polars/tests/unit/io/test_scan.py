@@ -1196,7 +1196,11 @@ def test_scan_empty_paths_friendly_error(
     # TODO: glob parameter not supported in some scan types
     cx = (
         pytest.raises(pl.exceptions.ComputeError, match="glob: false")
-        if scan_function is pl.scan_csv or scan_function is pl.scan_parquet
+        if (
+            scan_function is pl.scan_csv
+            or scan_function is pl.scan_parquet
+            or scan_function is pl.scan_ipc
+        )
         else pytest.raises(TypeError, match="unexpected keyword argument 'glob'")  # type: ignore[arg-type]
     )
 
