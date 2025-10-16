@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, TypeAlias, cast, overload
+from typing import IO, TYPE_CHECKING, Any, cast, overload
 
 from polars._dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars._utils.various import (
