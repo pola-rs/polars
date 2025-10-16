@@ -947,7 +947,6 @@ def test_invalid_agg_dtypes_should_raise(
     df=dataframes(
         min_size=1,
         max_size=1,
-        allow_null=False,
         excluded_dtypes=[
             # TODO(amber): This is broken, but also for .first()
             pl.Struct,
@@ -960,42 +959,59 @@ def test_single(df: pl.DataFrame) -> None:
     assert_frame_equal(q.collect(engine="streaming"), df)
 
 
-@given(
-    df=dataframes(
-        max_size=0,
-        allow_null=False,
-    )
-)
+@given(df=dataframes(max_size=0))
 def test_single_empty(df: pl.DataFrame) -> None:
     q = df.lazy().select(pl.all().single())
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=r"aggregation 'single' expected a single value, got none",
-    ):
+    match = "aggregation 'single' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect()
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=r"aggregation 'single' expected a single value, got none",
-    ):
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(df=dataframes(min_size=2))
+def test_single_too_many(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).single())
+    match = f"aggregation 'single' expected a single value, got {df.height} values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect(engine="streaming")
 
 
 @given(
     df=dataframes(
-        min_size=2,
+        min_size=1,
+        max_size=1,
         allow_null=False,
+        excluded_dtypes=[
+            # TODO(amber): This is broken, but also for .first()
+            pl.Struct,
+        ],
     )
 )
-def test_single_too_many(df: pl.DataFrame) -> None:
-    q = df.lazy().select(pl.all(ignore_nulls=False).single())
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=rf"aggregation 'single' expected a single value, got {df.height} values",
-    ):
-        q.collect()
+def test_single_on_groups(df: pl.DataFrame) -> None:
+    df = df.with_columns(pl.col("col0").alias("key"))
+    q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).single())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
 
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=rf"aggregation 'single' expected a single value, got {df.height} values",
-    ):
+
+def test_single_on_groups_empty() -> None:
+    df = pl.DataFrame({"col0": [[]]})
+    q = df.lazy().select(pl.all().list.single())
+    match = "aggregation 'single' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+def test_single_on_groups_too_many() -> None:
+    df = pl.DataFrame({"col0": [[1, 2, 3]]})
+    q = df.lazy().select(pl.all().list.single())
+    match = "aggregation 'single' expected a single value, got 3 values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect(engine="streaming")

@@ -1032,6 +1032,7 @@ def test_schema_on_agg() -> None:
         pl.col("b").sum().alias("sum"),
         pl.col("b").first().alias("first"),
         pl.col("b").last().alias("last"),
+        pl.col("b").single().alias("single"),
     )
     expected_schema = {
         "a": pl.String,
@@ -1040,6 +1041,7 @@ def test_schema_on_agg() -> None:
         "sum": pl.Int64,
         "first": pl.Int64,
         "last": pl.Int64,
+        "single": pl.Int64,
     }
     assert result.collect_schema() == expected_schema
 
