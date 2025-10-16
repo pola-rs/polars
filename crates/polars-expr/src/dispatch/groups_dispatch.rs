@@ -264,7 +264,7 @@ pub fn drop_items<'a>(
                         .copied()
                         .filter(|i| unsafe { predicate.get_bit_unchecked(*i as usize) })
                         .collect::<UnitVec<IdxSize>>();
-                    (idxs.first().copied().unwrap_or(fst), out)
+                    (out.first().copied().unwrap_or(fst), out)
                 })
                 .collect(),
             GroupsType::Slice {
