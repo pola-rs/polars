@@ -208,6 +208,12 @@ pub enum PhysNodeKind {
         map: Arc<dyn DataFrameUdf>,
     },
 
+    RangeGroupBy {
+        input: PhysStream,
+        key: PlSmallStr,
+        aggs: Vec<ExprIR>,
+    },
+
     Sort {
         input: PhysStream,
         by_column: Vec<ExprIR>,
@@ -410,6 +416,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::RangeGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
