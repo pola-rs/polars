@@ -18,7 +18,6 @@ use polars_plan::constants::PL_ELEMENT_NAME;
 use polars_plan::dsl::{EvalVariant, Expr};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
