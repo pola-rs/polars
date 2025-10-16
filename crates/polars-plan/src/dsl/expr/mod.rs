@@ -86,6 +86,10 @@ impl AsRef<Expr> for AggExpr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Expr {
+    /// Values in a `eval` context.
+    ///
+    /// Equivalent of `pl.element()`.
+    Element,
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),
     Selector(Selector),
@@ -315,7 +319,7 @@ impl Hash for Expr {
                 returns_scalar.hash(state);
             },
             // already hashed by discriminant
-            Expr::Len => {},
+            Expr::Element | Expr::Len => {},
             Expr::SortBy {
                 expr,
                 by,

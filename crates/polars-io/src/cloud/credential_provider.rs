@@ -47,7 +47,7 @@ impl PlCredentialProvider {
     /// Intended to be called with an internal `CredentialProviderBuilder` from
     /// py-polars.
     #[cfg(feature = "python")]
-    pub fn from_python_builder(func: pyo3::PyObject) -> Self {
+    pub fn from_python_builder(func: pyo3::Py<pyo3::PyAny>) -> Self {
         Self::Python(python_impl::PythonCredentialProvider::Builder(Arc::new(
             PythonObject(func),
         )))
@@ -543,7 +543,7 @@ mod python_impl {
         ) -> PolarsResult<Option<Self>> {
             match self {
                 Self::Builder(py_object) => {
-                    let opt_initialized_py_object = Python::with_gil(|py| {
+                    let opt_initialized_py_object = Python::attach(|py| {
                         let build_fn =
                             py_object.getattr(py, intern!(py, "build_credential_provider"))?;
 
@@ -607,7 +607,7 @@ mod python_impl {
                         token: None,
                     };
 
-                    let expiry = Python::with_gil(|py| {
+                    let expiry = Python::attach(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
                         let (storage_options, expiry) =
                             v.extract::<(pyo3::Bound<'_, PyDict>, Option<u64>)>()?;
@@ -682,7 +682,7 @@ mod python_impl {
                     static VALID_KEYS_MSG: &str =
                         "valid configuration keys are: account_key, bearer_token";
 
-                    let expiry = Python::with_gil(|py| {
+                    let expiry = Python::attach(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
                         let (storage_options, expiry) =
                             v.extract::<(pyo3::Bound<'_, PyDict>, Option<u64>)>()?;
@@ -747,7 +747,7 @@ mod python_impl {
                         bearer: String::new(),
                     };
 
-                    let expiry = Python::with_gil(|py| {
+                    let expiry = Python::attach(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
                         let (storage_options, expiry) =
                             v.extract::<(pyo3::Bound<'_, PyDict>, Option<u64>)>()?;
@@ -788,7 +788,7 @@ mod python_impl {
         fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>> {
             let py_object = self.unwrap_as_provider_ref();
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 py_object
                     .getattr(py, "_storage_update_options")
                     .map_or(Ok(vec![]), |f| {

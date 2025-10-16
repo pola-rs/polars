@@ -265,7 +265,7 @@ impl PolarsError {
             SQLSyntax(msg) => SQLSyntax(func(msg).into()),
             Context { error, .. } => error.wrap_msg(func),
             #[cfg(feature = "python")]
-            Python { error } => pyo3::Python::with_gil(|py| {
+            Python { error } => pyo3::Python::attach(|py| {
                 use pyo3::types::{PyAnyMethods, PyStringMethods};
                 use pyo3::{IntoPyObject, PyErr};
 
@@ -489,6 +489,9 @@ on startup."#.trim_start())
             ShapeMismatch: "argument {} called '{}' for `{}` have different lengths ({} != {})",
             $argument_idx, $argument, $operation, $lhs, $rhs
         )
+    };
+    (invalid_element_use) => {
+        $crate::polars_err!(InvalidOperation: "`element` is not allowed in this context")
     };
     (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(

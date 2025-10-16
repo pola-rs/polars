@@ -27,7 +27,7 @@ pub struct PythonOptionsDsl {
 impl PythonOptionsDsl {
     pub fn get_schema(&self) -> PolarsResult<SchemaRef> {
         match self.schema_fn.as_ref().expect("should be set").as_ref() {
-            Either::Left(func) => Python::with_gil(|py| {
+            Either::Left(func) => Python::attach(|py| {
                 let schema = func
                     .0
                     .call0(py)

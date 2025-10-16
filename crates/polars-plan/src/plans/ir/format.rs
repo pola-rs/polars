@@ -338,6 +338,7 @@ impl Display for ExprIRDisplay<'_> {
 
         use AExpr::*;
         match root {
+            Element => f.write_str("element()"),
             Window {
                 function,
                 partition_by,

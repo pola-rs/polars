@@ -590,6 +590,7 @@ where
     pub fn deposit(&self, validity: &Bitmap) -> Self {
         let set_bits = validity.set_bits();
 
+        assert_eq!(self.null_count(), 0);
         assert_eq!(self.len(), set_bits);
 
         if set_bits == validity.len() {

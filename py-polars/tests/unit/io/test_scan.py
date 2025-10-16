@@ -786,7 +786,7 @@ def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
         out,
         pl.DataFrame(
             {"index": [0, 1, 2], "a": [1, 2, 3]},
-            schema={"index": pl.UInt32, "a": pl.Int64},
+            schema={"index": pl.get_index_type(), "a": pl.Int64},
         ),
     )
 
@@ -820,7 +820,7 @@ def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
         lf.collect(engine="streaming"),
         pl.DataFrame(
             {"calories": "45", "index": 0},
-            schema={"calories": pl.String, "index": pl.UInt32},
+            schema={"calories": pl.String, "index": pl.get_index_type()},
         ),
     )
 
@@ -1082,15 +1082,29 @@ def test_hive_pruning_str_contains_21706(
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="paths not valid on Windows")
-def test_scan_no_glob_special_chars_23292(tmp_path: Path) -> None:
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="path characters not valid on Windows"
+)
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+    ],
+)
+@pytest.mark.parametrize("file_name", ["%?", "[", "]"])
+def test_scan_no_glob_special_chars_23292(
+    tmp_path: Path, file_name: str, scan: Any, write: Any
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    path = tmp_path / "%?.parquet"
+    path = tmp_path / file_name
     df = pl.DataFrame({"a": 1})
-    df.write_parquet(path)
+    write(df, path)
 
-    assert_frame_equal(pl.scan_parquet(f"file://{path}", glob=False).collect(), df)
+    assert_frame_equal(scan(path, glob=False).collect(), df)
+    assert_frame_equal(scan(f"file://{path}", glob=False).collect(), df)
 
 
 @pytest.mark.write_disk
@@ -1182,7 +1196,11 @@ def test_scan_empty_paths_friendly_error(
     # TODO: glob parameter not supported in some scan types
     cx = (
         pytest.raises(pl.exceptions.ComputeError, match="glob: false")
-        if scan_function is pl.scan_csv or scan_function is pl.scan_parquet
+        if (
+            scan_function is pl.scan_csv
+            or scan_function is pl.scan_parquet
+            or scan_function is pl.scan_ipc
+        )
         else pytest.raises(TypeError, match="unexpected keyword argument 'glob'")  # type: ignore[arg-type]
     )
 

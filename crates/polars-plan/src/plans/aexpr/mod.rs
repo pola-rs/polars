@@ -165,6 +165,10 @@ impl From<IRAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AExpr {
+    /// Values in a `eval` context.
+    ///
+    /// Equivalent of `pl.element()`.
+    Element,
     Explode {
         expr: Node,
         skip_empty: bool,
@@ -257,6 +261,7 @@ impl AExpr {
     #[recursive::recursive]
     pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
+            AExpr::Element => false,
             AExpr::Literal(lv) => lv.is_scalar(),
             AExpr::Function { options, input, .. }
             | AExpr::AnonymousFunction { options, input, .. } => {
@@ -323,6 +328,7 @@ impl AExpr {
         }
 
         match self {
+            AExpr::Element => true,
             AExpr::Column(_) => true,
 
             AExpr::Literal(_) | AExpr::Agg(_) | AExpr::Len => false,

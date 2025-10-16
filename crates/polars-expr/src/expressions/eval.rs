@@ -2,22 +2,22 @@ use std::borrow::Cow;
 use std::cell::LazyCell;
 use std::sync::Arc;
 
-use polars_core::POOL;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
-use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
+use polars_core::error::{PolarsResult, feature_gated};
 use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    AnyValue, ChunkCast, ChunkExplode, Column, Field, GroupPositions, GroupsType, IntoColumn,
+    ChunkCast, ChunkExplode, Column, Field, GroupPositions, GroupsType, IdxCa, IntoColumn,
     ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
+use polars_plan::constants::PL_ELEMENT_NAME;
 use polars_plan::dsl::{EvalVariant, Expr};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
@@ -28,7 +28,6 @@ pub struct EvalExpr {
     evaluation: Arc<dyn PhysicalExpr>,
     variant: EvalVariant,
     expr: Expr,
-    allow_threading: bool,
     output_field: Field,
     is_scalar: bool,
     evaluation_is_scalar: bool,
@@ -43,7 +42,6 @@ impl EvalExpr {
         evaluation: Arc<dyn PhysicalExpr>,
         variant: EvalVariant,
         expr: Expr,
-        allow_threading: bool,
         output_field: Field,
         is_scalar: bool,
         evaluation_is_scalar: bool,
@@ -55,7 +53,6 @@ impl EvalExpr {
             evaluation,
             variant,
             expr,
-            allow_threading,
             output_field,
             is_scalar,
             evaluation_is_scalar,
@@ -70,7 +67,10 @@ impl EvalExpr {
         state: &ExecutionState,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
+        let df = ca
+            .get_inner()
+            .with_name(PL_ELEMENT_NAME.clone())
+            .into_frame();
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -191,7 +191,10 @@ impl EvalExpr {
         as_list: bool,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = ca.get_inner().with_name(PlSmallStr::EMPTY).into_frame();
+        let df = ca
+            .get_inner()
+            .with_name(PL_ELEMENT_NAME.clone())
+            .into_frame();
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -333,65 +336,68 @@ impl EvalExpr {
         input: &Series,
         min_samples: usize,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
-        let finish = |out: Series| {
-            polars_ensure!(
-                out.len() <= 1,
-                ComputeError:
-                "expected single value, got a result with length {}, {:?}",
-                out.len(), out,
-            );
-            Ok(out.get(0).unwrap().into_static())
-        };
+    ) -> PolarsResult<Column> {
+        if input.is_empty() {
+            return Ok(Column::new_empty(
+                self.output_field.name().clone(),
+                self.output_field.dtype(),
+            ));
+        }
 
-        let input = input.clone().with_name(PlSmallStr::EMPTY);
-        let avs = if self.allow_threading {
-            POOL.install(|| {
-                (1..input.len() + 1)
-                    .into_par_iter()
-                    .map(|len| {
-                        let c = input.slice(0, len);
-                        if (len - c.null_count()) >= min_samples {
-                            let df = c.into_frame();
-                            let out = self
-                                .evaluation
-                                .evaluate(&df, state)?
-                                .take_materialized_series();
-                            finish(out)
-                        } else {
-                            Ok(AnyValue::Null)
-                        }
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()
-            })?
+        let mut deposit: Option<Bitmap> = None;
+        let groups = if min_samples == 0 {
+            (1..input.len() as IdxSize).map(|i| [0, i]).collect()
         } else {
-            let mut df_container = DataFrame::empty();
-            (1..input.len() + 1)
-                .map(|len| {
-                    let c = input.slice(0, len);
-                    if (len - c.null_count()) >= min_samples {
-                        unsafe {
-                            df_container.with_column_unchecked(c.into_column());
-                            let out = self
-                                .evaluation
-                                .evaluate(&df_container, state)?
-                                .take_materialized_series();
-                            df_container.clear_columns();
-                            finish(out)
-                        }
-                    } else {
-                        Ok(AnyValue::Null)
-                    }
+            let validity = input
+                .rechunk_validity()
+                .unwrap_or_else(|| Bitmap::new_with_value(true, input.len()));
+            let mut count = 0;
+            let mut deposit_builder = BitmapBuilder::with_capacity(input.len());
+            let out = (0..input.len() as IdxSize)
+                .filter(|i| {
+                    count += usize::from(unsafe { validity.get_bit_unchecked(*i as usize) });
+                    let is_selected = count >= min_samples;
+                    unsafe { deposit_builder.push_unchecked(is_selected) };
+                    is_selected
                 })
-                .collect::<PolarsResult<Vec<_>>>()?
+                .map(|i| [0, i + 1])
+                .collect();
+            deposit = Some(deposit_builder.freeze());
+            out
         };
 
-        Series::from_any_values_and_dtype(
-            self.output_field.name().clone(),
-            &avs,
-            self.output_field.dtype(),
-            true,
-        )
+        let groups = GroupsType::Slice {
+            groups,
+            overlapping: true,
+        };
+
+        let groups = groups.into_sliceable();
+
+        let df = input
+            .clone()
+            .with_name(PL_ELEMENT_NAME.clone())
+            .into_frame();
+        let agg = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
+        let (mut out, _) = agg.get_final_aggregation();
+
+        // Since we only evaluated the expressions on the items that satisfied the min samples, we
+        // need to fix it up here again.
+        if let Some(deposit) = deposit {
+            let mut i = 0;
+            let gather_idxs = deposit
+                .iter()
+                .map(|v| {
+                    let out = i;
+                    i += IdxSize::from(v);
+                    out
+                })
+                .collect::<Vec<IdxSize>>();
+            let gather_idxs =
+                IdxCa::from_vec_validity(PlSmallStr::EMPTY, gather_idxs, Some(deposit));
+            out = unsafe { out.take_unchecked(&gather_idxs) };
+        }
+
+        Ok(out)
     }
 }
 
@@ -417,9 +423,9 @@ impl PhysicalExpr for EvalExpr {
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
                 self.evaluate_on_array_chunked(input.array()?, state, true, true)
             }),
-            EvalVariant::Cumulative { min_samples } => self
-                .evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
-                .map(Column::from),
+            EvalVariant::Cumulative { min_samples } => {
+                self.evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
+            },
         }
     }
 
@@ -466,7 +472,7 @@ impl PhysicalExpr for EvalExpr {
                         Some(group) => {
                             let out =
                                 self.evaluate_cumulative_eval(group.as_ref(), min_samples, state)?;
-                            builder.append_series(&out)?;
+                            builder.append_series(out.as_materialized_series())?;
                         },
                     }
                 }

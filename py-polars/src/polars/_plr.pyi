@@ -4,6 +4,8 @@ from typing import Any, Literal, overload
 from numpy.typing import NDArray
 from typing_extensions import TypeAlias
 
+from polars.io.scan_options._options import ScanOptions
+
 # This file mirrors all the definitions made in the polars-python Rust API.
 
 __version__: str
@@ -853,27 +855,16 @@ class PyLazyFrame:
     def new_from_parquet(
         sources: Any,
         schema: Any | None,
-        scan_options: PyScanOptions,
+        scan_options: ScanOptions,
         parallel: Any,
         low_memory: bool,
         use_statistics: bool,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_ipc(
-        source: Any | None,
         sources: Any,
-        n_rows: int | None,
-        cache: bool,
-        rechunk: bool,
-        row_index: tuple[str, int] | None,
-        cloud_options: dict[str, Any] | None,
-        credential_provider: Any | None,
-        hive_partitioning: bool | None,
-        hive_schema: Any | None,
-        try_parse_hive_dates: bool,
-        retries: int,
+        scan_options: ScanOptions,
         file_cache_ttl: int | None,
-        include_file_paths: str | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
@@ -2099,6 +2090,7 @@ def as_struct(exprs: Sequence[PyExpr]) -> PyExpr: ...
 def field(names: Sequence[str]) -> PyExpr: ...
 def coalesce(exprs: Sequence[PyExpr]) -> PyExpr: ...
 def col(name: str) -> PyExpr: ...
+def element() -> PyExpr: ...
 def collect_all(
     lfs: Sequence[PyLazyFrame], engine: Any, optflags: PyOptFlags
 ) -> list[PyDataFrame]: ...

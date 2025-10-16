@@ -12,7 +12,7 @@ use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, FromPyObject, PyObject, PyResult, intern};
+use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult, intern};
 
 use crate::PyDataFrame;
 use crate::functions::parse_cloud_options;
@@ -62,7 +62,7 @@ impl PyScanOptions<'_> {
             rechunk: bool,
             cache: bool,
             storage_options: Option<Vec<(String, String)>>,
-            credential_provider: Option<PyObject>,
+            credential_provider: Option<Py<PyAny>>,
             retries: usize,
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,

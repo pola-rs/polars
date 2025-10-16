@@ -17,11 +17,12 @@ use super::*;
 // It is no longer needed to increment this. We use the schema hashes to check for compatibility.
 //
 // Only increment if you need to make a breaking change that doesn't change the schema hashes.
-pub const DSL_VERSION: (u16, u16) = (23, 0);
+pub const DSL_VERSION: (u16, u16) = (24, 0);
 const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
+#[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DslPlan {
@@ -267,7 +268,9 @@ impl DslPlan {
         writer.write_all(&le_major)?;
         writer.write_all(&le_minor)?;
         writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
-        pl_serialize::serialize_dsl(writer, self)
+        let serializable_plan = serializable_plan::SerializableDslPlan::from(self);
+        pl_serialize::serialize_dsl(writer, &serializable_plan)
+            .map_err(|e| polars_err!(ComputeError: "serialization failed\n\nerror: {e}"))
     }
 
     #[cfg(feature = "serde")]
@@ -333,8 +336,10 @@ impl DslPlan {
             );
         }
 
-        pl_serialize::deserialize_dsl(reader)
-            .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
+        let serializable_plan: serializable_plan::SerializableDslPlan =
+            pl_serialize::deserialize_dsl(reader)
+                .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))?;
+        (&serializable_plan).try_into()
     }
 
     #[cfg(feature = "dsl-schema")]

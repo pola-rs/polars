@@ -36,6 +36,10 @@ where
     }
 }
 
+pub fn element() -> Expr {
+    Expr::Element
+}
+
 /// Selects no columns.
 pub fn empty() -> Selector {
     Selector::Empty

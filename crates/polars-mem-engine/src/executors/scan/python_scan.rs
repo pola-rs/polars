@@ -37,7 +37,7 @@ impl PythonScanExec {
         state: &mut ExecutionState,
     ) -> PolarsResult<DataFrame> {
         let df = python_df_to_rust(py, df)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             self.check_schema(&df)?;
 
             if let Some(pred) = &self.predicate {
@@ -61,7 +61,7 @@ impl Executor for PythonScanExec {
         }
         let with_columns = self.options.with_columns.take();
         let n_rows = self.options.n_rows.take();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
             let utils = pl.getattr(intern!(py, "_utils")).unwrap();
             let callable = utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
@@ -157,7 +157,7 @@ impl Executor for PythonScanExec {
                                 let mut df = python_df_to_rust(py, out)?;
                                 if let (Some(pred), false) = (&self.predicate, can_parse_predicate)
                                 {
-                                    py.allow_threads(|| {
+                                    py.detach(|| {
                                         let mask = pred.evaluate(&df, state)?;
                                         df = df.filter(mask.bool()?)?;
                                         PolarsResult::Ok(())

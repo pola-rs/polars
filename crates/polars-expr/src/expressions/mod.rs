@@ -80,6 +80,24 @@ impl AggState {
     fn is_scalar(&self) -> bool {
         matches!(self, Self::AggregatedScalar(_))
     }
+
+    pub fn name(&self) -> &PlSmallStr {
+        match self {
+            AggState::AggregatedList(s)
+            | AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.name(),
+        }
+    }
+
+    pub fn flat_dtype(&self) -> &DataType {
+        match self {
+            AggState::AggregatedList(s) => s.dtype().inner_dtype().unwrap(),
+            AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.dtype(),
+        }
+    }
 }
 
 // lazy update strategy
@@ -104,16 +122,16 @@ pub struct AggregationContext<'a> {
     ///
     /// When aggregation state is LiteralScalar or AggregatedScalar, the group values are not
     /// related to the state data anymore. The number of groups is still accurate.
-    state: AggState,
+    pub(crate) state: AggState,
     /// group tuples for AggState
-    groups: Cow<'a, GroupPositions>,
+    pub(crate) groups: Cow<'a, GroupPositions>,
     /// This is used to determined if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
-    update_groups: UpdateGroups,
+    pub(crate) update_groups: UpdateGroups,
     /// This is true when the Series and Groups still have all
     /// their original values. Not the case when filtered
-    original_len: bool,
+    pub(crate) original_len: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -402,6 +420,16 @@ impl<'a> AggregationContext<'a> {
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
         self
+    }
+
+    /// Ensure that each group is represented by contiguous values in memory.
+    pub fn normalize_values(&mut self) {
+        self.set_original_len(false);
+        self.groups();
+        let values = self.flat_naive();
+        let values = unsafe { values.agg_list(&self.groups) };
+        self.state = AggState::AggregatedList(values);
+        self.with_update_groups(UpdateGroups::WithGroupsLen);
     }
 
     /// Aggregate into `ListChunked`.

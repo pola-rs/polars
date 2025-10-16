@@ -9110,6 +9110,8 @@ class Series:
         """
         Aggregate values into a list.
 
+        The returned list itself is a scalar value of `list` dtype.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
