@@ -381,6 +381,7 @@ def scan_ipc(
     rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
+    glob: bool = True,
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     memory_map: bool = True,
@@ -418,6 +419,8 @@ def scan_ipc(
         DataFrame
     row_index_offset
         Offset to start the row index column (only use if the name is set)
+    glob
+        Expand path given via globbing rules.
     storage_options
         Options that indicate how to connect to a cloud provider.
 
@@ -488,6 +491,7 @@ def scan_ipc(
             ),
             pre_slice=(0, n_rows) if n_rows is not None else None,
             include_file_paths=include_file_paths,
+            glob=glob,
             hive_partitioning=hive_partitioning,
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
