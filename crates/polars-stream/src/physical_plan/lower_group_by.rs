@@ -576,6 +576,28 @@ pub fn build_group_by_stream(
     );
     if let Some(stream) = streaming {
         stream
+    } else if keys.len() == 1 && !maintain_order && apply.is_none() {
+        dbg!("Change needed here!");
+        let key = phys_sm.insert(PhysNode {
+            output_schema: phys_sm[input.node].output_schema.clone(),
+            kind: PhysNodeKind::Sort {
+                input,
+                by_column: keys.to_vec(),
+                slice: None,
+                sort_options: SortMultipleOptions::default(),
+            },
+        });
+        let input = PhysStream::first(key);
+
+        let node = PhysNode {
+            output_schema: output_schema.clone(),
+            kind: PhysNodeKind::RangeGroupBy {
+                input,
+                key: keys[0].output_name().clone(),
+                aggs: aggs.to_vec(),
+            },
+        };
+        Ok(PhysStream::first(phys_sm.insert(node)))
     } else {
         let format_str = ctx.prepare_visualization.then(|| {
             let mut buffer = String::new();
