@@ -626,7 +626,9 @@ def test_predicate_pushdown_struct_unnest_19632() -> None:
 
     assert_frame_equal(
         q.collect(),
-        pl.DataFrame({"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.UInt32}),
+        pl.DataFrame(
+            {"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.get_index_type()}
+        ),
     )
 
 

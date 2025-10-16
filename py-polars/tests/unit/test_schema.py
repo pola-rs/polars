@@ -292,7 +292,7 @@ def test_lazy_nested_function_expr_agg_schema() -> None:
 def test_lazy_agg_scalar_return_schema() -> None:
     q = pl.LazyFrame({"k": [1]}).group_by("k").agg(pl.col("k").null_count().alias("o"))
 
-    schema = {"k": pl.Int64, "o": pl.UInt32}
+    schema = {"k": pl.Int64, "o": pl.get_index_type()}
     assert q.collect_schema() == schema
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
 

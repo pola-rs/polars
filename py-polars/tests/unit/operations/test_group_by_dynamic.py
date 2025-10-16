@@ -40,7 +40,7 @@ if TYPE_CHECKING:
                     ],
                     "num_points": [1, 2, 1],
                 },
-                schema={"dt": pl.Datetime, "num_points": pl.UInt32},
+                schema={"dt": pl.Datetime, "num_points": pl.get_index_type()},
             ).sort("dt"),
         )
     ],
@@ -597,7 +597,7 @@ def test_group_by_dynamic_when_conversion_crosses_dates_7274() -> None:
     expected = pl.DataFrame({"timestamp": [datetime(1970, 1, 1)], "value": [2]})
     expected = expected.with_columns(
         pl.col("timestamp").dt.replace_time_zone("Africa/Lagos"),
-        pl.col("value").cast(pl.UInt32),
+        pl.col("value").cast(pl.get_index_type()),
     )
     assert_frame_equal(result, expected)
     result = df.group_by_dynamic(
@@ -611,7 +611,7 @@ def test_group_by_dynamic_when_conversion_crosses_dates_7274() -> None:
     )
     expected = expected.with_columns(
         pl.col("timestamp_utc").dt.replace_time_zone("UTC"),
-        pl.col("value").cast(pl.UInt32),
+        pl.col("value").cast(pl.get_index_type()),
     )
     assert_frame_equal(result, expected)
 
@@ -1080,7 +1080,7 @@ def test_group_by_dynamic_single_row_22585() -> None:
     out = df.group_by_dynamic("date", every="1y", group_by=["group"]).agg(pl.len())
     expected = pl.DataFrame(
         {"group": ["x"], "date": [date(2025, 1, 1)], "len": [1]}
-    ).with_columns(pl.col("len").cast(pl.UInt32))
+    ).with_columns(pl.col("len").cast(pl.get_index_type()))
     assert_frame_equal(expected, out)
 
 
