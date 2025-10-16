@@ -4,9 +4,7 @@ use polars_core::prelude::*;
 use polars_ops::prelude::floor_div_series;
 
 use super::*;
-use crate::expressions::{
-    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
-};
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 
 #[derive(Clone)]
 pub struct BinaryExpr {
@@ -356,33 +354,5 @@ impl PhysicalExpr for BinaryExpr {
 
     fn is_scalar(&self) -> bool {
         self.is_scalar
-    }
-
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-}
-
-impl PartitionedAggregation for BinaryExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let left = self.left.as_partitioned_aggregator().unwrap();
-        let right = self.right.as_partitioned_aggregator().unwrap();
-        let left = left.evaluate_partitioned(df, groups, state)?;
-        let right = right.evaluate_partitioned(df, groups, state)?;
-        apply_operator(&left, &right, self.op)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }
