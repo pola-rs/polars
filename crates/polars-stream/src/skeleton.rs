@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
+use polars_plan::plans::visualization::generate_visualization_data;
 use polars_plan::plans::{Context, IR, IRPlan};
 use polars_plan::prelude::AExpr;
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -67,6 +68,13 @@ impl StreamingQuery {
         ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Self> {
+        eprintln!(
+            "{}",
+            generate_visualization_data("".into(), &[node], ir_arena, expr_arena,)
+                .to_json()
+                .unwrap()
+        );
+
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
             let plan = IRPlan {
                 lp_top: node,

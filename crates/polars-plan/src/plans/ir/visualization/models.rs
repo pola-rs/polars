@@ -1,5 +1,4 @@
 use polars_core::frame::UniqueKeepStrategy;
-use polars_error::feature_gated;
 use polars_ops::frame::{JoinCoalesce, JoinValidation, MaintainOrderJoin};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
@@ -190,6 +189,14 @@ pub enum IRNodeProperties {
         coalesce: JoinCoalesce,
         allow_eq: bool,
         check_sortedness: bool,
+    },
+    #[cfg(feature = "iejoin")]
+    IEJoin {
+        left_on: Vec<PlSmallStr>,
+        right_on: Vec<PlSmallStr>,
+        inequality_operators: Vec<polars_ops::frame::InequalityOperator>,
+        suffix: Option<PlSmallStr>,
+        slice: Option<[i128; 2]>,
     },
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {
