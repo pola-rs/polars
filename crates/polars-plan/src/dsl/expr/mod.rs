@@ -86,6 +86,9 @@ impl AsRef<Expr> for AggExpr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Expr {
+    /// Values in a `eval` context.
+    ///
+    /// Equivalent of `pl.element()`.
     Element,
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),

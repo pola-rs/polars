@@ -165,6 +165,9 @@ impl From<IRAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AExpr {
+    /// Values in a `eval` context.
+    ///
+    /// Equivalent of `pl.element()`.
     Element,
     Explode {
         expr: Node,
