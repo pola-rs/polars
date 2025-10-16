@@ -6,7 +6,7 @@ mod approx_n_unique;
 mod bitwise;
 mod convert;
 mod count;
-mod first_last_single;
+mod first_last;
 mod len;
 mod mean;
 mod min_max;

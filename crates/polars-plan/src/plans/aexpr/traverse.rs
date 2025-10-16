@@ -244,24 +244,24 @@ impl AExpr {
 impl IRAggExpr {
     pub fn get_input(&self) -> NodeInputs {
         use IRAggExpr::*;
-        use NodeInputs as NI;
+        use NodeInputs::*;
 
         match self {
-            Min { input, .. } => NI::Single(*input),
-            Max { input, .. } => NI::Single(*input),
-            Median(input) => NI::Single(*input),
-            NUnique(input) => NI::Single(*input),
-            First(input) => NI::Single(*input),
-            Last(input) => NI::Single(*input),
-            Single(input) => NI::Single(*input),
-            Mean(input) => NI::Single(*input),
-            Implode(input) => NI::Single(*input),
-            Quantile { expr, quantile, .. } => NI::Many(vec![*expr, *quantile]),
-            Sum(input) => NI::Single(*input),
-            Count { input, .. } => NI::Single(*input),
-            Std(input, _) => NI::Single(*input),
-            Var(input, _) => NI::Single(*input),
-            AggGroups(input) => NI::Single(*input),
+            Min { input, .. } => Single(*input),
+            Max { input, .. } => Single(*input),
+            Median(input) => Single(*input),
+            NUnique(input) => Single(*input),
+            First(input) => Single(*input),
+            Last(input) => Single(*input),
+            Item(input) => Single(*input),
+            Mean(input) => Single(*input),
+            Implode(input) => Single(*input),
+            Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
+            Sum(input) => Single(*input),
+            Count { input, .. } => Single(*input),
+            Std(input, _) => Single(*input),
+            Var(input, _) => Single(*input),
+            AggGroups(input) => Single(*input),
         }
     }
     pub fn set_input(&mut self, input: Node) {
@@ -273,7 +273,7 @@ impl IRAggExpr {
             NUnique(input) => input,
             First(input) => input,
             Last(input) => input,
-            Single(input) => input,
+            Item(input) => input,
             Mean(input) => input,
             Implode(input) => input,
             Quantile { expr, .. } => expr,

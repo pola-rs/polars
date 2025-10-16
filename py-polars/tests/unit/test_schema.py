@@ -358,16 +358,16 @@ def test_lazy_agg_to_scalar_schema_19752(lhs: pl.Expr, expr_op: str) -> None:
 def test_lazy_agg_schema_after_elementwise_19984() -> None:
     lf = pl.LazyFrame({"a": 1, "b": 1})
 
-    q = lf.group_by("a").agg(pl.col("b").single().fill_null(0))
+    q = lf.group_by("a").agg(pl.col("b").item().fill_null(0))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").single().fill_null(0).fill_null(0))
+    q = lf.group_by("a").agg(pl.col("b").item().fill_null(0).fill_null(0))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").single() + 1)
+    q = lf.group_by("a").agg(pl.col("b").item() + 1)
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(1 + pl.col("b").single())
+    q = lf.group_by("a").agg(1 + pl.col("b").item())
     assert q.collect_schema() == q.collect().collect_schema()
 
 

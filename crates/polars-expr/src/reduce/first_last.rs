@@ -15,8 +15,8 @@ pub fn new_last_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     new_reduction_with_policy::<Last>(dtype)
 }
 
-pub fn new_single_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
-    new_reduction_with_policy::<Single>(dtype)
+pub fn new_item_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
+    new_reduction_with_policy::<Item>(dtype)
 }
 
 fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn GroupedReduction> {
@@ -47,7 +47,7 @@ fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn Gr
 trait Policy: Send + Sync + 'static {
     fn index(len: usize) -> usize;
     fn should_replace(new: u64, old: u64) -> bool;
-    fn is_single() -> bool {
+    fn is_item_policy() -> bool {
         false
     }
 }
@@ -76,8 +76,8 @@ impl Policy for Last {
     }
 }
 
-struct Single;
-impl Policy for Single {
+struct Item;
+impl Policy for Item {
     fn index(_len: usize) -> usize {
         0
     }
@@ -86,7 +86,7 @@ impl Policy for Single {
         old == 0
     }
 
-    fn is_single() -> bool {
+    fn is_item_policy() -> bool {
         true
     }
 }
@@ -154,8 +154,8 @@ where
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        if P::is_single() {
-            check_single_value(&v)?;
+        if P::is_item_policy() {
+            check_item_count_is_one(&v)?;
         }
         let ca: ChunkedArray<T> = v
             .into_iter()
@@ -230,8 +230,8 @@ where
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        if P::is_single() {
-            check_single_value(&v)?;
+        if P::is_item_policy() {
+            check_item_count_is_one(&v)?;
         }
         let ca: BinaryChunked = v
             .into_iter()
@@ -291,8 +291,8 @@ where
         _dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        if P::is_single() {
-            check_single_value(&v)?;
+        if P::is_item_policy() {
+            check_item_count_is_one(&v)?;
         }
         let ca: BooleanChunked = v
             .into_iter()
@@ -431,10 +431,10 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         self.seqs.clear();
-        if P::is_single() {
+        if P::is_item_policy() {
             for count in self.counts.iter() {
                 if *count != 1 {
-                    return Err(single_count_err(*count));
+                    return Err(item_count_err(*count));
                 }
             }
         }
@@ -452,22 +452,22 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
     }
 }
 
-fn check_single_value<T: Clone>(v: &[Value<T>]) -> PolarsResult<()> {
+fn check_item_count_is_one<T: Clone>(v: &[Value<T>]) -> PolarsResult<()> {
     if let Some(Value { count: n, .. }) = v.iter().find(|v| v.count != 1) {
-        Err(single_count_err(*n))
+        Err(item_count_err(*n))
     } else {
         Ok(())
     }
 }
 
-fn single_count_err(n: u64) -> PolarsError {
+fn item_count_err(n: u64) -> PolarsError {
     if n == 0 {
         polars_err!(ComputeError:
-            "aggregation 'single' expected a single value, got none"
+            "aggregation 'item' expected a single value, got none"
         )
     } else if n > 1 {
         polars_err!(ComputeError:
-            "aggregation 'single' expected a single value, got {n} values"
+            "aggregation 'item' expected a single value, got {n} values"
         )
     } else {
         unreachable!()

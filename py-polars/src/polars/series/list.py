@@ -572,7 +572,7 @@ class ListNameSpace:
         """
 
     @unstable()
-    def single(self) -> Series:
+    def item(self) -> Series:
         """
         Get the single value of the sublists.
 
@@ -581,7 +581,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1], [4], [6]])
-        >>> s.list.single()
+        >>> s.list.item()
         shape: (3,)
         Series: 'a' [i64]
         [

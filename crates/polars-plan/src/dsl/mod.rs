@@ -177,8 +177,8 @@ impl Expr {
     }
 
     /// Get the single value in the group. If there are multiple values, an error is returned.
-    pub fn single(self) -> Self {
-        AggExpr::Single(Arc::new(self)).into()
+    pub fn item(self) -> Self {
+        AggExpr::Item(Arc::new(self)).into()
     }
 
     /// GroupBy the group to a Series.

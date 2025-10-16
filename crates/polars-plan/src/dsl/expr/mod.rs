@@ -37,7 +37,7 @@ pub enum AggExpr {
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
     Last(Arc<Expr>),
-    Single(Arc<Expr>),
+    Item(Arc<Expr>),
     Mean(Arc<Expr>),
     Implode(Arc<Expr>),
     Count {
@@ -65,7 +65,7 @@ impl AsRef<Expr> for AggExpr {
             NUnique(e) => e,
             First(e) => e,
             Last(e) => e,
-            Single(e) => e,
+            Item(e) => e,
             Mean(e) => e,
             Implode(e) => e,
             Count { input, .. } => input,

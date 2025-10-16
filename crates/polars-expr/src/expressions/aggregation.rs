@@ -130,16 +130,16 @@ impl PhysicalExpr for AggregationExpr {
             } else {
                 s.tail(Some(1))
             }),
-            GroupByMethod::Single => Ok(match s.len() {
+            GroupByMethod::Item => Ok(match s.len() {
                 0 => {
                     return Err(polars_err!(ComputeError:
-                        "aggregation 'single' expected a single value, got none"
+                        "aggregation 'item' expected a single value, got none"
                     ));
                 },
                 1 => s.slice(0, 1),
                 n => {
                     return Err(polars_err!(ComputeError:
-                        "aggregation 'single' expected a single value, got {n} values"
+                        "aggregation 'item' expected a single value, got {n} values"
                     ));
                 },
             }),
@@ -350,21 +350,21 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = s.agg_last(&groups);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
-                GroupByMethod::Single => {
+                GroupByMethod::Item => {
                     let (s, groups) = ac.get_final_aggregation();
                     for gc in groups.group_count().iter() {
                         if let Some(n) = gc
                             && n == 0
                         {
                             return Err(polars_err!(ComputeError:
-                                "aggregation 'single' expected a single value, got none"
+                                "aggregation 'item' expected a single value, got none"
                             ));
                         }
                         if let Some(n) = gc
                             && n > 1
                         {
                             return Err(polars_err!(ComputeError:
-                                "aggregation 'single' expected a single value, got {n} values"
+                                "aggregation 'item' expected a single value, got {n} values"
                             ));
                         }
                     }

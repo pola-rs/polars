@@ -685,7 +685,7 @@ class ExprListNameSpace:
         return self.get(-1, null_on_oob=True)
 
     @unstable()
-    def single(self) -> Expr:
+    def item(self) -> Expr:
         """
         Get the single value of the sublists.
 
@@ -694,24 +694,24 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[3], [1], [2]]})
-        >>> df.with_columns(single=pl.col("a").list.single())
+        >>> df.with_columns(item=pl.col("a").list.item())
         shape: (3, 2)
-        ┌───────────┬────────┐
-        │ a         ┆ single │
-        │ ---       ┆ ---    │
-        │ list[i64] ┆ i64    │
-        ╞═══════════╪════════╡
-        │ [3]       ┆ 3      │
-        │ [1]       ┆ 1      │
-        │ [2]       ┆ 2      │
-        └───────────┴────────┘
+        ┌───────────┬──────┐
+        │ a         ┆ item │
+        │ ---       ┆ ---  │
+        │ list[i64] ┆ i64  │
+        ╞═══════════╪══════╡
+        │ [3]       ┆ 3    │
+        │ [1]       ┆ 1    │
+        │ [2]       ┆ 2    │
+        └───────────┴──────┘
         >>> df = pl.DataFrame({"a": [[3, 2], [1], [2]]})
-        >>> df.select(pl.col("a").list.single())
+        >>> df.select(pl.col("a").list.item())
         Traceback (most recent call last):
         ...
-        polars.exceptions.ComputeError: aggregation 'single' expected a single value, got 2 values
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 2 values
         """  # noqa: W505
-        return self.agg(F.element().single())
+        return self.agg(F.element().item())
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """

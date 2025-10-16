@@ -3444,7 +3444,7 @@ class Expr:
         return wrap_expr(self._pyexpr.last())
 
     @unstable()
-    def single(self) -> Expr:
+    def item(self) -> Expr:
         """
         Get the single value.
 
@@ -3453,7 +3453,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1]})
-        >>> df.select(pl.col("a").single())
+        >>> df.select(pl.col("a").item())
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -3463,7 +3463,7 @@ class Expr:
         │ 1   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.single())
+        return wrap_expr(self._pyexpr.item())
 
     def over(
         self,
