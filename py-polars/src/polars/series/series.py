@@ -1608,6 +1608,11 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(_from_series=True)
 
+    @deprecated(
+        "`Series.item` is deprecated; "
+        "for unpacking a single value out of a dataframe as a scalar, use `Series.single()`; "
+        "for element retrieval, use `Series[index]` instead; "
+    )
     def item(self, index: int | None = None) -> Any:
         """
         Return the Series as a scalar, or return the element at the given index.
@@ -1625,15 +1630,30 @@ class Series:
         24
         """
         if index is None:
-            if len(self) != 1:
-                msg = (
-                    "can only call '.item()' if the Series is of length 1,"
-                    f" or an explicit index is provided (Series is of length {len(self)})"
-                )
-                raise ValueError(msg)
-            return self._s.get_index(0)
+            return self.single()
 
         return self._s.get_index_signed(index)
+
+    @unstable()
+    def single(self) -> Any:
+        """
+        Return the single value in this Series as a scalar.
+
+        This is equivalent to `s[0,0]`, with a check that the series length is 1.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [42])
+        >>> s.single()
+        42
+        """
+        if len(self) != 1:
+            msg = (
+                "can only call '.item()' if the Series is of length 1,"
+                f" or an explicit index is provided (Series is of length {len(self)})"
+            )
+            raise ValueError(msg)
+        return self._s.get_index(0)
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """

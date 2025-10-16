@@ -1647,6 +1647,11 @@ class DataFrame:
         """
         return self.schema
 
+    @deprecated(
+        "`DataFrame.item` is deprecated; "
+        "for unpacking a single value out of a dataframe as a scalar, use `DataFrame.single()`; "
+        "for element retrieval, use `Dataframe[row, col]` instead; "
+    )
     def item(self, row: int | None = None, column: int | str | None = None) -> Any:
         """
         Return the DataFrame as a scalar, or return the element at the given row/column.
@@ -1678,14 +1683,7 @@ class DataFrame:
         6
         """
         if row is None and column is None:
-            if self.shape != (1, 1):
-                msg = (
-                    "can only call `.item()` if the dataframe is of shape (1, 1),"
-                    " or if explicit row/col values are provided;"
-                    f" frame has shape {self.shape!r}"
-                )
-                raise ValueError(msg)
-            return self._df.to_series(0).get_index(0)
+            return self.single()
 
         elif row is None or column is None:
             msg = "cannot call `.item()` with only one of `row` or `column`"
@@ -1697,6 +1695,28 @@ class DataFrame:
             else self._df.get_column(column)
         )
         return s.get_index_signed(row)
+
+    @unstable()
+    def single(self) -> Any:
+        """
+        Return the single value in a 1x1 DataFrame as a scalar.
+
+        This is equivalent to `df[0,0]`, with a check that the shape is (1,1).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [42]})
+        >>> df.single()
+        42
+        """
+        if self.shape != (1, 1):
+            msg = (
+                "can only call `.single()` if the dataframe is of shape (1, 1),"
+                " or if explicit row/col values are provided;"
+                f" frame has shape {self.shape!r}"
+            )
+            raise ValueError(msg)
+        return self._df.to_series(0).get_index(0)
 
     @deprecate_renamed_parameter("future", "compat_level", version="1.1")
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
