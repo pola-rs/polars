@@ -1093,17 +1093,22 @@ def test_list_shift_self_broadcast() -> None:
 
 
 def test_list_filter_simple() -> None:
-    assert pl.Series(
-        [
-            [1, 2, 3, 4, 5],
-            [1, 3, 7, 8],
-            [6, 1, 4, 5],
-        ]
-    ).list.filter(pl.element() < 5).to_list() == [
-        [1, 2, 3, 4],
-        [1, 3],
-        [1, 4],
-    ]
+    assert_series_equal(
+        pl.Series(
+            [
+                [1, 2, 3, 4, 5],
+                [1, 3, 7, 8],
+                [6, 1, 4, 5],
+            ]
+        ).list.filter(pl.element() < 5),
+        pl.Series(
+            [
+                [1, 2, 3, 4],
+                [1, 3],
+                [1, 4],
+            ]
+        ),
+    )
 
 
 def test_list_filter_result_empty() -> None:

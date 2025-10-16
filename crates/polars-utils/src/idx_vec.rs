@@ -193,6 +193,24 @@ impl<T> UnitVec<T> {
     }
 }
 
+impl<T: Copy> UnitVec<T> {
+    pub fn retain(&mut self, mut f: impl FnMut(T) -> bool) {
+        let mut i = 0;
+        for j in 0..self.len() {
+            if f(self[j]) {
+                self[i] = self[j];
+                i += 1;
+            }
+        }
+
+        if i <= 1 {
+            *self = Self::from_slice(&[self[i]]);
+        } else {
+            self.len = i as IdxSize;
+        }
+    }
+}
+
 impl<T: Clone> UnitVec<T> {
     pub fn from_slice(sl: &[T]) -> Self {
         if sl.len() <= 1 {

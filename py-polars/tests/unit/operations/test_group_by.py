@@ -1716,3 +1716,66 @@ def test_group_by_enum_min_max_18394() -> None:
         },
     )
     assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_filter_24838(maintain_order: bool) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [1, 2, 1, 2, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            b=pl.lit(2, pl.Int64).filter(pl.col.b != 1)
+        ),
+        pl.DataFrame(
+            [
+                pl.Series("a", [1, 2, 3], pl.Int64),
+                pl.Series("b", [[2], [2], []], pl.List(pl.Int64)),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize(
+    "lhs",
+    [
+        pl.lit(2),
+        pl.col.a,
+        pl.col.a.first(),
+        pl.col.a.reverse(),
+        pl.col.a.fill_null(strategy="forward"),
+    ],
+)
+@pytest.mark.parametrize(
+    "rhs",
+    [
+        pl.col.b == 3,
+        pl.col.b != 3,
+        pl.col.b.reverse() == 3,
+        pl.col.b.reverse() != 3,
+        pl.col.b.fill_null(1) != 3,
+        pl.col.b.fill_null(1) == 3,
+        pl.lit(True),
+        pl.lit(False),
+        pl.lit(pl.Series([True])),
+        pl.lit(pl.Series([False])),
+        pl.lit(pl.Series([True])).first(),
+        pl.lit(pl.Series([False])).first(),
+    ],
+)
+@pytest.mark.parametrize(
+    "agg",
+    [
+        Expr.implode,
+        Expr.sum,
+        Expr.first,
+    ],
+)
+def test_group_by_filter_parametric(
+    lhs: pl.Expr, rhs: pl.Expr, agg: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [1, 2, 1, 2, 1]})
+    gb = df.group_by(pl.lit(1)).agg(a=agg(lhs.filter(rhs))).to_series(1)
+    gb = gb.rename("a")
+    sl = df.select(a=agg(lhs.filter(rhs))).to_series()
+    assert_series_equal(gb, sl)

@@ -131,6 +131,8 @@ mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
 
+pub use groups_dispatch::drop_items;
+
 pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRFunctionExpr as F;
     match func {
@@ -564,6 +566,8 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
             let ignore_nulls = *ignore_nulls;
             wrap_groups!(groups_dispatch::all, (ignore_nulls, v: bool))
         },
+        F::DropNans => wrap_groups!(groups_dispatch::drop_nans),
+        F::DropNulls => wrap_groups!(groups_dispatch::drop_nulls),
 
         _ => return None,
     })
