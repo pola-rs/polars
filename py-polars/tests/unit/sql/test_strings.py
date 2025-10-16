@@ -272,7 +272,7 @@ def test_string_like_multiline() -> None:
 
     # exact match
     for s in (s1, s2, s3):
-        assert df.sql(f"SELECT txt FROM self WHERE txt LIKE '{s}'").single() == s
+        assert df.sql(f"SELECT txt FROM self WHERE txt LIKE '{s}'").item() == s
 
 
 @pytest.mark.parametrize("form", ["NFKC", "NFKD"])

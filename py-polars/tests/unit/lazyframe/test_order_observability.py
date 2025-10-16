@@ -541,7 +541,7 @@ def test_reverse_non_order_observe() -> None:
     plan = q.explain()
 
     assert "UNIQUE[maintain_order: false" in plan
-    assert q.collect().single() == 10
+    assert q.collect().item() == 10
 
     # Observing the order of the output of `reverse()` implicitly observes the
     # input to `reverse()`.
@@ -554,7 +554,7 @@ def test_reverse_non_order_observe() -> None:
     plan = q.explain()
 
     assert "UNIQUE[maintain_order: true" in plan
-    assert q.collect().single() == 0
+    assert q.collect().item() == 0
 
     # Zipping `reverse()` must also consider the ordering of the input to
     # `reverse()`.

@@ -1100,10 +1100,10 @@ def test_rolling_median_2() -> None:
     # this can differ because simd sizes and non-associativity of floats.
     assert df.select(
         pl.col("x").rolling_median(window_size=10).sum()
-    ).single() == pytest.approx(5.139429061527812)
+    ).item() == pytest.approx(5.139429061527812)
     assert df.select(
         pl.col("x").rolling_median(window_size=100).sum()
-    ).single() == pytest.approx(26.60506093611384)
+    ).item() == pytest.approx(26.60506093611384)
 
 
 @pytest.mark.parametrize(
@@ -1801,5 +1801,5 @@ def test_rolling_rank_method_random(
             ).all()
         )
         .collect()
-        .single()
+        .item()
     )

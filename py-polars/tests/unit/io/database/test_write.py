@@ -301,7 +301,7 @@ def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> Non
     with Session(engine) as session:
         count = pl.read_database(
             query=f"select count(*) from {table_name}", connection=session
-        )[0, 0]
+        ).item(0, 0)
 
     assert isinstance(count, int)
     assert count == 0

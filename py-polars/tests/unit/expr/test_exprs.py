@@ -101,7 +101,7 @@ def test_len_expr() -> None:
 
     out = df.select(pl.len())
     assert out.shape == (1, 1)
-    assert cast(int, out.single()) == 5
+    assert cast(int, out.item()) == 5
 
     out = df.group_by("b", maintain_order=True).agg(pl.len())
     assert out["b"].to_list() == ["a", "b"]
@@ -518,11 +518,11 @@ def test_lit_dtypes() -> None:
 
 def test_lit_empty_tu() -> None:
     td = timedelta(1)
-    assert pl.select(pl.lit(td, dtype=pl.Duration)).single() == td
+    assert pl.select(pl.lit(td, dtype=pl.Duration)).item() == td
     assert pl.select(pl.lit(td, dtype=pl.Duration)).dtypes[0].time_unit == "us"  # type: ignore[attr-defined]
 
     t = datetime(2023, 1, 1)
-    assert pl.select(pl.lit(t, dtype=pl.Datetime)).single() == t
+    assert pl.select(pl.lit(t, dtype=pl.Datetime)).item() == t
     assert pl.select(pl.lit(t, dtype=pl.Datetime)).dtypes[0].time_unit == "us"  # type: ignore[attr-defined]
 
 

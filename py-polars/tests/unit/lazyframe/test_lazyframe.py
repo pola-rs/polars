@@ -207,7 +207,7 @@ def test_filter_multiple_predicates() -> None:
             "predicate": ["==", ">", ">="],
         },
     )
-    assert ldf.filter(predicate="==").select("description").collect().single() == "eq"
+    assert ldf.filter(predicate="==").select("description").collect().item() == "eq"
 
 
 @pytest.mark.parametrize(
@@ -490,7 +490,7 @@ def test_is_finite_is_infinite() -> None:
 
 def test_len() -> None:
     ldf = pl.LazyFrame({"nrs": [1, 2, 3]})
-    assert cast(int, ldf.select(pl.col("nrs").len()).collect().single()) == 3
+    assert cast(int, ldf.select(pl.col("nrs").len()).collect().item()) == 3
 
 
 @pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
@@ -576,7 +576,7 @@ def test_dot() -> None:
     ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]}).select(
         pl.col("a").dot(pl.col("b"))
     )
-    assert cast(float, ldf.collect().single()) == 12.96
+    assert cast(float, ldf.collect().item()) == 12.96
 
 
 def test_sort() -> None:
@@ -870,7 +870,7 @@ def test_float_floor_divide() -> None:
     x = 10.4
     step = 0.5
     ldf = pl.LazyFrame({"x": [x]})
-    ldf_res = ldf.with_columns(pl.col("x") // step).collect().single()
+    ldf_res = ldf.with_columns(pl.col("x") // step).collect().item()
     assert ldf_res == x // step
 
 
@@ -1499,7 +1499,7 @@ def test_unique_length_multiple_columns() -> None:
             "b": [100, 100, 200, 100, 300],
         }
     )
-    assert lf.unique().select(pl.len()).collect().single() == 4
+    assert lf.unique().select(pl.len()).collect().item() == 4
 
 
 def test_asof_cross_join() -> None:

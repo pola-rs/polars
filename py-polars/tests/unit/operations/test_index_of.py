@@ -126,8 +126,8 @@ def test_integer(dtype: IntegerType) -> None:
         3,
         None,
         4,
-        pl.select(dtype_max).single(),
-        pl.select(dtype_min).single(),
+        pl.select(dtype_max).item(),
+        pl.select(dtype_min).item(),
     ]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -136,7 +136,7 @@ def test_integer(dtype: IntegerType) -> None:
         [pl.Series([100, 7], dtype=dtype), series], rechunk=False
     )
 
-    extra_values = [pl.select(v).single() for v in [dtype_max - 1, dtype_min + 1]]
+    extra_values = [pl.select(v).item() for v in [dtype_max - 1, dtype_min + 1]]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         value: IntoExpr
         for value in values:

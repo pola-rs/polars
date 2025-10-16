@@ -44,7 +44,7 @@ def test_fill_null_non_lit() -> None:
             "d": pl.Series([None, 2], dtype=pl.Decimal(10, 2)),
         }
     )
-    assert df.fill_null(0).select(pl.all().null_count()).transpose().sum().single() == 0
+    assert df.fill_null(0).select(pl.all().null_count()).transpose().sum().item() == 0
 
 
 def test_fill_null_f32_with_lit() -> None:
@@ -62,7 +62,7 @@ def test_fill_null_lit_() -> None:
         }
     )
     assert (
-        df.fill_null(pl.lit(0)).select(pl.all().null_count()).transpose().sum().single()
+        df.fill_null(pl.lit(0)).select(pl.all().null_count()).transpose().sum().item()
         == 0
     )
 

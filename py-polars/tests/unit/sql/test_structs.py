@@ -151,7 +151,7 @@ def test_struct_field_operator_access(expr: str, expected: int | str) -> None:
             },
         },
     )
-    assert df.sql(f"SELECT {expr} FROM self").single() == expected
+    assert df.sql(f"SELECT {expr} FROM self").item() == expected
 
 
 @pytest.mark.parametrize(

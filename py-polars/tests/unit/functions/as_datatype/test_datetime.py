@@ -83,19 +83,19 @@ def test_datetime_invalid_time_component(components: list[int]) -> None:
 def test_datetime_time_unit(time_unit: TimeUnit) -> None:
     result = pl.datetime(2022, 1, 2, time_unit=time_unit)
 
-    assert pl.select(result.dt.year()).single() == 2022
-    assert pl.select(result.dt.month()).single() == 1
-    assert pl.select(result.dt.day()).single() == 2
+    assert pl.select(result.dt.year()).item() == 2022
+    assert pl.select(result.dt.month()).item() == 1
+    assert pl.select(result.dt.day()).item() == 2
 
 
 @pytest.mark.parametrize("time_zone", [None, "Europe/Amsterdam", "UTC"])
 def test_datetime_time_zone(time_zone: str | None) -> None:
     result = pl.datetime(2022, 1, 2, 10, time_zone=time_zone)
 
-    assert pl.select(result.dt.year()).single() == 2022
-    assert pl.select(result.dt.month()).single() == 1
-    assert pl.select(result.dt.day()).single() == 2
-    assert pl.select(result.dt.hour()).single() == 10
+    assert pl.select(result.dt.year()).item() == 2022
+    assert pl.select(result.dt.month()).item() == 1
+    assert pl.select(result.dt.day()).item() == 2
+    assert pl.select(result.dt.hour()).item() == 10
 
 
 def test_datetime_ambiguous_time_zone() -> None:
@@ -110,7 +110,7 @@ def test_datetime_ambiguous_time_zone_earliest() -> None:
         2018, 10, 28, 2, 30, time_zone="Europe/Brussels", ambiguous="earliest"
     )
 
-    result = pl.select(expr).single()
+    result = pl.select(expr).item()
 
     expected = datetime(2018, 10, 28, 2, 30, tzinfo=ZoneInfo("Europe/Brussels"))
     assert result == expected

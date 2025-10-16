@@ -918,7 +918,7 @@ def test_scan_csv_bytesio_memory_usage(
         pl.scan_csv(f)
         .filter(pl.col("mydata") == 999_999)
         .collect(engine="streaming" if streaming else "in-memory")
-        .single()
+        .item()
         == 999_999
     )
     # assert memory_usage.get_peak() - starting_memory < 1_000_000

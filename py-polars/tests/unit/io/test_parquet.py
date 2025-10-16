@@ -573,7 +573,7 @@ def test_parquet_nano_second_schema() -> None:
     df = pd.DataFrame({"Time": [value]})
     df.to_parquet(f)
     f.seek(0)
-    assert pl.read_parquet(f).single() == value
+    assert pl.read_parquet(f).item() == value
 
 
 def test_nested_struct_read_12610() -> None:
@@ -2733,7 +2733,7 @@ def test_boolean_slice_pushdown_20314() -> None:
     s.to_frame().write_parquet(f)
 
     f.seek(0)
-    assert pl.scan_parquet(f).slice(2, 1).collect().single()
+    assert pl.scan_parquet(f).slice(2, 1).collect().item()
 
 
 def test_load_pred_pushdown_fsl_19241() -> None:

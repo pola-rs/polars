@@ -133,7 +133,7 @@ def test_classification(selector: cs.Selector, fn_tags: list[str]) -> None:
         dtype_expr = dtype.to_dtype_expr()
         expr = dtype_expr.matches(selector)
         expected = dtype_tag in fn_tags
-        assert pl.select(expr).to_series().single() == expected
+        assert pl.select(expr).to_series().item() == expected
 
 
 @pytest.mark.parametrize(
@@ -148,7 +148,7 @@ def test_int_signed_classification(selector: cs.Selector, fn_tag: str) -> None:
         dtype_expr = dtype.to_dtype_expr()
         expr = dtype_expr.matches(selector)
         expected = dtype_tag == fn_tag
-        assert pl.select(expr).to_series().single() == expected
+        assert pl.select(expr).to_series().item() == expected
 
 
 def test_array_width_classification() -> None:
@@ -157,21 +157,21 @@ def test_array_width_classification() -> None:
     assert (
         pl.select(arr_dtype.to_dtype_expr().matches(cs.array(width=2)))
         .to_series()
-        .single()
+        .item()
     )
     assert not (
         pl.select(arr_dtype.to_dtype_expr().matches(cs.array(width=3)))
         .to_series()
-        .single()
+        .item()
     )
 
 
 def test_array_width() -> None:
     arr_dtype = pl.Array(pl.String, 2)
-    assert pl.select(arr_dtype.to_dtype_expr().arr.width()).to_series().single() == 2
+    assert pl.select(arr_dtype.to_dtype_expr().arr.width()).to_series().item() == 2
 
     arr_dtype = pl.Array(pl.String, 3)
-    assert pl.select(arr_dtype.to_dtype_expr().arr.width()).to_series().single() == 3
+    assert pl.select(arr_dtype.to_dtype_expr().arr.width()).to_series().item() == 3
 
 
 def test_array_shape() -> None:
@@ -202,19 +202,19 @@ def test_inner_dtype() -> None:
     assert (
         pl.select(arr_dtype.to_dtype_expr().inner_dtype() == pl.String)
         .to_series()
-        .single()
+        .item()
     )
     assert (
         pl.select(arr_dtype.to_dtype_expr().arr.inner_dtype() == pl.String)
         .to_series()
-        .single()
+        .item()
     )
     with pytest.raises(pl.exceptions.SchemaError):
         arr_dtype.to_dtype_expr().list.inner_dtype().collect_dtype({})
 
     list_dtype = pl.List(pl.String).to_dtype_expr()
-    assert pl.select(list_dtype.inner_dtype() == pl.String).to_series().single()
-    assert pl.select(list_dtype.list.inner_dtype() == pl.String).to_series().single()
+    assert pl.select(list_dtype.inner_dtype() == pl.String).to_series().item()
+    assert pl.select(list_dtype.list.inner_dtype() == pl.String).to_series().item()
     with pytest.raises(pl.exceptions.SchemaError):
         list_dtype.arr.inner_dtype().collect_dtype({})
 
@@ -222,7 +222,7 @@ def test_inner_dtype() -> None:
 def test_display() -> None:
     for dtype, _, dtype_str, _ in DTYPES:
         assert (
-            pl.select(dtype.to_dtype_expr().display()).to_series().single() == dtype_str
+            pl.select(dtype.to_dtype_expr().display()).to_series().item() == dtype_str
         )
 
 
@@ -320,7 +320,7 @@ def test_default_value_int(dtype: pl.DataType, numeric_to_one: bool) -> None:
         dtype.to_dtype_expr().default_value(numeric_to_one=numeric_to_one)
     ).to_series()
     assert result.dtype == dtype
-    assert result.single() == (1 if numeric_to_one else 0)
+    assert result.item() == (1 if numeric_to_one else 0)
 
 
 @pytest.mark.parametrize("dtype", sorted(FLOAT_DTYPES, key=lambda v: str(v)))
@@ -330,32 +330,32 @@ def test_default_value_float(dtype: pl.DataType, numeric_to_one: bool) -> None:
         dtype.to_dtype_expr().default_value(numeric_to_one=numeric_to_one)
     ).to_series()
     assert result.dtype == dtype
-    assert result.single() == (1.0 if numeric_to_one else 0.0)
+    assert result.item() == (1.0 if numeric_to_one else 0.0)
 
 
 def test_default_value_string() -> None:
     result = pl.select(pl.String().to_dtype_expr().default_value()).to_series()
     assert result.dtype == pl.String()
-    assert result.single() == ""
+    assert result.item() == ""
 
 
 def test_default_value_binary() -> None:
     result = pl.select(pl.String().to_dtype_expr().default_value()).to_series()
     assert result.dtype == pl.String()
-    assert result.single() == ""
+    assert result.item() == ""
 
 
 def test_default_value_decimal() -> None:
     result = pl.select(pl.Decimal(scale=2).to_dtype_expr().default_value()).to_series()
     assert result.dtype == pl.Decimal(scale=2)
-    assert result.single() == 0
+    assert result.item() == 0
 
 
 @pytest.mark.parametrize("dtype", sorted(TEMPORAL_DTYPES, key=lambda v: str(v)))
 def test_default_value_temporal(dtype: pl.DataType) -> None:
     result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
     assert result.dtype == dtype
-    assert result.to_physical().single() == 0
+    assert result.to_physical().item() == 0
 
 
 @pytest.mark.parametrize("numeric_to_one", [False, True])
@@ -395,33 +395,33 @@ def test_default_value_object() -> None:
     dtype = pl.Object()
     result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
     assert result.dtype == dtype
-    assert result.single() is None
+    assert result.item() is None
 
 
 def test_default_value_null() -> None:
     dtype = pl.Null()
     result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
     assert result.dtype == dtype
-    assert result.single() is None
+    assert result.item() is None
 
 
 def test_default_value_categorical() -> None:
     dtype = pl.Categorical()
     result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
     assert result.dtype == dtype
-    assert result.single() is None
+    assert result.item() is None
 
 
 def test_default_value_enum() -> None:
     dtype = pl.Enum([])
     result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
     assert result.dtype == dtype
-    assert result.single() is None
+    assert result.item() is None
 
     dtype = pl.Enum(["a", "b", "c"])
     result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
     assert result.dtype == dtype
-    assert result.single() == "a"
+    assert result.item() == "a"
 
 
 @pytest.mark.parametrize("n", [0, 1, 2, 5])

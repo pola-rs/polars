@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     n=st.integers(min_value=1, max_value=100),
 )
 def test_truncate_monthly(value: date, n: int) -> None:
-    result = pl.Series([value]).dt.truncate(f"{n}mo").single()
+    result = pl.Series([value]).dt.truncate(f"{n}mo").item()
     # manual calculation
     total = (value.year - 1970) * 12 + value.month - 1
     remainder = total % n
@@ -79,9 +79,9 @@ def test_truncate_date() -> None:
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_truncate_datetime_simple(time_unit: TimeUnit) -> None:
     s = pl.Series([datetime(2020, 1, 2, 6)], dtype=pl.Datetime(time_unit))
-    result = s.dt.truncate("1mo").single()
+    result = s.dt.truncate("1mo").item()
     assert result == datetime(2020, 1, 1)
-    result = s.dt.truncate("1d").single()
+    result = s.dt.truncate("1d").item()
     assert result == datetime(2020, 1, 2)
 
 
@@ -157,7 +157,7 @@ def test_truncate_origin_22590(
         .dt.replace_time_zone(time_zone)
         .dt.truncate(f"{multiplier}{unit}")
         .dt.replace_time_zone(None)
-        .single()
+        .item()
     )
     assert result == expected, result
 

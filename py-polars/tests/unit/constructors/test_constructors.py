@@ -1273,7 +1273,7 @@ def test_from_rows_dtype() -> None:
     dc = _TestBazDC(d=datetime(2020, 2, 22), e=42.0, f="xyz")
     df = pl.DataFrame([[dc]], schema={"d": pl.Object})
     assert df.schema == {"d": pl.Object}
-    assert df.single() == dc
+    assert df.item() == dc
 
 
 def test_from_dicts_schema() -> None:

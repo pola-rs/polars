@@ -483,7 +483,7 @@ def test_non_coalesce_join_projection_pushdown_16515(
         left.join(right, how=join_type, left_on="x", right_on="y", coalesce=False)
         .select("y")
         .collect()
-        .single()
+        .item()
         == 1
     )
 
@@ -645,7 +645,7 @@ def test_select_len_20337() -> None:
     )
 
     q = q.with_row_index("foo")
-    assert q.select(pl.len()).collect().single() == 3
+    assert q.select(pl.len()).collect().item() == 3
 
 
 def test_filter_count_projection_20902() -> None:

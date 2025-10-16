@@ -14,12 +14,8 @@ def test_nan_in_group_by_agg() -> None:
         }
     )
 
-    assert (
-        df.group_by("bar", "key").agg(pl.col("value").max())["value"].single() == 18.78
-    )
-    assert (
-        df.group_by("bar", "key").agg(pl.col("value").min())["value"].single() == 18.58
-    )
+    assert df.group_by("bar", "key").agg(pl.col("value").max())["value"].item() == 18.78
+    assert df.group_by("bar", "key").agg(pl.col("value").min())["value"].item() == 18.58
 
 
 def test_nan_aggregations() -> None:
@@ -146,8 +142,8 @@ def test_hash() -> None:
     ).hash()
 
     # check them against each other since hash is not stable
-    assert s[0] == s[1]  # hash(-0.0) == hash(0.0)
-    assert s[2] == s[3]  # hash(float('-nan')) == hash(float('nan'))
+    assert s.item(0) == s.item(1)  # hash(-0.0) == hash(0.0)
+    assert s.item(2) == s.item(3)  # hash(float('-nan')) == hash(float('nan'))
 
 
 def test_group_by_float() -> None:

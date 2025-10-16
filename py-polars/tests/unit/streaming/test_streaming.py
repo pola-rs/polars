@@ -379,6 +379,6 @@ def test_i128_sum_reduction() -> None:
         .lazy()
         .sum()
         .collect(engine="streaming")
-        .single()
+        .item()
         == 6
     )

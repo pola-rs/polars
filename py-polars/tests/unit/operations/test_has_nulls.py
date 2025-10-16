@@ -13,7 +13,7 @@ def test_has_nulls_series_no_nulls(s: pl.Series) -> None:
 @given(df=dataframes(allow_null=False))
 def test_has_nulls_expr_no_nulls(df: pl.DataFrame) -> None:
     result = df.select(pl.all().has_nulls())
-    assert result.select(pl.any_horizontal(df.columns)).single() is False
+    assert result.select(pl.any_horizontal(df.columns)).item() is False
 
 
 @given(

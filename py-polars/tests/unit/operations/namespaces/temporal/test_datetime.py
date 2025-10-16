@@ -106,7 +106,7 @@ def test_dt_date_and_time(
     attribute: str, time_zone: None | str, expected: date | time
 ) -> None:
     ser = pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)
-    result = getattr(ser.dt, attribute)().single()
+    result = getattr(ser.dt, attribute)().item()
     assert result == expected
 
 
@@ -121,7 +121,7 @@ def test_dt_replace_time_zone_none(time_zone: str | None, time_unit: TimeUnit) -
     result = ser.dt.replace_time_zone(None)
     expected = datetime(2022, 1, 1, 23)
     assert result.dtype == pl.Datetime(time_unit, None)
-    assert result.single() == expected
+    assert result.item() == expected
 
 
 def test_dt_datetime_deprecated() -> None:
@@ -130,7 +130,7 @@ def test_dt_datetime_deprecated() -> None:
         result = s.dt.datetime()
     expected = datetime(2022, 1, 1, 23)
     assert result.dtype == pl.Datetime(time_zone=None)
-    assert result.single() == expected
+    assert result.item() == expected
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
@@ -175,7 +175,7 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
     ser = pl.Series([datetime(1969, 7, 21, 2, 56, 2, 123000)]).dt.cast_time_unit(
         time_unit
     )
-    result = ser.dt.time().single()
+    result = ser.dt.time().item()
     expected = time(2, 56, 2, 123000)
     assert result == expected
 
@@ -1042,7 +1042,7 @@ def test_offset_by_expressions() -> None:
 def test_offset_by_saturating_8217_8474(
     duration: str, input_date: date, expected: date
 ) -> None:
-    result = pl.Series([input_date]).dt.offset_by(duration).single()
+    result = pl.Series([input_date]).dt.offset_by(duration).item()
     assert result == expected
 
 
@@ -1463,7 +1463,7 @@ def test_literal_from_date(
     if dtype == pl.Datetime:
         tz = ZoneInfo(dtype.time_zone) if dtype.time_zone is not None else None  # type: ignore[union-attr]
         value = datetime(value.year, value.month, value.day, tzinfo=tz)
-    assert out.single() == value
+    assert out.item() == value
 
 
 @pytest.mark.parametrize(
@@ -1511,7 +1511,7 @@ def test_literal_from_datetime(
         value = value.replace(tzinfo=ZoneInfo(dtype.time_zone))  # type: ignore[union-attr]
 
     assert out.schema == OrderedDict({"literal": dtype})
-    assert out.single() == value
+    assert out.item() == value
 
 
 @pytest.mark.parametrize(
@@ -1526,7 +1526,7 @@ def test_literal_from_datetime(
 def test_literal_from_time(value: time) -> None:
     out = pl.select(pl.lit(value))
     assert out.schema == OrderedDict({"literal": pl.Time})
-    assert out.single() == value
+    assert out.item() == value
 
 
 @pytest.mark.parametrize(
@@ -1550,4 +1550,4 @@ def test_literal_from_time(value: time) -> None:
 def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
     out = pl.select(pl.lit(value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
-    assert out.single() == value
+    assert out.item() == value

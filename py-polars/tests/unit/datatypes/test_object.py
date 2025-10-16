@@ -243,7 +243,7 @@ def test_object_null_slice() -> None:
 @pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_object_sort_scalar_19925() -> None:
     a = object()
-    assert pl.DataFrame({"a": [0], "obj": [a]}).sort("a")["obj"].single() == a
+    assert pl.DataFrame({"a": [0], "obj": [a]}).sort("a")["obj"].item() == a
 
 
 def test_object_estimated_size() -> None:

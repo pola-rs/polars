@@ -140,7 +140,7 @@ def test_offset_handling_arg_where_7863() -> None:
     assert (
         df_check.select((pl.lit(0).append(pl.col("a")).append(0)) != 0)
         .select(pl.col("literal").arg_true())
-        .single()
+        .item()
         == 2
     )
 
@@ -456,10 +456,10 @@ def test_schema_ne_missing_9256() -> None:
 def test_nested_binary_literal_super_type_12227() -> None:
     # The `.alias` is important here to trigger the bug.
     result = pl.select(x=1).select((pl.lit(0) + ((pl.col("x") > 0) * 0.1)).alias("x"))
-    assert result.single() == 0.1
+    assert result.item() == 0.1
 
     result = pl.select((pl.lit(0) + (pl.lit(0) == pl.lit(0)) * pl.lit(0.1)) + pl.lit(0))
-    assert result.single() == 0.1
+    assert result.item() == 0.1
 
 
 def test_struct_broadcasting_comparison() -> None:

@@ -34,10 +34,10 @@ def test_literal_scalar_list_18686() -> None:
 def test_literal_integer_20807() -> None:
     for i in range(100):
         value = 2**i
-        assert pl.select(pl.lit(value)).single() == value
-        assert pl.select(pl.lit(-value)).single() == -value
-        assert pl.select(pl.lit(value, dtype=pl.Int128)).single() == value
-        assert pl.select(pl.lit(-value, dtype=pl.Int128)).single() == -value
+        assert pl.select(pl.lit(value)).item() == value
+        assert pl.select(pl.lit(-value)).item() == -value
+        assert pl.select(pl.lit(value, dtype=pl.Int128)).item() == value
+        assert pl.select(pl.lit(-value, dtype=pl.Int128)).item() == -value
 
 
 @pytest.mark.parametrize(
@@ -58,7 +58,7 @@ def test_literal_datetime_timezone(tz: Any, lit_dtype: pl.DataType | None) -> No
 
     assert_frame_equal(df1, df2)
     assert df1.schema["dt"] == expected_dtype
-    assert df1.single() == value
+    assert df1.item() == value
 
 
 @pytest.mark.parametrize(
@@ -107,7 +107,7 @@ def test_literal_datetime_timezone_utc_offset(
 
     for df in (df1, df2):
         assert df.schema["dt"] == expected_dtype
-        assert df.single() == expected_item
+        assert df.item() == expected_item
 
 
 def test_literal_datetime_timezone_utc_error() -> None:

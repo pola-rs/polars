@@ -80,8 +80,8 @@ def test_struct_name_resolving_15430() -> None:
         .collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     )
 
-    assert a["b"].single() == "c"
-    assert b["b"].single() == "c"
+    assert a["b"].item() == "c"
+    assert b["b"].item() == "c"
     assert a.columns == ["b"]
     assert b.columns == ["b"]
 

@@ -169,9 +169,9 @@ def test_round_date() -> None:
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_round_datetime_simple(time_unit: TimeUnit) -> None:
     s = pl.Series([datetime(2020, 1, 2, 6)], dtype=pl.Datetime(time_unit))
-    result = s.dt.round("1mo").single()
+    result = s.dt.round("1mo").item()
     assert result == datetime(2020, 1, 1)
-    result = s.dt.round("1d").single()
+    result = s.dt.round("1d").item()
     assert result == datetime(2020, 1, 2)
 
 
@@ -197,14 +197,14 @@ def test_round_datetime_w_expression(time_unit: TimeUnit) -> None:
 def test_round_negative_towards_epoch_18239(time_unit: TimeUnit, expected: int) -> None:
     s = pl.Series([datetime(1970, 1, 1)], dtype=pl.Datetime(time_unit))
     s = s.dt.offset_by(f"-1{time_unit}")
-    result = s.dt.round(f"2{time_unit}").dt.timestamp(time_unit="ns").single()
+    result = s.dt.round(f"2{time_unit}").dt.timestamp(time_unit="ns").item()
     assert result == expected
     result = (
         s.dt.replace_time_zone("Europe/London")
         .dt.round(f"2{time_unit}")
         .dt.replace_time_zone(None)
         .dt.timestamp(time_unit="ns")
-        .single()
+        .item()
     )
     assert result == expected
 
@@ -222,14 +222,14 @@ def test_round_positive_away_from_epoch_18239(
 ) -> None:
     s = pl.Series([datetime(1970, 1, 1)], dtype=pl.Datetime(time_unit))
     s = s.dt.offset_by(f"1{time_unit}")
-    result = s.dt.round(f"2{time_unit}").dt.timestamp(time_unit="ns").single()
+    result = s.dt.round(f"2{time_unit}").dt.timestamp(time_unit="ns").item()
     assert result == expected
     result = (
         s.dt.replace_time_zone("Europe/London")
         .dt.round(f"2{time_unit}")
         .dt.replace_time_zone(None)
         .dt.timestamp(time_unit="ns")
-        .single()
+        .item()
     )
     assert result == expected
 
@@ -249,33 +249,33 @@ def test_round_unequal_length_22018(as_date: bool) -> None:
 def test_round_small() -> None:
     small = 1.234e-320
     small_s = pl.Series([small])
-    assert small_s.round().single() == 0.0
-    assert small_s.round(320).single() == 1e-320
-    assert small_s.round(321).single() == 1.2e-320
-    assert small_s.round(322).single() == 1.23e-320
-    assert small_s.round(323).single() == 1.234e-320
-    assert small_s.round(324).single() == small
-    assert small_s.round(1000).single() == small
+    assert small_s.round().item() == 0.0
+    assert small_s.round(320).item() == 1e-320
+    assert small_s.round(321).item() == 1.2e-320
+    assert small_s.round(322).item() == 1.23e-320
+    assert small_s.round(323).item() == 1.234e-320
+    assert small_s.round(324).item() == small
+    assert small_s.round(1000).item() == small
 
-    assert small_s.round_sig_figs(1).single() == 1e-320
-    assert small_s.round_sig_figs(2).single() == 1.2e-320
-    assert small_s.round_sig_figs(3).single() == 1.23e-320
-    assert small_s.round_sig_figs(4).single() == 1.234e-320
-    assert small_s.round_sig_figs(5).single() == small
-    assert small_s.round_sig_figs(1000).single() == small
+    assert small_s.round_sig_figs(1).item() == 1e-320
+    assert small_s.round_sig_figs(2).item() == 1.2e-320
+    assert small_s.round_sig_figs(3).item() == 1.23e-320
+    assert small_s.round_sig_figs(4).item() == 1.234e-320
+    assert small_s.round_sig_figs(5).item() == small
+    assert small_s.round_sig_figs(1000).item() == small
 
 
 def test_round_big() -> None:
     big = 1.234e308
     max_err = big / 10**10
     big_s = pl.Series([big])
-    assert big_s.round().single() == big
-    assert big_s.round(1).single() == big
-    assert big_s.round(100).single() == big
+    assert big_s.round().item() == big
+    assert big_s.round(1).item() == big
+    assert big_s.round(100).item() == big
 
-    assert abs(big_s.round_sig_figs(1).single() - 1e308) <= max_err
-    assert abs(big_s.round_sig_figs(2).single() - 1.2e308) <= max_err
-    assert abs(big_s.round_sig_figs(3).single() - 1.23e308) <= max_err
-    assert abs(big_s.round_sig_figs(4).single() - 1.234e308) <= max_err
-    assert abs(big_s.round_sig_figs(4).single() - big) <= max_err
-    assert big_s.round_sig_figs(100).single() == big
+    assert abs(big_s.round_sig_figs(1).item() - 1e308) <= max_err
+    assert abs(big_s.round_sig_figs(2).item() - 1.2e308) <= max_err
+    assert abs(big_s.round_sig_figs(3).item() - 1.23e308) <= max_err
+    assert abs(big_s.round_sig_figs(4).item() - 1.234e308) <= max_err
+    assert abs(big_s.round_sig_figs(4).item() - big) <= max_err
+    assert big_s.round_sig_figs(100).item() == big

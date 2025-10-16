@@ -106,7 +106,7 @@ def test_dollar_quoted_literals() -> None:
     assert df.to_dict(as_series=False) == {f"dq{n}": ["xyz"] for n in range(1, 5)}
 
     df = pl.sql("SELECT $$x$z$$ AS dq").collect()
-    assert df.single() == "x$z"
+    assert df.item() == "x$z"
 
 
 def test_fixed_intervals() -> None:

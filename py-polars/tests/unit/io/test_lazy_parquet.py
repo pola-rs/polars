@@ -66,7 +66,7 @@ def test_row_index(foods_parquet_path: Path) -> None:
 
 def test_row_index_len_16543(foods_parquet_path: Path) -> None:
     q = pl.scan_parquet(foods_parquet_path).with_row_index()
-    assert q.select(pl.all()).select(pl.len()).collect().single() == 27
+    assert q.select(pl.all()).select(pl.len()).collect().item() == 27
 
 
 @pytest.mark.write_disk

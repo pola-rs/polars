@@ -509,4 +509,4 @@ def test_format_ascii_table_truncation(df: pl.DataFrame, expected: str) -> None:
 
 
 def test_format_21393() -> None:
-    assert pl.select(pl.format("{}", pl.lit(1, pl.Int128))).single() == "1"
+    assert pl.select(pl.format("{}", pl.lit(1, pl.Int128))).item() == "1"

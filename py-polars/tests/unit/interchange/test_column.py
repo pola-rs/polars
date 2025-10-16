@@ -251,8 +251,8 @@ def test_get_buffers_chunked_bitmask() -> None:
     col = PolarsColumn(s_chunked)
 
     chunks = list(col.get_chunks())
-    assert chunks[0].get_buffers()["data"][0]._data.single() is True
-    assert chunks[1].get_buffers()["data"][0]._data.single() is False
+    assert chunks[0].get_buffers()["data"][0]._data.item() is True
+    assert chunks[1].get_buffers()["data"][0]._data.item() is False
 
 
 def test_get_buffers_string_zero_copy_fails() -> None:

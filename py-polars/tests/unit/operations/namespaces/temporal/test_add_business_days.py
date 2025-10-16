@@ -279,7 +279,7 @@ def test_against_np_busday_offset(
                 n, week_mask=week_mask, holidays=holidays, roll=roll
             )
         )["res"]
-        .single()
+        .item()
     )
     expected = np.busday_offset(
         start, n, weekmask=week_mask, holidays=holidays, roll=roll

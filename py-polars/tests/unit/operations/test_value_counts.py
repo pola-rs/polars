@@ -80,7 +80,7 @@ def test_value_counts_duplicate_name() -> None:
 
     df = pl.DataFrame({"a": [None, 1, None, 2, 3]})
     result = df.select(pl.col("a").count())
-    assert result.single() == 3
+    assert result.item() == 3
 
     result = df.group_by(1).agg(pl.col("a").count())
     assert result.to_dict(as_series=False) == {"literal": [1], "a": [3]}

@@ -36,7 +36,7 @@ def test_all_expr() -> None:
 
 
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.with_columns(pl.col("A").cast(bool)).select(pl.any("A")).single()
+    assert fruits_cars.with_columns(pl.col("A").cast(bool)).select(pl.any("A")).item()
 
 
 @pytest.mark.parametrize("function", ["all", "any"])

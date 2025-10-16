@@ -180,7 +180,7 @@ def _cast_series(
     dtype_out: PolarsDataType,
     strict: bool,
 ) -> int | datetime | date | time | timedelta | None:
-    return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict).single()  # type: ignore[no-any-return]
+    return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict).item()  # type: ignore[no-any-return]
 
 
 def _cast_expr(
@@ -193,7 +193,7 @@ def _cast_expr(
         pl.Series("a", [val], dtype=dtype_in)
         .to_frame()
         .select(pl.col("a").cast(dtype_out, strict=strict))
-        .single()
+        .item()
     )
 
 
@@ -203,9 +203,7 @@ def _cast_lit(
     dtype_out: PolarsDataType,
     strict: bool,
 ) -> int | datetime | date | time | timedelta | None:
-    return (  # type: ignore[no-any-return]
-        pl.select(pl.lit(val, dtype=dtype_in).cast(dtype_out, strict=strict)).single()
-    )
+    return pl.select(pl.lit(val, dtype=dtype_in).cast(dtype_out, strict=strict)).item()  # type: ignore[no-any-return]
 
 
 @pytest.mark.parametrize(
@@ -366,13 +364,13 @@ def test_strict_cast_temporal(
     args = [value, from_dtype, to_dtype, True]
     if should_succeed:
         out = _cast_series_t(*args)  # type: ignore[arg-type]
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
         out = _cast_expr_t(*args)  # type: ignore[arg-type]
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
         out = _cast_lit_t(*args)  # type: ignore[arg-type]
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
     else:
         with pytest.raises(InvalidOperationError):
@@ -438,23 +436,23 @@ def test_cast_temporal(
     args = [value, from_dtype, to_dtype, False]
     out = _cast_series_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
-        assert out.single() is None
+        assert out.item() is None
     else:
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
 
     out = _cast_expr_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
-        assert out.single() is None
+        assert out.item() is None
     else:
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
 
     out = _cast_lit_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
-        assert out.single() is None
+        assert out.item() is None
     else:
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
 
 
@@ -488,23 +486,23 @@ def test_cast_string(
     args = [value, from_dtype, to_dtype, False]
     out = _cast_series_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
-        assert out.single() is None
+        assert out.item() is None
     else:
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
 
     out = _cast_expr_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
-        assert out.single() is None
+        assert out.item() is None
     else:
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
 
     out = _cast_lit_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
-        assert out.single() is None
+        assert out.item() is None
     else:
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
 
 
@@ -540,13 +538,13 @@ def test_strict_cast_string(
     args = [value, from_dtype, to_dtype, True]
     if should_succeed:
         out = _cast_series_t(*args)  # type: ignore[arg-type]
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
         out = _cast_expr_t(*args)  # type: ignore[arg-type]
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
         out = _cast_lit_t(*args)  # type: ignore[arg-type]
-        assert out.single() == expected_value
+        assert out.item() == expected_value
         assert out.dtype == to_dtype
     else:
         with pytest.raises(InvalidOperationError):
@@ -706,14 +704,14 @@ def test_all_null_cast_5826() -> None:
     df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.String)])
     out = df.with_columns(pl.col("a").cast(pl.Boolean))
     assert out.dtypes == [pl.Boolean]
-    assert out.single() is None
+    assert out.item() is None
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
     result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())
-    assert result.single() - 0.3333333 <= 0.00001
+    assert result.item() - 0.3333333 <= 0.00001
 
 
 @pytest.mark.parametrize("dtype", [pl.String(), pl.String, str])

@@ -1021,11 +1021,11 @@ def test_mode() -> None:
     df = pl.DataFrame([s])
     assert df.select([pl.col("a").mode()])["a"].to_list() == [1]
     assert (
-        pl.Series(["foo", "bar", "buz", "bar"], dtype=pl.Categorical).mode().single()
+        pl.Series(["foo", "bar", "buz", "bar"], dtype=pl.Categorical).mode().item()
         == "bar"
     )
-    assert pl.Series([1.0, 2.0, 3.0, 2.0]).mode().single() == 2.0
-    assert pl.Series(["a", "b", "c", "b"]).mode().single() == "b"
+    assert pl.Series([1.0, 2.0, 3.0, 2.0]).mode().item() == 2.0
+    assert pl.Series(["a", "b", "c", "b"]).mode().item() == "b"
 
     # sorted data
     assert set(pl.int_range(0, 3, eager=True).mode().to_list()) == {0, 1, 2}
@@ -2054,8 +2054,8 @@ def test_upper_lower_bounds(
     dtype: PolarsDataType, upper: int | float, lower: int | float
 ) -> None:
     s = pl.Series("s", dtype=dtype)
-    assert s.lower_bound().single() == lower
-    assert s.upper_bound().single() == upper
+    assert s.lower_bound().item() == lower
+    assert s.upper_bound().item() == upper
 
 
 def test_numpy_series_arithmetic() -> None:
