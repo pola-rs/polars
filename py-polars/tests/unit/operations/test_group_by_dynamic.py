@@ -1187,3 +1187,32 @@ def test_group_by_dynamic_with_group_by_iter_24394() -> None:
     groups_rolling = df.rolling("t", period="2i", group_by="g")
     for (_, _), sub_df in groups_rolling:
         assert len(sub_df["g"].unique()) == 1
+
+
+@pytest.mark.parametrize("every", ["1i", "2i"])
+@pytest.mark.parametrize("period", ["1i", "2i"])
+@pytest.mark.parametrize("closed", ["left", "right", "none", "both"])
+def test_group_by_dynamic_sparse_24541(
+    every: str, period: str, closed: ClosedInterval
+) -> None:
+    # Note, at 100k, any of these queries 10s of seconds without a fast path
+    n = 10_000
+
+    df = pl.DataFrame({"n_date": (i * i for i in range(n))}).with_row_index()
+
+    out = df.group_by_dynamic("n_date", every=every, period=period, closed=closed).agg(
+        pl.col("index").count().alias("count")
+    )
+    total = out.select("count").sum().item()
+
+    # some easy checks
+    if every == "1i" and period == "1i":
+        if "closed" in ["left", "right"]:
+            assert out.shape == (n, 2)
+            assert total == n
+        elif "closed" == "both":
+            assert out.shape == (2 * n - 2, 2)
+            assert total == 2 * n - 1
+        elif "closed" == "none":
+            assert out.shape == (0, 2)
+            assert total == 0

@@ -21,3 +21,9 @@ pub const NS_MINUTE: i64 = 60 * NS_SECOND;
 pub const NS_HOUR: i64 = 60 * NS_MINUTE;
 pub const NS_DAY: i64 = 24 * NS_HOUR;
 pub const NS_WEEK: i64 = 7 * NS_DAY;
+
+/// Not-to-exceed (NTE) nanoseconds per unit, accounting for DST.
+/// Leap seconds are implicitly accounted for, as they never happen
+/// in a DST month.
+pub const NTE_NS_DAY: i64 = (24 + 1) * NS_HOUR + 1;
+pub const NTE_NS_WEEK: i64 = 6 * NS_DAY + NTE_NS_DAY;
