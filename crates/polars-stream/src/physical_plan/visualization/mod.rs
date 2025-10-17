@@ -458,6 +458,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                         file_projection_builder.into(),
                     ),
                     row_index_name: row_index.as_ref().map(|ri| ri.name.clone()),
+                    #[allow(clippy::useless_conversion)]
                     row_index_offset: row_index.as_ref().map(|ri| ri.offset.into()),
                     pre_slice: pre_slice.clone().map(|x| {
                         let (offset, len) = <(i128, i128)>::from(x);
@@ -759,6 +760,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     nulls_last: nulls_last.clone(),
                     multithreaded: *multithreaded,
                     maintain_order: *maintain_order,
+                    #[allow(clippy::useless_conversion)]
                     limit: limit.map(|x| x.into()),
                 };
 
@@ -817,6 +819,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
 
                 let properties = PhysNodeProperties::WithRowIndex {
                     name: name.clone(),
+                    #[allow(clippy::useless_conversion)]
                     offset: offset.map(|x| x.into()),
                 };
 
