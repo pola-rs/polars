@@ -1827,6 +1827,8 @@ def test_scan_iceberg_min_max_statistics_filter(
             else:
                 assert "[MultiScan]: " in capture
 
+            capfd.readouterr()
+
             assert_frame_equal(
                 pl.scan_iceberg(tbl, reader_override="native")
                 .with_row_index()
