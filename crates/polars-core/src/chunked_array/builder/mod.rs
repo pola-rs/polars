@@ -1,6 +1,6 @@
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
-mod categorical;
+pub mod categorical;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
 pub mod list;
