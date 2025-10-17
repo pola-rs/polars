@@ -1,0 +1,6 @@
+﻿polars.Expr.rolling\_median\_by
+===============================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.rolling_median_by
