@@ -478,6 +478,7 @@ impl IRVisualizationDataGenerator<'_> {
                     include_file_paths,
                     deletion_files,
                     table_statistics,
+                    row_count: _,
                 } = unified_scan_args.as_ref();
 
                 let file_columns: Option<Vec<PlSmallStr>> =
