@@ -713,11 +713,6 @@ pub trait PhysicalExpr: Send + Sync {
     /// Get the output field of this expr
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field>;
 
-    /// Convert to a partitioned aggregator.
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        None
-    }
-
     fn is_literal(&self) -> bool {
         false
     }
@@ -772,30 +767,4 @@ pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoEx
         expr,
         has_window_function,
     }) as Arc<dyn PhysicalIoExpr>
-}
-
-pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
-    /// This is called in partitioned aggregation.
-    /// Partitioned results may differ from aggregation results.
-    /// For instance, for a `mean` operation a partitioned result
-    /// needs to return the `sum` and the `valid_count` (length - null count).
-    ///
-    /// A final aggregation can then take the sum of sums and sum of valid_counts
-    /// to produce a final mean.
-    #[allow(clippy::ptr_arg)]
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column>;
-
-    /// Called to merge all the partitioned results in a final aggregate.
-    #[allow(clippy::ptr_arg)]
-    fn finalize(
-        &self,
-        partitioned: Column,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column>;
 }
