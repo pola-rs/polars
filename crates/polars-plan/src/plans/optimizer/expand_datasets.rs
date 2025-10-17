@@ -62,6 +62,8 @@ pub(super) fn expand_datasets(
                 dataset_object,
                 cached_ir,
             } => {
+                use crate::plans::pyarrow::predicate_to_pa;
+
                 let cached_ir = cached_ir.clone();
                 let mut guard = cached_ir.lock().unwrap();
 
@@ -111,6 +113,15 @@ pub(super) fn expand_datasets(
                     out
                 });
 
+                let pyarrow_predicate: Option<String> = if !unified_scan_args
+                    .has_row_index_or_slice()
+                    && let Some(predicate) = &predicate
+                {
+                    predicate_to_pa(predicate.node(), expr_arena, Default::default())
+                } else {
+                    None
+                };
+
                 let existing_resolved_version_key = match guard.as_ref() {
                     Some(resolved) => {
                         let ExpandedDataset {
@@ -118,13 +129,15 @@ pub(super) fn expand_datasets(
                             limit: cached_limit,
                             projection: cached_projection,
                             live_filter_columns: cached_live_filter_columns,
+                            pyarrow_predicate: cached_pyarrow_predicate,
                             expanded_dsl: _,
                             python_scan: _,
                         } = resolved;
 
                         (&limit == cached_limit
                             && &projection == cached_projection
-                            && &live_filter_columns == cached_live_filter_columns)
+                            && &live_filter_columns == cached_live_filter_columns
+                            && &pyarrow_predicate == cached_pyarrow_predicate)
                             .then_some(version.as_str())
                     },
 
@@ -136,12 +149,14 @@ pub(super) fn expand_datasets(
                     limit,
                     projection.as_deref(),
                     live_filter_columns.as_deref(),
+                    pyarrow_predicate.as_deref(),
                 )? {
                     *guard = Some(ExpandedDataset {
                         version,
                         limit,
                         projection,
                         live_filter_columns,
+                        pyarrow_predicate,
                         expanded_dsl,
                         python_scan: None,
                     })
@@ -152,6 +167,7 @@ pub(super) fn expand_datasets(
                     limit: _,
                     projection: _,
                     live_filter_columns: _,
+                    pyarrow_predicate: _,
                     expanded_dsl,
                     python_scan,
                 } = guard.as_mut().unwrap();
@@ -316,6 +332,7 @@ pub struct ExpandedDataset {
     limit: Option<usize>,
     projection: Option<Arc<[PlSmallStr]>>,
     live_filter_columns: Option<Arc<[PlSmallStr]>>,
+    pyarrow_predicate: Option<String>,
     expanded_dsl: DslPlan,
 
     /// Fallback python scan
@@ -347,6 +364,7 @@ impl Debug for ExpandedDataset {
             limit,
             projection,
             live_filter_columns,
+            pyarrow_predicate,
             expanded_dsl,
 
             #[cfg(feature = "python")]
@@ -361,6 +379,11 @@ impl Debug for ExpandedDataset {
             expanded_dsl: &match expanded_dsl.display() {
                 Ok(v) => v.to_string(),
                 Err(e) => e.to_string(),
+            },
+            pyarrow_predicate: if pyarrow_predicate.is_some() {
+                "Some(<redacted>)"
+            } else {
+                "None"
             },
             #[cfg(feature = "python")]
             python_scan: python_scan.as_ref().map(
@@ -388,6 +411,7 @@ impl Debug for ExpandedDataset {
                 pub limit: &'a Option<usize>,
                 pub projection: &'a Option<Arc<[PlSmallStr]>>,
                 pub live_filter_columns: &'a Option<Arc<[PlSmallStr]>>,
+                pub pyarrow_predicate: &'static str,
                 pub expanded_dsl: &'a str,
 
                 #[cfg(feature = "python")]
