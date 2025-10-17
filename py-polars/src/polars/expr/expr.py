@@ -1124,6 +1124,10 @@ class Expr:
         """
         Get the group indexes of the group by operation.
 
+        .. deprecated:: X.Y
+            use `df.with_row_index().group_by(...)[pl.col('index')]` instead.
+            This method will be removed in Polars 2.0.
+
         Should be used in aggregation context only.
 
         Examples
@@ -1152,6 +1156,12 @@ class Expr:
         │ two   ┆ [3, 4, 5] │
         └───────┴───────────┘
         """
+        warnings.warn(
+            "agg_groups is deprecated and will be removed in Polars 2.0. "
+            "Use df.with_row_index().group_by(...)[pl.col('index')] instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return wrap_expr(self._pyexpr.agg_groups())
 
     def count(self) -> Expr:
