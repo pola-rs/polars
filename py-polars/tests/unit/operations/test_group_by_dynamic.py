@@ -1207,12 +1207,12 @@ def test_group_by_dynamic_sparse_24541(
 
     # some easy checks
     if every == "1i" and period == "1i":
-        if "closed" in ["left", "right"]:
+        if closed in ["left", "right"]:
             assert out.shape == (n, 2)
             assert total == n
-        elif "closed" == "both":
+        elif closed == "both":
             assert out.shape == (2 * n - 2, 2)
             assert total == 2 * n - 1
-        elif "closed" == "none":
+        elif closed == "none":
             assert out.shape == (0, 2)
             assert total == 0
