@@ -455,7 +455,7 @@ class IcebergDataset:
                 f"iceberg_storage_properties: {keys_repr}, "
                 f"reader_override: {reader_override}, "
                 f"use_metadata_statistics: {use_metadata_statistics}, "
-                f"fast_deletion_count: {fast_deletion_count}"
+                f"fast_deletion_count: {fast_deletion_count}, "
                 f"use_pyiceberg_filter: {use_pyiceberg_filter}"
             )
 
@@ -464,7 +464,7 @@ class IcebergDataset:
     def __setstate__(self, state: dict[str, Any]) -> None:
         if verbose():
             path_repr = state["metadata_path"]
-            snapshot_id = state["snapshot_id"]
+            snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
             use_metadata_statistics = state["use_metadata_statistics"]
