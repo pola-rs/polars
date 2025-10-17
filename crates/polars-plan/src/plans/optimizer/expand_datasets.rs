@@ -186,6 +186,7 @@ pub(super) fn expand_datasets(
                             include_file_paths: _include_file_paths @ None,
                             deletion_files,
                             table_statistics,
+                            row_count,
                         } = resolved_unified_scan_args.as_ref()
                         else {
                             panic!(
@@ -204,6 +205,7 @@ pub(super) fn expand_datasets(
                         unified_scan_args.default_values = default_values.clone();
                         unified_scan_args.deletion_files = deletion_files.clone();
                         unified_scan_args.table_statistics = table_statistics.clone();
+                        unified_scan_args.row_count = *row_count;
 
                         if row_index_in_live_filter {
                             use polars_core::prelude::{Column, DataType, IdxCa, IntoColumn};

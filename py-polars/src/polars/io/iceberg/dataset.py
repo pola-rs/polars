@@ -36,6 +36,7 @@ class IcebergDataset:
         iceberg_storage_properties: dict[str, Any] | None = None,
         reader_override: Literal["native", "pyiceberg"] | None = None,
         use_metadata_statistics: bool = True,
+        fast_deletion_count: bool = True,
     ) -> None:
         self._metadata_path = None
         self._table = None
@@ -43,6 +44,7 @@ class IcebergDataset:
         self._iceberg_storage_properties = iceberg_storage_properties
         self._reader_override: Literal["native", "pyiceberg"] | None = reader_override
         self._use_metadata_statistics = use_metadata_statistics
+        self._fast_deletion_count = fast_deletion_count
 
         # Accept either a path or a table object. The one we don't have is
         # lazily initialized when needed.
@@ -199,6 +201,8 @@ class IcebergDataset:
             else None
         )
         deletion_files: dict[int, list[str]] = {}
+        total_physical_rows: int = 0
+        total_deleted_rows: int = 0
 
         if reader_override != "pyiceberg" and not fallback_reason:
             from pyiceberg.manifest import DataFileContent, FileFormat
@@ -243,6 +247,7 @@ class IcebergDataset:
 
                         deletion_files[i].append(deletion_file.file_path)
                         total_deletion_files += 1
+                        total_deleted_rows += deletion_file.record_count
 
                 if fallback_reason:
                     break
@@ -255,6 +260,8 @@ class IcebergDataset:
 
                 if statistics_loader is not None:
                     statistics_loader.push_file_statistics(file_info.file)
+
+                total_physical_rows += file_info.file.record_count
 
                 sources.append(file_info.file.file_path)
 
@@ -308,6 +315,14 @@ class IcebergDataset:
                 min_max_statistics=min_max_statistics,
                 statistics_loader=statistics_loader,
                 storage_options=storage_options,
+                row_count=(
+                    (total_physical_rows, total_deleted_rows)
+                    if (
+                        self._use_metadata_statistics
+                        and (self._fast_deletion_count or total_deleted_rows == 0)
+                    )
+                    else None
+                ),
                 _snapshot_id_key=snapshot_id_key,
             )
 
@@ -387,6 +402,8 @@ class IcebergDataset:
             "snapshot_id": self._snapshot_id,
             "iceberg_storage_properties": self._iceberg_storage_properties,
             "reader_override": self._reader_override,
+            "use_metadata_statistics": self._use_metadata_statistics,
+            "fast_deletion_count": self._fast_deletion_count,
         }
 
         if verbose():
@@ -394,13 +411,17 @@ class IcebergDataset:
             snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
+            use_metadata_statistics = state["use_metadata_statistics"]
+            fast_deletion_count = state["fast_deletion_count"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
                 f"snapshot_id: {snapshot_id}, "
                 f"iceberg_storage_properties: {keys_repr}, "
-                f"reader_override: {reader_override}"
+                f"reader_override: {reader_override}, "
+                f"use_metadata_statistics: {use_metadata_statistics}, "
+                f"fast_deletion_count: {fast_deletion_count}"
             )
 
         return state
@@ -411,13 +432,17 @@ class IcebergDataset:
             snapshot_id = state["snapshot_id"]
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
+            use_metadata_statistics = state["use_metadata_statistics"]
+            fast_deletion_count = state["fast_deletion_count"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
                 f"snapshot_id: '{snapshot_id}', "
                 f"iceberg_storage_properties: {keys_repr}, "
-                f"reader_override: {reader_override}"
+                f"reader_override: {reader_override}, "
+                f"use_metadata_statistics: {use_metadata_statistics}, "
+                f"fast_deletion_count: {fast_deletion_count}"
             )
 
         IcebergDataset.__init__(
@@ -426,6 +451,8 @@ class IcebergDataset:
             snapshot_id=state["snapshot_id"],
             iceberg_storage_properties=state["iceberg_storage_properties"],
             reader_override=state["reader_override"],
+            use_metadata_statistics=state["use_metadata_statistics"],
+            fast_deletion_count=state["fast_deletion_count"],
         )
 
 
@@ -454,6 +481,8 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     # coalescing.
     statistics_loader: IcebergStatisticsLoader | None
     storage_options: dict[str, str] | None
+    # (physical, deleted)
+    row_count: tuple[int, int] | None
     _snapshot_id_key: str
 
     def to_lazyframe(self) -> pl.LazyFrame:
@@ -469,6 +498,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             _default_values=("iceberg", self.default_values),
             _deletion_files=("iceberg-position-delete", self.deletion_files),
             _table_statistics=self.min_max_statistics,
+            _row_count=self.row_count,
         )
 
     @property
