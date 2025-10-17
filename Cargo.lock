@@ -3629,7 +3629,11 @@ dependencies = [
  "rand 0.9.1",
  "rayon",
  "recursive",
+ "schemars",
+ "serde",
+ "serde_json",
  "slotmap",
+ "strum_macros 0.27.1",
  "tokio",
  "version_check",
 ]
