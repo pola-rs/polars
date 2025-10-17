@@ -1811,8 +1811,18 @@ def test_scan_iceberg_min_max_statistics_filter(
             capture = capfd.readouterr().err
 
             if "iceberg_table_filter: Some(<redacted>)" in capture:
-                assert "scan IR had empty sources" in capture
+                assert "scan IR lowered as empty InMemorySource" in capture
                 assert "[MultiScan]: " not in capture
+
+                # Scanning with pyiceberg can also skip the file if the predicate
+                # can be converted.
+                assert_frame_equal(
+                    pl.scan_iceberg(tbl, reader_override="pyiceberg").filter(
+                        filter_expr
+                    ),
+                    pl.LazyFrame(schema=pl_schema),
+                )
+
                 iceberg_table_filter_seen = True
             else:
                 assert "[MultiScan]: " in capture
