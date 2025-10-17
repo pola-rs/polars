@@ -19,7 +19,7 @@ def scan_iceberg(
     storage_options: dict[str, Any] | None = None,
     reader_override: Literal["native", "pyiceberg"] | None = None,
     use_metadata_statistics: bool = True,
-    fast_deletion_count: bool = False,
+    fast_deletion_count: bool | None = None,
 ) -> LazyFrame:
     """
     Lazily read from an Apache Iceberg table.
@@ -157,6 +157,12 @@ def scan_iceberg(
     if reader_override is not None:
         msg = "the `reader_override` parameter of `scan_iceberg()` is considered unstable."
         issue_unstable_warning(msg)
+
+    if fast_deletion_count is not None:
+        msg = "the `fast_deletion_count` parameter of `scan_iceberg()` is considered unstable."
+        issue_unstable_warning(msg)
+    else:
+        fast_deletion_count = False
 
     dataset = IcebergDataset(
         source,
