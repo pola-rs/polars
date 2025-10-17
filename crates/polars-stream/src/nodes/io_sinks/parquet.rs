@@ -64,6 +64,7 @@ impl ParquetSinkNode {
         collect_metrics: bool,
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
+        // insert here
         let column_options: Vec<ColumnWriteOptions> =
             get_column_write_options(&schema, &write_options.field_overwrites);
         let parquet_schema = to_parquet_schema(&schema, &column_options)?;
@@ -230,6 +231,7 @@ impl SinkNode for ParquetSinkNode {
                             let column_options = &column_options[col_idx];
 
                             let array = column.as_materialized_series().rechunk();
+                            // insert here
                             let array = array.to_arrow(0, CompatLevel::newest());
 
                             // @TODO: This causes all structs fields to be handled on a single thread. It
