@@ -12,6 +12,7 @@ description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
 arrow = { workspace = true }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, optional = true }
