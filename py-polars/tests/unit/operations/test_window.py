@@ -220,7 +220,7 @@ def test_window_cached_keys_sorted_update_4183() -> None:
     )
     expected = pl.DataFrame(
         {"count": [2, 2, 1], "rank": [1, 2, 1]},
-        schema={"count": pl.UInt32, "rank": pl.UInt32},
+        schema={"count": pl.get_index_type(), "rank": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -404,7 +404,7 @@ def test_window_filtered_false_15483() -> None:
             "group": ["A", "A"],
             "value": [None, None],
         },
-        schema_overrides={"value": pl.UInt32},
+        schema_overrides={"value": pl.get_index_type()},
     )
     assert_frame_equal(out, expected)
 
@@ -801,3 +801,35 @@ def test_shape_mismatch(expr: pl.Expr) -> None:
     q = df.lazy().select(expr.over(pl.col.g))
     with pytest.raises(ShapeError):
         q.collect()
+
+
+def test_clear_cache_on_stacked_filters_24806() -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    predicate = (pl.col.x > 1).over(9)
+    out = df.filter(predicate).filter(predicate).collect()
+    expected = pl.DataFrame({"x": [2]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "expr", [pl.col.a, pl.col.a.first(), pl.col.b, pl.col.b.first()]
+)
+@pytest.mark.parametrize(
+    "over",
+    [
+        pl.lit(42),
+        pl.col.g,
+        pl.col.g.first(),
+        [pl.col.g, pl.lit(42)],
+        [pl.lit(42), pl.col.g],
+        [pl.col.g, pl.col.h],
+        [pl.col.g.first(), pl.col.h],
+    ],
+)
+def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["x", "y", "z"], "g": [10, 10, 20], "h": [10, 10, 20]}
+    )
+
+    out = df.select(expr.over(over))
+    assert out.shape == (3, 1)

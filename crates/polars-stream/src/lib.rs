@@ -14,6 +14,8 @@ mod metrics;
 mod morsel;
 mod nodes;
 mod physical_plan;
+#[cfg(feature = "physical_plan_visualization")]
+pub use physical_plan::visualization as physical_plan_visualization;
 mod pipe;
 mod utils;
 

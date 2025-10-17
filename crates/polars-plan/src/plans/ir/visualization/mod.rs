@@ -373,6 +373,30 @@ impl IRVisualizationDataGenerator<'_> {
                             check_sortedness: *check_sortedness,
                         }
                     },
+                    #[cfg(feature = "iejoin")]
+                    JoinType::IEJoin => {
+                        use polars_ops::frame::IEJoinOptions;
+
+                        let Some(JoinTypeOptionsIR::IEJoin(IEJoinOptions {
+                            operator1,
+                            operator2,
+                        })) = options
+                        else {
+                            unreachable!()
+                        };
+
+                        IRNodeProperties::IEJoin {
+                            left_on: expr_list(left_on, self.expr_arena),
+                            right_on: expr_list(right_on, self.expr_arena),
+                            inequality_operators: if let Some(operator2) = operator2 {
+                                vec![*operator1, *operator2]
+                            } else {
+                                vec![*operator1]
+                            },
+                            suffix: suffix.clone(),
+                            slice: convert_opt_slice(slice),
+                        }
+                    },
                     JoinType::Cross => {
                         let predicate: Option<PlSmallStr> = options.as_ref().map(|x| {
                             let JoinTypeOptionsIR::CrossAndFilter { predicate } = x else {
@@ -454,6 +478,7 @@ impl IRVisualizationDataGenerator<'_> {
                     include_file_paths,
                     deletion_files,
                     table_statistics,
+                    row_count: _,
                 } = unified_scan_args.as_ref();
 
                 let file_columns: Option<Vec<PlSmallStr>> =

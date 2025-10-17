@@ -10,12 +10,12 @@ import polars.functions as F
 from polars._dependencies import import_optional
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
-    is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.io._utils import (
+    get_sources,
     is_glob_pattern,
     is_local_file,
     parse_columns_arg,
@@ -25,6 +25,7 @@ from polars.io._utils import (
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
+from polars.io.scan_options._options import ScanOptions
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyDataFrame, PyLazyFrame
@@ -380,6 +381,7 @@ def scan_ipc(
     rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
+    glob: bool = True,
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     memory_map: bool = True,
@@ -417,6 +419,8 @@ def scan_ipc(
         DataFrame
     row_index_offset
         Offset to start the row index column (only use if the name is set)
+    glob
+        Expand path given via globbing rules.
     storage_options
         Options that indicate how to connect to a cloud provider.
 
@@ -467,48 +471,39 @@ def scan_ipc(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
-    sources: list[str] | list[Path] | list[IO[bytes]] | list[bytes] = []
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source, check_not_directory=False)
-    elif isinstance(source, list):
-        if is_path_or_str_sequence(source):
-            sources = [
-                normalize_filepath(source, check_not_directory=False)
-                for source in source
-            ]
-        else:
-            sources = source
-
-        source = None  # type: ignore[assignment]
-
     # Memory Mapping is now a no-op
     _ = memory_map
 
+    sources = get_sources(source)
+
     credential_provider_builder = _init_credential_provider_builder(
-        credential_provider, source, storage_options, "scan_parquet"
+        credential_provider, sources, storage_options, "scan_parquet"
     )
     del credential_provider
 
-    if storage_options:
-        storage_options = list(storage_options.items())  # type: ignore[assignment]
-    else:
-        # Handle empty dict input
-        storage_options = None
-
     pylf = PyLazyFrame.new_from_ipc(
-        source,
-        sources,
-        n_rows,
-        cache,
-        rechunk,
-        parse_row_index_args(row_index_name, row_index_offset),
-        cloud_options=storage_options,
-        credential_provider=credential_provider_builder,
-        retries=retries,
+        sources=sources,
+        scan_options=ScanOptions(
+            row_index=(
+                (row_index_name, row_index_offset)
+                if row_index_name is not None
+                else None
+            ),
+            pre_slice=(0, n_rows) if n_rows is not None else None,
+            include_file_paths=include_file_paths,
+            glob=glob,
+            hive_partitioning=hive_partitioning,
+            hive_schema=hive_schema,
+            try_parse_hive_dates=try_parse_hive_dates,
+            rechunk=rechunk,
+            cache=cache,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
+        ),
         file_cache_ttl=file_cache_ttl,
-        hive_partitioning=hive_partitioning,
-        hive_schema=hive_schema,
-        try_parse_hive_dates=try_parse_hive_dates,
-        include_file_paths=include_file_paths,
     )
+
     return wrap_ldf(pylf)

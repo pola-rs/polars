@@ -166,7 +166,7 @@ def test_literal_group_agg_chunked_7968() -> None:
         pl.DataFrame(
             [
                 pl.Series("A", [1], dtype=pl.Int64),
-                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.UInt32)),
+                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.get_index_type())),
             ]
         ),
     )
@@ -292,7 +292,9 @@ def test_horizontal_sum_null_to_identity() -> None:
 
 def test_horizontal_sum_bool_dtype() -> None:
     out = pl.DataFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
-    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.UInt32)}))
+    assert_frame_equal(
+        out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.get_index_type())})
+    )
 
 
 def test_horizontal_sum_in_group_by_15102() -> None:
@@ -315,8 +317,8 @@ def test_horizontal_sum_in_group_by_15102() -> None:
         out,
         pl.DataFrame(
             {
-                "num_null": pl.Series([0, 2, 3], dtype=pl.UInt32),
-                "len": pl.Series([nbr_records] * 3, dtype=pl.UInt32),
+                "num_null": pl.Series([0, 2, 3], dtype=pl.get_index_type()),
+                "len": pl.Series([nbr_records] * 3, dtype=pl.get_index_type()),
             }
         ),
     )
@@ -522,7 +524,7 @@ def test_horizontal_mean_in_group_by_15115() -> None:
         pl.DataFrame(
             {
                 "mean_null": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
-                "len": pl.Series([nbr_records] * 4, dtype=pl.UInt32),
+                "len": pl.Series([nbr_records] * 4, dtype=pl.get_index_type()),
             }
         ),
     )

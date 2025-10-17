@@ -246,5 +246,5 @@ def test_csv_scan_skip_lines_len_22889(
 
     # for comparison
     out = pl.scan_csv(bb, skip_lines=2).collect().select(pl.len())
-    expected = pl.DataFrame({"len": [1]}, schema={"len": pl.UInt32})
+    expected = pl.DataFrame({"len": [1]}, schema={"len": pl.get_index_type()})
     assert_frame_equal(expected, out)

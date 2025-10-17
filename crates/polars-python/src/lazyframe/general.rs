@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 use either::Either;
-use polars::io::{HiveOptions, RowIndex};
+use polars::io::RowIndex;
 use polars::time::*;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
@@ -341,78 +341,28 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (
-        source, sources, n_rows, cache, rechunk, row_index, cloud_options,credential_provider,
-        hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl,
-        include_file_paths
-    ))]
+    #[pyo3(signature = (sources, scan_options, file_cache_ttl))]
     fn new_from_ipc(
-        source: Option<Py<PyAny>>,
         sources: Wrap<ScanSources>,
-        n_rows: Option<usize>,
-        cache: bool,
-        rechunk: bool,
-        row_index: Option<(String, IdxSize)>,
-        cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<Py<PyAny>>,
-        hive_partitioning: Option<bool>,
-        hive_schema: Option<Wrap<Schema>>,
-        try_parse_hive_dates: bool,
-        retries: usize,
+        scan_options: PyScanOptions,
         file_cache_ttl: Option<u64>,
-        include_file_paths: Option<String>,
     ) -> PyResult<Self> {
-        #[cfg(feature = "cloud")]
-        use cloud::credential_provider::PlCredentialProvider;
-        use polars_utils::slice_enum::Slice;
-        let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: name.into(),
-            offset,
-        });
-
-        let hive_options = HiveOptions {
-            enabled: hive_partitioning,
-            hive_start_idx: 0,
-            schema: hive_schema.map(|x| Arc::new(x.0)),
-            try_parse_dates: try_parse_hive_dates,
-        };
-
-        let mut unified_scan_args = UnifiedScanArgs {
-            pre_slice: n_rows.map(|len| Slice::Positive { offset: 0, len }),
-            cache,
-            rechunk,
-            row_index,
-            cloud_options: None,
-            hive_options,
-            include_file_paths: include_file_paths.map(|x| x.into()),
-            ..Default::default()
-        };
+        let options = IpcScanOptions;
 
         let sources = sources.0;
-        let (first_path, sources) = match source {
-            None => (sources.first_path().map(|p| p.into_owned()), sources),
-            Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
-        };
+        let first_path = sources.first_path().map(|p| p.into_owned());
 
-        #[cfg(feature = "cloud")]
-        if let Some(first_path) = first_path {
-            let first_path_url = first_path.to_str();
+        let mut unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.as_ref().map(|p| p.as_ref()))?;
 
-            let mut cloud_options =
-                parse_cloud_options(first_path_url, cloud_options.unwrap_or_default())?;
-            if let Some(file_cache_ttl) = file_cache_ttl {
-                cloud_options.file_cache_ttl = file_cache_ttl;
-            }
-            unified_scan_args.cloud_options = Some(
-                cloud_options
-                    .with_max_retries(retries)
-                    .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_builder),
-                    ),
-            );
+        if let Some(file_cache_ttl) = file_cache_ttl {
+            unified_scan_args
+                .cloud_options
+                .get_or_insert_default()
+                .file_cache_ttl = file_cache_ttl;
         }
 
-        let lf = LazyFrame::scan_ipc_sources(sources, Default::default(), unified_scan_args)
+        let lf = LazyFrame::scan_ipc_sources(sources, options, unified_scan_args)
             .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
     }

@@ -175,6 +175,9 @@ fn try_lower_elementwise_scalar_agg_expr(
     }
 
     match expr_arena.get(expr) {
+        // Should be handled separately in `Eval`.
+        AExpr::Element => unreachable!(),
+
         AExpr::Column(_) => {
             // Implicit implode not yet supported.
             None

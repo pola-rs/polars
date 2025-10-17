@@ -135,6 +135,9 @@ fn get_frame_observing_impl(
 
     use ExprOutputOrder as O;
     Ok(match aexpr {
+        // This should never reached as we don't recurse on the Eval evaluation expression.
+        AExpr::Element => unreachable!(),
+
         // Explode creates local orders.
         //
         // The following observes order:

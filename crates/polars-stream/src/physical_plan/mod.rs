@@ -24,6 +24,8 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
+#[cfg(feature = "physical_plan_visualization")]
+pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileType, PlanCallback};
@@ -78,7 +80,7 @@ pub struct PhysStream {
 }
 
 impl PhysStream {
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn new(node: PhysNodeKey, port: usize) -> Self {
         Self { node, port }
     }

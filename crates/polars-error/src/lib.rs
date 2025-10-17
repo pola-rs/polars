@@ -490,6 +490,9 @@ on startup."#.trim_start())
             $argument_idx, $argument, $operation, $lhs, $rhs
         )
     };
+    (invalid_element_use) => {
+        $crate::polars_err!(InvalidOperation: "`element` is not allowed in this context")
+    };
     (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(
             AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",

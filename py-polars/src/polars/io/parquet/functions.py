@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-from collections.abc import Sequence
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
@@ -16,12 +15,12 @@ from polars._utils.deprecation import (
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     is_int_sequence,
-    is_path_or_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow
 from polars.io._utils import (
+    get_sources,
     prepare_file_arg,
 )
 from polars.io.cloud.credential_provider._builder import (
@@ -34,6 +33,7 @@ with contextlib.suppress(ImportError):
     from polars._plr import read_parquet_metadata as _read_parquet_metadata
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
@@ -470,6 +470,7 @@ def scan_parquet(
     _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
     _table_statistics: DataFrame | None = None,
+    _row_count: tuple[int, int] | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -660,24 +661,13 @@ def scan_parquet(
 
         missing_columns = "insert" if allow_missing_columns else "raise"
 
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source, check_not_directory=False)
-    elif is_path_or_str_sequence(source):
-        source = [
-            normalize_filepath(source, check_not_directory=False) for source in source
-        ]
+    sources = get_sources(source)
 
     credential_provider_builder = _init_credential_provider_builder(
-        credential_provider, source, storage_options, "scan_parquet"
+        credential_provider, sources, storage_options, "scan_parquet"
     )
 
     del credential_provider
-
-    sources = (
-        [source]
-        if not isinstance(source, Sequence) or isinstance(source, (str, bytes))
-        else source
-    )
 
     pylf = PyLazyFrame.new_from_parquet(
         sources=sources,
@@ -716,6 +706,7 @@ def scan_parquet(
             default_values=_default_values,
             deletion_files=_deletion_files,
             table_statistics=_table_statistics,
+            row_count=_row_count,
         ),
     )
 

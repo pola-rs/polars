@@ -411,7 +411,7 @@ def test_negative_zero_offset_16168() -> None:
     result = df.rolling(index_column="foo", period="1i", offset="0i").agg("index")
     expected = pl.DataFrame(
         {"foo": [1, 1, 1], "index": [[], [], []]},
-        schema_overrides={"index": pl.List(pl.UInt32)},
+        schema_overrides={"index": pl.List(pl.get_index_type())},
     )
     assert_frame_equal(result, expected)
     result = df.rolling(index_column="foo", period="1i", offset="-0i").agg("index")
