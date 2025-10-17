@@ -562,6 +562,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                         Some(expr_list(key_exprs, self.expr_arena)),
                         Some(*include_key),
                     ),
+                    #[allow(clippy::useless_conversion)]
                     PartitionVariantIR::MaxSize(max_size) => (Some((*max_size).into()), None, None),
                 };
 
