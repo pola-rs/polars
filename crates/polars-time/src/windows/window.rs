@@ -375,8 +375,8 @@ impl Iterator for BoundsIter<'_> {
 }
 
 impl<'a> BoundsIter<'a> {
-    // Return the number of iterations to advance, such the bounds are on target or close to target.
-    // Because duration is not always constant, this returns a conservative estimate.
+    // Return the number of iterations to advance, such that the bounds are on target or, in
+    // the case of non-constant duration, close to target.
     pub fn get_stride(&self, target: i64) -> usize {
         assert!(target >= 0);
         let mut stride = 0;

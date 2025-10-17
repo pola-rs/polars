@@ -1195,7 +1195,9 @@ def test_group_by_dynamic_with_group_by_iter_24394() -> None:
 def test_group_by_dynamic_sparse_24541(
     every: str, period: str, closed: ClosedInterval
 ) -> None:
-    # Note, at 100k, any of these queries 10s of seconds without a fast path
+    # For reference, at 100k, any of these queries took 10s of seconds prior to
+    # https://github.com/pola-rs/polars/pull/24916, but < 1 second for the entire
+    # suite with the PR
     n = 10_000
 
     df = pl.DataFrame({"n_date": (i * i for i in range(n))}).with_row_index()
@@ -1216,3 +1218,37 @@ def test_group_by_dynamic_sparse_24541(
         elif closed == "none":
             assert out.shape == (0, 2)
             assert total == 0
+
+
+@pytest.mark.parametrize(
+    ("every", "period", "closed", "expected"),
+    [
+        ("1i", "1i", "left", 6),
+        ("1i", "1i", "right", 6),
+        ("1i", "1i", "both", 11),
+        ("1i", "1i", "none", 0),
+        ("1i", "2i", "left", 11),
+        ("1i", "2i", "right", 11),
+        ("1i", "2i", "both", 16),
+        ("1i", "2i", "none", 6),
+        ("2i", "1i", "left", 2),
+        ("2i", "1i", "right", 4),
+        ("2i", "1i", "both", 6),
+        ("2i", "1i", "none", 0),
+        ("2i", "2i", "left", 6),
+        ("2i", "2i", "right", 6),
+        ("2i", "2i", "both", 8),
+        ("2i", "2i", "none", 4),
+    ],
+)
+def test_group_by_dynamic_sparse_count_small_24541(
+    every: str, period: str, closed: ClosedInterval, expected: int
+) -> None:
+    df = pl.DataFrame({"n_date": [1, 1000, 1001, 2001, 2002, 2003]}).with_row_index()
+
+    out = df.group_by_dynamic(
+        "n_date", every=every, period=period, closed=closed, include_boundaries=True
+    ).agg(pl.col("index").count().alias("count"))
+    total = out.select("count").sum().item()
+
+    assert total == expected
