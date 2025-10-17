@@ -376,7 +376,8 @@ impl PySeries {
         use pyo3::pybacked::PyBackedBytes;
         match state.extract::<PyBackedBytes>(py) {
             Ok(bytes) => py.enter_polars(|| {
-                *self.series.write() = Series::deserialize_from_reader(&mut &*bytes)?;
+                let mut reader = std::io::Cursor::new(&*bytes);
+                *self.series.write() = Series::deserialize_from_reader(&mut reader)?;
                 PolarsResult::Ok(())
             }),
             Err(e) => Err(e),

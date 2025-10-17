@@ -106,7 +106,6 @@ fn read_dictionary_block<R: Read + Seek>(
         dictionaries,
         reader,
         offset + length,
-        metadata.size,
         dictionary_scratch,
     )
 }
@@ -368,7 +367,6 @@ pub fn read_batch<R: Read + Seek>(
             .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferVersion(err)))?,
         reader,
         offset + length,
-        metadata.size,
         data_scratch,
     )
 }
