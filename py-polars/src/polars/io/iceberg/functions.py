@@ -20,6 +20,7 @@ def scan_iceberg(
     reader_override: Literal["native", "pyiceberg"] | None = None,
     use_metadata_statistics: bool = True,
     fast_deletion_count: bool | None = None,
+    use_pyiceberg_filter: bool = True,
 ) -> LazyFrame:
     """
     Lazily read from an Apache Iceberg table.
@@ -78,6 +79,8 @@ def scan_iceberg(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+    use_pyiceberg_filter
+        Convert and push the filter to PyIceberg where possible.
 
     Returns
     -------
@@ -171,6 +174,7 @@ def scan_iceberg(
         reader_override=reader_override,
         use_metadata_statistics=use_metadata_statistics,
         fast_deletion_count=fast_deletion_count,
+        use_pyiceberg_filter=use_pyiceberg_filter,
     )
 
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))

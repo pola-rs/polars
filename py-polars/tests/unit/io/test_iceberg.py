@@ -1180,7 +1180,15 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         ),
     )
 
-    q = pl.scan_iceberg(tbl, reader_override="native").filter(pl.col("column_3") == 5)
+    # Upstream issue - PyIceberg filter does not handle schema evolution
+    with pytest.raises(Exception, match="unpack requires a buffer of 8 bytes"):
+        pl.scan_iceberg(
+            tbl, reader_override="native", use_pyiceberg_filter=True
+        ).filter(pl.col("column_3") == 5).collect()
+
+    q = pl.scan_iceberg(
+        tbl, reader_override="native", use_pyiceberg_filter=False
+    ).filter(pl.col("column_3") == 5)
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
@@ -1485,7 +1493,11 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
+def test_scan_iceberg_min_max_statistics_filter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
     import datetime
 
     catalog = SqlCatalog(
@@ -1782,11 +1794,51 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
     with expect_file_not_found_err:
         pl.scan_iceberg(tbl, reader_override="native").collect()
 
+    iceberg_table_filter_seen = False
+
     def ensure_filter_skips_file(filter_expr: pl.Expr) -> None:
-        assert_frame_equal(
-            pl.scan_iceberg(tbl, reader_override="native").filter(filter_expr),
-            pl.LazyFrame(schema=pl_schema),
-        )
+        nonlocal iceberg_table_filter_seen
+
+        with monkeypatch.context() as cx:
+            cx.setenv("POLARS_VERBOSE", "1")
+            capfd.readouterr()
+
+            assert_frame_equal(
+                pl.scan_iceberg(tbl, reader_override="native").filter(filter_expr),
+                pl.LazyFrame(schema=pl_schema),
+            )
+
+            capture = capfd.readouterr().err
+
+            if "iceberg_table_filter: Some(<redacted>)" in capture:
+                assert "scan IR lowered as empty InMemorySource" in capture
+                assert "[MultiScan]: " not in capture
+
+                # Scanning with pyiceberg can also skip the file if the predicate
+                # can be converted.
+                assert_frame_equal(
+                    pl.scan_iceberg(tbl, reader_override="pyiceberg").filter(
+                        filter_expr
+                    ),
+                    pl.LazyFrame(schema=pl_schema),
+                )
+
+                iceberg_table_filter_seen = True
+            else:
+                assert "[MultiScan]: " in capture
+
+            capfd.readouterr()
+
+            assert_frame_equal(
+                pl.scan_iceberg(tbl, reader_override="native")
+                .with_row_index()
+                .filter(filter_expr),
+                pl.LazyFrame(schema=pl_schema).with_row_index(),
+            )
+
+            capture = capfd.readouterr().err
+
+            assert "iceberg_table_filter: Some(<redacted>)" not in capture
 
     # Check different operators
     ensure_filter_skips_file(pl.col("IntegerType") > 1)
@@ -1844,6 +1896,8 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
         .filter(pl.col("index").is_null()),
         pl.LazyFrame(schema={"index": pl.get_index_type(), **pl_schema}),
     )
+
+    assert iceberg_table_filter_seen
 
 
 @pytest.mark.write_disk

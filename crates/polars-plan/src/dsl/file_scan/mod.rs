@@ -294,6 +294,12 @@ pub struct UnifiedScanArgs {
     pub row_count: Option<(IdxSize, IdxSize)>,
 }
 
+impl UnifiedScanArgs {
+    pub fn has_row_index_or_slice(&self) -> bool {
+        self.row_index.is_some() || self.pre_slice.is_some()
+    }
+}
+
 // Manual default, we have `glob: true` by default.
 impl Default for UnifiedScanArgs {
     fn default() -> Self {
