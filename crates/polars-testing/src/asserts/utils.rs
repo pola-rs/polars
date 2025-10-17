@@ -695,7 +695,7 @@ impl DataFrameEqualOptions {
 ///    - When `check_column_order` is false, compares data type sets for equality
 ///    - When `check_column_order` is true, performs more precise type checking
 ///
-fn assert_dataframe_schema_equal(
+pub fn assert_dataframe_schema_equal(
     left: &DataFrame,
     right: &DataFrame,
     check_dtypes: bool,
