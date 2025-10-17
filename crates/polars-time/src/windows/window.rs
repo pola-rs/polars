@@ -343,4 +343,72 @@ impl Iterator for BoundsIter<'_> {
             None
         }
     }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let n: i64 = n.try_into().unwrap();
+        if self.bi.start < self.boundary.stop {
+            match self.tu {
+                TimeUnit::Nanoseconds => {
+                    self.bi.start = (self.window.every * n)
+                        .add_ns(self.bi.start, self.tz)
+                        .unwrap();
+                    self.bi.stop = (self.window.period).add_ns(self.bi.start, self.tz).unwrap();
+                },
+                TimeUnit::Microseconds => {
+                    self.bi.start = (self.window.every * n)
+                        .add_us(self.bi.start, self.tz)
+                        .unwrap();
+                    self.bi.stop = (self.window.period).add_us(self.bi.start, self.tz).unwrap();
+                },
+                TimeUnit::Milliseconds => {
+                    self.bi.start = (self.window.every * n)
+                        .add_ms(self.bi.start, self.tz)
+                        .unwrap();
+                    self.bi.stop = (self.window.period).add_ms(self.bi.start, self.tz).unwrap();
+                },
+            }
+            self.next()
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> BoundsIter<'a> {
+    // Return the number of iterations to advance, such that the bounds are on target or, in
+    // the case of non-constant duration, close to target.
+    pub fn get_stride(&self, target: i64) -> usize {
+        assert!(target >= 0);
+        let mut stride = 0;
+        if self.bi.start < self.boundary.stop && target > self.bi.start {
+            let gap = target - self.bi.start;
+            match self.tu {
+                TimeUnit::Nanoseconds => {
+                    if gap
+                        > self.window.every.nte_duration_ns() + self.window.period.nte_duration_ns()
+                    {
+                        stride = ((gap - self.window.period.nte_duration_ns()) as usize)
+                            / (self.window.every.nte_duration_ns() as usize);
+                    }
+                },
+                TimeUnit::Microseconds => {
+                    if gap
+                        > self.window.every.nte_duration_us() + self.window.period.nte_duration_us()
+                    {
+                        stride = ((gap - self.window.period.nte_duration_us()) as usize)
+                            / (self.window.every.nte_duration_us() as usize);
+                    }
+                },
+                TimeUnit::Milliseconds => {
+                    if gap
+                        > self.window.every.nte_duration_ms() + self.window.period.nte_duration_ms()
+                    {
+                        stride = ((gap - self.window.period.nte_duration_ms()) as usize)
+                            / (self.window.every.nte_duration_ms() as usize);
+                    }
+                },
+            }
+        }
+        stride
+    }
 }

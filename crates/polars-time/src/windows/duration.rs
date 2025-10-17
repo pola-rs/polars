@@ -20,7 +20,8 @@ use polars_error::polars_ensure;
 use serde::{Deserialize, Serialize};
 
 use super::calendar::{
-    NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
+    NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK, NTE_NS_DAY,
+    NTE_NS_WEEK,
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
@@ -513,6 +514,32 @@ impl Duration {
             + (self.weeks * NS_WEEK / 1_000_000
                 + self.nsecs / 1_000_000
                 + self.days * NS_DAY / 1_000_000)
+    }
+
+    /// Not-to-exceed estimated duration of the window duration. The actual duration will be
+    /// less or equal than the estimate.
+    #[doc(hidden)]
+    pub const fn nte_duration_ns(&self) -> i64 {
+        self.months * (31 * 24 + 1) * 3600 * NANOSECONDS
+            + self.weeks * NTE_NS_WEEK
+            + self.days * NTE_NS_DAY
+            + self.nsecs
+    }
+
+    #[doc(hidden)]
+    pub const fn nte_duration_us(&self) -> i64 {
+        self.months * (31 * 24 + 1) * 3600 * MICROSECONDS
+            + self.weeks * NTE_NS_WEEK / 1000
+            + self.days * NTE_NS_DAY / 1000
+            + self.nsecs / 1000
+    }
+
+    #[doc(hidden)]
+    pub const fn nte_duration_ms(&self) -> i64 {
+        self.months * (31 * 24 + 1) * 3600 * MILLISECONDS
+            + self.weeks * NTE_NS_WEEK / 1_000_000
+            + self.days * NTE_NS_DAY / 1_000_000
+            + self.nsecs / 1_000_000
     }
 
     #[doc(hidden)]
