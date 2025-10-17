@@ -61,6 +61,10 @@ pub struct SourceToken {
 }
 
 impl SourceToken {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     pub fn stop(&self) {
         self.stop.store(true);
     }
