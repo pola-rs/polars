@@ -30,6 +30,7 @@ pub struct StreamingExecutionState {
 
 impl StreamingExecutionState {
     /// Spawns a task which is awaited at the end of the query.
+    #[expect(unused)]
     pub fn spawn_query_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(&self, fut: F) {
         self.query_tasks_send
             .send(polars_io::pl_async::get_runtime().spawn(fut))

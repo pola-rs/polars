@@ -55,14 +55,16 @@ impl MorselSeq {
 /// A token indicating which source this morsel originated from, and a way to
 /// pass information/signals to it. Currently it's only used to request a source
 /// to stop with passing new morsels this execution phase.
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct SourceToken {
     stop: Arc<RelaxedCell<bool>>,
 }
 
 impl SourceToken {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            stop: Arc::default(),
+        }
     }
 
     pub fn stop(&self) {

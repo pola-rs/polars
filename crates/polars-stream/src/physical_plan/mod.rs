@@ -80,6 +80,7 @@ pub struct PhysStream {
 }
 
 impl PhysStream {
+    #[expect(unused)]
     pub fn new(node: PhysNodeKey, port: usize) -> Self {
         Self { node, port }
     }
