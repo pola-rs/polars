@@ -53,9 +53,20 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         let cats = ChunkedArray::with_chunk(self.name().clone(), arr);
 
         // SAFETY: we only reordered the indexes so we are still in bounds.
-        unsafe {
+        let mut out = unsafe {
             CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
-        }
+        };
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+
+        let mut flags = out.get_flags();
+        flags.set_sorted(s);
+        out.set_flags(flags);
+
+        out
     }
 
     /// Returned a sorted `ChunkedArray`.

@@ -4,10 +4,9 @@ use arrow::bitmap::BitmapBuilder;
 use num_traits::Zero;
 
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::flags::StatisticsFlags;
+use crate::chunked_array::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::chunked_array::ops::ChunkFullNull;
 use crate::prelude::*;
-use crate::series::IsSorted;
 use crate::utils::handle_casting_failures;
 
 pub type CategoricalChunked<T> = Logical<T, <T as PolarsCategoricalType>::PolarsPhysical>;
@@ -35,22 +34,38 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     }
 
     pub(crate) fn get_flags(&self) -> StatisticsFlags {
-        // If we use lexical ordering then physical sortedness does not imply
-        // our sortedness.
-        let mut flags = self.phys.get_flags();
         if self.uses_lexical_ordering() {
-            flags.set_sorted(IsSorted::Not);
+            self.logical_flags.get()
+        } else {
+            self.phys.get_flags()
         }
-        flags
     }
 
     /// Set flags for the ChunkedArray.
-    pub(crate) fn set_flags(&mut self, mut flags: StatisticsFlags) {
-        // We should not set the sorted flag if we are sorting in lexical order.
+    pub(crate) fn set_flags(&mut self, flags: StatisticsFlags) {
         if self.uses_lexical_ordering() {
-            flags.set_sorted(IsSorted::Not)
+            self.physical_mut()
+                .set_flags(Self::logical_flags_to_physical(flags));
+            self.logical_flags.set(flags)
+        } else {
+            self.physical_mut().set_flags(flags)
         }
-        self.physical_mut().set_flags(flags)
+    }
+
+    pub(crate) fn logical_flags_to_physical(logical_flags: StatisticsFlags) -> StatisticsFlags {
+        use StatisticsFlags as SF;
+        logical_flags
+            & (SF::CAN_FAST_EXPLODE_LIST
+                | SF::HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS
+                | SF::HAS_PROPAGATED_NULLS)
+    }
+
+    pub(crate) fn physical_flags_to_logical(physical_flags: StatisticsFlags) -> StatisticsFlags {
+        use StatisticsFlags as SF;
+        physical_flags
+            & (SF::CAN_FAST_EXPLODE_LIST
+                | SF::HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS
+                | SF::HAS_PROPAGATED_NULLS)
     }
 
     /// Return whether or not the [`CategoricalChunked`] uses the lexical order
@@ -106,6 +121,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         Self {
             phys: cat_ids,
             dtype,
+            logical_flags: StatisticsFlagsIM::empty(),
             _phantom: PhantomData,
         }
     }
@@ -119,10 +135,12 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         dtype: DataType,
     ) -> Self {
         debug_assert!(dtype.cat_physical().ok() == Some(T::physical()));
+        let physical_flags = cat_ids.get_flags();
 
         Self {
             phys: cat_ids,
             dtype,
+            logical_flags: Self::physical_flags_to_logical(physical_flags).into(),
             _phantom: PhantomData,
         }
     }
