@@ -6,26 +6,34 @@ use crate::dsl::EvalVariant;
 use crate::plans::{AExpr, IRAggExpr};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FrameOrderObserved;
+pub struct ColumnOrderObserved;
 
+/// Tracks orders that can be observed in the output of an expression.
+///
+/// This also allows distinguishing if an output is strictly column ordered (i.e. contains no other
+/// observable ordering).
+///
+/// This currently does not support distinguishing the origin(s) of independent orders.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ExprOutputOrder {
-    /// The expression has no defined output order.
+#[derive(Debug, Clone, Copy)]
+pub enum ObservableOrders {
+    /// No ordering can be observed.
     None = 0b00,
 
-    /// The expression's output order is reliant on the input dataframe's order.
-    Frame = 0b01,
+    /// Ordering of a column can be observed. Note that this does not capture information on whether
+    /// the column itself is ordered (e.g. this is not the case after an unstable unique).
+    Column = 0b01,
 
-    /// The expression's output order is completely independent from the frame order.
+    /// Order originating from a non-column node can be observed.
+    /// E.g.: sort()
     Independent = 0b10,
 
-    /// The expression's output order is both observing the frame order and some other independent
-    /// order.
+    /// Both the ordering of a column, as well as independent ordering can be observed.
+    /// E.g.: explode()
     Both = 0b11,
 }
 
-impl BitOr for ExprOutputOrder {
+impl BitOr for ObservableOrders {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self::Output {
@@ -33,17 +41,17 @@ impl BitOr for ExprOutputOrder {
     }
 }
 
-impl BitOrAssign for ExprOutputOrder {
+impl BitOrAssign for ObservableOrders {
     fn bitor_assign(&mut self, rhs: Self) {
         *self = Self::from_u8((*self as u8) | (rhs as u8)).unwrap();
     }
 }
 
-impl ExprOutputOrder {
+impl ObservableOrders {
     pub const fn from_u8(v: u8) -> Option<Self> {
         Some(match v {
             0b00 => Self::None,
-            0b01 => Self::Frame,
+            0b01 => Self::Column,
             0b10 => Self::Independent,
             0b11 => Self::Both,
 
@@ -51,32 +59,34 @@ impl ExprOutputOrder {
         })
     }
 
-    /// Do a elementwise zip between two output orderings.
-    pub fn zip_with(self, other: Self) -> Result<Self, FrameOrderObserved> {
-        use ExprOutputOrder as O;
+    /// Combines output ordering for expressions being projected alongside each other.
+    ///
+    /// Returns `Err(ColumnOrderObserved)` if a side contains column ordering and the other side
+    /// contains a non-column ordering.
+    pub fn zip_with(self, other: Self) -> Result<Self, ColumnOrderObserved> {
+        use ObservableOrders as O;
 
         match (self, other) {
             (v, O::None)
             | (O::None, v)
             | (v @ O::Independent, O::Independent)
-            | (v @ O::Frame, O::Frame) => Ok(v),
+            | (v @ O::Column, O::Column) => Ok(v),
 
-            // Otherwise, one side contains frame ordering, and the other side
-            // contains independent ordering, which observes the frame ordering.
-            _ => Err(FrameOrderObserved),
+            // Otherwise, one side contains column ordering, and the other side
+            // contains independent ordering, which observes the column ordering.
+            _ => Err(ColumnOrderObserved),
         }
     }
 
-    /// Does the output order observe an ordering (in)directly derived from the frame ordering.
-    pub fn has_frame_ordering(self) -> bool {
-        matches!(self, Self::Frame | Self::Both)
+    pub fn column_ordering_observable(self) -> bool {
+        matches!(self, Self::Column | Self::Both)
     }
 }
 
 pub fn zip(
-    orders: impl IntoIterator<Item = Result<ExprOutputOrder, FrameOrderObserved>>,
-) -> Result<ExprOutputOrder, FrameOrderObserved> {
-    let mut output_order = ExprOutputOrder::None;
+    orders: impl IntoIterator<Item = Result<ObservableOrders, ColumnOrderObserved>>,
+) -> Result<ObservableOrders, ColumnOrderObserved> {
+    let mut output_order = ObservableOrders::None;
     for order in orders {
         output_order = output_order.zip_with(order?)?;
     }
@@ -84,56 +94,58 @@ pub fn zip(
 }
 
 pub fn adjust_for_with_columns_context(
-    order: Result<ExprOutputOrder, FrameOrderObserved>,
-) -> Result<ExprOutputOrder, FrameOrderObserved> {
-    order?.zip_with(ExprOutputOrder::Frame)
+    order: Result<ObservableOrders, ColumnOrderObserved>,
+) -> Result<ObservableOrders, ColumnOrderObserved> {
+    order?.zip_with(ObservableOrders::Column)
 }
 
 /// Returns the observable orderings in the output of this `AExpr`.
 ///
-/// If within the expression tree an expression observes a `Frame` ordering, this instead returns
-/// `Err(FrameOrderObserved)`.
-pub fn get_frame_observing(
+/// If within the expression tree an expression observes a `Column` ordering, this instead returns
+/// `Err(ColumnOrderObserved)`.
+pub fn resolve_observable_orders(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
-) -> Result<ExprOutputOrder, FrameOrderObserved> {
-    ExprOutputOrderResolver::new(ExprOutputOrder::Frame)
-        .resolve_observable_orderings(aexpr, expr_arena)
+) -> Result<ObservableOrders, ColumnOrderObserved> {
+    ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena)
+        .resolve_observable_orders(aexpr)
 }
 
-pub(super) struct ExprOutputOrderResolver {
-    column_ordering: ExprOutputOrder,
+pub(super) struct ObservableOrdersResolver<'a> {
+    column_ordering: ObservableOrders,
+    expr_arena: &'a Arena<AExpr>,
 }
 
-impl ExprOutputOrderResolver {
-    pub(super) fn new(column_ordering: ExprOutputOrder) -> Self {
-        Self { column_ordering }
+impl<'a> ObservableOrdersResolver<'a> {
+    pub(super) fn new(column_ordering: ObservableOrders, expr_arena: &'a Arena<AExpr>) -> Self {
+        Self {
+            column_ordering,
+            expr_arena,
+        }
     }
 
-    pub(super) fn resolve_observable_orderings(
+    pub(super) fn resolve_observable_orders(
         &self,
         aexpr: &AExpr,
-        expr_arena: &Arena<AExpr>,
-    ) -> Result<ExprOutputOrder, FrameOrderObserved> {
-        get_frame_observing_impl(self, aexpr, expr_arena)
+    ) -> Result<ObservableOrders, ColumnOrderObserved> {
+        resolve_observable_orders_impl(self, aexpr)
     }
 }
 
 #[recursive::recursive]
-fn get_frame_observing_impl(
-    slf: &ExprOutputOrderResolver,
+fn resolve_observable_orders_impl(
+    slf: &ObservableOrdersResolver,
     aexpr: &AExpr,
-    expr_arena: &Arena<AExpr>,
-) -> Result<ExprOutputOrder, FrameOrderObserved> {
+) -> Result<ObservableOrders, ColumnOrderObserved> {
     macro_rules! rec {
-        ($expr:expr) => {{ get_frame_observing_impl(slf, expr_arena.get($expr), expr_arena)? }};
+        ($expr:expr) => {{ resolve_observable_orders_impl(slf, slf.expr_arena.get($expr))? }};
     }
 
     macro_rules! zip {
         ($($expr:expr),*) => {{ zip([$(Ok(rec!($expr))),*])? }};
     }
 
-    use ExprOutputOrder as O;
+    use ObservableOrders as O;
     Ok(match aexpr {
         // This should never reached as we don't recurse on the Eval evaluation expression.
         AExpr::Element => unreachable!(),
@@ -218,8 +230,8 @@ fn get_frame_observing_impl(
 
             // Input order observing aggregations.
             IRAggExpr::Implode(node) | IRAggExpr::First(node) | IRAggExpr::Last(node) => {
-                if rec!(*node).has_frame_ordering() {
-                    return Err(FrameOrderObserved);
+                if rec!(*node).column_ordering_observable() {
+                    return Err(ColumnOrderObserved);
                 }
                 O::None
             },
@@ -227,8 +239,8 @@ fn get_frame_observing_impl(
             // @NOTE: This aggregation makes very little sense. We do the most pessimistic thing
             // possible here.
             IRAggExpr::AggGroups(node) => {
-                if rec!(*node).has_frame_ordering() {
-                    return Err(FrameOrderObserved);
+                if rec!(*node).column_ordering_observable() {
+                    return Err(ColumnOrderObserved);
                 }
 
                 O::Independent
@@ -243,10 +255,10 @@ fn get_frame_observing_impl(
             let expr = rec!(*expr);
             let idx = rec!(*idx);
 
-            // We need to ensure that the values come in frame order. The order of the idxes is
+            // We need to ensure that the values come in column order. The order of the idxes is
             // propagated.
-            if expr.has_frame_ordering() {
-                return Err(FrameOrderObserved);
+            if expr.column_ordering_observable() {
+                return Err(ColumnOrderObserved);
             }
 
             if *returns_scalar { O::None } else { idx }
@@ -259,8 +271,8 @@ fn get_frame_observing_impl(
                 zip(input.iter().map(|e| Ok(rec!(e.node()))))?
             };
 
-            if input_ordering.has_frame_ordering() && options.flags.observes_input_order() {
-                return Err(FrameOrderObserved);
+            if input_ordering.column_ordering_observable() && options.flags.observes_input_order() {
+                return Err(ColumnOrderObserved);
             }
 
             match (
@@ -285,8 +297,8 @@ fn get_frame_observing_impl(
             | EvalVariant::ListAgg => rec!(*expr),
             EvalVariant::Cumulative { min_samples: _ } => {
                 let expr = rec!(*expr);
-                if expr.has_frame_ordering() {
-                    return Err(FrameOrderObserved);
+                if expr.column_ordering_observable() {
+                    return Err(ColumnOrderObserved);
                 }
                 expr
             },
@@ -303,18 +315,18 @@ fn get_frame_observing_impl(
             // @Performance.
             // All of the code below might be a bit pessimistic, several window function variants
             // are length preserving and/or propagate order in specific ways.
-            if input.has_frame_ordering() {
-                return Err(FrameOrderObserved);
+            if input.column_ordering_observable() {
+                return Err(ColumnOrderObserved);
             }
             for e in partition_by {
-                if rec!(*e).has_frame_ordering() {
-                    return Err(FrameOrderObserved);
+                if rec!(*e).column_ordering_observable() {
+                    return Err(ColumnOrderObserved);
                 }
             }
             if let Some((e, _)) = &order_by
-                && rec!(*e).has_frame_ordering()
+                && rec!(*e).column_ordering_observable()
             {
-                return Err(FrameOrderObserved);
+                return Err(ColumnOrderObserved);
             }
             O::Independent
         },
@@ -330,8 +342,8 @@ fn get_frame_observing_impl(
             _ = rec!(*length);
 
             let input = rec!(*input);
-            if input.has_frame_ordering() {
-                return Err(FrameOrderObserved);
+            if input.column_ordering_observable() {
+                return Err(ColumnOrderObserved);
             }
             input
         },
