@@ -1189,6 +1189,7 @@ def test_group_by_dynamic_with_group_by_iter_24394() -> None:
         assert len(sub_df["g"].unique()) == 1
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("every", ["1i", "2i"])
 @pytest.mark.parametrize("period", ["1i", "2i"])
 @pytest.mark.parametrize("closed", ["left", "right", "none", "both"])
