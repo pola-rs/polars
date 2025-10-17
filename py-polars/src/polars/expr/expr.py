@@ -3443,6 +3443,28 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.last())
 
+    @unstable()
+    def item(self) -> Expr:
+        """
+        Get the single value.
+
+        This raises an error if there is not exactly one value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1]})
+        >>> df.select(pl.col("a").item())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.item())
+
     def over(
         self,
         partition_by: IntoExpr | Iterable[IntoExpr] | None = None,

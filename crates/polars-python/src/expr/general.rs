@@ -152,6 +152,9 @@ impl PyExpr {
     fn last(&self) -> Self {
         self.inner.clone().last().into()
     }
+    fn item(&self) -> Self {
+        self.inner.clone().item().into()
+    }
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
     }

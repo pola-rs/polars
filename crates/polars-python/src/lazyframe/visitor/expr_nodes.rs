@@ -684,6 +684,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
+            IRAggExpr::Item(n) => Agg {
+                name: "item".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: py.None(),
+            },
             IRAggExpr::Mean(n) => Agg {
                 name: "mean".into_py_any(py)?,
                 arguments: vec![n.0],

@@ -204,7 +204,8 @@ fn get_frame_observing_impl(
             | IRAggExpr::Sum(node)
             | IRAggExpr::Count { input: node, .. }
             | IRAggExpr::Std(node, _)
-            | IRAggExpr::Var(node, _) => {
+            | IRAggExpr::Var(node, _)
+            | IRAggExpr::Item(node) => {
                 // Input order is deregarded, but must not observe order.
                 _ = rec!(*node);
                 O::None

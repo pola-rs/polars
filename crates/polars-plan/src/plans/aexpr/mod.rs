@@ -48,6 +48,7 @@ pub enum IRAggExpr {
     NUnique(Node),
     First(Node),
     Last(Node),
+    Item(Node),
     Mean(Node),
     Implode(Node),
     Quantile {
@@ -146,6 +147,7 @@ impl From<IRAggExpr> for GroupByMethod {
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
             Last(_) => GroupByMethod::Last,
+            Item(_) => GroupByMethod::Item,
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,
             Sum(_) => GroupByMethod::Sum,

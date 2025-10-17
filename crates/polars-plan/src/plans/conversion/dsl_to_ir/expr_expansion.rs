@@ -467,6 +467,14 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Last(Arc::new(e))),
                 )?,
+                AggExpr::Item(expr) => expand_single(
+                    expr.as_ref(),
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| Expr::Agg(AggExpr::Item(Arc::new(e))),
+                )?,
                 AggExpr::Mean(expr) => expand_single(
                     expr.as_ref(),
                     ignored_selector_columns,
