@@ -67,15 +67,17 @@ pub fn read_parquet_metadata(
                     use polars_error::PolarsResult;
 
                     feature_gated!("cloud", {
-                        get_runtime().block_on(async {
-                            let mut reader = ParquetObjectStore::from_uri(
-                                p.as_ref(),
-                                cloud_options.as_ref(),
-                                None,
-                            )
-                            .await?;
-                            let result = reader.get_metadata().await?;
-                            PolarsResult::Ok((**result).clone())
+                        py.allow_threads(|| {
+                            get_runtime().block_on(async {
+                                let mut reader = ParquetObjectStore::from_uri(
+                                    p.as_ref(),
+                                    cloud_options.as_ref(),
+                                    None,
+                                )
+                                .await?;
+                                let result = reader.get_metadata().await?;
+                                PolarsResult::Ok((**result).clone())
+                            })
                         })
                     })
                     .map_err(PyPolarsErr::from)?
