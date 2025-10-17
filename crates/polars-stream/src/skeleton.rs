@@ -62,7 +62,7 @@ pub struct StreamingQuery {
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
 }
 
-static PREPARE_VISUALIZATION_DATA: RelaxedCell<bool> = RelaxedCell::new_bool(false);
+pub static PREPARE_VISUALIZATION_DATA: RelaxedCell<bool> = RelaxedCell::new_bool(false);
 
 /// Sets config to ensure IR lowering always creates the `format_str` for `InMemoryMap`.
 pub fn always_prepare_visualization_data() {
