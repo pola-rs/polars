@@ -51,7 +51,7 @@ polars_cloud = ["polars_cloud >= 0.0.1a1"]
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
 pyarrow = ["pyarrow >= 7.0.0"]
-pydantic = ["pydantic"]
+pydantic = ["pydantic <= 2.11.10"]
 
 # Excel
 calamine = ["fastexcel >= 0.9"]
