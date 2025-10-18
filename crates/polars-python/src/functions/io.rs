@@ -67,7 +67,7 @@ pub fn read_parquet_metadata(
                     use polars_error::PolarsResult;
 
                     feature_gated!("cloud", {
-                        py.allow_threads(|| {
+                        py.detach(|| {
                             get_runtime().block_on(async {
                                 let mut reader = ParquetObjectStore::from_uri(
                                     p.as_ref(),
