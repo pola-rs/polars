@@ -112,7 +112,12 @@ AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
-ColumnMapping: TypeAlias = tuple[Literal["iceberg-column-mapping"], "pa.Schema"]
+ColumnMapping: TypeAlias = tuple[
+    Literal["iceberg-column-mapping"],
+    # This is "pa.Schema". Not typed as that causes pyright strict type checking
+    # failures for users who don't have pyarrow-stubs installed.
+    Any,
+]
 DefaultFieldValues: TypeAlias = tuple[
     Literal["iceberg"], dict[int, Union["Series", str]]
 ]
