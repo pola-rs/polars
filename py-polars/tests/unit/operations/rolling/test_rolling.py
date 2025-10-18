@@ -861,7 +861,7 @@ def test_rolling_aggregations_with_over_11225() -> None:
             "group": ["A", "A", "B", "B", "B"],
             "rolling_row_mean": [None, 0.0, None, 2.0, 2.5],
         },
-        schema_overrides={"index": pl.UInt32},
+        schema_overrides={"index": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 

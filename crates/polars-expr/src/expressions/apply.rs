@@ -10,9 +10,7 @@ use rayon::prelude::*;
 
 use super::*;
 use crate::dispatch::GroupsUdf;
-use crate::expressions::{
-    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
-};
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 
 #[derive(Clone)]
 pub struct ApplyExpr {
@@ -565,43 +563,8 @@ impl PhysicalExpr for ApplyExpr {
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         Ok(self.output_field.clone())
     }
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        if self.inputs.len() == 1 && self.flags.is_elementwise() {
-            Some(self)
-        } else {
-            None
-        }
-    }
     fn is_scalar(&self) -> bool {
         self.flags.returns_scalar()
             || (self.function_operates_on_scalar && self.flags.is_length_preserving())
-    }
-}
-
-impl PartitionedAggregation for ApplyExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let a = self.inputs[0].as_partitioned_aggregator().unwrap();
-        let s = a.evaluate_partitioned(df, groups, state)?;
-
-        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
-            self.eval_and_flatten(&mut [s])
-        } else {
-            let in_name = s.name().clone();
-            Ok(self.eval_and_flatten(&mut [s])?.with_name(in_name))
-        }
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

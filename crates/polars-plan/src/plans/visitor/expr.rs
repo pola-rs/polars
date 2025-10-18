@@ -79,6 +79,7 @@ impl TreeWalker for Expr {
             },
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
             KeepName(expr) => KeepName(am(expr, f)?),
+            Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
             AnonymousFunction { input, function, options, fmt_str } => {

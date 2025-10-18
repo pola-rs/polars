@@ -219,7 +219,7 @@ def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
         q,
         pl.LazyFrame(
             [
-                pl.Series("index", [14, 20, 25], dtype=pl.UInt32),
+                pl.Series("index", [14, 20, 25], dtype=pl.get_index_type()),
                 pl.Series(
                     "category",
                     ["vegetables", "vegetables", "vegetables"],
@@ -282,7 +282,7 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
         .select(pl.len())
         .collect()
     )
-    expected = pl.DataFrame({"len": 27}, schema={"len": pl.UInt32})
+    expected = pl.DataFrame({"len": 27}, schema={"len": pl.get_index_type()})
     assert_frame_equal(df, expected)
 
 

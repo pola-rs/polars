@@ -690,7 +690,7 @@ def test_group_by_multiple_column_reference() -> None:
         ("mean", [], [1.0, None], pl.Float64),
         ("median", [], [1.0, None], pl.Float64),
         ("min", [], [1, None], pl.Int64),
-        ("n_unique", [], [1, 0], pl.UInt32),
+        ("n_unique", [], [1, 0], pl.get_index_type()),
         ("quantile", [0.5], [1.0, None], pl.Float64),
     ],
 )
@@ -1064,8 +1064,8 @@ def test_group_by_schema_err() -> None:
         (
             {"x": [True]},
             pl.col("x").sum(),
-            {"x": pl.UInt32},
-            {"x": pl.UInt32},
+            {"x": pl.get_index_type()},
+            {"x": pl.get_index_type()},
         ),
         (
             {"a": [[1, 2]]},
@@ -1690,3 +1690,92 @@ def test_group_by_length_preserving_on_scalar() -> None:
             }
         ),
     )
+
+
+def test_group_by_enum_min_max_18394() -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["a", "a", "b", "b", "c", "c"],
+            "degree": ["low", "high", "high", "mid", "mid", "low"],
+        }
+    ).with_columns(pl.col("degree").cast(pl.Enum(["low", "mid", "high"])))
+    out = df.group_by("id").agg(
+        min_degree=pl.col("degree").min(),
+        max_degree=pl.col("degree").max(),
+    )
+    expected = pl.DataFrame(
+        {
+            "id": ["a", "b", "c"],
+            "min_degree": ["low", "mid", "low"],
+            "max_degree": ["high", "high", "mid"],
+        },
+        schema={
+            "id": pl.String,
+            "min_degree": pl.Enum(["low", "mid", "high"]),
+            "max_degree": pl.Enum(["low", "mid", "high"]),
+        },
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_filter_24838(maintain_order: bool) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [1, 2, 1, 2, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            b=pl.lit(2, pl.Int64).filter(pl.col.b != 1)
+        ),
+        pl.DataFrame(
+            [
+                pl.Series("a", [1, 2, 3], pl.Int64),
+                pl.Series("b", [[2], [2], []], pl.List(pl.Int64)),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize(
+    "lhs",
+    [
+        pl.lit(2),
+        pl.col.a,
+        pl.col.a.first(),
+        pl.col.a.reverse(),
+        pl.col.a.fill_null(strategy="forward"),
+    ],
+)
+@pytest.mark.parametrize(
+    "rhs",
+    [
+        pl.col.b == 3,
+        pl.col.b != 3,
+        pl.col.b.reverse() == 3,
+        pl.col.b.reverse() != 3,
+        pl.col.b.fill_null(1) != 3,
+        pl.col.b.fill_null(1) == 3,
+        pl.lit(True),
+        pl.lit(False),
+        pl.lit(pl.Series([True])),
+        pl.lit(pl.Series([False])),
+        pl.lit(pl.Series([True])).first(),
+        pl.lit(pl.Series([False])).first(),
+    ],
+)
+@pytest.mark.parametrize(
+    "agg",
+    [
+        Expr.implode,
+        Expr.sum,
+        Expr.first,
+    ],
+)
+def test_group_by_filter_parametric(
+    lhs: pl.Expr, rhs: pl.Expr, agg: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [1, 2, 1, 2, 1]})
+    gb = df.group_by(pl.lit(1)).agg(a=agg(lhs.filter(rhs))).to_series(1)
+    gb = gb.rename("a")
+    sl = df.select(a=agg(lhs.filter(rhs))).to_series()
+    assert_series_equal(gb, sl)

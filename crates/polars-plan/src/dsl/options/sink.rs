@@ -265,10 +265,10 @@ impl PartitionTargetContextKey {
         Ok(value.to_string())
     }
     #[getter]
-    pub fn raw_value(&self) -> pyo3::PyObject {
+    pub fn raw_value(&self) -> pyo3::Py<pyo3::PyAny> {
         let converter = polars_core::chunked_array::object::registry::get_pyobject_converter();
         *(converter.as_ref())(self.raw_value.as_any_value())
-            .downcast::<pyo3::PyObject>()
+            .downcast::<pyo3::Py<pyo3::PyAny>>()
             .unwrap()
     }
 }
@@ -318,12 +318,32 @@ impl SinkFinishCallback {
         match self {
             Self::Rust(f) => f(df),
             #[cfg(feature = "python")]
-            Self::Python(f) => pyo3::Python::with_gil(|py| {
+            Self::Python(f) => pyo3::Python::attach(|py| {
                 let converter =
                     polars_utils::python_convert_registry::get_python_convert_registry();
                 let df = (converter.to_py.df)(Box::new(df) as Box<dyn std::any::Any>)?;
                 f.call1(py, (df,))?;
                 PolarsResult::Ok(())
+            }),
+        }
+    }
+
+    pub fn display_str(&self) -> PlSmallStr {
+        match self {
+            Self::Rust(_) => PlSmallStr::from_static("Rust(<dyn Fn>)"),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::attach(|py| {
+                use polars_utils::format_pl_smallstr;
+                use pyo3::intern;
+                use pyo3::pybacked::PyBackedStr;
+
+                let class_name: PyBackedStr = f
+                    .getattr(py, intern!(py, "__class__"))
+                    .unwrap()
+                    .extract(py)
+                    .unwrap();
+
+                format_pl_smallstr!("Python({class_name})")
             }),
         }
     }
@@ -340,7 +360,7 @@ impl PartitionTargetCallback {
         match self {
             Self::Rust(f) => f(ctx),
             #[cfg(feature = "python")]
-            Self::Python(f) => pyo3::Python::with_gil(|py| {
+            Self::Python(f) => pyo3::Python::attach(|py| {
                 let partition_target = f.call1(py, (ctx,))?;
                 let converter =
                     polars_utils::python_convert_registry::get_python_convert_registry();
@@ -351,6 +371,26 @@ impl PartitionTargetCallback {
                     .unwrap()
                     .clone();
                 PolarsResult::Ok(partition_target)
+            }),
+        }
+    }
+
+    pub fn display_str(&self) -> PlSmallStr {
+        match self {
+            Self::Rust(_) => PlSmallStr::from_static("Rust(<dyn Fn>)"),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::attach(|py| {
+                use polars_utils::format_pl_smallstr;
+                use pyo3::intern;
+                use pyo3::pybacked::PyBackedStr;
+
+                let class_name: PyBackedStr = f
+                    .getattr(py, intern!(py, "__class__"))
+                    .unwrap()
+                    .extract(py)
+                    .unwrap();
+
+                format_pl_smallstr!("Python({class_name})")
             }),
         }
     }
@@ -534,7 +574,7 @@ pub enum PartitionVariant {
 }
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, strum_macros::IntoStaticStr)]
 pub enum PartitionVariantIR {
     MaxSize(IdxSize),
     Parted {

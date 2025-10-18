@@ -7,7 +7,7 @@ use polars_core::prelude::{
 use polars_lazy::dsl::Expr;
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
-use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
+use polars_plan::dsl::{coalesce, concat_str, element, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
 use polars_utils::pl_str::PlSmallStr;
@@ -1810,7 +1810,7 @@ impl SQLFunctionVisitor<'_> {
                     } else {
                         e.cast(DataType::List(Box::from(DataType::String)))
                             .list()
-                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())))
+                            .eval(element().fill_null(lit(lv.extract_str().unwrap())))
                             .list()
                             .join(sep, false)
                     })

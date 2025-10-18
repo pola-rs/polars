@@ -25,7 +25,7 @@ impl AExpr {
 
             Eval { variant, .. } => variant.is_elementwise(),
 
-            BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+            Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
             Agg { .. }
             | Explode { .. }

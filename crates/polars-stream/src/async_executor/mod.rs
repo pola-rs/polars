@@ -93,7 +93,7 @@ impl<T> JoinHandle<T> {
         self.0.metadata().metrics.as_ref()
     }
 
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn spawn_location(&self) -> &'static Location<'static> {
         self.0.metadata().spawn_location
     }

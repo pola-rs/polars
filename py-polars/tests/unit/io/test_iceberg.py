@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
+import pickle
 import sys
 import zoneinfo
 from datetime import date, datetime
@@ -1179,7 +1180,15 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         ),
     )
 
-    q = pl.scan_iceberg(tbl, reader_override="native").filter(pl.col("column_3") == 5)
+    # Upstream issue - PyIceberg filter does not handle schema evolution
+    with pytest.raises(Exception, match="unpack requires a buffer of 8 bytes"):
+        pl.scan_iceberg(
+            tbl, reader_override="native", use_pyiceberg_filter=True
+        ).filter(pl.col("column_3") == 5).collect()
+
+    q = pl.scan_iceberg(
+        tbl, reader_override="native", use_pyiceberg_filter=False
+    ).filter(pl.col("column_3") == 5)
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
@@ -1484,7 +1493,11 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
+def test_scan_iceberg_min_max_statistics_filter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
     import datetime
 
     catalog = SqlCatalog(
@@ -1781,11 +1794,51 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
     with expect_file_not_found_err:
         pl.scan_iceberg(tbl, reader_override="native").collect()
 
+    iceberg_table_filter_seen = False
+
     def ensure_filter_skips_file(filter_expr: pl.Expr) -> None:
-        assert_frame_equal(
-            pl.scan_iceberg(tbl, reader_override="native").filter(filter_expr),
-            pl.LazyFrame(schema=pl_schema),
-        )
+        nonlocal iceberg_table_filter_seen
+
+        with monkeypatch.context() as cx:
+            cx.setenv("POLARS_VERBOSE", "1")
+            capfd.readouterr()
+
+            assert_frame_equal(
+                pl.scan_iceberg(tbl, reader_override="native").filter(filter_expr),
+                pl.LazyFrame(schema=pl_schema),
+            )
+
+            capture = capfd.readouterr().err
+
+            if "iceberg_table_filter: Some(<redacted>)" in capture:
+                assert "scan IR lowered as empty InMemorySource" in capture
+                assert "[MultiScan]: " not in capture
+
+                # Scanning with pyiceberg can also skip the file if the predicate
+                # can be converted.
+                assert_frame_equal(
+                    pl.scan_iceberg(tbl, reader_override="pyiceberg").filter(
+                        filter_expr
+                    ),
+                    pl.LazyFrame(schema=pl_schema),
+                )
+
+                iceberg_table_filter_seen = True
+            else:
+                assert "[MultiScan]: " in capture
+
+            capfd.readouterr()
+
+            assert_frame_equal(
+                pl.scan_iceberg(tbl, reader_override="native")
+                .with_row_index()
+                .filter(filter_expr),
+                pl.LazyFrame(schema=pl_schema).with_row_index(),
+            )
+
+            capture = capfd.readouterr().err
+
+            assert "iceberg_table_filter: Some(<redacted>)" not in capture
 
     # Check different operators
     ensure_filter_skips_file(pl.col("IntegerType") > 1)
@@ -1799,6 +1852,17 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
             reader_override="native",
             use_metadata_statistics=False,
         ).filter(pl.col("IntegerType") > 1).collect()
+
+    with expect_file_not_found_err:
+        pickle.loads(
+            pickle.dumps(
+                pl.scan_iceberg(
+                    tbl,
+                    reader_override="native",
+                    use_metadata_statistics=False,
+                ).filter(pl.col("IntegerType") > 1)
+            )
+        ).collect()
 
     # Check different types
     ensure_filter_skips_file(pl.col("BooleanType") < True)
@@ -1832,6 +1896,8 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
         .filter(pl.col("index").is_null()),
         pl.LazyFrame(schema={"index": pl.get_index_type(), **pl_schema}),
     )
+
+    assert iceberg_table_filter_seen
 
 
 @pytest.mark.write_disk
@@ -1873,4 +1939,80 @@ def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
     assert_frame_equal(
         pl.scan_iceberg(tbl, reader_override="native").collect(),
         expect,
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
+
+    dfiles = [*tbl.scan().plan_files()]
+
+    assert len(dfiles) == 1
+
+    p = dfiles[0].file.file_path.removeprefix("file://")
+
+    # Overwrite the data file with one that has a different number of rows
+    pq.write_table(
+        pa.Table.from_pydict(
+            {"a": [0, 1, 2]},
+            schema=schema_to_pyarrow(tbl.schema()),
+        ),
+        p,
+    )
+
+    # `use_metadata_statistics=False` should disable sourcing the row count from
+    # Iceberg metadata.
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=False)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    assert (
+        pickle.loads(
+            pickle.dumps(
+                pl.scan_iceberg(
+                    tbl, reader_override="native", use_metadata_statistics=False
+                ).select(pl.len())
+            )
+        )
+        .collect()
+        .item()
+        == 3
+    )
+
+    Path(p).unlink()
+
+    with pytest.raises(
+        OSError,
+        match=(
+            "The system cannot find the file specified"
+            if sys.platform == "win32"
+            else "No such file or directory"
+        ),
+    ):
+        pl.scan_iceberg(tbl, reader_override="native").collect()
+
+    # `select(len())` should be able to return the result from the Iceberg metadata
+    # without looking at the underlying data files.
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native").select(pl.len()).collect().item()
+        == 5
     )

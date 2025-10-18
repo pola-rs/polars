@@ -84,13 +84,14 @@ def test_array_lengths() -> None:
     )
     out = df.select(pl.col("a").arr.len(), pl.col("b").arr.len())
     expected_df = pl.DataFrame(
-        {"a": [3], "b": [2]}, schema={"a": pl.UInt32, "b": pl.UInt32}
+        {"a": [3], "b": [2]},
+        schema={"a": pl.get_index_type(), "b": pl.get_index_type()},
     )
     assert_frame_equal(out, expected_df)
 
     assert pl.Series("a", [], pl.Array(pl.Null, 1)).arr.len().to_list() == []
     assert pl.Series(
-        "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.Int32, 3)
+        "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.get_index_type(), 3)
     ).arr.len().to_list() == [3, None, 3]
 
 
@@ -209,9 +210,9 @@ def test_array_reverse() -> None:
 
 def test_array_arg_min_max() -> None:
     s = pl.Series("a", [[1, 2, 4], [3, 2, 1]], dtype=pl.Array(pl.UInt32, 3))
-    expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
+    expected = pl.Series("a", [0, 2], dtype=pl.get_index_type())
     assert_series_equal(s.arr.arg_min(), expected)
-    expected = pl.Series("a", [2, 0], dtype=pl.UInt32)
+    expected = pl.Series("a", [2, 0], dtype=pl.get_index_type())
     assert_series_equal(s.arr.arg_max(), expected)
 
 
@@ -541,7 +542,7 @@ def test_array_n_unique() -> None:
 
     out = df.select(n_unique=pl.col("a").arr.n_unique())
     expected = pl.DataFrame(
-        {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.UInt32}
+        {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.get_index_type()}
     )
     assert_frame_equal(out, expected)
 

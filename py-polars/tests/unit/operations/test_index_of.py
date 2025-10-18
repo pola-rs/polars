@@ -158,7 +158,7 @@ def test_groupby() -> None:
     )
     expected = pl.DataFrame(
         {"label": ["a", "b"], "value": [1, 2]},
-        schema={"label": pl.String, "value": pl.UInt32},
+        schema={"label": pl.String, "value": pl.get_index_type()},
     )
     assert_frame_equal(
         df.group_by("label", maintain_order=True).agg(pl.col("value").index_of(20)),

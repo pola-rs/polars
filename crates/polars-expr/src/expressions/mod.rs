@@ -80,6 +80,24 @@ impl AggState {
     fn is_scalar(&self) -> bool {
         matches!(self, Self::AggregatedScalar(_))
     }
+
+    pub fn name(&self) -> &PlSmallStr {
+        match self {
+            AggState::AggregatedList(s)
+            | AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.name(),
+        }
+    }
+
+    pub fn flat_dtype(&self) -> &DataType {
+        match self {
+            AggState::AggregatedList(s) => s.dtype().inner_dtype().unwrap(),
+            AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.dtype(),
+        }
+    }
 }
 
 // lazy update strategy
@@ -104,16 +122,16 @@ pub struct AggregationContext<'a> {
     ///
     /// When aggregation state is LiteralScalar or AggregatedScalar, the group values are not
     /// related to the state data anymore. The number of groups is still accurate.
-    state: AggState,
+    pub(crate) state: AggState,
     /// group tuples for AggState
-    groups: Cow<'a, GroupPositions>,
+    pub(crate) groups: Cow<'a, GroupPositions>,
     /// This is used to determined if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
-    update_groups: UpdateGroups,
+    pub(crate) update_groups: UpdateGroups,
     /// This is true when the Series and Groups still have all
     /// their original values. Not the case when filtered
-    original_len: bool,
+    pub(crate) original_len: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -404,6 +422,16 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
+    /// Ensure that each group is represented by contiguous values in memory.
+    pub fn normalize_values(&mut self) {
+        self.set_original_len(false);
+        self.groups();
+        let values = self.flat_naive();
+        let values = unsafe { values.agg_list(&self.groups) };
+        self.state = AggState::AggregatedList(values);
+        self.with_update_groups(UpdateGroups::WithGroupsLen);
+    }
+
     /// Aggregate into `ListChunked`.
     pub fn aggregated_as_list<'b>(&'b mut self) -> Cow<'b, ListChunked> {
         self.aggregated();
@@ -685,11 +713,6 @@ pub trait PhysicalExpr: Send + Sync {
     /// Get the output field of this expr
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field>;
 
-    /// Convert to a partitioned aggregator.
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        None
-    }
-
     fn is_literal(&self) -> bool {
         false
     }
@@ -744,30 +767,4 @@ pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoEx
         expr,
         has_window_function,
     }) as Arc<dyn PhysicalIoExpr>
-}
-
-pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
-    /// This is called in partitioned aggregation.
-    /// Partitioned results may differ from aggregation results.
-    /// For instance, for a `mean` operation a partitioned result
-    /// needs to return the `sum` and the `valid_count` (length - null count).
-    ///
-    /// A final aggregation can then take the sum of sums and sum of valid_counts
-    /// to produce a final mean.
-    #[allow(clippy::ptr_arg)]
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column>;
-
-    /// Called to merge all the partitioned results in a final aggregate.
-    #[allow(clippy::ptr_arg)]
-    fn finalize(
-        &self,
-        partitioned: Column,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column>;
 }
