@@ -10338,6 +10338,52 @@ Consider using {self}.implode() instead"""
         │ red   ┆ 0.333333 │
         │ green ┆ 0.166667 │
         └───────┴──────────┘
+
+        Note that `group_by` can be used to generate counts.
+
+        >>> df.group_by("color").len()  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌───────┬─────┐
+        │ color ┆ len │
+        │ ---   ┆ --- │
+        │ str   ┆ u32 │
+        ╞═══════╪═════╡
+        │ red   ┆ 2   │
+        │ green ┆ 1   │
+        │ blue  ┆ 3   │
+        └───────┴─────┘
+
+        To add counts as a new column `pl.len()` can be used as a window function.
+
+        >>> df.with_columns(pl.len().over("color"))
+        shape: (6, 2)
+        ┌───────┬─────┐
+        │ color ┆ len │
+        │ ---   ┆ --- │
+        │ str   ┆ u32 │
+        ╞═══════╪═════╡
+        │ red   ┆ 2   │
+        │ blue  ┆ 3   │
+        │ red   ┆ 2   │
+        │ green ┆ 1   │
+        │ blue  ┆ 3   │
+        │ blue  ┆ 3   │
+        └───────┴─────┘
+
+        >>> df.with_columns((pl.len().over("color") / pl.len()).alias("fraction"))
+        shape: (6, 2)
+        ┌───────┬──────────┐
+        │ color ┆ fraction │
+        │ ---   ┆ ---      │
+        │ str   ┆ f64      │
+        ╞═══════╪══════════╡
+        │ red   ┆ 0.333333 │
+        │ blue  ┆ 0.5      │
+        │ red   ┆ 0.333333 │
+        │ green ┆ 0.166667 │
+        │ blue  ┆ 0.5      │
+        │ blue  ┆ 0.5      │
+        └───────┴──────────┘
         """
         name = name or ("proportion" if normalize else "count")
         return wrap_expr(self._pyexpr.value_counts(sort, parallel, name, normalize))
@@ -10356,11 +10402,7 @@ Consider using {self}.implode() instead"""
         ...         "id": ["a", "b", "b", "c", "c", "c"],
         ...     }
         ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("id").unique_counts(),
-        ...     ]
-        ... )
+        >>> df.select(pl.col("id").unique_counts())
         shape: (3, 1)
         ┌─────┐
         │ id  │
@@ -10371,6 +10413,37 @@ Consider using {self}.implode() instead"""
         │ 2   │
         │ 3   │
         └─────┘
+
+        Note that `group_by` can be used to generate counts.
+
+        >>> df.group_by("id", maintain_order=True).len().select("len")
+        shape: (3, 1)
+        ┌─────┐
+        │ len │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        To add counts as a new column `pl.len()` can be used as a window function.
+
+        >>> df.with_columns(pl.len().over("id"))
+        shape: (6, 2)
+        ┌─────┬─────┐
+        │ id  ┆ len │
+        │ --- ┆ --- │
+        │ str ┆ u32 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        │ b   ┆ 2   │
+        │ b   ┆ 2   │
+        │ c   ┆ 3   │
+        │ c   ┆ 3   │
+        │ c   ┆ 3   │
+        └─────┴─────┘
         """
         return wrap_expr(self._pyexpr.unique_counts())
 
