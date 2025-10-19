@@ -3560,3 +3560,42 @@ def test_binary_offset_roundtrip() -> None:
     lf = pl.scan_parquet(f)
 
     assert "binary[offset]" in str(lf.collect())
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.Series("a", [], pl.Struct([])).to_frame(),
+        pl.Series("a", [{}]).to_frame(),
+        pl.Series("a", [{}, None, {}]).to_frame(),
+        pl.Series("a", [[{}, None], [{}]], pl.List(pl.Struct([]))).to_frame(),
+        pl.Series("a", [[{}, None], None, []], pl.List(pl.Struct([]))).to_frame(),
+        pl.DataFrame(
+            {
+                "a": [{}, None, {}],
+                "b": [1, 2, 3],
+            }
+        ),
+        pl.DataFrame(
+            {
+                "b": [1, 2, 3],
+                "a": [{}, None, {}],
+            }
+        ),
+        pl.DataFrame(
+            {
+                "x": [2, 3, 4],
+                "a": [{}, None, {}],
+                "b": [1, 2, 3],
+            }
+        ),
+    ],
+)
+def test_empty_struct_roundtrip(df: pl.DataFrame, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_ALLOW_PQ_EMPTY_STRUCT", "1")
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))

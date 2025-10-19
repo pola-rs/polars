@@ -36,11 +36,39 @@ pub fn page_iter_to_array(
 
     let physical_type = &type_.physical_type;
     let logical_type = &type_.logical_type;
+    let is_pl_empty_struct = field.is_pl_pq_empty_struct();
     let dtype = field.dtype;
 
     Ok(match (physical_type, dtype.to_logical_type()) {
         (_, Null) => PageDecoder::new(&field.name, pages, dtype, null::NullDecoder, init_nested)?
             .collect_boxed(filter)?,
+
+        // Empty structs are roundtrippable by mapping to Boolean array.
+        (PhysicalType::Boolean, Struct(fs)) if fs.is_empty() && is_pl_empty_struct => {
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::Boolean,
+                boolean::BooleanDecoder,
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let array = array
+                .into_iter()
+                .map(|mut array| {
+                    StructArray::new(
+                        dtype.clone(),
+                        array.len(),
+                        Vec::new(),
+                        array.take_validity(),
+                    )
+                    .to_boxed()
+                })
+                .collect::<Vec<Box<dyn Array>>>();
+
+            (nested, array, ptm)
+        },
         (PhysicalType::Boolean, Boolean) => PageDecoder::new(
             &field.name,
             pages,

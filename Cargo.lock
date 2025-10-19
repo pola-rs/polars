@@ -3043,6 +3043,7 @@ dependencies = [
  "getrandom 0.2.16",
  "getrandom 0.3.3",
  "polars-arrow",
+ "polars-compute",
  "polars-core",
  "polars-error",
  "polars-expr",
@@ -3812,7 +3813,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.34.0"
+version = "1.35.0-beta.1"
 dependencies = [
  "either",
  "libc",
