@@ -19,7 +19,7 @@ pub fn columns_to_iter_recursive(
     mut init: Vec<InitNested>,
     filter: Option<Filter>,
 ) -> ParquetResult<(NestedState, Vec<Box<dyn Array>>, Bitmap)> {
-    if !field.dtype().is_nested() {
+    if !field.dtype().is_nested() || field.is_pl_pq_empty_struct() {
         let pages = columns.pop().unwrap();
         init.push(InitNested::Primitive(field.is_nullable));
         let type_ = types.pop().unwrap();

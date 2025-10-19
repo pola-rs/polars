@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 pub use field::{
     DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
-    DTYPE_ENUM_VALUES_NEW, Field, MAINTAIN_PL_TYPE, PL_KEY,
+    DTYPE_ENUM_VALUES_NEW, Field, MAINTAIN_PL_TYPE, PARQUET_EMPTY_STRUCT, PL_KEY,
 };
 pub use physical_type::*;
 use polars_utils::pl_str::PlSmallStr;
