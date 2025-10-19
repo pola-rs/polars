@@ -82,18 +82,33 @@ fn update_groups_and_bounds(
     upper_bound: &mut Vec<i64>,
     groups: &mut Vec<[IdxSize; 2]>,
 ) {
-    'bounds: for bi in bounds_iter {
+    let mut iter = bounds_iter.into_iter();
+    let mut stride = 0;
+
+    'bounds: while let Some(bi) = iter.nth(stride) {
+        let mut has_member = false;
         // find starting point of window
         for &t in &time[start..time.len().saturating_sub(1)] {
             // the window is behind the time values.
             if bi.is_future(t, closed_window) {
+                stride = iter.get_stride(t);
                 continue 'bounds;
             }
             if bi.is_member_entry(t, closed_window) {
+                has_member = true;
                 break;
             }
+            // element drops out of the window
             start += 1;
         }
+
+        // update stride so we can fast-forward in case of sparse data
+        stride = if has_member {
+            0
+        } else {
+            debug_assert!(start < time.len());
+            iter.get_stride(time[start])
+        };
 
         // find members of this window
         let mut end = start;
