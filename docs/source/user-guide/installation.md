@@ -174,8 +174,10 @@ The opt-in features are:
     - `dtype-duration`
     - `dtype-i8`
     - `dtype-i16`
+    - `dtype-i128`
     - `dtype-u8`
     - `dtype-u16`
+    - `dtype-u128`
     - `dtype-categorical`
     - `dtype-struct`
 - `lazy` - Lazy API:
