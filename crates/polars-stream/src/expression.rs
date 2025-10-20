@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::Column;
+use polars_core::without_threading;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{ExecutionState, PhysicalExpr};
 
@@ -27,11 +28,11 @@ impl StreamExpr {
             let phys_expr = self.inner.clone();
             let df = df.clone();
             polars_io::pl_async::get_runtime()
-                .spawn_blocking(move || phys_expr.evaluate(&df, &state))
+                .spawn_blocking(move || without_threading(|| phys_expr.evaluate(&df, &state)))
                 .await
                 .unwrap()
         } else {
-            self.inner.evaluate(df, state)
+            without_threading(|| self.inner.evaluate(df, state))
         }
     }
 
@@ -40,6 +41,6 @@ impl StreamExpr {
         df: &DataFrame,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
-        self.inner.evaluate(df, state)
+        without_threading(|| self.inner.evaluate(df, state))
     }
 }
