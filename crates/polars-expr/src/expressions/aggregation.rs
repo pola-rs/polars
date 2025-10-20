@@ -126,17 +126,8 @@ impl PhysicalExpr for AggregationExpr {
                 s.tail(Some(1))
             }),
             GroupByMethod::Item => Ok(match s.len() {
-                0 => {
-                    return Err(polars_err!(ComputeError:
-                        "aggregation 'item' expected a single value, got none"
-                    ));
-                },
-                1 => s.slice(0, 1),
-                n => {
-                    return Err(polars_err!(ComputeError:
-                        "aggregation 'item' expected a single value, got {n} values"
-                    ));
-                },
+                1 => s,
+                n => polars_bail!(item_agg_count_not_one = n),
             }),
             GroupByMethod::Sum => parallel_op_columns(
                 |s| s.sum_reduce().map(|sc| sc.into_column(s.name().clone())),

@@ -599,7 +599,6 @@ class ListNameSpace:
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
         """  # noqa: W505
-        return self.agg(F.element().item())
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """

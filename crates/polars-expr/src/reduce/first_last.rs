@@ -433,9 +433,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         self.seqs.clear();
         if P::is_item_policy() {
             for count in self.counts.iter() {
-                if *count != 1 {
-                    return Err(item_count_err(*count));
-                }
+                polars_ensure!(*count == 1, item_agg_count_not_one = *count);
             }
         }
         unsafe {
@@ -454,22 +452,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
 
 fn check_item_count_is_one<T: Clone>(v: &[Value<T>]) -> PolarsResult<()> {
     if let Some(Value { count: n, .. }) = v.iter().find(|v| v.count != 1) {
-        Err(item_count_err(*n))
-    } else {
-        Ok(())
+        polars_bail!(item_agg_count_not_one = *n);
     }
-}
-
-fn item_count_err(n: u64) -> PolarsError {
-    if n == 0 {
-        polars_err!(ComputeError:
-            "aggregation 'item' expected a single value, got none"
-        )
-    } else if n > 1 {
-        polars_err!(ComputeError:
-            "aggregation 'item' expected a single value, got {n} values"
-        )
-    } else {
-        unreachable!()
-    }
+    Ok(())
 }
