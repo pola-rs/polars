@@ -2,8 +2,8 @@ use core::{get_file_chunks_json, json_lines};
 use std::num::NonZeroUsize;
 
 use arrow::array::StructArray;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::{pool_install, pool_num_threads};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub(crate) mod buffer;
@@ -33,7 +33,7 @@ pub fn infer_schema<R: std::io::BufRead>(
 ///
 /// This does not check if the lines are valid NDJSON - it assumes that is the case.
 pub fn count_rows_par(full_bytes: &[u8], n_threads: Option<usize>) -> usize {
-    let n_threads = n_threads.unwrap_or(POOL.current_num_threads());
+    let n_threads = n_threads.unwrap_or(pool_num_threads());
     let file_chunks = get_file_chunks_json(full_bytes, n_threads);
 
     if file_chunks.len() == 1 {
@@ -43,7 +43,7 @@ pub fn count_rows_par(full_bytes: &[u8], n_threads: Option<usize>) -> usize {
             .into_par_iter()
             .map(|(start_pos, stop_at_nbytes)| count_rows(&full_bytes[start_pos..stop_at_nbytes]));
 
-        POOL.install(|| iter.sum())
+        pool_install(|| iter.sum())
     }
 }
 

@@ -1,7 +1,7 @@
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
-use crate::POOL;
+use crate::pool_install;
 use crate::prelude::*;
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 
@@ -74,7 +74,7 @@ impl DataFrame {
 
         if parallel {
             // Parallel so that null_counts run in parallel
-            POOL.install(|| split.into_par_iter().map(split_fn).collect())
+            pool_install(|| split.into_par_iter().map(split_fn).collect())
         } else {
             split.into_iter().map(split_fn).collect()
         }

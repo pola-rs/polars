@@ -7,7 +7,7 @@ use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_core::{POOL, config};
+use polars_core::{POOL, config, pool_install};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
@@ -219,7 +219,7 @@ fn estimate_cardinality(
     let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
     let runtime = get_runtime();
 
-    POOL.install(|| {
+    pool_install(|| {
         let sample_cardinality = morsels[..to_process_end]
             .par_iter()
             .enumerate()
@@ -1065,7 +1065,7 @@ impl ProbeState {
 
 impl Drop for ProbeState {
     fn drop(&mut self) {
-        POOL.install(|| {
+        pool_install(|| {
             // Parallel drop as the state might be quite big.
             self.table_per_partition.par_drain(..).for_each(drop);
         })

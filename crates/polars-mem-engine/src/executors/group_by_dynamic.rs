@@ -1,3 +1,5 @@
+use polars_core::pool_install;
+
 use super::*;
 
 #[cfg_attr(not(feature = "dynamic_group_by"), allow(dead_code))]
@@ -38,7 +40,7 @@ impl GroupByDynamicExec {
         };
 
         let (mut time_key, bounds, groups) = df.group_by_dynamic(group_by, &self.options)?;
-        POOL.install(|| {
+        pool_install(|| {
             keys.iter_mut().for_each(|key| {
                 unsafe { *key = key.agg_first(&groups) };
             })

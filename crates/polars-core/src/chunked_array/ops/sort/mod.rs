@@ -20,12 +20,12 @@ use rayon::prelude::*;
 pub use slice::*;
 
 use super::row_encode::_get_rows_encoded_ca;
-use crate::POOL;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
+use crate::{POOL, pool_install, pool_num_threads};
 
 fn partition_nulls<T: Copy>(
     values: &mut [T],
@@ -74,7 +74,7 @@ where
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
     if parallel {
-        POOL.install(|| match descending {
+        pool_install(|| match descending {
             true => slice.par_sort_by(|a, b| cmp(b, a)),
             false => slice.par_sort_by(cmp),
         })
@@ -92,7 +92,7 @@ where
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
     if options.multithreaded {
-        POOL.install(|| match options.descending {
+        pool_install(|| match options.descending {
             true => slice.par_sort_unstable_by(|a, b| cmp(b, a)),
             false => slice.par_sort_unstable_by(cmp),
         })
@@ -317,7 +317,7 @@ where
     T: PolarsNumericType,
 {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<T> {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= pool_num_threads() > 1;
         sort_with_numeric(self, options)
     }
 
@@ -403,7 +403,7 @@ impl ChunkSort<StringType> for StringChunked {
 
 impl ChunkSort<BinaryType> for BinaryChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<BinaryType> {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= pool_num_threads() > 1;
         sort_with_fast_path!(self, options);
         // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
         // We must rechunk to ensure that all views point into the proper buffers.
@@ -499,7 +499,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
 
 impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     fn sort_with(&self, mut options: SortOptions) -> BinaryOffsetChunked {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= pool_num_threads() > 1;
         sort_with_fast_path!(self, options);
 
         let mut v: Vec<&[u8]> = Vec::with_capacity(self.len());
@@ -588,7 +588,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     }
 
     fn arg_sort(&self, mut options: SortOptions) -> IdxCa {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= pool_num_threads() > 1;
         let ca = self.rechunk();
         let arr = ca.downcast_as_array();
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
@@ -661,7 +661,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 #[cfg(feature = "dtype-struct")]
 impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= pool_num_threads() > 1;
         let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
@@ -686,7 +686,7 @@ impl ChunkSort<StructType> for StructChunked {
 
 impl ChunkSort<ListType> for ListChunked {
     fn sort_with(&self, mut options: SortOptions) -> ListChunked {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= pool_num_threads() > 1;
         let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
@@ -717,7 +717,7 @@ impl ChunkSort<ListType> for ListChunked {
 
 impl ChunkSort<BooleanType> for BooleanChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<BooleanType> {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= pool_num_threads() > 1;
         sort_with_fast_path!(self, options);
         let mut bitmap = BitmapBuilder::with_capacity(self.len());
         let mut validity =

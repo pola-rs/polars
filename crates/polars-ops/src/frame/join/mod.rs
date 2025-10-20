@@ -30,7 +30,6 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::POOL;
 #[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
@@ -41,6 +40,7 @@ pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::slice_offsets;
 #[allow(unused_imports)]
 use polars_core::utils::slice_slice;
+use polars_core::{POOL, pool_num_threads};
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
@@ -230,8 +230,7 @@ pub trait DataFrameJoinOps: IntoDf {
             let Some(JoinTypeOptions::IEJoin(options)) = options else {
                 unreachable!()
             };
-            let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty()
-            {
+            let func = if pool_num_threads() > 1 && !left_df.is_empty() && !other.is_empty() {
                 iejoin::iejoin_par
             } else {
                 iejoin::iejoin

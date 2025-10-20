@@ -4,9 +4,9 @@ use std::sync::Arc;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
-use polars_core::POOL;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
+use polars_core::pool_install;
 use polars_core::prelude::{
     AnyValue, ChunkCast, Column, CompatLevel, GroupPositions, GroupsType, IDX_DTYPE, IntoColumn,
 };
@@ -35,7 +35,7 @@ pub fn reverse<'a>(
         return Ok(ac);
     }
 
-    POOL.install(|| {
+    pool_install(|| {
         let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -93,7 +93,7 @@ pub fn null_count<'a>(
         return Ok(ac);
     };
 
-    POOL.install(|| {
+    pool_install(|| {
         let validity = BitMask::from_bitmap(&validity);
         let null_count: Vec<IdxSize> = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
@@ -331,7 +331,7 @@ pub fn drop_items<'a>(
 
     ac.groups();
     let predicate = BitMask::from_bitmap(predicate);
-    POOL.install(|| {
+    pool_install(|| {
         let positions = GroupsType::Idx(match &**ac.groups.as_ref() {
             GroupsType::Idx(idxs) => idxs
                 .into_par_iter()

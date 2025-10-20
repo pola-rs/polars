@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use arrow::bitmap::BitmapBuilder;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_core::utils::CustomIterTools;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::exceptions::PyValueError;
@@ -138,7 +138,7 @@ fn iterator_to_struct<'py>(
     }
 
     let fields = py.enter_polars_ok(|| {
-        POOL.install(|| {
+        pool_install(|| {
             field_names_ordered
                 .par_iter()
                 .map(|name| Series::new(name.clone(), struct_fields.get(name).unwrap()))

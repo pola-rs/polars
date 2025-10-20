@@ -1,4 +1,4 @@
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::utils::arrow::ffi;
@@ -163,7 +163,7 @@ pub fn to_rust_df(
             // dict encoded to categorical
             let columns = if run_parallel {
                 py.enter_polars(|| {
-                    POOL.install(|| {
+                    pool_install(|| {
                         columns
                             .into_par_iter()
                             .enumerate()

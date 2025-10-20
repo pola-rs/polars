@@ -1,9 +1,9 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::trusted_len::TrustedLen;
-use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
+use polars_core::{POOL, pool_install, pool_num_threads};
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -631,12 +631,13 @@ pub fn group_by_values(
         return Ok(GroupsSlice::from(vec![]));
     }
 
-    let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
+    let n_threads = pool_num_threads();
+    let mut thread_offsets = _split_offsets(time.len(), n_threads);
     // there are duplicates in the splits, so we opt for a single partition
     prune_splits_on_duplicates(time, &mut thread_offsets);
 
     // If we start from within parallel work we will do this single threaded.
-    let run_parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
+    let run_parallel = n_threads > 1 && !POOL.current_thread_has_pending_tasks().unwrap_or(false);
 
     // we have a (partial) lookbehind window
     if offset.negative && !offset.is_zero() {
@@ -659,7 +660,7 @@ pub fn group_by_values(
                 return Ok(GroupsSlice::from(vecs));
             }
 
-            POOL.install(|| {
+            pool_install(|| {
                 let vals = thread_offsets
                     .par_iter()
                     .copied()
@@ -732,7 +733,7 @@ pub fn group_by_values(
             return Ok(GroupsSlice::from(vecs));
         }
 
-        POOL.install(|| {
+        pool_install(|| {
             let vals = thread_offsets
                 .par_iter()
                 .copied()
@@ -772,7 +773,7 @@ pub fn group_by_values(
         // it must be that the window starts at t and t is a member
         // --t-----------
         //  [---]
-        POOL.install(|| {
+        pool_install(|| {
             let vals = thread_offsets
                 .par_iter()
                 .copied()

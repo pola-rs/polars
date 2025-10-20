@@ -2,6 +2,7 @@ use arrow::bitmap::MutableBitmap;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
+use crate::pool_install;
 
 pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
     df.iter_chunks_physical().flat_map(|chunk| {
@@ -74,7 +75,7 @@ fn flatten_par_impl<T: Send + Sync + Copy>(
     let mut out = Vec::with_capacity(len);
     let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
 
-    POOL.install(|| {
+    pool_install(|| {
         offsets.into_par_iter().enumerate().for_each(|(i, offset)| {
             let buf = bufs[i];
             let ptr: *mut T = out_ptr.get();

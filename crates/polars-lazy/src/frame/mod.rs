@@ -23,9 +23,9 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
-use polars_core::POOL;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_core::{pool_install, pool_num_threads};
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::RowIndex;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
@@ -792,10 +792,10 @@ impl LazyFrame {
                 if let Some(mut cache_prefiller) = multiplan.cache_prefiller {
                     cache_prefiller.execute(&mut state)?;
                 }
-                let out = POOL.install(|| {
+                let out = pool_install(|| {
                     multiplan
                         .physical_plans
-                        .chunks_mut(POOL.current_num_threads() * 3)
+                        .chunks_mut(pool_num_threads() * 3)
                         .map(|chunk| {
                             chunk
                                 .into_par_iter()

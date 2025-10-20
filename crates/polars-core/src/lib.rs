@@ -49,7 +49,7 @@ pub static PROCESS_ID: LazyLock<u128> = LazyLock::new(|| {
 
 // Thread locals to allow disabling threading for specific threads.
 thread_local! {
-    static ALLOW_THREADS: Cell<bool> = Cell::new(true);
+    static ALLOW_THREADS: Cell<bool> = const { Cell::new(true) };
     static NOOP_POOL: RefCell<ThreadPool> = RefCell::new(ThreadPoolBuilder::new()
         .use_current_thread()
         .num_threads(1)
@@ -57,18 +57,26 @@ thread_local! {
         .expect("could not create no-op thread pool"));
 }
 
-/// Perform the `op` without rayon threading.
-///
-/// Cannot be called from a rayon thread.
+/// Try to perform the `op` without rayon threading.
 pub fn without_threading<R>(op: impl FnOnce() -> R) -> R {
     // This can only be done from threads that are not in the main threadpool.
-    assert!(!POOL.current_thread_index().is_some());
+    if POOL.current_thread_index().is_some() {
+        op()
+    } else {
+        let prev = ALLOW_THREADS.replace(false);
+        // @Q? Should this catch_unwind?
+        let result = op();
+        ALLOW_THREADS.set(prev);
+        result
+    }
+}
 
-    let prev = ALLOW_THREADS.replace(false);
-    // @Q? Should this catch_unwind?
-    let result = op();
-    ALLOW_THREADS.set(prev);
-    result
+pub fn pool_num_threads() -> usize {
+    if ALLOW_THREADS.get() || POOL.current_thread_index().is_some() {
+        POOL.current_num_threads()
+    } else {
+        1
+    }
 }
 
 /// Install the correct thread-pool for the current operation.
@@ -79,7 +87,18 @@ where
     OP: FnOnce() -> R + Send,
     R: Send,
 {
-    if ALLOW_THREADS.get() || POOL.current_thread_index().is_some() {
+    pool_install_when(true, op)
+}
+
+/// Optionally install the correct thread-pool for the current operation.
+///
+/// This may not actually run on multiple threads.
+pub fn pool_install_when<OP, R>(allow_threads: bool, op: OP) -> R
+where
+    OP: FnOnce() -> R + Send,
+    R: Send,
+{
+    if (allow_threads && ALLOW_THREADS.get()) || POOL.current_thread_index().is_some() {
         POOL.install(op)
     } else {
         NOOP_POOL.with(|v| v.borrow().install(op))

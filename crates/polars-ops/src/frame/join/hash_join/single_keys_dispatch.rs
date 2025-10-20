@@ -473,7 +473,7 @@ where
     for<'a> <T::Physical<'a> as ToTotalOrd>::TotalOrdItem:
         Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = pool_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
     let splitted_a = split(a, n_threads);
     let splitted_b = split(b, n_threads);
@@ -587,7 +587,7 @@ where
     T::Native: DirtyHash + Copy + ToTotalOrd,
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = pool_num_threads();
     let splitted_a = split(left, n_threads);
     let splitted_b = split(right, n_threads);
     match (
@@ -720,7 +720,7 @@ where
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash + IsNull,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = pool_num_threads();
     let splitted_a = split(left, n_threads);
     let splitted_b = split(right, n_threads);
     match (

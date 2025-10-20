@@ -1,6 +1,6 @@
-use polars_core::POOL;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
+use polars_core::{POOL, pool_install};
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
@@ -60,7 +60,7 @@ pub(super) fn update_groups_sort_by(
 ) -> PolarsResult<GroupsType> {
     // Will trigger a gather for every group, so rechunk before.
     let sort_by_s = sort_by_s.rechunk();
-    let groups = POOL.install(|| {
+    let groups = pool_install(|| {
         groups
             .par_iter()
             .map(|indicator| sort_by_groups_single_by(indicator, &sort_by_s, options))
@@ -115,7 +115,7 @@ fn sort_by_groups_no_match_single<'a>(
     let mut s_by = s_by.list().unwrap().clone();
 
     let dtype = s_in.dtype().clone();
-    let ca: PolarsResult<ListChunked> = POOL.install(|| {
+    let ca: PolarsResult<ListChunked> = pool_install(|| {
         s_in.par_iter_indexed()
             .zip(s_by.par_iter_indexed())
             .map(|(opt_s, s_sort_by)| match (opt_s, s_sort_by) {
@@ -213,7 +213,7 @@ impl PhysicalExpr for SortByExpr {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
                 Ok(s_sort_by.arg_sort(SortOptions::from(&self.sort_options)))
             };
-            POOL.install(|| rayon::join(series_f, sorted_idx_f))
+            pool_install(|| rayon::join(series_f, sorted_idx_f))
         } else {
             let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
             let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
@@ -275,7 +275,7 @@ impl PhysicalExpr for SortByExpr {
                     .as_materialized_series()
                     .arg_sort_multiple(&s_sort_by[1..], &options)
             };
-            POOL.install(|| rayon::join(series_f, sorted_idx_f))
+            pool_install(|| rayon::join(series_f, sorted_idx_f))
         };
         let (sorted_idx, series) = (sorted_idx?, series?);
         polars_ensure!(
@@ -390,7 +390,7 @@ impl PhysicalExpr for SortByExpr {
         } else {
             let groups = ac_sort_by[0].groups();
 
-            let groups = POOL.install(|| {
+            let groups = pool_install(|| {
                 groups
                     .par_iter()
                     .map(|indicator| {

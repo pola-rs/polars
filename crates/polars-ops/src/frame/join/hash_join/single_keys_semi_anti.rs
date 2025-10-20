@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
@@ -33,11 +34,11 @@ where
         }
         hash_tbl
     });
-    POOL.install(|| par_iter.collect())
+    pool_install(|| par_iter.collect())
 }
 
 /// Construct a ParallelIterator, but doesn't iterate it. This means the caller
-/// context (or wherever it gets iterated) should be in POOL.install.
+/// context (or wherever it gets iterated) should be in pool_install.
 fn semi_anti_impl<T, I>(
     probe: Vec<I>,
     build: Vec<I>,
@@ -57,7 +58,7 @@ where
     let n_tables = hash_sets.len();
 
     // next we probe the other relation
-    // This is not wrapped in POOL.install because it is not being iterated here
+    // This is not wrapped in pool_install because it is not being iterated here
     probe
         .into_par_iter()
         .zip(offsets)
@@ -105,7 +106,7 @@ where
     let par_iter = semi_anti_impl(probe, build, nulls_equal)
         .filter(|tpls| !tpls.1)
         .map(|tpls| tpls.0);
-    POOL.install(|| par_iter.collect())
+    pool_install(|| par_iter.collect())
 }
 
 pub(super) fn hash_join_tuples_left_semi<T, I>(
@@ -121,5 +122,5 @@ where
     let par_iter = semi_anti_impl(probe, build, nulls_equal)
         .filter(|tpls| tpls.1)
         .map(|tpls| tpls.0);
-    POOL.install(|| par_iter.collect())
+    pool_install(|| par_iter.collect())
 }

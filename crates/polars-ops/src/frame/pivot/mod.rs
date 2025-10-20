@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
-use polars_core::{POOL, downcast_as_macro_arg_physical};
+use polars_core::{downcast_as_macro_arg_physical, pool_install};
 use polars_utils::format_pl_smallstr;
 use rayon::prelude::*;
 pub use unpivot::UnpivotDF;
@@ -255,16 +255,18 @@ fn pivot_impl_single_column(
     let sep = separator.unwrap_or("_");
     let mut final_cols = vec![];
     let mut count = 0;
-    let out: PolarsResult<()> = POOL.install(|| {
+    let out: PolarsResult<()> = pool_install(|| {
         let mut group_by = index.to_vec();
         group_by.push(column.clone());
 
         let groups = pivot_df.group_by_stable(group_by)?.take_groups();
 
-        let (col, row) = POOL.join(
-            || positioning::compute_col_idx(pivot_df, column, &groups),
-            || positioning::compute_row_idx(pivot_df, index, &groups, count),
-        );
+        let (col, row) = pool_install(|| {
+            rayon::join(
+                || positioning::compute_col_idx(pivot_df, column, &groups),
+                || positioning::compute_row_idx(pivot_df, index, &groups, count),
+            )
+        });
         let (col_locations, column_agg) = col?;
         let (row_locations, n_rows, mut row_index) = row?;
 

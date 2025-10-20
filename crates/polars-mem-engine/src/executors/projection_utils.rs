@@ -1,3 +1,4 @@
+use polars_core::{pool_install, pool_num_threads};
 use polars_plan::constants::CSE_REPLACED;
 use polars_utils::itertools::Itertools;
 
@@ -21,7 +22,7 @@ fn rolling_evaluate(
     state: &ExecutionState,
     rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>>,
 ) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
-    POOL.install(|| {
+    pool_install(|| {
         rolling
             .par_iter()
             .map(|(options, partition)| {
@@ -52,7 +53,7 @@ fn window_evaluate(
     if window.is_empty() {
         return Ok(vec![]);
     }
-    let n_threads = POOL.current_num_threads();
+    let n_threads = pool_num_threads();
 
     let max_hor = window.values().map(|v| v.len()).max().unwrap_or(0);
     let vert = window.len();
@@ -119,7 +120,7 @@ fn window_evaluate(
     };
 
     if par_vertical {
-        POOL.install(|| window.par_iter().map(|t| apply(t.1)).collect())
+        pool_install(|| window.par_iter().map(|t| apply(t.1)).collect())
     } else {
         window.iter().map(|t| apply(t.1)).collect()
     }
@@ -190,7 +191,7 @@ fn execute_projection_cached_window_fns(
         }
     });
 
-    let mut selected_columns = POOL.install(|| {
+    let mut selected_columns = pool_install(|| {
         other
             .par_iter()
             .map(|(idx, expr)| expr.evaluate(df, state).map(|s| (*idx, s)))
@@ -202,10 +203,12 @@ fn execute_projection_cached_window_fns(
     // The rolling expression knows how to fetch the groups.
     #[cfg(feature = "dynamic_group_by")]
     {
-        let (a, b) = POOL.join(
-            || rolling_evaluate(df, state, rolling),
-            || window_evaluate(df, state, windows),
-        );
+        let (a, b) = pool_install(|| {
+            rayon::join(
+                || rolling_evaluate(df, state, rolling),
+                || window_evaluate(df, state, windows),
+            )
+        });
 
         let partitions = a?;
         for part in partitions {
@@ -234,7 +237,7 @@ fn run_exprs_par(
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
-    POOL.install(|| {
+    pool_install(|| {
         exprs
             .par_iter()
             .map(|expr| expr.evaluate(df, state))

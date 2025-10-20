@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
 
-use polars_core::POOL;
 use polars_core::datatypes::Field;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
+use polars_core::{pool_install, pool_num_threads};
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -126,7 +126,7 @@ impl<'a> CoreReader<'a> {
             self.parse_options.eol_char,
         )?;
 
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
+        let n_threads = self.n_threads.unwrap_or_else(pool_num_threads);
 
         // Copied from [`Self::parse_csv`]
         let n_parts_hint = n_threads * 16;
@@ -216,7 +216,7 @@ impl BatchedCsvReader<'_> {
             bytes = &bytes[pos..];
         }
 
-        let mut chunks = POOL.install(|| {
+        let mut chunks = pool_install(|| {
             chunks
                 .into_par_iter()
                 .copied()

@@ -3,6 +3,7 @@ use std::hash::Hash;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
+use polars_core::{pool_install, pool_num_threads};
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
@@ -22,7 +23,7 @@ pub(super) fn position_aggregates(
     let mut buf = vec![default_val.clone(); n_rows * n_cols];
     let start_ptr = buf.as_mut_ptr() as usize;
 
-    let n_threads = POOL.current_num_threads();
+    let n_threads = pool_num_threads();
     let split = _split_offsets(row_locations.len(), n_threads);
 
     // ensure the slice series are not dropped
@@ -33,7 +34,7 @@ pub(super) fn position_aggregates(
     // every thread will only write to their partition
     let array_ptr = unsafe { SyncPtr::new(arrays.as_mut_ptr()) };
 
-    POOL.install(|| {
+    pool_install(|| {
         split
             .into_par_iter()
             .enumerate()
@@ -115,7 +116,7 @@ pub(super) fn position_aggregates_numeric<T: PolarsNumericType>(
     let mut buf = vec![default_val; n_rows * n_cols];
     let start_ptr = buf.as_mut_ptr() as usize;
 
-    let n_threads = POOL.current_num_threads();
+    let n_threads = pool_num_threads();
 
     let split = _split_offsets(row_locations.len(), n_threads);
     let n_splits = split.len();
@@ -126,7 +127,7 @@ pub(super) fn position_aggregates_numeric<T: PolarsNumericType>(
     // every thread will only write to their partition
     let array_ptr = unsafe { SyncPtr::new(arrays.as_mut_ptr()) };
 
-    POOL.install(|| {
+    pool_install(|| {
         split
             .into_par_iter()
             .enumerate()

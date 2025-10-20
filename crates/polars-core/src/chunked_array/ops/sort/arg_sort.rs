@@ -263,7 +263,7 @@ pub(crate) fn arg_sort_row_fmt(
     let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
 
     if parallel {
-        POOL.install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));
+        pool_install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));
     } else {
         items.sort_by(|a, b| a.1.cmp(b.1));
     }

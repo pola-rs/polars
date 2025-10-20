@@ -2,6 +2,7 @@ use std::hash::BuildHasher;
 
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::legacy::utils::CustomIterTools;
+use polars_core::pool_install;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
@@ -21,7 +22,7 @@ where
     <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let build_hasher = build_hasher.unwrap_or_default();
-    let hashes = POOL.install(|| {
+    let hashes = pool_install(|| {
         iters
             .into_par_iter()
             .map(|iter| {
@@ -50,7 +51,7 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
+    pool_install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|partition_no| {

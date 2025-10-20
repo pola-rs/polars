@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -209,7 +209,7 @@ impl GroupBySinkState {
 
     fn combine_locals(&mut self) -> PolarsResult<Vec<GroupByPartition>> {
         // Finalize pre-aggregations.
-        POOL.install(|| {
+        pool_install(|| {
             self.locals
                 .as_mut_slice()
                 .into_par_iter()
@@ -416,7 +416,7 @@ impl GroupBySinkState {
         })?;
 
         // Drop remaining local state in parallel.
-        POOL.install(|| {
+        pool_install(|| {
             core::mem::take(&mut self.locals)
                 .into_par_iter()
                 .with_max_len(1)
@@ -537,7 +537,7 @@ impl ComputeNode for GroupByNode {
                     unreachable!()
                 };
                 let partitions = sink.combine_locals()?;
-                let dfs = POOL.install(|| {
+                let dfs = pool_install(|| {
                     partitions
                         .into_par_iter()
                         .map(|p| p.into_df(&self.key_schema, &self.output_schema))

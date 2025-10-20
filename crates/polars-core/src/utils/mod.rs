@@ -20,8 +20,8 @@ pub use series::*;
 pub use supertype::*;
 pub use {arrow, rayon};
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::{POOL, pool_num_threads};
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -35,7 +35,7 @@ impl<T> Deref for Wrap<T> {
 
 #[inline(always)]
 pub fn _set_partition_size() -> usize {
-    POOL.current_num_threads()
+    pool_num_threads()
 }
 
 /// Just a wrapper structure which is useful for certain impl specializations.

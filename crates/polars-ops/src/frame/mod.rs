@@ -3,8 +3,7 @@ pub mod join;
 pub mod pivot;
 
 pub use join::*;
-#[cfg(feature = "to_dummies")]
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_core::prelude::*;
 #[cfg(feature = "to_dummies")]
 use polars_core::utils::accumulate_dataframes_horizontal;
@@ -108,7 +107,7 @@ pub trait DataFrameOps: IntoDf {
             PlHashSet::from_iter(df.iter().map(|s| s.name().as_str()))
         };
 
-        let cols = POOL.install(|| {
+        let cols = pool_install(|| {
             df.get_columns()
                 .par_iter()
                 .map(|s| match set.contains(s.name().as_str()) {

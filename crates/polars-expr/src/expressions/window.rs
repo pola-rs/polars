@@ -5,7 +5,7 @@ use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::{POOL, downcast_as_macro_arg_physical};
+use polars_core::{POOL, downcast_as_macro_arg_physical, pool_install, pool_num_threads};
 use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
@@ -689,40 +689,36 @@ fn set_numeric<T: PolarsNumericType>(
 
     if ca.null_count() == 0 {
         let ca = ca.rechunk();
-        match groups {
+        pool_install(|| match groups {
             GroupsType::Idx(groups) => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
-                POOL.install(|| {
-                    agg_vals
-                        .par_iter()
-                        .zip(groups.all().par_iter())
-                        .for_each(|(v, g)| {
-                            let ptr = sync_ptr_values.get();
-                            for idx in g.as_slice() {
-                                debug_assert!((*idx as usize) < len);
-                                unsafe { *ptr.add(*idx as usize) = *v }
-                            }
-                        })
-                })
+                agg_vals
+                    .par_iter()
+                    .zip(groups.all().par_iter())
+                    .for_each(|(v, g)| {
+                        let ptr = sync_ptr_values.get();
+                        for idx in g.as_slice() {
+                            debug_assert!((*idx as usize) < len);
+                            unsafe { *ptr.add(*idx as usize) = *v }
+                        }
+                    })
             },
             GroupsType::Slice { groups, .. } => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
-                POOL.install(|| {
-                    agg_vals
-                        .par_iter()
-                        .zip(groups.par_iter())
-                        .for_each(|(v, [start, g_len])| {
-                            let ptr = sync_ptr_values.get();
-                            let start = *start as usize;
-                            let end = start + *g_len as usize;
-                            for idx in start..end {
-                                debug_assert!(idx < len);
-                                unsafe { *ptr.add(idx) = *v }
-                            }
-                        })
-                });
+                agg_vals
+                    .par_iter()
+                    .zip(groups.par_iter())
+                    .for_each(|(v, [start, g_len])| {
+                        let ptr = sync_ptr_values.get();
+                        let start = *start as usize;
+                        let end = start + *g_len as usize;
+                        for idx in start..end {
+                            debug_assert!(idx < len);
+                            unsafe { *ptr.add(idx) = *v }
+                        }
+                    })
             },
-        }
+        });
 
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
@@ -734,7 +730,7 @@ fn set_numeric<T: PolarsNumericType>(
         let validity_ptr = validity.as_mut_ptr();
         let sync_ptr_validity = unsafe { SyncPtr::new(validity_ptr) };
 
-        let n_threads = POOL.current_num_threads();
+        let n_threads = pool_num_threads();
         let offsets = _split_offsets(ca.len(), n_threads);
 
         match groups {

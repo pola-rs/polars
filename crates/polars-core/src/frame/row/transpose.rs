@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use either::Either;
 
 use super::*;
+use crate::pool_install;
 
 impl DataFrame {
     pub(crate) fn transpose_from_dtype(
@@ -185,7 +186,7 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
     let values_buf_ptr = &mut values_buf as *mut Vec<Vec<T::Native>> as usize;
     let validity_buf_ptr = &mut validity_buf as *mut Vec<Vec<bool>> as usize;
 
-    POOL.install(|| {
+    pool_install(|| {
         cols.iter()
             .map(Column::as_materialized_series)
             .enumerate()
@@ -258,7 +259,7 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
             );
             ChunkedArray::<T>::with_chunk(name.clone(), arr).into_column()
         });
-    POOL.install(|| cols_t.par_extend(par_iter));
+    pool_install(|| cols_t.par_extend(par_iter));
 }
 
 #[cfg(test)]

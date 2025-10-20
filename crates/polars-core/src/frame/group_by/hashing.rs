@@ -7,10 +7,10 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 use polars_utils::unitvec;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::hashing::*;
 use crate::prelude::*;
 use crate::utils::flatten;
+use crate::{POOL, pool_install};
 
 fn get_init_size() -> usize {
     // we check if this is executed from the main thread
@@ -34,7 +34,7 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
             let mut items = Vec::with_capacity(cap);
             let items_ptr = unsafe { SyncPtr::new(items.as_mut_ptr()) };
 
-            POOL.install(|| {
+            pool_install(|| {
                 out.into_par_iter()
                     .zip(offsets)
                     .for_each(|(mut g, offset)| {
@@ -128,7 +128,7 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let out = POOL.install(|| {
+    let out = pool_install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
@@ -182,7 +182,7 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let out = POOL.install(|| {
+    let out = pool_install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {

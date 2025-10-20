@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
 use crossbeam_queue::ArrayQueue;
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_error::PolarsResult;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
@@ -123,7 +123,7 @@ impl Default for BufferedStream {
 
 impl Drop for BufferedStream {
     fn drop(&mut self) {
-        POOL.install(|| {
+        pool_install(|| {
             // Parallel drop as the state might be quite big.
             (0..self.morsels.len())
                 .into_par_iter()

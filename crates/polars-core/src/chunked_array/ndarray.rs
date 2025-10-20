@@ -3,7 +3,7 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::POOL;
+use crate::pool_install;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -106,7 +106,7 @@ impl DataFrame {
         let ptr = membuf.as_ptr() as usize;
 
         let columns = self.get_columns();
-        POOL.install(|| {
+        pool_install(|| {
             columns.par_iter().enumerate().try_for_each(|(col_idx, s)| {
                 let s = s.as_materialized_series().cast(&N::get_static_dtype())?;
                 let s = match s.dtype() {

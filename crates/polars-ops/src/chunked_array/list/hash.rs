@@ -2,7 +2,7 @@ use std::hash::{BuildHasher, Hash};
 
 use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
-use polars_core::{POOL, with_match_physical_float_polars_type};
+use polars_core::{pool_install, with_match_physical_float_polars_type};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
@@ -61,7 +61,7 @@ pub(crate) fn hash(
 
     ca.set_inner_dtype(ca.inner_dtype().to_physical());
 
-    let out: NoNull<UInt64Chunked> = POOL.install(|| {
+    let out: NoNull<UInt64Chunked> = pool_install(|| {
         ca.par_iter()
             .map(|opt_s: Option<Series>| match opt_s {
                 None => null_hash,

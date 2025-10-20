@@ -2,7 +2,7 @@ use std::io::Write;
 use std::sync::Mutex;
 
 use arrow::record_batch::RecordBatch;
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_core::prelude::*;
 use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
@@ -217,7 +217,7 @@ fn create_serializer(
     )| { array_to_pages_iter(array, type_, column_options, options) };
 
     let columns = if parallel {
-        POOL.install(|| {
+        pool_install(|| {
             batch
                 .columns()
                 .par_iter()

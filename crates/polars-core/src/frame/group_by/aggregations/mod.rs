@@ -37,7 +37,7 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{POOL, apply_method_physical_integer};
+use crate::{apply_method_physical_integer, pool_install};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -166,7 +166,7 @@ where
     F: Fn((IdxSize, &IdxVec)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: ChunkedArray<T> = pool_install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -176,7 +176,7 @@ where
     F: Fn((IdxSize, &IdxVec)) -> T::Native + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: NoNull<ChunkedArray<T>> = pool_install(|| groups.into_par_iter().map(f).collect());
     ca.into_inner().into_series()
 }
 
@@ -187,7 +187,7 @@ where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
+    let ca: ChunkedArray<T> = pool_install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -198,7 +198,7 @@ where
     T: PolarsNumericType,
 {
     let ca: NoNull<ChunkedArray<T>> =
-        POOL.install(|| groups.all().into_par_iter().map(f).collect());
+        pool_install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_inner().into_series()
 }
 
@@ -207,7 +207,7 @@ where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: ChunkedArray<T> = pool_install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
@@ -216,7 +216,7 @@ where
     F: Fn([IdxSize; 2]) -> T::Native + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: NoNull<ChunkedArray<T>> = pool_install(|| groups.par_iter().copied().map(f).collect());
     ca.into_inner().into_series()
 }
 

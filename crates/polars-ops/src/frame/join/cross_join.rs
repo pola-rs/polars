@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_core::utils::{
     _set_partition_size, CustomIterTools, NoNull, accumulate_dataframes_vertical_unchecked,
     concat_df_unchecked, split,
@@ -122,7 +123,7 @@ fn cross_join_dfs<'a>(
     };
     let (l_df, r_df) = if parallel {
         try_raise_keyboard_interrupt();
-        POOL.install(|| rayon::join(create_left_df, create_right_df))
+        pool_install(|| rayon::join(create_left_df, create_right_df))
     } else {
         (create_left_df(), create_right_df())
     };

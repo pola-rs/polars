@@ -1,4 +1,5 @@
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_core::{pool_install, pool_num_threads};
 
 use super::*;
 
@@ -63,7 +64,7 @@ impl FilterExec {
             // @partition-opt
             df.filter(column_to_mask(&c)?)
         });
-        let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+        let df = pool_install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
         Ok(accumulate_dataframes_vertical_unchecked(df))
     }
 
@@ -72,7 +73,7 @@ impl FilterExec {
         mut df: DataFrame,
         state: &mut ExecutionState,
     ) -> PolarsResult<DataFrame> {
-        let n_partitions = POOL.current_num_threads();
+        let n_partitions = pool_num_threads();
         // Vertical parallelism.
         if self.streamable && df.height() > 0 {
             if df.first_col_n_chunks() > 1 {

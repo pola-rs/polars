@@ -6,7 +6,7 @@ use polars_utils::idx_vec::IdxVec;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
-use crate::POOL;
+use crate::pool_install;
 use crate::prelude::*;
 use crate::utils::{NoNull, flatten, slice_slice};
 
@@ -55,7 +55,7 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
         let mut all = Vec::with_capacity(cap);
         let all_ptr = all.as_ptr() as usize;
 
-        POOL.install(|| {
+        pool_install(|| {
             v.into_par_iter()
                 .zip(offsets)
                 .for_each(|(mut inner, offset)| {
@@ -119,7 +119,7 @@ impl GroupsIdx {
                 })
                 .collect_trusted::<Vec<_>>()
         };
-        let (first, all) = POOL.install(|| rayon::join(take_first, take_all));
+        let (first, all) = pool_install(|| rayon::join(take_first, take_all));
         self.first = first;
         self.all = all;
         self.sorted = true

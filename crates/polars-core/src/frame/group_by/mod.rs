@@ -8,7 +8,7 @@ use polars_utils::hashing::DirtyHash;
 use rayon::prelude::*;
 
 use self::hashing::*;
-use crate::POOL;
+use crate::pool_install;
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 
@@ -260,7 +260,7 @@ impl<'a> GroupBy<'a> {
         } else {
             &self.groups
         };
-        POOL.install(|| {
+        pool_install(|| {
             self.selected_keys
                 .par_iter()
                 .map(Column::as_materialized_series)

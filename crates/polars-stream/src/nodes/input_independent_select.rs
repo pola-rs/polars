@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_core::prelude::IntoColumn;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::*;
@@ -38,7 +38,7 @@ impl ComputeNode for InputIndependentSelectNode {
             return Ok(());
         }
 
-        POOL.install(|| {
+        pool_install(|| {
             if let Self::ToSelect { selectors } = self {
                 let empty_df = DataFrame::empty();
                 let state = ExecutionState::new();

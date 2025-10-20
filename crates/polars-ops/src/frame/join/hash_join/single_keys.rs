@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
@@ -8,7 +9,7 @@ use polars_utils::unitvec;
 use super::*;
 
 // FIXME: we should compute the number of threads / partition size we'll use.
-// let avail_threads = POOL.current_num_threads();
+// let avail_threads = pool_num_threads();
 // let n_threads = (num_keys / MIN_ELEMS_PER_THREAD).clamp(1, avail_threads);
 // Use a small element per thread threshold for debugging/testing purposes.
 const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 };
@@ -47,7 +48,7 @@ where
         return vec![hm];
     }
 
-    POOL.install(|| {
+    pool_install(|| {
         // Compute the number of elements in each partition for each portion.
         let per_thread_partition_sizes: Vec<Vec<usize>> = keys
             .par_iter()

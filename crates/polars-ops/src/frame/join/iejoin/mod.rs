@@ -12,7 +12,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, split};
-use polars_core::{POOL, with_match_physical_numeric_polars_type};
+use polars_core::{POOL, pool_install, with_match_physical_numeric_polars_type};
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::binary_search::ExponentialSearch;
@@ -324,7 +324,7 @@ pub(super) fn iejoin_par(
         }
     });
 
-    let row_indices = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+    let row_indices = pool_install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
 
     let mut left_idx = IdxCa::default();
     let mut right_idx = IdxCa::default();

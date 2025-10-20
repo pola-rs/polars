@@ -1,5 +1,5 @@
 use AnyValue::Null;
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, slice_offsets};
 use polars_utils::idx_vec::IdxVec;
@@ -84,7 +84,7 @@ impl PhysicalExpr for SliceExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let results = POOL.install(|| {
+        let results = pool_install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
                 .map(|e| e.evaluate(df, state))
@@ -104,7 +104,7 @@ impl PhysicalExpr for SliceExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let mut results = POOL.install(|| {
+        let mut results = pool_install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
                 .map(|e| e.evaluate_on_groups(df, groups, state))

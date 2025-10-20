@@ -83,7 +83,7 @@ where
 {
     let iter = lfs.into_par_iter();
 
-    polars_core::POOL.install(|| iter.map(|lf| lf.collect()).collect())
+    polars_core::pool_install(|| iter.map(|lf| lf.collect()).collect())
 }
 
 #[cfg(test)]

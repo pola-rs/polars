@@ -4,7 +4,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
 use polars_core::utils::dtypes_to_supertype;
-use polars_core::{POOL, with_match_physical_numeric_polars_type};
+use polars_core::{pool_install, with_match_physical_numeric_polars_type};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 fn validate_column_lengths(cs: &[Column]) -> PolarsResult<()> {
@@ -143,7 +143,7 @@ pub fn max_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
         _ => {
             // the try_reduce_with is a bit slower in parallelism,
             // but I don't think it matters here as we parallelize over columns, not over elements
-            POOL.install(|| {
+            pool_install(|| {
                 columns
                     .par_iter()
                     .map(|s| Ok(Cow::Borrowed(s)))
@@ -169,7 +169,7 @@ pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
         _ => {
             // the try_reduce_with is a bit slower in parallelism,
             // but I don't think it matters here as we parallelize over columns, not over elements
-            POOL.install(|| {
+            pool_install(|| {
                 columns
                     .par_iter()
                     .map(|s| Ok(Cow::Borrowed(s)))
@@ -249,7 +249,7 @@ pub fn sum_horizontal(
         _ => {
             // the try_reduce_with is a bit slower in parallelism,
             // but I don't think it matters here as we parallelize over columns, not over elements
-            let out = POOL.install(|| {
+            let out = pool_install(|| {
                 non_null_cols
                     .into_par_iter()
                     .cloned()
@@ -313,7 +313,7 @@ pub fn mean_horizontal(
                     .unwrap()
             };
 
-            let (sum, null_count) = POOL.install(|| rayon::join(sum, null_count));
+            let (sum, null_count) = pool_install(|| rayon::join(sum, null_count));
             let sum = sum?;
             let null_count = null_count?;
 

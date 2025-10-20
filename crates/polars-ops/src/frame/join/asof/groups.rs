@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
 use polars_core::utils::split_and_flatten;
-use polars_core::{POOL, with_match_physical_float_polars_type};
+use polars_core::{POOL, pool_install, pool_num_threads, with_match_physical_float_polars_type};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
@@ -88,11 +88,12 @@ where
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
+    let (left_asof, right_asof) =
+        pool_install(|| rayon::join(|| left_asof.rechunk(), || right_asof.rechunk()));
     let left_val_arr = left_asof.downcast_as_array();
     let right_val_arr = right_asof.downcast_as_array();
 
-    let n_threads = POOL.current_num_threads();
+    let n_threads = pool_num_threads();
     // `strict` is false so that we always flatten. Even if there are more chunks than threads.
     let split_by_left = split_and_flatten(by_left, n_threads);
     let split_by_right = split_and_flatten(by_right, n_threads);
@@ -153,7 +154,7 @@ where
             results
         });
 
-    let bufs = POOL.install(|| out.collect::<Vec<_>>());
+    let bufs = pool_install(|| out.collect::<Vec<_>>());
     Ok(flatten_nullable(&bufs))
 }
 
@@ -216,7 +217,7 @@ where
             }
             results
         });
-    let bufs = POOL.install(|| iter.collect::<Vec<_>>());
+    let bufs = pool_install(|| iter.collect::<Vec<_>>());
     flatten_nullable(&bufs)
 }
 

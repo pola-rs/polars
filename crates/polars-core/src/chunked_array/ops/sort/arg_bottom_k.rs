@@ -58,10 +58,10 @@ pub fn _arg_bottom_k(
 
     let sorted = if k >= from_n_rows {
         match (sort_options.multithreaded, sort_options.maintain_order) {
-            (true, true) => POOL.install(|| {
+            (true, true) => pool_install(|| {
                 rows.par_sort();
             }),
-            (true, false) => POOL.install(|| {
+            (true, false) => pool_install(|| {
                 rows.par_sort_unstable();
             }),
             (false, true) => rows.sort(),
@@ -71,7 +71,7 @@ pub fn _arg_bottom_k(
     } else if sort_options.maintain_order {
         // todo: maybe there is some more efficient method, comparable to select_nth_unstable
         if sort_options.multithreaded {
-            POOL.install(|| {
+            pool_install(|| {
                 rows.par_sort();
             })
         } else {
@@ -82,7 +82,7 @@ pub fn _arg_bottom_k(
         // todo: possible multi threaded `select_nth_unstable`?
         let (lower, _el, _upper) = rows.select_nth_unstable(k);
         if sort_options.multithreaded {
-            POOL.install(|| {
+            pool_install(|| {
                 lower.par_sort_unstable();
             })
         } else {

@@ -1,4 +1,4 @@
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
@@ -148,7 +148,7 @@ pub trait ToStruct: AsList {
         let ca = self.as_list();
         let n_fields = args.det_n_fields(ca);
 
-        let mut fields = POOL.install(|| {
+        let mut fields = pool_install(|| {
             (0..n_fields)
                 .into_par_iter()
                 .map(|i| ca.lst_get(i as i64, true))

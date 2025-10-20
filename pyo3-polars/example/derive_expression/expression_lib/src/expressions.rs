@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars::prelude::*;
 use polars_plan::prelude::FieldsMapper;
 use pyo3_polars::derive::{polars_expr, CallerContext};
-use pyo3_polars::export::polars_core::POOL;
+use pyo3_polars::export::polars_core::{pool_install, pool_num_threads};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -70,8 +70,8 @@ fn pig_latinnify_with_parallelism(
         });
         Ok(out.into_series())
     } else {
-        POOL.install(|| {
-            let n_threads = POOL.current_num_threads();
+        pool_install(|| {
+            let n_threads = pool_num_threads();
             let splits = split_offsets(ca.len(), n_threads);
 
             let chunks: Vec<_> = splits

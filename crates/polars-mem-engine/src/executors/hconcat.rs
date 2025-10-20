@@ -1,4 +1,5 @@
 use polars_core::functions::concat_df_horizontal;
+use polars_core::{pool_install, pool_num_threads};
 
 use super::*;
 
@@ -38,9 +39,9 @@ impl Executor for HConcatExec {
             // We don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
             // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
             // within bounds
-            let out = POOL.install(|| {
+            let out = pool_install(|| {
                 inputs
-                    .chunks_mut(POOL.current_num_threads() * 3)
+                    .chunks_mut(pool_num_threads() * 3)
                     .map(|chunk| {
                         chunk
                             .into_par_iter()

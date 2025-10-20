@@ -4,7 +4,7 @@ pub fn _agg_helper_idx_bin<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &'a IdxVec)) -> Option<&'a [u8]> + Send + Sync,
 {
-    let ca: BinaryChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BinaryChunked = pool_install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -12,7 +12,7 @@ pub fn _agg_helper_slice_bin<'a, F>(groups: &'a [[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<&'a [u8]> + Send + Sync,
 {
-    let ca: BinaryChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BinaryChunked = pool_install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 

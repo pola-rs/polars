@@ -4,6 +4,7 @@ use arrow::legacy::kernels::sorted_join;
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
 use polars_core::utils::flatten::flatten_par;
+use polars_core::{pool_install, pool_num_threads};
 
 use super::*;
 
@@ -15,7 +16,7 @@ fn par_sorted_merge_left_impl<T>(
 where
     T: PolarsNumericType,
 {
-    let offsets = _split_offsets(s_left.len(), POOL.current_num_threads());
+    let offsets = _split_offsets(s_left.len(), pool_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
 
@@ -27,7 +28,7 @@ where
         let slice_left = &slice_left[offset..offset + len];
         sorted_join::left::join(slice_left, slice_right, offset as IdxSize)
     });
-    let indexes = POOL.install(|| indexes.collect::<Vec<_>>());
+    let indexes = pool_install(|| indexes.collect::<Vec<_>>());
 
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
@@ -95,7 +96,7 @@ fn par_sorted_merge_inner_impl<T>(
 where
     T: PolarsNumericType,
 {
-    let offsets = _split_offsets(s_left.len(), POOL.current_num_threads());
+    let offsets = _split_offsets(s_left.len(), pool_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
 
@@ -107,7 +108,7 @@ where
         let slice_left = &slice_left[offset..offset + len];
         sorted_join::inner::join(slice_left, slice_right, offset as IdxSize)
     });
-    let indexes = POOL.install(|| indexes.collect::<Vec<_>>());
+    let indexes = pool_install(|| indexes.collect::<Vec<_>>());
 
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
@@ -251,7 +252,7 @@ pub(crate) fn _sort_or_hash_inner(
 
             let (left, mut right) = ids;
 
-            POOL.install(|| {
+            pool_install(|| {
                 right.par_iter_mut().for_each(|idx| {
                     *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
                 });
@@ -279,7 +280,7 @@ pub(crate) fn _sort_or_hash_inner(
 
             let (mut left, right) = ids;
 
-            POOL.install(|| {
+            pool_install(|| {
                 left.par_iter_mut().for_each(|idx| {
                     *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
                 });
@@ -351,7 +352,7 @@ pub(crate) fn sort_or_hash_left(
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
             let (left, mut right) = ids;
 
-            POOL.install(|| {
+            pool_install(|| {
                 right.par_iter_mut().for_each(|opt_idx| {
                     if !opt_idx.is_null_idx() {
                         *opt_idx =

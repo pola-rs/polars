@@ -11,6 +11,7 @@ use crate::config::verbose;
 use crate::series::BitRepr;
 use crate::utils::Container;
 use crate::utils::flatten::flatten_par;
+use crate::{pool_install, pool_num_threads};
 
 /// Used to create the tuples for a group_by operation.
 pub trait IntoGroupsType {
@@ -24,7 +25,7 @@ pub trait IntoGroupsType {
 
 fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     // TODO! change to something sensible
-    ca.len() > 1000 && POOL.current_num_threads() > 1
+    ca.len() > 1000 && pool_num_threads() > 1
 }
 
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsType
@@ -90,7 +91,7 @@ where
             values = &values[..length - null_count];
         };
 
-        let n_threads = POOL.current_num_threads();
+        let n_threads = pool_num_threads();
         if multithreaded && n_threads > 1 {
             let parts =
                 create_clean_partitions(values, n_threads, self.is_sorted_descending_flag());
@@ -121,7 +122,7 @@ where
                     partition_to_groups(part, 0, false, offset)
                 }
             });
-            let groups = POOL.install(|| groups.collect::<Vec<_>>());
+            let groups = pool_install(|| groups.collect::<Vec<_>>());
             flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
@@ -185,7 +186,7 @@ where
 }
 impl IntoGroupsType for BooleanChunked {
     fn group_tuples(&self, mut multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= pool_num_threads() > 1;
 
         #[cfg(feature = "performant")]
         {
@@ -231,7 +232,7 @@ impl IntoGroupsType for BinaryChunked {
             });
         }
 
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= pool_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
         let out = if multithreaded {
@@ -264,7 +265,7 @@ impl IntoGroupsType for BinaryOffsetChunked {
                 overlapping: false,
             });
         }
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= pool_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
         let out = if multithreaded {
@@ -287,7 +288,7 @@ impl IntoGroupsType for ListChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= pool_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
             encode_rows_vertical_par_unordered(by).unwrap()
@@ -308,7 +309,7 @@ impl IntoGroupsType for ArrayChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= pool_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
             encode_rows_vertical_par_unordered(by).unwrap()

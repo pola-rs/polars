@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_core::utils::flatten;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
@@ -75,7 +76,7 @@ where
     let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    let out = POOL.install(|| {
+    let out = pool_install(|| {
         let tuples = probe
             .into_par_iter()
             .zip(offsets)

@@ -1,4 +1,4 @@
-use polars_core::POOL;
+use polars_core::pool_num_threads;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
 use polars_plan::plans::expr_ir::ExprIR;
@@ -555,7 +555,7 @@ fn create_physical_plan_impl(
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
-            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
+            let mut state = ExpressionConversionState::new(pool_num_threads() > expr.len());
             let phys_expr = create_physical_expressions_from_irs(
                 &expr,
                 Context::Default,
@@ -830,8 +830,7 @@ fn create_physical_plan_impl(
                     .iter()
                     .all(|e| is_elementwise_rec(e.node(), expr_arena));
 
-            let mut state =
-                ExpressionConversionState::new(POOL.current_num_threads() > exprs.len());
+            let mut state = ExpressionConversionState::new(pool_num_threads() > exprs.len());
 
             let phys_exprs = create_physical_expressions_from_irs(
                 &exprs,

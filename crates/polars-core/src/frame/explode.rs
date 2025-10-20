@@ -4,8 +4,8 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::POOL;
 use crate::chunked_array::ops::explode::offsets_to_indexes;
+use crate::pool_install;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -54,7 +54,7 @@ impl DataFrame {
             df = df.drop(s.name().as_str())?;
         }
 
-        let exploded_columns = POOL.install(|| {
+        let exploded_columns = pool_install(|| {
             columns
                 .par_iter()
                 .map(Column::as_materialized_series)
@@ -113,7 +113,7 @@ impl DataFrame {
             process_column(self, &mut df, exploded.clone())?;
             PolarsResult::Ok(df)
         };
-        let (df, result) = POOL.join(process_first, check_offsets);
+        let (df, result) = pool_install(|| rayon::join(process_first, check_offsets));
         let mut df = df?;
         result?;
 

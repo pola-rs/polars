@@ -7,7 +7,7 @@ pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BooleanChunked = pool_install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -15,7 +15,7 @@ pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BooleanChunked = pool_install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
@@ -188,7 +188,7 @@ impl BooleanChunked {
         let values = self.rechunk();
         let values = values.downcast_as_array();
 
-        let ca: BooleanChunked = POOL.install(|| {
+        let ca: BooleanChunked = pool_install(|| {
             let validity = values
                 .validity()
                 .filter(|v| v.unset_bits() > 0)

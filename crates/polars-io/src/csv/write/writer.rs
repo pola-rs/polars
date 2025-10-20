@@ -1,8 +1,8 @@
 use std::io::Write;
 use std::num::NonZeroUsize;
 
-use polars_core::POOL;
 use polars_core::frame::DataFrame;
+use polars_core::pool_num_threads;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 
@@ -41,7 +41,7 @@ where
             header: true,
             bom: false,
             batch_size: NonZeroUsize::new(1024).unwrap(),
-            n_threads: POOL.current_num_threads(),
+            n_threads: pool_num_threads(),
         }
     }
 

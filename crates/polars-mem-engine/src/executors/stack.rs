@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_plan::constants::CSE_REPLACED;
 
@@ -42,7 +43,7 @@ impl StackExec {
                 Ok(df)
             });
 
-            let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let df = pool_install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             accumulate_dataframes_vertical_unchecked(df)
         }
         // Only horizontal parallelism

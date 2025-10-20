@@ -3,9 +3,9 @@ pub(super) mod batched;
 use std::fmt;
 use std::sync::Mutex;
 
-use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
+use polars_core::{POOL, pool_install, pool_num_threads};
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -71,7 +71,7 @@ pub fn cast_columns(
     };
 
     if parallel {
-        let cols = POOL.install(|| {
+        let cols = pool_install(|| {
             df.get_columns()
                 .into_par_iter()
                 .map(|s| {
@@ -354,7 +354,7 @@ impl<'a> CoreReader<'a> {
             return Ok(df);
         }
 
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
+        let n_threads = self.n_threads.unwrap_or_else(pool_num_threads);
 
         // This is chosen by benchmarking on ny city trip csv dataset.
         // We want small enough chunks such that threads start working as soon as possible
@@ -379,7 +379,7 @@ impl<'a> CoreReader<'a> {
         #[cfg(not(target_family = "wasm"))]
         let pool;
         #[cfg(not(target_family = "wasm"))]
-        let pool = if n_threads == POOL.current_num_threads() {
+        let pool = if n_threads == pool_num_threads() {
             &POOL
         } else {
             pool = rayon::ThreadPoolBuilder::new()

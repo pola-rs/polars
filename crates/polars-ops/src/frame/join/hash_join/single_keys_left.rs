@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_core::utils::flatten::flatten_par;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
@@ -143,7 +144,7 @@ where
     let offsets = probe_to_offsets(&probe);
 
     // next we probe the other relation
-    let result: Vec<LeftJoinIds> = POOL.install(move || {
+    let result: Vec<LeftJoinIds> = pool_install(move || {
         probe
             .into_par_iter()
             .zip(offsets)

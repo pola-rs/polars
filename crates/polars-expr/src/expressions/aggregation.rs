@@ -2,10 +2,10 @@ use std::borrow::Cow;
 
 use arrow::legacy::utils::CustomIterTools;
 use polars_compute::rolling::QuantileMethod;
-use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_split_offsets, NoNull};
+use polars_core::{POOL, pool_install, pool_num_threads};
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
@@ -547,10 +547,10 @@ where
     {
         return f(s);
     }
-    let n_threads = POOL.current_num_threads();
+    let n_threads = pool_num_threads();
     let splits = _split_offsets(s.len(), n_threads);
 
-    let chunks = POOL.install(|| {
+    let chunks = pool_install(|| {
         splits
             .into_par_iter()
             .map(|(offset, len)| {

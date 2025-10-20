@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::chunked_array::from_iterator_par::{
     ChunkedCollectParIterExt, try_list_from_par_iter,
 };
+use polars_core::pool_install;
 use polars_core::prelude::*;
 use rayon::prelude::*;
 
@@ -73,7 +73,7 @@ impl ApplyExpr {
     ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, state);
         if self.allow_threading {
-            POOL.install(|| self.inputs.par_iter().map(f).collect())
+            pool_install(|| self.inputs.par_iter().map(f).collect())
         } else {
             self.inputs.iter().map(f).collect()
         }
@@ -154,11 +154,11 @@ impl ApplyExpr {
             if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null() {
                 let dtype = self.output_field.dtype.clone();
                 let dtype = dtype.implode();
-                POOL.install(|| {
+                pool_install(|| {
                     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, dtype)
                 })?
             } else {
-                POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
+                pool_install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
             }
         } else {
             agg.list()
@@ -411,7 +411,7 @@ impl PhysicalExpr for ApplyExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
         let mut inputs = if self.allow_threading && self.inputs.len() > 1 {
-            POOL.install(|| {
+            pool_install(|| {
                 self.inputs
                     .par_iter()
                     .map(f)

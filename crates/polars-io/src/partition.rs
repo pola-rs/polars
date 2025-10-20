@@ -1,6 +1,6 @@
 //! Functionality for writing a DataFrame partitioned into multiple files.
 
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_utils::plpath::PlPathRef;
@@ -158,7 +158,7 @@ pub fn write_partitioned_dataset(
         }
     };
 
-    POOL.install(|| match groups.as_ref() {
+    pool_install(|| match groups.as_ref() {
         GroupsType::Idx(idx) => idx
             .all()
             .chunks(MAX_OPEN_FILES)

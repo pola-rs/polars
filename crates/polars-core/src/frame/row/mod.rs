@@ -14,7 +14,6 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::total_ord::TotalHash;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::prelude::*;
 use crate::utils::{dtypes_to_schema, dtypes_to_supertype, try_get_supertype};
 

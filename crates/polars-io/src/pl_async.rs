@@ -3,8 +3,8 @@ use std::future::Future;
 use std::ops::Deref;
 use std::sync::LazyLock;
 
-use polars_core::POOL;
 use polars_core::config::{self, verbose};
+use polars_core::{POOL, pool_num_threads};
 use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
@@ -187,7 +187,7 @@ fn get_semaphore() -> &'static (Semaphore, u32) {
                 FINISHED_TUNING.store(true);
                 budget
             })
-            .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
+            .unwrap_or_else(|_| std::cmp::max(pool_num_threads(), MAX_BUDGET_PER_REQUEST));
         (Semaphore::new(permits), permits as u32)
     })
 }
@@ -277,7 +277,7 @@ impl RuntimeManager {
     fn new() -> Self {
         let n_threads = std::env::var("POLARS_ASYNC_THREAD_COUNT")
             .map(|x| x.parse::<usize>().expect("integer"))
-            .unwrap_or(POOL.current_num_threads().clamp(1, 4));
+            .unwrap_or(pool_num_threads().clamp(1, 4));
 
         if polars_core::config::verbose() {
             eprintln!("async thread count: {n_threads}");

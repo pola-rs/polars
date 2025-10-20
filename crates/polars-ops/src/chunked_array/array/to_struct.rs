@@ -1,4 +1,4 @@
-use polars_core::POOL;
+use polars_core::pool_install;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
@@ -23,7 +23,7 @@ pub trait ToStruct: AsArray {
             .as_deref()
             .unwrap_or(&|i| Ok(arr_default_struct_name_gen(i)));
 
-        let fields = POOL.install(|| {
+        let fields = pool_install(|| {
             (0..n_fields)
                 .into_par_iter()
                 .map(|i| {

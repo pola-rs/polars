@@ -1,3 +1,4 @@
+use polars_core::pool_num_threads;
 #[cfg(feature = "async")]
 use polars_io::pl_async;
 use polars_utils::unique_id::UniqueId;
@@ -89,7 +90,8 @@ impl Executor for CachePrefiller {
         let parallel_scan_exec_limit = {
             // Note, this needs to be less than the size of the tokio blocking threadpool (which
             // defaults to 512).
-            let parallel_scan_exec_limit = POOL.current_num_threads().min(128);
+
+            let parallel_scan_exec_limit = pool_num_threads().min(128);
 
             if state.verbose() {
                 eprintln!(

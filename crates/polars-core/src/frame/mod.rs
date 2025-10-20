@@ -16,7 +16,7 @@ use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
 use crate::utils::{Container, NoNull, slice_offsets, try_get_supertype};
-use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
+use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH, pool_install, pool_install_when};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -41,7 +41,6 @@ use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use crate::POOL;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
@@ -232,14 +231,14 @@ impl DataFrame {
         &self,
         func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
     ) -> PolarsResult<Vec<Column>> {
-        POOL.install(|| self.columns.par_iter().map(func).collect())
+        pool_install(|| self.columns.par_iter().map(func).collect())
     }
     // Reduce monomorphization.
     pub fn _apply_columns_par(
         &self,
         func: &(dyn Fn(&Column) -> Column + Send + Sync),
     ) -> Vec<Column> {
-        POOL.install(|| self.columns.par_iter().map(func).collect())
+        pool_install(|| self.columns.par_iter().map(func).collect())
     }
 
     /// Get the index of the column.
@@ -2025,7 +2024,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
-        let new_col = POOL.install(|| self.try_apply_columns_par(&|s| s.take(indices)))?;
+        let new_col = pool_install(|| self.try_apply_columns_par(&|s| s.take(indices)))?;
 
         Ok(unsafe { DataFrame::new_no_checks(indices.len(), new_col) })
     }
@@ -2039,11 +2038,9 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
-        let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|c| c.take_unchecked(idx)))
-        } else {
-            self._apply_columns(&|s| s.take_unchecked(idx))
-        };
+        let cols = pool_install_when(allow_threads, || {
+            self._apply_columns_par(&|c| c.take_unchecked(idx))
+        });
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
@@ -2056,11 +2053,9 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
-        let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
-        } else {
-            self._apply_columns(&|s| s.take_slice_unchecked(idx))
-        };
+        let cols = pool_install_when(allow_threads, || {
+            self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
+        });
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
@@ -3158,7 +3153,9 @@ impl DataFrame {
         &mut self,
         hasher_builder: Option<PlSeedableRandomStateQuality>,
     ) -> PolarsResult<UInt64Chunked> {
-        let dfs = split_df(self, POOL.current_num_threads(), false);
+        use crate::pool_num_threads;
+
+        let dfs = split_df(self, pool_num_threads(), false);
         let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;
 
         let mut iter = cas.into_iter();
@@ -3241,7 +3238,7 @@ impl DataFrame {
         if parallel {
             // don't parallelize this
             // there is a lot of parallelization in take and this may easily SO
-            POOL.install(|| {
+            pool_install(|| {
                 match groups.as_ref() {
                     GroupsType::Idx(idx) => {
                         // Rechunk as the gather may rechunk for every group #17562.
@@ -3418,7 +3415,7 @@ impl Iterator for RecordBatchIter<'_> {
                 .par_iter()
                 .map(Column::as_materialized_series)
                 .map(|s| s.to_arrow(self.idx, self.compat_level));
-            POOL.install(|| iter.collect())
+            pool_install(|| iter.collect())
         } else {
             self.columns
                 .iter()

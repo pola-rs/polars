@@ -2,7 +2,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use rayon::prelude::*;
 
-use crate::POOL;
+use crate::pool_install;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
@@ -18,7 +18,7 @@ macro_rules! impl_arithmetic {
     ($self:expr, $rhs:expr, $operand:expr) => {{
         let st = get_supertype_all($self, $rhs)?;
         let rhs = $rhs.cast(&st)?;
-        let cols = POOL.install(|| {
+        let cols = pool_install(|| {
             $self
                 .par_materialized_column_iter()
                 .map(|s| $operand(&s.cast(&st)?, &rhs))
@@ -141,7 +141,7 @@ impl DataFrame {
 
                 f(&l, &r).map(Column::from)
             });
-        let mut cols = POOL.install(|| cols.collect::<PolarsResult<Vec<_>>>())?;
+        let mut cols = pool_install(|| cols.collect::<PolarsResult<Vec<_>>>())?;
 
         let col_len = cols.len();
         if col_len < max_width {

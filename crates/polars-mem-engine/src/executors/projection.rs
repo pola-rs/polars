@@ -1,4 +1,5 @@
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_core::{pool_install, pool_num_threads};
 
 use super::*;
 
@@ -25,7 +26,7 @@ impl ProjectionExec {
         // Vertical and horizontal parallelism.
         let df = if self.allow_vertical_parallelism
             && df.first_col_n_chunks() > 1
-            && df.height() > POOL.current_num_threads() * 2
+            && df.height() > pool_num_threads() * 2
             && self.options.run_parallel
         {
             let chunks = df.split_chunks().collect::<Vec<_>>();
@@ -40,7 +41,7 @@ impl ProjectionExec {
                 check_expand_literals(&df, &self.expr, selected_cols, df.is_empty(), self.options)
             });
 
-            let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let df = pool_install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             accumulate_dataframes_vertical_unchecked(df)
         }
         // Only horizontal parallelism.

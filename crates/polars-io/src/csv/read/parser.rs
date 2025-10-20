@@ -1,6 +1,6 @@
 use memchr::memchr2_iter;
 use polars_core::prelude::*;
-use polars_core::{POOL, config};
+use polars_core::{config, pool_install};
 use polars_error::feature_gated;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::plpath::PlPathRef;
@@ -94,7 +94,7 @@ pub fn count_rows_from_slice_par(
     const BYTES_PER_CHUNK: usize = 1 << 16;
 
     let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
-    POOL.install(|| {
+    pool_install(|| {
         let mut states = Vec::new();
         if comment_prefix.is_none() {
             bytes
