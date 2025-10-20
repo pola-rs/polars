@@ -192,6 +192,7 @@ pub fn all<'a>(
     Ok(ac)
 }
 
+#[cfg(feature = "bitwise")]
 pub fn bitwise_agg<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -222,6 +223,7 @@ pub fn bitwise_agg<'a>(
     Ok(ac)
 }
 
+#[cfg(feature = "bitwise")]
 pub fn bitwise_and<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -238,6 +240,7 @@ pub fn bitwise_and<'a>(
     )
 }
 
+#[cfg(feature = "bitwise")]
 pub fn bitwise_or<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -249,6 +252,7 @@ pub fn bitwise_or<'a>(
     })
 }
 
+#[cfg(feature = "bitwise")]
 pub fn bitwise_xor<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
