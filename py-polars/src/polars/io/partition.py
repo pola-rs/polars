@@ -237,7 +237,7 @@ class PartitionMaxSize(PartitioningScheme):
     Split a parquet file by over smaller CSV files with 100 000 rows each:
 
     >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
-    ...     PartitionMax("./out", max_size=100_000),
+    ...     pl.PartitionMax("./out/", max_size=100_000),
     ... )  # doctest: +SKIP
 
     See Also
@@ -345,12 +345,12 @@ class PartitionByKey(PartitioningScheme):
     Split into a hive-partitioning style partition:
 
     >>> (
-    ...     pl.DataFrame({"a": [1, 2, 3], "b": [5, 7, 9], "c": ["A", "B", "C"]})
-    ...     .lazy()
-    ...     .sink_parquet(
-    ...         PartitionByKey(
-    ...             "./out",
-    ...             by=[pl.col.a, pl.col.b],
+    ...     pl.LazyFrame(
+    ...         {"a": [1, 2, 3], "b": [5, 7, 9], "c": ["A", "B", "C"]}
+    ...     ).sink_parquet(
+    ...         pl.PartitionByKey(
+    ...             "./out/",
+    ...             by=["a", "b"],
     ...             include_key=False,
     ...         ),
     ...         mkdir=True,
@@ -452,7 +452,7 @@ class PartitionParted(PartitioningScheme):
     Split a parquet file by a column `year` into CSV files:
 
     >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
-    ...     PartitionParted("./out", by="year"),
+    ...     pl.PartitionParted("./out/", by="year"),
     ...     mkdir=True,
     ... )  # doctest: +SKIP
 

@@ -289,6 +289,15 @@ pub struct UnifiedScanArgs {
 
     pub deletion_files: Option<DeletionFilesList>,
     pub table_statistics: Option<TableStatistics>,
+    /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
+    /// This allows for row-count queries to succeed without scanning all files.
+    pub row_count: Option<(IdxSize, IdxSize)>,
+}
+
+impl UnifiedScanArgs {
+    pub fn has_row_index_or_slice(&self) -> bool {
+        self.row_index.is_some() || self.pre_slice.is_some()
+    }
 }
 
 // Manual default, we have `glob: true` by default.
@@ -313,6 +322,7 @@ impl Default for UnifiedScanArgs {
             include_file_paths: None,
             deletion_files: None,
             table_statistics: None,
+            row_count: None,
         }
     }
 }

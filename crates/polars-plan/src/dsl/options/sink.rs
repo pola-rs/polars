@@ -327,6 +327,26 @@ impl SinkFinishCallback {
             }),
         }
     }
+
+    pub fn display_str(&self) -> PlSmallStr {
+        match self {
+            Self::Rust(_) => PlSmallStr::from_static("Rust(<dyn Fn>)"),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::attach(|py| {
+                use polars_utils::format_pl_smallstr;
+                use pyo3::intern;
+                use pyo3::pybacked::PyBackedStr;
+
+                let class_name: PyBackedStr = f
+                    .getattr(py, intern!(py, "__class__"))
+                    .unwrap()
+                    .extract(py)
+                    .unwrap();
+
+                format_pl_smallstr!("Python({class_name})")
+            }),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -351,6 +371,26 @@ impl PartitionTargetCallback {
                     .unwrap()
                     .clone();
                 PolarsResult::Ok(partition_target)
+            }),
+        }
+    }
+
+    pub fn display_str(&self) -> PlSmallStr {
+        match self {
+            Self::Rust(_) => PlSmallStr::from_static("Rust(<dyn Fn>)"),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::attach(|py| {
+                use polars_utils::format_pl_smallstr;
+                use pyo3::intern;
+                use pyo3::pybacked::PyBackedStr;
+
+                let class_name: PyBackedStr = f
+                    .getattr(py, intern!(py, "__class__"))
+                    .unwrap()
+                    .extract(py)
+                    .unwrap();
+
+                format_pl_smallstr!("Python({class_name})")
             }),
         }
     }
@@ -534,7 +574,7 @@ pub enum PartitionVariant {
 }
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, strum_macros::IntoStaticStr)]
 pub enum PartitionVariantIR {
     MaxSize(IdxSize),
     Parted {

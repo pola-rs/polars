@@ -87,6 +87,23 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
         let func = unsafe { CALL_DF_UDF_PYTHON.unwrap() };
         func(df, &self.0)
     }
+
+    fn display_str(&self) -> PlSmallStr {
+        pyo3::Python::attach(|py| {
+            use polars_utils::format_pl_smallstr;
+            use pyo3::intern;
+            use pyo3::pybacked::PyBackedStr;
+
+            let class_name: PyBackedStr = self
+                .0
+                .getattr(py, intern!(py, "__class__"))
+                .unwrap()
+                .extract(py)
+                .unwrap();
+
+            format_pl_smallstr!("PythonUdf({class_name})")
+        })
+    }
 }
 
 impl ColumnsUdf for PythonUdfExpression {
