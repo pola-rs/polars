@@ -1125,7 +1125,7 @@ class Expr:
         Get the group indexes of the group by operation.
 
         .. deprecated:: X.Y
-            use `df.with_row_index().group_by(...)[pl.col('index')]` instead.
+            use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.
             This method will be removed in Polars 2.0.
 
         Should be used in aggregation context only.
@@ -1176,7 +1176,7 @@ class Expr:
         """
         warnings.warn(
             "agg_groups() is deprecated and will be removed in Polars 2.0. "
-            "Use df.with_row_index().group_by(...)[pl.col('index')] instead.",
+            "Use df.with_row_index().group_by(...).agg(pl.col('index')) instead.",
             DeprecationWarning,
             stacklevel=2,
         )
