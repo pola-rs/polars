@@ -23,9 +23,11 @@ impl AExpr {
 
             Literal(v) => v.is_scalar(),
 
+            Foldv { .. } => false,
+
             Eval { variant, .. } => variant.is_elementwise(),
 
-            Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+            State | Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
             Agg { .. }
             | Explode { .. }

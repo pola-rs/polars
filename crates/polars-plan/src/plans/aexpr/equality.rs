@@ -76,10 +76,12 @@ impl AExpr {
 
             // Discriminant check done above.
             E::Element |
+            E::State |
             E::Filter { input: _, by: _ } |
             E::Ternary { predicate: _, truthy: _, falsy: _ } |
             E::Slice { input: _, offset: _, length: _ } |
             E::Len => true,
+            E::Foldv { .. } => false,
         };
 
         is_equal

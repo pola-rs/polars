@@ -138,6 +138,7 @@ pub fn is_input_independent_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
+        AExpr::State => unreachable!(),
 
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
@@ -237,6 +238,7 @@ pub fn is_input_independent_rec(
                 && is_input_independent_rec(*length, arena, cache)
         },
         AExpr::Len => false,
+        AExpr::Foldv { .. } => false,
     };
 
     cache.insert(expr_key, ret);
@@ -285,6 +287,7 @@ pub fn is_length_preserving_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
+        AExpr::State => unreachable!(),
 
         AExpr::Gather { .. }
         | AExpr::Explode { .. }
@@ -350,6 +353,7 @@ pub fn is_length_preserving_rec(
             order_by: _,
             options,
         } => !matches!(options, WindowType::Over(WindowMapping::Explode)),
+        AExpr::Foldv { .. } => true,
     };
 
     cache.insert(expr_key, ret);
@@ -582,6 +586,8 @@ fn lower_exprs_with_ctx(
         match ctx.expr_arena.get(expr).clone() {
             // Handled separately in `Eval` expressions.
             AExpr::Element => unreachable!(),
+            AExpr::State => unreachable!(),
+            AExpr::Foldv { .. } => unreachable!(),
 
             AExpr::Explode {
                 expr: inner,

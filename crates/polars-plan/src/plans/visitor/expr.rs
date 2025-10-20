@@ -88,6 +88,8 @@ impl TreeWalker for Expr {
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             SubPlan(_, _) => self,
             Selector(_) => self,
+            Foldv { .. } => self,
+            State => State,
         };
         Ok(ret)
     }

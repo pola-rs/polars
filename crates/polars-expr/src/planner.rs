@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_plan::constants::PL_ELEMENT_NAME;
+use polars_plan::constants::{PL_ELEMENT_NAME, PL_STATE_NAME};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -306,6 +306,11 @@ fn create_physical_expr_inner(
         ))),
         Element => Ok(Arc::new(ColumnExpr::new(
             PL_ELEMENT_NAME.clone(),
+            node_to_expr(expression, expr_arena),
+            schema.clone(),
+        ))),
+        State => Ok(Arc::new(ColumnExpr::new(
+            PL_STATE_NAME.clone(),
             node_to_expr(expression, expr_arena),
             schema.clone(),
         ))),
@@ -630,6 +635,21 @@ fn create_physical_expr_inner(
                 false,
                 false,
             )))
+        },
+        Foldv {
+            state_expr,
+            stateless_exprs,
+        } => {
+            let phys_state_expr =
+                create_physical_expr_inner(*state_expr, ctxt, expr_arena, schema, state)?;
+            let required_expr = stateless_exprs
+                .iter()
+                .map(|e| create_physical_expr_inner(*e, ctxt, expr_arena, schema, state))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            Ok(Arc::new(FoldvExpr {
+                state_expr: phys_state_expr,
+                required_exprs: required_expr,
+            }))
         },
     }
 }

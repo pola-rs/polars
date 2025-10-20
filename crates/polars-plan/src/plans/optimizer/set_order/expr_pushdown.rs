@@ -137,6 +137,7 @@ fn get_frame_observing_impl(
     Ok(match aexpr {
         // This should never reached as we don't recurse on the Eval evaluation expression.
         AExpr::Element => unreachable!(),
+        AExpr::State => unreachable!(),
 
         // Explode creates local orders.
         //
@@ -336,5 +337,6 @@ fn get_frame_observing_impl(
             input
         },
         AExpr::Len => O::None,
+        AExpr::Foldv { .. } => O::None,
     })
 }

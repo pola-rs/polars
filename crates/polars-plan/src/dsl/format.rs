@@ -221,6 +221,8 @@ impl fmt::Debug for Expr {
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]
             Field(names) => write!(f, "pl.field({names:?})"),
+            Foldv { expr } => todo!(),
+            Expr::State => write!(f, "state"),
         }
     }
 }

@@ -250,6 +250,11 @@ pub enum AExpr {
     },
     #[default]
     Len,
+    Foldv {
+        state_expr: Node,
+        stateless_exprs: Vec<Node>,
+    },
+    State,
 }
 
 impl AExpr {
@@ -300,6 +305,8 @@ impl AExpr {
             | AExpr::Column(_)
             | AExpr::Filter { .. }
             | AExpr::Slice { .. } => false,
+            AExpr::Foldv { .. } => true,
+            AExpr::State { .. } => true,
         }
     }
 
@@ -367,6 +374,8 @@ impl AExpr {
             AExpr::Window { function, .. } => is_length_preserving_ae(*function, arena),
 
             AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
+            AExpr::Foldv { .. } => true,
+            AExpr::State => true,
         }
     }
 

@@ -272,8 +272,6 @@ fn expand_expression_rec(
                 |e| Expr::Alias(Arc::new(e), name.clone()),
             )?
         },
-
-        // Backwards compatibility. We previously allowed `pl.col("")` and `pl.first()`
         Expr::Column(column) if schema.contains(POLARS_ELEMENT) && column.is_empty() => {
             out.push(Expr::Element)
         },
@@ -282,7 +280,6 @@ fn expand_expression_rec(
         {
             out.push(Expr::Element)
         },
-
         Expr::Column(_) => out.push(expr.clone()),
         Expr::Selector(selector) => {
             let mut schema = std::borrow::Cow::Borrowed(schema);
@@ -854,15 +851,14 @@ fn expand_expression_rec(
                 },
             )?
         },
-
         #[cfg(feature = "dtype-struct")]
         Expr::Field(names) => {
             toggle_cse_for_structs(opt_flags);
             out.extend(names.iter().cloned().map(|n| Expr::Field([n].into())));
         },
-
-        // SQL only
         Expr::SubPlan(_, _) => unreachable!(),
+        Expr::Foldv { expr } => todo!(),
+        Expr::State => todo!(),
     };
     Ok(out.len() - start_len)
 }

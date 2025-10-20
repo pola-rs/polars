@@ -179,6 +179,10 @@ pub enum Expr {
         evaluation: Arc<Expr>,
         variant: EvalVariant,
     },
+    State,
+    Foldv {
+        expr: Arc<Expr>,
+    },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     RenameAlias {
         function: RenameAliasFn,
@@ -319,7 +323,7 @@ impl Hash for Expr {
                 returns_scalar.hash(state);
             },
             // already hashed by discriminant
-            Expr::Element | Expr::Len => {},
+            Expr::Element | Expr::Len | Expr::State => {},
             Expr::SortBy {
                 expr,
                 by,
@@ -353,6 +357,10 @@ impl Hash for Expr {
                 input.hash(state);
                 offset.hash(state);
                 length.hash(state);
+            },
+
+            Expr::Foldv { expr } => {
+                expr.hash(state);
             },
             // Expr::Exclude(input, excl) => {
             //     input.hash(state);
@@ -569,6 +577,7 @@ impl EvalVariant {
             Self::Array { .. } => "array.eval",
             Self::ArrayAgg => "array.agg",
             Self::Cumulative { min_samples: _ } => "cumulative_eval",
+            // Self::Fold { .. } => "fold",
         }
     }
 

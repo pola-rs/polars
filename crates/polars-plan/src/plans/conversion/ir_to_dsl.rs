@@ -7,6 +7,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 
     match expr {
         AExpr::Element => Expr::Element,
+        AExpr::State => Expr::State,
         AExpr::Explode { expr, skip_empty } => Expr::Explode {
             input: Arc::new(node_to_expr(expr, expr_arena)),
             skip_empty,
@@ -238,6 +239,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length: Arc::new(node_to_expr(length, expr_arena)),
         },
         AExpr::Len => Expr::Len,
+        AExpr::Foldv { state_expr, .. } => Expr::Foldv {
+            expr: Arc::new(node_to_expr(state_expr, expr_arena)),
+        },
     }
 }
 

@@ -339,6 +339,7 @@ impl Display for ExprIRDisplay<'_> {
         use AExpr::*;
         match root {
             Element => f.write_str("element()"),
+            State => f.write_str("state()"),
             Window {
                 function,
                 partition_by,
@@ -521,6 +522,7 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, ".{fmt_str}()")
                 }
             },
+            Foldv { .. } => write!(f, "cool"),
             Eval {
                 expr,
                 evaluation,

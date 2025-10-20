@@ -13,7 +13,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            State | Element | Column(_) | Literal(_) | Len => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -73,6 +73,9 @@ impl AExpr {
             } => {
                 container.extend([*length, *offset, *input]);
             },
+            Foldv { state_expr, .. } => {
+                container.extend([*state_expr]);
+            },
         }
     }
 
@@ -85,7 +88,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            State | Element | Column(_) | Literal(_) | Len => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -141,13 +144,14 @@ impl AExpr {
             } => {
                 container.extend([*length, *offset, *input]);
             },
+            Foldv { .. } => {},
         }
     }
 
     pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
+            State | Element | Column(_) | Literal(_) | Len => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -161,6 +165,7 @@ impl AExpr {
                 return self;
             },
             Sort { expr, .. } => expr,
+            Foldv { state_expr, .. } => state_expr,
             SortBy { expr, by, .. } => {
                 *expr = inputs[0];
                 by.clear();

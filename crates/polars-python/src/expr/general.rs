@@ -687,6 +687,14 @@ impl PyExpr {
             .into()
     }
 
+    fn state(&self) -> Self {
+        self.inner.clone().state().into()
+    }
+
+    fn foldv(&self) -> Self {
+        self.inner.clone().foldv().into()
+    }
+
     fn product(&self) -> Self {
         self.inner.clone().product().into()
     }

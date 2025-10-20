@@ -4,7 +4,7 @@ use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
-use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
+use crate::constants::{PL_ELEMENT_NAME, PL_STATE_NAME, POLARS_ELEMENT, POLARS_STATE};
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
@@ -45,7 +45,7 @@ impl AExpr {
                 .schema
                 .get_field(POLARS_ELEMENT)
                 .ok_or_else(|| polars_err!(invalid_element_use)),
-
+            State => Ok(Field::new(PL_STATE_NAME.clone(), DataType::Int64)),
             Len => Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE)),
             Window {
                 function,
@@ -290,6 +290,10 @@ impl AExpr {
 
                 ctx.arena.get(*input).to_field_impl(ctx)
             },
+            Foldv { state_expr, .. } => {
+                let field = ctx.arena.get(*state_expr).to_field_impl(ctx)?;
+                Ok(field)
+            },
         }
     }
 
@@ -345,6 +349,8 @@ impl AExpr {
             },
             Column(name) => name.clone(),
             Literal(lv) => lv.output_column_name().clone(),
+            Foldv { .. } => PlSmallStr::EMPTY,
+            State => PlSmallStr::EMPTY,
         }
     }
 }

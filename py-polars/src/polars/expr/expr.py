@@ -3130,6 +3130,16 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.nan_min())
 
+    def foldv(
+        self,
+        function: Callable[[Expr, Expr], Expr],
+    ) -> Expr:
+
+        state = wrap_expr(self._pyexpr.state())
+        new_value = function(state,self)
+
+        return wrap_expr(new_value._pyexpr.foldv())
+
     def sum(self) -> Expr:
         """
         Get sum value.

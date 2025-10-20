@@ -9,7 +9,7 @@ use polars_utils::format_pl_smallstr;
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::constants::{PL_ELEMENT_NAME, get_len_name, get_literal_name};
+use crate::constants::{PL_ELEMENT_NAME, PL_STATE_NAME, get_len_name, get_literal_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -123,6 +123,10 @@ impl ExprIR {
             match ae {
                 AExpr::Element => {
                     out.output_name = OutputName::ColumnLhs(PL_ELEMENT_NAME.clone());
+                    break;
+                },
+                AExpr::State => {
+                    out.output_name = OutputName::ColumnLhs(PL_STATE_NAME.clone());
                     break;
                 },
                 AExpr::Column(name) => {

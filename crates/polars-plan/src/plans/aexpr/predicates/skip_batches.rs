@@ -111,6 +111,7 @@ fn aexpr_to_skip_batch_predicate_rec(
 
         match arena.get(e) {
             AExpr::Element => None,
+            AExpr::State => None,
             AExpr::Explode { .. } => None,
             AExpr::Column(_) => None,
             AExpr::Literal(_) => None,
@@ -450,6 +451,7 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Window { .. } => None,
             AExpr::Slice { .. } => None,
             AExpr::Len => None,
+            AExpr::Foldv { .. } => None,
         }
     })();
 

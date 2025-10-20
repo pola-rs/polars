@@ -27,6 +27,7 @@ polars/vendor
 .pytest_cache/
 .ruff_cache/
 .venv*/
+.venv
 __pycache__/
 .coverage
 *.egg-info

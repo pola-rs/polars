@@ -6,6 +6,7 @@ pub static CSE_REPLACED: &str = "__POLARS_CSER_";
 pub static POLARS_TMP_PREFIX: &str = "_POLARS_";
 pub static POLARS_PLACEHOLDER: &str = "_POLARS_<>";
 pub static POLARS_ELEMENT: &str = "__PL_ELEMENT";
+pub static POLARS_STATE: &str = "__PL_STATE";
 pub const LEN: &str = "len";
 const LITERAL_NAME: &str = "literal";
 
@@ -13,6 +14,7 @@ const LITERAL_NAME: &str = "literal";
 static LITERAL_NAME_INIT: OnceLock<PlSmallStr> = OnceLock::new();
 static LEN_INIT: OnceLock<PlSmallStr> = OnceLock::new();
 pub static PL_ELEMENT_NAME: PlSmallStr = PlSmallStr::from_static(POLARS_ELEMENT);
+pub static PL_STATE_NAME: PlSmallStr = PlSmallStr::from_static(POLARS_STATE);
 
 pub fn get_literal_name() -> &'static PlSmallStr {
     LITERAL_NAME_INIT.get_or_init(|| PlSmallStr::from_static(LITERAL_NAME))

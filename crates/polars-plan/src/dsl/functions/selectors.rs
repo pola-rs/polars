@@ -40,6 +40,10 @@ pub fn element() -> Expr {
     Expr::Element
 }
 
+pub fn state() -> Expr {
+    Expr::State
+}
+
 /// Selects no columns.
 pub fn empty() -> Selector {
     Selector::Empty

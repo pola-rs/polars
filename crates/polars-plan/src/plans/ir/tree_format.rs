@@ -25,6 +25,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
             AExpr::Element => "element()",
+            AExpr::State => "state()",
             AExpr::Explode {
                 expr: _,
                 skip_empty: false,
@@ -76,6 +77,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::Window { .. } => "window",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
+            AExpr::Foldv { .. } => "foldv",
         };
 
         write!(f, "{s}")

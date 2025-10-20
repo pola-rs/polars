@@ -637,6 +637,20 @@ impl Expr {
 
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
+    pub fn foldv(self) -> Self {
+        Expr::Foldv {
+            expr: Arc::new(self),
+        }
+    }
+
+    /// Cumulatively count values from 0 to len.
+    #[cfg(feature = "cum_agg")]
+    pub fn state(self) -> Self {
+        Expr::State
+    }
+
+    /// Cumulatively count values from 0 to len.
+    #[cfg(feature = "cum_agg")]
     pub fn cum_count(self, reverse: bool) -> Self {
         self.map_unary(FunctionExpr::CumCount { reverse })
     }

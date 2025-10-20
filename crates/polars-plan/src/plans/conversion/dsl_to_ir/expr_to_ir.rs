@@ -1,6 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
-use crate::constants::PL_ELEMENT_NAME;
+use crate::constants::{PL_ELEMENT_NAME, PL_STATE_NAME};
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -90,6 +90,46 @@ impl<'a> ExprToIRContext<'a> {
     }
 }
 
+fn to_statebased_aexpr_impl(
+    expr: Expr,
+    ctx: &mut ExprToIRContext,
+    stateless: &mut Vec<Node>,
+) -> PolarsResult<(Node, bool)> {
+    let (aexpr_or_node, has_state) = match expr {
+        Expr::BinaryExpr { left, op, right } => {
+            let (mut left_node, is_left_stateful) =
+                to_statebased_aexpr_impl(left.as_ref().clone(), ctx, stateless)?;
+            if !is_left_stateful {
+                let (stateless_left, _) = to_aexpr_impl(left.as_ref().clone(), ctx)?;
+                left_node = stateless_left;
+                stateless.push(left_node);
+            }
+            let (mut right_node, is_right_stateful) =
+                to_statebased_aexpr_impl(right.as_ref().clone(), ctx, stateless)?;
+            if !is_right_stateful {
+                let (stateless_right, _) = to_aexpr_impl(right.as_ref().clone(), ctx)?;
+                right_node = stateless_right;
+                stateless.push(right_node);
+            }
+            (
+                Either::Left(AExpr::BinaryExpr {
+                    left: left_node,
+                    op,
+                    right: right_node,
+                }),
+                is_left_stateful || is_right_stateful,
+            )
+        },
+        Expr::State => (Either::Left(AExpr::State), true),
+        _ => {
+            let (n, _) = to_aexpr_impl(expr, ctx)?;
+            (Either::Right(n), false)
+        },
+    };
+    let res = aexpr_or_node.map_left(|x| ctx.arena.add(x));
+    Ok((res.into_inner(), has_state))
+}
+
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
 pub(super) fn to_aexpr_impl(
     expr: Expr,
@@ -121,6 +161,23 @@ pub(super) fn to_aexpr_impl(
     }
 
     let (v, output_name) = match expr {
+        Expr::Foldv { expr } => {
+            let mut stateless = Vec::new();
+            let (node, stateful) = to_statebased_aexpr_impl(owned(expr), ctx, &mut stateless)?;
+            if !stateful {
+                polars_bail!(InvalidOperation: "Foldv must contain at least one `State` expression.");
+            }
+            (
+                AExpr::Foldv {
+                    state_expr: node,
+                    stateless_exprs: stateless,
+                },
+                PlSmallStr::from_str("cool"),
+            )
+        },
+        Expr::State => {
+            polars_bail!(InvalidOperation: "State expression not allowed in this operation.")
+        },
         Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
         Expr::Explode { input, skip_empty } => {
             let (expr, output_name) = recurse_arc!(input)?;
@@ -517,7 +574,6 @@ pub(super) fn to_aexpr_impl(
                 name.clone(),
             )
         },
-
         e @ Expr::SubPlan { .. } | e @ Expr::Selector(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
         },
