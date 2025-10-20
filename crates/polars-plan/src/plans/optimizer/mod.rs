@@ -25,6 +25,7 @@ pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
+mod sortedness;
 mod stack_opt;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
@@ -282,6 +283,13 @@ pub fn optimize(
                     _ = set_order::simplify_and_fetch_orderings(&[tmp_top], lp_arena, expr_arena)
                 },
             }
+        }
+    }
+
+    if opt_flags.contains(OptFlags::SORT_PULLUP) {
+        let members = get_or_init_members!();
+        if members.has_sort | members.has_hint {
+            sortedness::propagate_sortedness(&[lp_top], lp_arena, expr_arena);
         }
     }
 
