@@ -54,23 +54,23 @@ orders_sf10 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-prd/pdsh/sf10
         storage_options={"request_payer": "true"})
 
 # Your query remains the same
-pdsh_q3(lineitem_sf10, customer_sf10, orders_sf10).remote(context=ctx).show()
+pdsh_q3(customer_sf10, lineitem_sf10, orders_sf10).remote(context=ctx).show()
 
 # --8<-- [end:context]
 
 # --8<-- [start:sink_parquet]
 # Replace the S3 url with your own to run the query successfully
 
-pdsh_q3(lineitem_sf10, customer_sf10, orders_sf10).remote(context=ctx).sink_parquet("s3://your-bucket/processed-data/")
+pdsh_q3(customer_sf10, lineitem_sf10, orders_sf10).remote(context=ctx).sink_parquet("s3://your-bucket/processed-data/")
 # --8<-- [end:sink_parquet]
 
 # --8<-- [start:show]
-pdsh_q3(lineitem_sf10, customer_sf10, orders_sf10).remote(context=ctx).show()
+pdsh_q3(customer_sf10, lineitem_sf10,  orders_sf10).remote(context=ctx).show()
 
 # --8<-- [end:show]
 
 # --8<-- [start:await_scan]
-result = pdsh_q3(lineitem_sf10, customer_sf10, orders_sf10).remote(context=ctx).await_and_scan()
+result = pdsh_q3(customer_sf10, lineitem_sf10,  orders_sf10).remote(context=ctx).await_and_scan()
 
 print(result.collect())
 # --8<-- [end:await_scan]
