@@ -5,7 +5,7 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
 use polars_core::POOL;
-use polars_core::error::PolarsResult;
+use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     AnyValue, ChunkCast, Column, CompatLevel, GroupPositions, GroupsType, IDX_DTYPE, IntoColumn,
@@ -190,6 +190,83 @@ pub fn all<'a>(
     ac.state = AggState::AggregatedScalar(out.into_column());
 
     Ok(ac)
+}
+
+#[cfg(feature = "bitwise")]
+pub fn bitwise_agg<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    op: &'static str,
+    f: impl Fn(&Column, &GroupsType) -> Column,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 1);
+
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+
+    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &ac.state {
+        let dtype = s.dtype();
+        polars_ensure!(
+            dtype.is_bool() | dtype.is_primitive_numeric(),
+            op = op,
+            dtype
+        );
+        return Ok(ac);
+    }
+
+    ac.groups();
+    let values = ac.flat_naive();
+    let out = f(values.as_ref(), ac.groups.as_ref());
+    ac.state = AggState::AggregatedScalar(out.into_column());
+
+    Ok(ac)
+}
+
+#[cfg(feature = "bitwise")]
+pub fn bitwise_and<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+) -> PolarsResult<AggregationContext<'a>> {
+    bitwise_agg(
+        inputs,
+        df,
+        groups,
+        state,
+        "and_reduce",
+        |v, groups| unsafe { v.agg_and(groups) },
+    )
+}
+
+#[cfg(feature = "bitwise")]
+pub fn bitwise_or<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+) -> PolarsResult<AggregationContext<'a>> {
+    bitwise_agg(inputs, df, groups, state, "or_reduce", |v, groups| unsafe {
+        v.agg_or(groups)
+    })
+}
+
+#[cfg(feature = "bitwise")]
+pub fn bitwise_xor<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+) -> PolarsResult<AggregationContext<'a>> {
+    bitwise_agg(
+        inputs,
+        df,
+        groups,
+        state,
+        "xor_reduce",
+        |v, groups| unsafe { v.agg_xor(groups) },
+    )
 }
 
 pub fn drop_items<'a>(
