@@ -948,7 +948,7 @@ def test_invalid_agg_dtypes_should_raise(
         min_size=1,
         max_size=1,
         excluded_dtypes=[
-            # TODO(amber): This is broken, but also for .first()
+            # TODO: polars/#24936
             pl.Struct,
         ],
     )
@@ -985,7 +985,7 @@ def test_item_too_many(df: pl.DataFrame) -> None:
         max_size=1,
         allow_null=False,
         excluded_dtypes=[
-            # TODO(amber): This is broken, but also for .first()
+            # TODO: polars/#24936
             pl.Struct,
         ],
     )
