@@ -962,7 +962,7 @@ def test_single(df: pl.DataFrame) -> None:
 @given(df=dataframes(max_size=0))
 def test_single_empty(df: pl.DataFrame) -> None:
     q = df.lazy().select(pl.all().item())
-    match = "aggregation 'single' expected a single value, got none"
+    match = "aggregation 'item' expected a single value, got none"
     with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect()
     with pytest.raises(pl.exceptions.ComputeError, match=match):
@@ -970,9 +970,9 @@ def test_single_empty(df: pl.DataFrame) -> None:
 
 
 @given(df=dataframes(min_size=2))
-def test_single_too_many(df: pl.DataFrame) -> None:
+def test_item_too_many(df: pl.DataFrame) -> None:
     q = df.lazy().select(pl.all(ignore_nulls=False).item())
-    match = f"aggregation 'single' expected a single value, got {df.height} values"
+    match = f"aggregation 'item' expected a single value, got {df.height} values"
     with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect()
     with pytest.raises(pl.exceptions.ComputeError, match=match):
@@ -990,27 +990,27 @@ def test_single_too_many(df: pl.DataFrame) -> None:
         ],
     )
 )
-def test_single_on_groups(df: pl.DataFrame) -> None:
+def test_item_on_groups(df: pl.DataFrame) -> None:
     df = df.with_columns(pl.col("col0").alias("key"))
     q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).item())
     assert_frame_equal(q.collect(), df)
     assert_frame_equal(q.collect(engine="streaming"), df)
 
 
-def test_single_on_groups_empty() -> None:
+def test_item_on_groups_empty() -> None:
     df = pl.DataFrame({"col0": [[]]})
     q = df.lazy().select(pl.all().list.item())
-    match = "aggregation 'single' expected a single value, got none"
+    match = "aggregation 'item' expected a single value, got none"
     with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect()
     with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect(engine="streaming")
 
 
-def test_single_on_groups_too_many() -> None:
+def test_item_on_groups_too_many() -> None:
     df = pl.DataFrame({"col0": [[1, 2, 3]]})
     q = df.lazy().select(pl.all().list.item())
-    match = "aggregation 'single' expected a single value, got 3 values"
+    match = "aggregation 'item' expected a single value, got 3 values"
     with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect()
     with pytest.raises(pl.exceptions.ComputeError, match=match):
