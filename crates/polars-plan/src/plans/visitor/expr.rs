@@ -60,6 +60,7 @@ impl TreeWalker for Expr {
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
                 Last(x) => Last(am(x, f)?),
+                Item(x) => Item(am(x, f)?),
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
                 Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },

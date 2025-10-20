@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -569,6 +570,35 @@ class ListNameSpace:
             2
         ]
         """
+
+    @unstable()
+    def item(self) -> Series:
+        """
+        Get the single value of the sublists.
+
+        This errors if the sublist length is not exactly one.
+
+        See Also
+        --------
+        :meth:`Series.list.get` : Get the value by index in the sublists.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1], [4], [6]])
+        >>> s.list.item()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            4
+            6
+        ]
+        >>> df = pl.Series("a", [[3, 2, 1], [1], [2]])
+        >>> df.list.item()
+        Traceback (most recent call last):
+        ...
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        """  # noqa: W505
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
