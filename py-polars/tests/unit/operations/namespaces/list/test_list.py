@@ -49,7 +49,7 @@ def test_list_arr_get() -> None:
     expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
     assert_frame_equal(out_df, expected_df)
 
-    # Single
+    # item()
     a = pl.Series("a", [[1], [4], [6]])
     expected = pl.Series("a", [1, 4, 6])
     out = a.list.item()
