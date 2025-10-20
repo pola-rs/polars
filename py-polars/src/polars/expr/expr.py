@@ -3450,6 +3450,10 @@ class Expr:
 
         This raises an error if there is not exactly one value.
 
+        See Also
+        --------
+        :meth:`Expr.get` : Get a single value by index.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1]})
@@ -3462,7 +3466,12 @@ class Expr:
         ╞═════╡
         │ 1   │
         └─────┘
-        """
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").item())
+        Traceback (most recent call last):
+        ...
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        """  # noqa: W505
         return wrap_expr(self._pyexpr.item())
 
     def over(

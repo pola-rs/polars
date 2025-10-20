@@ -691,6 +691,10 @@ class ExprListNameSpace:
 
         This errors if the sublist length is not exactly one.
 
+        See Also
+        --------
+        :meth:`Expr.list.get` : Get the value by index in the sublists.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[3], [1], [2]]})
@@ -705,11 +709,11 @@ class ExprListNameSpace:
         │ [1]       ┆ 1    │
         │ [2]       ┆ 2    │
         └───────────┴──────┘
-        >>> df = pl.DataFrame({"a": [[3, 2], [1], [2]]})
+        >>> df = pl.DataFrame({"a": [[3, 2, 1], [1], [2]]})
         >>> df.select(pl.col("a").list.item())
         Traceback (most recent call last):
         ...
-        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 2 values
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
         """  # noqa: W505
         return self.agg(F.element().item())
 

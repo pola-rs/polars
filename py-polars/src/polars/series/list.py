@@ -576,7 +576,11 @@ class ListNameSpace:
         """
         Get the single value of the sublists.
 
-        This errors if the sublist does not contain exactly one element.
+        This errors if the sublist length is not exactly one.
+
+        See Also
+        --------
+        :meth:`Series.list.get` : Get the value by index in the sublists.
 
         Examples
         --------
@@ -589,7 +593,13 @@ class ListNameSpace:
             4
             6
         ]
-        """
+        >>> df = pl.Series("a", [[3, 2, 1], [1], [2]])
+        >>> df.list.item()
+        Traceback (most recent call last):
+        ...
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        """  # noqa: W505
+        return self.agg(F.element().item())
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
