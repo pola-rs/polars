@@ -339,19 +339,11 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Item => {
                     let (s, groups) = ac.get_final_aggregation();
                     for gc in groups.group_count().iter() {
-                        if let Some(n) = gc
-                            && n == 0
-                        {
-                            return Err(polars_err!(ComputeError:
-                                "aggregation 'item' expected a single value, got none"
-                            ));
-                        }
-                        if let Some(n) = gc
-                            && n > 1
-                        {
-                            return Err(polars_err!(ComputeError:
-                                "aggregation 'item' expected a single value, got {n} values"
-                            ));
+                        match gc {
+                            None | Some(1) => continue,
+                            Some(n) => {
+                                polars_bail!(item_agg_count_not_one = n);
+                            },
                         }
                     }
                     let agg_s = s.agg_first(&groups);
