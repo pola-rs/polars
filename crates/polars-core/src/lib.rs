@@ -33,6 +33,7 @@ pub mod testing;
 mod tests;
 
 use std::cell::{Cell, RefCell};
+use std::panic::AssertUnwindSafe;
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -190,9 +191,12 @@ impl POOL {
             } else {
                 let prev = ALLOW_THREADS.replace(false);
                 // @Q? Should this catch_unwind?
-                let result = op();
+                let result = std::panic::catch_unwind(AssertUnwindSafe(op));
                 ALLOW_THREADS.set(prev);
-                result
+                match result {
+                    Ok(v) => v,
+                    Err(p) => std::panic::resume_unwind(p),
+                }
             }
         }
     }
