@@ -55,8 +55,8 @@ from polars.testing import assert_frame_equal
 with warnings.catch_warnings():
     # Upstream issue at https://github.com/apache/iceberg-python/issues/2648
     warnings.simplefilter("ignore", pydantic.warnings.PydanticDeprecatedSince212)
-    from pyiceberg.io.pyarrow import schema_to_pyarrow
     from pyiceberg.catalog.sql import SqlCatalog
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 
 @pytest.fixture
