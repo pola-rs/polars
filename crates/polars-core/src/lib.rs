@@ -109,7 +109,12 @@ impl POOL {
 
         #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
         {
-            self.with(|p| p.spawn(op))
+            self.with(|p| {
+                p.spawn(op);
+                if p.current_num_threads() == 1 {
+                    p.yield_now();
+                }
+            })
         }
     }
 
@@ -124,7 +129,12 @@ impl POOL {
 
         #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
         {
-            self.with(|p| p.spawn_fifo(op))
+            self.with(|p| {
+                p.spawn_fifo(op);
+                if p.current_num_threads() == 1 {
+                    p.yield_now();
+                }
+            })
         }
     }
 
