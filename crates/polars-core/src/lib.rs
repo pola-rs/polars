@@ -50,22 +50,20 @@ pub static PROCESS_ID: LazyLock<u128> = LazyLock::new(|| {
 // Thread locals to allow disabling threading for specific threads.
 thread_local! {
     static ALLOW_THREADS: Cell<bool> = const { Cell::new(true) };
-    static NOOP_POOL: RefCell<Option<ThreadPool>> = RefCell::new(None);
+    static NOOP_POOL: RefCell<ThreadPool> = RefCell::new(
+        ThreadPoolBuilder::new()
+            .use_current_thread()
+            .num_threads(1)
+            .build()
+            .expect("could not create no-op thread pool")
+    );
 }
 
 pub fn with_pool<R>(op: impl FnOnce(&ThreadPool) -> R) -> R {
     if ALLOW_THREADS.get() || POOL.current_thread_index().is_some() {
-        op(&*POOL)
+        op(&POOL)
     } else {
-        NOOP_POOL.with(|v| {
-            op(v.borrow_mut().get_or_insert_with(|| {
-                ThreadPoolBuilder::new()
-                    .use_current_thread()
-                    .num_threads(1)
-                    .build()
-                    .expect("could not create no-op thread pool")
-            }))
-        })
+        NOOP_POOL.with(|v| op(&v.borrow()))
     }
 }
 
@@ -99,7 +97,7 @@ where
     OP: FnOnce() -> R + Send,
     R: Send,
 {
-    with_pool(|pool| pool.install(|| op()))
+    with_pool(|pool| pool.install(op))
 }
 
 // this is re-exported in utils for polars child crates

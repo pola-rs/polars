@@ -56,10 +56,12 @@ impl Executor for JoinExec {
             let mut state_left = state.split();
             state_right.branch_idx += 1;
 
-            pool_install(|| rayon::join(
-                move || input_left.execute(&mut state_left),
-                move || input_right.execute(&mut state_right),
-            ))
+            pool_install(|| {
+                rayon::join(
+                    move || input_left.execute(&mut state_left),
+                    move || input_right.execute(&mut state_right),
+                )
+            })
         } else {
             (input_left.execute(state), input_right.execute(state))
         };
