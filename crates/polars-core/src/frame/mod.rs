@@ -296,6 +296,8 @@ impl DataFrame {
             );
         }
 
+        ensure_names_unique(&columns, |s| s.name().as_str())?;
+
         Ok(DataFrame {
             height,
             columns,
