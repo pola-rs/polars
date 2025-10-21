@@ -308,9 +308,11 @@ impl SkewState {
             None => Self::new(&arr.values().as_slice()[start..][..length]),
             Some(validity) => {
                 let iter = arr.values()[start..][..length].iter().copied();
-                let iter = iter.zip(validity.iter()).filter_map(|(x, v)| v.then_some(x));
+                let iter = iter
+                    .zip(validity.iter())
+                    .filter_map(|(x, v)| v.then_some(x));
                 Self::from_iter(iter, validity.set_bits())
-            }
+            },
         }
     }
 
@@ -456,9 +458,11 @@ impl KurtosisState {
             None => Self::new(&arr.values().as_slice()[start..][..length]),
             Some(validity) => {
                 let iter = arr.values()[start..][..length].iter().copied();
-                let iter = iter.zip(validity.iter()).filter_map(|(x, v)| v.then_some(x));
+                let iter = iter
+                    .zip(validity.iter())
+                    .filter_map(|(x, v)| v.then_some(x));
                 Self::from_iter(iter, validity.set_bits())
-            }
+            },
         }
     }
 

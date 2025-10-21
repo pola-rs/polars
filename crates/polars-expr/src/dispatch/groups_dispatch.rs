@@ -442,8 +442,18 @@ pub fn moment_agg<'a, S: Default>(
 
     if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
         let ca = s.f64()?;
-        let name = s.name().clone();
-        *s = Column::new_scalar(name, f64::NAN.into(), ca.len()).into_column();
+        *s = ca
+            .iter()
+            .map(|v| {
+                v.and_then(|v| {
+                    let mut state = S::default();
+                    insert_one(&mut state, v);
+                    finalize(state)
+                })
+            })
+            .collect::<Float64Chunked>()
+            .with_name(ca.name().clone())
+            .into_column();
         return Ok(ac);
     }
 

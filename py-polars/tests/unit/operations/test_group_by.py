@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 
 import polars as pl
 import polars.selectors as cs
@@ -1846,7 +1846,6 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
     )
 )
 def test_group_by_skew_kurtosis(s: pl.Series) -> None:
-    print(s.chunk_lengths())
     df = s.to_frame()
 
     exprs = {
@@ -1866,6 +1865,15 @@ def test_group_by_skew_kurtosis(s: pl.Series) -> None:
             .drop("literal")
         )
         assert_frame_equal(sl, gb)
+
+        # check scalar case
+        sl_first = df.select([e(pl.col.f.first()).alias(n) for n, e in exprs.items()])
+        gb = (
+            df.group_by(pl.lit(1))
+            .agg([e(pl.col.f.first()).alias(n) for n, e in exprs.items()])
+            .drop("literal")
+        )
+        assert_frame_equal(sl_first, gb)
 
     li = df.select(pl.col.f.implode()).select(
         [pl.col.f.list.agg(e(pl.element())).alias(n) for n, e in exprs.items()]
