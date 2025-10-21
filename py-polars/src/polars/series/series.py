@@ -8095,6 +8095,11 @@ class Series:
         n
             periods to shift for forming percent change.
 
+        Notes
+        -----
+        Null values are preserved. If you're coming from pandas, this matches
+        their ``fill_method=None`` behaviour.
+
         Examples
         --------
         >>> pl.Series(range(10)).pct_change()
