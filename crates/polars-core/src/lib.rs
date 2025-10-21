@@ -32,6 +32,7 @@ pub mod testing;
 #[cfg(test)]
 mod tests;
 
+use std::cell::{Cell, RefCell};
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -46,9 +47,102 @@ pub static PROCESS_ID: LazyLock<u128> = LazyLock::new(|| {
         .as_nanos()
 });
 
+pub struct POOL;
+
+// Thread locals to allow disabling threading for specific threads.
+thread_local! {
+    static ALLOW_THREADS: Cell<bool> = const { Cell::new(true) };
+    static NOOP_POOL: RefCell<ThreadPool> = RefCell::new(
+        ThreadPoolBuilder::new()
+            .use_current_thread()
+            .num_threads(1)
+            .build()
+            .expect("could not create no-op thread pool")
+    );
+}
+
+impl POOL {
+    pub fn install<OP, R>(&self, op: OP) -> R
+    where
+        OP: FnOnce() -> R + Send,
+        R: Send,
+    {
+        self.with(|p| p.install(op))
+    }
+
+    pub fn join<A, B, RA, RB>(&self, oper_a: A, oper_b: B) -> (RA, RB)
+    where
+        A: FnOnce() -> RA + Send,
+        B: FnOnce() -> RB + Send,
+        RA: Send,
+        RB: Send,
+    {
+        self.install(|| rayon::join(oper_a, oper_b))
+    }
+
+    pub fn scope<'scope, OP, R>(&self, op: OP) -> R
+    where
+        OP: FnOnce(&rayon::Scope<'scope>) -> R + Send,
+        R: Send,
+    {
+        self.install(|| rayon::scope(op))
+    }
+
+    pub fn spawn<OP>(&self, op: OP)
+    where
+        OP: FnOnce() + Send + 'static,
+    {
+        self.with(|p| p.spawn(op))
+    }
+
+    pub fn spawn_fifo<OP>(&self, op: OP)
+    where
+        OP: FnOnce() + Send + 'static,
+    {
+        self.with(|p| p.spawn_fifo(op))
+    }
+
+    pub fn current_thread_has_pending_tasks(&self) -> Option<bool> {
+        self.with(|p| p.current_thread_has_pending_tasks())
+    }
+
+    pub fn current_thread_index(&self) -> Option<usize> {
+        self.with(|p| p.current_thread_index())
+    }
+
+    pub fn current_num_threads(&self) -> usize {
+        self.with(|p| p.current_num_threads())
+    }
+
+    pub fn with<OP, R>(&self, op: OP) -> R
+    where
+        OP: FnOnce(&ThreadPool) -> R + Send,
+        R: Send,
+    {
+        if ALLOW_THREADS.get() || THREAD_POOL.current_thread_index().is_some() {
+            op(&THREAD_POOL)
+        } else {
+            NOOP_POOL.with(|v| op(&v.borrow()))
+        }
+    }
+
+    pub fn without_threading<R>(&self, op: impl FnOnce() -> R) -> R {
+        // This can only be done from threads that are not in the main threadpool.
+        if THREAD_POOL.current_thread_index().is_some() {
+            op()
+        } else {
+            let prev = ALLOW_THREADS.replace(false);
+            // @Q? Should this catch_unwind?
+            let result = op();
+            ALLOW_THREADS.set(prev);
+            result
+        }
+    }
+}
+
 // this is re-exported in utils for polars child crates
 #[cfg(not(target_family = "wasm"))] // only use this on non wasm targets
-pub static POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
+pub static THREAD_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
     ThreadPoolBuilder::new()
         .num_threads(
@@ -66,7 +160,7 @@ pub static POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
 });
 
 #[cfg(all(target_os = "emscripten", target_family = "wasm"))] // Use 1 rayon thread on emscripten
-pub static POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
+pub static THREAD_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .num_threads(1)
         .use_current_thread()
@@ -75,7 +169,8 @@ pub static POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
 });
 
 #[cfg(all(not(target_os = "emscripten"), target_family = "wasm"))] // use this on other wasm targets
-pub static POOL: LazyLock<polars_utils::wasm::Pool> = LazyLock::new(|| polars_utils::wasm::Pool);
+pub static THREAD_POOL: LazyLock<polars_utils::wasm::Pool> =
+    LazyLock::new(|| polars_utils::wasm::Pool);
 
 // utility for the tests to ensure a single thread can execute
 pub static SINGLE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
