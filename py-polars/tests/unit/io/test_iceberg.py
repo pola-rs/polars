@@ -6,6 +6,7 @@ import itertools
 import os
 import pickle
 import sys
+import warnings
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -14,10 +15,9 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pydantic
 import pyiceberg
 import pytest
-from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import (
     BucketTransform,
     IdentityTransform,
@@ -51,6 +51,12 @@ from polars._utils.various import parse_version
 from polars.io.iceberg._utils import _convert_predicate, _to_ast
 from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
+
+with warnings.catch_warnings():
+    # Upstream issue at https://github.com/apache/iceberg-python/issues/2648
+    warnings.simplefilter("ignore", pydantic.warnings.PydanticDeprecatedSince212)
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+    from pyiceberg.catalog.sql import SqlCatalog
 
 
 @pytest.fixture
