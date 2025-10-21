@@ -623,10 +623,13 @@ pub fn lower_ir(
                 }
             } else if output_schema.is_empty()
                 && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
-                && unified_scan_args.pre_slice.is_none()
-                && predicate.is_none()
             {
                 // Fast-count for scan_iceberg will hit here.
+
+                // Note: These are currently always `None`, as projection pushdown runs before slice /
+                // predicate pushdown.
+                assert!(unified_scan_args.pre_slice.is_none() && predicate.is_none());
+
                 let row_counter = RowCounter::new(physical_rows, deleted_rows);
                 let num_rows = row_counter.num_rows()?;
 
