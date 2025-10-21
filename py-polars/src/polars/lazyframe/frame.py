@@ -6348,6 +6348,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             and throw an exception if any do not. (Note that this parameter
             is a no-op when passing a function to `mapping`).
 
+        See Also
+        --------
+        Expr.name.replace
+
         Notes
         -----
         If existing names are swapped (e.g. 'A' points to 'B' and 'B' points to 'A'),

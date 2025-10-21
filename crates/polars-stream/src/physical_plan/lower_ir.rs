@@ -625,6 +625,11 @@ pub fn lower_ir(
                 && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
             {
                 // Fast-count for scan_iceberg will hit here.
+
+                // Note: These are currently always `None`, as projection pushdown runs before slice /
+                // predicate pushdown.
+                assert!(unified_scan_args.pre_slice.is_none() && predicate.is_none());
+
                 let row_counter = RowCounter::new(physical_rows, deleted_rows);
                 let num_rows = row_counter.num_rows()?;
 
@@ -639,7 +644,7 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_height(num_rows)),
                 }
             } else {
-                let file_reader_builder = match &*scan_type {
+                let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet {
                         options,
@@ -649,7 +654,7 @@ pub fn lower_ir(
                             options: Arc::new(options.clone()),
                             first_metadata: first_metadata.clone(),
                         },
-                    ) as Arc<dyn FileReaderBuilder>,
+                    ) as _,
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {
@@ -657,17 +662,13 @@ pub fn lower_ir(
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         first_metadata: first_metadata.clone(),
-                    }) as Arc<dyn FileReaderBuilder>,
+                    }) as _,
 
                     #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => {
-                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
-                    },
+                    FileScanIR::Csv { options } => Arc::new(Arc::new(options.clone())) as _,
 
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => {
-                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
-                    },
+                    FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
 
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {
@@ -1110,7 +1111,7 @@ pub fn lower_ir(
                     distinct_lp_node,
                     &mut lp_arena,
                     expr_arena,
-                    None,
+                    Some(crate::dispatch::build_streaming_query_executor),
                 )?);
 
                 let format_str = ctx.prepare_visualization.then(|| {

@@ -5034,6 +5034,10 @@ class DataFrame:
             and throw an exception if any do not. (Note that this parameter
             is a no-op when passing a function to `mapping`).
 
+        See Also
+        --------
+        Expr.name.replace
+
         Examples
         --------
         >>> df = pl.DataFrame(

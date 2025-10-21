@@ -934,21 +934,21 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_and(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_and(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_and(g) })
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_or(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_or(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_or(g) })
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_xor(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_xor(&self, groups: &GroupsType) -> Self {
         // @partition-opt
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_xor(groups) }.into()
