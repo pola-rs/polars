@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use polars_core::frame::DataFrame;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_plan::plans::hive::HivePartitionsDf;
 

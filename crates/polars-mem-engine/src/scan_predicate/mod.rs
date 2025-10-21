@@ -1,7 +1,10 @@
+pub mod functions;
+pub mod skip_files_mask;
 use core::fmt;
 use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
+pub use functions::{create_scan_predicate, initialize_scan_predicate};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, Field, GroupPositions, PlHashMap, PlIndexSet};
 use polars_core::scalar::Scalar;
