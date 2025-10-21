@@ -50,6 +50,7 @@ pub static PROCESS_ID: LazyLock<u128> = LazyLock::new(|| {
 pub struct POOL;
 
 // Thread locals to allow disabling threading for specific threads.
+#[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
 thread_local! {
     static ALLOW_THREADS: Cell<bool> = const { Cell::new(true) };
     static NOOP_POOL: RefCell<ThreadPool> = RefCell::new(
@@ -67,7 +68,15 @@ impl POOL {
         OP: FnOnce() -> R + Send,
         R: Send,
     {
-        self.with(|p| p.install(op))
+        #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
+        {
+            op()
+        }
+
+        #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+        {
+            self.with(|p| p.install(op))
+        }
     }
 
     pub fn join<A, B, RA, RB>(&self, oper_a: A, oper_b: B) -> (RA, RB)
@@ -92,28 +101,69 @@ impl POOL {
     where
         OP: FnOnce() + Send + 'static,
     {
-        self.with(|p| p.spawn(op))
+        #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
+        {
+            rayon::spawn(op)
+        }
+
+        #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+        {
+            self.with(|p| p.spawn(op))
+        }
     }
 
     pub fn spawn_fifo<OP>(&self, op: OP)
     where
         OP: FnOnce() + Send + 'static,
     {
-        self.with(|p| p.spawn_fifo(op))
+        #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
+        {
+            rayon::spawn_fifo(op)
+        }
+
+        #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+        {
+            self.with(|p| p.spawn_fifo(op))
+        }
     }
 
     pub fn current_thread_has_pending_tasks(&self) -> Option<bool> {
-        self.with(|p| p.current_thread_has_pending_tasks())
+        #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
+        {
+            None
+        }
+
+        #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+        {
+            self.with(|p| p.current_thread_has_pending_tasks())
+        }
     }
 
     pub fn current_thread_index(&self) -> Option<usize> {
-        self.with(|p| p.current_thread_index())
+        #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
+        {
+            rayon::current_thread_index()
+        }
+
+        #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+        {
+            self.with(|p| p.current_thread_index())
+        }
     }
 
     pub fn current_num_threads(&self) -> usize {
-        self.with(|p| p.current_num_threads())
+        #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
+        {
+            rayon::current_num_threads()
+        }
+
+        #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+        {
+            self.with(|p| p.current_num_threads())
+        }
     }
 
+    #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
     pub fn with<OP, R>(&self, op: OP) -> R
     where
         OP: FnOnce(&ThreadPool) -> R + Send,
@@ -127,15 +177,23 @@ impl POOL {
     }
 
     pub fn without_threading<R>(&self, op: impl FnOnce() -> R) -> R {
-        // This can only be done from threads that are not in the main threadpool.
-        if THREAD_POOL.current_thread_index().is_some() {
+        #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
+        {
             op()
-        } else {
-            let prev = ALLOW_THREADS.replace(false);
-            // @Q? Should this catch_unwind?
-            let result = op();
-            ALLOW_THREADS.set(prev);
-            result
+        }
+
+        #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+        {
+            // This can only be done from threads that are not in the main threadpool.
+            if THREAD_POOL.current_thread_index().is_some() {
+                op()
+            } else {
+                let prev = ALLOW_THREADS.replace(false);
+                // @Q? Should this catch_unwind?
+                let result = op();
+                ALLOW_THREADS.set(prev);
+                result
+            }
         }
     }
 }
@@ -167,10 +225,6 @@ pub static THREAD_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
         .build()
         .expect("could not create pool")
 });
-
-#[cfg(all(not(target_os = "emscripten"), target_family = "wasm"))] // use this on other wasm targets
-pub static THREAD_POOL: LazyLock<polars_utils::wasm::Pool> =
-    LazyLock::new(|| polars_utils::wasm::Pool);
 
 // utility for the tests to ensure a single thread can execute
 pub static SINGLE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
