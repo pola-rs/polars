@@ -1848,7 +1848,7 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
 def test_group_by_skew_kurtosis(s: pl.Series) -> None:
     df = s.to_frame()
 
-    exprs = {
+    exprs: dict[str, Callable[[pl.Expr], pl.Expr]] = {
         "skew": lambda e: e.skew(),
         "skew_b": lambda e: e.skew(bias=False),
         "kurt": lambda e: e.kurtosis(),
