@@ -1,14 +1,17 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
+use polars_compute::moment::{KurtosisState, SkewState};
 use polars_core::POOL;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    AnyValue, ChunkCast, Column, CompatLevel, GroupPositions, GroupsType, IDX_DTYPE, IntoColumn,
+    AnyValue, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions, GroupsType,
+    IDX_DTYPE, IntoColumn,
 };
 use polars_core::scalar::Scalar;
 use polars_core::series::{ChunkCompareEq, Series};
@@ -422,4 +425,108 @@ pub fn drop_nulls<'a>(
         .cloned()
         .unwrap_or(Bitmap::new_with_value(true, 1));
     drop_items(ac, &predicate)
+}
+
+pub fn moment_agg<'a, S: Default>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+
+    insert_one: impl Fn(&mut S, f64) + Send + Sync,
+    new_from_slice: impl Fn(&PrimitiveArray<f64>, usize, usize) -> S + Send + Sync,
+    finalize: impl Fn(S) -> Option<f64> + Send + Sync,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 1);
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+
+    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
+        let ca = s.f64()?;
+        let name = s.name().clone();
+        *s = Column::new_scalar(name, f64::NAN.into(), ca.len()).into_column();
+        return Ok(ac);
+    }
+
+    ac.groups();
+
+    let name = ac.get_values().name().clone();
+    let ca = ac.flat_naive();
+    let ca = ca.f64()?;
+    let ca = ca.rechunk();
+    let arr = ca.downcast_as_array();
+
+    let ca = POOL.install(|| match &**ac.groups.as_ref() {
+        GroupsType::Idx(idx) => {
+            if let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) {
+                idx.into_par_iter()
+                    .map(|(_, idx)| {
+                        let mut state = S::default();
+                        for &i in idx.iter() {
+                            if unsafe { validity.get_bit_unchecked(i as usize) } {
+                                insert_one(&mut state, arr.values()[i as usize]);
+                            }
+                        }
+                        finalize(state)
+                    })
+                    .collect::<Float64Chunked>()
+            } else {
+                idx.into_par_iter()
+                    .map(|(_, idx)| {
+                        let mut state = S::default();
+                        for &i in idx.iter() {
+                            insert_one(&mut state, arr.values()[i as usize]);
+                        }
+                        finalize(state)
+                    })
+                    .collect::<Float64Chunked>()
+            }
+        },
+        GroupsType::Slice {
+            groups,
+            overlapping: _,
+        } => groups
+            .into_par_iter()
+            .map(|[start, length]| finalize(new_from_slice(arr, *start as usize, *length as usize)))
+            .collect::<Float64Chunked>(),
+    });
+
+    ac.state = AggState::AggregatedScalar(ca.with_name(name).into_column());
+    Ok(ac)
+}
+
+pub fn skew<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    bias: bool,
+) -> PolarsResult<AggregationContext<'a>> {
+    moment_agg::<SkewState>(
+        inputs,
+        df,
+        groups,
+        state,
+        SkewState::insert_one,
+        SkewState::from_array,
+        |s| s.finalize(bias),
+    )
+}
+
+pub fn kurtosis<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    fisher: bool,
+    bias: bool,
+) -> PolarsResult<AggregationContext<'a>> {
+    moment_agg::<KurtosisState>(
+        inputs,
+        df,
+        groups,
+        state,
+        KurtosisState::insert_one,
+        KurtosisState::from_array,
+        |s| s.finalize(fisher, bias),
+    )
 }
