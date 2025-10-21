@@ -54,7 +54,7 @@ fn build_group_by_fallback(
         group_by_lp_node,
         &mut lp_arena,
         expr_arena,
-        None,
+        Some(crate::dispatch::build_streaming_query_executor),
     )?);
 
     let group_by_node = PhysNode {
