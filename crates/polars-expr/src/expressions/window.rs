@@ -108,9 +108,17 @@ impl WindowExpr {
         }
         // SAFETY:
         // we only have unique indices ranging from 0..len
-        POOL.with(|pool| {
-            unsafe { perfect_sort(pool, &idx_mapping, &mut take_idx) };
-        });
+        #[cfg(all(not(target_os = "emscripten"), target_family = "wasm"))]
+        {
+            unsafe { perfect_sort(&idx_mapping, &mut take_idx) };
+        }
+
+        #[cfg(not(all(not(target_os = "emscripten"), target_family = "wasm")))]
+        {
+            POOL.with(|pool| {
+                unsafe { perfect_sort(pool, &idx_mapping, &mut take_idx) };
+            });
+        }
         Ok(IdxCa::from_vec(PlSmallStr::EMPTY, take_idx))
     }
 
