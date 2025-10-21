@@ -578,7 +578,9 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         },
         F::DropNans => wrap_groups!(groups_dispatch::drop_nans),
         F::DropNulls => wrap_groups!(groups_dispatch::drop_nulls),
+        #[cfg(feature = "moment")]
         F::Skew(bias) => wrap_groups!(groups_dispatch::skew, (*bias, v: bool)),
+        #[cfg(feature = "moment")]
         F::Kurtosis(fisher, bias) => {
             wrap_groups!(groups_dispatch::kurtosis, (*fisher, v1: bool), (*bias, v2: bool))
         },

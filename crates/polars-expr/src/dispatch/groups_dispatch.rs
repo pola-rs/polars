@@ -5,7 +5,6 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
-use polars_compute::moment::{KurtosisState, SkewState};
 use polars_core::POOL;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
@@ -427,6 +426,7 @@ pub fn drop_nulls<'a>(
     drop_items(ac, &predicate)
 }
 
+#[cfg(feature = "moment")]
 pub fn moment_agg<'a, S: Default>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -504,6 +504,7 @@ pub fn moment_agg<'a, S: Default>(
     Ok(ac)
 }
 
+#[cfg(feature = "moment")]
 pub fn skew<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -511,6 +512,7 @@ pub fn skew<'a>(
     state: &ExecutionState,
     bias: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
+    use polars_compute::moment::SkewState;
     moment_agg::<SkewState>(
         inputs,
         df,
@@ -522,6 +524,7 @@ pub fn skew<'a>(
     )
 }
 
+#[cfg(feature = "moment")]
 pub fn kurtosis<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -530,6 +533,7 @@ pub fn kurtosis<'a>(
     fisher: bool,
     bias: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
+    use polars_compute::moment::KurtosisState;
     moment_agg::<KurtosisState>(
         inputs,
         df,
