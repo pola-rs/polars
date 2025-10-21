@@ -1158,24 +1158,22 @@ impl IRFunctionExpr {
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
 
             F::FoldHorizontal { returns_scalar, .. }
-            | F::ReduceHorizontal { returns_scalar, .. } => FunctionOptions::groupwise()
-                .with_flags(|mut f| {
-                    f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                    if *returns_scalar {
-                        f |= FunctionFlags::RETURNS_SCALAR;
-                    }
-                    f
+            | F::ReduceHorizontal { returns_scalar, .. } => match returns_scalar {
+                &false => FunctionOptions::elementwise()
+                    .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+                &true => FunctionOptions::groupwise().with_flags(|f| {
+                    f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::RETURNS_SCALAR
                 }),
+            },
             #[cfg(feature = "dtype-struct")]
             F::CumFoldHorizontal { returns_scalar, .. }
-            | F::CumReduceHorizontal { returns_scalar, .. } => FunctionOptions::groupwise()
-                .with_flags(|mut f| {
-                    f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                    if *returns_scalar {
-                        f |= FunctionFlags::RETURNS_SCALAR;
-                    }
-                    f
+            | F::CumReduceHorizontal { returns_scalar, .. } => match returns_scalar {
+                &false => FunctionOptions::elementwise()
+                    .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+                &true => FunctionOptions::groupwise().with_flags(|f| {
+                    f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::RETURNS_SCALAR
                 }),
+            },
             #[cfg(feature = "ewma")]
             F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => {
                 FunctionOptions::length_preserving()
