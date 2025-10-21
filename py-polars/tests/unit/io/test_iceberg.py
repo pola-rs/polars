@@ -1208,10 +1208,8 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     )
 
     # First file
-    assert (
-        "[MultiScan]: Source filter mask initialization via table statistics" in capture
-    )
-    assert "[MultiScan]: Predicate pushdown allows skipping 1 / 2 files" in capture
+    assert "Source filter mask initialization via table statistics" in capture
+    assert "Predicate pushdown allows skipping 1 / 2 files" in capture
     # Second file
     assert (
         "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
