@@ -514,7 +514,7 @@ fn to_graph_rec<'a>(
                 sort_node,
                 &mut lp_arena,
                 ctx.expr_arena,
-                None,
+                Some(crate::dispatch::build_streaming_query_executor),
             )?);
 
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -825,7 +825,7 @@ fn to_graph_rec<'a>(
                 join_node,
                 &mut lp_arena,
                 ctx.expr_arena,
-                None,
+                Some(crate::dispatch::build_streaming_query_executor),
             )?);
 
             ctx.graph.add_node(

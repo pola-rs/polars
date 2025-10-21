@@ -1110,7 +1110,7 @@ pub fn lower_ir(
                     distinct_lp_node,
                     &mut lp_arena,
                     expr_arena,
-                    None,
+                    Some(crate::dispatch::build_streaming_query_executor),
                 )?);
 
                 let format_str = ctx.prepare_visualization.then(|| {
