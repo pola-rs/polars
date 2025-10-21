@@ -22,12 +22,11 @@ pub struct WindowExpr {
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
-    /// A function Expr. i.e. Mean, Median, Max, etc.
-    pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) mapping: WindowMapping,
     pub(crate) expr: Expr,
     pub(crate) has_different_group_sources: bool,
+    pub(crate) output_field: Field,
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -387,7 +386,7 @@ impl PhysicalExpr for WindowExpr {
             }
         }
 
-        let group_by_columns = self
+        let mut group_by_columns = self
             .group_by
             .iter()
             .map(|e| e.evaluate(df, state))
@@ -474,6 +473,18 @@ impl PhysicalExpr for WindowExpr {
                 .window_cache
                 .insert_groups(cache_key.clone(), groups.clone());
         }
+
+        // broadcast if required
+        for col in group_by_columns.iter_mut() {
+            if col.len() != df.height() {
+                polars_ensure!(
+                    col.len() == 1,
+                    ShapeMismatch: "columns used as `partition_by` must have the same length as the DataFrame"
+                );
+                *col = col.new_from_index(0, df.height())
+            }
+        }
+
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
 
         let mut ac = self.run_aggregation(df, state, &gb)?;
@@ -489,7 +500,11 @@ impl PhysicalExpr for WindowExpr {
                 Ok(out.into_column())
             },
             Explode => {
-                let out = ac.aggregated().explode(false)?;
+                let out = if self.phys_function.is_scalar() {
+                    ac.get_values().clone()
+                } else {
+                    ac.aggregated().explode(false)?
+                };
                 Ok(out.into_column())
             },
             Map => {
@@ -599,8 +614,8 @@ impl PhysicalExpr for WindowExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.function.to_field(input_schema)
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        Ok(self.output_field.clone())
     }
 
     fn is_scalar(&self) -> bool {

@@ -44,7 +44,7 @@ jobs:
         run: |
           sed -i 's/serde_json = { workspace = true, optional = true }/serde_json = { workspace = true }/' crates/polars-python/Cargo.toml
           sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
-          sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
+          sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/runtime/Cargo.toml
 
       - name: Setup emsdk
         uses: mymindstorm/setup-emsdk@v14
@@ -67,6 +67,6 @@ jobs:
           target: wasm32-unknown-emscripten
           args: >
             --profile dev
-            --manifest-path py-polars/Cargo.toml
+            --manifest-path py-polars/runtime/Cargo.toml
             --interpreter python3.10
           maturin-version: 1.7.4

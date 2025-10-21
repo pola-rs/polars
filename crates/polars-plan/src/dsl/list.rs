@@ -304,4 +304,12 @@ impl ListNameSpace {
             variant: EvalVariant::List,
         }
     }
+
+    pub fn agg<E: Into<Expr>>(self, other: E) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::ListAgg,
+        }
+    }
 }

@@ -11,7 +11,7 @@ use super::{
     ArrayDataTypeFunction, DataTypeFunction, DataTypeSelector, Expr, StructDataTypeFunction,
 };
 use crate::frame::OptFlags;
-use crate::plans::{ExprToIRContext, expand_expression, to_expr_ir};
+use crate::plans::{ExprToIRContext, ToFieldContext, expand_expression, to_expr_ir};
 
 #[derive(Clone, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -89,7 +89,9 @@ fn into_datatype_impl(
             let mut arena = Arena::new();
             let mut ctx = ExprToIRContext::new(&mut arena, schema);
             let e = to_expr_ir(expr, &mut ctx)?;
-            let dtype = arena.get(e.node()).to_dtype(schema, &arena)?;
+            let dtype = arena
+                .get(e.node())
+                .to_dtype(&ToFieldContext::new(&arena, schema))?;
             polars_ensure!(!dtype.contains_unknown(),InvalidOperation:"DataType expression is not allowed to instantiate to `unknown`");
             dtype
         },

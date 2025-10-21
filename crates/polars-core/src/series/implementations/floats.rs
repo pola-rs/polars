@@ -236,6 +236,10 @@ macro_rules! impl_dyn_series {
                 self.0.take_unchecked(indices).into_series()
             }
 
+            fn deposit(&self, validity: &Bitmap) -> Series {
+                self.0.deposit(validity).into_series()
+            }
+
             fn len(&self) -> usize {
                 self.0.len()
             }
@@ -316,6 +320,12 @@ macro_rules! impl_dyn_series {
             }
             fn min_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(ChunkAggSeries::min_reduce(&self.0))
+            }
+            fn mean_reduce(&self) -> PolarsResult<Scalar> {
+                let mean = self
+                    .mean()
+                    .map(|m| m as <$pdt as PolarsDataType>::OwnedPhysical);
+                Ok(Scalar::new(self.dtype().clone(), mean.into()))
             }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(QuantileAggSeries::median_reduce(&self.0))

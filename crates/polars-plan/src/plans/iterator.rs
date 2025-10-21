@@ -11,7 +11,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            DataTypeFunction(_) | Column(_) | Literal(_) | Len => {},
+            DataTypeFunction(_) | Column(_) | Literal(_) | Len | Element => {},
             #[cfg(feature = "dtype-struct")]
             Field(_) => {},
             Alias(e, _) => $push($c, e),
@@ -48,6 +48,7 @@ macro_rules! push_expr {
                     NUnique(e) => $push($c, e),
                     First(e) => $push($c, e),
                     Last(e) => $push($c, e),
+                    Item(e) => $push($c, e),
                     Implode(e) => $push($c, e),
                     Count { input, .. } => $push($c, input),
                     Quantile { expr, .. } => $push($c, expr),

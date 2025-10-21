@@ -72,13 +72,13 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        MinMax::max_propagate_nan,
-                    ),
+                    )
+                    .reduce(MinMax::max_propagate_nan),
                     (_, 1) => take_agg_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        MinMax::max_propagate_nan,
-                    ),
+                    )
+                    .reduce(MinMax::max_propagate_nan),
                     _ => {
                         let take = { ca.take_unchecked(idx) };
                         ca_nan_agg(&take, MinMax::max_propagate_nan)
@@ -137,13 +137,13 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        MinMax::min_propagate_nan,
-                    ),
+                    )
+                    .reduce(MinMax::min_propagate_nan),
                     (_, 1) => take_agg_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        MinMax::min_propagate_nan,
-                    ),
+                    )
+                    .reduce(MinMax::min_propagate_nan),
                     _ => {
                         let take = { ca.take_unchecked(idx) };
                         ca_nan_agg(&take, MinMax::min_propagate_nan)

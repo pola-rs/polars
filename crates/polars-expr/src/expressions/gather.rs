@@ -77,7 +77,11 @@ impl PhysicalExpr for GatherExpr {
                     s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
                 }
             },
-            _ => unreachable!(),
+            _ => polars_bail!(
+                op = "gather/get",
+                got = s.dtype(),
+                expected = "integer type"
+            ),
         })?;
 
         let taken = if idx.inner_dtype() == &IDX_DTYPE {
@@ -110,7 +114,7 @@ impl PhysicalExpr for GatherExpr {
                 .with_name(ac.get_values().name().clone())
         };
 
-        ac.with_values(taken.into_column(), true, Some(&self.expr))?;
+        ac.with_agg_state(AggState::AggregatedList(taken.into_column()));
         ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }

@@ -7,12 +7,11 @@ pub(crate) mod writer;
 
 pub use common::{
     Compression, DictionaryTracker, EncodedData, Record, WriteOptions, commit_encoded_arrays,
-    dictionaries_to_encode, encode_array, encode_dictionary, encode_new_dictionaries,
+    dictionaries_to_encode, encode_array, encode_dictionary_values, encode_new_dictionaries,
     encode_record_batch,
 };
 pub use schema::schema_to_bytes;
 pub use serialize::write;
-use serialize::write_dictionary;
 pub use stream::StreamWriter;
 pub use writer::FileWriter;
 

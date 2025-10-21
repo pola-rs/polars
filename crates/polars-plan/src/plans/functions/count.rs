@@ -84,7 +84,6 @@ fn count_all_rows_csv(
         .map(|source| match source {
             ScanSourceRef::Path(addr) => polars_io::csv::read::count_rows(
                 addr,
-                parse_options.separator,
                 parse_options.quote_char,
                 parse_options.comment_prefix.as_ref(),
                 parse_options.eol_char,
@@ -98,7 +97,6 @@ fn count_all_rows_csv(
 
                 polars_io::csv::read::count_rows_from_slice_par(
                     &memslice[..],
-                    parse_options.separator,
                     parse_options.quote_char,
                     parse_options.comment_prefix.as_ref(),
                     parse_options.eol_char,
@@ -140,15 +138,15 @@ pub(super) fn count_rows_parquet(
 
 #[cfg(all(feature = "parquet", feature = "async"))]
 async fn count_rows_cloud_parquet(
-    addrs: &[PlPath],
+    paths: &[PlPath],
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_io::prelude::ParquetObjectStore;
 
-    let collection = addrs.iter().map(|path| {
+    let collection = paths.iter().map(|path| {
         with_concurrency_budget(1, || async {
             let mut reader =
-                ParquetObjectStore::from_uri(path.to_str(), cloud_options, None).await?;
+                ParquetObjectStore::from_uri(path.as_ref(), cloud_options, None).await?;
             reader.num_rows().await
         })
     });
@@ -197,7 +195,7 @@ async fn count_rows_cloud_ipc(
 
     let collection = addrs.iter().map(|path| {
         with_concurrency_budget(1, || async {
-            let reader = IpcReaderAsync::from_uri(path.to_str(), cloud_options).await?;
+            let reader = IpcReaderAsync::from_uri(path.as_ref(), cloud_options).await?;
             reader.count_rows(metadata).await
         })
     });

@@ -38,6 +38,7 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"], o
 uuid = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true }
 rand = { workspace = true }
 
 [build-dependencies]
@@ -58,7 +59,7 @@ serde = [
   "dep:serde_stacker",
   "uuid/serde",
 ]
-dsl-schema = ["dep:schemars"]
+dsl-schema = ["dep:schemars", "schemars/uuid1"]
 python = ["pyo3", "polars-error/python"]
 
 [lints]

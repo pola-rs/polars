@@ -10,14 +10,14 @@ use crate::utils::EnterPolarsExt;
 impl PyLazyFrame {
     fn collect_concurrently(&self, py: Python) -> PyResult<PyInProcessQuery> {
         let ipq = py.enter_polars(|| {
-            let ldf = self.ldf.clone();
+            let ldf = self.ldf.read().clone();
             ldf.collect_concurrently()
         })?;
         Ok(PyInProcessQuery { ipq })
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[cfg(not(target_arch = "wasm32"))]
 #[repr(transparent)]
 #[derive(Clone)]

@@ -215,7 +215,7 @@ impl GetPages<'_> {
 pub(super) async fn expand_paths_hf(
     paths: &[PlPath],
     check_directory_level: bool,
-    cloud_options: Option<&CloudOptions>,
+    cloud_options: &Option<CloudOptions>,
     glob: bool,
 ) -> PolarsResult<(usize, Vec<PlPath>)> {
     assert!(!paths.is_empty());

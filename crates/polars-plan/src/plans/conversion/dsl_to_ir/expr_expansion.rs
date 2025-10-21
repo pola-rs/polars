@@ -1,6 +1,7 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 
 use super::*;
+use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
 
 pub fn prepare_projection(
     exprs: Vec<Expr>,
@@ -8,7 +9,9 @@ pub fn prepare_projection(
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, &PlHashSet::new(), schema, opt_flags)?;
-    let schema = expressions_to_schema(&exprs, schema)?;
+    let schema = expressions_to_schema(&exprs, schema, |duplicate_name: &str| {
+        format!("projections contained duplicate output name '{duplicate_name}'")
+    })?;
     Ok((exprs, schema))
 }
 
@@ -229,8 +232,7 @@ fn try_expand_single(
 
 fn needs_expansion(expr: &Expr) -> bool {
     expr.into_iter().any(|e| {
-        let mut v = matches!(e, Expr::Selector(_))
-            || matches!(e, Expr::Eval { evaluation, .. } if needs_expansion(evaluation.as_ref()));
+        let mut v = matches!(e, Expr::Selector(_) | Expr::Eval { .. });
 
         #[cfg(feature = "dtype-struct")]
         {
@@ -259,6 +261,7 @@ fn expand_expression_rec(
 ) -> PolarsResult<usize> {
     let start_len = out.len();
     match &expr {
+        Expr::Element => out.push(expr.clone()),
         Expr::Alias(subexpr, name) => {
             _ = expand_single(
                 subexpr.as_ref(),
@@ -269,9 +272,25 @@ fn expand_expression_rec(
                 |e| Expr::Alias(Arc::new(e), name.clone()),
             )?
         },
+
+        // Backwards compatibility. We previously allowed `pl.col("")` and `pl.first()`
+        Expr::Column(column) if schema.contains(POLARS_ELEMENT) && column.is_empty() => {
+            out.push(Expr::Element)
+        },
+        Expr::Selector(Selector::ByIndex { indices, strict: _ })
+            if schema.contains(POLARS_ELEMENT) && indices.len() == 1 && indices[0] == 0 =>
+        {
+            out.push(Expr::Element)
+        },
+
         Expr::Column(_) => out.push(expr.clone()),
         Expr::Selector(selector) => {
-            let columns = selector.into_columns(schema, ignored_selector_columns)?;
+            let mut schema = std::borrow::Cow::Borrowed(schema);
+            // Remove `element()` for selectors.
+            if schema.contains(POLARS_ELEMENT) {
+                schema.to_mut().remove(POLARS_ELEMENT);
+            }
+            let columns = selector.into_columns(schema.as_ref(), ignored_selector_columns)?;
             out.extend(columns.into_iter().map(Expr::Column));
         },
         Expr::Literal(_) => out.push(expr.clone()),
@@ -447,6 +466,14 @@ fn expand_expression_rec(
                     out,
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Last(Arc::new(e))),
+                )?,
+                AggExpr::Item(expr) => expand_single(
+                    expr.as_ref(),
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| Expr::Agg(AggExpr::Item(Arc::new(e))),
                 )?,
                 AggExpr::Mean(expr) => expand_single(
                     expr.as_ref(),
@@ -801,8 +828,8 @@ fn expand_expression_rec(
                 let expr = Arc::new(expr);
                 let expr_dtype = expr.to_field(schema)?.dtype;
                 let element_dtype = variant.element_dtype(&expr_dtype)?;
-                let evaluation_schema =
-                    Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+                let mut evaluation_schema = schema.clone();
+                evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
 
                 let start_length = out.len();
                 expand_expression_rec(

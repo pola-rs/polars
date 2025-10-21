@@ -83,8 +83,7 @@ fn init_entries_from_uri_list_impl(
         ))
         .then(|| {
             pl_async::get_runtime().block_in_place_on(async {
-                let (_, object_store) =
-                    build_object_store(first_uri.to_str(), cloud_options, false).await?;
+                let (_, object_store) = build_object_store(first_uri, cloud_options, false).await?;
 
                 PolarsResult::Ok(object_store)
             })
@@ -96,20 +95,21 @@ fn init_entries_from_uri_list_impl(
                 let shared_object_store = shared_object_store.clone();
 
                 async move {
-                    let object_store =
-                        if let Some(shared_object_store) = shared_object_store.clone() {
-                            shared_object_store
-                        } else {
-                            let (_, object_store) =
-                                build_object_store(&uri, cloud_options, false).await?;
-                            object_store
-                        };
+                    let object_store = if let Some(shared_object_store) =
+                        shared_object_store.clone()
+                    {
+                        shared_object_store
+                    } else {
+                        let (_, object_store) =
+                            build_object_store(PlPathRef::new(&uri), cloud_options, false).await?;
+                        object_store
+                    };
 
                     FILE_CACHE.init_entry(
                         uri.clone(),
                         &|| {
                             let CloudLocation { prefix, .. } =
-                                CloudLocation::new(uri.as_ref(), false).unwrap();
+                                CloudLocation::new(PlPathRef::new(&uri), false).unwrap();
                             let cloud_path = object_path_from_str(&prefix)?;
 
                             let uri = uri.clone();

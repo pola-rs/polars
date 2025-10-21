@@ -1,14 +1,22 @@
+use parking_lot::RwLock;
 use polars::sql::SQLContext;
 use pyo3::prelude::*;
 
 use crate::PyLazyFrame;
 use crate::error::PyPolarsErr;
 
-#[pyclass(unsendable)]
+#[pyclass(frozen)]
 #[repr(transparent)]
-#[derive(Clone)]
 pub struct PySQLContext {
-    pub context: SQLContext,
+    pub context: RwLock<SQLContext>,
+}
+
+impl Clone for PySQLContext {
+    fn clone(&self) -> Self {
+        Self {
+            context: RwLock::new(self.context.read().clone()),
+        }
+    }
 }
 
 #[pymethods]
@@ -22,27 +30,28 @@ impl PySQLContext {
     #[allow(clippy::new_without_default)]
     pub fn new() -> PySQLContext {
         PySQLContext {
-            context: SQLContext::new(),
+            context: RwLock::new(SQLContext::new()),
         }
     }
 
-    pub fn execute(&mut self, query: &str) -> PyResult<PyLazyFrame> {
+    pub fn execute(&self, query: &str) -> PyResult<PyLazyFrame> {
         Ok(self
             .context
+            .write()
             .execute(query)
             .map_err(PyPolarsErr::from)?
             .into())
     }
 
     pub fn get_tables(&self) -> PyResult<Vec<String>> {
-        Ok(self.context.get_tables())
+        Ok(self.context.read().get_tables())
     }
 
-    pub fn register(&mut self, name: &str, lf: PyLazyFrame) {
-        self.context.register(name, lf.ldf)
+    pub fn register(&self, name: &str, lf: PyLazyFrame) {
+        self.context.write().register(name, lf.ldf.into_inner())
     }
 
-    pub fn unregister(&mut self, name: &str) {
-        self.context.unregister(name)
+    pub fn unregister(&self, name: &str) {
+        self.context.write().unregister(name)
     }
 }

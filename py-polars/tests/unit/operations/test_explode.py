@@ -98,7 +98,7 @@ def test_explode_correct_for_slice() -> None:
             "group": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             "b": [1, 2, 3, 2, 3, 4, 1, 2, 3, 0, 1, 2, 3, 2, 3, 4, 1, 2, 3, 0],
         },
-        schema_overrides={"index": pl.UInt32},
+        schema_overrides={"index": pl.get_index_type()},
     )
     assert_frame_equal(df.slice(0, 10).explode(["b"]), expected)
 

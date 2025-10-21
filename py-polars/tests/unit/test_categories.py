@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import pickle
 import subprocess
 import sys
 
@@ -48,6 +49,7 @@ def test_cat_parquet_roundtrip(cats: pl.Categories) -> None:
     assert_frame_equal(df, df2)
 
 
+@pytest.mark.may_fail_cloud  # reason: these are not seen locally
 def test_local_categories_gc() -> None:
     dt = pl.Categorical(pl.Categories.random())
     df = pl.DataFrame({"x": ["foo", "bar", "moo"]}, schema={"x": dt})
@@ -145,3 +147,13 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+def test_categories_pickle_24690() -> None:
+    categories = pickle.loads(
+        pickle.dumps(pl.Categories("name", "namespace", pl.UInt8))
+    )
+
+    assert categories.name() == "name"
+    assert categories.namespace() == "namespace"
+    assert categories.physical() == pl.UInt8

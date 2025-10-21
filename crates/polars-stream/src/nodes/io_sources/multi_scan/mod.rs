@@ -17,7 +17,6 @@ use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_scan::components::bridge::BridgeState;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
@@ -25,6 +24,7 @@ use crate::nodes::io_sources::multi_scan::functions::{
     calc_max_concurrent_scans, calc_n_readers_pre_init,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::models::InitializedPipelineState;
+use crate::pipe::PortSender;
 
 pub struct MultiScan {
     name: PlSmallStr,
@@ -150,7 +150,7 @@ enum MultiScanState {
     },
 
     Initialized {
-        phase_channel_tx: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+        phase_channel_tx: connector::Sender<(PortSender, WaitToken)>,
         /// Wait group sent to the bridge, only dropped when a disconnect happens at the bridge.
         wait_group: WaitGroup,
         bridge_state: Arc<Mutex<BridgeState>>,

@@ -60,6 +60,12 @@ pub struct SourceToken {
     stop: Arc<RelaxedCell<bool>>,
 }
 
+impl Default for SourceToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SourceToken {
     pub fn new() -> Self {
         Self {

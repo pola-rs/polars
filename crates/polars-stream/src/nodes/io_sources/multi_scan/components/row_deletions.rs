@@ -86,10 +86,11 @@ impl DeletionFilesProvider {
                 let paths = paths.get(&scan_source_idx)?;
 
                 if verbose {
+                    let s = if paths.len() == 1 { "" } else { "s" };
                     eprintln!(
-                        "[DeletionFilesProvider[Iceberg]]: scan_source_idx: {}, {} files",
+                        "[DeletionFilesProvider[Iceberg]]: scan_source_idx: {}, {} file{s}",
                         scan_source_idx,
-                        paths.len()
+                        paths.len(),
                     )
                 }
 

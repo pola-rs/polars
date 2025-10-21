@@ -140,6 +140,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         | DT::UInt16
         | DT::UInt32
         | DT::UInt64
+        | DT::UInt128
         | DT::Int8
         | DT::Int16
         | DT::Int32
@@ -155,6 +156,9 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         DT::Categorical(..) | DT::Enum(..) => unreachable!(),
         DT::Date | DT::Datetime(..) | DT::Duration(..) | DT::Time => unreachable!(),
 
-        DT::Object(_) | DT::Unknown(_) => polars_bail!(op = "index_of", series.dtype()),
+        #[cfg(feature = "object")]
+        DT::Object(_) => polars_bail!(op = "index_of", series.dtype()),
+
+        DT::Unknown(_) => polars_bail!(op = "index_of", series.dtype()),
     }
 }

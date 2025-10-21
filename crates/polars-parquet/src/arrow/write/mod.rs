@@ -26,6 +26,7 @@ mod schema;
 mod utils;
 
 use arrow::array::*;
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::*;
 use arrow::types::{NativeType, days_ms, i256};
 pub use nested::{num_values, write_rep_and_def};
@@ -456,6 +457,18 @@ pub fn array_to_page_simple(
     }
 
     match dtype.to_logical_type() {
+        // Map empty struct to boolean array with same validity.
+        ArrowDataType::Struct(fs) if fs.is_empty() => boolean::array_to_page(
+            &BooleanArray::new(
+                ArrowDataType::Boolean,
+                Bitmap::new_zeroed(array.len()),
+                array.validity().cloned(),
+            ),
+            options,
+            type_,
+            encoding,
+        ),
+
         ArrowDataType::Boolean => boolean::array_to_page(
             array.as_any().downcast_ref().unwrap(),
             options,
@@ -811,6 +824,26 @@ pub fn array_to_page_simple(
                 fixed_size_binary::array_to_page(&array, options, type_, statistics)
             }
         },
+        ArrowDataType::UInt128 => {
+            let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
+            let statistics = if options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_decimal(
+                    array,
+                    type_.clone(),
+                    16,
+                    &options.statistics,
+                );
+                Some(stats)
+            } else {
+                None
+            };
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(16),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
+        },
         ArrowDataType::Int128 => {
             let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
@@ -854,6 +887,15 @@ fn array_to_page_nested(
         Null => {
             let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
+        },
+        // Map empty struct to boolean array with same validity.
+        Struct(fs) if fs.is_empty() => {
+            let array = BooleanArray::new(
+                ArrowDataType::Boolean,
+                Bitmap::new_zeroed(array.len()),
+                array.validity().cloned(),
+            );
+            boolean::nested_array_to_page(&array, options, type_, nested)
         },
         Boolean => {
             let array = array.as_any().downcast_ref().unwrap();
@@ -1072,6 +1114,26 @@ fn array_to_page_nested(
         },
         Int128 => {
             let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
+            let statistics = if options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_decimal(
+                    array,
+                    type_.clone(),
+                    16,
+                    &options.statistics,
+                );
+                Some(stats)
+            } else {
+                None
+            };
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(16),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
+        },
+        UInt128 => {
+            let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
                 let stats = fixed_size_binary::build_statistics_decimal(
                     array,

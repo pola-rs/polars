@@ -24,6 +24,7 @@ macro_rules! apply_method_all_arrow_series2 {
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
+            DataType::UInt128 => $self.u128().unwrap().$method($($args),*),
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
@@ -103,7 +104,7 @@ impl EnterPolarsExt for Python<'_> {
         E: Ungil + Send + Into<PyPolarsErr>,
     {
         let timeout = schedule_polars_timeout();
-        let ret = self.allow_threads(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
+        let ret = self.detach(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
         cancel_polars_timeout(timeout);
         match ret {
             Ok(Ok(ret)) => Ok(ret),

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -182,3 +183,56 @@ def test_map_groups_return_all_null_15260() -> None:
         .sort("key"),
         pl.DataFrame({"key": [0, 1], "a": [None, None]}),
     )
+
+
+@pytest.mark.parametrize(
+    ("func", "result"),
+    [
+        (lambda n: n[0] + n[1], [[85], [85]]),
+        (lambda _: pl.Series([1, 2, 3]), [[1, 2, 3], [1, 2, 3]]),
+    ],
+)
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_map_groups_multiple_all_literal(
+    func: Any, result: list[int], maintain_order: bool
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3], "b": [2, 3, 4]})
+
+    q = (
+        df.lazy()
+        .group_by(pl.col("g"), maintain_order=maintain_order)
+        .agg(
+            pl.map_groups(
+                exprs=[pl.lit(42).cast(pl.Int64), pl.lit(43).cast(pl.Int64)],
+                function=func,
+                return_dtype=pl.Int64,
+            ).alias("out")
+        )
+    )
+    out = q.collect()
+    expected = pl.DataFrame({"g": [10, 20], "out": result})
+    assert_frame_equal(out, expected, check_row_order=maintain_order)
+
+
+@pytest.mark.may_fail_auto_streaming  # reason: alternate error message
+def test_map_groups_multiple_all_literal_elementwise_raises() -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3], "b": [2, 3, 4]})
+    q = (
+        df.lazy()
+        .group_by(pl.col("g"))
+        .agg(
+            pl.map_groups(
+                exprs=[pl.lit(42), pl.lit(43)],
+                function=lambda _: pl.Series([1, 2, 3]),
+                return_dtype=pl.Int64,
+                is_elementwise=True,
+            ).alias("out")
+        )
+    )
+    msg = "elementwise expression dyn int: 42.python_udf([dyn int: 43]) must return exactly 1 value on literals, got 3"
+    with pytest.raises(ComputeError, match=re.escape(msg)):
+        q.collect(engine="in-memory")
+
+    # different error message in streaming, not specific to the problem
+    with pytest.raises(ShapeError):
+        q.collect(engine="streaming")

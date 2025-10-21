@@ -9,7 +9,7 @@ use polars_utils::format_pl_smallstr;
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::constants::{get_len_name, get_literal_name};
+use crate::constants::{PL_ELEMENT_NAME, get_len_name, get_literal_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -121,6 +121,10 @@ impl ExprIR {
         out.node = node;
         for (_, ae) in arena.iter(node) {
             match ae {
+                AExpr::Element => {
+                    out.output_name = OutputName::ColumnLhs(PL_ELEMENT_NAME.clone());
+                    break;
+                },
                 AExpr::Column(name) => {
                     out.output_name = OutputName::ColumnLhs(name.clone());
                     break;
@@ -259,11 +263,17 @@ impl ExprIR {
         is_scalar_ae(self.node, expr_arena)
     }
 
+    pub fn is_length_preserving(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_length_preserving_ae(self.node, expr_arena)
+    }
+
     pub fn dtype(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<&DataType> {
         match self.output_dtype.get() {
             Some(dtype) => Ok(dtype),
             None => {
-                let dtype = expr_arena.get(self.node).to_dtype(schema, expr_arena)?;
+                let dtype = expr_arena
+                    .get(self.node)
+                    .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
                 let _ = self.output_dtype.set(dtype);
                 Ok(self.output_dtype.get().unwrap())
             },

@@ -284,7 +284,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
         .agg([
             col("day").alias("day"),
             col("cumcases")
-                .apply(|s: Column| (&s - &(s.shift(1))), |_, f| Ok(f.clone()))
+                .apply(|s: Column| &s - &(s.shift(1)), |_, f| Ok(f.clone()))
                 .alias("diff_cases"),
         ])
         .explode(by_name(["day", "diff_cases"], true))

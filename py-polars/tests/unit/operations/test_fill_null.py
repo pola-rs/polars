@@ -41,7 +41,7 @@ def test_fill_null_non_lit() -> None:
             "a": pl.Series([1, None], dtype=pl.Int32),
             "b": pl.Series([None, 2], dtype=pl.UInt32),
             "c": pl.Series([None, 2], dtype=pl.Int64),
-            "d": pl.Series([None, 2], dtype=pl.Decimal),
+            "d": pl.Series([None, 2], dtype=pl.Decimal(10, 2)),
         }
     )
     assert df.fill_null(0).select(pl.all().null_count()).transpose().sum().item() == 0

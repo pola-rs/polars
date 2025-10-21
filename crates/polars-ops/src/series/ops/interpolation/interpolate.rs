@@ -178,7 +178,8 @@ fn interpolate_linear(s: &Series) -> Series {
                     | DataType::UInt8
                     | DataType::UInt16
                     | DataType::UInt32
-                    | DataType::UInt64 => {
+                    | DataType::UInt64
+                    | DataType::UInt128 => {
                         linear_interp_signed(s.cast(&DataType::Float64).unwrap().f64().unwrap())
                     },
                     _ => s.as_ref().clone(),

@@ -62,7 +62,7 @@ def test_row_index_schema(foods_ipc_path: Path) -> None:
         pl.scan_ipc(foods_ipc_path, row_index_name="id")
         .select(["id", "category"])
         .collect()
-    ).dtypes == [pl.UInt32, pl.String]
+    ).dtypes == [pl.get_index_type(), pl.String]
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:

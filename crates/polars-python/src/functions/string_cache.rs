@@ -16,7 +16,7 @@ pub fn using_string_cache() -> bool {
     true
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyStringCacheHolder;
 
 #[pymethods]

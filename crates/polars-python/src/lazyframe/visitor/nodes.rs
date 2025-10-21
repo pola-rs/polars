@@ -21,7 +21,7 @@ fn scan_type_to_pyobject(
     py: Python<'_>,
     scan_type: &FileScanIR,
     cloud_options: &Option<CloudOptions>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     match scan_type {
         #[cfg(feature = "csv")]
         FileScanIR::Csv { options } => {
@@ -54,14 +54,14 @@ fn scan_type_to_pyobject(
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Scan a table with an optional predicate from a python function
 pub struct PythonScan {
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Slice the table
 pub struct Slice {
     #[pyo3(get)]
@@ -72,7 +72,7 @@ pub struct Slice {
     len: IdxSize,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Filter the table with a boolean expression
 pub struct Filter {
     #[pyo3(get)]
@@ -81,7 +81,7 @@ pub struct Filter {
     predicate: PyExprIR,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: UnifiedScanArgs,
@@ -122,7 +122,7 @@ impl PyFileOptions {
         self.inner.rechunk
     }
     #[getter]
-    fn hive_options(&self, _py: Python<'_>) -> PyResult<PyObject> {
+    fn hive_options(&self, _py: Python<'_>) -> PyResult<Py<PyAny>> {
         Err(PyNotImplementedError::new_err("hive options"))
     }
     #[getter]
@@ -134,7 +134,7 @@ impl PyFileOptions {
     /// * None
     /// * ("iceberg-position-delete", dict[int, list[str]])
     #[getter]
-    fn deletion_files(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn deletion_files(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.deletion_files {
             None => py.None().into_any(),
 
@@ -157,7 +157,7 @@ impl PyFileOptions {
     /// * None
     /// * ("iceberg-column-mapping", <unimplemented>)
     #[getter]
-    fn column_mapping(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn column_mapping(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
@@ -166,40 +166,40 @@ impl PyFileOptions {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Scan a table from file
 pub struct Scan {
     #[pyo3(get)]
-    paths: PyObject,
+    paths: Py<PyAny>,
     #[pyo3(get)]
-    file_info: PyObject,
+    file_info: Py<PyAny>,
     #[pyo3(get)]
     predicate: Option<PyExprIR>,
     #[pyo3(get)]
     file_options: PyFileOptions,
     #[pyo3(get)]
-    scan_type: PyObject,
+    scan_type: Py<PyAny>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Scan a table from an existing dataframe
 pub struct DataFrameScan {
     #[pyo3(get)]
     df: PyDataFrame,
     #[pyo3(get)]
-    projection: PyObject,
+    projection: Py<PyAny>,
     #[pyo3(get)]
     selection: Option<PyExprIR>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Project out columns from a table
 pub struct SimpleProjection {
     #[pyo3(get)]
     input: usize,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Column selection
 pub struct Select {
     #[pyo3(get)]
@@ -210,7 +210,7 @@ pub struct Select {
     should_broadcast: bool,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Sort the table
 pub struct Sort {
     #[pyo3(get)]
@@ -223,7 +223,7 @@ pub struct Sort {
     slice: Option<(i64, usize)>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Cache the input at this point in the LP
 pub struct Cache {
     #[pyo3(get)]
@@ -232,7 +232,7 @@ pub struct Cache {
     id_: u128,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Groupby aggregation
 pub struct GroupBy {
     #[pyo3(get)]
@@ -246,10 +246,10 @@ pub struct GroupBy {
     #[pyo3(get)]
     maintain_order: bool,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Join operation
 pub struct Join {
     #[pyo3(get)]
@@ -261,10 +261,10 @@ pub struct Join {
     #[pyo3(get)]
     right_on: Vec<PyExprIR>,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Merge sorted operation
 pub struct MergeSorted {
     #[pyo3(get)]
@@ -275,7 +275,7 @@ pub struct MergeSorted {
     key: String,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Adding columns to the table without a Join
 pub struct HStack {
     #[pyo3(get)]
@@ -286,7 +286,7 @@ pub struct HStack {
     should_broadcast: bool,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Like Select, but all operations produce a single row.
 pub struct Reduce {
     #[pyo3(get)]
@@ -295,30 +295,30 @@ pub struct Reduce {
     exprs: Vec<PyExprIR>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 /// Remove duplicates from the table
 pub struct Distinct {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
-#[pyclass]
+#[pyclass(frozen)]
 /// A (User Defined) Function
 pub struct MapFunction {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    function: PyObject,
+    function: Py<PyAny>,
 }
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Union {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
     options: Option<(i64, usize)>,
 }
-#[pyclass]
+#[pyclass(frozen)]
 /// Horizontal concatenation of multiple plans
 pub struct HConcat {
     #[pyo3(get)]
@@ -326,7 +326,7 @@ pub struct HConcat {
     #[pyo3(get)]
     options: (),
 }
-#[pyclass]
+#[pyclass(frozen)]
 /// This allows expressions to access other tables
 pub struct ExtContext {
     #[pyo3(get)]
@@ -335,15 +335,15 @@ pub struct ExtContext {
     contexts: Vec<usize>,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Sink {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    payload: PyObject,
+    payload: Py<PyAny>,
 }
 
-pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
+pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
     match plan {
         IR::PythonScan { options } => {
             let python_src = match options.python_source {
@@ -605,9 +605,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     streamable: _,
                     fmt_str: _,
                 } => return Err(PyNotImplementedError::new_err("opaque rust mapfunction")),
-                FunctionIR::Unnest { columns } => (
+                FunctionIR::Unnest { columns, separator } => (
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    separator.as_ref().map(|s| s.to_string()),
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,

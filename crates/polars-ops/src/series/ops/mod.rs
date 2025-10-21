@@ -61,6 +61,7 @@ mod rolling;
 pub mod round;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
+mod strings;
 #[cfg(feature = "to_dummies")]
 mod to_dummies;
 #[cfg(feature = "unique_counts")]
@@ -136,6 +137,7 @@ pub use rolling::*;
 pub use round::*;
 #[cfg(feature = "search_sorted")]
 pub use search_sorted::*;
+pub use strings::*;
 #[cfg(feature = "to_dummies")]
 pub use to_dummies::*;
 #[cfg(feature = "unique_counts")]

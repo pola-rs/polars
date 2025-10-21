@@ -3,16 +3,17 @@ use std::marker::PhantomData;
 use arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
-use arrow::types::{AlignedBytes, NativeType};
+use polars_utils::vec::with_cast_mut_vec;
 
-use super::PredicateFilter;
 use super::binview::BinViewDecoder;
 use super::utils::{self, Decoder, StateTranslation, dict_indices_decoder, freeze_validity};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
+use crate::read::ParquetError;
 use crate::read::deserialize::dictionary_encoded::IndexMapping;
+use crate::read::expr::SpecializedParquetColumnExpr;
 
 impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
     StateTranslation<'a, CategoricalDecoder<T>> for HybridRleDecoder<'a>
@@ -75,12 +76,26 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         )
     }
 
-    fn has_predicate_specialization(
-        &self,
+    fn evaluate_predicate(
+        &mut self,
         state: &utils::State<'_, Self>,
-        _predicate: &PredicateFilter,
+        _predicate: Option<&SpecializedParquetColumnExpr>,
+        pred_true_mask: &mut BitmapBuilder,
+        dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
-        Ok(state.page_validity.is_none())
+        if state.page_validity.is_some() {
+            // @Performance: implement validity aware
+            return Ok(false);
+        }
+
+        let dict_mask = dict_mask.unwrap();
+        super::dictionary_encoded::predicate::decode(
+            state.translation.clone(),
+            dict_mask,
+            pred_true_mask,
+        )?;
+
+        Ok(true)
     }
 
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
@@ -140,19 +155,30 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         &mut self,
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut BitmapBuilder,
         filter: Option<super::Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
-        super::dictionary_encoded::decode_dict_dispatch(
-            state.translation,
-            T::try_from(self.dict_size).ok().unwrap(),
-            state.dict_mask,
-            state.is_optional,
-            state.page_validity.as_ref(),
-            filter,
-            &mut decoded.1,
-            <<T as NativeType>::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(&mut decoded.0),
-            pred_true_mask,
-        )
+        with_cast_mut_vec::<T, T::AlignedBytes, _, _>(&mut decoded.0, |aligned_bytes_vec| {
+            super::dictionary_encoded::decode_dict_dispatch(
+                state.translation,
+                T::try_from(self.dict_size).ok().unwrap(),
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+                &mut decoded.1,
+                aligned_bytes_vec,
+            )
+        })
+    }
+
+    fn extend_constant(
+        &mut self,
+        _decoded: &mut Self::DecodedState,
+        _length: usize,
+        _value: &crate::read::expr::ParquetScalar,
+    ) -> ParquetResult<()> {
+        Err(ParquetError::not_supported(
+            "categorical with pushed-down equality filter",
+        ))
     }
 }

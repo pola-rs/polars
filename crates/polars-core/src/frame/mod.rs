@@ -3327,19 +3327,37 @@ impl DataFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest<I: IntoVec<PlSmallStr>>(&self, cols: I) -> PolarsResult<DataFrame> {
+    pub fn unnest<I: IntoVec<PlSmallStr>>(
+        &self,
+        cols: I,
+        separator: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
         let cols = cols.into_vec();
-        self.unnest_impl(cols.into_iter().collect())
+        self.unnest_impl(cols.into_iter().collect(), separator)
     }
 
     #[cfg(feature = "dtype-struct")]
-    fn unnest_impl(&self, cols: PlHashSet<PlSmallStr>) -> PolarsResult<DataFrame> {
+    fn unnest_impl(
+        &self,
+        cols: PlHashSet<PlSmallStr>,
+        separator: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
         let mut new_cols = Vec::with_capacity(std::cmp::min(self.width() * 2, self.width() + 128));
         let mut count = 0;
         for s in &self.columns {
             if cols.contains(s.name()) {
                 let ca = s.struct_()?.clone();
-                new_cols.extend(ca.fields_as_series().into_iter().map(Column::from));
+                new_cols.extend(ca.fields_as_series().into_iter().map(|mut f| {
+                    if let Some(separator) = &separator {
+                        f.rename(polars_utils::format_pl_smallstr!(
+                            "{}{}{}",
+                            s.name(),
+                            separator,
+                            f.name()
+                        ));
+                    }
+                    Column::from(f)
+                }));
                 count += 1;
             } else {
                 new_cols.push(s.clone())

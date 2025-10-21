@@ -141,7 +141,7 @@ fn test_logical_mean_partitioned_group_by_block() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_column(col("decimal").cast(DataType::Decimal(None, Some(2))))
+        .with_column(col("decimal").cast(DataType::Decimal(38, 2)))
         .with_column(col("duration").cast(DataType::Duration(TimeUnit::Microseconds)))
         .group_by([col("decimal")])
         .agg([col("duration").mean()])

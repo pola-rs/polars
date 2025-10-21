@@ -3,6 +3,7 @@ use uuid::Uuid;
 /// Unique identifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct UniqueId(Uuid);
 
 impl UniqueId {

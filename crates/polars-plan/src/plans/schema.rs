@@ -88,6 +88,22 @@ impl FileInfo {
             }
         }
     }
+
+    pub fn iter_reader_schema_names(
+        &self,
+    ) -> Option<impl '_ + ExactSizeIterator<Item = &PlSmallStr>> {
+        let reader_schema = self.reader_schema.as_ref()?;
+
+        let len = match reader_schema {
+            Either::Left(v) => v.len(),
+            Either::Right(v) => v.len(),
+        };
+
+        Some((0..len).map(move |i| match reader_schema {
+            Either::Left(v) => v.get_at_index(i).unwrap().0,
+            Either::Right(v) => v.get_at_index(i).unwrap().0,
+        }))
+    }
 }
 
 pub(crate) fn det_join_schema(

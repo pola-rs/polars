@@ -24,6 +24,7 @@ pub struct TreeFmtAExpr<'a>(&'a AExpr);
 impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
+            AExpr::Element => "element()",
             AExpr::Explode {
                 expr: _,
                 skip_empty: false,
@@ -339,6 +340,7 @@ impl<'a> TreeFmtNode<'a> {
                             h,
                             match payload {
                                 SinkTypeIR::Memory => "SINK (memory)",
+                                SinkTypeIR::Callback(..) => "SINK (callback)",
                                 SinkTypeIR::File { .. } => "SINK (file)",
                                 SinkTypeIR::Partition { .. } => "SINK (partition)",
                             },

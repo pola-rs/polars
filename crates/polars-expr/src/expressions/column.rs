@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_plan::constants::CSE_REPLACED;
 
 use super::*;
-use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct ColumnExpr {
     name: PlSmallStr,
@@ -145,10 +145,6 @@ impl PhysicalExpr for ColumnExpr {
         Ok(AggregationContext::new(c, Cow::Borrowed(groups), false))
     }
 
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         input_schema.get_field(&self.name).ok_or_else(|| {
             polars_err!(
@@ -158,25 +154,5 @@ impl PhysicalExpr for ColumnExpr {
     }
     fn is_scalar(&self) -> bool {
         false
-    }
-}
-
-impl PartitionedAggregation for ColumnExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        _groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        self.evaluate(df, state)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

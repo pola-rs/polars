@@ -1,3 +1,4 @@
+use polars::prelude::PlanCallback;
 use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 
@@ -9,11 +10,11 @@ impl PyExpr {
         self.inner.clone().name().keep().into()
     }
 
-    fn name_map(&self, lambda: PyObject) -> Self {
+    fn name_map(&self, lambda: Py<PyAny>) -> Self {
         self.inner
             .clone()
             .name()
-            .map_udf(PythonObject(lambda))
+            .map(PlanCallback::new_python(PythonObject(lambda)))
             .into()
     }
 
@@ -33,11 +34,19 @@ impl PyExpr {
         self.inner.clone().name().to_uppercase().into()
     }
 
-    fn name_map_fields(&self, name_mapper: PyObject) -> Self {
+    fn name_replace(&self, pattern: &str, value: &str, literal: bool) -> Self {
         self.inner
             .clone()
             .name()
-            .map_fields_udf(PythonObject(name_mapper))
+            .replace(pattern, value, literal)
+            .into()
+    }
+
+    fn name_map_fields(&self, name_mapper: Py<PyAny>) -> Self {
+        self.inner
+            .clone()
+            .name()
+            .map_fields(PlanCallback::new_python(PythonObject(name_mapper)))
             .into()
     }
 

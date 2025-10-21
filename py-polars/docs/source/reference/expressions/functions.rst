@@ -44,6 +44,7 @@ These functions are available from the Polars module root and can be used as exp
    duration
    element
    exclude
+   field
    first
    fold
    format

@@ -3,9 +3,10 @@ use std::borrow::{Borrow, Cow};
 use arrow_format::ipc;
 use arrow_format::ipc::planus::Builder;
 use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_utils::compression::ZstdLevel;
 
 use super::super::IpcField;
-use super::{write, write_dictionary};
+use super::write;
 use crate::array::*;
 use crate::datatypes::*;
 use crate::io::ipc::endianness::is_native_little_endian;
@@ -21,7 +22,7 @@ pub enum Compression {
     /// LZ4 (framed)
     LZ4,
     /// ZSTD
-    ZSTD,
+    ZSTD(ZstdLevel),
 }
 
 /// Options declaring the behaviour of writing to IPC
@@ -150,23 +151,16 @@ pub fn encode_dictionary(
     dict_id: i64,
     array: &dyn Array,
     options: &WriteOptions,
-    encoded_dictionaries: &mut Vec<EncodedData>,
-) -> PolarsResult<()> {
+) -> PolarsResult<EncodedData> {
     let PhysicalType::Dictionary(key_type) = array.dtype().to_physical_type() else {
         panic!("Given array is not a DictionaryArray")
     };
 
     match_integer_type!(key_type, |$T| {
-        let array = array.as_any().downcast_ref::<DictionaryArray<$T>>().unwrap();
-        encoded_dictionaries.push(dictionary_batch_to_bytes::<$T>(
-            dict_id,
-            array,
-            options,
-            is_native_little_endian(),
-        ));
-    });
+        let array: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
 
-    Ok(())
+        encode_dictionary_values(dict_id, array.values().as_ref(), options)
+    })
 }
 
 pub fn encode_new_dictionaries(
@@ -179,7 +173,7 @@ pub fn encode_new_dictionaries(
     let mut dicts_to_encode = Vec::new();
     dictionaries_to_encode(field, array, dictionary_tracker, &mut dicts_to_encode)?;
     for (dict_id, dict_array) in dicts_to_encode {
-        encode_dictionary(dict_id, dict_array.as_ref(), options, encoded_dictionaries)?;
+        encoded_dictionaries.push(encode_dictionary(dict_id, dict_array.as_ref(), options)?);
     }
     Ok(())
 }
@@ -231,7 +225,7 @@ fn serialize_compression(
     if let Some(compression) = compression {
         let codec = match compression {
             Compression::LZ4 => arrow_format::ipc::CompressionType::Lz4Frame,
-            Compression::ZSTD => arrow_format::ipc::CompressionType::Zstd,
+            Compression::ZSTD(_) => arrow_format::ipc::CompressionType::Zstd,
         };
         Some(Box::new(arrow_format::ipc::BodyCompression {
             codec,
@@ -404,19 +398,16 @@ pub fn commit_encoded_arrays(
     encoded_message.ipc_message = ipc_message.to_vec();
 }
 
-/// Write dictionary values into two sets of bytes, one for the header (ipc::Schema::Message) and the
-/// other for the data
-fn dictionary_batch_to_bytes<K: DictionaryKey>(
+pub fn encode_dictionary_values(
     dict_id: i64,
-    array: &DictionaryArray<K>,
+    values_array: &dyn Array,
     options: &WriteOptions,
-    is_little_endian: bool,
-) -> EncodedData {
+) -> PolarsResult<EncodedData> {
     let mut nodes: Vec<arrow_format::ipc::FieldNode> = vec![];
     let mut buffers: Vec<arrow_format::ipc::Buffer> = vec![];
     let mut arrow_data: Vec<u8> = vec![];
     let mut variadic_buffer_counts = vec![];
-    set_variadic_buffer_counts(&mut variadic_buffer_counts, array.values().as_ref());
+    set_variadic_buffer_counts(&mut variadic_buffer_counts, values_array);
 
     let variadic_buffer_counts = if variadic_buffer_counts.is_empty() {
         None
@@ -424,15 +415,14 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
         Some(variadic_buffer_counts)
     };
 
-    let length = write_dictionary(
-        array,
+    write(
+        values_array,
         &mut buffers,
         &mut arrow_data,
         &mut nodes,
         &mut 0,
-        is_little_endian,
+        is_native_little_endian(),
         options.compression,
-        false,
     );
 
     let compression = serialize_compression(options.compression);
@@ -443,7 +433,7 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
             arrow_format::ipc::DictionaryBatch {
                 id: dict_id,
                 data: Some(Box::new(arrow_format::ipc::RecordBatch {
-                    length: length as i64,
+                    length: values_array.len() as i64,
                     nodes: Some(nodes),
                     buffers: Some(buffers),
                     compression,
@@ -459,10 +449,10 @@ fn dictionary_batch_to_bytes<K: DictionaryKey>(
     let mut builder = Builder::new();
     let ipc_message = builder.finish(&message, None);
 
-    EncodedData {
+    Ok(EncodedData {
         ipc_message: ipc_message.to_vec(),
         arrow_data,
-    }
+    })
 }
 
 /// Keeps track of dictionaries that have been written, to avoid emitting the same dictionary

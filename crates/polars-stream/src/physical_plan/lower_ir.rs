@@ -13,8 +13,8 @@ use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR,
-    SinkTypeIR,
+    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR,
+    PartitionVariantIR, SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
@@ -32,6 +32,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
@@ -242,6 +243,22 @@ pub fn lower_ir(
             SinkTypeIR::Memory => {
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
+            },
+            SinkTypeIR::Callback(CallbackSinkType {
+                function,
+                maintain_order,
+                chunk_size,
+            }) => {
+                let function = function.clone();
+                let maintain_order = *maintain_order;
+                let chunk_size = *chunk_size;
+                let phys_input = lower_ir!(*input)?;
+                PhysNodeKind::CallbackSink {
+                    input: phys_input,
+                    function,
+                    maintain_order,
+                    chunk_size,
+                }
             },
             SinkTypeIR::File(FileSinkType {
                 target,
@@ -596,13 +613,30 @@ pub fn lower_ir(
                     .is_some_and(|slice| slice.len() == 0)
             {
                 if config::verbose() {
-                    eprintln!("lower_ir: scan IR had empty sources")
+                    eprintln!("lower_ir: scan IR lowered as empty InMemorySource")
                 }
 
                 // If there are no sources, just provide an empty in-memory source with the right
                 // schema.
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
+                }
+            } else if output_schema.is_empty()
+                && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
+            {
+                // Fast-count for scan_iceberg will hit here.
+                let row_counter = RowCounter::new(physical_rows, deleted_rows);
+                let num_rows = row_counter.num_rows()?;
+
+                if config::verbose() {
+                    eprintln!(
+                        "lower_ir: scan IR lowered as 0-width InMemorySource with height {} ({:?})",
+                        num_rows, &row_counter
+                    )
+                }
+
+                PhysNodeKind::InMemorySource {
+                    df: Arc::new(DataFrame::empty_with_height(num_rows)),
                 }
             } else {
                 let file_reader_builder = match &*scan_type {
@@ -730,6 +764,7 @@ pub fn lower_ir(
                         deletion_files: DeletionFilesList::filter_empty(
                             unified_scan_args.deletion_files,
                         ),
+                        table_statistics: unified_scan_args.table_statistics,
                         file_schema,
                     };
 
@@ -1075,7 +1110,7 @@ pub fn lower_ir(
                     distinct_lp_node,
                     &mut lp_arena,
                     expr_arena,
-                    None,
+                    Some(crate::dispatch::build_streaming_query_executor),
                 )?);
 
                 let format_str = ctx.prepare_visualization.then(|| {

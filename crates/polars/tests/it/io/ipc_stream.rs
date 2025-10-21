@@ -124,7 +124,7 @@ mod test {
 
     #[test]
     fn test_write_with_zstd_compression() {
-        test_write_with_compression(IpcCompression::ZSTD);
+        test_write_with_compression(IpcCompression::ZSTD(Default::default()));
     }
 
     fn test_write_with_compression(compression: IpcCompression) {

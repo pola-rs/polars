@@ -214,6 +214,32 @@ where
     cum_scan_numeric(ca, reverse, init, det_sum)
 }
 
+#[cfg(feature = "dtype-decimal")]
+fn cum_sum_decimal(
+    ca: &Int128Chunked,
+    reverse: bool,
+    init: Option<i128>,
+) -> PolarsResult<Int128Chunked> {
+    use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
+
+    let mut value = init.unwrap_or(0);
+    let update = |opt_v| {
+        if let Some(v) = opt_v {
+            value = dec128_add(value, v, DEC128_MAX_PREC).ok_or_else(
+                || polars_err!(ComputeError: "overflow in decimal addition in cum_sum"),
+            )?;
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
+    };
+    if reverse {
+        ca.iter().rev().map(update).try_collect_ca_trusted_like(ca)
+    } else {
+        ca.iter().map(update).try_collect_ca_trusted_like(ca)
+    }
+}
+
 fn cum_prod_numeric<T>(
     ca: &ChunkedArray<T>,
     reverse: bool,
@@ -242,6 +268,8 @@ pub fn cum_prod_with_init(
         UInt64 => cum_prod_numeric(s.u64()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-i128")]
         Int128 => cum_prod_numeric(s.i128()?, reverse, init.extract()).into_series(),
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => cum_prod_numeric(s.u128()?, reverse, init.extract()).into_series(),
         Float32 => cum_prod_numeric(s.f32()?, reverse, init.extract()).into_series(),
         Float64 => cum_prod_numeric(s.f64()?, reverse, init.extract()).into_series(),
         dt => polars_bail!(opq = cum_prod, dt),
@@ -276,15 +304,18 @@ pub fn cum_sum_with_init(
         UInt32 => cum_sum_numeric(s.u32()?, reverse, init.extract()).into_series(),
         Int64 => cum_sum_numeric(s.i64()?, reverse, init.extract()).into_series(),
         UInt64 => cum_sum_numeric(s.u64()?, reverse, init.extract()).into_series(),
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => cum_sum_numeric(s.u128()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-i128")]
         Int128 => cum_sum_numeric(s.i128()?, reverse, init.extract()).into_series(),
         Float32 => cum_sum_numeric(s.f32()?, reverse, init.extract()).into_series(),
         Float64 => cum_sum_numeric(s.f64()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-decimal")]
-        Decimal(precision, scale) => {
+        Decimal(_precision, scale) => {
+            use polars_compute::decimal::DEC128_MAX_PREC;
             let ca = s.decimal().unwrap().physical();
-            cum_sum_numeric(ca, reverse, init.clone().to_physical().extract())
-                .into_decimal_unchecked(*precision, scale.unwrap())
+            cum_sum_decimal(ca, reverse, init.clone().to_physical().extract())?
+                .into_decimal_unchecked(DEC128_MAX_PREC, *scale)
                 .into_series()
         },
         #[cfg(feature = "dtype-duration")]
@@ -319,7 +350,7 @@ pub fn cum_min_with_init(
         DataType::Decimal(precision, scale) => {
             let ca = s.decimal().unwrap().physical();
             let out = cum_min_numeric(ca, reverse, init.clone().to_physical().extract())
-                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_decimal_unchecked(*precision, *scale)
                 .into_series();
             Ok(out)
         },
@@ -357,7 +388,7 @@ pub fn cum_max_with_init(
         DataType::Decimal(precision, scale) => {
             let ca = s.decimal().unwrap().physical();
             let out = cum_max_numeric(ca, reverse, init.clone().to_physical().extract())
-                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_decimal_unchecked(*precision, *scale)
                 .into_series();
             Ok(out)
         },

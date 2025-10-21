@@ -26,6 +26,7 @@ use crate::frame::_finish_join;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum InequalityOperator {
     #[default]
     Lt,

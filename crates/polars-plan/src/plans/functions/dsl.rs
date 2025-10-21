@@ -44,7 +44,10 @@ pub enum DslFunction {
         new: Arc<[PlSmallStr]>,
         strict: bool,
     },
-    Unnest(Selector),
+    Unnest {
+        columns: Selector,
+        separator: Option<PlSmallStr>,
+    },
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
@@ -112,10 +115,17 @@ impl DslFunction {
                 offset,
                 schema: Default::default(),
             },
-            DslFunction::Unnest(selector) => {
-                let columns = selector.into_columns(input_schema, &Default::default())?;
-                let columns = columns.into_iter().collect();
-                FunctionIR::Unnest { columns }
+            DslFunction::Unnest { columns, separator } => {
+                let columns = columns.into_columns(input_schema, &Default::default())?;
+                let columns: Arc<[PlSmallStr]> = columns.into_iter().collect();
+                for col in columns.iter() {
+                    let dtype = input_schema.try_get(col.as_str())?;
+                    polars_ensure!(
+                        dtype.is_struct(),
+                        InvalidOperation: "invalid dtype: expected 'Struct', got '{:?}' for '{}'", dtype, col
+                    );
+                }
+                FunctionIR::Unnest { columns, separator }
             },
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),

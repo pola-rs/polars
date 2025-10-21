@@ -1,4 +1,4 @@
-# Connect to your cloud environment
+# Connect to your cloud
 
 Polars Cloud requires connection to your AWS environment to execute queries. After account
 registration, you'll set up an [organization](organization/organizations.md) that manages connected

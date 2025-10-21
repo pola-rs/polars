@@ -292,7 +292,7 @@ def test_lazy_nested_function_expr_agg_schema() -> None:
 def test_lazy_agg_scalar_return_schema() -> None:
     q = pl.LazyFrame({"k": [1]}).group_by("k").agg(pl.col("k").null_count().alias("o"))
 
-    schema = {"k": pl.Int64, "o": pl.UInt32}
+    schema = {"k": pl.Int64, "o": pl.get_index_type()}
     assert q.collect_schema() == schema
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
 
@@ -358,16 +358,16 @@ def test_lazy_agg_to_scalar_schema_19752(lhs: pl.Expr, expr_op: str) -> None:
 def test_lazy_agg_schema_after_elementwise_19984() -> None:
     lf = pl.LazyFrame({"a": 1, "b": 1})
 
-    q = lf.group_by("a").agg(pl.col("b").first().fill_null(0))
+    q = lf.group_by("a").agg(pl.col("b").item().fill_null(0))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").first().fill_null(0).fill_null(0))
+    q = lf.group_by("a").agg(pl.col("b").item().fill_null(0).fill_null(0))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").first() + 1)
+    q = lf.group_by("a").agg(pl.col("b").item() + 1)
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(1 + pl.col("b").first())
+    q = lf.group_by("a").agg(1 + pl.col("b").item())
     assert q.collect_schema() == q.collect().collect_schema()
 
 
@@ -452,9 +452,3 @@ def test_div_collect_schema_matches_23993(df: pl.DataFrame) -> None:
     expected = q.collect().schema
     actual = q.collect_schema()
     assert actual == expected
-
-
-def test_mean_on_invalid_type_24008() -> None:
-    df = pl.DataFrame({"s": ["bob", "foo"]})
-    q = df.lazy().select(pl.col("s").mean())
-    assert q.collect_schema() == q.collect().schema

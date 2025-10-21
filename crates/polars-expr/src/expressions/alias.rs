@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 
 use super::*;
-use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct AliasExpr {
     pub(crate) physical_expr: Arc<dyn PhysicalExpr>,
@@ -65,33 +65,5 @@ impl PhysicalExpr for AliasExpr {
 
     fn is_scalar(&self) -> bool {
         self.physical_expr.is_scalar()
-    }
-
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-}
-
-impl PartitionedAggregation for AliasExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
-        let s = agg.evaluate_partitioned(df, groups, state)?;
-        Ok(s.with_name(self.name.clone()))
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
-        let s = agg.finalize(partitioned, groups, state)?;
-        Ok(s.with_name(self.name.clone()))
     }
 }

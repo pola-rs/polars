@@ -9,6 +9,7 @@ mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -17,8 +18,6 @@ pub use csv::*;
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::*;
 pub use file_list_reader::*;
-#[cfg(feature = "ipc")]
-pub use ipc::*;
 #[cfg(feature = "json")]
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
@@ -139,12 +138,6 @@ impl LazyFrame {
     /// Toggle cluster with columns optimization.
     pub fn with_cluster_with_columns(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::CLUSTER_WITH_COLUMNS, toggle);
-        self
-    }
-
-    /// Toggle collapse joins optimization.
-    pub fn with_collapse_joins(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptFlags::COLLAPSE_JOINS, toggle);
         self
     }
 
@@ -661,7 +654,9 @@ impl LazyFrame {
         if engine == Engine::Auto {
             engine = match payload {
                 #[cfg(feature = "new_streaming")]
-                SinkType::File { .. } | SinkType::Partition { .. } => Engine::Streaming,
+                SinkType::Callback { .. } | SinkType::File { .. } | SinkType::Partition { .. } => {
+                    Engine::Streaming
+                },
                 _ => Engine::InMemory,
             };
         }
@@ -1060,6 +1055,19 @@ impl LazyFrame {
             cloud_options,
             per_partition_sort_by,
             finish_callback,
+        }))
+    }
+
+    pub fn sink_batches(
+        self,
+        function: PlanCallback<DataFrame, bool>,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+    ) -> PolarsResult<Self> {
+        self.sink(SinkType::Callback(CallbackSinkType {
+            function,
+            maintain_order,
+            chunk_size,
         }))
     }
 
@@ -2020,8 +2028,12 @@ impl LazyFrame {
         let name = name.into();
 
         match &self.logical_plan {
-            v @ DslPlan::Scan { scan_type, .. }
-                if !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
+            v @ DslPlan::Scan {
+                scan_type,
+                unified_scan_args,
+                ..
+            } if unified_scan_args.row_index.is_none()
+                && !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
             {
                 let DslPlan::Scan {
                     sources,
@@ -2058,8 +2070,11 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest(self, cols: Selector) -> Self {
-        self.map_private(DslFunction::Unnest(cols))
+    pub fn unnest(self, cols: Selector, separator: Option<PlSmallStr>) -> Self {
+        self.map_private(DslFunction::Unnest {
+            columns: cols,
+            separator,
+        })
     }
 
     #[cfg(feature = "merge_sorted")]
@@ -2151,7 +2166,7 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().head(n).explode()])
+        self.agg([all().as_expr().head(n)])
             .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }
 
@@ -2163,7 +2178,7 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().tail(n).explode()])
+        self.agg([all().as_expr().tail(n)])
             .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }
 
@@ -2442,78 +2457,6 @@ pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorB
     }
     #[cfg(feature = "new_streaming")]
     {
-        Some(streaming_dispatch::build_streaming_query_executor)
+        Some(polars_stream::build_streaming_query_executor)
     }
 };
-#[cfg(feature = "new_streaming")]
-pub use streaming_dispatch::build_streaming_query_executor;
-
-#[cfg(feature = "new_streaming")]
-mod streaming_dispatch {
-    use std::sync::{Arc, Mutex};
-
-    use polars_core::POOL;
-    use polars_core::error::PolarsResult;
-    use polars_core::frame::DataFrame;
-    use polars_expr::state::ExecutionState;
-    use polars_mem_engine::Executor;
-    use polars_plan::dsl::SinkTypeIR;
-    use polars_plan::plans::{AExpr, IR};
-    use polars_utils::arena::{Arena, Node};
-
-    pub fn build_streaming_query_executor(
-        node: Node,
-        ir_arena: &mut Arena<IR>,
-        expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<Box<dyn Executor>> {
-        let rechunk = match ir_arena.get(node) {
-            IR::Scan {
-                unified_scan_args, ..
-            } => unified_scan_args.rechunk,
-            _ => false,
-        };
-
-        let node = match ir_arena.get(node) {
-            IR::SinkMultiple { .. } => panic!("SinkMultiple not supported"),
-            IR::Sink { .. } => node,
-            _ => ir_arena.add(IR::Sink {
-                input: node,
-                payload: SinkTypeIR::Memory,
-            }),
-        };
-
-        polars_stream::StreamingQuery::build(node, ir_arena, expr_arena)
-            .map(Some)
-            .map(Mutex::new)
-            .map(Arc::new)
-            .map(|x| StreamingQueryExecutor {
-                executor: x,
-                rechunk,
-            })
-            .map(|x| Box::new(x) as Box<dyn Executor>)
-    }
-
-    // Note: Arc/Mutex is because Executor requires Sync, but SlotMap is not Sync.
-    struct StreamingQueryExecutor {
-        executor: Arc<Mutex<Option<polars_stream::StreamingQuery>>>,
-        rechunk: bool,
-    }
-
-    impl Executor for StreamingQueryExecutor {
-        fn execute(&mut self, _cache: &mut ExecutionState) -> PolarsResult<DataFrame> {
-            // Must not block rayon thread on pending new-streaming future.
-            assert!(POOL.current_thread_index().is_none());
-
-            let mut df = { self.executor.try_lock().unwrap().take() }
-                .expect("unhandled: execute() more than once")
-                .execute()
-                .map(|x| x.unwrap_single())?;
-
-            if self.rechunk {
-                df.as_single_chunk_par();
-            }
-
-            Ok(df)
-        }
-    }
-}

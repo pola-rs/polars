@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use polars_utils::arena::Node;
 #[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -16,11 +17,12 @@ use super::*;
 // It is no longer needed to increment this. We use the schema hashes to check for compatibility.
 //
 // Only increment if you need to make a breaking change that doesn't change the schema hashes.
-pub const DSL_VERSION: (u16, u16) = (23, 0);
+pub const DSL_VERSION: (u16, u16) = (24, 0);
 const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
+#[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DslPlan {
@@ -36,6 +38,7 @@ pub enum DslPlan {
     /// Cache the input at this point in the LP
     Cache {
         input: Arc<DslPlan>,
+        id: UniqueId,
     },
     Scan {
         sources: ScanSources,
@@ -172,7 +175,7 @@ impl Clone for DslPlan {
             #[cfg(feature = "python")]
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
-            Self::Cache { input } => Self::Cache { input: input.clone() },
+            Self::Cache { input, id } => Self::Cache { input: input.clone(), id: *id },
             Self::Scan { sources,  unified_scan_args, scan_type, cached_ir } => Self::Scan { sources: sources.clone(), unified_scan_args: unified_scan_args.clone(), scan_type: scan_type.clone(), cached_ir: cached_ir.clone() },
             Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
@@ -265,7 +268,9 @@ impl DslPlan {
         writer.write_all(&le_major)?;
         writer.write_all(&le_minor)?;
         writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
-        pl_serialize::serialize_dsl(writer, self)
+        let serializable_plan = serializable_plan::SerializableDslPlan::from(self);
+        pl_serialize::serialize_dsl(writer, &serializable_plan)
+            .map_err(|e| polars_err!(ComputeError: "serialization failed\n\nerror: {e}"))
     }
 
     #[cfg(feature = "serde")]
@@ -331,8 +336,10 @@ impl DslPlan {
             );
         }
 
-        pl_serialize::deserialize_dsl(reader)
-            .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
+        let serializable_plan: serializable_plan::SerializableDslPlan =
+            pl_serialize::deserialize_dsl(reader)
+                .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))?;
+        (&serializable_plan).try_into()
     }
 
     #[cfg(feature = "dsl-schema")]

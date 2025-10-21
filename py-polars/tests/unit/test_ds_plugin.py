@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.dependencies import _lazy_import
+from polars._dependencies import _lazy_import
 from polars.testing import assert_frame_equal
 
 # don't import polars_ds until an actual test is triggered (the decorator already

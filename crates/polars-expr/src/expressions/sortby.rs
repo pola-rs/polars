@@ -312,9 +312,23 @@ impl PhysicalExpr for SortByExpr {
                 .all(|ac_sort_by| ac_sort_by.groups.len() == ac_in.groups.len())
         );
 
-        for ac in ac_sort_by.iter_mut() {
-            if matches!(ac.state, AggState::LiteralScalar(_)) {
-                ac.aggregated();
+        // If every input is a LiteralScalar, we return a LiteralScalar.
+        // Otherwise, we convert any LiteralScalar to AggregatedList.
+        let all_literal = matches!(ac_in.state, AggState::LiteralScalar(_))
+            || ac_sort_by
+                .iter()
+                .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
+
+        if all_literal {
+            return Ok(ac_in);
+        } else {
+            if matches!(ac_in.state, AggState::LiteralScalar(_)) {
+                ac_in.aggregated();
+            }
+            for ac in ac_sort_by.iter_mut() {
+                if matches!(ac.state, AggState::LiteralScalar(_)) {
+                    ac.aggregated();
+                }
             }
         }
 

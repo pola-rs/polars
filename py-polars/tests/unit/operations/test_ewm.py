@@ -202,6 +202,7 @@ def test_ewm_param_validation() -> None:
 
 # https://github.com/pola-rs/polars/issues/4951
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: chunking
 def test_ewm_with_multiple_chunks() -> None:
     df0 = pl.DataFrame(
         data=[

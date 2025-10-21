@@ -98,7 +98,7 @@ pub mod builder {
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
     "\
 IPC file produces more than 2^32 rows; \
-consider compiling with polars-bigidx feature (polars-u64-idx package on python)",
+consider compiling with polars-bigidx feature (pip install polars[rt64])",
 ));
 
 struct IpcFileReader {

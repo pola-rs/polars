@@ -182,6 +182,7 @@ macro_rules! compare {
             PH::Primitive(PR::MonthDayNano) => {
                 call_binary!(PrimitiveArray<months_days_ns>)
             },
+            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
             PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
@@ -210,6 +211,7 @@ macro_rules! compare {
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
             PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
+            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
         }
     }};
 }

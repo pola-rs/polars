@@ -33,6 +33,7 @@ impl BinviewHashHotGrouper {
         &mut self,
         hash: u64,
         view: View,
+        force_hot: bool,
         buffers: &Arc<[Buffer<u8>]>,
     ) -> Option<EvictIdx> {
         unsafe {
@@ -49,6 +50,7 @@ impl BinviewHashHotGrouper {
                 self.table.insert_key(
                     hash,
                     (),
+                    force_hot,
                     |_, b| view == b.1,
                     |_| (hash, view, Vec::new()),
                     |_, ev_k| {
@@ -64,6 +66,7 @@ impl BinviewHashHotGrouper {
                 self.table.insert_key(
                     hash,
                     (),
+                    force_hot,
                     |_, b| {
                         // We only reach here if the hash matched, so jump straight to full comparison.
                         bytes == b.2
@@ -108,6 +111,7 @@ impl HotGrouper for BinviewHashHotGrouper {
         hot_idxs: &mut Vec<IdxSize>,
         hot_group_idxs: &mut Vec<EvictIdx>,
         cold_idxs: &mut Vec<IdxSize>,
+        force_hot: bool,
     ) {
         let HashKeys::Binview(hash_keys) = hash_keys else {
             unreachable!()
@@ -133,7 +137,7 @@ impl HotGrouper for BinviewHashHotGrouper {
                 hash_keys.for_each_hash(|idx, opt_h| {
                     if let Some(h) = opt_h {
                         let view = views.get_unchecked(idx as usize);
-                        push_g(idx as usize, self.insert_key(h, *view, buffers));
+                        push_g(idx as usize, self.insert_key(h, *view, force_hot, buffers));
                     } else {
                         push_g(idx as usize, self.insert_null());
                     }
@@ -142,7 +146,7 @@ impl HotGrouper for BinviewHashHotGrouper {
                 hash_keys.for_each_hash(|idx, opt_h| {
                     if let Some(h) = opt_h {
                         let view = views.get_unchecked(idx as usize);
-                        push_g(idx as usize, self.insert_key(h, *view, buffers));
+                        push_g(idx as usize, self.insert_key(h, *view, force_hot, buffers));
                     }
                 });
             }

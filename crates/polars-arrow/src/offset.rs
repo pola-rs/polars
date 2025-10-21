@@ -465,6 +465,16 @@ impl<O: Offset> OffsetsBuffer<O> {
         end - start
     }
 
+    /// Returns a `length` corresponding to the position `index`
+    ///
+    /// # Safety
+    /// `index` must be `< self.len()`
+    #[inline]
+    pub unsafe fn length_at_unchecked(&self, index: usize) -> usize {
+        let (start, end) = unsafe { self.start_end_unchecked(index) };
+        end - start
+    }
+
     /// Returns a range (start, end) corresponding to the position `index`
     /// # Panic
     /// This function panics iff `index >= self.len_proxy()`

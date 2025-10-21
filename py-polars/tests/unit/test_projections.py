@@ -232,40 +232,46 @@ def test_asof_join_projection_() -> None:
     dirty_lf1 = lf1.select(expressions)
 
     concatted = pl.concat([joined, dirty_lf1])
-    assert concatted.select(["b", "a"]).collect().to_dict(as_series=False) == {
-        "b": [
-            0.0,
-            0.8333333333333334,
-            1.6666666666666667,
-            2.5,
-            3.3333333333333335,
-            4.166666666666667,
-            5.0,
-            0.0,
-            0.8333333333333334,
-            1.6666666666666667,
-            2.5,
-            3.3333333333333335,
-            4.166666666666667,
-            5.0,
-        ],
-        "a": [
-            0.0,
-            0.8333333333333334,
-            1.6666666666666667,
-            2.5,
-            3.3333333333333335,
-            4.166666666666667,
-            5.0,
-            0.0,
-            0.8333333333333334,
-            1.6666666666666667,
-            2.5,
-            3.3333333333333335,
-            4.166666666666667,
-            5.0,
-        ],
-    }
+    assert_frame_equal(
+        concatted.select(["b", "a"]).collect(),
+        pl.DataFrame(
+            {
+                "b": [
+                    0.0,
+                    0.8333333333333334,
+                    1.6666666666666667,
+                    2.5,
+                    3.3333333333333335,
+                    4.166666666666667,
+                    5.0,
+                    0.0,
+                    0.8333333333333334,
+                    1.6666666666666667,
+                    2.5,
+                    3.3333333333333335,
+                    4.166666666666667,
+                    5.0,
+                ],
+                "a": [
+                    0.0,
+                    0.8333333333333334,
+                    1.6666666666666667,
+                    2.5,
+                    3.3333333333333335,
+                    4.166666666666667,
+                    5.0,
+                    0.0,
+                    0.8333333333333334,
+                    1.6666666666666667,
+                    2.5,
+                    3.3333333333333335,
+                    4.166666666666667,
+                    5.0,
+                ],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_merge_sorted_projection_pd() -> None:
@@ -299,7 +305,7 @@ def test_distinct_projection_pd_7578() -> None:
             "bar": ["a", "b"],
             "len": [3, 2],
         },
-        schema_overrides={"len": pl.UInt32},
+        schema_overrides={"len": pl.get_index_type()},
     )
     assert_frame_equal(result, expected, check_row_order=False)
 
@@ -548,7 +554,7 @@ def test_projection_empty_frame_len_16904() -> None:
 
     assert "0/0 COLUMNS" in q.explain()
 
-    expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.UInt32()})
+    expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.get_index_type()})
     assert_frame_equal(q.collect(), expect)
 
 

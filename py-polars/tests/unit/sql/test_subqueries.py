@@ -34,6 +34,7 @@ def test_from_subquery(cols: str, join_type: str, constraint: str) -> None:
     assert sorted(res.to_series()) == [0, 1, 2, 3]
 
 
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_in_subquery() -> None:
     df = pl.DataFrame(
         {

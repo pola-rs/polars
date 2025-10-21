@@ -27,7 +27,8 @@ def test_rank_random_expr() -> None:
 def test_rank_random_series() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     assert_series_equal(
-        s.rank("random", seed=1), pl.Series("a", [2, 5, 7, 3, 4, 6, 1], dtype=pl.UInt32)
+        s.rank("random", seed=1),
+        pl.Series("a", [2, 5, 7, 3, 4, 6, 1], dtype=pl.get_index_type()),
     )
 
 
@@ -101,7 +102,8 @@ def test_rank_series() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
     assert_series_equal(
-        s.rank("dense"), pl.Series("a", [2, 3, 4, 3, 3, 4, 1], dtype=pl.UInt32)
+        s.rank("dense"),
+        pl.Series("a", [2, 3, 4, 3, 3, 4, 1], dtype=pl.get_index_type()),
     )
 
     df = pl.DataFrame([s])
@@ -109,7 +111,7 @@ def test_rank_series() -> None:
 
     assert_series_equal(
         s.rank("dense", descending=True),
-        pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=pl.UInt32),
+        pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=pl.get_index_type()),
     )
 
     assert s.rank(method="average").dtype == pl.Float64

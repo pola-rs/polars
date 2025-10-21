@@ -53,7 +53,7 @@ pub fn to_deserializer(
     columns: Vec<(&ColumnChunkMetadata, MemSlice)>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<(Box<dyn Array>, Bitmap)> {
+) -> PolarsResult<(Vec<Box<dyn Array>>, Bitmap)> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {

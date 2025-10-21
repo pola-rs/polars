@@ -99,7 +99,7 @@ where
         false => det_offsets,
     };
     match weights {
-        None => rolling_apply_agg_window::<MomentWindow<_, VarianceMoment>, _, _>(
+        None => rolling_apply_agg_window::<MomentWindow<_, VarianceMoment>, _, _, _>(
             values,
             window_size,
             min_periods,
@@ -143,7 +143,7 @@ where
         true => det_offsets_center,
         false => det_offsets,
     };
-    rolling_apply_agg_window::<MomentWindow<_, SkewMoment>, _, _>(
+    rolling_apply_agg_window::<MomentWindow<_, SkewMoment>, _, _, _>(
         values,
         window_size,
         min_periods,
@@ -166,7 +166,7 @@ where
         true => det_offsets_center,
         false => det_offsets,
     };
-    rolling_apply_agg_window::<MomentWindow<_, KurtosisMoment>, _, _>(
+    rolling_apply_agg_window::<MomentWindow<_, KurtosisMoment>, _, _, _>(
         values,
         window_size,
         min_periods,

@@ -11,6 +11,7 @@ pub enum RollingFunction {
     Quantile,
     Var,
     Std,
+    Rank,
     #[cfg(feature = "moment")]
     Skew,
     #[cfg(feature = "moment")]
@@ -36,6 +37,7 @@ impl Display for RollingFunction {
             Quantile => "quantile",
             Var => "var",
             Std => "std",
+            Rank => "rank",
             #[cfg(feature = "moment")]
             Skew => "skew",
             #[cfg(feature = "moment")]

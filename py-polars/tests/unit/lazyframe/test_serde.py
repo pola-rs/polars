@@ -134,6 +134,7 @@ def custom_function(x: pl.Series) -> pl.Series:
     return x + 1
 
 
+@pytest.mark.may_fail_cloud  # reason: cloud does not have access to this scope
 @pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
 def test_lf_serde_version_specific_named_function() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}).select(

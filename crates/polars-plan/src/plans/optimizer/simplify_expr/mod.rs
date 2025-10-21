@@ -8,10 +8,12 @@ mod arity;
 use crate::plans::*;
 
 fn new_null_count(input: &[ExprIR]) -> AExpr {
+    let function = IRFunctionExpr::NullCount;
+    let options = function.function_options();
     AExpr::Function {
         input: input.to_vec(),
-        function: IRFunctionExpr::NullCount,
-        options: FunctionOptions::aggregation(),
+        function,
+        options,
     }
 }
 
@@ -222,7 +224,10 @@ fn string_addition_to_linear_concat(
         let left_e = ExprIR::from_node(left_node, expr_arena);
         let right_e = ExprIR::from_node(right_node, expr_arena);
 
-        let get_type = |ae: &AExpr| ae.get_dtype(input_schema, expr_arena).ok();
+        let get_type = |ae: &AExpr| {
+            ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+                .ok()
+        };
         let type_a = get_type(left_aexpr).or_else(|| get_type(right_aexpr))?;
         let type_b = get_type(right_aexpr).or_else(|| get_type(right_aexpr))?;
 

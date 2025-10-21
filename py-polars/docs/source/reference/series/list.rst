@@ -26,6 +26,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.gather_every
     Series.list.get
     Series.list.head
+    Series.list.item
     Series.list.join
     Series.list.last
     Series.list.len

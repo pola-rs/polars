@@ -391,7 +391,11 @@ impl<'a> CoreReader<'a> {
         #[cfg(target_family = "wasm")]
         let pool = &POOL;
 
-        let counter = CountLines::new(self.parse_options.quote_char, self.parse_options.eol_char);
+        let counter = CountLines::new(
+            self.parse_options.quote_char,
+            self.parse_options.eol_char,
+            None,
+        );
         let mut total_offset = 0;
         let mut previous_total_offset = 0;
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)

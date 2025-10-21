@@ -179,6 +179,16 @@ impl<W: Write> FileWriter<W> {
         }
 
         // add all dictionaries
+        self.write_encoded_dictionaries(encoded_dictionaries)?;
+        self.write_encoded_record_batch(encoded_message)?;
+
+        Ok(())
+    }
+
+    pub fn write_encoded_dictionaries(
+        &mut self,
+        encoded_dictionaries: &[EncodedData],
+    ) -> PolarsResult<()> {
         for encoded_dictionary in encoded_dictionaries {
             let (meta, data) = write_message(&mut self.writer, encoded_dictionary)?;
 
@@ -190,8 +200,6 @@ impl<W: Write> FileWriter<W> {
             self.dictionary_blocks.push(block);
             self.block_offsets += meta + data;
         }
-
-        self.write_encoded_record_batch(encoded_message)?;
 
         Ok(())
     }

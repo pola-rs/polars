@@ -12,6 +12,8 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::{DataType, Field, PlIndexMap};
 
+pub const LIST_ELEMENT_DEFAULT_ID: u32 = u32::MAX;
+
 /// Maps Iceberg physical IDs to columns.
 ///
 /// Note: This doesn't use `Schema<D>` as the keys are u32's.
@@ -32,9 +34,8 @@ impl IcebergSchema {
         I: IntoIterator<Item = &'a ArrowField>,
     {
         let iter = iter.into_iter();
-        let size_hint = iter.size_hint();
 
-        let mut out = PlIndexMap::with_capacity(size_hint.1.unwrap_or(size_hint.0));
+        let mut out = PlIndexMap::with_capacity(iter.size_hint().0);
 
         for arrow_field in iter {
             let col: IcebergColumn = arrow_field_to_iceberg_column_rec(arrow_field, None)?;
@@ -116,7 +117,6 @@ fn arrow_field_to_iceberg_column_rec(
     field_id_override: Option<u32>,
 ) -> PolarsResult<IcebergColumn> {
     const PARQUET_FIELD_ID_KEY: &str = "PARQUET:field_id";
-    const MAP_DEFAULT_ID: u32 = u32::MAX; // u32::MAX
 
     let physical_id: u32 = field_id_override.ok_or(Cow::Borrowed("")).or_else(|_| {
         field
@@ -158,7 +158,7 @@ fn arrow_field_to_iceberg_column_rec(
                 .metadata
                 .as_ref()
                 .is_none_or(|x| !x.contains_key(PARQUET_FIELD_ID_KEY))
-                .then_some(MAP_DEFAULT_ID);
+                .then_some(LIST_ELEMENT_DEFAULT_ID);
 
             IcebergColumnType::List(Box::new(arrow_field_to_iceberg_column_rec(
                 field,
@@ -178,18 +178,25 @@ fn arrow_field_to_iceberg_column_rec(
         },
 
         dtype => {
-            if dtype.is_nested() {
+            if let ADT::Dictionary(_key_type, value_type, _is_sorted) = dtype
+                && !value_type.is_nested()
+            {
+                let dtype =
+                    DataType::from_arrow_field(&ArrowField::new(name.clone(), dtype.clone(), true));
+
+                IcebergColumnType::Primitive { dtype }
+            } else if dtype.is_nested() {
                 polars_bail!(
                     ComputeError:
                     "IcebergSchema: unsupported arrow type: {:?}",
                     dtype,
                 )
+            } else {
+                let dtype =
+                    DataType::from_arrow_field(&ArrowField::new(name.clone(), dtype.clone(), true));
+
+                IcebergColumnType::Primitive { dtype }
             }
-
-            let dtype =
-                DataType::from_arrow_field(&ArrowField::new(name.clone(), dtype.clone(), true));
-
-            IcebergColumnType::Primitive { dtype }
         },
     };
 

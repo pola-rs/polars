@@ -17,7 +17,6 @@ use polars_utils::slice_enum::Slice;
 use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::WaitToken;
-use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
@@ -25,10 +24,11 @@ use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSl
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_scan::reader_interface::{FileReader, FileReaderCallbacks};
+use crate::pipe::PortSender;
 
 pub struct InitializedPipelineState {
     pub task_handle: AbortOnDropHandle<PolarsResult<()>>,
-    pub phase_channel_tx: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+    pub phase_channel_tx: connector::Sender<(PortSender, WaitToken)>,
     pub bridge_state: Arc<Mutex<BridgeState>>,
 }
 

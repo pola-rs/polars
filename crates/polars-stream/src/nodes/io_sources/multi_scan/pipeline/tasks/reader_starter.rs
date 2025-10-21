@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
 use components::bridge::BridgeRecvPort;
 use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
@@ -24,6 +23,7 @@ use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSl
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
 use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_scan::components::skip_files::SkipFilesMask;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };
@@ -43,7 +43,7 @@ pub struct ReaderStarter {
         WaitToken,
     )>,
     pub max_concurrent_scans: usize,
-    pub skip_files_mask: Option<Bitmap>,
+    pub skip_files_mask: Option<SkipFilesMask>,
     pub extra_ops: ExtraOperations,
     pub constant_args: StartReaderArgsConstant,
     pub verbose: bool,
@@ -199,7 +199,7 @@ impl ReaderStarter {
             // &str that holds the reason
             let mut skip_read_reason: Option<&'static str> = skip_files_mask
                 .as_ref()
-                .is_some_and(|x| x.get_bit(scan_source_idx))
+                .is_some_and(|x| x.is_skipped_file(scan_source_idx))
                 .then_some("skip_files_mask");
 
             if skip_read_reason.is_some() {
@@ -610,8 +610,11 @@ async fn start_reader_impl(
 
     if let Some(forbid_extra_columns) = forbid_extra_columns {
         if let Ok(this_file_schema) = file_schema_rx.unwrap().recv().await {
-            forbid_extra_columns
-                .check_file_schema(&this_file_schema, file_iceberg_schema.as_ref())?;
+            forbid_extra_columns.check_file_schema(
+                &this_file_schema,
+                file_iceberg_schema.as_ref(),
+                scan_source.as_scan_source_ref().to_include_path_name(),
+            )?;
         } else {
             drop(reader_output_port);
             return Err(reader_handle.await.unwrap_err());

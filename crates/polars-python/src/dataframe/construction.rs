@@ -87,18 +87,13 @@ fn finish_from_rows(
     schema_overrides: Option<Schema>,
     infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
-    let mut schema = if let Some(mut schema) = schema {
+    let schema = if let Some(mut schema) = schema {
         resolve_schema_overrides(&mut schema, schema_overrides);
         update_schema_from_rows(&mut schema, &rows, infer_schema_length)?;
         schema
     } else {
         rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?
     };
-
-    // TODO: Remove this step when Decimals are supported properly.
-    // Erasing the decimal precision/scale here will just require us to infer it again later.
-    // https://github.com/pola-rs/polars/issues/14427
-    erase_decimal_precision_scale(&mut schema);
 
     let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
     Ok(df.into())
@@ -138,15 +133,6 @@ fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema
     if let Some(overrides) = schema_overrides {
         for (name, dtype) in overrides.into_iter() {
             schema.set_dtype(name.as_str(), dtype);
-        }
-    }
-}
-
-/// Erase precision/scale information from Decimal types.
-fn erase_decimal_precision_scale(schema: &mut Schema) {
-    for dtype in schema.iter_values_mut() {
-        if let DataType::Decimal(_, _) = dtype {
-            *dtype = DataType::Decimal(None, None)
         }
     }
 }

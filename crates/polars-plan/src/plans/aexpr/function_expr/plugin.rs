@@ -24,7 +24,7 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
         #[cfg(feature = "python")]
         let load_path = if !std::path::Path::new(lib).is_absolute() {
             // Get python virtual environment path
-            let prefix = Python::with_gil(|py| {
+            let prefix = Python::attach(|py| {
                 let sys = py.import("sys").unwrap();
                 let prefix = sys.getattr("prefix").unwrap();
                 prefix.to_string()
@@ -71,7 +71,8 @@ fn retrieve_error_msg(lib: &Library) -> String {
     }
 }
 
-pub(super) unsafe fn call_plugin(
+#[doc(hidden)]
+pub unsafe fn call_plugin(
     s: &[Column],
     lib: &str,
     symbol: &str,

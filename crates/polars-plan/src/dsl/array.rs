@@ -197,4 +197,20 @@ impl ArrayNameSpace {
                 skip_empty: false,
             }))
     }
+
+    pub fn eval<E: Into<Expr>>(self, other: E, as_list: bool) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::Array { as_list },
+        }
+    }
+
+    pub fn agg<E: Into<Expr>>(self, other: E) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::ArrayAgg,
+        }
+    }
 }

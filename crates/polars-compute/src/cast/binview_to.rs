@@ -2,8 +2,6 @@ use std::ptr::copy_nonoverlapping;
 
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
-#[cfg(feature = "dtype-decimal")]
-use arrow::compute::decimal::deserialize_decimal;
 use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
@@ -15,6 +13,8 @@ use polars_error::{PolarsResult, polars_err};
 use super::CastOptionsImpl;
 use super::binary_to::Parse;
 use super::temporal::EPOCH_DAYS_FROM_CE;
+#[cfg(feature = "dtype-decimal")]
+use crate::decimal::str_to_dec128;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
@@ -104,19 +104,15 @@ where
 #[cfg(feature = "dtype-decimal")]
 pub fn binview_to_decimal(
     array: &BinaryViewArray,
-    precision: Option<usize>,
+    precision: usize,
     scale: usize,
 ) -> PrimitiveArray<i128> {
-    let precision = precision.map(|p| p as u8);
     PrimitiveArray::<i128>::from_trusted_len_iter(
         array
             .iter()
-            .map(|val| val.and_then(|val| deserialize_decimal(val, precision, scale as u8))),
+            .map(|val| val.and_then(|val| str_to_dec128(val, precision, scale, false))),
     )
-    .to(ArrowDataType::Decimal(
-        precision.unwrap_or(38).into(),
-        scale,
-    ))
+    .to(ArrowDataType::Decimal(precision, scale))
 }
 
 pub(super) fn utf8view_to_naive_timestamp_dyn(

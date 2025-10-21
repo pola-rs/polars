@@ -289,3 +289,29 @@ def test_to_datetime_fallible_predicate_pushdown() -> None:
         assert_frame_equal(
             q.collect(), q.collect(optimizations=pl.QueryOptFlags.none())
         )
+
+
+def test_to_date_inexact_overlong_24263() -> None:
+    df = pl.DataFrame({"a": ["15/03/2024", "2024-02-29 00:00:00"]})
+    out = df.with_columns(
+        pl.col("a").str.to_date("%d/%m/%Y", strict=False, exact=False)
+    )
+    assert_frame_equal(out, pl.DataFrame({"a": [date(2024, 3, 15), None]}))
+
+
+def test_to_date_inexact_unicode_multibyte() -> None:
+    df = pl.DataFrame({"a": ["你好15/03/2024你好", "你好"]})
+    out = df.with_columns(
+        pl.col("a").str.to_date("%d/%m/%Y", strict=False, exact=False)
+    )
+    assert_frame_equal(out, pl.DataFrame({"a": [date(2024, 3, 15), None]}))
+
+
+def test_to_datetime_inexact_unicode_multibyte() -> None:
+    df = pl.DataFrame({"a": ["你好2020-02-03 12:53:11你好", "你好"]})
+    out = df.with_columns(
+        pl.col("a").str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False, exact=False)
+    )
+    assert_frame_equal(
+        out, pl.DataFrame({"a": [datetime(2020, 2, 3, 12, 53, 11), None]})
+    )

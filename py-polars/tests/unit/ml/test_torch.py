@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.dependencies import _lazy_import
+from polars._dependencies import _lazy_import
 from polars.testing import assert_frame_equal, assert_series_equal
 
 # don't import torch until an actual test is triggered (the decorator already

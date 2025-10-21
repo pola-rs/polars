@@ -5,6 +5,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 @pytest.fixture(
@@ -100,3 +101,8 @@ def test_init_from_numpy_values(np_dtype_cls: Any, expected_pl_dtype: Any) -> No
     # test init from raw numpy values (vs arrays)
     s = pl.Series("n", [np_dtype_cls(0), np_dtype_cls(4), np_dtype_cls(8)])
     assert s.dtype == expected_pl_dtype
+
+
+def test_from_numpy_nonbit_bools_24296() -> None:
+    a = np.array([24, 15, 32, 1, 0], dtype=np.uint8).view(bool)
+    assert_series_equal(pl.Series(a), pl.Series([True, True, True, True, False]))

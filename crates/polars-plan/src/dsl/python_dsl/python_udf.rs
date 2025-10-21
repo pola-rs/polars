@@ -15,10 +15,12 @@ use crate::prelude::*;
 // Will be overwritten on Python Polars start up.
 #[allow(clippy::type_complexity)]
 pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
-    fn(s: &[Column], output_dtype: Option<DataType>, lambda: &PyObject) -> PolarsResult<Column>,
+    fn(s: &[Column], output_dtype: Option<DataType>, lambda: &Py<PyAny>) -> PolarsResult<Column>,
 > = None;
+
+#[allow(clippy::type_complexity)]
 pub static mut CALL_DF_UDF_PYTHON: Option<
-    fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
+    fn(s: DataFrame, lambda: &Py<PyAny>) -> PolarsResult<DataFrame>,
 > = None;
 
 pub use polars_utils::python_function::PythonFunction;
@@ -26,7 +28,7 @@ pub use polars_utils::python_function::PythonFunction;
 pub use polars_utils::python_function::{PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VERSION};
 
 pub struct PythonUdfExpression {
-    python_function: PyObject,
+    python_function: Py<PyAny>,
     output_type: Option<DataTypeExpr>,
     materialized_field: OnceLock<Field>,
     is_elementwise: bool,
@@ -35,7 +37,7 @@ pub struct PythonUdfExpression {
 
 impl PythonUdfExpression {
     pub fn new(
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         output_type: Option<impl Into<DataTypeExpr>>,
         is_elementwise: bool,
         returns_scalar: bool,
@@ -85,6 +87,23 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
         let func = unsafe { CALL_DF_UDF_PYTHON.unwrap() };
         func(df, &self.0)
     }
+
+    fn display_str(&self) -> PlSmallStr {
+        pyo3::Python::attach(|py| {
+            use polars_utils::format_pl_smallstr;
+            use pyo3::intern;
+            use pyo3::pybacked::PyBackedStr;
+
+            let class_name: PyBackedStr = self
+                .0
+                .getattr(py, intern!(py, "__class__"))
+                .unwrap()
+                .extract(py)
+                .unwrap();
+
+            format_pl_smallstr!("PythonUdf({class_name})")
+        })
+    }
 }
 
 impl ColumnsUdf for PythonUdfExpression {
@@ -120,7 +139,7 @@ impl AnonymousColumnsUdf for PythonUdfExpression {
     }
     fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf> {
         Arc::new(Self {
-            python_function: Python::with_gil(|py| self.python_function.clone_ref(py)),
+            python_function: Python::attach(|py| self.python_function.clone_ref(py)),
             output_type: self.output_type.clone(),
             materialized_field: OnceLock::new(),
             is_elementwise: self.is_elementwise,

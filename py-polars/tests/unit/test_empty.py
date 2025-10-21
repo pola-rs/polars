@@ -46,7 +46,7 @@ def test_empty_count_window() -> None:
     )
 
     out = df.select(pl.col("ID").count().over(["ID", "DESC"]))
-    assert out.schema == {"ID": pl.UInt32}
+    assert out.schema == {"ID": pl.get_index_type()}
     assert out.height == 0
 
 

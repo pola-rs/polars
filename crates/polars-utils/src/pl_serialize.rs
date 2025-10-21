@@ -220,7 +220,7 @@ pub fn python_object_serialize(
     use crate::python_function::PYTHON3_VERSION;
 
     let mut use_cloudpickle = USE_CLOUDPICKLE.get();
-    let dumped = Python::with_gil(|py| {
+    let dumped = Python::attach(|py| {
         // Pickle with whatever pickling method was selected.
         if use_cloudpickle {
             let cloudpickle = PyModule::import(py, "cloudpickle")?.getattr("dumps")?;
@@ -271,7 +271,7 @@ pub fn python_object_deserialize(buf: &[u8]) -> PolarsResult<pyo3::Py<pyo3::PyAn
     }
     let buf = &buf[3..];
 
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let loads = PyModule::import(py, "pickle")?.getattr("loads")?;
         let arg = (PyBytes::new(py, buf),);
         let python_function = loads.call1(arg)?;

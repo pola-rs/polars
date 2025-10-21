@@ -2,6 +2,7 @@ mod mean;
 mod min_max;
 mod moment;
 mod quantile;
+mod rank;
 mod sum;
 
 use arrow::legacy::utils::CustomIterTools;
@@ -9,11 +10,12 @@ pub use mean::*;
 pub use min_max::*;
 pub use moment::*;
 pub use quantile::*;
+pub use rank::*;
 pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNulls<'a, T: NativeType> {
+pub trait RollingAggWindowNulls<'a, T: NativeType, Out: NativeType = T> {
     /// # Safety
     /// `start` and `end` must be in bounds for `slice` and `validity`
     unsafe fn new(
@@ -27,13 +29,13 @@ pub trait RollingAggWindowNulls<'a, T: NativeType> {
 
     /// # Safety
     /// `start` and `end` must be in bounds of `slice` and `bitmap`
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
 
     fn is_valid(&self, min_periods: usize) -> bool;
 }
 
 // Use an aggregation window that maintains the state
-pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
+pub(super) fn rolling_apply_agg_window<'a, Agg, T, Out, Fo>(
     values: &'a [T],
     validity: &'a Bitmap,
     window_size: usize,
@@ -42,9 +44,10 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
     params: Option<RollingFnParams>,
 ) -> ArrayRef
 where
+    Agg: RollingAggWindowNulls<'a, T, Out>,
+    T: NativeType,
+    Out: NativeType,
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
-    Agg: RollingAggWindowNulls<'a, T>,
-    T: IsFloat + NativeType,
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
@@ -72,20 +75,20 @@ where
                     } else {
                         // SAFETY: we are in bounds
                         unsafe { validity.set_unchecked(idx, false) };
-                        T::default()
+                        Out::default()
                     }
                 },
                 None => {
                     // SAFETY: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
-                    T::default()
+                    Out::default()
                 },
             }
         })
         .collect_trusted::<Vec<_>>();
 
     Box::new(PrimitiveArray::new(
-        T::PRIMITIVE.into(),
+        Out::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
     ))
@@ -249,7 +252,7 @@ mod test {
 
         let arr = Int32Array::new(ArrowDataType::Int32, vals.into(), Some(validity));
 
-        let out = rolling_apply_agg_window::<MinMaxWindow<i32, MaxIgnoreNan>, _, _>(
+        let out = rolling_apply_agg_window::<MinMaxWindow<i32, MaxIgnoreNan>, _, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,

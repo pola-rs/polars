@@ -1,6 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use super::Bitmap;
+use super::bitmask::BitMask;
 use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
 use crate::bitmap::MutableBitmap;
 use crate::trusted_len::TrustedLen;
@@ -113,6 +114,25 @@ where
 
 /// Apply a bitwise operation `op` to two inputs and fold the result.
 pub fn binary_fold<B, F, R>(lhs: &Bitmap, rhs: &Bitmap, op: F, init: B, fold: R) -> B
+where
+    F: Fn(u64, u64) -> B,
+    R: Fn(B, B) -> B,
+{
+    assert_eq!(lhs.len(), rhs.len());
+    let lhs_chunks = lhs.chunks();
+    let rhs_chunks = rhs.chunks();
+    let rem_lhs = lhs_chunks.remainder();
+    let rem_rhs = rhs_chunks.remainder();
+
+    let result = lhs_chunks
+        .zip(rhs_chunks)
+        .fold(init, |prev, (left, right)| fold(prev, op(left, right)));
+
+    fold(result, op(rem_lhs, rem_rhs))
+}
+
+/// Apply a bitwise operation `op` to two inputs and fold the result.
+pub fn binary_mask_fold<B, F, R>(lhs: BitMask<'_>, rhs: BitMask<'_>, op: F, init: B, fold: R) -> B
 where
     F: Fn(u64, u64) -> B,
     R: Fn(B, B) -> B,
@@ -269,8 +289,8 @@ fn eq(lhs: &Bitmap, rhs: &Bitmap) -> bool {
     lhs_remainder.zip(rhs_remainder).all(|(x, y)| x == y)
 }
 
-pub fn num_intersections_with(lhs: &Bitmap, rhs: &Bitmap) -> usize {
-    binary_fold(
+pub fn num_intersections_with(lhs: BitMask<'_>, rhs: BitMask<'_>) -> usize {
+    binary_mask_fold(
         lhs,
         rhs,
         |lhs, rhs| (lhs & rhs).count_ones() as usize,
@@ -402,7 +422,7 @@ mod tests {
         fn test_num_intersections_with(
             (lhs, rhs) in two_equal_length_bitmaps()
         ) {
-            let kernel_out = num_intersections_with(&lhs, &rhs);
+            let kernel_out = num_intersections_with(BitMask::from_bitmap(&lhs), BitMask::from_bitmap(&rhs));
             let mut reference_out = 0;
             for (l, r) in lhs.iter().zip(rhs.iter()) {
                 reference_out += usize::from(l & r);

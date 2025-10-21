@@ -26,7 +26,7 @@ pub(crate) fn get_file_chunks_iterator(
     quote_char: Option<u8>,
     eol_char: u8,
 ) {
-    let cl = CountLines::new(quote_char, eol_char);
+    let cl = CountLines::new(quote_char, eol_char, None);
 
     for _ in 0..n_chunks {
         let bytes = &bytes[*last_pos..];

@@ -523,6 +523,7 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
     assert_frame_equal(pl.read_delta(table_path), expect)
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
 def test_scan_delta_nanosecond_timestamp(
     tmp_path: Path,
@@ -754,8 +755,8 @@ endpoint_url = http://localhost:333
         "endpoint_url": "http://localhost:333"
     }
 
-    with pytest.raises(OSError, match="http://localhost:333"):
+    with pytest.raises(DeltaError, match="http://localhost:333"):
         pl.scan_delta("s3://.../...")
 
-    with pytest.raises(OSError, match="http://localhost:333"):
+    with pytest.raises(DeltaError, match="http://localhost:333"):
         pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")

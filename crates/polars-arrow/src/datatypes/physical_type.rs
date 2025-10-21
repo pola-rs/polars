@@ -87,4 +87,6 @@ pub enum IntegerType {
     UInt32,
     /// An unsigned 64-bit integer.
     UInt64,
+    /// An unsigned 128-bit integer.
+    UInt128,
 }

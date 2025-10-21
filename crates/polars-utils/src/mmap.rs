@@ -344,7 +344,18 @@ impl MMapSemaphore {
         file: &File,
         options: MmapOptions,
     ) -> PolarsResult<MMapSemaphore> {
-        let mmap = unsafe { options.map(file) }?;
+        let mmap = match unsafe { options.map(file) } {
+            Ok(m) => m,
+
+            // Mmap can fail with ENODEV on filesystems which don't support
+            // MAP_SHARED, try MAP_PRIVATE instead, see #24343.
+            #[cfg(target_family = "unix")]
+            Err(e) if e.raw_os_error() == Some(libc::ENODEV) => unsafe {
+                options.map_copy_read_only(file)?
+            },
+
+            Err(e) => return Err(e.into()),
+        };
 
         #[cfg(target_family = "unix")]
         {

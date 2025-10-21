@@ -286,3 +286,42 @@ def test_int_ranges_non_numeric_input_should_error() -> None:
         _ = df.select(pl.int_ranges("start", "end"))
 
     assert "conversion from `str` to `i64` failed" in str(excinfo.value)
+
+
+def test_int_range_len_count() -> None:
+    values = [1, 2, None, 4, 5, 6]
+
+    lf = pl.Series("a", values).to_frame().lazy()
+
+    def irange(e: pl.Expr) -> pl.LazyFrame:
+        return lf.select(r=pl.int_range(0, e, dtype=pl.get_index_type()))
+
+    q = irange(pl.len())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3, 4, 5], pl.get_index_type()),
+    )
+
+    q = irange(pl.col.a.len())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3, 4, 5], pl.get_index_type()),
+    )
+
+    q = irange(pl.col.a.filter(pl.col.a.ne_missing(4)).len())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3, 4], pl.get_index_type()),
+    )
+
+    q = irange(pl.col.a.count())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3, 4], pl.get_index_type()),
+    )
+
+    q = irange(pl.col.a.filter(pl.col.a.ne_missing(4)).count())
+    assert_series_equal(
+        q.collect().to_series(),
+        pl.Series("r", [0, 1, 2, 3], pl.get_index_type()),
+    )

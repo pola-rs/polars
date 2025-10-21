@@ -5,7 +5,7 @@ use polars_core::prelude::PlIndexMap;
 // Note, there are a lot of single variant enums here, but the intention is that we'll support
 // Delta deletion vectors as well at some point in the future.
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DeletionFilesList {

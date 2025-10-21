@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::PhysicalType;
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::{Offset, OffsetsBuffer};
 use polars_error::{PolarsResult, polars_bail};
 
@@ -152,6 +152,19 @@ fn to_nested_recursive(
             let fields = if let ParquetType::GroupType { fields, .. } = type_ {
                 fields
             } else {
+                // @NOTE: Support empty struct by mapping to Boolean array.
+                if let ArrowDataType::Struct(fs) = array.dtype()
+                    && fs.is_empty()
+                {
+                    parents.push(Nested::Primitive(PrimitiveNested {
+                        validity: array.validity().cloned(),
+                        is_optional,
+                        length: array.len(),
+                    }));
+                    nested.push(parents);
+                    return Ok(());
+                }
+
                 polars_bail!(InvalidOperation:
                     "Parquet type must be a group for a struct array",
                 )
@@ -397,7 +410,7 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
         let validity = (&child_validity) & (&inherited_validity);
 
         match array.dtype().to_physical_type() {
-            P::Struct => {
+            P::Struct if !matches!(array.dtype(), ArrowDataType::Struct(fs) if fs.is_empty()) => {
                 let array = array.as_any().downcast_ref::<StructArray>().unwrap();
 
                 leaves.reserve(array.len().saturating_sub(1));
@@ -471,7 +484,8 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
             | P::LargeUtf8
             | P::Dictionary(_)
             | P::BinaryView
-            | P::Utf8View => {
+            | P::Utf8View
+            | P::Struct => {
                 leaves.push(array.with_validity(validity.into()));
             },
 
@@ -518,7 +532,7 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
 
     assert_eq!(field_options.len(), types.len());
 
-    values
+    let x = values
         .iter()
         .zip(nested)
         .zip(types)
@@ -526,7 +540,8 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
         .map(|(((values, nested), type_), field_options)| {
             array_to_pages(values.as_ref(), type_, &nested, options, field_options)
         })
-        .collect()
+        .collect::<PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>>>()?;
+    Ok(x)
 }
 
 pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(

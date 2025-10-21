@@ -1,8 +1,10 @@
 mod dot;
 mod format;
-mod inputs;
+pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
+#[cfg(feature = "ir_visualization")]
+pub mod visualization;
 
 use std::borrow::Cow;
 use std::fmt;

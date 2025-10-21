@@ -408,3 +408,8 @@ def test_map_elements_list_dtype_24006() -> None:
 
     assert_series_equal(s1, s2)
     assert_series_equal(s1, pl.Series(values, dtype=dtype))
+
+
+def test_map_elements_reentrant_mutable_no_deadlock() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    s.map_elements(lambda _: s.rechunk(in_place=True)[0])
