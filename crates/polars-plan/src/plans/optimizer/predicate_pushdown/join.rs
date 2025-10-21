@@ -451,7 +451,7 @@ fn try_rewrite_join_type(
             return Ok(());
         }
 
-        // Try converting to IEJoin
+        // Try converting cross join to IEJoin
         #[cfg(feature = "iejoin")]
         if matches!(options.args.maintain_order, MaintainOrderJoin::None)
             && left_on.len() < IEJOIN_MAX_PREDICATES
