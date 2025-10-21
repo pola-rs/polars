@@ -25,7 +25,6 @@ mod unique;
 use std::borrow::Cow;
 
 pub use executor::*;
-use polars_core::POOL;
 use polars_plan::utils::*;
 use projection_utils::*;
 use rayon::prelude::*;

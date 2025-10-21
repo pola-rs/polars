@@ -173,7 +173,8 @@ where
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
+    let (left_asof, right_asof) =
+        pool_install(|| rayon::join(|| left_asof.rechunk(), || right_asof.rechunk()));
     let left_val_arr = left_asof.downcast_as_array();
     let right_val_arr = right_asof.downcast_as_array();
 

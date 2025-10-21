@@ -1,6 +1,6 @@
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
+use polars_core::pool_install;
 use polars_core::prelude::*;
-use polars_core::{POOL, pool_install};
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
@@ -370,20 +370,22 @@ impl PhysicalExpr for SortByExpr {
             let sort_by_s = sort_by_s.pop().unwrap();
             let groups = ac_sort_by.groups();
 
-            let (check, groups) = POOL.join(
-                || check_groups(groups, ac_in.groups()),
-                || {
-                    update_groups_sort_by(
-                        groups,
-                        &sort_by_s,
-                        &SortOptions {
-                            descending: descending[0],
-                            nulls_last: nulls_last[0],
-                            ..Default::default()
-                        },
-                    )
-                },
-            );
+            let (check, groups) = pool_install(|| {
+                rayon::join(
+                    || check_groups(groups, ac_in.groups()),
+                    || {
+                        update_groups_sort_by(
+                            groups,
+                            &sort_by_s,
+                            &SortOptions {
+                                descending: descending[0],
+                                nulls_last: nulls_last[0],
+                                ..Default::default()
+                            },
+                        )
+                    },
+                )
+            });
             check?;
 
             groups?

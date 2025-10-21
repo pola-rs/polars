@@ -631,23 +631,25 @@ impl PyLazyFrame {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
 
-            polars_core::POOL.spawn(move || {
-                let result = ldf
-                    .collect_with_engine(engine.0)
-                    .map(PyDataFrame::new)
-                    .map_err(PyPolarsErr::from);
+            polars_core::pool_install(|| {
+                rayon::spawn(move || {
+                    let result = ldf
+                        .collect_with_engine(engine.0)
+                        .map(PyDataFrame::new)
+                        .map_err(PyPolarsErr::from);
 
-                Python::attach(|py| match result {
-                    Ok(df) => {
-                        lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
-                    },
-                    Err(err) => {
-                        lambda
-                            .call1(py, (PyErr::from(err),))
-                            .map_err(|err| err.restore(py))
-                            .ok();
-                    },
-                });
+                    Python::attach(|py| match result {
+                        Ok(df) => {
+                            lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
+                        },
+                        Err(err) => {
+                            lambda
+                                .call1(py, (PyErr::from(err),))
+                                .map_err(|err| err.restore(py))
+                                .ok();
+                        },
+                    });
+                })
             });
         })
     }

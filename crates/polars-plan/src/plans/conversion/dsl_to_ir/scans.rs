@@ -330,7 +330,7 @@ pub fn csv_file_info(
     use std::io::{Read, Seek};
 
     use polars_core::error::feature_gated;
-    use polars_core::{POOL, config};
+    use polars_core::{config, pool_install, POOL};
     use polars_io::csv::read::schema_inference::SchemaInferenceResult;
     use polars_io::utils::get_reader_bytes;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -405,7 +405,7 @@ pub fn csv_file_info(
         }
     };
 
-    let si_results = POOL.join(
+    let si_results = pool_install(|| rayon::join(
         || infer_schema_func(0),
         || {
             (1..sources.len())
@@ -413,7 +413,7 @@ pub fn csv_file_info(
                 .map(infer_schema_func)
                 .reduce(|| Ok(Default::default()), merge_func)
         },
-    );
+    ));
 
     let si_result = merge_func(si_results.0, si_results.1)?;
 

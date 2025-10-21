@@ -1,8 +1,8 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use polars_core::POOL;
 use polars_core::frame::DataFrame;
+use polars_core::{pool_install, pool_num_threads};
 use polars_utils::priority::Priority;
 use polars_utils::sync::SyncPtr;
 
@@ -22,7 +22,7 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<
 
     let n_threads = num_morsels
         .div_ceil(MORSELS_PER_THREAD)
-        .min(POOL.current_num_threads()) as u64;
+        .min(pool_num_threads()) as u64;
 
     // Partitioning based on sequence number.
     let max_seq = morsels_per_pipe
@@ -35,38 +35,40 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<
     let morsels_per_p = &morsels_per_pipe;
     let mut dataframes: Vec<DataFrame> = Vec::with_capacity(num_morsels);
     let dataframes_ptr = unsafe { SyncPtr::new(dataframes.as_mut_ptr()) };
-    POOL.scope(|s| {
-        let mut out_offset = 0;
-        let mut stop_idx_per_pipe = vec![0; morsels_per_p.len()];
-        for t in 0..n_threads {
-            // This thread will handle all morsels with sequence id
-            // [t * seqs_per_thread, (t + 1) * seqs_per_threads).
-            // Compute per pipe the slice that covers this range, re-using
-            // the stop indices from the previous thread as our starting indices.
-            let this_thread_out_offset = out_offset;
-            let partition_max_seq = (t + 1) * seqs_per_thread;
-            let cur_idx_per_pipe = stop_idx_per_pipe;
-            stop_idx_per_pipe = Vec::with_capacity(morsels_per_p.len());
-            for p in 0..morsels_per_p.len() {
-                let stop_idx =
-                    morsels_per_p[p].partition_point(|m| m.0.to_u64() < partition_max_seq);
-                assert!(stop_idx >= cur_idx_per_pipe[p]);
-                out_offset += stop_idx - cur_idx_per_pipe[p];
-                stop_idx_per_pipe.push(stop_idx);
-            }
+    pool_install(|| {
+        rayon::scope(|s| {
+            let mut out_offset = 0;
+            let mut stop_idx_per_pipe = vec![0; morsels_per_p.len()];
+            for t in 0..n_threads {
+                // This thread will handle all morsels with sequence id
+                // [t * seqs_per_thread, (t + 1) * seqs_per_threads).
+                // Compute per pipe the slice that covers this range, re-using
+                // the stop indices from the previous thread as our starting indices.
+                let this_thread_out_offset = out_offset;
+                let partition_max_seq = (t + 1) * seqs_per_thread;
+                let cur_idx_per_pipe = stop_idx_per_pipe;
+                stop_idx_per_pipe = Vec::with_capacity(morsels_per_p.len());
+                for p in 0..morsels_per_p.len() {
+                    let stop_idx =
+                        morsels_per_p[p].partition_point(|m| m.0.to_u64() < partition_max_seq);
+                    assert!(stop_idx >= cur_idx_per_pipe[p]);
+                    out_offset += stop_idx - cur_idx_per_pipe[p];
+                    stop_idx_per_pipe.push(stop_idx);
+                }
 
-            {
-                let stop_idx_per_pipe = stop_idx_per_pipe.clone();
-                s.spawn(move |_| unsafe {
-                    fill_partition(
-                        morsels_per_p,
-                        cur_idx_per_pipe,
-                        &stop_idx_per_pipe,
-                        dataframes_ptr.get().add(this_thread_out_offset),
-                    )
-                });
+                {
+                    let stop_idx_per_pipe = stop_idx_per_pipe.clone();
+                    s.spawn(move |_| unsafe {
+                        fill_partition(
+                            morsels_per_p,
+                            cur_idx_per_pipe,
+                            &stop_idx_per_pipe,
+                            dataframes_ptr.get().add(this_thread_out_offset),
+                        )
+                    });
+                }
             }
-        }
+        })
     });
 
     // SAFETY: all partitions were handled, so dataframes is full filled and

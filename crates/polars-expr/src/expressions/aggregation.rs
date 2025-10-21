@@ -5,7 +5,7 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_split_offsets, NoNull};
-use polars_core::{POOL, pool_install, pool_num_threads};
+use polars_core::{pool_install, pool_num_threads, with_pool};
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
@@ -543,7 +543,7 @@ where
 
     if !allow_threading
         || s.len() < thread_boundary
-        || POOL.current_thread_has_pending_tasks().unwrap_or(false)
+        || with_pool(|pool| pool.current_thread_has_pending_tasks().unwrap_or(false))
     {
         return f(s);
     }

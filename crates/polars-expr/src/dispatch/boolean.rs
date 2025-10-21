@@ -1,8 +1,8 @@
 use std::ops::{BitAnd, BitOr};
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::error::PolarsResult;
+use polars_core::pool_install;
 use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBooleanFunction;
@@ -158,44 +158,42 @@ fn not(s: &Column) -> PolarsResult<Column> {
 
 // We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
 fn any_horizontal(s: &[Column]) -> PolarsResult<Column> {
-    let out = POOL
-        .install(|| {
-            s.par_iter()
-                .try_fold(
-                    || BooleanChunked::new(PlSmallStr::EMPTY, &[false]),
-                    |acc, b| {
-                        let b = b.cast(&DataType::Boolean)?;
-                        let b = b.bool()?;
-                        PolarsResult::Ok((&acc).bitor(b))
-                    },
-                )
-                .try_reduce(
-                    || BooleanChunked::new(PlSmallStr::EMPTY, [false]),
-                    |a, b| Ok(a.bitor(b)),
-                )
-        })?
-        .with_name(s[0].name().clone());
+    let out = pool_install(|| {
+        s.par_iter()
+            .try_fold(
+                || BooleanChunked::new(PlSmallStr::EMPTY, &[false]),
+                |acc, b| {
+                    let b = b.cast(&DataType::Boolean)?;
+                    let b = b.bool()?;
+                    PolarsResult::Ok((&acc).bitor(b))
+                },
+            )
+            .try_reduce(
+                || BooleanChunked::new(PlSmallStr::EMPTY, [false]),
+                |a, b| Ok(a.bitor(b)),
+            )
+    })?
+    .with_name(s[0].name().clone());
     Ok(out.into_column())
 }
 
 // We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
 fn all_horizontal(s: &[Column]) -> PolarsResult<Column> {
-    let out = POOL
-        .install(|| {
-            s.par_iter()
-                .try_fold(
-                    || BooleanChunked::new(PlSmallStr::EMPTY, &[true]),
-                    |acc, b| {
-                        let b = b.cast(&DataType::Boolean)?;
-                        let b = b.bool()?;
-                        PolarsResult::Ok((&acc).bitand(b))
-                    },
-                )
-                .try_reduce(
-                    || BooleanChunked::new(PlSmallStr::EMPTY, [true]),
-                    |a, b| Ok(a.bitand(b)),
-                )
-        })?
-        .with_name(s[0].name().clone());
+    let out = pool_install(|| {
+        s.par_iter()
+            .try_fold(
+                || BooleanChunked::new(PlSmallStr::EMPTY, &[true]),
+                |acc, b| {
+                    let b = b.cast(&DataType::Boolean)?;
+                    let b = b.bool()?;
+                    PolarsResult::Ok((&acc).bitand(b))
+                },
+            )
+            .try_reduce(
+                || BooleanChunked::new(PlSmallStr::EMPTY, [true]),
+                |a, b| Ok(a.bitand(b)),
+            )
+    })?
+    .with_name(s[0].name().clone());
     Ok(out.into_column())
 }

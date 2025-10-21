@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_utils::unique_column_name;
 
 use super::*;
@@ -32,14 +33,16 @@ pub(super) fn sort_and_groups(
         // If not sorted on keys, sort.
         let idx_s = idx.clone().into_series();
         if !idx_s.is_sorted(Default::default()).unwrap() {
-            let (df_ordered, keys_ordered) = POOL.join(
-                || df.take_unchecked(&idx),
-                || {
-                    keys.iter()
-                        .map(|c| c.take_unchecked(&idx))
-                        .collect::<Vec<_>>()
-                },
-            );
+            let (df_ordered, keys_ordered) = pool_install(|| {
+                rayon::join(
+                    || df.take_unchecked(&idx),
+                    || {
+                        keys.iter()
+                            .map(|c| c.take_unchecked(&idx))
+                            .collect::<Vec<_>>()
+                    },
+                )
+            });
             *df = df_ordered;
             *keys = keys_ordered;
         }

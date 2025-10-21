@@ -1,7 +1,6 @@
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, channel};
 
-use polars_core::POOL;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::*;
@@ -29,9 +28,11 @@ impl LazyFrame {
                 });
             }
         } else {
-            POOL.spawn_fifo(move || {
-                let result = physical_plan.execute(&mut state);
-                tx.send(result).unwrap();
+            pool_install(|| {
+                rayon::spawn_fifo(move || {
+                    let result = physical_plan.execute(&mut state);
+                    tx.send(result).unwrap();
+                })
             });
         }
 

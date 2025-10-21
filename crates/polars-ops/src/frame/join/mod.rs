@@ -35,7 +35,7 @@ use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
 };
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
-use polars_core::prelude::*;
+use polars_core::{pool_install, prelude::*};
 pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::slice_offsets;
 #[allow(unused_imports)]
@@ -601,17 +601,17 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                     a.set_sorted_flag(IsSorted::Ascending);
                 }
 
-                POOL.join(
+                pool_install(|| rayon::join(
                     // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
                     || unsafe { other.take_unchecked(b.idx().unwrap()) },
-                )
+                ))
             } else {
-                POOL.join(
+                pool_install(|| rayon::join(
                     // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
                     || unsafe { other.take_unchecked(right.into_series().idx().unwrap()) },
-                )
+                ))
             };
 
         _finish_join(df_left, df_right, args.suffix)

@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_ops::prelude::*;
 
 use super::*;
@@ -20,10 +21,12 @@ impl Executor for MergeSorted {
         let (left, right) = {
             let mut state2 = state.split();
             state2.branch_idx += 1;
-            let (left, right) = POOL.join(
-                || self.input_left.execute(state),
-                || self.input_right.execute(&mut state2),
-            );
+            let (left, right) = pool_install(|| {
+                rayon::join(
+                    || self.input_left.execute(state),
+                    || self.input_right.execute(&mut state2),
+                )
+            });
             (left?, right?)
         };
 

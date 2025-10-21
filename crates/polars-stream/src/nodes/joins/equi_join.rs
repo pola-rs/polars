@@ -7,7 +7,7 @@ use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_core::{POOL, config, pool_install};
+use polars_core::{config, pool_install};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
@@ -499,82 +499,88 @@ impl BuildState {
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        POOL.scope(|s| {
-            for p in 0..num_partitions {
-                let probe_tables = &probe_tables;
-                s.spawn(move |_| {
-                    // TODO: every thread does an identical linearize, we can do a single parallel one.
-                    let mut kmerge = BinaryHeap::with_capacity(local_builders.len());
-                    let mut cur_idx_per_loc = vec![0; local_builders.len()];
+        pool_install(|| {
+            rayon::scope(|s| {
+                for p in 0..num_partitions {
+                    let probe_tables = &probe_tables;
+                    s.spawn(move |_| {
+                        // TODO: every thread does an identical linearize, we can do a single parallel one.
+                        let mut kmerge = BinaryHeap::with_capacity(local_builders.len());
+                        let mut cur_idx_per_loc = vec![0; local_builders.len()];
 
-                    // Compute cardinality estimate and total amount of
-                    // payload for this partition, and initialize k-way merge.
-                    let mut sketch = CardinalitySketch::new();
-                    let mut payload_rows = 0;
-                    for (l_idx, l) in local_builders.iter().enumerate() {
-                        let Some((seq, _, _)) = l.morsels.first() else {
-                            continue;
-                        };
-                        kmerge.push(Priority(Reverse(seq), l_idx));
+                        // Compute cardinality estimate and total amount of
+                        // payload for this partition, and initialize k-way merge.
+                        let mut sketch = CardinalitySketch::new();
+                        let mut payload_rows = 0;
+                        for (l_idx, l) in local_builders.iter().enumerate() {
+                            let Some((seq, _, _)) = l.morsels.first() else {
+                                continue;
+                            };
+                            kmerge.push(Priority(Reverse(seq), l_idx));
 
-                        sketch.combine(&l.sketch_per_p[p]);
-                        let offsets_len = l.morsel_idxs_offsets_per_p.len();
-                        payload_rows +=
-                            l.morsel_idxs_offsets_per_p[offsets_len - num_partitions + p];
-                    }
+                            sketch.combine(&l.sketch_per_p[p]);
+                            let offsets_len = l.morsel_idxs_offsets_per_p.len();
+                            payload_rows +=
+                                l.morsel_idxs_offsets_per_p[offsets_len - num_partitions + p];
+                        }
 
-                    // Allocate hash table and payload builder.
-                    let mut p_table = table.new_empty();
-                    p_table.reserve(sketch.estimate() * 5 / 4);
-                    let mut p_payload = DataFrameBuilder::new(payload_schema.clone());
-                    p_payload.reserve(payload_rows);
+                        // Allocate hash table and payload builder.
+                        let mut p_table = table.new_empty();
+                        p_table.reserve(sketch.estimate() * 5 / 4);
+                        let mut p_payload = DataFrameBuilder::new(payload_schema.clone());
+                        p_payload.reserve(payload_rows);
 
-                    let mut p_seq_ids = Vec::new();
-                    if track_unmatchable {
-                        p_seq_ids.reserve(payload_rows);
-                    }
+                        let mut p_seq_ids = Vec::new();
+                        if track_unmatchable {
+                            p_seq_ids.reserve(payload_rows);
+                        }
 
-                    // Linearize and build.
-                    unsafe {
-                        let mut norm_seq_id = 0 as IdxSize;
-                        while let Some(Priority(Reverse(_seq), l_idx)) = kmerge.pop() {
-                            let l = local_builders.get_unchecked(l_idx);
-                            let idx_in_l = *cur_idx_per_loc.get_unchecked(l_idx);
-                            *cur_idx_per_loc.get_unchecked_mut(l_idx) += 1;
-                            if let Some((next_seq, _, _)) = l.morsels.get(idx_in_l + 1) {
-                                kmerge.push(Priority(Reverse(next_seq), l_idx));
-                            }
+                        // Linearize and build.
+                        unsafe {
+                            let mut norm_seq_id = 0 as IdxSize;
+                            while let Some(Priority(Reverse(_seq), l_idx)) = kmerge.pop() {
+                                let l = local_builders.get_unchecked(l_idx);
+                                let idx_in_l = *cur_idx_per_loc.get_unchecked(l_idx);
+                                *cur_idx_per_loc.get_unchecked_mut(l_idx) += 1;
+                                if let Some((next_seq, _, _)) = l.morsels.get(idx_in_l + 1) {
+                                    kmerge.push(Priority(Reverse(next_seq), l_idx));
+                                }
 
-                            let (_mseq, payload, keys) = l.morsels.get_unchecked(idx_in_l);
-                            let p_morsel_idxs_start =
-                                l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
-                            let p_morsel_idxs_stop =
-                                l.morsel_idxs_offsets_per_p[(idx_in_l + 1) * num_partitions + p];
-                            let p_morsel_idxs = &l.morsel_idxs_values_per_p[p]
-                                [p_morsel_idxs_start..p_morsel_idxs_stop];
-                            p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
-                            p_payload.gather_extend(payload, p_morsel_idxs, ShareStrategy::Never);
+                                let (_mseq, payload, keys) = l.morsels.get_unchecked(idx_in_l);
+                                let p_morsel_idxs_start =
+                                    l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
+                                let p_morsel_idxs_stop = l.morsel_idxs_offsets_per_p
+                                    [(idx_in_l + 1) * num_partitions + p];
+                                let p_morsel_idxs = &l.morsel_idxs_values_per_p[p]
+                                    [p_morsel_idxs_start..p_morsel_idxs_stop];
+                                p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
+                                p_payload.gather_extend(
+                                    payload,
+                                    p_morsel_idxs,
+                                    ShareStrategy::Never,
+                                );
 
-                            if track_unmatchable {
-                                p_seq_ids.resize(p_payload.len(), norm_seq_id);
-                                norm_seq_id += 1;
+                                if track_unmatchable {
+                                    p_seq_ids.resize(p_payload.len(), norm_seq_id);
+                                    norm_seq_id += 1;
+                                }
                             }
                         }
-                    }
 
-                    probe_tables
-                        .try_set(
-                            p,
-                            ProbeTable {
-                                hash_table: p_table,
-                                payload: p_payload.freeze(),
-                                seq_ids: p_seq_ids,
-                            },
-                        )
-                        .ok()
-                        .unwrap();
-                });
-            }
+                        probe_tables
+                            .try_set(
+                                p,
+                                ProbeTable {
+                                    hash_table: p_table,
+                                    payload: p_payload.freeze(),
+                                    seq_ids: p_seq_ids,
+                                },
+                            )
+                            .ok()
+                            .unwrap();
+                    });
+                }
+            })
         });
 
         ProbeState {

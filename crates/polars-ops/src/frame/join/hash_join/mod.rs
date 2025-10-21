@@ -184,15 +184,19 @@ pub trait JoinDispatch: IntoDf {
 
             let join_tuples_left = df.column("a").unwrap().idx().unwrap();
             let join_tuples_right = df.column("b").unwrap().idx().unwrap();
-            POOL.join(
-                || unsafe { df_self.take_unchecked(join_tuples_left) },
-                || unsafe { other.take_unchecked(join_tuples_right) },
-            )
+            pool_install(|| {
+                rayon::join(
+                    || unsafe { df_self.take_unchecked(join_tuples_left) },
+                    || unsafe { other.take_unchecked(join_tuples_right) },
+                )
+            })
         } else {
-            POOL.join(
-                || unsafe { df_self.take_unchecked(&idx_ca_l) },
-                || unsafe { other.take_unchecked(&idx_ca_r) },
-            )
+            pool_install(|| {
+                rayon::join(
+                    || unsafe { df_self.take_unchecked(&idx_ca_l) },
+                    || unsafe { other.take_unchecked(&idx_ca_r) },
+                )
+            })
         };
 
         let coalesce = args.coalesce.coalesce(&JoinType::Full);

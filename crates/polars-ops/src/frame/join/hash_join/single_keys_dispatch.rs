@@ -561,7 +561,7 @@ fn create_mappings(
         }
     };
 
-    POOL.join(mapping_left, mapping_right)
+    pool_install(|| rayon::join(mapping_left, mapping_right))
 }
 
 #[cfg(not(feature = "chunked_ids"))]

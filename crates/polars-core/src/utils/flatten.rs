@@ -116,6 +116,6 @@ pub fn flatten_nullable<S: AsRef<[NullableIdxSize]> + Send + Sync>(
         validity.freeze()
     };
 
-    let (a, b) = POOL.join(a, b);
+    let (a, b) = pool_install(|| rayon::join(a, b));
     PrimitiveArray::from_vec(bytemuck::cast_vec::<_, IdxSize>(a)).with_validity(Some(b))
 }

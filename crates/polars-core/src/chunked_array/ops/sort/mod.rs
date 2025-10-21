@@ -249,7 +249,7 @@ fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, mut options: SortOptions) -> IdxCa
 where
     T: PolarsNumericType,
 {
-    options.multithreaded &= POOL.current_num_threads() > 1;
+    options.multithreaded &= pool_num_threads() > 1;
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
         let iter = ca

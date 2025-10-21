@@ -1,3 +1,4 @@
+use polars_core::pool_install;
 use polars_ops::frame::DataFrameJoinOps;
 
 use super::*;
@@ -55,10 +56,10 @@ impl Executor for JoinExec {
             let mut state_left = state.split();
             state_right.branch_idx += 1;
 
-            POOL.join(
+            pool_install(|| rayon::join(
                 move || input_left.execute(&mut state_left),
                 move || input_right.execute(&mut state_right),
-            )
+            ))
         } else {
             (input_left.execute(state), input_right.execute(state))
         };

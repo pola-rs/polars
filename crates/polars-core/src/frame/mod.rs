@@ -16,7 +16,7 @@ use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
 use crate::utils::{Container, NoNull, slice_offsets, try_get_supertype};
-use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH, pool_install, pool_install_when};
+use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH, pool_install};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -2038,9 +2038,11 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
-        let cols = pool_install_when(allow_threads, || {
-            self._apply_columns_par(&|c| c.take_unchecked(idx))
-        });
+        let cols = if allow_threads {
+            pool_install(|| self._apply_columns_par(&|c| c.take_unchecked(idx)))
+        } else {
+            self._apply_columns(&|c| c.take_unchecked(idx))
+        };
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
@@ -2053,9 +2055,11 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
-        let cols = pool_install_when(allow_threads, || {
-            self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
-        });
+        let cols = if allow_threads {
+            pool_install(|| self._apply_columns_par(&|c| c.take_slice_unchecked(idx)))
+        } else {
+            self._apply_columns(&|c| c.take_slice_unchecked(idx))
+        };
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 

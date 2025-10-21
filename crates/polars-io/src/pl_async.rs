@@ -277,7 +277,7 @@ impl RuntimeManager {
     fn new() -> Self {
         let n_threads = std::env::var("POLARS_ASYNC_THREAD_COUNT")
             .map(|x| x.parse::<usize>().expect("integer"))
-            .unwrap_or(pool_num_threads().clamp(1, 4));
+            .unwrap_or(POOL.current_num_threads().clamp(1, 4));
 
         if polars_core::config::verbose() {
             eprintln!("async thread count: {n_threads}");

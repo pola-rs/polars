@@ -366,10 +366,10 @@ unsafe fn materialize_join(
 ) -> PolarsResult<DataFrame> {
     try_raise_keyboard_interrupt();
     let (join_left, join_right) = {
-        POOL.join(
+        pool_install(|| rayon::join(
             || left.take_unchecked(left_row_idx),
             || right.take_unchecked(right_row_idx),
-        )
+        ))
     };
 
     _finish_join(join_left, join_right, suffix)

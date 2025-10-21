@@ -5,7 +5,7 @@ use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::{POOL, downcast_as_macro_arg_physical, pool_install, pool_num_threads};
+use polars_core::{downcast_as_macro_arg_physical, pool_install, pool_num_threads, with_pool};
 use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
@@ -108,7 +108,9 @@ impl WindowExpr {
         }
         // SAFETY:
         // we only have unique indices ranging from 0..len
-        unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
+        with_pool(|pool| {
+            unsafe { perfect_sort(pool, &idx_mapping, &mut take_idx) };
+        });
         Ok(IdxCa::from_vec(PlSmallStr::EMPTY, take_idx))
     }
 

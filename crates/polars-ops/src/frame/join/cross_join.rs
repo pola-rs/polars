@@ -164,22 +164,21 @@ pub(super) fn fused_cross_filter(
     let rename_names = names.get_column_names();
     let rename_names = &rename_names[left.width()..];
 
-    let dfs = POOL
-        .install(|| {
-            cartesian_prod.par_iter().map(|(left, right)| {
-                let (mut left, right) = cross_join_dfs(left, right, None, false, maintain_order)?;
-                let mut right_columns = right.take_columns();
+    let dfs = pool_install(|| {
+        cartesian_prod.par_iter().map(|(left, right)| {
+            let (mut left, right) = cross_join_dfs(left, right, None, false, maintain_order)?;
+            let mut right_columns = right.take_columns();
 
-                for (c, name) in right_columns.iter_mut().zip(rename_names) {
-                    c.rename((*name).clone());
-                }
+            for (c, name) in right_columns.iter_mut().zip(rename_names) {
+                c.rename((*name).clone());
+            }
 
-                unsafe { left.hstack_mut_unchecked(&right_columns) };
+            unsafe { left.hstack_mut_unchecked(&right_columns) };
 
-                cross_join_options.predicate.apply(left)
-            })
+            cross_join_options.predicate.apply(left)
         })
-        .collect::<PolarsResult<Vec<_>>>()?;
+    })
+    .collect::<PolarsResult<Vec<_>>>()?;
 
     Ok(accumulate_dataframes_vertical_unchecked(dfs))
 }
