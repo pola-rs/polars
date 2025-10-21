@@ -113,6 +113,7 @@ impl fmt::Debug for Expr {
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
                     Last(expr) => write!(f, "{expr:?}.last()"),
+                    Item(expr) => write!(f, "{expr:?}.item()"),
                     Implode(expr) => write!(f, "{expr:?}.list()"),
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),

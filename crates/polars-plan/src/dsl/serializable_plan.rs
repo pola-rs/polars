@@ -616,6 +616,6 @@ mod tests {
             .unwrap();
         let mut reader: &[u8] = &buffer;
         let deserialized = DslPlan::deserialize_versioned(&mut reader).unwrap();
-        assert_eq!(format!("{:?}", lf), format!("{:?}", deserialized));
+        assert_eq!(format!("{lf:?}"), format!("{deserialized:?}"));
     }
 }

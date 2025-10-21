@@ -6,6 +6,7 @@ import itertools
 import os
 import pickle
 import sys
+import warnings
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -14,10 +15,9 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pydantic
 import pyiceberg
 import pytest
-from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import (
     BucketTransform,
     IdentityTransform,
@@ -51,6 +51,12 @@ from polars._utils.various import parse_version
 from polars.io.iceberg._utils import _convert_predicate, _to_ast
 from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
+
+with warnings.catch_warnings():
+    # Upstream issue at https://github.com/apache/iceberg-python/issues/2648
+    warnings.simplefilter("ignore", pydantic.warnings.PydanticDeprecatedSince212)
+    from pyiceberg.catalog.sql import SqlCatalog
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 
 @pytest.fixture
@@ -1959,6 +1965,41 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     tbl = catalog.load_table("namespace.table")
 
     pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 5
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .filter(pl.col("a") <= 2)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .head(3)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .slice(1, 3)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
 
     dfiles = [*tbl.scan().plan_files()]
 

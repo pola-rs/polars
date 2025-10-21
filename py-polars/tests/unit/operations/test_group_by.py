@@ -1032,6 +1032,7 @@ def test_schema_on_agg() -> None:
         pl.col("b").sum().alias("sum"),
         pl.col("b").first().alias("first"),
         pl.col("b").last().alias("last"),
+        pl.col("b").item().alias("item"),
     )
     expected_schema = {
         "a": pl.String,
@@ -1040,6 +1041,7 @@ def test_schema_on_agg() -> None:
         "sum": pl.Int64,
         "first": pl.Int64,
         "last": pl.Int64,
+        "item": pl.Int64,
     }
     assert result.collect_schema() == expected_schema
 
@@ -1779,3 +1781,56 @@ def test_group_by_filter_parametric(
     gb = gb.rename("a")
     sl = df.select(a=agg(lhs.filter(rhs))).to_series()
     assert_series_equal(gb, sl)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.Expr.any,
+        pl.Expr.all,
+        lambda e: e.any(ignore_nulls=False),
+        lambda e: e.all(ignore_nulls=False),
+    ],
+)
+def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
+    combinations = [
+        [True, None],
+        [None, None],
+        [False, None],
+        [True, True],
+        [False, False],
+        [True, False],
+    ]
+
+    cl = cs.starts_with("^x")
+    df = pl.DataFrame(
+        [pl.Series("g", [1, 1])]
+        + [pl.Series(f"x{i}", c, pl.Boolean()) for i, c in enumerate(combinations)]
+    )
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit"),
+    )
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.group_by("g").agg(expr(cl)).drop("g"),
+    )
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.select(cl.implode().list.agg(expr(pl.element()))),
+    )
+
+    df = pl.Schema({"x": pl.Boolean()}).to_frame()
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit"),
+    )
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.select(cl.implode().list.agg(expr(pl.element()))),
+    )

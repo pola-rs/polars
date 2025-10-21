@@ -56,6 +56,7 @@ impl BooleanChunked {
                     % 2
                     == 0
             },
+            |_, _, _| unreachable!(),
             |values, start, length| {
                 unsafe { values.sliced_unchecked(start as usize, length as usize) }.set_bits() % 2
                     == 1
@@ -66,6 +67,7 @@ impl BooleanChunked {
                     unsafe { validity.sliced_unchecked(start as usize, length as usize) };
                 values.num_intersections_with(validity) % 2 == 1
             },
+            |_, _, _, _| unreachable!(),
         )
     }
 }
@@ -168,6 +170,7 @@ impl BooleanChunked {
     /// # Safety
     ///
     /// Groups should be in correct.
+    #[expect(clippy::too_many_arguments)]
     unsafe fn bool_agg(
         &self,
         groups: &GroupsType,
@@ -175,9 +178,11 @@ impl BooleanChunked {
 
         idx_no_valid: impl Fn(BitMask, &[IdxSize]) -> bool + Send + Sync,
         idx_validity: impl Fn(BitMask, BitMask, &[IdxSize]) -> bool + Send + Sync,
+        idx_kleene: impl Fn(BitMask, BitMask, &[IdxSize]) -> Option<bool> + Send + Sync,
 
         slice_no_valid: impl Fn(BitMask, IdxSize, IdxSize) -> bool + Send + Sync,
         slice_validity: impl Fn(BitMask, BitMask, IdxSize, IdxSize) -> bool + Send + Sync,
+        slice_kleene: impl Fn(BitMask, BitMask, IdxSize, IdxSize) -> Option<bool> + Send + Sync,
     ) -> BooleanChunked {
         let name = self.name().clone();
         let values = self.rechunk();
@@ -194,26 +199,14 @@ impl BooleanChunked {
                 match groups {
                     GroupsType::Idx(idx) => idx
                         .into_par_iter()
-                        .map(|(_, idx)| {
-                            (idx.is_empty()
-                                || idx.iter().any(|i| validity.get_bit_unchecked(*i as usize)))
-                            .then(|| idx_validity(values, validity, idx))
-                        })
+                        .map(|(_, idx)| idx_kleene(values, validity, idx))
                         .collect(),
                     GroupsType::Slice {
                         groups,
                         overlapping: _,
                     } => groups
                         .into_par_iter()
-                        .map(|[start, length]| {
-                            (*length == 0
-                                || (unsafe {
-                                    validity.sliced_unchecked(*start as usize, *length as usize)
-                                }
-                                .leading_zeros()
-                                    == *length as usize))
-                                .then(|| slice_validity(values, validity, *start, *length))
-                        })
+                        .map(|[start, length]| slice_kleene(values, validity, *start, *length))
                         .collect(),
                 }
             } else {
@@ -265,6 +258,19 @@ impl BooleanChunked {
                     validity.get_bit_unchecked(*i as usize) & values.get_bit_unchecked(*i as usize)
                 })
             },
+            |values, validity, idxs| {
+                let mut saw_null = false;
+                for i in idxs.iter() {
+                    let is_valid = unsafe { validity.get_bit_unchecked(*i as usize) };
+                    let is_true = unsafe { values.get_bit_unchecked(*i as usize) };
+
+                    if is_valid & is_true {
+                        return Some(true);
+                    }
+                    saw_null |= !is_valid;
+                }
+                (!saw_null).then_some(false)
+            },
             |values, start, length| {
                 unsafe { values.sliced_unchecked(start as usize, length as usize) }.leading_zeros()
                     < length as usize
@@ -274,6 +280,19 @@ impl BooleanChunked {
                 let validity =
                     unsafe { validity.sliced_unchecked(start as usize, length as usize) };
                 values.intersects_with(validity)
+            },
+            |values, validity, start, length| {
+                let values = unsafe { values.sliced_unchecked(start as usize, length as usize) };
+                let validity =
+                    unsafe { validity.sliced_unchecked(start as usize, length as usize) };
+
+                if values.intersects_with(validity) {
+                    Some(true)
+                } else if validity.unset_bits() == 0 {
+                    None
+                } else {
+                    Some(true)
+                }
             },
         )
     }
@@ -291,8 +310,21 @@ impl BooleanChunked {
             },
             |values, validity, idxs| {
                 idxs.iter().all(|i| unsafe {
-                    validity.get_bit_unchecked(*i as usize) & values.get_bit_unchecked(*i as usize)
+                    !validity.get_bit_unchecked(*i as usize) | values.get_bit_unchecked(*i as usize)
                 })
+            },
+            |values, validity, idxs| {
+                let mut saw_null = false;
+                for i in idxs.iter() {
+                    let is_valid = unsafe { validity.get_bit_unchecked(*i as usize) };
+                    let is_true = unsafe { values.get_bit_unchecked(*i as usize) };
+
+                    if is_valid & !is_true {
+                        return Some(false);
+                    }
+                    saw_null |= !is_valid;
+                }
+                (!saw_null).then_some(true)
             },
             |values, start, length| {
                 let values = unsafe { values.sliced_unchecked(start as usize, length as usize) };
@@ -303,6 +335,21 @@ impl BooleanChunked {
                 let validity =
                     unsafe { validity.sliced_unchecked(start as usize, length as usize) };
                 values.num_intersections_with(validity) == validity.set_bits()
+            },
+            |values, validity, start, length| {
+                let values = unsafe { values.sliced_unchecked(start as usize, length as usize) };
+                let validity =
+                    unsafe { validity.sliced_unchecked(start as usize, length as usize) };
+
+                let num_non_nulls = validity.set_bits();
+
+                if values.num_intersections_with(validity) < num_non_nulls {
+                    Some(false)
+                } else if num_non_nulls < values.len() {
+                    None
+                } else {
+                    Some(true)
+                }
             },
         )
     }
