@@ -21,6 +21,7 @@ hashbrown = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }
 memmap = { workspace = true, optional = true }
+num-derive = { workspace = true }
 num-traits = { workspace = true }
 polars-error = { workspace = true }
 pyo3 = { workspace = true, optional = true }

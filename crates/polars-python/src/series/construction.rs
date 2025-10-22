@@ -185,7 +185,6 @@ init_method_opt!(new_opt_i16, Int16Type, i16);
 init_method_opt!(new_opt_i32, Int32Type, i32);
 init_method_opt!(new_opt_i64, Int64Type, i64);
 init_method_opt!(new_opt_i128, Int128Type, i128);
-init_method_opt!(new_opt_f16, Float16Type, f16);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 

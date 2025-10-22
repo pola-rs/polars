@@ -1,4 +1,6 @@
+use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
+use polars_utils::float16::pf16;
 
 use super::*;
 
@@ -192,6 +194,25 @@ where
     }
 }
 
+// TODO: [amber] I feel like this could be chunked together maybe?
+
+impl ChunkQuantile<pf16> for Float16Chunked {
+    fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        let out = if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
+            let mut owned = slice.to_vec();
+            quantile_slice(&mut owned, quantile, method)
+        } else {
+            generic_quantile(self.clone(), quantile, method)
+        };
+        out.map(|v| v.map(|v| v.as_()))
+    }
+
+    fn median(&self) -> Option<pf16> {
+        self.quantile(0.5, QuantileMethod::Linear).unwrap() // unwrap fine since quantile in range
+    }
+}
+
 impl ChunkQuantile<f32> for Float32Chunked {
     fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f32>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
@@ -201,7 +222,7 @@ impl ChunkQuantile<f32> for Float32Chunked {
         } else {
             generic_quantile(self.clone(), quantile, method)
         };
-        out.map(|v| v.map(|v| v as f32))
+        out.map(|v| v.map(|v| v.as_()))
     }
 
     fn median(&self) -> Option<f32> {
@@ -261,6 +282,26 @@ impl Float32Chunked {
     }
 
     pub(crate) fn median_faster(self) -> Option<f32> {
+        self.quantile_faster(0.5, QuantileMethod::Linear).unwrap()
+    }
+}
+
+impl Float16Chunked {
+    pub(crate) fn quantile_faster(
+        mut self,
+        quantile: f64,
+        method: QuantileMethod,
+    ) -> PolarsResult<Option<pf16>> {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        let is_sorted = self.is_sorted_ascending_flag();
+        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
+            quantile_slice(slice, quantile, method).map(|v| v.map(|v| v.as_()))
+        } else {
+            self.quantile(quantile, method)
+        }
+    }
+
+    pub(crate) fn median_faster(self) -> Option<pf16> {
         self.quantile_faster(0.5, QuantileMethod::Linear).unwrap()
     }
 }

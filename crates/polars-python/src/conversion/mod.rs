@@ -218,6 +218,10 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Int128"))?;
                 class.call0()
             },
+            DataType::Float16 => {
+                let class = pl.getattr(intern!(py, "Float16"))?;
+                class.call0()
+            },
             DataType::Float32 => {
                 let class = pl.getattr(intern!(py, "Float32"))?;
                 class.call0()

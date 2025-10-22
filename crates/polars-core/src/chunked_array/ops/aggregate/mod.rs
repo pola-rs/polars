@@ -3,11 +3,12 @@ mod quantile;
 mod var;
 
 use arrow::types::NativeType;
-use num_traits::{Float, One, ToPrimitive, Zero};
+use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
+use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
@@ -297,14 +298,26 @@ where
     }
 }
 
+impl VarAggSeries for Float16Chunked {
+    fn var_reduce(&self, ddof: u8) -> Scalar {
+        let v = self.var(ddof).map(AsPrimitive::<pf16>::as_);
+        Scalar::new(DataType::Float16, v.into())
+    }
+
+    fn std_reduce(&self, ddof: u8) -> Scalar {
+        let v = self.std(ddof).map(AsPrimitive::<pf16>::as_);
+        Scalar::new(DataType::Float16, v.into())
+    }
+}
+
 impl VarAggSeries for Float32Chunked {
     fn var_reduce(&self, ddof: u8) -> Scalar {
-        let v = self.var(ddof).map(|v| v as f32);
+        let v = self.var(ddof).map(AsPrimitive::<f32>::as_);
         Scalar::new(DataType::Float32, v.into())
     }
 
     fn std_reduce(&self, ddof: u8) -> Scalar {
-        let v = self.std(ddof).map(|v| v as f32);
+        let v = self.std(ddof).map(AsPrimitive::<f32>::as_);
         Scalar::new(DataType::Float32, v.into())
     }
 }
@@ -334,6 +347,18 @@ where
     fn median_reduce(&self) -> Scalar {
         let v = self.median();
         Scalar::new(DataType::Float64, v.into())
+    }
+}
+
+impl QuantileAggSeries for Float16Chunked {
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantile(quantile, method)?;
+        Ok(Scalar::new(DataType::Float16, v.into()))
+    }
+
+    fn median_reduce(&self) -> Scalar {
+        let v = self.median();
+        Scalar::new(DataType::Float16, v.into())
     }
 }
 

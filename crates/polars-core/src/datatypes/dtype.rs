@@ -852,6 +852,7 @@ impl DataType {
             Int32 => Ok(ArrowDataType::Int32),
             Int64 => Ok(ArrowDataType::Int64),
             Int128 => Ok(ArrowDataType::Int128),
+            Float16 => Ok(ArrowDataType::Float16),
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
@@ -1067,6 +1068,7 @@ impl Display for DataType {
             DataType::Int32 => "i32",
             DataType::Int64 => "i64",
             DataType::Int128 => "i128",
+            DataType::Float16 => "f16",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
@@ -1126,6 +1128,7 @@ impl std::fmt::Debug for DataType {
             Int32 => write!(f, "Int32"),
             Int64 => write!(f, "Int64"),
             Int128 => write!(f, "Int128"),
+            Float16 => write!(f, "Float16"),
             Float32 => write!(f, "Float32"),
             Float64 => write!(f, "Float64"),
             String => write!(f, "String"),

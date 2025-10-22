@@ -115,7 +115,7 @@ compute = [
   "compute_comparison",
   "compute_temporal",
 ]
-serde = ["dep:serde", "polars-schema/serde", "polars-utils/serde"]
+serde = ["dep:serde", "polars-schema/serde", "polars-utils/serde", "half/serde"]
 dsl-schema = ["dep:schemars", "polars-schema/dsl-schema", "polars-utils/dsl-schema"]
 simd = []
 

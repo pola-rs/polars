@@ -6,7 +6,9 @@ use arrow::datatypes::{
 };
 use arrow::types::{NativeType, days_ms, i256};
 use ethnum::I256;
+use num_traits::AsPrimitive;
 use polars_compute::cast::CastOptionsImpl;
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::utils::filter::Filter;
@@ -528,8 +530,8 @@ pub fn page_iter_to_array(
                         .map(|v| {
                             // SAFETY: We know that `v` is always of size two.
                             let le_bytes: [u8; 2] = unsafe { v.try_into().unwrap_unchecked() };
-                            let v = arrow::types::f16::from_le_bytes(le_bytes);
-                            v.to_f32()
+                            let v = pf16::from_le_bytes(le_bytes);
+                            v.as_()
                         })
                         .collect();
                     Ok(PrimitiveArray::<f32>::new(dtype.clone(), values, validity).to_boxed())

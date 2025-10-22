@@ -31,6 +31,7 @@ pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
+use polars_utils::float16::pf16;
 pub use primitive_to::*;
 use temporal::utf8view_to_timestamp;
 pub use utf8_to::*;
@@ -878,10 +879,11 @@ pub fn cast(
         #[cfg(all(feature = "dtype-i128", feature = "dtype-decimal"))]
         (Int128, Decimal(p, s)) => integer_to_decimal_dyn::<i128>(array, *p, *s),
 
-        (Float16, Float32) => {
-            let from = array.as_any().downcast_ref().unwrap();
-            Ok(f16_to_f32(from).boxed())
-        },
+        // (Float16, Float32) => {
+        //     let from = array.as_any().downcast_ref().unwrap();
+        //     Ok(f16_to_f32(from).boxed())
+        // },
+        (Float16, Float32) => primitive_to_primitive_dyn::<pf16, f32>(array, to_type, as_options),
 
         (Float32, UInt8) => primitive_to_primitive_dyn::<f32, u8>(array, to_type, options),
         (Float32, UInt16) => primitive_to_primitive_dyn::<f32, u16>(array, to_type, options),

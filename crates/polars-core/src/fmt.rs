@@ -1166,6 +1166,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
             AnyValue::Int64(v) => fmt_integer(f, width, *v),
             AnyValue::Int128(v) => feature_gated!("dtype-i128", fmt_integer(f, width, *v)),
+            AnyValue::Float16(v) => fmt_float(f, width, *v),
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),

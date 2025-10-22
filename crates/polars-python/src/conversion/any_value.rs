@@ -6,6 +6,7 @@ use chrono::{
 };
 use chrono_tz::Tz;
 use hashbrown::HashMap;
+use num_traits::ToPrimitive;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
@@ -75,6 +76,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Int32(v) => v.into_bound_py_any(py),
         AnyValue::Int64(v) => v.into_bound_py_any(py),
         AnyValue::Int128(v) => v.into_bound_py_any(py),
+        AnyValue::Float16(v) => ToPrimitive::to_f32(&v).into_bound_py_any(py), // TODO: [amber] Is this right?
         AnyValue::Float32(v) => v.into_bound_py_any(py),
         AnyValue::Float64(v) => v.into_bound_py_any(py),
         AnyValue::Null => py.None().into_bound_py_any(py),

@@ -3,6 +3,7 @@ use std::hash::{BuildHasher, Hash, Hasher};
 
 use bytemuck::TransparentWrapper;
 
+use crate::float16::{canonical_f16, pf16};
 use crate::hashing::{BytesHash, DirtyHash};
 use crate::nulls::IsNull;
 
@@ -194,6 +195,13 @@ impl<T: IsNull> IsNull for TotalOrdWrap<T> {
     #[inline(always)]
     fn unwrap_inner(self) -> Self::Inner {
         self.0.unwrap_inner()
+    }
+}
+
+impl DirtyHash for pf16 {
+    #[inline(always)]
+    fn dirty_hash(&self) -> u64 {
+        canonical_f16(*self).0.to_bits().dirty_hash()
     }
 }
 

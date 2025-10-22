@@ -1,8 +1,8 @@
 use std::convert::Infallible;
 
 use arrow;
+use polars::prelude::*;
 use polars_core::datatypes::{CompatLevel, DataType};
-use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 #[cfg(feature = "lazy")]
 use polars_lazy::frame::LazyFrame;

@@ -19,6 +19,7 @@ pub use config::check_allow_importing_interval_as_struct;
 pub mod cpuid;
 pub mod decimal;
 pub mod error;
+pub mod float16;
 pub mod floor_divmod;
 pub mod functions;
 pub mod hashing;

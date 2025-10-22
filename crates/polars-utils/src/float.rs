@@ -1,7 +1,13 @@
+use crate::float16::pf16;
+
 /// # Safety
 /// unsafe code downstream relies on the correct is_float call
 pub unsafe trait IsFloat: private::Sealed + Sized {
     fn is_float() -> bool {
+        false
+    }
+
+    fn is_f16() -> bool {
         false
     }
 
@@ -58,6 +64,8 @@ unsafe impl IsFloat for bool {}
 unsafe impl<T: IsFloat> IsFloat for Option<T> {}
 
 mod private {
+    use super::*;
+
     pub trait Sealed {}
     impl Sealed for i8 {}
     impl Sealed for i16 {}
@@ -70,6 +78,7 @@ mod private {
     impl Sealed for u64 {}
     impl Sealed for u128 {}
     impl Sealed for usize {}
+    impl Sealed for pf16 {}
     impl Sealed for f32 {}
     impl Sealed for f64 {}
     impl Sealed for &str {}
@@ -79,12 +88,16 @@ mod private {
 }
 
 macro_rules! impl_is_float {
-    ($tp:ty, $is_f32:literal, $is_f64:literal) => {
+    ($tp:ty, $is_f16:literal, $is_f32:literal, $is_f64:literal) => {
         unsafe impl IsFloat for $tp {
             #[inline]
             fn is_float() -> bool {
                 true
             }
+
+            // fn is_f16() -> bool {
+            //     $is_f16
+            // }
 
             fn is_f32() -> bool {
                 $is_f32
@@ -119,5 +132,6 @@ macro_rules! impl_is_float {
     };
 }
 
-impl_is_float!(f32, true, false);
-impl_is_float!(f64, false, true);
+impl_is_float!(pf16, true, false, false);
+impl_is_float!(f32, false, true, false);
+impl_is_float!(f64, false, false, true);

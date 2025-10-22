@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use arrow::types::PrimitiveType;
 use polars_compute::cast::SerPrimitive;
 use polars_error::feature_gated;
+use polars_utils::float16::pf16;
 use polars_utils::total_ord::ToTotalOrd;
 
 use super::*;
@@ -56,6 +57,8 @@ pub enum AnyValue<'a> {
     Int64(i64),
     /// A 128-bit integer number.
     Int128(i128),
+    /// A 16-bit floating point number.
+    Float16(pf16),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -156,6 +159,7 @@ impl AnyValue<'static> {
             DT::Int32 => AV::Int32(numeric_to_one.into()),
             DT::Int64 => AV::Int64(numeric_to_one.into()),
             DT::Int128 => AV::Int128(numeric_to_one.into()),
+            DT::Float16 => AV::Float16(numeric_to_one.into()),
             DT::Float32 => AV::Float32(numeric_to_one.into()),
             DT::Float64 => AV::Float64(numeric_to_one.into()),
             #[cfg(feature = "dtype-decimal")]
@@ -236,6 +240,7 @@ impl<'a> AnyValue<'a> {
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,
             UInt128(_) => DataType::UInt128,
+            Float16(_) => DataType::Float16,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
             String(_) | StringOwned(_) => DataType::String,
@@ -686,6 +691,7 @@ impl<'a> AnyValue<'a> {
             | Self::Int32(_)
             | Self::Int64(_)
             | Self::Int128(_)
+            | Self::Float16(_)
             | Self::Float32(_)
             | Self::Float64(_) => self,
 
@@ -790,6 +796,7 @@ impl AnyValue<'_> {
             UInt128(v) => feature_gated!("dtype-u128", v.hash(state)),
             String(v) => v.hash(state),
             StringOwned(v) => v.hash(state),
+            Float16(v) => v.to_ne_bytes().hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
             Float64(v) => v.to_ne_bytes().hash(state),
             Binary(v) => v.hash(state),
@@ -1007,6 +1014,7 @@ impl<'a> AnyValue<'a> {
             UInt64(v) => UInt64(v),
             UInt128(v) => UInt128(v),
             Boolean(v) => Boolean(v),
+            Float16(v) => Float16(v),
             Float32(v) => Float32(v),
             Float64(v) => Float64(v),
             #[cfg(feature = "dtype-datetime")]
