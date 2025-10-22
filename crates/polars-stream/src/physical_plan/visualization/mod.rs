@@ -435,6 +435,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 row_index,
                 pre_slice,
                 predicate,
+                predicate_file_skip_applied: _,
                 hive_parts,
                 include_file_paths,
                 cast_columns_policy: _,

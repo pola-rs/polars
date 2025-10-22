@@ -1144,3 +1144,26 @@ def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
         pl.scan_parquet(tmp_path).filter(pl.lit(False)).collect(),
         df.clear(),
     )
+
+
+def test_hive_filter_in_ir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "a=1").mkdir()
+    pl.DataFrame({"x": 1}).write_parquet(tmp_path / "a=1/data.parquet")
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capfd.readouterr()
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.col("a") == 1).collect(),
+        pl.DataFrame({"x": 1, "a": 1}),
+    )
+
+    capture = capfd.readouterr().err
+
+    assert (
+        capture.count("initialize_scan_predicate: Source filter mask initialization")
+        == 1
+    )

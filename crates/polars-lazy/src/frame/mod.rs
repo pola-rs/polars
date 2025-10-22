@@ -28,6 +28,7 @@ use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::RowIndex;
+use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
@@ -555,6 +556,7 @@ impl LazyFrame {
                 let io_expr = phys_expr_to_io_expr(phys_expr);
                 Some(io_expr)
             }),
+            apply_scan_predicate_to_scan_ir,
         )?;
 
         Ok(lp_top)

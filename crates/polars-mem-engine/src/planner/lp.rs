@@ -467,11 +467,12 @@ fn create_physical_plan_impl(
             output_schema,
             scan_type,
             predicate,
+            predicate_file_skip_applied,
             unified_scan_args,
         } => {
             let mut expr_conversion_state = ExpressionConversionState::new(true);
 
-            let mut create_skip_batch_predicate = false;
+            let mut create_skip_batch_predicate = unified_scan_args.table_statistics.is_some();
             #[cfg(feature = "parquet")]
             {
                 create_skip_batch_predicate |= matches!(
