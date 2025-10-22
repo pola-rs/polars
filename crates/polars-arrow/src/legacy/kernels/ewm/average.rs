@@ -47,10 +47,6 @@ impl<T> EwmMeanState<T>
 where
     T: NativeType + num_traits::Float + std::ops::MulAssign,
 {
-    pub fn update(&mut self, values: &PrimitiveArray<T>) -> PrimitiveArray<T> {
-        values.iter().map(|x| x.copied()).collect()
-    }
-
     pub fn update_iter<I>(&mut self, values: I) -> impl Iterator<Item = Option<T>>
     where
         I: IntoIterator<Item = Option<T>>,
