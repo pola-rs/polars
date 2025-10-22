@@ -286,10 +286,10 @@ impl WindowExpr {
 
     fn determine_map_strategy(
         &self,
-        agg_state: &AggState,
+        ac: &mut AggregationContext,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.mapping, agg_state) {
+        match (self.mapping, ac.agg_state()) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
             (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
@@ -307,6 +307,7 @@ impl WindowExpr {
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
                 if let GroupsType::Slice { .. } = gb.get_groups().as_ref() {
                     // Result can be directly exploded if the input was sorted.
+                    ac.groups().as_ref().check_lengths(gb.get_groups())?;
                     Ok(MapStrategy::Explode)
                 } else {
                     Ok(MapStrategy::Map)
@@ -490,7 +491,8 @@ impl PhysicalExpr for WindowExpr {
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), &gb)? {
+
+        match self.determine_map_strategy(&mut ac, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
 
