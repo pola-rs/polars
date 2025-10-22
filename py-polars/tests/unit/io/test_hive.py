@@ -1184,3 +1184,8 @@ def test_hive_filter_in_ir(
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).tail(1).filter(pl.col("a") == 1).collect(),
+        pl.DataFrame(schema={"x": pl.Int64, "a": pl.Int64}),
+    )
