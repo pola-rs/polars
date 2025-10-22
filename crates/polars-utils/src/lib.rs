@@ -57,8 +57,6 @@ pub mod itertools;
 pub mod macros;
 pub mod option;
 pub mod vec;
-#[cfg(target_family = "wasm")]
-pub mod wasm;
 
 pub mod float;
 pub mod index;

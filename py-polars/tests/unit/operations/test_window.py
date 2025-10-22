@@ -841,9 +841,24 @@ def test_shape_mismatch_group_by_slice() -> None:
             "x": [True, True, False],
             "t": [1, 1, 3],
         }
-    ).select(pl.col.t.unique().over(pl.col("x").rle_id()))
+    ).select(pl.col.t.mode().over(pl.col("x").rle_id()))
 
     with pytest.raises(
         ComputeError, match="expressions must have matching group lengths"
+    ):
+        q.collect()
+
+
+def test_shape_mismatch_group_by_unique_slice() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False],
+            "t": [1, 1, 3],
+        }
+    ).select(pl.col.t.unique().over(pl.col("x").rle_id()))
+
+    with pytest.raises(
+        ShapeError,
+        match="the length of the window expression did not match that of the group",
     ):
         q.collect()
