@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
 import polars.selectors as cs
@@ -14,6 +15,7 @@ from polars import Expr
 from polars.exceptions import ColumnNotFoundError
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -1832,3 +1834,46 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
         df.select(expr(cl)),
         df.select(cl.implode().list.agg(expr(pl.element()))),
     )
+
+
+@given(
+    s=series(
+        name="f",
+        dtype=pl.Float64(),
+        allow_chunks=False,  # bug: See #24960
+    )
+)
+def test_group_by_skew_kurtosis(s: pl.Series) -> None:
+    df = s.to_frame()
+
+    exprs: dict[str, Callable[[pl.Expr], pl.Expr]] = {
+        "skew": lambda e: e.skew(),
+        "skew_b": lambda e: e.skew(bias=False),
+        "kurt": lambda e: e.kurtosis(),
+        "kurt_f": lambda e: e.kurtosis(fisher=False),
+        "kurt_b": lambda e: e.kurtosis(bias=False),
+        "kurt_fb": lambda e: e.kurtosis(fisher=False, bias=False),
+    }
+
+    sl = df.select([e(pl.col.f).alias(n) for n, e in exprs.items()])
+    if s.len() > 0:
+        gb = (
+            df.group_by(pl.lit(1))
+            .agg([e(pl.col.f).alias(n) for n, e in exprs.items()])
+            .drop("literal")
+        )
+        assert_frame_equal(sl, gb)
+
+        # check scalar case
+        sl_first = df.select([e(pl.col.f.first()).alias(n) for n, e in exprs.items()])
+        gb = (
+            df.group_by(pl.lit(1))
+            .agg([e(pl.col.f.first()).alias(n) for n, e in exprs.items()])
+            .drop("literal")
+        )
+        assert_frame_equal(sl_first, gb)
+
+    li = df.select(pl.col.f.implode()).select(
+        [pl.col.f.list.agg(e(pl.element())).alias(n) for n, e in exprs.items()]
+    )
+    assert_frame_equal(sl, li)
