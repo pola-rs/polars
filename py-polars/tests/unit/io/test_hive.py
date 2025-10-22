@@ -1163,6 +1163,7 @@ def test_hive_filter_in_ir(
 
     capture = capfd.readouterr().err
 
+    # Ensure this only happens once.
     assert (
         capture.count("initialize_scan_predicate: Source filter mask initialization")
         == 1
