@@ -286,13 +286,6 @@ pub fn optimize(
         }
     }
 
-    if opt_flags.contains(OptFlags::SORT_PULLUP) {
-        let members = get_or_init_members!();
-        if members.has_sort | members.has_hint {
-            sortedness::propagate_sortedness(&[lp_top], lp_arena, expr_arena);
-        }
-    }
-
     expand_datasets::expand_datasets(lp_top, lp_arena, expr_arena)?;
 
     // During debug we check if the optimizations have not modified the final schema.

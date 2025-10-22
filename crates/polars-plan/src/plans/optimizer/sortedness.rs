@@ -5,54 +5,42 @@ use polars_utils::UnitVec;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 
-use crate::plans::{AExpr, FunctionIR, HintIR, IR, Sorted};
+use crate::plans::{AExpr, FunctionIR, HintIR, IR, Sorted, into_column};
 
-type IRSorted = Arc<[Arc<[Sorted]>]>;
+type IRSorted = Arc<[Sorted]>;
 
-pub fn propagate_sortedness(
-    roots: &[Node],
-    ir_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-) -> PlHashMap<Node, IRSorted> {
-    let mut sortedness = PlHashMap::<Node, IRSorted>::default();
-    let mut cache_proxy = PlHashMap::<UniqueId, IRSorted>::default();
+pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
+    let mut sortedness = PlHashMap::default();
+    let mut cache_proxy = PlHashMap::default();
 
-    for root in roots {
-        sortedness_rec(
-            *root,
-            ir_arena,
-            expr_arena,
-            &mut sortedness,
-            &mut cache_proxy,
-        );
-    }
-
-    sortedness
+    is_sorted_rec(
+        root,
+        ir_arena,
+        expr_arena,
+        &mut sortedness,
+        &mut cache_proxy,
+    )
 }
 
 #[recursive::recursive]
-fn sortedness_rec(
+fn is_sorted_rec(
     root: Node,
-    ir_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-    sortedness: &mut PlHashMap<Node, IRSorted>,
-    cache_proxy: &mut PlHashMap<UniqueId, IRSorted>,
-) -> IRSorted {
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    sortedness: &mut PlHashMap<Node, Option<IRSorted>>,
+    cache_proxy: &mut PlHashMap<UniqueId, Option<IRSorted>>,
+) -> Option<IRSorted> {
     if let Some(s) = sortedness.get(&root) {
         return s.clone();
     }
 
-    fn empty() -> IRSorted {
-        [].into()
-    }
-
     macro_rules! rec {
-        ($node:expr) => {{ sortedness_rec($node, ir_arena, expr_arena, sortedness, cache_proxy) }};
+        ($node:expr) => {{ is_sorted_rec($node, ir_arena, expr_arena, sortedness, cache_proxy) }};
     }
 
     // @NOTE: Most of the below implementations are very very conservative.
     let sorted = match ir_arena.get(root) {
-        IR::PythonScan { .. } => empty(),
+        IR::PythonScan { .. } => None,
         IR::Slice {
             input,
             offset: _,
@@ -62,24 +50,42 @@ fn sortedness_rec(
             input,
             predicate: _,
         } => rec!(*input),
-        IR::Scan { .. } => empty(),
-        IR::DataFrameScan { .. } => empty(),
-        IR::SimpleProjection { input, columns } => {
-            rec!(*input);
-            empty()
-        },
-        IR::Select { input, .. } => {
-            rec!(*input);
-            empty()
-        },
+        IR::Scan { .. } => None,
+        IR::DataFrameScan { .. } => None,
+        IR::SimpleProjection { input, columns } => None,
+        IR::Select { input, .. } => None,
         IR::Sort {
             input,
             by_column,
             slice: _,
             sort_options,
         } => {
-            rec!(*input);
-            empty()
+            let mut s = by_column
+                .iter()
+                .map_while(|e| {
+                    into_column(e.node(), expr_arena).map(|c| Sorted {
+                        column: c.clone(),
+                        descending: false,
+                        nulls_last: false,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if sort_options.descending.len() != 1 {
+                s.iter_mut()
+                    .zip(sort_options.descending.iter())
+                    .for_each(|(s, &d)| s.descending = d);
+            } else if sort_options.descending[0] {
+                s.iter_mut().for_each(|s| s.descending = true);
+            }
+            if sort_options.nulls_last.len() != 1 {
+                s.iter_mut()
+                    .zip(sort_options.nulls_last.iter())
+                    .for_each(|(s, &d)| s.nulls_last = d);
+            } else if sort_options.nulls_last[0] {
+                s.iter_mut().for_each(|s| s.nulls_last = true);
+            }
+
+            Some(s.into())
         },
         IR::Cache { input, id } => {
             let (input, id) = (*input, *id);
@@ -91,96 +97,23 @@ fn sortedness_rec(
                 s
             }
         },
-        IR::GroupBy { input, .. } => {
-            rec!(*input);
-            empty()
+        IR::GroupBy { .. } => None,
+        IR::Join { .. } => None,
+        IR::HStack { .. } => None,
+        IR::MapFunction { input, function } => match function {
+            FunctionIR::Hint(hint) => match hint {
+                HintIR::Sorted(v) => Some(v.clone()),
+                _ => rec!(*input),
+            },
+            _ => None,
         },
-        IR::Join {
-            input_left,
-            input_right,
-            ..
-        } => {
-            let (input_left, input_right) = (*input_left, *input_right);
-            rec!(input_left);
-            rec!(input_right);
-            empty()
-        },
-        IR::HStack {
-            input,
-            exprs,
-            schema,
-            options,
-        } => {
-            rec!(*input);
-            empty()
-        },
-        IR::Distinct { input, options: _ } => {
-            rec!(*input);
-            empty()
-        },
-        IR::MapFunction { input, function } => {
-            let function = function.clone();
-            let mut input = rec!(*input);
-            match function {
-                FunctionIR::Hint(hint) => match hint {
-                    HintIR::Sorted(v) => input
-                        .iter()
-                        .cloned()
-                        .chain(std::iter::once(v.clone()))
-                        .collect(),
-                    _ => input,
-                },
-                _ => empty(),
-            }
-        },
-        IR::Union { inputs, options: _ } => {
-            let inputs = inputs.clone();
-            for i in inputs {
-                rec!(i);
-            }
-            empty()
-        },
-        IR::HConcat { inputs, .. } => {
-            let inputs = inputs.clone();
-            for i in inputs {
-                rec!(i);
-            }
-            empty()
-        },
-        IR::ExtContext {
-            input,
-            contexts,
-            schema: _,
-        } => {
-            let input = *input;
-            let contexts = contexts.clone();
-            rec!(input);
-            for c in contexts {
-                rec!(c);
-            }
-            empty()
-        },
-        IR::Sink { input, payload: _ } => {
-            rec!(*input);
-            empty()
-        },
-        IR::SinkMultiple { inputs } => {
-            let inputs = inputs.clone();
-            for i in inputs {
-                rec!(i);
-            }
-            empty()
-        },
-        IR::MergeSorted {
-            input_left,
-            input_right,
-            key: _,
-        } => {
-            let (input_left, input_right) = (*input_left, *input_right);
-            rec!(input_left);
-            rec!(input_right);
-            empty()
-        },
+        IR::Union { .. } => None,
+        IR::HConcat { .. } => None,
+        IR::ExtContext { .. } => None,
+        IR::Sink { .. } => None,
+        IR::SinkMultiple { .. } => None,
+        IR::MergeSorted { .. } => None,
+        IR::Distinct { .. } => None,
         IR::Invalid => unreachable!(),
     };
 

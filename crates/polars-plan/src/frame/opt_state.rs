@@ -37,8 +37,6 @@ bitflags! {
         /// Check if operations are order dependent and unset maintaining_order if
         /// the order would not be observed.
         const CHECK_ORDER_OBSERVE = 1 << 15;
-        /// Use sorting information to optimize operations and remove redundant sorts.
-        const SORT_PULLUP = 1 << 16;
     }
 }
 
