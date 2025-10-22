@@ -19,7 +19,6 @@ where
 pub struct EwmMeanState<T> {
     weighted_mean: T,
     weight: T,
-    new_value_weight: T,
     alpha: T,
     non_null_count: usize,
     adjust: bool,
@@ -35,7 +34,6 @@ where
         Self {
             weighted_mean: T::zero(),
             weight: T::zero(),
-            new_value_weight: if adjust { T::one() } else { alpha },
             alpha,
             non_null_count: 0,
             adjust,
@@ -57,7 +55,9 @@ where
     where
         I: IntoIterator<Item = Option<T>>,
     {
-        values.into_iter().map(|opt_v| {
+        let new_value_weight = if self.adjust { T::one() } else { self.alpha };
+
+        values.into_iter().map(move |opt_v| {
             if self.non_null_count == 0
                 && let Some(v) = opt_v
             {
@@ -71,10 +71,10 @@ where
                 }
 
                 if let Some(new_v) = opt_v {
-                    let new_weight = self.weight + self.new_value_weight;
+                    let new_weight = self.weight + new_value_weight;
 
                     self.weighted_mean = self.weighted_mean
-                        + (new_v - self.weighted_mean) * (self.new_value_weight / new_weight);
+                        + (new_v - self.weighted_mean) * (new_value_weight / new_weight);
 
                     self.weight = if self.adjust {
                         self.weight + T::one()
