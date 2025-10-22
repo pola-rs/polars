@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
+use polars_core::prelude::sort::perfect_sort;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
@@ -10,7 +11,6 @@ use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
-use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
@@ -108,7 +108,7 @@ impl WindowExpr {
         }
         // SAFETY:
         // we only have unique indices ranging from 0..len
-        unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
+        unsafe { perfect_sort(&idx_mapping, &mut take_idx) };
         Ok(IdxCa::from_vec(PlSmallStr::EMPTY, take_idx))
     }
 
