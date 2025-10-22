@@ -1,8 +1,14 @@
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
 
-use super::*;
+use polars_core::prelude::*;
+use polars_error::{PolarsResult, feature_gated, polars_bail};
+
+#[cfg(feature = "serde")]
+use super::serde_expr;
+use crate::dsl::LazySerde;
 
 pub trait AnonymousColumnsUdf: ColumnsUdf {
     fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf>;
