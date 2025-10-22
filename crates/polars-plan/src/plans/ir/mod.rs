@@ -61,7 +61,8 @@ pub enum IR {
         predicate: Option<ExprIR>,
         /// * None: No skipping
         /// * Some(v): Files were skipped (filtered out), where:
-        ///   v @ true: Filter was fully applied (e.g. refers only to hive parts)
+        ///   v @ true: Filter was fully applied (e.g. refers only to hive parts), so does not need
+        ///             to be applied at execution.
         ///   v @ false: Filter still needs to be applied on remaining data.
         predicate_file_skip_applied: Option<bool>,
         /// schema of the projected file
