@@ -7,7 +7,7 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::POOL;
-use polars_core::error::{PolarsResult, polars_ensure};
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
@@ -566,9 +566,12 @@ pub fn unique<'a>(
     }
 
     let values = ac.flat_naive().to_physical_repr();
-    let values = if let Some(ca) = values.try_str() {
+    let dtype = values.dtype();
+    let values = if dtype.contains_objects() {
+        polars_bail!(opq = unique, dtype);
+    } else if let Some(ca) = values.try_str() {
         ca.as_binary().into_column()
-    } else if values.dtype().is_nested() {
+    } else if dtype.is_nested() {
         encode_rows_unordered(&[values])?.into_column()
     } else {
         values

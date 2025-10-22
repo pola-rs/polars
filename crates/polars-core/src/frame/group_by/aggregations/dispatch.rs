@@ -94,9 +94,12 @@ impl Series {
     #[doc(hidden)]
     pub unsafe fn agg_n_unique(&self, groups: &GroupsType) -> Series {
         let values = self.to_physical_repr();
-        let values = if let Some(ca) = values.try_str() {
+        let dtype = values.dtype();
+        let values = if dtype.contains_objects() {
+            panic!("{}", polars_err!(opq = unique, dtype));
+        } else if let Some(ca) = values.try_str() {
             ca.as_binary().into_column()
-        } else if values.dtype().is_nested() {
+        } else if dtype.is_nested() {
             encode_rows_unordered(&[values.into_owned().into_column()])
                 .unwrap()
                 .into_column()
