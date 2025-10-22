@@ -1165,6 +1165,8 @@ def test_hive_filter_in_ir(
 
     # Ensure this only happens once.
     assert (
-        capture.count("initialize_scan_predicate: Source filter mask initialization")
+        capture.count(
+            "initialize_scan_predicate: Predicate pushdown allows skipping 0 / 1 file"
+        )
         == 1
     )
