@@ -5,9 +5,11 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
+use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::POOL;
-use polars_core::error::{PolarsResult, polars_ensure};
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
+use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions, GroupsType,
     IDX_DTYPE, IntoColumn,
@@ -543,4 +545,74 @@ pub fn kurtosis<'a>(
         KurtosisState::from_array,
         |s| s.finalize(fisher, bias),
     )
+}
+
+pub fn unique<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    stable: bool,
+) -> PolarsResult<AggregationContext<'a>> {
+    _ = stable;
+
+    assert_eq!(inputs.len(), 1);
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    ac.groups();
+
+    if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
+        *c = c.as_list().into_column();
+        return Ok(ac);
+    }
+
+    let values = ac.flat_naive().to_physical_repr();
+    let dtype = values.dtype();
+    let values = if dtype.contains_objects() {
+        polars_bail!(opq = unique, dtype);
+    } else if let Some(ca) = values.try_str() {
+        ca.as_binary().into_column()
+    } else if dtype.is_nested() {
+        encode_rows_unordered(&[values])?.into_column()
+    } else {
+        values
+    };
+
+    let values = values.rechunk_to_arrow(CompatLevel::newest());
+    let values = values.as_ref();
+    let state = amortized_unique_from_dtype(values.dtype());
+
+    struct CloneWrapper(Box<dyn AmortizedUnique>);
+    impl Clone for CloneWrapper {
+        fn clone(&self) -> Self {
+            Self(self.0.new_empty())
+        }
+    }
+
+    POOL.install(|| {
+        let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
+            GroupsType::Idx(idx) => idx
+                .into_par_iter()
+                .map_with(CloneWrapper(state), |state, (first, idx)| {
+                    let mut idx = idx.clone();
+                    unsafe { state.0.retain_unique(values, &mut idx) };
+                    (idx.first().copied().unwrap_or(first), idx)
+                })
+                .collect(),
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+            } => groups
+                .into_par_iter()
+                .map_with(CloneWrapper(state), |state, [start, len]| {
+                    let mut idx = UnitVec::new();
+                    state.0.arg_unique(values, &mut idx, *start, *len);
+                    (idx.first().copied().unwrap_or(*start), idx)
+                })
+                .collect(),
+        })
+        .into_sliceable();
+        ac.with_groups(positions);
+    });
+
+    Ok(ac)
 }

@@ -1785,6 +1785,41 @@ def test_group_by_filter_parametric(
     assert_series_equal(gb, sl)
 
 
+@given(s=series(name="a", min_size=1))
+@pytest.mark.parametrize(
+    ("expr", "is_scalar", "maintain_order"),
+    [
+        (pl.Expr.n_unique, True, True),
+        (pl.Expr.unique, False, False),
+        (lambda e: e.unique(maintain_order=True), False, True),
+    ],
+)
+def test_group_by_unique_parametric(
+    s: pl.Series,
+    expr: Callable[[pl.Expr], pl.Expr],
+    is_scalar: bool,
+    maintain_order: bool,
+) -> None:
+    df = s.to_frame()
+
+    sl = df.select(expr(pl.col.a))
+    gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a)).drop("literal")
+    if not is_scalar:
+        gb = gb.select(pl.col.a.explode())
+    assert_frame_equal(sl, gb, check_row_order=maintain_order)
+
+    # check scalar case
+    sl_first = df.select(expr(pl.col.a.first()))
+    gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a.first())).drop("literal")
+    if not is_scalar:
+        gb = gb.select(pl.col.a.explode())
+    assert_frame_equal(sl_first, gb, check_row_order=maintain_order)
+
+    li = df.select(pl.col.a.implode().list.eval(expr(pl.element())))
+    li = li.select(pl.col.a.explode())
+    assert_frame_equal(sl, li, check_row_order=maintain_order)
+
+
 @pytest.mark.parametrize(
     "expr",
     [
