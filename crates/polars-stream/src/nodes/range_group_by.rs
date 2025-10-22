@@ -142,6 +142,9 @@ impl ComputeNode for RangeGroupBy {
         let (mut distributor, rxs) =
             distributor_channel::<Morsel>(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
+        // Worker tasks.
+        //
+        // These evaluate the aggregations.
         join_handles.extend(rxs.into_iter().zip(send).map(|(mut rx, mut tx)| {
             let wg = WaitGroup::default();
             let key = self.key.clone();
@@ -167,6 +170,9 @@ impl ComputeNode for RangeGroupBy {
             })
         }));
 
+        // Distributor task.
+        //
+        // This finds boundaries to distribute to worker threads over.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while self.buffer.is_none()
                 && let Ok(m) = recv.recv().await
