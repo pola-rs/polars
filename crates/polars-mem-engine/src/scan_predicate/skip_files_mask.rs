@@ -7,6 +7,13 @@ pub enum SkipFilesMask {
 }
 
 impl SkipFilesMask {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Exclusion(mask) => mask.is_empty(),
+            Self::Inclusion(mask) => mask.is_empty(),
+        }
+    }
+
     pub fn len(&self) -> usize {
         match self {
             Self::Exclusion(mask) => mask.len(),
