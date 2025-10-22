@@ -1880,7 +1880,7 @@ def groups(column: str) -> Expr:
     """
     Syntactic sugar for `pl.col("foo").agg_groups()`.
 
-    .. deprecated:: X.Y
+    .. deprecated:: 1.35
         Use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.
         This method will be removed in Polars 2.0.
     """
