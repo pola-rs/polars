@@ -93,7 +93,7 @@ all = [
 ]
 
 [tool.mypy]
-files = ["polars", "tests"]
+files = ["src/polars", "tests"]
 strict = true
 enable_error_code = [
   "redundant-expr",
