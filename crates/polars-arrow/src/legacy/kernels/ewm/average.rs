@@ -61,7 +61,7 @@ where
             if self.non_null_count == 0
                 && let Some(v) = opt_v
             {
-                // Initialize. This is done here to skip leading NULLs.
+                // Initialize
                 self.non_null_count = 1;
                 self.weighted_mean = v;
                 self.weight = T::one();
