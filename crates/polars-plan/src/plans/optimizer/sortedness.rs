@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use polars_core::prelude::PlHashMap;
-use polars_utils::UnitVec;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 
 use crate::plans::{AExpr, FunctionIR, HintIR, IR, Sorted, into_column};
 
-type IRSorted = Arc<[Sorted]>;
+pub type IRSorted = Arc<[Sorted]>;
 
+#[expect(unused)]
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
     let mut sortedness = PlHashMap::default();
     let mut cache_proxy = PlHashMap::default();
@@ -40,6 +40,7 @@ fn is_sorted_rec(
 
     // @NOTE: Most of the below implementations are very very conservative.
     let sorted = match ir_arena.get(root) {
+        #[cfg(feature = "python")]
         IR::PythonScan { .. } => None,
         IR::Slice {
             input,
@@ -53,7 +54,7 @@ fn is_sorted_rec(
         IR::Scan { .. } => None,
         IR::DataFrameScan { .. } => None,
         IR::SimpleProjection { input, columns } => None,
-        IR::Select { input, .. } => None,
+        IR::Select { .. } => None,
         IR::Sort {
             input,
             by_column,
@@ -103,6 +104,7 @@ fn is_sorted_rec(
         IR::MapFunction { input, function } => match function {
             FunctionIR::Hint(hint) => match hint {
                 HintIR::Sorted(v) => Some(v.clone()),
+                #[expect(unreachable_patterns)]
                 _ => rec!(*input),
             },
             _ => None,
@@ -112,6 +114,7 @@ fn is_sorted_rec(
         IR::ExtContext { .. } => None,
         IR::Sink { .. } => None,
         IR::SinkMultiple { .. } => None,
+        #[cfg(feature = "merge_sorted")]
         IR::MergeSorted { .. } => None,
         IR::Distinct { .. } => None,
         IR::Invalid => unreachable!(),

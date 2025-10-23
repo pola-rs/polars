@@ -8091,7 +8091,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             nl = nulls_last
 
         return self._from_pyldf(
-            self._ldf.hint_sorted([column] + more_columns, descending=ds, nulls_last=nl)
+            self._ldf.hint_sorted(
+                [column] + list(more_columns), descending=ds, nulls_last=nl
+            )
         )
 
     @unstable()
