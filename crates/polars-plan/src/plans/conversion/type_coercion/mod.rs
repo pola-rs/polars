@@ -810,6 +810,34 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
+                ref input,
+                options,
+            } => {
+                let (_, type_input) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+
+                if matches!(type_input, DataType::Float64) {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let mut input = input.clone();
+                cast_expr_ir(
+                    &mut input[0],
+                    &type_input,
+                    &DataType::Float64,
+                    expr_arena,
+                    CastOptions::Strict,
+                )?;
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
             AExpr::Slice { offset, length, .. } => {
                 let (_, offset_dtype) = unpack!(get_aexpr_and_type(expr_arena, offset, schema));
                 polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice expression, not {}", offset_dtype);

@@ -2,21 +2,17 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
-use self::expr_ir::OutputName;
-use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
 #[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
 use super::*;
-use crate::ScanPredicate;
 use crate::executors::{
     self, CachePrefiller, Executor, GroupByStreamingExec, PartitionedSinkExecutor, SinkExecutor,
     sink_name,
 };
-use crate::predicate::PhysicalColumnPredicates;
+use crate::scan_predicate::functions::create_scan_predicate;
 
 pub type StreamingExecutorBuilder =
     fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<Box<dyn Executor>>;
@@ -471,11 +467,12 @@ fn create_physical_plan_impl(
             output_schema,
             scan_type,
             predicate,
+            predicate_file_skip_applied,
             unified_scan_args,
         } => {
             let mut expr_conversion_state = ExpressionConversionState::new(true);
 
-            let mut create_skip_batch_predicate = false;
+            let mut create_skip_batch_predicate = unified_scan_args.table_statistics.is_some();
             #[cfg(feature = "parquet")]
             {
                 create_skip_batch_predicate |= matches!(
@@ -895,190 +892,6 @@ fn create_physical_plan_impl(
         },
         Invalid => unreachable!(),
     }
-}
-
-pub fn create_scan_predicate(
-    predicate: &ExprIR,
-    expr_arena: &mut Arena<AExpr>,
-    schema: &Arc<Schema>,
-    hive_schema: Option<&Schema>,
-    state: &mut ExpressionConversionState,
-    create_skip_batch_predicate: bool,
-    create_column_predicates: bool,
-) -> PolarsResult<ScanPredicate> {
-    let mut predicate = predicate.clone();
-
-    let mut hive_predicate = None;
-    let mut hive_predicate_is_full_predicate = false;
-
-    #[expect(clippy::never_loop)]
-    loop {
-        let Some(hive_schema) = hive_schema else {
-            break;
-        };
-
-        let mut hive_predicate_parts = vec![];
-        let mut non_hive_predicate_parts = vec![];
-
-        for predicate_part in MintermIter::new(predicate.node(), expr_arena) {
-            if aexpr_to_leaf_names_iter(predicate_part, expr_arena)
-                .all(|name| hive_schema.contains(&name))
-            {
-                hive_predicate_parts.push(predicate_part)
-            } else {
-                non_hive_predicate_parts.push(predicate_part)
-            }
-        }
-
-        if hive_predicate_parts.is_empty() {
-            break;
-        }
-
-        if non_hive_predicate_parts.is_empty() {
-            hive_predicate_is_full_predicate = true;
-            break;
-        }
-
-        {
-            let mut iter = hive_predicate_parts.into_iter();
-            let mut node = iter.next().unwrap();
-
-            for next_node in iter {
-                node = expr_arena.add(AExpr::BinaryExpr {
-                    left: node,
-                    op: Operator::And,
-                    right: next_node,
-                });
-            }
-
-            hive_predicate = Some(create_physical_expr(
-                &ExprIR::from_node(node, expr_arena),
-                Context::Default,
-                expr_arena,
-                schema,
-                state,
-            )?)
-        }
-
-        {
-            let mut iter = non_hive_predicate_parts.into_iter();
-            let mut node = iter.next().unwrap();
-
-            for next_node in iter {
-                node = expr_arena.add(AExpr::BinaryExpr {
-                    left: node,
-                    op: Operator::And,
-                    right: next_node,
-                });
-            }
-
-            predicate = ExprIR::from_node(node, expr_arena);
-        }
-
-        break;
-    }
-
-    let phys_predicate =
-        create_physical_expr(&predicate, Context::Default, expr_arena, schema, state)?;
-
-    if hive_predicate_is_full_predicate {
-        hive_predicate = Some(phys_predicate.clone());
-    }
-
-    let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
-        predicate.node(),
-        expr_arena,
-    )));
-
-    let mut skip_batch_predicate = None;
-
-    if create_skip_batch_predicate {
-        if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, schema) {
-            let expr = ExprIR::new(node, predicate.output_name_inner().clone());
-
-            if std::env::var("POLARS_OUTPUT_SKIP_BATCH_PRED").as_deref() == Ok("1") {
-                eprintln!("predicate: {}", predicate.display(expr_arena));
-                eprintln!("skip_batch_predicate: {}", expr.display(expr_arena));
-            }
-
-            let mut skip_batch_schema = Schema::with_capacity(1 + live_columns.len());
-
-            skip_batch_schema.insert(PlSmallStr::from_static("len"), IDX_DTYPE);
-            for (col, dtype) in schema.iter() {
-                if !live_columns.contains(col) {
-                    continue;
-                }
-
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_min"), dtype.clone());
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_max"), dtype.clone());
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), IDX_DTYPE);
-            }
-
-            skip_batch_predicate = Some(create_physical_expr(
-                &expr,
-                Context::Default,
-                expr_arena,
-                &Arc::new(skip_batch_schema),
-                state,
-            )?);
-        }
-    }
-
-    let column_predicates = if create_column_predicates {
-        let column_predicates = aexpr_to_column_predicates(predicate.node(), expr_arena, schema);
-        if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
-            eprintln!("column_predicates: {{");
-            eprintln!("  [");
-            for (pred, spec) in column_predicates.predicates.values() {
-                eprintln!(
-                    "    {} ({spec:?}),",
-                    ExprIRDisplay::display_node(*pred, expr_arena)
-                );
-            }
-            eprintln!("  ],");
-            eprintln!(
-                "  is_sumwise_complete: {}",
-                column_predicates.is_sumwise_complete
-            );
-            eprintln!("}}");
-        }
-        PhysicalColumnPredicates {
-            predicates: column_predicates
-                .predicates
-                .into_iter()
-                .map(|(n, (p, s))| {
-                    PolarsResult::Ok((
-                        n,
-                        (
-                            create_physical_expr(
-                                &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
-                                Context::Default,
-                                expr_arena,
-                                schema,
-                                state,
-                            )?,
-                            s,
-                        ),
-                    ))
-                })
-                .collect::<PolarsResult<PlHashMap<_, _>>>()?,
-            is_sumwise_complete: column_predicates.is_sumwise_complete,
-        }
-    } else {
-        PhysicalColumnPredicates {
-            predicates: PlHashMap::default(),
-            is_sumwise_complete: false,
-        }
-    };
-
-    PolarsResult::Ok(ScanPredicate {
-        predicate: phys_predicate,
-        live_columns,
-        skip_batch_predicate,
-        column_predicates,
-        hive_predicate,
-        hive_predicate_is_full_predicate,
-    })
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
@@ -1876,7 +1877,19 @@ def exclude(
 
 
 def groups(column: str) -> Expr:
-    """Syntactic sugar for `pl.col("foo").agg_groups()`."""
+    """
+    Syntactic sugar for `pl.col("foo").agg_groups()`.
+
+    .. deprecated:: 1.35
+        Use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.
+        This method will be removed in Polars 2.0.
+    """
+    warnings.warn(
+        "pl.groups() is deprecated and will be removed in Polars 2.0. "
+        "Use df.with_row_index().group_by(...).agg(pl.col('index')) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return F.col(column).agg_groups()
 
 

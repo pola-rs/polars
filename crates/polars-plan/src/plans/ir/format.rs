@@ -721,6 +721,7 @@ pub fn write_ir_non_recursive(
             sources,
             file_info,
             predicate,
+            predicate_file_skip_applied: _,
             scan_type,
             unified_scan_args,
             hive_parts: _,

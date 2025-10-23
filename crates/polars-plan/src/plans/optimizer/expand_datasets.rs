@@ -17,13 +17,18 @@ use crate::plans::{AExpr, IR};
 
 pub(super) fn expand_datasets(
     root: Node,
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    apply_scan_predicate_to_scan_ir: fn(
+        Node,
+        &mut Arena<IR>,
+        &mut Arena<AExpr>,
+    ) -> PolarsResult<()>,
 ) -> PolarsResult<()> {
     let mut stack = unitvec![root];
 
     while let Some(node) = stack.pop() {
-        lp_arena.get(node).copy_inputs(&mut stack);
+        ir_arena.get(node).copy_inputs(&mut stack);
 
         let IR::Scan {
             sources,
@@ -33,8 +38,9 @@ pub(super) fn expand_datasets(
             file_info: _,
             hive_parts: _,
             predicate,
+            predicate_file_skip_applied: _,
             output_schema: _,
-        } = lp_arena.get_mut(node)
+        } = ir_arena.get_mut(node)
         else {
             continue;
         };
@@ -319,6 +325,8 @@ pub(super) fn expand_datasets(
 
             _ => {},
         }
+
+        apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
     }
 
     Ok(())

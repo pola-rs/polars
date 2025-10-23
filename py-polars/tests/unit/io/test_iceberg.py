@@ -1214,10 +1214,8 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     )
 
     # First file
-    assert (
-        "[MultiScan]: Source filter mask initialization via table statistics" in capture
-    )
-    assert "[MultiScan]: Predicate pushdown allows skipping 1 / 2 files" in capture
+    assert "Source filter mask initialization via table statistics" in capture
+    assert "Predicate pushdown allows skipping 1 / 2 files" in capture
     # Second file
     assert (
         "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
@@ -1817,8 +1815,7 @@ def test_scan_iceberg_min_max_statistics_filter(
             capture = capfd.readouterr().err
 
             if "iceberg_table_filter: Some(<redacted>)" in capture:
-                assert "scan IR lowered as empty InMemorySource" in capture
-                assert "[MultiScan]: " not in capture
+                assert "apply_scan_predicate_to_scan_ir: remove 0 / 0 files" in capture
 
                 # Scanning with pyiceberg can also skip the file if the predicate
                 # can be converted.
@@ -1831,7 +1828,7 @@ def test_scan_iceberg_min_max_statistics_filter(
 
                 iceberg_table_filter_seen = True
             else:
-                assert "[MultiScan]: " in capture
+                assert "apply_scan_predicate_to_scan_ir: remove 1 / 1 file" in capture
 
             capfd.readouterr()
 
