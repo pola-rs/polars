@@ -9091,6 +9091,11 @@ Consider using {self}.implode() instead"""
         n
             periods to shift for forming percent change.
 
+        Notes
+        -----
+        Null values are preserved. If you're coming from pandas, this matches
+        their ``fill_method=None`` behaviour.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -9108,8 +9113,8 @@ Consider using {self}.implode() instead"""
         │ 10   ┆ null       │
         │ 11   ┆ 0.1        │
         │ 12   ┆ 0.090909   │
-        │ null ┆ 0.0        │
-        │ 12   ┆ 0.0        │
+        │ null ┆ null       │
+        │ 12   ┆ null       │
         └──────┴────────────┘
         """
         n_pyexpr = parse_into_expression(n)
