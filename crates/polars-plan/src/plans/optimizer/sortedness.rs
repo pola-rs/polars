@@ -53,10 +53,10 @@ fn is_sorted_rec(
         } => rec!(*input),
         IR::Scan { .. } => None,
         IR::DataFrameScan { .. } => None,
-        IR::SimpleProjection { input, columns } => None,
+        IR::SimpleProjection { .. } => None,
         IR::Select { .. } => None,
         IR::Sort {
-            input,
+            input: _,
             by_column,
             slice: _,
             sort_options,
