@@ -21,10 +21,8 @@ mod inner {
     use polars_utils::idx_vec::UnitVec;
     use polars_utils::unitvec;
 
-
-    pub struct PredicatePushDown<'a> {
+    pub struct PredicatePushDown {
         // TODO: Remove unused
-        #[expect(unused)]
         #[expect(unused)]
         pub(super) verbose: bool,
         pub(super) block_at_cache: bool,
@@ -34,8 +32,8 @@ mod inner {
         pub(super) maintain_errors: bool,
     }
 
-    impl<'a> PredicatePushDown<'a> {
-        pub fn new(  maintain_errors: bool, new_streaming: bool) -> Self {
+    impl PredicatePushDown {
+        pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
                 verbose: verbose(),
                 block_at_cache: true,
@@ -55,7 +53,7 @@ mod inner {
 
 pub use inner::PredicatePushDown;
 
-impl PredicatePushDown<'_> {
+impl PredicatePushDown {
     pub(crate) fn block_at_cache(mut self, toggle: bool) -> Self {
         self.block_at_cache = toggle;
         self
