@@ -1542,6 +1542,27 @@ impl PyLazyFrame {
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
+
+    /// Apply the transformations from this LazyFrame to a new data source.
+    /// This allows you to serialize just the transformation plan and apply it to different data.
+    fn apply_to_source(&self, other: &PyLazyFrame) -> PyResult<Self> {
+        let ldf = self.ldf.read();
+        let other_ldf = other.ldf.read();
+        let new_plan = ldf
+            .logical_plan
+            .apply_to_source(other_ldf.logical_plan.clone());
+        Ok(LazyFrame::from(new_plan).into())
+    }
+
+    /// Apply the transformations from this LazyFrame to a DataFrame.
+    /// This allows you to serialize just the transformation plan and apply it to different data.
+    fn apply_to_dataframe(&self, df: &PyDataFrame) -> PyResult<Self> {
+        let ldf = self.ldf.read();
+        let plan = ldf
+            .logical_plan
+            .apply_to_source(polars_plan::dsl::DslBuilder::from_existing_df(df.df.clone()).build());
+        Ok(LazyFrame::from(plan).into())
+    }
 }
 
 #[cfg(feature = "parquet")]

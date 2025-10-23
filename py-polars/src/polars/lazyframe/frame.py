@@ -884,6 +884,54 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return serialize_polars_object(serializer, file, format)
 
+    def apply_to_source(self, other: LazyFrame | DataFrame) -> LazyFrame:
+        """
+        Apply the transformations from this LazyFrame to a new data source.
+
+        This allows you to serialize just the transformation plan and apply it to
+        different data. The transformation operations (filters, selects, aggregations, etc.)
+        from the current LazyFrame will be applied to the new source.
+
+        Parameters
+        ----------
+        other
+            The new data source to apply transformations to. Can be either a LazyFrame
+            or DataFrame.
+
+        Returns
+        -------
+        LazyFrame
+            A new LazyFrame with the transformations applied to the new source.
+
+        Examples
+        --------
+        >>> # Create a LazyFrame with transformations
+        >>> lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        >>> lf_with_ops = lf1.filter(pl.col("a") > 1).select("b")
+        >>> # Apply the same transformations to different data
+        >>> lf2 = pl.LazyFrame({"a": [10, 20, 30], "b": [40, 50, 60]})
+        >>> result = lf_with_ops.apply_to_source(lf2).collect()
+        >>> result
+        shape: (2, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 50  │
+        │ 60  │
+        └─────┘
+
+        This is particularly useful for:
+        - Serializing transformation pipelines and applying them in Rust
+        - Reusing the same transformations on different datasets
+        - Testing transformations on sample data before applying to production data
+        """
+        if isinstance(other, DataFrame):
+            return self._from_pyldf(self._ldf.apply_to_dataframe(other._df))
+        else:
+            return self._from_pyldf(self._ldf.apply_to_source(other._ldf))
+
     def pipe(
         self,
         function: Callable[Concatenate[LazyFrame, P], T],

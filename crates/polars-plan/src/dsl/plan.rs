@@ -342,6 +342,212 @@ impl DslPlan {
         (&serializable_plan).try_into()
     }
 
+    /// Extract just the transformation operations from this plan, removing the source data/scan.
+    /// Returns a plan that starts with a placeholder DataFrameScan which can be replaced.
+    pub fn extract_transformations(&self) -> Self {
+        self.clone()
+    }
+
+    /// Get the root source of the plan (the deepest input).
+    fn get_root_input(&self) -> &DslPlan {
+        match self {
+            DslPlan::Filter { input, .. }
+            | DslPlan::Cache { input, .. }
+            | DslPlan::Select { input, .. }
+            | DslPlan::GroupBy { input, .. }
+            | DslPlan::HStack { input, .. }
+            | DslPlan::MatchToSchema { input, .. }
+            | DslPlan::PipeWithSchema { input, .. }
+            | DslPlan::Distinct { input, .. }
+            | DslPlan::Sort { input, .. }
+            | DslPlan::Slice { input, .. }
+            | DslPlan::MapFunction { input, .. }
+            | DslPlan::ExtContext { input, .. }
+            | DslPlan::Sink { input, .. } => input.get_root_input(),
+            DslPlan::Join { input_left, .. } => input_left.get_root_input(),
+            #[cfg(feature = "merge_sorted")]
+            DslPlan::MergeSorted { input_left, .. } => input_left.get_root_input(),
+            DslPlan::Union { inputs, .. } | DslPlan::HConcat { inputs, .. } => {
+                if let Some(first) = inputs.first() {
+                    first.get_root_input()
+                } else {
+                    self
+                }
+            }
+            DslPlan::IR { dsl, .. } => dsl.get_root_input(),
+            // These are source nodes
+            #[cfg(feature = "python")]
+            DslPlan::PythonScan { .. }
+            | DslPlan::Scan { .. }
+            | DslPlan::DataFrameScan { .. }
+            | DslPlan::SinkMultiple { .. } => self,
+            #[cfg(not(feature = "python"))]
+            DslPlan::Scan { .. } | DslPlan::DataFrameScan { .. } | DslPlan::SinkMultiple { .. } => {
+                self
+            },
+        }
+    }
+
+    /// Replace the root source in this plan with a new source.
+    fn replace_root_source(&self, new_source: DslPlan) -> Self {
+        match self {
+            DslPlan::Filter { input, predicate } => DslPlan::Filter {
+                input: Arc::new(input.replace_root_source(new_source)),
+                predicate: predicate.clone(),
+            },
+            DslPlan::Cache { input, id } => DslPlan::Cache {
+                input: Arc::new(input.replace_root_source(new_source)),
+                id: *id,
+            },
+            DslPlan::Select {
+                expr,
+                input,
+                options,
+            } => DslPlan::Select {
+                expr: expr.clone(),
+                input: Arc::new(input.replace_root_source(new_source)),
+                options: options.clone(),
+            },
+            DslPlan::GroupBy {
+                input,
+                keys,
+                aggs,
+                maintain_order,
+                options,
+                apply,
+            } => DslPlan::GroupBy {
+                input: Arc::new(input.replace_root_source(new_source)),
+                keys: keys.clone(),
+                aggs: aggs.clone(),
+                maintain_order: *maintain_order,
+                options: options.clone(),
+                apply: apply.clone(),
+            },
+            DslPlan::Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                predicates,
+                options,
+            } => DslPlan::Join {
+                input_left: Arc::new(input_left.replace_root_source(new_source.clone())),
+                input_right: Arc::new(input_right.replace_root_source(new_source)),
+                left_on: left_on.clone(),
+                right_on: right_on.clone(),
+                predicates: predicates.clone(),
+                options: options.clone(),
+            },
+            DslPlan::HStack {
+                input,
+                exprs,
+                options,
+            } => DslPlan::HStack {
+                input: Arc::new(input.replace_root_source(new_source)),
+                exprs: exprs.clone(),
+                options: options.clone(),
+            },
+            DslPlan::MatchToSchema {
+                input,
+                match_schema,
+                per_column,
+                extra_columns,
+            } => DslPlan::MatchToSchema {
+                input: Arc::new(input.replace_root_source(new_source)),
+                match_schema: match_schema.clone(),
+                per_column: per_column.clone(),
+                extra_columns: *extra_columns,
+            },
+            DslPlan::PipeWithSchema { input, callback } => DslPlan::PipeWithSchema {
+                input: Arc::new(input.replace_root_source(new_source)),
+                callback: callback.clone(),
+            },
+            DslPlan::Distinct { input, options } => DslPlan::Distinct {
+                input: Arc::new(input.replace_root_source(new_source)),
+                options: options.clone(),
+            },
+            DslPlan::Sort {
+                input,
+                by_column,
+                slice,
+                sort_options,
+            } => DslPlan::Sort {
+                input: Arc::new(input.replace_root_source(new_source)),
+                by_column: by_column.clone(),
+                slice: *slice,
+                sort_options: sort_options.clone(),
+            },
+            DslPlan::Slice { input, offset, len } => DslPlan::Slice {
+                input: Arc::new(input.replace_root_source(new_source)),
+                offset: *offset,
+                len: *len,
+            },
+            DslPlan::MapFunction { input, function } => DslPlan::MapFunction {
+                input: Arc::new(input.replace_root_source(new_source)),
+                function: function.clone(),
+            },
+            DslPlan::Union { inputs, args } => DslPlan::Union {
+                inputs: inputs
+                    .iter()
+                    .map(|input| input.replace_root_source(new_source.clone()))
+                    .collect(),
+                args: args.clone(),
+            },
+            DslPlan::HConcat { inputs, options } => DslPlan::HConcat {
+                inputs: inputs
+                    .iter()
+                    .map(|input| input.replace_root_source(new_source.clone()))
+                    .collect(),
+                options: options.clone(),
+            },
+            DslPlan::ExtContext { input, contexts } => DslPlan::ExtContext {
+                input: Arc::new(input.replace_root_source(new_source.clone())),
+                contexts: contexts
+                    .iter()
+                    .map(|ctx| ctx.replace_root_source(new_source.clone()))
+                    .collect(),
+            },
+            DslPlan::Sink { input, payload } => DslPlan::Sink {
+                input: Arc::new(input.replace_root_source(new_source)),
+                payload: payload.clone(),
+            },
+            DslPlan::SinkMultiple { inputs } => DslPlan::SinkMultiple {
+                inputs: inputs
+                    .iter()
+                    .map(|input| input.replace_root_source(new_source.clone()))
+                    .collect(),
+            },
+            #[cfg(feature = "merge_sorted")]
+            DslPlan::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => DslPlan::MergeSorted {
+                input_left: Arc::new(input_left.replace_root_source(new_source.clone())),
+                input_right: Arc::new(input_right.replace_root_source(new_source)),
+                key: key.clone(),
+            },
+            DslPlan::IR { dsl, version, node } => DslPlan::IR {
+                dsl: Arc::new(dsl.replace_root_source(new_source)),
+                version: *version,
+                node: *node,
+            },
+            // These are source nodes - replace them
+            #[cfg(feature = "python")]
+            DslPlan::PythonScan { .. } | DslPlan::Scan { .. } | DslPlan::DataFrameScan { .. } => {
+                new_source
+            },
+            #[cfg(not(feature = "python"))]
+            DslPlan::Scan { .. } | DslPlan::DataFrameScan { .. } => new_source,
+        }
+    }
+
+    /// Apply the transformations from this plan to a new source (DataFrame or scan).
+    /// The new_source should be a DslPlan representing the data source.
+    pub fn apply_to_source(&self, new_source: DslPlan) -> Self {
+        self.replace_root_source(new_source)
+    }
+
     #[cfg(feature = "dsl-schema")]
     pub fn dsl_schema() -> schemars::schema::RootSchema {
         use schemars::r#gen::SchemaSettings;
