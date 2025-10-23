@@ -46,7 +46,6 @@ pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
-use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;
 use crate::prelude::optimizer::collect_members::MemberCollector;
@@ -72,7 +71,6 @@ pub fn optimize(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    expr_eval: ExprEval<'_>,
     apply_scan_predicate_to_scan_ir: fn(
         Node,
         &mut Arena<IR>,
@@ -171,11 +169,8 @@ pub fn optimize(
     }
 
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt = PredicatePushDown::new(
-            expr_eval,
-            pushdown_maintain_errors,
-            opt_flags.new_streaming(),
-        );
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
@@ -237,7 +232,6 @@ pub fn optimize(
             lp_arena,
             expr_arena,
             scratch,
-            expr_eval,
             verbose,
             pushdown_maintain_errors,
             opt_flags.new_streaming(),

@@ -14,9 +14,6 @@ use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::utils::{check_input_node, has_aexpr};
 
-pub type ExprEval<'a> =
-    Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> Option<Arc<dyn PhysicalIoExpr>>>;
-
 /// The struct is wrapped in a mod to prevent direct member access of `nodes_scratch`
 mod inner {
     use polars_core::config::verbose;
@@ -24,12 +21,10 @@ mod inner {
     use polars_utils::idx_vec::UnitVec;
     use polars_utils::unitvec;
 
-    use super::ExprEval;
 
     pub struct PredicatePushDown<'a> {
         // TODO: Remove unused
         #[expect(unused)]
-        pub(super) expr_eval: ExprEval<'a>,
         #[expect(unused)]
         pub(super) verbose: bool,
         pub(super) block_at_cache: bool,
@@ -40,9 +35,8 @@ mod inner {
     }
 
     impl<'a> PredicatePushDown<'a> {
-        pub fn new(expr_eval: ExprEval<'a>, maintain_errors: bool, new_streaming: bool) -> Self {
+        pub fn new(  maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
-                expr_eval,
                 verbose: verbose(),
                 block_at_cache: true,
                 nodes_scratch: unitvec![],

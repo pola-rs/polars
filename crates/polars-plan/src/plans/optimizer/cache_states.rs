@@ -124,7 +124,6 @@ pub(super) fn set_cache_states(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    expr_eval: ExprEval<'_>,
     verbose: bool,
     pushdown_maintain_errors: bool,
     new_streaming: bool,
@@ -259,8 +258,7 @@ pub(super) fn set_cache_states(
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
         let mut pred_pd =
-            PredicatePushDown::new(expr_eval, pushdown_maintain_errors, new_streaming)
-                .block_at_cache(false);
+            PredicatePushDown::new(pushdown_maintain_errors, new_streaming).block_at_cache(false);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
