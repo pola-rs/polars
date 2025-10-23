@@ -513,7 +513,10 @@ where
     *sources = sources.gather(selected_path_indices.clone()).unwrap();
     *row_estimation = (
         None,
-        row_estimation.1.div_ceil(original_sources_len) * sources.len(),
+        row_estimation
+            .1
+            .div_ceil(original_sources_len)
+            .saturating_mul(sources.len()),
     );
 
     *hive_parts = hive_parts.as_ref().map(|hp| {
