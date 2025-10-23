@@ -73,6 +73,11 @@ pub fn optimize(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     expr_eval: ExprEval<'_>,
+    apply_scan_predicate_to_scan_ir: fn(
+        Node,
+        &mut Arena<IR>,
+        &mut Arena<AExpr>,
+    ) -> PolarsResult<()>,
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
@@ -285,7 +290,12 @@ pub fn optimize(
         }
     }
 
-    expand_datasets::expand_datasets(lp_top, lp_arena, expr_arena)?;
+    expand_datasets::expand_datasets(
+        lp_top,
+        lp_arena,
+        expr_arena,
+        apply_scan_predicate_to_scan_ir,
+    )?;
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

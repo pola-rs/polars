@@ -666,6 +666,7 @@ fn to_graph_rec<'a>(
             row_index,
             pre_slice,
             predicate,
+            predicate_file_skip_applied,
             hive_parts,
             missing_columns_policy,
             cast_columns_policy,
@@ -694,6 +695,7 @@ fn to_graph_rec<'a>(
                 })
                 .transpose()?
                 .map(|p| p.to_io(None, file_schema.clone()));
+            let predicate_file_skip_applied = *predicate_file_skip_applied;
 
             let sources = scan_sources.clone();
             let file_reader_builder = file_reader_builder.clone();
@@ -724,6 +726,7 @@ fn to_graph_rec<'a>(
                     row_index,
                     pre_slice,
                     predicate,
+                    predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
                     missing_columns_policy,
@@ -1161,6 +1164,7 @@ fn to_graph_rec<'a>(
             let row_index = None;
             let pre_slice = None;
             let predicate = None;
+            let predicate_file_skip_applied = None;
             let hive_parts = None;
             let include_file_paths = None;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
@@ -1180,6 +1184,7 @@ fn to_graph_rec<'a>(
                     row_index,
                     pre_slice,
                     predicate,
+                    predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
                     missing_columns_policy,

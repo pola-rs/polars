@@ -1,6 +1,7 @@
 use std::cell::LazyCell;
 use std::sync::Arc;
 
+use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
@@ -10,13 +11,13 @@ use polars_plan::dsl::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::{FileScanIR, Operator, TableStatistics, UnifiedScanArgs};
+use polars_plan::dsl::{FileScanIR, Operator, ScanSources, TableStatistics, UnifiedScanArgs};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
 use polars_plan::plans::{AExpr, Context, ExprIRDisplay, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
-use polars_utils::arena::Arena;
+use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
@@ -278,6 +279,94 @@ pub fn initialize_scan_predicate<'a>(
     Ok((None, predicate))
 }
 
+/// Filters the list of files in an `IR::Scan` based on the contained predicate. This is possible
+/// if the predicate has components that refer to only the hive parts and there is no e.g.
+/// row index / slice.
+///
+/// This also applies the projection onto the hive parts.
+///
+/// # Panics
+/// Panics if `scan_ir_node` is not `IR::Scan`.
+pub fn apply_scan_predicate_to_scan_ir(
+    scan_ir_node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<()> {
+    let scan_ir_schema = IR::schema(ir_arena.get(scan_ir_node), ir_arena).into_owned();
+    let scan_ir = ir_arena.get_mut(scan_ir_node);
+
+    let IR::Scan {
+        sources,
+        hive_parts,
+        predicate,
+        predicate_file_skip_applied,
+        unified_scan_args,
+        file_info,
+        ..
+    } = scan_ir
+    else {
+        unreachable!()
+    };
+
+    if let Some(hive_parts) = hive_parts.as_mut() {
+        *hive_parts = hive_parts.filter_columns(&scan_ir_schema);
+    }
+
+    if unified_scan_args.has_row_index_or_slice() || predicate_file_skip_applied.is_some() {
+        return Ok(());
+    }
+
+    let Some(predicate) = predicate else {
+        return Ok(());
+    };
+
+    match sources {
+        // Files cannot be `gather()`ed.
+        ScanSources::Files(_) => return Ok(()),
+        ScanSources::Paths(_) | ScanSources::Buffers(_) => {},
+    }
+
+    let verbose = config::verbose();
+
+    let scan_predicate = create_scan_predicate(
+        predicate,
+        expr_arena,
+        &scan_ir_schema,
+        hive_parts.as_ref().map(|hp| hp.df().schema().as_ref()),
+        &mut ExpressionConversionState::new(true),
+        true,  // create_skip_batch_predicate
+        false, // create_column_predicates
+    )?
+    .to_io(None, file_info.schema.clone());
+
+    let (skip_files_mask, predicate_to_readers) = initialize_scan_predicate(
+        Some(&scan_predicate),
+        hive_parts.as_ref(),
+        unified_scan_args.table_statistics.as_ref(),
+        verbose,
+    )?;
+
+    if let Some(skip_files_mask) = skip_files_mask {
+        assert_eq!(skip_files_mask.len(), sources.len());
+
+        if verbose {
+            let s = if sources.len() == 1 { "" } else { "s" };
+            eprintln!(
+                "apply_scan_predicate_to_scan_ir: remove {} / {} file{s}",
+                skip_files_mask.num_skipped_files(),
+                sources.len()
+            );
+        }
+
+        let is_fully_applied = predicate_to_readers.is_none();
+        *predicate_file_skip_applied = Some(is_fully_applied);
+
+        filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+    }
+
+    Ok(())
+}
+
 /// Filters the paths for a scan IR. This also involves performing selections on
 /// e.g. hive partitions, deletion files.
 ///
@@ -292,6 +381,7 @@ where
         file_info: _,
         hive_parts,
         predicate: _,
+        predicate_file_skip_applied: _,
         output_schema: _,
         scan_type,
         unified_scan_args,

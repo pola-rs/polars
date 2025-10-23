@@ -59,6 +59,11 @@ pub enum IR {
         file_info: FileInfo,
         hive_parts: Option<HivePartitionsDf>,
         predicate: Option<ExprIR>,
+        /// * None: No skipping
+        /// * Some(v): Files were skipped (filtered out), where:
+        ///   * v @ true: Filter was fully applied (e.g. refers only to hive parts), so does not need to be applied at execution.
+        ///   * v @ false: Filter still needs to be applied on remaining data.
+        predicate_file_skip_applied: Option<bool>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScanIR>,
