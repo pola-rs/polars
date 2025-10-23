@@ -6,6 +6,10 @@ use super::AnonymousColumnsUdf;
 // The receiver must have implemented this registry and map the names to the proper UDFs.
 pub trait ExprRegistry: Sync + Send {
     fn get_function(&self, name: &str, payload: &[u8]) -> Option<Arc<dyn AnonymousColumnsUdf>>;
+
+    fn get_agg(&self, name: &str, payload: &[u8]) {
+        todo!()
+    }
 }
 
 pub(super) static NAMED_SERDE_REGISTRY_EXPR: LazyLock<RwLock<Option<Arc<dyn ExprRegistry>>>> =

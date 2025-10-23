@@ -215,6 +215,12 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
+    /// A streaming aggregation that can only run in the streaming engine.
+    AnonymousStreamingAgg {
+        input: Vec<ExprIR>,
+        fmt_str: Box<PlSmallStr>,
+        function: OpaqueStreamingAgg,
+    },
     AnonymousFunction {
         input: Vec<ExprIR>,
         function: OpaqueColumnUdf,

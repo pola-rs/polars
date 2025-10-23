@@ -1,5 +1,10 @@
+pub mod agg;
 mod expr;
+use std::sync::Arc;
+
 pub use expr::*;
+
+use super::LazySerde;
 #[cfg(feature = "dsl-schema")]
 mod json_schema;
 #[cfg(feature = "serde")]
