@@ -10,7 +10,12 @@ fn check_alpha(alpha: f64) -> PolarsResult<()> {
 }
 
 pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
-    check_alpha(options.alpha)?;
+    check_alpha(options.alpha).map_err(|e| {
+        if cfg!(debug_assertions) {
+            panic!()
+        }
+        e
+    })?;
     match s.dtype() {
         DataType::Float32 => {
             let xs = s.f32().unwrap();
@@ -34,6 +39,7 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
+        dt if cfg!(debug_assertions) => panic!("{:?}", dt),
         _ => ewm_mean(&s.cast(&DataType::Float64)?, options),
     }
 }
