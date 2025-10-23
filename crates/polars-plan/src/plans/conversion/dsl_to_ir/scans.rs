@@ -157,6 +157,7 @@ pub(super) fn dsl_to_ir(
                 file_info,
                 hive_parts,
                 predicate: None,
+                predicate_file_skip_applied: None,
                 scan_type: Box::new(scan_type_ir),
                 output_schema: None,
                 unified_scan_args,

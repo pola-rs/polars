@@ -70,12 +70,16 @@ async fn finish_initialize_multi_scan_pipeline(
 ) -> PolarsResult<()> {
     let verbose = config.verbose;
 
-    let (skip_files_mask, predicate) = initialize_scan_predicate(
-        config.predicate.as_ref(),
-        config.hive_parts.as_deref(),
-        config.table_statistics.as_ref(),
-        verbose,
-    )?;
+    let (skip_files_mask, predicate) = match config.predicate_file_skip_applied {
+        None => initialize_scan_predicate(
+            config.predicate.as_ref(),
+            config.hive_parts.as_deref(),
+            config.table_statistics.as_ref(),
+            verbose,
+        )?,
+        Some(false) => (None, config.predicate.as_ref()),
+        Some(true) => (None, None),
+    };
 
     if let Some(skip_files_mask) = &skip_files_mask {
         assert_eq!(skip_files_mask.len(), config.sources.len());

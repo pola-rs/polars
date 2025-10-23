@@ -600,6 +600,7 @@ pub fn lower_ir(
                 output_schema: _,
                 scan_type,
                 predicate,
+                predicate_file_skip_applied,
                 unified_scan_args,
             } = v.clone()
             else {
@@ -747,6 +748,8 @@ pub fn lower_ir(
                         unified_scan_args.column_mapping.as_ref(),
                     );
 
+                    let pre_slice = unified_scan_args.pre_slice.clone();
+
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
                         file_reader_builder,
@@ -754,8 +757,9 @@ pub fn lower_ir(
                         file_projection_builder,
                         output_schema: output_schema.clone(),
                         row_index: None,
-                        pre_slice: None,
-                        predicate: None,
+                        pre_slice,
+                        predicate,
+                        predicate_file_skip_applied,
                         hive_parts,
                         cast_columns_policy: unified_scan_args.cast_columns_policy,
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
@@ -780,22 +784,11 @@ pub fn lower_ir(
                         unreachable!()
                     };
 
-                    let pre_slice = unified_scan_args.pre_slice.clone();
-
                     let mut row_index_post = unified_scan_args.row_index;
-                    let mut pre_slice_post = pre_slice.clone();
-                    let mut predicate_post = predicate;
-
-                    // Always send predicate and slice to multiscan as they can be used to prune files. If the
-                    // underlying reader does not support predicates, multiscan will apply it in post.
-                    *predicate_to_multiscan = predicate_post.take();
-                    // * Negative slice is resolved internally by the multiscan.
-                    //   * Note that is done via a row-count pass
-                    *pre_slice_to_multiscan = pre_slice_post.take();
 
                     // * If a predicate was pushed then we always push row index
                     if predicate_to_multiscan.is_some()
-                        || matches!(pre_slice, Some(Slice::Negative { .. }))
+                        || matches!(pre_slice_to_multiscan, Some(Slice::Negative { .. }))
                     {
                         *row_index_to_multiscan = row_index_post.take();
                     }
@@ -835,8 +828,8 @@ pub fn lower_ir(
                     let row_index_post_after_slice = (|| {
                         let mut row_index = row_index_post.take()?;
 
-                        let positive_offset = match pre_slice {
-                            Some(Slice::Positive { offset, .. }) => Some(offset),
+                        let positive_offset = match pre_slice_to_multiscan {
+                            Some(Slice::Positive { offset, .. }) => Some(*offset),
                             None => Some(0),
                             Some(Slice::Negative { .. }) => unreachable!(),
                         }?;
@@ -885,12 +878,6 @@ pub fn lower_ir(
                         }
                     }
 
-                    if let Some(pre_slice) = pre_slice_post {
-                        // TODO: Use native Slice enum in the slice node.
-                        let (offset, length) = <(i64, usize)>::try_from(pre_slice).unwrap();
-                        stream = build_slice_stream(stream, offset, length, phys_sm);
-                    }
-
                     if let Some(ri) = row_index_post_after_slice {
                         let node = PhysNodeKind::WithRowIndex {
                             input: stream,
@@ -918,12 +905,6 @@ pub fn lower_ir(
 
                             stream = PhysStream::first(node_key);
                         }
-                    }
-
-                    if let Some(predicate) = predicate_post {
-                        stream = build_filter_stream(
-                            stream, predicate, expr_arena, phys_sm, expr_cache, ctx,
-                        )?;
                     }
 
                     return Ok(stream);

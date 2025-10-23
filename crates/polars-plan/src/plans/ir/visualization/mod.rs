@@ -454,6 +454,7 @@ impl IRVisualizationDataGenerator<'_> {
                         row_estimation: _,
                     },
                 predicate,
+                predicate_file_skip_applied: _,
                 scan_type,
                 unified_scan_args,
                 hive_parts,
