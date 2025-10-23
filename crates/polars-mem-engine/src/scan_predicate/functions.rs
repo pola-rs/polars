@@ -438,7 +438,6 @@ where
     *row_count = None;
 
     if selected_path_indices.clone().next() != Some(0) {
-        *row_estimation = (None, usize::MAX);
         *reader_schema = None;
 
         // Ensure the metadata is unset, otherwise it may incorrectly be used at
@@ -510,7 +509,12 @@ where
         }))
     });
 
+    let original_sources_len = sources.len();
     *sources = sources.gather(selected_path_indices.clone()).unwrap();
+    *row_estimation = (
+        None,
+        row_estimation.1.div_ceil(original_sources_len) * sources.len(),
+    );
 
     *hive_parts = hive_parts.as_ref().map(|hp| {
         let df = hp.df();
