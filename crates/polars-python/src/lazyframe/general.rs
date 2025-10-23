@@ -1558,9 +1558,10 @@ impl PyLazyFrame {
     /// This allows you to serialize just the transformation plan and apply it to different data.
     fn apply_to_dataframe(&self, df: &PyDataFrame) -> PyResult<Self> {
         let ldf = self.ldf.read();
+        let df_clone = df.df.read().clone();
         let plan = ldf
             .logical_plan
-            .apply_to_source(polars_plan::dsl::DslBuilder::from_existing_df(df.df.clone()).build());
+            .apply_to_source(polars_plan::dsl::DslBuilder::from_existing_df(df_clone).build());
         Ok(LazyFrame::from(plan).into())
     }
 }
