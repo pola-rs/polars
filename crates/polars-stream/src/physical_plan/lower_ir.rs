@@ -932,10 +932,58 @@ pub fn lower_ir(
         },
 
         #[cfg(feature = "python")]
-        IR::PythonScan { options } => PhysNodeKind::PythonScan {
-            options: options.clone(),
-        },
+        v @ IR::PythonScan { options } => {
+            use polars_plan::dsl::python_dsl::PythonScanSource;
 
+            match options.python_source {
+                PythonScanSource::Pyarrow => {
+                    // Fallback to in-memory engine.
+                    let input = PhysNodeKind::InMemorySource {
+                        df: Arc::new(DataFrame::default()),
+                    };
+                    let input_key =
+                        phys_sm.insert(PhysNode::new(Arc::new(Schema::default()), input));
+                    let phys_input = PhysStream::first(input_key);
+
+                    let lmdf = Arc::new(LateMaterializedDataFrame::default());
+                    let mut lp_arena = Arena::default();
+                    let scan_lp_node = lp_arena.add(v.clone());
+
+                    let executor = Mutex::new(create_physical_plan(
+                        scan_lp_node,
+                        &mut lp_arena,
+                        expr_arena,
+                        None,
+                    )?);
+
+                    let format_str = ctx.prepare_visualization.then(|| {
+                        let mut buffer = String::new();
+                        write_ir_non_recursive(
+                            &mut buffer,
+                            ir_arena.get(node),
+                            expr_arena,
+                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
+                            0,
+                        )
+                        .unwrap();
+                        buffer
+                    });
+
+                    PhysNodeKind::InMemoryMap {
+                        input: phys_input,
+                        map: Arc::new(move |df| {
+                            lmdf.set_materialized_dataframe(df);
+                            let mut state = ExecutionState::new();
+                            executor.lock().execute(&mut state)
+                        }),
+                        format_str,
+                    }
+                },
+                _ => PhysNodeKind::PythonScan {
+                    options: options.clone(),
+                },
+            }
+        },
         IR::Cache { input, id } => {
             let id = *id;
             if let Some(cached) = cache_nodes.get(&id) {
