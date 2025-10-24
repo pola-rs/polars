@@ -1875,11 +1875,12 @@ fn lower_exprs_with_ctx(
 
                 let input_schema = ctx.phys_sm[input.node].output_schema.clone();
                 assert_eq!(input_schema.len(), 1);
-                assert!(input_schema.get_at_index(0).unwrap().1.is_float());
+                let (name, dtype) = input_schema.get_at_index(0).unwrap();
+                assert!(dtype.is_float());
+                let out_name = name.clone();
                 let output_schema = input_schema;
-                let out_name = output_schema.get_at_index(0).unwrap().0.clone();
 
-                let kind: PhysNodeKind = PhysNodeKind::EwmMean { input, options };
+                let kind = PhysNodeKind::EwmMean { input, options };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
