@@ -101,6 +101,10 @@ pub enum PhysNodeProperties {
         closed_window: PlSmallStr,
         aggs: Vec<PlSmallStr>,
     },
+    RangeGroupBy {
+        key: PlSmallStr,
+        aggs: Vec<PlSmallStr>,
+    },
     InMemoryMap {
         format_str: PlSmallStr,
     },

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, SortMultipleOptions};
-use polars_core::schema::{Schema, SchemaExt};
+use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -520,6 +520,7 @@ fn try_build_streaming_group_by(
     Some(out)
 }
 
+#[expect(clippy::too_many_arguments)]
 pub fn try_build_range_group_by(
     input: PhysStream,
     keys: &[ExprIR],
@@ -536,7 +537,7 @@ pub fn try_build_range_group_by(
 ) -> Option<PolarsResult<PhysStream>> {
     let input_schema = phys_sm[input.node].output_schema.as_ref();
 
-    if keys.len() == 0
+    if keys.is_empty()
         || apply.is_some()
         || options.rolling.is_some()
         || options.dynamic.is_some()

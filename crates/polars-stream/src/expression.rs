@@ -80,14 +80,16 @@ impl StreamExpr {
             let df = df.clone();
             polars_io::pl_async::get_runtime()
                 .spawn_blocking(move || {
-                    Ok(phys_expr
-                        .evaluate_on_groups(&df, &groups, &state)?
-                        .into_static())
+                    POOL.without_threading(|| {
+                        Ok(phys_expr
+                            .evaluate_on_groups(&df, &groups, &state)?
+                            .into_static())
+                    })
                 })
                 .await
                 .unwrap()
         } else {
-            self.inner.evaluate_on_groups(df, groups, state)
+            POOL.without_threading(|| self.inner.evaluate_on_groups(df, groups, state))
         }
     }
 }
