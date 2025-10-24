@@ -1201,6 +1201,16 @@ fn to_graph_rec<'a>(
                 [],
             )
         },
+
+        EwmMean { input, options } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let dtype = input_schema.get_at_index(0).unwrap().1;
+            ctx.graph.add_node(
+                nodes::ewm_mean::EwmMeanNode::new(dtype.clone(), options),
+                [(input_key, input.port)],
+            )
+        },
     };
 
     ctx.phys_to_graph.insert(phys_node_key, graph_key);

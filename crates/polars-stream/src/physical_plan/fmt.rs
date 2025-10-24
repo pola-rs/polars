@@ -551,6 +551,7 @@ fn visualize_plan_rec(
             input_left,
             input_right,
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
     };
 
     let node_id = node_key.data().as_ffi();

@@ -91,3 +91,18 @@ macro_rules! assert_allclose {
 }
 #[cfg(test)]
 pub(crate) use assert_allclose;
+
+#[cfg(test)]
+fn assert_all_close<I, T>(xs: I, ys: I, tolerance: T) -> bool
+where
+    I: IntoIterator<Item = Option<T>>,
+    T: std::ops::Sub<T, Output = T> + num_traits::Signed + std::cmp::PartialOrd,
+{
+    xs.into_iter()
+        .zip(ys.into_iter())
+        .all(|(x, y)| match (x, y) {
+            (Some(x), Some(y)) => (x - y).abs() < tolerance,
+            (None, None) => true,
+            _ => false,
+        })
+}

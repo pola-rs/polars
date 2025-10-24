@@ -1866,6 +1866,25 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            AExpr::Function {
+                input: input_exprs,
+                function: IRFunctionExpr::EwmMean { options },
+                options: _,
+            } => {
+                let input = build_select_stream_with_ctx(input, &input_exprs, ctx)?;
+
+                let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+                assert_eq!(input_schema.len(), 1);
+                assert!(input_schema.get_at_index(0).unwrap().1.is_float());
+                let output_schema = input_schema;
+                let out_name = output_schema.get_at_index(0).unwrap().0.clone();
+
+                let kind: PhysNodeKind = PhysNodeKind::EwmMean { input, options };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }
             | AExpr::Window { .. }

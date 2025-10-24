@@ -2,6 +2,7 @@ pub mod callback_sink;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
 pub mod dynamic_slice;
+pub mod ewm_mean;
 pub mod filter;
 pub mod gather_every;
 pub mod group_by;

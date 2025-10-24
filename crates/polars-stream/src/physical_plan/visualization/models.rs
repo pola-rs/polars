@@ -75,6 +75,13 @@ pub enum PhysNodeProperties {
         chunk_size: Option<NonZeroUsize>,
     },
     DynamicSlice,
+    EwmMean {
+        alpha: f64,
+        adjust: bool,
+        bias: bool,
+        min_periods: usize,
+        ignore_nulls: bool,
+    },
     FileSink {
         target: PlSmallStr,
         sync_on_close: SyncOnCloseType,

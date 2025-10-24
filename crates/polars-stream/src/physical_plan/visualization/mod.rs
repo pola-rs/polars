@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
 use polars_ops::frame::{JoinArgs, JoinType};
+use polars_ops::series::EWMOptions;
 use polars_plan::dsl::{JoinTypeOptionsIR, PartitionVariantIR, SinkOptions, SinkTarget};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::AExpr;
@@ -107,6 +108,33 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 phys_node_inputs.push(length.node);
 
                 let properties = PhysNodeProperties::DynamicSlice;
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            PhysNodeKind::EwmMean {
+                input,
+                options:
+                    EWMOptions {
+                        alpha,
+                        adjust,
+                        bias,
+                        min_periods,
+                        ignore_nulls,
+                    },
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::EwmMean {
+                    alpha: *alpha,
+                    adjust: *adjust,
+                    bias: *bias,
+                    min_periods: *min_periods,
+                    ignore_nulls: *ignore_nulls,
+                };
 
                 PhysNodeInfo {
                     title: properties.variant_name(),
