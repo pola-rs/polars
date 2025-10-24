@@ -392,7 +392,7 @@ impl GroupsType {
         }
         polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
             a.len() == b.len()
-        }), ComputeError: "expressions must have matching group lengths");
+        }), ShapeMismatch: "expressions must have matching group lengths");
         Ok(())
     }
 

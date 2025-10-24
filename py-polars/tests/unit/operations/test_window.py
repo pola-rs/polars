@@ -9,7 +9,7 @@ import polars as pl
 
 if TYPE_CHECKING:
     from polars._typing import WindowMappingStrategy
-from polars.exceptions import ComputeError, ShapeError
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -844,7 +844,7 @@ def test_shape_mismatch_group_by_slice() -> None:
     ).select(pl.col.t.mode().over(pl.col("x").rle_id()))
 
     with pytest.raises(
-        ComputeError, match="expressions must have matching group lengths"
+        ShapeError, match="expressions must have matching group lengths"
     ):
         q.collect()
 
