@@ -15,7 +15,7 @@ use polars_plan::dsl::{FileScanIR, Operator, ScanSources, TableStatistics, Unifi
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
-use polars_plan::plans::{AExpr, Context, ExprIRDisplay, IR, MintermIter};
+use polars_plan::plans::{AExpr, Context, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -370,6 +370,8 @@ pub fn apply_scan_predicate_to_scan_ir(
 /// Filters the paths for a scan IR. This also involves performing selections on
 /// e.g. hive partitions, deletion files.
 ///
+/// Note: `selected_path_indices` should be cheaply cloneable.
+///
 /// # Panics
 /// Panics if `scan_ir` is not `IR::Scan`.
 pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I)
@@ -378,7 +380,12 @@ where
 {
     let IR::Scan {
         sources,
-        file_info: _,
+        file_info:
+            FileInfo {
+                schema: _,
+                reader_schema,
+                row_estimation,
+            },
         hive_parts,
         predicate: _,
         predicate_file_skip_applied: _,
@@ -431,6 +438,8 @@ where
     *row_count = None;
 
     if selected_path_indices.clone().next() != Some(0) {
+        *reader_schema = None;
+
         // Ensure the metadata is unset, otherwise it may incorrectly be used at
         // scan. This is especially important for Parquet as it requires the
         // correct `is_nullable` in the arrow field.
@@ -500,7 +509,15 @@ where
         }))
     });
 
+    let original_sources_len = sources.len();
     *sources = sources.gather(selected_path_indices.clone()).unwrap();
+    *row_estimation = (
+        None,
+        row_estimation
+            .1
+            .div_ceil(original_sources_len)
+            .saturating_mul(sources.len()),
+    );
 
     *hive_parts = hive_parts.as_ref().map(|hp| {
         let df = hp.df();
