@@ -25,6 +25,7 @@ pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
+mod sortedness;
 mod stack_opt;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
