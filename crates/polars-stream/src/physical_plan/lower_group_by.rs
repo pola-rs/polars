@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, SortMultipleOptions};
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -534,11 +534,17 @@ pub fn try_build_range_group_by(
     ctx: StreamingLowerIRContext,
     is_input_sorted: bool,
 ) -> Option<PolarsResult<PhysStream>> {
+    let input_schema = phys_sm[input.node].output_schema.as_ref();
+
     if keys.len() == 0
         || apply.is_some()
         || options.rolling.is_some()
         || options.dynamic.is_some()
         || maintain_order
+        || keys.iter().any(|k| {
+            k.dtype(input_schema, expr_arena)
+                .is_ok_and(|dtype| dtype.contains_unknown())
+        })
     {
         return None;
     }
@@ -548,7 +554,6 @@ pub fn try_build_range_group_by(
     let mut projected = false;
     let mut row_encoded: Option<Vec<Field>> = None;
 
-    let input_schema = phys_sm[input.node].output_schema.as_ref();
     if keys.len() > 1
         || match keys[0].dtype(input_schema, expr_arena) {
             Ok(v) => v.is_nested(),
@@ -600,19 +605,42 @@ pub fn try_build_range_group_by(
 
     let schema = phys_sm[input.node].output_schema.clone();
     if !is_input_sorted {
+        let row_idx_name = unique_column_name();
+        input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
+
+        let row_idx_expr =
+            AExprBuilder::col(row_idx_name.clone(), expr_arena).expr_ir(row_idx_name.clone());
+
         input = PhysStream::first(phys_sm.insert(PhysNode {
             output_schema: schema.clone(),
             kind: PhysNodeKind::Sort {
                 input,
-                by_column: vec![key],
+                by_column: vec![key, row_idx_expr],
                 slice: None,
                 sort_options: SortMultipleOptions::default(),
             },
         }));
     }
 
+    let mut gb_output_schema = Schema::with_capacity(aggs.len() + 1);
+    gb_output_schema.insert(
+        input_column.clone(),
+        schema.get(input_column.as_str()).unwrap().clone(),
+    );
+    for agg in aggs {
+        let field = match agg.field(schema.as_ref(), expr_arena) {
+            Ok(v) => v,
+            Err(err) => return Some(Err(err)),
+        };
+        let dtype = if agg.is_scalar(expr_arena) {
+            field.dtype
+        } else {
+            field.dtype.implode()
+        };
+        gb_output_schema.insert(field.name, dtype);
+    }
     input = PhysStream::first(phys_sm.insert(PhysNode {
-        output_schema: schema.clone(),
+        output_schema: Arc::new(gb_output_schema.clone()),
         kind: PhysNodeKind::RangeGroupBy {
             input,
             key: input_column.clone(),
@@ -622,8 +650,10 @@ pub fn try_build_range_group_by(
 
     if projected {
         if let Some(key_fields) = row_encoded {
+            let expr =
+                AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
             let expr = AExprBuilder::function(
-                keys.to_vec(),
+                vec![expr],
                 IRFunctionExpr::RowDecode(key_fields, RowEncodingVariant::Unordered),
                 expr_arena,
             )
@@ -634,6 +664,7 @@ pub fn try_build_range_group_by(
                 Err(err) => return Some(Err(err)),
             };
 
+            // Unnest the row encoded columns.
             input = PhysStream::first(phys_sm.insert(PhysNode {
                 output_schema: output_schema.clone(),
                 kind: PhysNodeKind::Map {
@@ -642,14 +673,32 @@ pub fn try_build_range_group_by(
                         as _,
                 },
             }));
+
+            let exprs = output_schema
+                .iter_names()
+                .map(|name| AExprBuilder::col(name.clone(), expr_arena).expr_ir(name.clone()))
+                .collect::<Vec<_>>();
+            input = match build_select_stream(input, &exprs, expr_arena, phys_sm, expr_cache, ctx) {
+                Ok(v) => v,
+                Err(err) => return Some(Err(err)),
+            };
         } else {
-            input = PhysStream::first(phys_sm.insert(PhysNode {
-                output_schema: output_schema.clone(),
-                kind: PhysNodeKind::SimpleProjection {
-                    input,
-                    columns: schema.iter_names_cloned().collect(),
-                },
-            }));
+            let exprs = std::iter::once(input_column)
+                .map(|name| (name, output_schema.get_at_index(0).unwrap().0.clone()))
+                .chain(
+                    output_schema
+                        .iter_names_cloned()
+                        .skip(1)
+                        .map(|name| (name.clone(), name.clone())),
+                )
+                .map(|(col_name, out_name)| {
+                    AExprBuilder::col(col_name, expr_arena).expr_ir(out_name)
+                })
+                .collect::<Vec<_>>();
+            input = match build_select_stream(input, &exprs, expr_arena, phys_sm, expr_cache, ctx) {
+                Ok(v) => v,
+                Err(err) => return Some(Err(err)),
+            };
         }
     }
 
@@ -698,18 +747,6 @@ pub fn build_group_by_stream(
         return Ok(input);
     }
 
-    let streaming = try_build_streaming_group_by(
-        input,
-        keys,
-        aggs,
-        maintain_order,
-        options.clone(),
-        apply.clone(),
-        expr_arena,
-        phys_sm,
-        expr_cache,
-        ctx,
-    );
     if std::env::var("POLARS_FORCE_RANGE_GROUP_BY").is_ok_and(|v| v == "1")
         && let Some(stream) = try_build_range_group_by(
             input,
@@ -727,7 +764,18 @@ pub fn build_group_by_stream(
         )
     {
         stream
-    } else if let Some(stream) = streaming {
+    } else if let Some(stream) = try_build_streaming_group_by(
+        input,
+        keys,
+        aggs,
+        maintain_order,
+        options.clone(),
+        apply.clone(),
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+    ) {
         stream
     } else if let Some(stream) = try_build_range_group_by(
         input,

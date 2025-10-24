@@ -183,6 +183,10 @@ impl ComputeNode for RangeGroupBy {
                 let (df, seq, source, _) = m.into_inner();
                 self.buffer = Some((df, seq, source));
             }
+            
+            if self.buffer.is_none() {
+                return Ok(());
+            }
 
             let (buf_df, buf_seq, buf_src) = self.buffer.as_mut().unwrap();
 
