@@ -226,7 +226,7 @@ def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     assert_frame_equal(
         lf0.join(lf1, on="a", how="inner").collect(),
         pl.DataFrame({"a": [1, 2]}),
-        check_row_order=False
+        check_row_order=False,
     )
 
 
