@@ -1866,6 +1866,33 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            #[cfg(feature = "ewma")]
+            AExpr::Function {
+                input: input_exprs,
+                function: IRFunctionExpr::EwmMean { options },
+                options: _,
+            } => {
+                let out_name = unique_column_name();
+
+                let input = match input_exprs.as_slice() {
+                    [input_expr] => build_select_stream_with_ctx(
+                        input,
+                        &[input_expr.with_alias(out_name.clone())],
+                        ctx,
+                    )?,
+                    _ => panic!("{:?}", input_exprs),
+                };
+
+                let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+                assert_eq!(input_schema.len(), 1);
+                let output_schema = input_schema;
+
+                let kind = PhysNodeKind::EwmMean { input, options };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }
             | AExpr::Window { .. }
