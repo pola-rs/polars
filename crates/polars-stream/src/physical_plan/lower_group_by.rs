@@ -541,7 +541,7 @@ pub fn try_build_range_group_by(
         || apply.is_some()
         || options.rolling.is_some()
         || options.dynamic.is_some()
-        || maintain_order
+        || (!are_keys_sorted && maintain_order)
         || keys.iter().any(|k| {
             k.dtype(input_schema, expr_arena)
                 .is_ok_and(|dtype| dtype.contains_unknown())
