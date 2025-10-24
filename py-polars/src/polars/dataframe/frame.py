@@ -9433,54 +9433,73 @@ class DataFrame:
         └──────┴──────────┴──────────┘
         """  # noqa: W505
         on = _expand_selectors(self, on)
+
+        if values is None and index is None:
+            msg = "either `values or `index` needs to be specified"
+            raise ValueError(msg)
+
         if values is not None:
             values = _expand_selectors(self, values)
         if index is not None:
             index = _expand_selectors(self, index)
 
+        if values is None:
+            values = set(self.columns) - set(index) - set(on)
+        if index is None:
+            index = set(self.columns) - set(values) - set(on)
+
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
-                aggregate_expr = F.element().first()._pyexpr
+                agg_f = pl.Expr.first
             elif aggregate_function == "sum":
-                aggregate_expr = F.element().sum()._pyexpr
+                agg_f = pl.Expr.sum
             elif aggregate_function == "max":
-                aggregate_expr = F.element().max()._pyexpr
+                agg_f = pl.Expr.max
             elif aggregate_function == "min":
-                aggregate_expr = F.element().min()._pyexpr
+                agg_f = pl.Expr.min
             elif aggregate_function == "mean":
-                aggregate_expr = F.element().mean()._pyexpr
+                agg_f = pl.Expr.mean
             elif aggregate_function == "median":
-                aggregate_expr = F.element().median()._pyexpr
+                agg_f = pl.Expr.median
             elif aggregate_function == "last":
-                aggregate_expr = F.element().last()._pyexpr
+                agg_f = pl.Expr.last
             elif aggregate_function == "len":
-                aggregate_expr = F.len()._pyexpr
+                agg_f = pl.Expr.len
             elif aggregate_function == "count":
                 issue_deprecation_warning(
                     "`aggregate_function='count'` input for `pivot` is deprecated."
                     " Please use `aggregate_function='len'`.",
                     version="0.20.5",
                 )
-                aggregate_expr = F.len()._pyexpr
+                agg_f = pl.Expr.len
             else:
                 msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
                 raise ValueError(msg)
         elif aggregate_function is None:
-            aggregate_expr = None
+            agg_f = pl.Expr.item
         else:
-            aggregate_expr = aggregate_function._pyexpr
+            agg_f = aggregate_function.meta._replace_element
 
-        return self._from_pydf(
-            self._df.pivot_expr(
-                on,
-                index,
-                values,
-                maintain_order,
-                sort_columns,
-                aggregate_expr,
-                separator,
-            )
-        )
+        on_values = self.select(on).unique(maintain_order=True)
+        if sort_columns:
+            on_values = on_values.sort()
+        on_titles = on_values.cast(String())
+
+        aggs = []
+        for value in values:
+            for on_value, on_title in zip(on_values.rows(), on_titles.rows()):
+                name = separator.join(on_title)
+                if len(values) > 1:
+                    name = value + separator + name
+                aggs += [
+                    agg_f(
+                        F.col(value).filter(
+                            *[F.col(on[i]) == on_value[i] for i in range(len(on))]
+                        )
+                    ).alias(name)
+                ]
+
+        return self.group_by(index, maintain_order=maintain_order).agg(aggs)
 
     def unpivot(
         self,
