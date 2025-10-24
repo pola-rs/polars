@@ -8099,8 +8099,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def set_sorted(
         self,
         column: str,
-        *,
-        descending: bool = False,
+        *more_columns: str,
+        descending: bool | list[bool] = False,
+        nulls_last: bool | list[bool] = False,
     ) -> LazyFrame:
         """
         Flag a column as sorted.
@@ -8111,8 +8112,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         column
             Column that is sorted
+        more_columns
+            Columns that are sorted over after `column`.
         descending
             Whether the column is sorted in descending order.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -8125,7 +8130,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not isinstance(column, str):
             msg = "expected a 'str' for argument 'column' in 'set_sorted'"
             raise TypeError(msg)
-        return self.with_columns(F.col(column).set_sorted(descending=descending))
+
+        ds: list[bool]
+        nl: list[bool]
+        if isinstance(descending, bool):
+            ds = [descending]
+        else:
+            ds = descending
+        if isinstance(nulls_last, bool):
+            nl = [nulls_last]
+        else:
+            nl = nulls_last
+
+        return self._from_pyldf(
+            self._ldf.hint_sorted(
+                [column] + list(more_columns), descending=ds, nulls_last=nl
+            )
+        )
 
     @unstable()
     def update(

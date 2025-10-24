@@ -1839,11 +1839,14 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
         [True, False],
     ]
 
-    cl = cs.starts_with("^x")
+    cl = cs.starts_with("x")
     df = pl.DataFrame(
         [pl.Series("g", [1, 1])]
         + [pl.Series(f"x{i}", c, pl.Boolean()) for i, c in enumerate(combinations)]
     )
+
+    # verify that we are actually calculating something
+    assert len(df.lazy().select(expr(cl)).collect_schema()) == len(combinations)
 
     assert_frame_equal(
         df.select(expr(cl)),
@@ -1864,7 +1867,10 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
 
     assert_frame_equal(
         df.select(expr(cl)),
-        df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit"),
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(expr(pl.lit(pl.Series("x", [], pl.Boolean()))))
+        .drop("lit"),
     )
 
     assert_frame_equal(
