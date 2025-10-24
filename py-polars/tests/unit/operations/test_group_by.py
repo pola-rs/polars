@@ -2535,3 +2535,39 @@ def test_group_by_first_last(
     assert_frame_equal(result, expected)
     result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=True).collect()
     assert_frame_equal(result, expected)
+
+
+def test_range_group_by() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 1, 2, 2, 3, 3, 3],
+            "b": [4, 5, 8, 1, 0, 1, 3],
+        }
+    )
+
+    lf1 = lf
+    lf2 = lf.set_sorted("a")
+
+    assert_frame_equal(
+        *[
+            q.group_by("a")
+            .agg(b_first=pl.col.b.first(), b_sum=pl.col.b.sum(), b=pl.col.b)
+            .collect(engine="streaming")
+            for q in (lf1, lf2)
+        ],
+        check_row_order=False,
+    )
+
+    lf = lf.with_columns(c=pl.col.a.rle_id())
+    lf1 = lf
+    lf2 = lf.set_sorted("a", "c")
+
+    assert_frame_equal(
+        *[
+            q.group_by("a", "c")
+            .agg(b_first=pl.col.b.first(), b_sum=pl.col.b.sum(), b=pl.col.b)
+            .collect(engine="streaming")
+            for q in (lf1, lf2)
+        ],
+        check_row_order=False,
+    )

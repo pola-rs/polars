@@ -17,7 +17,9 @@ use polars_plan::dsl::{
     PartitionVariantIR, SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
+use polars_plan::plans::{
+    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, is_sorted, write_ir_non_recursive,
+};
 use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -966,6 +968,9 @@ pub fn lower_ir(
             maintain_order,
             options,
         } => {
+            let are_keys_sorted = is_sorted(*input, ir_arena, expr_arena)
+                .is_some_and(|s| s.is_sorted_any(keys, expr_arena));
+
             let input = *input;
             let keys = keys.clone();
             let aggs = aggs.clone();
@@ -987,6 +992,7 @@ pub fn lower_ir(
                 phys_sm,
                 expr_cache,
                 ctx,
+                are_keys_sorted,
             );
         },
         IR::Join {
@@ -1096,7 +1102,8 @@ pub fn lower_ir(
 
         IR::Distinct { input, options } => {
             let options = options.clone();
-            let phys_input = lower_ir!(*input)?;
+            let input = *input;
+            let phys_input = lower_ir!(input)?;
 
             // We don't have a dedicated distinct operator (yet), lower to group
             // by with an aggregate for each column.
@@ -1200,6 +1207,9 @@ pub fn lower_ir(
                 ));
             }
 
+            let are_keys_sorted = is_sorted(input, ir_arena, expr_arena)
+                .is_some_and(|s| s.is_sorted_any(&keys, expr_arena));
+
             let mut stream = build_group_by_stream(
                 phys_input,
                 &keys,
@@ -1212,6 +1222,7 @@ pub fn lower_ir(
                 phys_sm,
                 expr_cache,
                 ctx,
+                are_keys_sorted,
             )?;
 
             if options.keep_strategy == UniqueKeepStrategy::None {

@@ -533,7 +533,7 @@ pub fn try_build_range_group_by(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
-    is_input_sorted: bool,
+    are_keys_sorted: bool,
 ) -> Option<PolarsResult<PhysStream>> {
     let input_schema = phys_sm[input.node].output_schema.as_ref();
 
@@ -605,7 +605,7 @@ pub fn try_build_range_group_by(
     let key = AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
 
     let schema = phys_sm[input.node].output_schema.clone();
-    if !is_input_sorted {
+    if !are_keys_sorted {
         let row_idx_name = unique_column_name();
         input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
 
@@ -719,6 +719,7 @@ pub fn build_group_by_stream(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
+    are_keys_sorted: bool,
 ) -> PolarsResult<PhysStream> {
     #[cfg(feature = "dynamic_group_by")]
     if let Some(rolling_options) = options.as_ref().rolling.as_ref()
@@ -778,20 +779,22 @@ pub fn build_group_by_stream(
         ctx,
     ) {
         stream
-    } else if let Some(stream) = try_build_range_group_by(
-        input,
-        keys,
-        aggs,
-        output_schema.clone(),
-        maintain_order,
-        options.clone(),
-        apply.clone(),
-        expr_arena,
-        phys_sm,
-        expr_cache,
-        ctx,
-        false,
-    ) {
+    } else if are_keys_sorted
+        && let Some(stream) = try_build_range_group_by(
+            input,
+            keys,
+            aggs,
+            output_schema.clone(),
+            maintain_order,
+            options.clone(),
+            apply.clone(),
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+            true,
+        )
+    {
         stream
     } else {
         let format_str = ctx.prepare_visualization.then(|| {
