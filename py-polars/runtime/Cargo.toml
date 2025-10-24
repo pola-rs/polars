@@ -17,6 +17,9 @@ pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module"
 
 either = { workspace = true }
 
+[build-dependencies]
+rustflags = { workspace = true }
+
 [features]
 # Features used in this crate
 ffi_plugin = ["polars-python/ffi_plugin"]
