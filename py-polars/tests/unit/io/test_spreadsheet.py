@@ -954,8 +954,15 @@ def test_excel_read_named_table_with_total_row(tmp_path: Path) -> None:
         column_totals=True,
     )
     for engine in ("calamine", "openpyxl"):
-        xldf = pl.read_excel(wb_path, table_name="PolarsFrameTable", engine=engine)
+        common_kwargs = {"table_name": "PolarsFrameTable", "engine": engine}
+
+        # read all col from named table
+        xldf = pl.read_excel(wb_path, **common_kwargs)
         assert_frame_equal(df, xldf)
+
+        # read selected cols from named table
+        xldf = pl.read_excel(wb_path, **common_kwargs, columns=["x", "z"])
+        assert_frame_equal(df.select("x", "z"), xldf)
 
     # xlsx2csv doesn't support reading named tables, so we see the
     # column total if we don't filter it out after reading the data
