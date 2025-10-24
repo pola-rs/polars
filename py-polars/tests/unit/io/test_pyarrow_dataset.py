@@ -4,14 +4,13 @@ from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Callable
 
 import pyarrow.dataset as ds
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 def helper_dataset_test(
@@ -265,3 +264,16 @@ def test_pyarrow_dataset_predicate_verbose_log(
         'predicate node: [(col("a").strict_cast(String)) < ("3")], '
         "converted pyarrow predicate: <conversion failed>\n"
     ) in capture
+
+
+@pytest.mark.write_disk
+def test_pyarrow_dataset_python_scan(tmp_path: Path) -> None:
+    df = pl.DataFrame({"x": [0, 1, 2, 3]})
+    file_path = tmp_path / "0.parquet"
+    df.write_parquet(file_path)
+
+    dataset = ds.dataset(file_path)
+    lf = pl.scan_pyarrow_dataset(dataset)
+    out = lf.collect(engine="streaming")
+
+    assert_frame_equal(df, out)
