@@ -70,7 +70,9 @@ impl<T: Serialize + Clone> Serialize for LazySerde<T> {
                 payload,
                 value: _,
             } => serialize_named(serializer, name, payload.as_deref()),
-            Self::Deserialized(t) => t.serialize(serializer),
+            Self::Deserialized(t) => {
+                unreachable!("serialization after deserialization is not supported")
+            },
             Self::Bytes(b) => b.serialize(serializer),
         }
     }
