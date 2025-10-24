@@ -44,8 +44,6 @@ impl ComputeNode for EwmMeanNode {
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
-
-        assert!(recv.len() == 1 && send.len() == 1);
         recv.swap_with_slice(send);
         Ok(())
     }
