@@ -30,7 +30,7 @@ async fn select_keys(
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(
         &keys,
-        params.random_state,
+        params.random_state.clone(),
         params.nulls_equal,
         false,
     ))
