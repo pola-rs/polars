@@ -1872,13 +1872,19 @@ fn lower_exprs_with_ctx(
                 function: IRFunctionExpr::EwmMean { options },
                 options: _,
             } => {
-                let input = build_select_stream_with_ctx(input, &input_exprs, ctx)?;
+                let out_name = unique_column_name();
+
+                let input = match input_exprs.as_slice() {
+                    [input_expr] => build_select_stream_with_ctx(
+                        input,
+                        &[input_expr.with_alias(out_name.clone())],
+                        ctx,
+                    )?,
+                    _ => panic!("{:?}", input_exprs),
+                };
 
                 let input_schema = ctx.phys_sm[input.node].output_schema.clone();
                 assert_eq!(input_schema.len(), 1);
-                let (name, dtype) = input_schema.get_at_index(0).unwrap();
-                assert!(dtype.is_float());
-                let out_name = name.clone();
                 let output_schema = input_schema;
 
                 let kind = PhysNodeKind::EwmMean { input, options };
