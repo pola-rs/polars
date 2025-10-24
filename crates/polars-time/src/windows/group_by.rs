@@ -36,7 +36,9 @@ pub enum Label {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
+#[derive(Default)]
 pub enum StartBy {
+    #[default]
     WindowBound,
     DataPoint,
     /// only useful if periods are weekly
@@ -49,11 +51,6 @@ pub enum StartBy {
     Sunday,
 }
 
-impl Default for StartBy {
-    fn default() -> Self {
-        Self::WindowBound
-    }
-}
 
 impl StartBy {
     pub fn weekday(&self) -> Option<u32> {

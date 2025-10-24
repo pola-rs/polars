@@ -314,29 +314,9 @@ impl Wrap<&DataFrame> {
             _ => options.period > options.every,
         };
 
-        let groups = if group_by.is_none() {
+        let groups = if let Some(groups) = group_by.as_ref() {
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            let (groups, lower, upper) = group_by_windows(
-                w,
-                ts,
-                options.closed_window,
-                tu,
-                tz,
-                include_lower_bound,
-                include_upper_bound,
-                options.start_by,
-            )?;
-            update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::Slice {
-                groups,
-                overlapping,
-            })
-        } else {
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
-
-            let groups = group_by.as_ref().unwrap();
 
             let iter = groups.par_iter().map(|[start, len]| {
                 let group_offset = *start;
@@ -378,6 +358,24 @@ impl Wrap<&DataFrame> {
                 )
             });
 
+            update_bounds(lower, upper);
+            PolarsResult::Ok(GroupsType::Slice {
+                groups,
+                overlapping,
+            })
+        } else {
+            let vals = dt.physical().downcast_iter().next().unwrap();
+            let ts = vals.values().as_slice();
+            let (groups, lower, upper) = group_by_windows(
+                w,
+                ts,
+                options.closed_window,
+                tu,
+                tz,
+                include_lower_bound,
+                include_upper_bound,
+                options.start_by,
+            )?;
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
@@ -438,30 +436,10 @@ impl Wrap<&DataFrame> {
     ) -> PolarsResult<(Column, GroupPositions)> {
         let mut dt = dt.rechunk();
 
-        let groups = if group_by.is_none() {
-            // a requirement for the index
-            // so we can set this such that downstream code has this info
-            dt.set_sorted_flag(IsSorted::Ascending);
+        let groups = if let Some(groups) = group_by {
             let dt = dt.datetime().unwrap();
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            PolarsResult::Ok(GroupsType::Slice {
-                groups: group_by_values(
-                    options.period,
-                    options.offset,
-                    ts,
-                    options.closed_window,
-                    tu,
-                    tz,
-                )?,
-                overlapping: true,
-            })
-        } else {
-            let dt = dt.datetime().unwrap();
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
-
-            let groups = group_by.unwrap();
 
             let iter = groups.into_par_iter().map(|[start, len]| {
                 let group_offset = start;
@@ -491,6 +469,24 @@ impl Wrap<&DataFrame> {
             let groups = POOL.install(|| flatten_par(&groups));
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
+                overlapping: true,
+            })
+        } else {
+            // a requirement for the index
+            // so we can set this such that downstream code has this info
+            dt.set_sorted_flag(IsSorted::Ascending);
+            let dt = dt.datetime().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
+            let ts = vals.values().as_slice();
+            PolarsResult::Ok(GroupsType::Slice {
+                groups: group_by_values(
+                    options.period,
+                    options.offset,
+                    ts,
+                    options.closed_window,
+                    tu,
+                    tz,
+                )?,
                 overlapping: true,
             })
         }?;
