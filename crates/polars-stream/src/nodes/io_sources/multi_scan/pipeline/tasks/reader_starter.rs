@@ -287,7 +287,9 @@ impl ReaderStarter {
                         PolarsResult::Ok(file_row_count)
                     };
 
-                    if let Some(n_rows_in_file) = n_rows_in_file && cfg!(debug_assertions) {
+                    if let Some(n_rows_in_file) = n_rows_in_file
+                        && cfg!(debug_assertions)
+                    {
                         assert_eq!(n_rows_in_file, get_row_count.await?)
                     } else {
                         n_rows_in_file = Some(get_row_count.await?)

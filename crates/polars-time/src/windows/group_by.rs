@@ -51,7 +51,6 @@ pub enum StartBy {
     Sunday,
 }
 
-
 impl StartBy {
     pub fn weekday(&self) -> Option<u32> {
         match self {

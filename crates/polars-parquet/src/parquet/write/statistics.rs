@@ -162,7 +162,8 @@ mod tests {
 
     #[test]
     fn binary() -> ParquetResult<()> {
-        let iter = [BinaryStatistics {
+        let iter = [
+            BinaryStatistics {
                 primitive_type: PrimitiveType::from_physical("bla".into(), PhysicalType::ByteArray),
                 null_count: Some(0),
                 distinct_count: None,
@@ -175,7 +176,8 @@ mod tests {
                 distinct_count: None,
                 min_value: Some(vec![4, 5]),
                 max_value: None,
-            }];
+            },
+        ];
         let a = reduce_binary(iter.iter());
 
         assert_eq!(
@@ -194,7 +196,8 @@ mod tests {
 
     #[test]
     fn fixed_len_binary() -> ParquetResult<()> {
-        let iter = [FixedLenStatistics {
+        let iter = [
+            FixedLenStatistics {
                 primitive_type: PrimitiveType::from_physical(
                     "bla".into(),
                     PhysicalType::FixedLenByteArray(2),
@@ -213,7 +216,8 @@ mod tests {
                 distinct_count: None,
                 min_value: Some(vec![4, 5]),
                 max_value: None,
-            }];
+            },
+        ];
         let a = reduce_fix_len_binary(iter.iter());
 
         assert_eq!(

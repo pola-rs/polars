@@ -86,7 +86,10 @@ where
         cum_offset = 0;
         for t in 0..n_threads {
             per_thread_input_offsets[t] = cum_offset;
-            cum_offset += per_thread_partition_sizes[t].iter().take(n_partitions).sum::<usize>();
+            cum_offset += per_thread_partition_sizes[t]
+                .iter()
+                .take(n_partitions)
+                .sum::<usize>();
         }
 
         // Scatter values into partitions.
