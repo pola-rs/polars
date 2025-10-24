@@ -310,7 +310,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
-                            into_column(input[0].node(), arena, schema, 0),
+                            into_column(input[0].node(), arena),
                             constant_evaluate(lv_node, arena, schema, 0),
                         ) {
                             (Some(col), Some(_)) => {
@@ -374,7 +374,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         }
                     },
                     IRBooleanFunction::IsNull => {
-                        let col = into_column(input[0].node(), arena, schema, 0)?;
+                        let col = into_column(input[0].node(), arena)?;
 
                         // col(A).is_null() -> null_count(A) == 0
                         let col_nc = col!(null_count: col);
@@ -382,7 +382,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         Some(col_nc.eq(idx_zero, arena).node())
                     },
                     IRBooleanFunction::IsNotNull => {
-                        let col = into_column(input[0].node(), arena, schema, 0)?;
+                        let col = into_column(input[0].node(), arena)?;
 
                         // col(A).is_not_null() -> null_count(A) == LEN
                         let col_nc = col!(null_count: col);
@@ -391,7 +391,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     },
                     #[cfg(feature = "is_between")]
                     IRBooleanFunction::IsBetween { closed } => {
-                        let col = into_column(input[0].node(), arena, schema, 0)?;
+                        let col = into_column(input[0].node(), arena)?;
                         let dtype = schema.get(col)?;
 
                         if !does_dtype_have_sufficient_order(dtype) {

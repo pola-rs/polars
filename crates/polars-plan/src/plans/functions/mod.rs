@@ -1,5 +1,6 @@
 mod count;
 mod dsl;
+mod hint;
 #[cfg(feature = "python")]
 mod python_udf;
 mod schema;
@@ -10,8 +11,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 pub use dsl::*;
+pub use hint::*;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_io::cloud::CloudOptions;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
@@ -72,6 +75,7 @@ pub enum FunctionIR {
         // used for formatting
         fmt_str: PlSmallStr,
     },
+    Hint(HintIR),
 }
 
 impl Eq for FunctionIR {}
@@ -132,6 +136,7 @@ impl Hash for FunctionIR {
                 name.hash(state);
                 offset.hash(state);
             },
+            FunctionIR::Hint(hint) => hint.hash(state),
         }
     }
 }
@@ -149,6 +154,7 @@ impl FunctionIR {
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
             RowIndex { .. } => false,
+            Hint(_) => true,
         }
     }
 
@@ -171,7 +177,7 @@ impl FunctionIR {
             OpaquePython(OpaquePythonUdf { predicate_pd, .. }) => *predicate_pd,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
-            Rechunk | Unnest { .. } | Explode { .. } => true,
+            Rechunk | Unnest { .. } | Explode { .. } | Hint(_) => true,
             RowIndex { .. } | FastCount { .. } => false,
         }
     }
@@ -182,7 +188,7 @@ impl FunctionIR {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { projection_pd, .. }) => *projection_pd,
-            Rechunk | FastCount { .. } | Unnest { .. } | Explode { .. } => true,
+            Rechunk | FastCount { .. } | Unnest { .. } | Explode { .. } | Hint(_) => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             RowIndex { .. } => true,
@@ -233,6 +239,23 @@ impl FunctionIR {
                 df.unpivot2(args)
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
+            Hint(hint) => {
+                #[expect(irrefutable_let_patterns)]
+                if let HintIR::Sorted(s) = &hint
+                    && let Some(s) = s.first()
+                {
+                    let idx = df.try_get_column_index(&s.column)?;
+                    let col = &mut unsafe { df.get_columns_mut() }[idx];
+                    let flag = if s.descending {
+                        IsSorted::Descending
+                    } else {
+                        IsSorted::Ascending
+                    };
+                    col.set_sorted_flag(flag);
+                }
+
+                Ok(df)
+            },
         }
     }
 
@@ -248,12 +271,13 @@ impl FunctionIR {
             #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { .. } => true,
             FunctionIR::Opaque { .. } => true,
+            FunctionIR::Hint(_) => is_input_ordered,
         }
     }
 
     pub fn is_elementwise(&self) -> bool {
         match self {
-            Self::Unnest { .. } => true,
+            Self::Unnest { .. } | Self::Hint(_) => true,
             #[cfg(feature = "python")]
             Self::OpaquePython(..) => false,
             #[cfg(feature = "pivot")]
@@ -273,7 +297,7 @@ impl FunctionIR {
     /// Is the input ordering always the same as the output ordering.
     pub fn has_equal_order(&self) -> bool {
         match self {
-            Self::Unnest { .. } | Self::Rechunk => true,
+            Self::Unnest { .. } | Self::Rechunk | Self::Hint(_) => true,
             #[cfg(feature = "python")]
             Self::OpaquePython(..) => false,
             #[cfg(feature = "pivot")]
@@ -296,6 +320,9 @@ impl Display for FunctionIR {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionIR::*;
         match self {
+            Hint(hint) => {
+                write!(f, "hint.{hint}")
+            },
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             Unnest { columns, .. } => {
                 write!(f, "UNNEST by:")?;

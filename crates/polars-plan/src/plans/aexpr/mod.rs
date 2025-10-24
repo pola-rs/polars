@@ -27,6 +27,7 @@ pub use traverse::*;
 mod properties;
 pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
+pub use evaluate::into_column;
 pub use properties::*;
 pub use schema::ToFieldContext;
 
