@@ -71,6 +71,7 @@ fn write_scan(
     indent: usize,
     n_columns: i64,
     total_columns: usize,
+    row_estimation: Option<usize>,
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
@@ -107,6 +108,9 @@ fn write_scan(
     }
     if let Some(deletion_files) = deletion_files {
         write!(f, "\n{deletion_files}")?;
+    }
+    if let Some(row_estimation) = row_estimation {
+        write!(f, "\n{:indent$}ESTIMATED ROWS: {row_estimation}", "")?;
     }
     Ok(())
 }
@@ -692,6 +696,7 @@ pub fn write_ir_non_recursive(
                 indent,
                 n_columns,
                 total_columns,
+                None,
                 &predicate,
                 options
                     .n_rows
@@ -732,6 +737,12 @@ pub fn write_ir_non_recursive(
                 .map(|columns| columns.len() as i64)
                 .unwrap_or(-1);
 
+            let row_estimation = if file_info.row_estimation.1 != usize::MAX {
+                Some(file_info.row_estimation.1)
+            } else {
+                None
+            };
+
             let predicate = predicate.as_ref().map(|p| p.display(expr_arena));
 
             write_scan(
@@ -741,6 +752,7 @@ pub fn write_ir_non_recursive(
                 indent,
                 n_columns,
                 file_info.schema.len(),
+                row_estimation,
                 &predicate,
                 unified_scan_args.pre_slice.clone(),
                 unified_scan_args.row_index.as_ref(),
