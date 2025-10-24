@@ -1866,6 +1866,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            #[cfg(feature = "ewma")]
             AExpr::Function {
                 input: input_exprs,
                 function: IRFunctionExpr::EwmMean { options },

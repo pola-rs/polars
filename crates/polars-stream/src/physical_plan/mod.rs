@@ -8,7 +8,6 @@ use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
-use polars_ops::series::EWMOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
@@ -342,9 +341,10 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
     },
 
+    #[cfg(feature = "ewma")]
     EwmMean {
         input: PhysStream,
-        options: EWMOptions,
+        options: polars_ops::series::EWMOptions,
     },
 }
 
@@ -497,6 +497,7 @@ fn visit_node_inputs_mut(
                 }
             },
 
+            #[cfg(feature = "ewma")]
             PhysNodeKind::EwmMean { input, options: _ } => {
                 rec!(input.node);
                 visit(input)

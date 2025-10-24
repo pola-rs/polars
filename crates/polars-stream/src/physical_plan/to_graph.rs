@@ -1202,6 +1202,7 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "ewma")]
         EwmMean { input, options } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
