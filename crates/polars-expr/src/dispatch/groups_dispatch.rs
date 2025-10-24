@@ -190,7 +190,7 @@ pub fn all<'a>(
     ac.groups();
     let values = ac.flat_naive();
     let values = values.bool()?;
-    let out = unsafe { values.agg_all(groups.as_ref(), ignore_nulls) };
+    let out = unsafe { values.agg_all(ac.groups.as_ref(), ignore_nulls) };
     ac.state = AggState::AggregatedScalar(out.into_column());
 
     Ok(ac)

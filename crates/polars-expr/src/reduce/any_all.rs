@@ -248,7 +248,7 @@ impl GroupedReduction for AnyKleeneNullGroupedReduction {
         if ca.any() {
             self.seen_true.set(group_idx as usize, true);
         }
-        if ca.len() != ca.null_count() {
+        if ca.has_nulls() {
             self.seen_null.set(group_idx as usize, true);
         }
         Ok(())
@@ -372,7 +372,7 @@ impl GroupedReduction for AllKleeneNullGroupedReduction {
         if !ca.all() {
             self.seen_false.set(group_idx as usize, true);
         }
-        if ca.len() != ca.null_count() {
+        if ca.has_nulls() {
             self.seen_null.set(group_idx as usize, true);
         }
         Ok(())
