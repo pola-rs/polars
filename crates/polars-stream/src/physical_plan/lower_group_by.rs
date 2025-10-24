@@ -539,8 +539,8 @@ pub fn try_build_range_group_by(
 
     if keys.is_empty()
         || apply.is_some()
-        || options.rolling.is_some()
-        || options.dynamic.is_some()
+        || options.is_rolling()
+        || options.is_dynamic()
         || (!are_keys_sorted && maintain_order)
         || keys.iter().any(|k| {
             k.dtype(input_schema, expr_arena)
