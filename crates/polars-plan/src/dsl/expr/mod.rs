@@ -732,11 +732,13 @@ impl Operator {
             Operator::NotEq => Operator::NotEq,
             Operator::EqValidity => Operator::EqValidity,
             Operator::NotEqValidity => Operator::NotEqValidity,
-            Operator::Divide => Operator::Multiply,
-            Operator::Multiply => Operator::Divide,
+            // Operator::Divide requires modifying the right operand: left / right == 1/right * left
+            Operator::Divide => unimplemented!(),
+            Operator::Multiply => Operator::Multiply,
             Operator::And => Operator::And,
-            Operator::Plus => Operator::Minus,
-            Operator::Minus => Operator::Plus,
+            Operator::Plus => Operator::Plus,
+            // Operator::Minus requires modifying the right operand: left - right == -right + left
+            Operator::Minus => unimplemented!(),
             Operator::Lt => Operator::Gt,
             _ => unimplemented!(),
         }
