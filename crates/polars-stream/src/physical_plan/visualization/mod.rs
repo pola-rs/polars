@@ -213,6 +213,20 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            PhysNodeKind::RangeGroupBy { input, key, aggs } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::RangeGroupBy {
+                    key: key.clone(),
+                    aggs: expr_list(aggs, self.expr_arena),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
             PhysNodeKind::InMemoryMap {
                 input,
                 map: _, // dyn DataFrameUdf

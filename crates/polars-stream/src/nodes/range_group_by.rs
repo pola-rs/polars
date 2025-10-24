@@ -41,8 +41,8 @@ impl RangeGroupBy {
         idxs: &mut Vec<IdxSize>,
         df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        let column = df.column(&key).unwrap();
-        rle_lengths(&column, idxs).unwrap();
+        let column = df.column(key).unwrap();
+        rle_lengths(column, idxs).unwrap();
 
         let mut offset = 0;
         let groups = GroupsType::Slice {
@@ -66,10 +66,10 @@ impl RangeGroupBy {
         });
 
         let mut columns = Vec::with_capacity(1 + aggs.len());
-        columns.push(unsafe { column.take_slice_unchecked(&idxs) });
+        columns.push(unsafe { column.take_slice_unchecked(idxs) });
 
         for (name, agg) in aggs.iter() {
-            let mut agg = agg.evaluate_on_groups(&df, &groups, &state).await?;
+            let mut agg = agg.evaluate_on_groups(&df, &groups, state).await?;
             let agg = agg.finalize();
             columns.push(agg.with_name(name.clone()));
         }
@@ -183,7 +183,7 @@ impl ComputeNode for RangeGroupBy {
                 let (df, seq, source, _) = m.into_inner();
                 self.buffer = Some((df, seq, source));
             }
-            
+
             if self.buffer.is_none() {
                 return Ok(());
             }
