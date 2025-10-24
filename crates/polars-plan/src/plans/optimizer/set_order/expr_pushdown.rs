@@ -197,7 +197,12 @@ impl<'a> ObservableOrdersResolver<'a> {
                     O::Independent
                 }
             },
-
+            // Fow now only non-observing aggregations
+            AExpr::AnonymousStreamingAgg {
+                input: _,
+                fmt_str: _,
+                function: _,
+            } => O::None,
             AExpr::Agg(agg) => match agg {
                 // Input order agnostic aggregations.
                 IRAggExpr::Min { input: node, .. }

@@ -524,7 +524,8 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, ".{function}()")
                 }
             },
-            AnonymousFunction { input, fmt_str, .. } => {
+            AnonymousFunction { input, fmt_str, .. }
+            | AnonymousStreamingAgg { input, fmt_str, .. } => {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {

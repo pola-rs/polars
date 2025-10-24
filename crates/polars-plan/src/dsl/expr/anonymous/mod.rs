@@ -2,6 +2,7 @@ pub mod agg;
 mod expr;
 use std::sync::Arc;
 
+pub use agg::OpaqueStreamingAgg;
 pub use expr::*;
 
 use super::LazySerde;

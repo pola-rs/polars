@@ -5,6 +5,7 @@ use recursive::recursive;
 
 use super::*;
 use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
+use crate::dsl::agg::AnonymousStreamingAgg;
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
@@ -247,6 +248,18 @@ impl AExpr {
                 let out = function.get_field(ctx.schema, &fields)?;
                 Ok(out)
             },
+            AnonymousStreamingAgg {
+                input,
+                function,
+                fmt_str,
+                ..
+            } => {
+                let fields = func_args_to_fields(input, ctx)?;
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
+                let function = function.clone().materialize()?;
+                let out = function.get_field(ctx.schema, &fields)?;
+                Ok(out)
+            },
             Eval {
                 expr,
                 evaluation,
@@ -331,7 +344,8 @@ impl AExpr {
             | Agg(Count { input: expr, .. })
             | Agg(AggGroups(expr))
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
-            AnonymousFunction { input, fmt_str, .. } => {
+            AnonymousFunction { input, fmt_str, .. }
+            | AnonymousStreamingAgg { input, fmt_str, .. } => {
                 if input.is_empty() {
                     fmt_str.as_ref().clone()
                 } else {
