@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{InitHashMaps, PlIndexMap, SortMultipleOptions};
+use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
@@ -18,7 +18,7 @@ use slotmap::SlotMap;
 
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_elementwise_rec_cached,
+    build_hstack_stream, build_select_stream, compute_output_schema, is_elementwise_rec_cached,
     is_fake_elementwise_function, is_input_independent,
 };
 use crate::physical_plan::lower_ir::{build_row_idx_stream, build_slice_stream};
@@ -520,6 +520,142 @@ fn try_build_streaming_group_by(
     Some(out)
 }
 
+pub fn try_build_range_group_by(
+    input: PhysStream,
+    keys: &[ExprIR],
+    aggs: &[ExprIR],
+    output_schema: Arc<Schema>,
+    maintain_order: bool,
+    options: Arc<GroupbyOptions>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
+    is_input_sorted: bool,
+) -> Option<PolarsResult<PhysStream>> {
+    if keys.len() == 0
+        || apply.is_some()
+        || options.rolling.is_some()
+        || options.dynamic.is_some()
+        || maintain_order
+    {
+        return None;
+    }
+
+    let mut input = input;
+    let mut input_column = unique_column_name();
+    let mut projected = false;
+    let mut row_encoded: Option<Vec<Field>> = None;
+
+    let input_schema = phys_sm[input.node].output_schema.as_ref();
+    if keys.len() > 1
+        || match keys[0].dtype(input_schema, expr_arena) {
+            Ok(v) => v.is_nested(),
+            Err(err) => return Some(Err(err)),
+        }
+    {
+        let key_fields = match keys
+            .iter()
+            .map(|k| k.field(input_schema, expr_arena))
+            .collect::<PolarsResult<Vec<_>>>()
+        {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        let expr = AExprBuilder::function(
+            keys.to_vec(),
+            IRFunctionExpr::RowEncode(
+                key_fields.iter().map(|k| k.dtype().clone()).collect(),
+                RowEncodingVariant::Unordered,
+            ),
+            expr_arena,
+        )
+        .expr_ir(input_column.clone());
+        input = match build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx) {
+            Ok(v) => v,
+            Err(err) => return Some(Err(err)),
+        };
+        projected = true;
+        row_encoded = Some(key_fields);
+    } else if !matches!(expr_arena.get(keys[0].node()), AExpr::Column(c) if c == keys[0].output_name())
+    {
+        input = match build_hstack_stream(
+            input,
+            &[keys[0].with_alias(input_column.clone())],
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+        ) {
+            Ok(v) => v,
+            Err(err) => return Some(Err(err)),
+        };
+        projected = true;
+    } else {
+        input_column = keys[0].output_name().clone();
+    }
+
+    let key = AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
+
+    let schema = phys_sm[input.node].output_schema.clone();
+    if !is_input_sorted {
+        input = PhysStream::first(phys_sm.insert(PhysNode {
+            output_schema: schema.clone(),
+            kind: PhysNodeKind::Sort {
+                input,
+                by_column: vec![key],
+                slice: None,
+                sort_options: SortMultipleOptions::default(),
+            },
+        }));
+    }
+
+    input = PhysStream::first(phys_sm.insert(PhysNode {
+        output_schema: schema.clone(),
+        kind: PhysNodeKind::RangeGroupBy {
+            input,
+            key: input_column.clone(),
+            aggs: aggs.to_vec(),
+        },
+    }));
+
+    if projected {
+        if let Some(key_fields) = row_encoded {
+            let expr = AExprBuilder::function(
+                keys.to_vec(),
+                IRFunctionExpr::RowDecode(key_fields, RowEncodingVariant::Unordered),
+                expr_arena,
+            )
+            .expr_ir(input_column.clone());
+            input = match build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx)
+            {
+                Ok(v) => v,
+                Err(err) => return Some(Err(err)),
+            };
+
+            input = PhysStream::first(phys_sm.insert(PhysNode {
+                output_schema: output_schema.clone(),
+                kind: PhysNodeKind::Map {
+                    input,
+                    map: Arc::new(move |df: DataFrame| df.unnest([input_column.clone()], None))
+                        as _,
+                },
+            }));
+        } else {
+            input = PhysStream::first(phys_sm.insert(PhysNode {
+                output_schema: output_schema.clone(),
+                kind: PhysNodeKind::SimpleProjection {
+                    input,
+                    columns: schema.iter_names_cloned().collect(),
+                },
+            }));
+        }
+    }
+
+    Some(Ok(input))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_group_by_stream(
     input: PhysStream,
@@ -574,30 +710,40 @@ pub fn build_group_by_stream(
         expr_cache,
         ctx,
     );
-    if let Some(stream) = streaming {
+    if std::env::var("POLARS_FORCE_RANGE_GROUP_BY").is_ok_and(|v| v == "1")
+        && let Some(stream) = try_build_range_group_by(
+            input,
+            keys,
+            aggs,
+            output_schema.clone(),
+            maintain_order,
+            options.clone(),
+            apply.clone(),
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+            false,
+        )
+    {
         stream
-    } else if keys.len() == 1 && !maintain_order && apply.is_none() {
-        dbg!("Change needed here!");
-        let key = phys_sm.insert(PhysNode {
-            output_schema: phys_sm[input.node].output_schema.clone(),
-            kind: PhysNodeKind::Sort {
-                input,
-                by_column: keys.to_vec(),
-                slice: None,
-                sort_options: SortMultipleOptions::default(),
-            },
-        });
-        let input = PhysStream::first(key);
-
-        let node = PhysNode {
-            output_schema: output_schema.clone(),
-            kind: PhysNodeKind::RangeGroupBy {
-                input,
-                key: keys[0].output_name().clone(),
-                aggs: aggs.to_vec(),
-            },
-        };
-        Ok(PhysStream::first(phys_sm.insert(node)))
+    } else if let Some(stream) = streaming {
+        stream
+    } else if let Some(stream) = try_build_range_group_by(
+        input,
+        keys,
+        aggs,
+        output_schema.clone(),
+        maintain_order,
+        options.clone(),
+        apply.clone(),
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+        false,
+    ) {
+        stream
     } else {
         let format_str = ctx.prepare_visualization.then(|| {
             let mut buffer = String::new();
