@@ -83,7 +83,7 @@ mod identifier_impl {
             Self {
                 inner,
                 last_node: Some(*alp),
-                hb: self.hb,
+                hb: self.hb.clone(),
             }
         }
     }
