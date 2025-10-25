@@ -306,6 +306,49 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            AExpr::Function {
+                ref function,
+                ref input,
+                options,
+            } if matches!(
+                function,
+                IRFunctionExpr::Boolean(
+                    IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. }
+                )
+            ) =>
+            {
+                // Ensure the input to boolean aggregations is boolean; try cast if possible.
+                let (_, in_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+
+                if in_dtype.is_bool() {
+                    return Ok(None);
+                }
+
+                // If input cannot be cast to boolean, raise a error.
+                polars_ensure!(
+                    in_dtype.can_cast_to(&DataType::Boolean) != Some(false),
+                    InvalidOperation: "expected boolean input for '{}()' (got {})",
+                    function,
+                    in_dtype
+                );
+
+                let function = function.clone();
+                let mut input = input.clone();
+                cast_expr_ir(
+                    &mut input[0],
+                    &in_dtype,
+                    &DataType::Boolean,
+                    expr_arena,
+                    CastOptions::NonStrict,
+                )?;
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
             // shift and fill should only cast left and fill value to super type.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,
