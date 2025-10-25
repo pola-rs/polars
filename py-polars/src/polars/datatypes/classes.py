@@ -436,7 +436,6 @@ class Decimal(NumericType):
         precision: int | None = None,
         scale: int = 0,
     ) -> None:
-
         if precision is None:
             precision = 38
 
