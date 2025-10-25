@@ -18,11 +18,6 @@ from typing import (
     Union,
     overload,
 )
-from typing import (
-    # Returning a union is rarely useful so we return Any but aliased for
-    # documentation. See https://github.com/pola-rs/polars/issues/23132
-    Any as UnknownPythonLiteral,
-)
 
 import polars._reexport as pl
 from polars import functions as F
@@ -2052,7 +2047,7 @@ class Series:
         stats.columns = ["statistic", "value"]
         return stats.filter(F.col("value").is_not_null())
 
-    def sum(self) -> int | float:
+    def sum(self) -> Any:
         """
         Reduce this Series to the sum value.
 
@@ -2073,7 +2068,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> UnknownPythonLiteral | None:
+    def mean(self) -> Any | None:
         """
         Reduce this Series to the mean value.
 
@@ -2148,7 +2143,7 @@ class Series:
             exponent = Series(exponent)
         return self.to_frame().select_seq(F.col(self.name).pow(exponent)).to_series()
 
-    def min(self) -> UnknownPythonLiteral | None:
+    def min(self) -> Any | None:
         """
         Get the minimal value in this Series.
 
@@ -2160,7 +2155,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> UnknownPythonLiteral | None:
+    def max(self) -> Any | None:
         """
         Get the maximum value in this Series.
 
@@ -2172,7 +2167,7 @@ class Series:
         """
         return self._s.max()
 
-    def nan_max(self) -> int | float | date | datetime | timedelta | str:
+    def nan_max(self) -> Any | None:
         """
         Get maximum value, but propagate/poison encountered NaN values.
 
@@ -2191,7 +2186,7 @@ class Series:
         """
         return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
 
-    def nan_min(self) -> int | float | date | datetime | timedelta | str:
+    def nan_min(self) -> Any | None:
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
@@ -2210,7 +2205,7 @@ class Series:
         """
         return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
 
-    def std(self, ddof: int = 1) -> float | timedelta | None:
+    def std(self, ddof: int = 1) -> Any | None:
         """
         Get the standard deviation of this Series.
 
@@ -2229,7 +2224,7 @@ class Series:
         """
         return self._s.std(ddof)
 
-    def var(self, ddof: int = 1) -> float | timedelta | None:
+    def var(self, ddof: int = 1) -> Any | None:
         """
         Get variance of this Series.
 
@@ -2248,7 +2243,7 @@ class Series:
         """
         return self._s.var(ddof)
 
-    def median(self) -> UnknownPythonLiteral | None:
+    def median(self) -> Any | None:
         """
         Get the median of this Series.
 
@@ -9151,19 +9146,19 @@ class Series:
     def bitwise_trailing_zeros(self) -> Self:
         """Evaluate the number least-significant unset bits before seeing a set bit."""
 
-    def bitwise_and(self) -> UnknownPythonLiteral | None:
+    def bitwise_and(self) -> Any | None:
         """Perform an aggregation of bitwise ANDs."""
         return self._s.bitwise_and()
 
-    def bitwise_or(self) -> UnknownPythonLiteral | None:
+    def bitwise_or(self) -> Any | None:
         """Perform an aggregation of bitwise ORs."""
         return self._s.bitwise_or()
 
-    def bitwise_xor(self) -> UnknownPythonLiteral | None:
+    def bitwise_xor(self) -> Any | None:
         """Perform an aggregation of bitwise XORs."""
         return self._s.bitwise_xor()
 
-    def first(self) -> UnknownPythonLiteral | None:
+    def first(self) -> Any | None:
         """
         Get the first element of the Series.
 
@@ -9171,7 +9166,7 @@ class Series:
         """
         return self._s.first()
 
-    def last(self) -> UnknownPythonLiteral | None:
+    def last(self) -> Any | None:
         """
         Get the last element of the Series.
 
@@ -9179,7 +9174,7 @@ class Series:
         """
         return self._s.last()
 
-    def approx_n_unique(self) -> UnknownPythonLiteral | None:
+    def approx_n_unique(self) -> int:
         """
         Approximate count of unique values.
 
