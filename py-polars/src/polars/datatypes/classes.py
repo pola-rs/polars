@@ -436,8 +436,6 @@ class Decimal(NumericType):
         precision: int | None = None,
         scale: int = 0,
     ) -> None:
-        # Issuing the warning on `__init__` does not trigger when the class is used
-        # without being instantiated, but it's better than nothing
 
         if precision is None:
             precision = 38
