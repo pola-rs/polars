@@ -47,11 +47,7 @@ from polars._dependencies import (
 from polars._dependencies import numpy as np
 from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
-from polars._typing import (
-    DbWriteMode,
-    JaxExportType,
-    TorchExportType,
-)
+from polars._typing import DbWriteMode, JaxExportType, TorchExportType
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
