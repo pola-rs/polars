@@ -157,7 +157,6 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
     )
     from polars.config import TableFormatNames
-    from polars.dependencies import numpy as np
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.parquet import ParquetFieldOverwrites
 
