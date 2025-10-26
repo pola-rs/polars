@@ -52,11 +52,8 @@ fn read_uncompressed_bytes<R: Read + Seek>(
     is_little_endian: bool,
 ) -> PolarsResult<Vec<u8>> {
     if is_native_little_endian() == is_little_endian {
-        let mut buffer = Vec::with_capacity(buffer_length);
-        let _ = reader
-            .take(buffer_length as u64)
-            .read_to_end(&mut buffer)
-            .unwrap();
+        let mut buffer = vec![0; buffer_length];
+        let _ = reader.read_exact(&mut buffer).unwrap();
         Ok(buffer)
     } else {
         unreachable!()
@@ -115,11 +112,8 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     // decompress first
     scratch.clear();
-    scratch.try_reserve(buffer_length)?;
-    reader
-        .by_ref()
-        .take(buffer_length as u64)
-        .read_to_end(scratch)?;
+    scratch.resize(buffer_length, 0);
+    reader.read_exact(scratch)?;
 
     let length = output_length
         .unwrap_or_else(|| i64::from_le_bytes(scratch[..8].try_into().unwrap()) as usize);
@@ -254,12 +248,8 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
         )
     }
 
-    let mut buffer = vec![];
-    buffer.try_reserve(bytes)?;
-    reader
-        .by_ref()
-        .take(bytes as u64)
-        .read_to_end(&mut buffer)?;
+    let mut buffer = vec![0; bytes];
+    reader.read_exact(&mut buffer)?;
 
     Ok(buffer)
 }
@@ -276,8 +266,8 @@ fn read_compressed_bitmap<R: Read + Seek>(
     buffer.resize(length.div_ceil(8), 0);
 
     scratch.clear();
-    scratch.try_reserve(bytes)?;
-    reader.by_ref().take(bytes as u64).read_to_end(scratch)?;
+    scratch.resize(bytes, 0);
+    reader.read_exact(scratch)?;
 
     let compression = compression
         .codec()
