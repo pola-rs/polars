@@ -108,6 +108,7 @@ impl ApplyExpr {
     fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
         self.function.call_udf(inputs)
     }
+
     fn apply_single_group_aware<'a>(
         &self,
         mut ac: AggregationContext<'a>,
@@ -115,24 +116,7 @@ impl ApplyExpr {
         // Fix up groups for AggregatedScalar, so that we can pretend they are just normal groups.
         ac.set_groups_for_undefined_agg_states();
 
-        let agg = match ac.agg_state() {
-            AggState::AggregatedScalar(s) => s.as_list().into_column(),
-            _ => ac.aggregated(),
-        };
-        let name = agg.name().clone();
-
-        // Collection of empty list leads to a null dtype. See: #3687.
-        if agg.is_empty() {
-            // Create input for the function to determine the output dtype, see #3946.
-            let agg = agg.list().unwrap();
-            let input_dtype = agg.inner_dtype();
-            let input = Column::full_null(name.clone(), 0, input_dtype);
-
-            let output = self.eval_and_flatten(&mut [input])?;
-            let ca = ListChunked::full(name, output.as_materialized_series(), 0);
-            return self.finish_apply_groups(ac, ca);
-        }
-
+        let name = ac.get_values().name().clone();
         let f = |opt_s: Option<Series>| match opt_s {
             None => Ok(None),
             Some(mut s) => {
@@ -146,6 +130,41 @@ impl ApplyExpr {
                 ))
             },
         };
+
+        // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
+        // memory explosion.
+        // TODO: Add parallel iterator path; support Idx GroupsType.
+        if matches!(ac.agg_state(), AggState::NotAggregated(_))
+            && let GroupsType::Slice {
+                overlapping: true, ..
+            } = ac.groups.as_ref().as_ref()
+        {
+            let ca: ChunkedArray<_> = ac
+                .iter_groups_lazy(false)
+                .map(|opt| opt.map(|s| s.as_ref().clone()))
+                .map(f)
+                .collect::<PolarsResult<_>>()?;
+
+            return self.finish_apply_groups(ac, ca.with_name(name));
+        }
+
+        // At this point, calling aggregated() will not lead to memory explosion.
+        let agg = match ac.agg_state() {
+            AggState::AggregatedScalar(s) => s.as_list().into_column(),
+            _ => ac.aggregated(),
+        };
+
+        // Collection of empty list leads to a null dtype. See: #3687.
+        if agg.is_empty() {
+            // Create input for the function to determine the output dtype, see #3946.
+            let agg = agg.list().unwrap();
+            let input_dtype = agg.inner_dtype();
+            let input = Column::full_null(name.clone(), 0, input_dtype);
+
+            let output = self.eval_and_flatten(&mut [input])?;
+            let ca = ListChunked::full(name, output.as_materialized_series(), 0);
+            return self.finish_apply_groups(ac, ca);
+        }
 
         let ca: ListChunked = if self.allow_threading {
             let lst = agg.list().unwrap();

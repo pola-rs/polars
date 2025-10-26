@@ -340,6 +340,12 @@ pub enum PhysNodeKind {
         input_left: PhysStream,
         input_right: PhysStream,
     },
+
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
 }
 
 fn visit_node_inputs_mut(
@@ -489,6 +495,12 @@ fn visit_node_inputs_mut(
                     rec!(*sink);
                     visit(&mut PhysStream::first(*sink));
                 }
+            },
+
+            #[cfg(feature = "ewma")]
+            PhysNodeKind::EwmMean { input, options: _ } => {
+                rec!(input.node);
+                visit(input)
             },
         }
     }

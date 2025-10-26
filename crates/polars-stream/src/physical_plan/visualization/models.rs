@@ -247,6 +247,14 @@ pub enum PhysNodeProperties {
     CumAgg {
         kind: PlSmallStr,
     },
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        alpha: f64,
+        adjust: bool,
+        bias: bool,
+        min_periods: usize,
+        ignore_nulls: bool,
+    },
     #[cfg(feature = "semi_anti_join")]
     SemiAntiJoin {
         left_on: Vec<PlSmallStr>,

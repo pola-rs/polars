@@ -864,6 +864,34 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            #[cfg(feature = "ewma")]
+            PhysNodeKind::EwmMean {
+                input,
+                options:
+                    polars_ops::series::EWMOptions {
+                        alpha,
+                        adjust,
+                        bias,
+                        min_periods,
+                        ignore_nulls,
+                    },
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::EwmMean {
+                    alpha: *alpha,
+                    adjust: *adjust,
+                    bias: *bias,
+                    min_periods: *min_periods,
+                    ignore_nulls: *ignore_nulls,
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
             #[cfg(feature = "semi_anti_join")]
             PhysNodeKind::SemiAntiJoin {
                 input_left,

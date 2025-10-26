@@ -1077,11 +1077,17 @@ def _read_spreadsheet_calamine(
         df = ws.to_polars()
     else:
         if table_name:
+            if col_names := read_options.get("use_columns"):
+                selected_col_names = set(col_names)
+                read_options["use_columns"] = lambda col: col.name in selected_col_names
+
             xl_table = parser.load_table(table_name, **read_options)
+
             if sheet_name and sheet_name != xl_table.sheet_name:
                 msg = f"table named {table_name!r} not found in sheet {sheet_name!r}"
                 raise RuntimeError(msg)
             df = xl_table.to_polars()
+
         elif _PYARROW_AVAILABLE:
             # eager loading is faster / more memory-efficient, but requires pyarrow
             ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)

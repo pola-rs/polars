@@ -2080,6 +2080,14 @@ impl LazyFrame {
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
+
+    pub fn hint(self, hint: HintIR) -> PolarsResult<LazyFrame> {
+        let lp = DslPlan::MapFunction {
+            input: Arc::new(self.logical_plan),
+            function: DslFunction::Hint(hint),
+        };
+        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
+    }
 }
 
 /// Utility struct for lazy group_by operation.
