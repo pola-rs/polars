@@ -125,10 +125,9 @@ jobs:
           pip install yq
 
       - name: Rename target directory
-        if: matrix.package != 'polars-runtime-64'
         run: |
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
-          mv py-polars/runtime/_polars_runtime_64 py-polars/runtime/_$SNAKE_CASE
+          mv py-polars/runtime/_polars_runtime_tmpl py-polars/runtime/_$SNAKE_CASE
       - name: Update runtime package and module names
         run: |
           cp rust-toolchain.toml py-polars/runtime
@@ -288,10 +287,9 @@ jobs:
           pip install yq
 
       - name: Rename target directory
-        if: matrix.package != 'polars-runtime-64'
         run: |
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
-          mv py-polars/runtime/_polars_runtime_64 py-polars/runtime/_$SNAKE_CASE
+          mv py-polars/runtime/_polars_runtime_tmpl py-polars/runtime/_$SNAKE_CASE
       - name: Update runtime package and module names
         run: |
           SNAKE_CASE="$(echo '${{ matrix.package }}' | sed 's/-/_/g')"
