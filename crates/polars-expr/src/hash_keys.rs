@@ -399,7 +399,7 @@ impl SingleKeys {
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         Self {
-            random_state: self.random_state,
+            random_state: self.random_state.clone(),
             keys: self.keys.take_slice_unchecked(idxs),
             null_is_valid: self.null_is_valid,
         }

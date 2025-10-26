@@ -223,9 +223,11 @@ def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     lf0 = pl.scan_pyarrow_dataset(ds0)
     lf1 = pl.scan_pyarrow_dataset(ds1)
 
-    assert lf0.join(lf1, on="a", how="inner").collect().to_dict(as_series=False) == {
-        "a": [1, 2]
-    }
+    assert_frame_equal(
+        lf0.join(lf1, on="a", how="inner").collect(),
+        pl.DataFrame({"a": [1, 2]}),
+        check_row_order=False,
+    )
 
 
 def test_pyarrow_dataset_predicate_verbose_log(
