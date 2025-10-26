@@ -575,7 +575,9 @@ def test_natural_joins_01() -> None:
         ("!= 4", [(8, 8, 6), (2, 8, 6), (0, 7, 2)]),
     ],
 )
-def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -> None:
+def test_natural_joins_02(
+    cols_constraint: str, expect_data: list[tuple[int, ...]]
+) -> None:
     df1 = pl.DataFrame(  # noqa: F841
         {
             "x": [1, 5, 3, 8, 6, 7, 4, 0, 2],
