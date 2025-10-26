@@ -349,196 +349,203 @@ impl DslPlan {
     }
 
     /// Get the root source of the plan (the deepest input).
+    #[recursive]
     fn get_root_input(&self) -> &DslPlan {
-        match self {
-            DslPlan::Filter { input, .. }
-            | DslPlan::Cache { input, .. }
-            | DslPlan::Select { input, .. }
-            | DslPlan::GroupBy { input, .. }
-            | DslPlan::HStack { input, .. }
-            | DslPlan::MatchToSchema { input, .. }
-            | DslPlan::PipeWithSchema { input, .. }
-            | DslPlan::Distinct { input, .. }
-            | DslPlan::Sort { input, .. }
-            | DslPlan::Slice { input, .. }
-            | DslPlan::MapFunction { input, .. }
-            | DslPlan::ExtContext { input, .. }
-            | DslPlan::Sink { input, .. } => input.get_root_input(),
-            DslPlan::Join { input_left, .. } => input_left.get_root_input(),
-            #[cfg(feature = "merge_sorted")]
-            DslPlan::MergeSorted { input_left, .. } => input_left.get_root_input(),
-            DslPlan::Union { inputs, .. } | DslPlan::HConcat { inputs, .. } => {
+        match self.inputs() {
+            DslInputs::Empty => self,
+            DslInputs::Single(input) => input.get_root_input(),
+            DslInputs::Double(left, _) => left.get_root_input(),
+            DslInputs::Multiple(inputs) => {
                 if let Some(first) = inputs.first() {
                     first.get_root_input()
                 } else {
                     self
                 }
             }
-            DslPlan::IR { dsl, .. } => dsl.get_root_input(),
-            // These are source nodes
-            #[cfg(feature = "python")]
-            DslPlan::PythonScan { .. }
-            | DslPlan::Scan { .. }
-            | DslPlan::DataFrameScan { .. }
-            | DslPlan::SinkMultiple { .. } => self,
-            #[cfg(not(feature = "python"))]
-            DslPlan::Scan { .. } | DslPlan::DataFrameScan { .. } | DslPlan::SinkMultiple { .. } => {
-                self
-            },
+            DslInputs::WithContexts { input, .. } => input.get_root_input(),
         }
     }
 
     /// Replace the root source in this plan with a new source.
+    #[recursive]
     fn replace_root_source(&self, new_source: DslPlan) -> Self {
+        use DslPlan::*;
+
+        match self.inputs() {
+            DslInputs::Empty => {
+                // This is a source node - replace it
+                new_source
+            }
+            DslInputs::Single(input) => {
+                let new_input = Arc::new(input.replace_root_source(new_source));
+                self.clone_with_single_input(new_input)
+            }
+            DslInputs::Double(left, right) => {
+                let new_left = Arc::new(left.replace_root_source(new_source.clone()));
+                let new_right = Arc::new(right.replace_root_source(new_source));
+                self.clone_with_double_input(new_left, new_right)
+            }
+            DslInputs::Multiple(inputs) => {
+                let new_inputs: Vec<_> = inputs
+                    .iter()
+                    .map(|input| input.replace_root_source(new_source.clone()))
+                    .collect();
+                self.clone_with_multiple_inputs(new_inputs)
+            }
+            DslInputs::WithContexts { input, contexts } => {
+                let new_input = Arc::new(input.replace_root_source(new_source.clone()));
+                let new_contexts: Vec<_> = contexts
+                    .iter()
+                    .map(|ctx| ctx.replace_root_source(new_source.clone()))
+                    .collect();
+                self.clone_with_contexts(new_input, new_contexts)
+            }
+        }
+    }
+
+    /// Helper: clone plan with a new single input
+    fn clone_with_single_input(&self, new_input: Arc<DslPlan>) -> Self {
+        use DslPlan::*;
         match self {
-            DslPlan::Filter { input, predicate } => DslPlan::Filter {
-                input: Arc::new(input.replace_root_source(new_source)),
+            Filter { predicate, .. } => Filter {
+                input: new_input,
                 predicate: predicate.clone(),
             },
-            DslPlan::Cache { input, id } => DslPlan::Cache {
-                input: Arc::new(input.replace_root_source(new_source)),
+            Cache { id, .. } => Cache {
+                input: new_input,
                 id: *id,
             },
-            DslPlan::Select {
-                expr,
-                input,
-                options,
-            } => DslPlan::Select {
+            Select { expr, options, .. } => Select {
                 expr: expr.clone(),
-                input: Arc::new(input.replace_root_source(new_source)),
+                input: new_input,
                 options: options.clone(),
             },
-            DslPlan::GroupBy {
-                input,
+            GroupBy {
                 keys,
                 aggs,
                 maintain_order,
                 options,
                 apply,
-            } => DslPlan::GroupBy {
-                input: Arc::new(input.replace_root_source(new_source)),
+                ..
+            } => GroupBy {
+                input: new_input,
                 keys: keys.clone(),
                 aggs: aggs.clone(),
                 maintain_order: *maintain_order,
                 options: options.clone(),
                 apply: apply.clone(),
             },
-            DslPlan::Join {
-                input_left,
-                input_right,
+            HStack { exprs, options, .. } => HStack {
+                input: new_input,
+                exprs: exprs.clone(),
+                options: options.clone(),
+            },
+            MatchToSchema {
+                match_schema,
+                per_column,
+                extra_columns,
+                ..
+            } => MatchToSchema {
+                input: new_input,
+                match_schema: match_schema.clone(),
+                per_column: per_column.clone(),
+                extra_columns: *extra_columns,
+            },
+            PipeWithSchema { callback, .. } => PipeWithSchema {
+                input: new_input,
+                callback: callback.clone(),
+            },
+            Distinct { options, .. } => Distinct {
+                input: new_input,
+                options: options.clone(),
+            },
+            Sort {
+                by_column,
+                slice,
+                sort_options,
+                ..
+            } => Sort {
+                input: new_input,
+                by_column: by_column.clone(),
+                slice: *slice,
+                sort_options: sort_options.clone(),
+            },
+            Slice { offset, len, .. } => Slice {
+                input: new_input,
+                offset: *offset,
+                len: *len,
+            },
+            MapFunction { function, .. } => MapFunction {
+                input: new_input,
+                function: function.clone(),
+            },
+            Sink { payload, .. } => Sink {
+                input: new_input,
+                payload: payload.clone(),
+            },
+            IR { version, node, .. } => IR {
+                dsl: new_input,
+                version: *version,
+                node: *node,
+            },
+            _ => unreachable!("clone_with_single_input called on non-single-input plan"),
+        }
+    }
+
+    /// Helper: clone plan with new double inputs
+    fn clone_with_double_input(&self, new_left: Arc<DslPlan>, new_right: Arc<DslPlan>) -> Self {
+        use DslPlan::*;
+        match self {
+            Join {
                 left_on,
                 right_on,
                 predicates,
                 options,
-            } => DslPlan::Join {
-                input_left: Arc::new(input_left.replace_root_source(new_source.clone())),
-                input_right: Arc::new(input_right.replace_root_source(new_source)),
+                ..
+            } => Join {
+                input_left: new_left,
+                input_right: new_right,
                 left_on: left_on.clone(),
                 right_on: right_on.clone(),
                 predicates: predicates.clone(),
                 options: options.clone(),
             },
-            DslPlan::HStack {
-                input,
-                exprs,
-                options,
-            } => DslPlan::HStack {
-                input: Arc::new(input.replace_root_source(new_source)),
-                exprs: exprs.clone(),
-                options: options.clone(),
-            },
-            DslPlan::MatchToSchema {
-                input,
-                match_schema,
-                per_column,
-                extra_columns,
-            } => DslPlan::MatchToSchema {
-                input: Arc::new(input.replace_root_source(new_source)),
-                match_schema: match_schema.clone(),
-                per_column: per_column.clone(),
-                extra_columns: *extra_columns,
-            },
-            DslPlan::PipeWithSchema { input, callback } => DslPlan::PipeWithSchema {
-                input: Arc::new(input.replace_root_source(new_source)),
-                callback: callback.clone(),
-            },
-            DslPlan::Distinct { input, options } => DslPlan::Distinct {
-                input: Arc::new(input.replace_root_source(new_source)),
-                options: options.clone(),
-            },
-            DslPlan::Sort {
-                input,
-                by_column,
-                slice,
-                sort_options,
-            } => DslPlan::Sort {
-                input: Arc::new(input.replace_root_source(new_source)),
-                by_column: by_column.clone(),
-                slice: *slice,
-                sort_options: sort_options.clone(),
-            },
-            DslPlan::Slice { input, offset, len } => DslPlan::Slice {
-                input: Arc::new(input.replace_root_source(new_source)),
-                offset: *offset,
-                len: *len,
-            },
-            DslPlan::MapFunction { input, function } => DslPlan::MapFunction {
-                input: Arc::new(input.replace_root_source(new_source)),
-                function: function.clone(),
-            },
-            DslPlan::Union { inputs, args } => DslPlan::Union {
-                inputs: inputs
-                    .iter()
-                    .map(|input| input.replace_root_source(new_source.clone()))
-                    .collect(),
-                args: args.clone(),
-            },
-            DslPlan::HConcat { inputs, options } => DslPlan::HConcat {
-                inputs: inputs
-                    .iter()
-                    .map(|input| input.replace_root_source(new_source.clone()))
-                    .collect(),
-                options: options.clone(),
-            },
-            DslPlan::ExtContext { input, contexts } => DslPlan::ExtContext {
-                input: Arc::new(input.replace_root_source(new_source.clone())),
-                contexts: contexts
-                    .iter()
-                    .map(|ctx| ctx.replace_root_source(new_source.clone()))
-                    .collect(),
-            },
-            DslPlan::Sink { input, payload } => DslPlan::Sink {
-                input: Arc::new(input.replace_root_source(new_source)),
-                payload: payload.clone(),
-            },
-            DslPlan::SinkMultiple { inputs } => DslPlan::SinkMultiple {
-                inputs: inputs
-                    .iter()
-                    .map(|input| input.replace_root_source(new_source.clone()))
-                    .collect(),
-            },
             #[cfg(feature = "merge_sorted")]
-            DslPlan::MergeSorted {
-                input_left,
-                input_right,
-                key,
-            } => DslPlan::MergeSorted {
-                input_left: Arc::new(input_left.replace_root_source(new_source.clone())),
-                input_right: Arc::new(input_right.replace_root_source(new_source)),
+            MergeSorted { key, .. } => MergeSorted {
+                input_left: new_left,
+                input_right: new_right,
                 key: key.clone(),
             },
-            DslPlan::IR { dsl, version, node } => DslPlan::IR {
-                dsl: Arc::new(dsl.replace_root_source(new_source)),
-                version: *version,
-                node: *node,
+            _ => unreachable!("clone_with_double_input called on non-double-input plan"),
+        }
+    }
+
+    /// Helper: clone plan with new multiple inputs
+    fn clone_with_multiple_inputs(&self, new_inputs: Vec<DslPlan>) -> Self {
+        use DslPlan::*;
+        match self {
+            Union { args, .. } => Union {
+                inputs: new_inputs,
+                args: args.clone(),
             },
-            // These are source nodes - replace them
-            #[cfg(feature = "python")]
-            DslPlan::PythonScan { .. } | DslPlan::Scan { .. } | DslPlan::DataFrameScan { .. } => {
-                new_source
+            HConcat { options, .. } => HConcat {
+                inputs: new_inputs,
+                options: options.clone(),
             },
-            #[cfg(not(feature = "python"))]
-            DslPlan::Scan { .. } | DslPlan::DataFrameScan { .. } => new_source,
+            SinkMultiple { .. } => SinkMultiple { inputs: new_inputs },
+            _ => unreachable!("clone_with_multiple_inputs called on non-multiple-input plan"),
+        }
+    }
+
+    /// Helper: clone ExtContext with new input and contexts
+    fn clone_with_contexts(&self, new_input: Arc<DslPlan>, new_contexts: Vec<DslPlan>) -> Self {
+        use DslPlan::*;
+        match self {
+            ExtContext { .. } => ExtContext {
+                input: new_input,
+                contexts: new_contexts,
+            },
+            _ => unreachable!("clone_with_contexts called on non-ExtContext plan"),
         }
     }
 
@@ -546,6 +553,56 @@ impl DslPlan {
     /// The new_source should be a DslPlan representing the data source.
     pub fn apply_to_source(&self, new_source: DslPlan) -> Self {
         self.replace_root_source(new_source)
+    }
+
+    /// Get references to child input plans
+    fn inputs(&self) -> DslInputs {
+        use DslPlan::*;
+        match self {
+            Filter { input, .. }
+            | Cache { input, .. }
+            | Select { input, .. }
+            | GroupBy { input, .. }
+            | HStack { input, .. }
+            | MatchToSchema { input, .. }
+            | PipeWithSchema { input, .. }
+            | Distinct { input, .. }
+            | Sort { input, .. }
+            | Slice { input, .. }
+            | MapFunction { input, .. }
+            | Sink { input, .. } => DslInputs::Single(input.as_ref()),
+
+            Join {
+                input_left,
+                input_right,
+                ..
+            } => DslInputs::Double(input_left.as_ref(), input_right.as_ref()),
+
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => DslInputs::Double(input_left.as_ref(), input_right.as_ref()),
+
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
+                DslInputs::Multiple(inputs.as_slice())
+            }
+
+            ExtContext { input, contexts } => DslInputs::WithContexts {
+                input: input.as_ref(),
+                contexts: contexts.as_slice(),
+            },
+
+            IR { dsl, .. } => DslInputs::Single(dsl.as_ref()),
+
+            // Source nodes
+            #[cfg(feature = "python")]
+            PythonScan { .. } | Scan { .. } | DataFrameScan { .. } => DslInputs::Empty,
+
+            #[cfg(not(feature = "python"))]
+            Scan { .. } | DataFrameScan { .. } => DslInputs::Empty,
+        }
     }
 
     #[cfg(feature = "dsl-schema")]
@@ -625,4 +682,17 @@ impl std::fmt::Display for SchemaHash<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+/// Helper enum for accessing input plans in a DslPlan
+#[derive(Debug)]
+enum DslInputs<'a> {
+    Empty,
+    Single(&'a DslPlan),
+    Double(&'a DslPlan, &'a DslPlan),
+    Multiple(&'a [DslPlan]),
+    WithContexts {
+        input: &'a DslPlan,
+        contexts: &'a [DslPlan],
+    },
 }
