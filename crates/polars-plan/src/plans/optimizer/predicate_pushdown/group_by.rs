@@ -37,12 +37,14 @@ pub(super) fn process_group_by(
     }
 
     // If the predicate only resolves to the keys we can push it down, on the condition
-    // that the keys are not modified from their original values.
+    // that the key values are not modified from their original values.
     // When it filters the aggregations, the predicate should be done after aggregation.
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
     let eligible_keys = keys
         .iter()
-        .filter(|&key| matches!(expr_arena.get(key.node()), AExpr::Column(_)))
+        .filter(
+            |&key| matches!(expr_arena.get(key.node()), AExpr::Column(c) if c == key.output_name()),
+        )
         .cloned()
         .collect::<Vec<_>>();
     let key_schema = aexprs_to_schema(

@@ -1218,6 +1218,17 @@ def test_no_predicate_pushdown_on_modified_groupby_keys_21439(
     expected = pl.DataFrame({"a": [2, 3]})
     assert_frame_equal(q.collect(), expected, check_row_order=maintain_order)
 
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    q = (
+        df.lazy()
+        .group_by([(pl.col.a + 1).alias("b"), pl.col.b.alias("a")], maintain_order=True)
+        .agg()
+        .filter(pl.col.b <= 2)
+        .select(pl.col.b)
+    )
+    expected = pl.DataFrame({"b": [2]})
+    assert_frame_equal(q.collect(), expected, check_row_order=maintain_order)
+
 
 def test_no_predicate_pushdown_on_modified_groupby_keys_21439b() -> None:
     df = pl.DataFrame(
