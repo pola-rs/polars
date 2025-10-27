@@ -16,8 +16,6 @@ use crate::utils::{check_input_node, has_aexpr};
 
 /// The struct is wrapped in a mod to prevent direct member access of `nodes_scratch`
 mod inner {
-    use std::u32;
-
     use polars_core::config::verbose;
     use polars_utils::arena::Node;
     use polars_utils::idx_vec::UnitVec;

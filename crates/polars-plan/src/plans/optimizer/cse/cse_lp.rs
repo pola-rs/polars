@@ -431,6 +431,7 @@ pub(crate) fn elim_cmn_subplans(
             if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
                 let (input_node, changed) = elim_cmn_subplans(*input, lp_arena, expr_arena);
 
+                // Ensure that the optimization is applied to (duplicate) all subgraphs
                 if changed {
                     let ir = lp_arena.get(input_node).clone();
 
