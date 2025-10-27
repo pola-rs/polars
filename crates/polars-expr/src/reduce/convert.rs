@@ -51,7 +51,9 @@ pub fn into_reduction(
             },
             IRAggExpr::First(input) => (new_first_reduction(get_dt(*input)?), *input),
             IRAggExpr::Last(input) => (new_last_reduction(get_dt(*input)?), *input),
-            IRAggExpr::Item(input) => (new_item_reduction(get_dt(*input)?), *input),
+            IRAggExpr::Item { input, allow_empty } => {
+                (new_item_reduction(get_dt(*input)?, *allow_empty), *input)
+            },
             IRAggExpr::Count {
                 input,
                 include_nulls,

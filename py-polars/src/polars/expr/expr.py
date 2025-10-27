@@ -3472,11 +3472,16 @@ class Expr:
         return wrap_expr(self._pyexpr.last())
 
     @unstable()
-    def item(self) -> Expr:
+    def item(self, *, allow_empty: bool = False) -> Expr:
         """
         Get the single value.
 
         This raises an error if there is not exactly one value.
+
+        Parameters
+        ----------
+        allow_empty
+            Allow having no values to return `null`.
 
         See Also
         --------
@@ -3499,8 +3504,17 @@ class Expr:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        >>> df.head(0).select(pl.col("a").item(allow_empty=True))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        └──────┘
         """  # noqa: W505
-        return wrap_expr(self._pyexpr.item())
+        return wrap_expr(self._pyexpr.item(allow_empty=allow_empty))
 
     def over(
         self,

@@ -48,7 +48,7 @@ macro_rules! push_expr {
                     NUnique(e) => $push($c, e),
                     First(e) => $push($c, e),
                     Last(e) => $push($c, e),
-                    Item(e) => $push($c, e),
+                    Item { input, .. } => $push($c, input),
                     Implode(e) => $push($c, e),
                     Count { input, .. } => $push($c, input),
                     Quantile { expr, .. } => $push($c, expr),
