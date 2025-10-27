@@ -1,6 +1,6 @@
 [build-system]
-requires = ["maturin>=1.3.2"]
-build-backend = "maturin"
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "polars"
@@ -9,6 +9,8 @@ readme = "README.md"
 authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
+# example: 1.35.0b1
+version = "1.35.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 
@@ -31,7 +33,8 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
-dynamic = ["version"]
+# example: 1.35.0b1
+dependencies = ["polars-runtime-32 == 1.35.0"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -39,11 +42,58 @@ Documentation = "https://docs.pola.rs/api/python/stable/reference/index.html"
 Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
-[tool.maturin]
-include = [{ path = "rust-toolchain.toml", format = "sdist" }, { path = "polars/**/*", format = ["sdist"] }]
+[project.optional-dependencies]
+# Runtimes
+# example: 1.35.0b1
+rt64 = ["polars-runtime-64 == 1.35.0"]
+rtcompat = ["polars-runtime-compat == 1.35.0"]
+
+# NOTE: keep this list in sync with show_versions() and requirements-dev.txt
+polars_cloud = ["polars_cloud >= 0.0.1a1"]
+# Interop
+numpy = ["numpy >= 1.16.0"]
+pandas = ["pandas", "polars[pyarrow]"]
+pyarrow = ["pyarrow >= 7.0.0"]
+pydantic = ["pydantic"]
+
+# Excel
+calamine = ["fastexcel >= 0.9"]
+openpyxl = ["openpyxl >= 3.0.0"]
+xlsx2csv = ["xlsx2csv >= 0.8.0"]
+xlsxwriter = ["xlsxwriter"]
+excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
+
+# Database
+adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
+connectorx = ["connectorx >= 0.3.2"]
+sqlalchemy = ["sqlalchemy", "polars[pandas]"]
+database = ["polars[adbc,connectorx,sqlalchemy]"]
+
+# Cloud
+fsspec = ["fsspec"]
+
+# Other I/O
+deltalake = ["deltalake >= 1.0.0"]
+iceberg = ["pyiceberg >= 0.7.1"]
+
+# Other
+async = ["gevent"]
+cloudpickle = ["cloudpickle"]
+graph = ["matplotlib"]
+plot = ["altair >= 5.4.0"]
+style = ["great-tables >= 0.8.0"]
+timezone = ["tzdata; platform_system == 'Windows'"]
+
+# GPU Engine
+gpu = ["cudf-polars-cu12"]
+
+# All
+all = [
+  "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
+]
 
 [tool.mypy]
-files = ["polars", "tests"]
+files = ["src/polars", "tests"]
 strict = true
 enable_error_code = [
   "redundant-expr",
@@ -114,6 +164,7 @@ select = [
   "B", # flake8-bugbear
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
+  "D417", # undocumented-param
   "E", # pycodestyle
   "EM", # flake8-errmsg
   "F", # pyflakes

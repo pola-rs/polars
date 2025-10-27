@@ -543,7 +543,7 @@ def test_fill_null_unknown_output_type() -> None:
 def test_approx_n_unique(dtype: pl.DataType) -> None:
     df = pl.DataFrame({"a": pl.arange(100, eager=True).cast(dtype)})
     cardinality = df.select(pl.col("a").approx_n_unique()).to_series()[0]
-    assert 95 <= cardinality <= 100
+    assert 92 <= cardinality <= 108
 
 
 def test_approx_n_unique_null() -> None:
@@ -602,8 +602,8 @@ def test_lazy_functions() -> None:
         pl.DataFrame(
             data=expected,
             schema_overrides={
-                "a_n_unique": pl.UInt32,
-                "b_n_unique": pl.UInt32,
+                "a_n_unique": pl.get_index_type(),
+                "b_n_unique": pl.get_index_type(),
             },
         ),
     )

@@ -136,6 +136,9 @@ pub fn is_input_independent_rec(
     }
 
     let ret = match arena.get(expr_key) {
+        // Handled separately in `Eval`.
+        AExpr::Element => unreachable!(),
+
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
             expr: inner,
@@ -280,6 +283,9 @@ pub fn is_length_preserving_rec(
     }
 
     let ret = match arena.get(expr_key) {
+        // Handled separately in `Eval`.
+        AExpr::Element => unreachable!(),
+
         AExpr::Gather { .. }
         | AExpr::Explode { .. }
         | AExpr::Filter { .. }
@@ -574,6 +580,9 @@ fn lower_exprs_with_ctx(
         }
 
         match ctx.expr_arena.get(expr).clone() {
+            // Handled separately in `Eval` expressions.
+            AExpr::Element => unreachable!(),
+
             AExpr::Explode {
                 expr: inner,
                 skip_empty,
@@ -1246,6 +1255,28 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: IRFunctionExpr::GatherEvery { n, offset },
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let value_key = unique_column_name();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::GatherEvery { input, n, offset };
+
+                let output_schema = ctx.phys_sm[input.node].output_schema.clone();
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: ref function @ (IRFunctionExpr::PeakMin | IRFunctionExpr::PeakMax),
                 options: _,
             } => {
@@ -1435,7 +1466,10 @@ fn lower_exprs_with_ctx(
                 evaluation,
                 variant,
             } => match variant {
-                EvalVariant::List => {
+                EvalVariant::List
+                | EvalVariant::ListAgg
+                | EvalVariant::Array { as_list: _ }
+                | EvalVariant::ArrayAgg => {
                     let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                     let eval_expr = AExpr::Eval {
                         expr: trans_expr[0],
@@ -1627,6 +1661,7 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::Last(_)
+                | IRAggExpr::Item(_)
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Var { .. }
@@ -1701,11 +1736,22 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(trans_expr);
             },
 
+            #[cfg(feature = "approx_unique")]
+            AExpr::Function {
+                function: IRFunctionExpr::ApproxNUnique,
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
+
             AExpr::Function {
                 function:
                     IRFunctionExpr::Boolean(
                         IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
-                    ),
+                    )
+                    | IRFunctionExpr::NullCount,
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
@@ -1816,6 +1862,33 @@ fn lower_exprs_with_ctx(
                     },
                 ));
 
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            #[cfg(feature = "ewma")]
+            AExpr::Function {
+                input: input_exprs,
+                function: IRFunctionExpr::EwmMean { options },
+                options: _,
+            } => {
+                let out_name = unique_column_name();
+
+                let input = match input_exprs.as_slice() {
+                    [input_expr] => build_select_stream_with_ctx(
+                        input,
+                        &[input_expr.with_alias(out_name.clone())],
+                        ctx,
+                    )?,
+                    _ => panic!("{:?}", input_exprs),
+                };
+
+                let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+                assert_eq!(input_schema.len(), 1);
+                let output_schema = input_schema;
+
+                let kind = PhysNodeKind::EwmMean { input, options };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },

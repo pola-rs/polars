@@ -30,6 +30,7 @@ use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::execute::StreamingExecutionState;
+use crate::nodes::io_sinks::SendBufferedMorsel;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
 use crate::utils::task_handles_ext::AbortOnDropHandle;
@@ -63,6 +64,7 @@ impl ParquetSinkNode {
         collect_metrics: bool,
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
+        // insert here
         let column_options: Vec<ColumnWriteOptions> =
             get_column_write_options(&schema, &write_options.field_overwrites);
         let parquet_schema = to_parquet_schema(&schema, &column_options)?;
@@ -204,7 +206,7 @@ impl SinkNode for ParquetSinkNode {
         // Buffer task.
         join_handles.push(buffer_and_distribute_columns_task(
             recv_port_rx,
-            dist_tx,
+            SendBufferedMorsel::Distributor(dist_tx),
             write_options
                 .row_group_size
                 .unwrap_or(DEFAULT_ROW_GROUP_SIZE),
@@ -229,6 +231,7 @@ impl SinkNode for ParquetSinkNode {
                             let column_options = &column_options[col_idx];
 
                             let array = column.as_materialized_series().rechunk();
+                            // insert here
                             let array = array.to_arrow(0, CompatLevel::newest());
 
                             // @TODO: This causes all structs fields to be handled on a single thread. It

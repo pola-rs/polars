@@ -105,9 +105,8 @@ impl Executor for JoinExec {
                             ComputeError: "cannot use month offset in timedelta of an asof join; \
                             consider using 4 weeks"
                         );
-                        let left_asof = df_left.column(left_on_series[0].name())?;
                         use DataType::*;
-                        match left_asof.dtype() {
+                        match left_on_series[0].dtype() {
                             Datetime(tu, _) | Duration(tu) => {
                                 let tolerance = match tu {
                                     TimeUnit::Nanoseconds => duration.duration_ns(),

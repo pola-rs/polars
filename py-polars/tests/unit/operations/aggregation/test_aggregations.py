@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -166,7 +168,7 @@ def test_literal_group_agg_chunked_7968() -> None:
         pl.DataFrame(
             [
                 pl.Series("A", [1], dtype=pl.Int64),
-                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.UInt32)),
+                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.get_index_type())),
             ]
         ),
     )
@@ -292,7 +294,9 @@ def test_horizontal_sum_null_to_identity() -> None:
 
 def test_horizontal_sum_bool_dtype() -> None:
     out = pl.DataFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
-    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.UInt32)}))
+    assert_frame_equal(
+        out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.get_index_type())})
+    )
 
 
 def test_horizontal_sum_in_group_by_15102() -> None:
@@ -315,8 +319,8 @@ def test_horizontal_sum_in_group_by_15102() -> None:
         out,
         pl.DataFrame(
             {
-                "num_null": pl.Series([0, 2, 3], dtype=pl.UInt32),
-                "len": pl.Series([nbr_records] * 3, dtype=pl.UInt32),
+                "num_null": pl.Series([0, 2, 3], dtype=pl.get_index_type()),
+                "len": pl.Series([nbr_records] * 3, dtype=pl.get_index_type()),
             }
         ),
     )
@@ -522,7 +526,7 @@ def test_horizontal_mean_in_group_by_15115() -> None:
         pl.DataFrame(
             {
                 "mean_null": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
-                "len": pl.Series([nbr_records] * 4, dtype=pl.UInt32),
+                "len": pl.Series([nbr_records] * 4, dtype=pl.get_index_type()),
             }
         ),
     )
@@ -937,3 +941,77 @@ def test_invalid_agg_dtypes_should_raise(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
         df.lazy().select(expr).collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        excluded_dtypes=[
+            # TODO: polars/#24936
+            pl.Struct,
+        ],
+    )
+)
+def test_single(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).item())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+@given(df=dataframes(max_size=0))
+def test_single_empty(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all().item())
+    match = "aggregation 'item' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(df=dataframes(min_size=2))
+def test_item_too_many(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).item())
+    match = f"aggregation 'item' expected a single value, got {df.height} values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        allow_null=False,
+        excluded_dtypes=[
+            # TODO: polars/#24936
+            pl.Struct,
+        ],
+    )
+)
+def test_item_on_groups(df: pl.DataFrame) -> None:
+    df = df.with_columns(pl.col("col0").alias("key"))
+    q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).item())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+def test_item_on_groups_empty() -> None:
+    df = pl.DataFrame({"col0": [[]]})
+    q = df.lazy().select(pl.all().list.item())
+    match = "aggregation 'item' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+def test_item_on_groups_too_many() -> None:
+    df = pl.DataFrame({"col0": [[1, 2, 3]]})
+    q = df.lazy().select(pl.all().list.item())
+    match = "aggregation 'item' expected a single value, got 3 values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")

@@ -143,6 +143,7 @@ impl Hash for HashableEqLP<'_> {
                 file_info: _,
                 hive_parts: _,
                 predicate,
+                predicate_file_skip_applied: _,
                 output_schema: _,
                 scan_type,
                 unified_scan_args,
@@ -373,6 +374,7 @@ impl HashableEqLP<'_> {
                     file_info: _,
                     hive_parts: _,
                     predicate: pred_l,
+                    predicate_file_skip_applied: _,
                     output_schema: _,
                     scan_type: stl,
                     unified_scan_args: ol,
@@ -382,6 +384,7 @@ impl HashableEqLP<'_> {
                     file_info: _,
                     hive_parts: _,
                     predicate: pred_r,
+                    predicate_file_skip_applied: _,
                     output_schema: _,
                     scan_type: str,
                     unified_scan_args: or,
@@ -490,7 +493,8 @@ impl HashableEqLP<'_> {
                     options: or,
                 },
             ) => {
-                ol == or
+                ol.args == or.args
+                    && ol.options == or.options
                     && expr_irs_eq(ll, lr, self.expr_arena)
                     && expr_irs_eq(rl, rr, self.expr_arena)
             },
@@ -569,6 +573,12 @@ impl HashableEqLP<'_> {
                         l == r
                     })
             },
+            (IR::Cache { .. }, IR::Cache { .. }) => false,
+            (IR::Sink { .. }, IR::Sink { .. }) => false,
+            (IR::SinkMultiple { .. }, IR::SinkMultiple { .. }) => false,
+            (IR::Invalid, IR::Invalid) => unreachable!(),
+            #[cfg(feature = "merge_sorted")]
+            (IR::MergeSorted { key: l, .. }, IR::MergeSorted { key: r, .. }) => l == r,
             _ => false,
         }
     }

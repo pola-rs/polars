@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::BitmapBuilder;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
 use polars_compute::rolling::QuantileMethod;
@@ -759,7 +759,7 @@ impl Column {
                     &GroupsType::Slice {
                         // @NOTE: this group is always valid since s is non-empty.
                         groups: vec![[0, 1]],
-                        rolling: false,
+                        overlapping: false,
                     },
                 );
 
@@ -934,21 +934,21 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_and(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_and(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_and(g) })
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_or(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_or(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_or(g) })
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_xor(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_xor(&self, groups: &GroupsType) -> Self {
         // @partition-opt
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_xor(groups) }.into()
@@ -1902,6 +1902,17 @@ impl Column {
         self.as_materialized_series()
             .propagate_nulls()
             .map(Column::from)
+    }
+
+    pub fn deposit(&self, validity: &Bitmap) -> Column {
+        self.as_materialized_series()
+            .deposit(validity)
+            .into_column()
+    }
+
+    pub fn rechunk_validity(&self) -> Option<Bitmap> {
+        // @scalar-opt
+        self.as_materialized_series().rechunk_validity()
     }
 }
 

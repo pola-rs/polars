@@ -12,6 +12,7 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
+            Element => f.write_str("element()"),
             Window {
                 function,
                 partition_by,
@@ -112,6 +113,7 @@ impl fmt::Debug for Expr {
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
                     Last(expr) => write!(f, "{expr:?}.last()"),
+                    Item(expr) => write!(f, "{expr:?}.item()"),
                     Implode(expr) => write!(f, "{expr:?}.list()"),
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
@@ -178,6 +180,14 @@ impl fmt::Debug for Expr {
                 variant,
             } => match variant {
                 EvalVariant::List => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                EvalVariant::ListAgg => write!(f, "{input:?}.list.agg({evaluation:?})"),
+                EvalVariant::Array { as_list: false } => {
+                    write!(f, "{input:?}.arr.eval({evaluation:?})")
+                },
+                EvalVariant::Array { as_list: true } => {
+                    write!(f, "{input:?}.arr.eval({evaluation:?}, as_list=true)")
+                },
+                EvalVariant::ArrayAgg => write!(f, "{input:?}.arr.agg({evaluation:?})"),
                 EvalVariant::Cumulative { min_samples } => write!(
                     f,
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
@@ -195,6 +205,19 @@ impl fmt::Debug for Expr {
                 RenameAliasFn::ToLowercase => write!(f, "{expr:?}.name.to_lowercase()"),
                 RenameAliasFn::ToUppercase => write!(f, "{expr:?}.name.to_uppercase()"),
                 RenameAliasFn::Map(_) => write!(f, "{expr:?}.name.map()"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: false,
+                } => write!(f, "{expr:?}.replace(\"{pattern}\", \"{value}\")"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: true,
+                } => write!(
+                    f,
+                    "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
+                ),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]

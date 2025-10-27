@@ -1209,7 +1209,7 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
         },
         DateTimeField::Time => expr.dt().time(),
         #[cfg(feature = "timezones")]
-        DateTimeField::Timezone => expr.dt().base_utc_offset().dt().total_seconds(),
+        DateTimeField::Timezone => expr.dt().base_utc_offset().dt().total_seconds(false),
         DateTimeField::Epoch => {
             expr.clone()
                 .dt()

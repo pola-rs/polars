@@ -87,7 +87,9 @@ impl Hash for JoinTypeOptionsIR {
         match self {
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => opt.hash(state),
-            CrossAndFilter { predicate } => predicate.node().hash(state),
+            CrossAndFilter { predicate } => {
+                predicate.node().hash(state);
+            },
         }
     }
 }
@@ -365,7 +367,7 @@ pub struct AnonymousScanOptions {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),

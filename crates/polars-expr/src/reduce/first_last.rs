@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use polars_core::frame::row::AnyValueBufferTrusted;
@@ -14,6 +15,10 @@ pub fn new_last_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     new_reduction_with_policy::<Last>(dtype)
 }
 
+pub fn new_item_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
+    new_reduction_with_policy::<Item>(dtype)
+}
+
 fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn GroupedReduction> {
     use DataType::*;
     use VecGroupedReduction as VGR;
@@ -22,7 +27,11 @@ fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn Gr
             dtype,
             BoolFirstLastReducer::<P>(PhantomData),
         )),
-        _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
+        _ if dtype.is_primitive_numeric()
+            || dtype.is_temporal()
+            || dtype.is_decimal()
+            || dtype.is_categorical() =>
+        {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VGR::new(dtype, NumFirstLastReducer::<P, $T>(PhantomData)))
             })
@@ -38,6 +47,9 @@ fn new_reduction_with_policy<P: Policy + 'static>(dtype: DataType) -> Box<dyn Gr
 trait Policy: Send + Sync + 'static {
     fn index(len: usize) -> usize;
     fn should_replace(new: u64, old: u64) -> bool;
+    fn is_item_policy() -> bool {
+        false
+    }
 }
 
 struct First;
@@ -64,9 +76,8 @@ impl Policy for Last {
     }
 }
 
-#[allow(dead_code)]
-struct Arbitrary;
-impl Policy for Arbitrary {
+struct Item;
+impl Policy for Item {
     fn index(_len: usize) -> usize {
         0
     }
@@ -74,9 +85,20 @@ impl Policy for Arbitrary {
     fn should_replace(_new: u64, old: u64) -> bool {
         old == 0
     }
+
+    fn is_item_policy() -> bool {
+        true
+    }
 }
 
 struct NumFirstLastReducer<P, T>(PhantomData<(P, T)>);
+
+#[derive(Clone, Debug, Default)]
+struct Value<T: Clone> {
+    value: Option<T>,
+    seq: u64,
+    count: u64,
+}
 
 impl<P, T> Clone for NumFirstLastReducer<P, T> {
     fn clone(&self) -> Self {
@@ -90,10 +112,10 @@ where
     T: PolarsNumericType,
 {
     type Dtype = T;
-    type Value = (Option<T::Native>, u64);
+    type Value = Value<T::Native>;
 
     fn init(&self) -> Self::Value {
-        (None, 0)
+        Value::default()
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -101,22 +123,28 @@ where
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        if P::should_replace(b.1, a.1) {
-            *a = *b;
+        if P::should_replace(b.seq, a.seq) {
+            a.value = b.value;
+            a.seq = b.seq;
         }
+        a.count += b.count;
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, seq_id: u64) {
-        if P::should_replace(seq_id, a.1) {
-            *a = (b, seq_id);
+        if P::should_replace(seq_id, a.seq) {
+            a.value = b;
+            a.seq = seq_id;
         }
+        a.count += b.is_some() as u64;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
-        if !ca.is_empty() && P::should_replace(seq_id, v.1) {
+        if !ca.is_empty() && P::should_replace(seq_id, v.seq) {
             let val = ca.get(P::index(ca.len()));
-            *v = (val, seq_id);
+            v.value = val;
+            v.seq = seq_id;
         }
+        v.count += ca.len() as u64;
     }
 
     fn finish(
@@ -126,8 +154,15 @@ where
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        let ca: ChunkedArray<T> = v.into_iter().map(|(x, _s)| x).collect_ca(PlSmallStr::EMPTY);
-        ca.into_series().cast(dtype)
+        if P::is_item_policy() {
+            check_item_count_is_one(&v)?;
+        }
+        let ca: ChunkedArray<T> = v
+            .into_iter()
+            .map(|red_val| red_val.value)
+            .collect_ca(PlSmallStr::EMPTY);
+        let s = ca.into_series();
+        unsafe { s.from_physical_unchecked(dtype) }
     }
 }
 
@@ -154,10 +189,10 @@ where
     P: Policy,
 {
     type Dtype = BinaryType;
-    type Value = (Option<Vec<u8>>, u64);
+    type Value = Value<Vec<u8>>;
 
     fn init(&self) -> Self::Value {
-        (None, 0)
+        Value::default()
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -165,24 +200,27 @@ where
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        if P::should_replace(b.1, a.1) {
-            a.0.clone_from(&b.0);
-            a.1 = b.1;
+        if P::should_replace(b.seq, a.seq) {
+            a.value.clone_from(&b.value);
+            a.seq = b.seq;
         }
+        a.count += b.count;
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>, seq_id: u64) {
-        if P::should_replace(seq_id, a.1) {
-            replace_opt_bytes(&mut a.0, b);
-            a.1 = seq_id;
+        if P::should_replace(seq_id, a.seq) {
+            replace_opt_bytes(&mut a.value, b);
+            a.seq = seq_id;
         }
+        a.count += b.is_some() as u64;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
-        if !ca.is_empty() && P::should_replace(seq_id, v.1) {
-            replace_opt_bytes(&mut v.0, ca.get(P::index(ca.len())));
-            v.1 = seq_id;
+        if !ca.is_empty() && P::should_replace(seq_id, v.seq) {
+            replace_opt_bytes(&mut v.value, ca.get(P::index(ca.len())));
+            v.seq = seq_id;
         }
+        v.count += ca.len() as u64;
     }
 
     fn finish(
@@ -192,7 +230,13 @@ where
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        let ca: BinaryChunked = v.into_iter().map(|(x, _s)| x).collect_ca(PlSmallStr::EMPTY);
+        if P::is_item_policy() {
+            check_item_count_is_one(&v)?;
+        }
+        let ca: BinaryChunked = v
+            .into_iter()
+            .map(|Value { value, .. }| value)
+            .collect_ca(PlSmallStr::EMPTY);
         ca.into_series().cast(dtype)
     }
 }
@@ -210,30 +254,34 @@ where
     P: Policy,
 {
     type Dtype = BooleanType;
-    type Value = (Option<bool>, u64);
+    type Value = Value<bool>;
 
     fn init(&self) -> Self::Value {
-        (None, 0)
+        Value::default()
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        if P::should_replace(b.1, a.1) {
-            *a = *b;
+        if P::should_replace(b.seq, a.seq) {
+            a.value = b.value;
+            a.seq = b.seq;
         }
+        a.count += b.count;
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>, seq_id: u64) {
-        if P::should_replace(seq_id, a.1) {
-            a.0 = b;
-            a.1 = seq_id;
+        if P::should_replace(seq_id, a.seq) {
+            a.value = b;
+            a.seq = seq_id;
         }
+        a.count += b.is_some() as u64;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
-        if !ca.is_empty() && P::should_replace(seq_id, v.1) {
-            v.0 = ca.get(P::index(ca.len()));
-            v.1 = seq_id;
+        if !ca.is_empty() && P::should_replace(seq_id, v.seq) {
+            v.value = ca.get(P::index(ca.len()));
+            v.seq = seq_id;
         }
+        v.count += ca.len() as u64;
     }
 
     fn finish(
@@ -243,7 +291,13 @@ where
         _dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
-        let ca: BooleanChunked = v.into_iter().map(|(x, _s)| x).collect_ca(PlSmallStr::EMPTY);
+        if P::is_item_policy() {
+            check_item_count_is_one(&v)?;
+        }
+        let ca: BooleanChunked = v
+            .into_iter()
+            .map(|Value { value, .. }| value)
+            .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }
 }
@@ -252,8 +306,10 @@ pub struct GenericFirstLastGroupedReduction<P> {
     in_dtype: DataType,
     values: Vec<AnyValue<'static>>,
     seqs: Vec<u64>,
+    counts: Vec<u64>,
     evicted_values: Vec<AnyValue<'static>>,
     evicted_seqs: Vec<u64>,
+    evicted_counts: Vec<u64>,
     policy: PhantomData<fn() -> P>,
 }
 
@@ -263,8 +319,10 @@ impl<P> GenericFirstLastGroupedReduction<P> {
             in_dtype,
             values: Vec::new(),
             seqs: Vec::new(),
+            counts: Vec::new(),
             evicted_values: Vec::new(),
             evicted_seqs: Vec::new(),
+            evicted_counts: Vec::new(),
             policy: PhantomData,
         }
     }
@@ -278,11 +336,13 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
     fn reserve(&mut self, additional: usize) {
         self.values.reserve(additional);
         self.seqs.reserve(additional);
+        self.counts.reserve(additional);
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, AnyValue::Null);
         self.seqs.resize(num_groups as usize, 0);
+        self.counts.resize(num_groups as usize, 0);
     }
 
     fn update_group(
@@ -291,12 +351,14 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.in_dtype);
         if !values.is_empty() {
             let seq_id = seq_id + 1; // We use 0 for 'no value'.
             if P::should_replace(seq_id, self.seqs[group_idx as usize]) {
                 self.values[group_idx as usize] = values.get(P::index(values.len()))?.into_static();
                 self.seqs[group_idx as usize] = seq_id;
             }
+            self.counts[group_idx as usize] += values.len() as u64;
         }
         Ok(())
     }
@@ -308,19 +370,24 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.in_dtype);
+        assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // We use 0 for 'no value'.
         for (i, g) in subset.iter().zip(group_idxs) {
             let grp_val = self.values.get_unchecked_mut(g.idx());
             let grp_seq = self.seqs.get_unchecked_mut(g.idx());
+            let grp_count = self.counts.get_unchecked_mut(g.idx());
             if g.should_evict() {
                 self.evicted_values
                     .push(core::mem::replace(grp_val, AnyValue::Null));
                 self.evicted_seqs.push(core::mem::replace(grp_seq, 0));
+                self.evicted_counts.push(core::mem::replace(grp_count, 0));
             }
             if P::should_replace(seq_id, *grp_seq) {
                 *grp_val = values.get_unchecked(*i as usize).into_static();
                 *grp_seq = seq_id;
             }
+            *self.counts.get_unchecked_mut(g.idx()) += 1;
         }
         Ok(())
     }
@@ -332,6 +399,8 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idxs: &[IdxSize],
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.in_dtype == other.in_dtype);
+        assert!(subset.len() == group_idxs.len());
         for (i, g) in group_idxs.iter().enumerate() {
             let si = *subset.get_unchecked(i) as usize;
             if P::should_replace(
@@ -342,6 +411,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                     other.values.get_unchecked(si).clone();
                 *self.seqs.get_unchecked_mut(*g as usize) = *other.seqs.get_unchecked(si);
             }
+            *self.counts.get_unchecked_mut(*g as usize) += *other.counts.get_unchecked(si);
         }
         Ok(())
     }
@@ -351,14 +421,21 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
             in_dtype: self.in_dtype.clone(),
             values: core::mem::take(&mut self.evicted_values),
             seqs: core::mem::take(&mut self.evicted_seqs),
+            counts: core::mem::take(&mut self.evicted_counts),
             evicted_values: Vec::new(),
             evicted_seqs: Vec::new(),
+            evicted_counts: Vec::new(),
             policy: PhantomData,
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         self.seqs.clear();
+        if P::is_item_policy() {
+            for count in self.counts.iter() {
+                polars_ensure!(*count == 1, item_agg_count_not_one = *count);
+            }
+        }
         unsafe {
             let mut buf = AnyValueBufferTrusted::new(&self.in_dtype, self.values.len());
             for v in core::mem::take(&mut self.values) {
@@ -371,4 +448,11 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
+
+fn check_item_count_is_one<T: Clone>(v: &[Value<T>]) -> PolarsResult<()> {
+    if let Some(Value { count: n, .. }) = v.iter().find(|v| v.count != 1) {
+        polars_bail!(item_agg_count_not_one = *n);
+    }
+    Ok(())
 }

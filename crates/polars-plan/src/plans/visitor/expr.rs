@@ -60,6 +60,7 @@ impl TreeWalker for Expr {
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
                 Last(x) => Last(am(x, f)?),
+                Item(x) => Item(am(x, f)?),
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
                 Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
@@ -79,6 +80,7 @@ impl TreeWalker for Expr {
             },
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
             KeepName(expr) => KeepName(am(expr, f)?),
+            Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
             AnonymousFunction { input, function, options, fmt_str } => {

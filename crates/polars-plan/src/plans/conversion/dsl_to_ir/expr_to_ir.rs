@@ -1,5 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
+use crate::constants::PL_ELEMENT_NAME;
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -120,6 +121,7 @@ pub(super) fn to_aexpr_impl(
     }
 
     let (v, output_name) = match expr {
+        Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
         Expr::Explode { input, skip_empty } => {
             let (expr, output_name) = recurse_arc!(input)?;
             (AExpr::Explode { expr, skip_empty }, output_name)
@@ -250,6 +252,10 @@ pub(super) fn to_aexpr_impl(
                 AggExpr::Last(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Last(input), output_name)
+                },
+                AggExpr::Item(input) => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::Item(input), output_name)
                 },
                 AggExpr::Mean(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
@@ -418,16 +424,16 @@ pub(super) fn to_aexpr_impl(
 
             // Perform this before schema resolution so that we can better error messages.
             for e in evaluation.as_ref().into_iter() {
-                if let Expr::Column(name) = e {
-                    polars_ensure!(
-                        name.is_empty(),
+                if matches!(e, Expr::Column(_)) {
+                    polars_bail!(
                         ComputeError:
                         "named columns are not allowed in `eval` functions; consider using `element`"
                     );
                 }
             }
 
-            let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let mut evaluation_schema = ctx.schema.clone();
+            evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
                 with_fields: None,
                 schema: &evaluation_schema,
@@ -438,7 +444,14 @@ pub(super) fn to_aexpr_impl(
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 
             match variant {
-                EvalVariant::List => {},
+                EvalVariant::List | EvalVariant::ListAgg => {},
+                EvalVariant::Array { as_list } => {
+                    polars_ensure!(
+                        as_list || is_length_preserving_ae(evaluation, ctx.arena),
+                        InvalidOperation: "`array.eval` is not allowed with non-length preserving expressions. Enable `as_list` if you want to output a variable amount of items per row."
+                    )
+                },
+                EvalVariant::ArrayAgg => {},
                 EvalVariant::Cumulative { .. } => {
                     polars_ensure!(
                         is_scalar_ae(evaluation, ctx.arena),

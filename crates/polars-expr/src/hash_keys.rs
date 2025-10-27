@@ -90,7 +90,6 @@ macro_rules! downcast_single_key_ca {
         }
     }}
 }
-pub(crate) use downcast_single_key_ca;
 
 /// Represents a DataFrame plus a hash per row, intended for keys in grouping
 /// or joining. The hashes may or may not actually be physically pre-computed,
@@ -400,7 +399,7 @@ impl SingleKeys {
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         Self {
-            random_state: self.random_state,
+            random_state: self.random_state.clone(),
             keys: self.keys.take_slice_unchecked(idxs),
             null_is_valid: self.null_is_valid,
         }

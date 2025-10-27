@@ -219,7 +219,7 @@ impl PySeries {
 
         // Fall back to Object type for non-strict construction.
         if !strict && result.is_err() {
-            return Python::with_gil(|py| {
+            return Python::attach(|py| {
                 let objects = values
                     .try_iter()?
                     .map(|v| v?.extract())
@@ -242,8 +242,8 @@ impl PySeries {
         let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(
-                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-            ))
+                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                ))
             })?;
         Ok(s.into())
     }

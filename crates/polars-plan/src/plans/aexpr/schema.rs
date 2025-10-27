@@ -4,6 +4,7 @@ use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
+use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
@@ -25,28 +26,6 @@ impl AExpr {
         self.to_field(ctx).map(|f| f.dtype)
     }
 
-    /// Get Field result of the expression. The schema is the input data. The provided
-    /// context will be used to coerce the type into a List if needed, also known as auto-implode.
-    pub fn to_field_with_ctx(
-        &self,
-        agg_ctx: Context,
-        ctx: &ToFieldContext<'_>,
-    ) -> PolarsResult<Field> {
-        // Indicates whether we should auto-implode the result. This is initialized to true if we are
-        // in an aggregation context, so functions that return scalars should explicitly set this
-        // to false in `to_field_impl`.
-        let agg_list = matches!(agg_ctx, Context::Aggregation);
-        let mut field = self.to_field_impl(ctx)?;
-
-        if agg_list {
-            if !self.is_scalar(ctx.arena) {
-                field.coerce(field.dtype().clone().implode());
-            }
-        }
-
-        Ok(field)
-    }
-
     /// Get Field result of the expression. The schema is the input data. The result will
     /// not be coerced (also known as auto-implode): this is the responsibility of the caller.
     pub fn to_field(&self, ctx: &ToFieldContext<'_>) -> PolarsResult<Field> {
@@ -62,6 +41,11 @@ impl AExpr {
         use AExpr::*;
         use DataType::*;
         match self {
+            Element => ctx
+                .schema
+                .get_field(POLARS_ELEMENT)
+                .ok_or_else(|| polars_err!(invalid_element_use)),
+
             Len => Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE)),
             Window {
                 function,
@@ -155,7 +139,8 @@ impl AExpr {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
                     | First(expr)
-                    | Last(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
+                    | Last(expr)
+                    | Item(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
@@ -270,19 +255,17 @@ impl AExpr {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
 
                 let element_dtype = variant.element_dtype(field.dtype())?;
-                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
-
-                let ctx = ToFieldContext {
-                    schema: &schema,
-                    arena: ctx.arena,
-                };
-                let mut output_field = ctx.arena.get(*evaluation).to_field_impl(&ctx)?;
+                let mut evaluation_schema = ctx.schema.clone();
+                evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
+                let mut output_field = ctx
+                    .arena
+                    .get(*evaluation)
+                    .to_field_impl(&ToFieldContext::new(ctx.arena, &evaluation_schema))?;
                 output_field.dtype = output_field.dtype.materialize_unknown(false)?;
+                let eval_is_scalar = is_scalar_ae(*evaluation, ctx.arena);
 
-                output_field.dtype = match variant {
-                    EvalVariant::List => DataType::List(Box::new(output_field.dtype)),
-                    EvalVariant::Cumulative { .. } => output_field.dtype,
-                };
+                output_field.dtype =
+                    variant.output_dtype(field.dtype(), output_field.dtype, eval_is_scalar)?;
                 output_field.name = field.name;
 
                 Ok(output_field)
@@ -315,6 +298,7 @@ impl AExpr {
         use AExpr::*;
         use IRAggExpr::*;
         match self {
+            Element => PlSmallStr::EMPTY,
             Len => crate::constants::get_len_name(),
             Window {
                 function: expr,
@@ -336,6 +320,7 @@ impl AExpr {
             | Agg(Min { input: expr, .. })
             | Agg(First(expr))
             | Agg(Last(expr))
+            | Agg(Item(expr))
             | Agg(Sum(expr))
             | Agg(Median(expr))
             | Agg(Mean(expr))

@@ -31,21 +31,21 @@ pub struct Alias {
     #[pyo3(get)]
     expr: usize,
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
 pub struct Column {
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
 pub struct Literal {
     #[pyo3(get)]
-    value: PyObject,
+    value: Py<PyAny>,
     #[pyo3(get)]
-    dtype: PyObject,
+    dtype: Py<PyAny>,
 }
 
 #[pyclass(name = "Operator", eq, frozen)]
@@ -296,7 +296,7 @@ pub struct BinaryExpr {
     #[pyo3(get)]
     left: usize,
     #[pyo3(get)]
-    op: PyObject,
+    op: Py<PyAny>,
     #[pyo3(get)]
     right: usize,
 }
@@ -306,7 +306,7 @@ pub struct Cast {
     #[pyo3(get)]
     expr: usize,
     #[pyo3(get)]
-    dtype: PyObject,
+    dtype: Py<PyAny>,
     // 0: strict
     // 1: non-strict
     // 2: overflow
@@ -355,12 +355,12 @@ pub struct SortBy {
 #[pyclass(frozen)]
 pub struct Agg {
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
     #[pyo3(get)]
     arguments: Vec<usize>,
     #[pyo3(get)]
     // Arbitrary control options
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -378,9 +378,9 @@ pub struct Function {
     #[pyo3(get)]
     input: Vec<usize>,
     #[pyo3(get)]
-    function_data: PyObject,
+    function_data: Py<PyAny>,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -409,7 +409,7 @@ pub struct Window {
     #[pyo3(get)]
     order_by_nulls_last: bool,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(name = "WindowMapping", frozen)]
@@ -553,8 +553,9 @@ impl PyGroupbyOptions {
     }
 }
 
-pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
+pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
     match expr {
+        AExpr::Element => Err(PyNotImplementedError::new_err("element")),
         AExpr::Explode { .. } => Err(PyNotImplementedError::new_err("explode")),
         AExpr::Column(name) => Column {
             name: name.into_py_any(py)?,
@@ -562,7 +563,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py_any(py),
         AExpr::Literal(lit) => {
             use polars_core::prelude::AnyValue;
-            let dtype: PyObject = Wrap(lit.get_datatype()).into_py_any(py)?;
+            let dtype: Py<PyAny> = Wrap(lit.get_datatype()).into_py_any(py)?;
             let py_value = match lit {
                 LiteralValue::Dyn(d) => match d {
                     DynLiteralValue::Int(v) => v.into_py_any(py)?,
@@ -683,6 +684,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
+            IRAggExpr::Item(n) => Agg {
+                name: "item".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: py.None(),
+            },
             IRAggExpr::Mean(n) => Agg {
                 name: "mean".into_py_any(py)?,
                 arguments: vec![n.0],
@@ -767,6 +773,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("bitwise expr"));
                 },
                 IRFunctionExpr::StringExpr(strfun) => match strfun {
+                    IRStringFunction::Format { .. } => {
+                        return Err(PyNotImplementedError::new_err("bitwise expr"));
+                    },
                     IRStringFunction::ConcatHorizontal {
                         delimiter,
                         ignore_nulls,
@@ -977,26 +986,26 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRTemporalFunction::DaysInMonth => {
                         (PyTemporalFunction::DaysInMonth,).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalDays => {
-                        (PyTemporalFunction::TotalDays,).into_py_any(py)
+                    IRTemporalFunction::TotalDays { fractional } => {
+                        (PyTemporalFunction::TotalDays, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalHours => {
-                        (PyTemporalFunction::TotalHours,).into_py_any(py)
+                    IRTemporalFunction::TotalHours { fractional } => {
+                        (PyTemporalFunction::TotalHours, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMinutes => {
-                        (PyTemporalFunction::TotalMinutes,).into_py_any(py)
+                    IRTemporalFunction::TotalMinutes { fractional } => {
+                        (PyTemporalFunction::TotalMinutes, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalSeconds => {
-                        (PyTemporalFunction::TotalSeconds,).into_py_any(py)
+                    IRTemporalFunction::TotalSeconds { fractional } => {
+                        (PyTemporalFunction::TotalSeconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMilliseconds => {
-                        (PyTemporalFunction::TotalMilliseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalMilliseconds { fractional } => {
+                        (PyTemporalFunction::TotalMilliseconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMicroseconds => {
-                        (PyTemporalFunction::TotalMicroseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalMicroseconds { fractional } => {
+                        (PyTemporalFunction::TotalMicroseconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalNanoseconds => {
-                        (PyTemporalFunction::TotalNanoseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalNanoseconds { fractional } => {
+                        (PyTemporalFunction::TotalNanoseconds, fractional).into_py_any(py)
                     },
                     IRTemporalFunction::ToString(format) => {
                         (PyTemporalFunction::ToString, format).into_py_any(py)
@@ -1180,6 +1189,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRRollingFunctionBy::StdBy => {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
+                    IRRollingFunctionBy::RankBy => {
+                        return Err(PyNotImplementedError::new_err("rolling rank by"));
+                    },
                 },
                 IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::Append { upcast } => ("append", upcast).into_py_any(py),
@@ -1272,8 +1284,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
                 IRFunctionExpr::Ceil => ("ceil",).into_py_any(py),
-                IRFunctionExpr::UpperBound => ("upper_bound",).into_py_any(py),
-                IRFunctionExpr::LowerBound => ("lower_bound",).into_py_any(py),
                 IRFunctionExpr::Fused(_) => return Err(PyNotImplementedError::new_err("fused")),
                 IRFunctionExpr::ConcatExpr(_) => {
                     return Err(PyNotImplementedError::new_err("concat expr"));
@@ -1346,7 +1356,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 IRFunctionExpr::Negate => ("negate",).into_py_any(py),
                 IRFunctionExpr::FillNullWithStrategy(strategy) => {
-                    let (strategy_str, py_limit): (&str, PyObject) = match strategy {
+                    let (strategy_str, py_limit): (&str, Py<PyAny>) = match strategy {
                         FillNullStrategy::Forward(limit) => {
                             let py_limit = limit
                                 .map(|v| PyInt::new(py, v).into())

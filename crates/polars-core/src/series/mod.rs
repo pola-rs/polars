@@ -19,12 +19,17 @@ pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
 pub mod builder;
+#[cfg(feature = "dtype-categorical")]
+pub mod categorical_to_arrow;
 mod comparison;
 mod from;
 pub mod implementations;
 mod into;
+pub use into::ToArrowConverter;
 pub(crate) mod iterator;
 pub mod ops;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 mod series_trait;
 
 use std::borrow::Cow;

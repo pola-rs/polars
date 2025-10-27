@@ -14,7 +14,6 @@ use polars_utils::itertools::Itertools;
 use polars_utils::sparse_init_vec::SparseInitVec;
 
 use crate::async_executor;
-use crate::async_primitives::connector::{Receiver, Sender};
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
@@ -31,7 +30,7 @@ async fn select_keys(
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(
         &keys,
-        params.random_state,
+        params.random_state.clone(),
         params.nulls_equal,
         false,
     ))
@@ -123,7 +122,7 @@ impl BuildState {
     }
 
     async fn partition_and_sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         local: &mut LocalBuilder,
         partitioner: HashPartitioner,
         params: &SemiAntiJoinParams,
@@ -268,8 +267,8 @@ struct ProbeState {
 impl ProbeState {
     /// Returns the max morsel sequence sent.
     async fn partition_and_probe(
-        mut recv: Receiver<Morsel>,
-        mut send: Sender<Morsel>,
+        mut recv: PortReceiver,
+        mut send: PortSender,
         partitions: &[Box<dyn Grouper>],
         partitioner: HashPartitioner,
         params: &SemiAntiJoinParams,

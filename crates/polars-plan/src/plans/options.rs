@@ -120,14 +120,15 @@ bitflags!(
             /// NULLs on any input are propagated to the output.
             const PRESERVES_NULL_ALL_INPUTS = 1 << 9;
 
+            /// Indicates that this expression does not observe the ordering of its input(s).
+            const NON_ORDER_OBSERVING = 1 << 10;
 
-            /// Single-input expression is non-elementwise, but propagates the ordering the input.
-            const PROPAGATES_ORDER = 1 << 10;
-            /// The output of this expression has an undefined order.
-            const OUTPUT_UNORDERED = 1 << 11;
-            /// The expression is not sensitive to order of any of its inputs. Meaning that if any
-            /// of its inputs were individually shuffled, the output would be the same.
-            const INPUT_ORDER_AGNOSTIC = 1 << 12;
+            /// Indicates that the ordering of the inputs to this expression is not observable
+            /// in its output.
+            const TERMINATES_INPUT_ORDER = 1 << 11;
+
+            /// Indicates that this expression does not produce any ordering into its output.
+            const NON_ORDER_PRODUCING = 1 << 12;
         }
 );
 
@@ -148,16 +149,21 @@ impl FunctionFlags {
         self.contains(Self::LENGTH_PRESERVING)
     }
 
-    pub fn propagates_order(self) -> bool {
-        self.contains(Self::PROPAGATES_ORDER)
+    pub fn observes_input_order(self) -> bool {
+        let non_order_observing =
+            self.contains(Self::NON_ORDER_OBSERVING) | self.contains(Self::ROW_SEPARABLE);
+
+        !non_order_observing
     }
 
-    pub fn is_output_unordered(self) -> bool {
-        self.contains(Self::OUTPUT_UNORDERED)
+    pub fn terminates_input_order(self) -> bool {
+        self.contains(Self::TERMINATES_INPUT_ORDER) | self.contains(Self::RETURNS_SCALAR)
     }
 
-    pub fn is_input_order_agnostic(self) -> bool {
-        self.contains(Self::INPUT_ORDER_AGNOSTIC)
+    pub fn non_order_producing(self) -> bool {
+        self.contains(Self::NON_ORDER_PRODUCING)
+            | self.contains(Self::RETURNS_SCALAR)
+            | self.is_elementwise()
     }
 
     pub fn returns_scalar(self) -> bool {

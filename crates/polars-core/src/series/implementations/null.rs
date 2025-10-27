@@ -122,7 +122,7 @@ impl PrivateSeries for NullChunked {
         } else {
             GroupsType::Slice {
                 groups: vec![[0, self.length]],
-                rolling: false,
+                overlapping: false,
             }
         })
     }
@@ -210,6 +210,11 @@ impl SeriesTrait for NullChunked {
 
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
         NullChunked::new(self.name.clone(), indices.len()).into_series()
+    }
+
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        assert_eq!(validity.set_bits(), 0);
+        self.clone().into_series()
     }
 
     fn len(&self) -> usize {

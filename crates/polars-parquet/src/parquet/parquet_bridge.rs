@@ -247,17 +247,12 @@ impl From<Encoding> for ParquetEncoding {
 
 /// Enum to annotate whether lists of min/max elements inside ColumnIndex
 /// are ordered and if so, in which direction.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Default)]
 pub enum BoundaryOrder {
+    #[default]
     Unordered,
     Ascending,
     Descending,
-}
-
-impl Default for BoundaryOrder {
-    fn default() -> Self {
-        Self::Unordered
-    }
 }
 
 impl TryFrom<ParquetBoundaryOrder> for BoundaryOrder {

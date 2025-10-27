@@ -9,9 +9,9 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 
-use super::expr_pushdown::{adjust_for_with_columns_context, get_frame_observing, zip};
+use super::expr_pushdown::{adjust_for_with_columns_context, resolve_observable_orders, zip};
 use crate::dsl::{PartitionVariantIR, SinkTypeIR, UnionOptions};
-use crate::plans::set_order::expr_pushdown::FrameOrderObserved;
+use crate::plans::set_order::expr_pushdown::ColumnOrderObserved;
 use crate::plans::{AExpr, IR, is_scalar_ae};
 
 pub(super) fn pushdown_orders(
@@ -91,7 +91,7 @@ pub(super) fn pushdown_orders(
                 let is_order_observing = sort_options.maintain_order || {
                     adjust_for_with_columns_context(zip(by_column
                         .iter()
-                        .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena))))
+                        .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena))))
                     .is_err()
                 };
                 [is_order_observing].into()
@@ -120,7 +120,9 @@ pub(super) fn pushdown_orders(
                         let expr_observing = adjust_for_with_columns_context(zip(keys
                             .iter()
                             .chain(aggs.iter())
-                            .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena))))
+                            .map(|e| {
+                                resolve_observable_orders(expr_arena.get(e.node()), expr_arena)
+                            })))
                         .is_err();
 
                         expr_observing
@@ -209,7 +211,7 @@ pub(super) fn pushdown_orders(
             },
             IR::MapFunction { input: _, function } => {
                 let is_order_observing = (function.has_equal_order() && !all_outputs_unordered)
-                    || !function.is_input_order_agnostic();
+                    || function.observes_input_order();
                 [is_order_observing].into()
             },
             IR::SimpleProjection { .. } => [!all_outputs_unordered].into(),
@@ -218,7 +220,7 @@ pub(super) fn pushdown_orders(
                 let input = *input;
                 let mut observing = zip(exprs
                     .iter()
-                    .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena)));
+                    .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena)));
 
                 let input_schema = ir_arena.get(input).schema(ir_arena).as_ref().clone();
                 ir = ir_arena.get_mut(node);
@@ -236,18 +238,18 @@ pub(super) fn pushdown_orders(
                 }
 
                 let is_order_observing = match observing {
-                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
-                    Err(FrameOrderObserved) => true,
+                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
+                    Err(ColumnOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },
             IR::Select { expr: exprs, .. } => {
                 let observing = zip(exprs
                     .iter()
-                    .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena)));
+                    .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena)));
                 let is_order_observing = match observing {
-                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
-                    Err(FrameOrderObserved) => true,
+                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
+                    Err(ColumnOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },
@@ -256,13 +258,13 @@ pub(super) fn pushdown_orders(
                 input: _,
                 predicate,
             } => {
-                let observing = adjust_for_with_columns_context(get_frame_observing(
+                let observing = adjust_for_with_columns_context(resolve_observable_orders(
                     expr_arena.get(predicate.node()),
                     expr_arena,
                 ));
                 let is_order_observing = match observing {
-                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
-                    Err(FrameOrderObserved) => true,
+                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
+                    Err(ColumnOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },
@@ -294,7 +296,7 @@ pub(super) fn pushdown_orders(
                             PartitionVariantIR::Parted { .. } => true,
                             PartitionVariantIR::ByKey { key_exprs, .. } => {
                                 adjust_for_with_columns_context(zip(key_exprs.iter().map(|e| {
-                                    get_frame_observing(expr_arena.get(e.node()), expr_arena)
+                                    resolve_observable_orders(expr_arena.get(e.node()), expr_arena)
                                 })))
                                 .is_err()
                             },

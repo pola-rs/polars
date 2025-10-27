@@ -24,6 +24,8 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
+#[cfg(feature = "physical_plan_visualization")]
+pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileType, PlanCallback};
@@ -78,7 +80,7 @@ pub struct PhysStream {
 }
 
 impl PhysStream {
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn new(node: PhysNodeKey, port: usize) -> Self {
         Self { node, port }
     }
@@ -228,6 +230,11 @@ pub enum PhysNodeKind {
     },
 
     // Parameter is the input stream
+    GatherEvery {
+        input: PhysStream,
+        n: usize,
+        offset: usize,
+    },
     Rle(PhysStream),
     RleId(PhysStream),
     PeakMinMax {
@@ -266,6 +273,7 @@ pub enum PhysNodeKind {
         row_index: Option<RowIndex>,
         pre_slice: Option<Slice>,
         predicate: Option<ExprIR>,
+        predicate_file_skip_applied: Option<bool>,
 
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
@@ -332,6 +340,12 @@ pub enum PhysNodeKind {
         input_left: PhysStream,
         input_right: PhysStream,
     },
+
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
 }
 
 fn visit_node_inputs_mut(
@@ -372,6 +386,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
+            | PhysNodeKind::GatherEvery { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. }
@@ -480,6 +495,12 @@ fn visit_node_inputs_mut(
                     rec!(*sink);
                     visit(&mut PhysStream::first(*sink));
                 }
+            },
+
+            #[cfg(feature = "ewma")]
+            PhysNodeKind::EwmMean { input, options: _ } => {
+                rec!(input.node);
+                visit(input)
             },
         }
     }

@@ -6,6 +6,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node).clone();
 
     match expr {
+        AExpr::Element => Expr::Element,
         AExpr::Explode { expr, skip_empty } => Expr::Explode {
             input: Arc::new(node_to_expr(expr, expr_arena)),
             skip_empty,
@@ -120,6 +121,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Last(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
+            },
+            IRAggExpr::Item(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::Item(Arc::new(exp)).into()
             },
             IRAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -383,6 +388,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::StringExpr(f) => {
             use {IRStringFunction as IB, StringFunction as B};
             F::StringExpr(match f {
+                IB::Format { format, insertions } => B::Format { format, insertions },
                 #[cfg(feature = "concat_str")]
                 IB::ConcatHorizontal {
                     delimiter,
@@ -535,19 +541,19 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Microsecond => B::Microsecond,
                 IB::Nanosecond => B::Nanosecond,
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalDays => B::TotalDays,
+                IB::TotalDays { fractional } => B::TotalDays { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalHours => B::TotalHours,
+                IB::TotalHours { fractional } => B::TotalHours { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalMinutes => B::TotalMinutes,
+                IB::TotalMinutes { fractional } => B::TotalMinutes { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalSeconds => B::TotalSeconds,
+                IB::TotalSeconds { fractional } => B::TotalSeconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalMilliseconds => B::TotalMilliseconds,
+                IB::TotalMilliseconds { fractional } => B::TotalMilliseconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalMicroseconds => B::TotalMicroseconds,
+                IB::TotalMicroseconds { fractional } => B::TotalMicroseconds { fractional },
                 #[cfg(feature = "dtype-duration")]
-                IB::TotalNanoseconds => B::TotalNanoseconds,
+                IB::TotalNanoseconds { fractional } => B::TotalNanoseconds { fractional },
                 IB::ToString(v) => B::ToString(v),
                 IB::CastTimeUnit(time_unit) => B::CastTimeUnit(time_unit),
                 IB::WithTimeUnit(time_unit) => B::WithTimeUnit(time_unit),
@@ -785,6 +791,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     IR::Quantile => R::Quantile,
                     IR::Var => R::Var,
                     IR::Std => R::Std,
+                    IR::Rank => R::Rank,
                     #[cfg(feature = "moment")]
                     IR::Skew => R::Skew,
                     #[cfg(feature = "moment")]
@@ -817,6 +824,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     IR::QuantileBy => R::QuantileBy,
                     IR::VarBy => R::VarBy,
                     IR::StdBy => R::StdBy,
+                    IR::RankBy => R::RankBy,
                 },
                 options,
             }
@@ -912,8 +920,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Floor => F::Floor,
         #[cfg(feature = "round_series")]
         IF::Ceil => F::Ceil,
-        IF::UpperBound => F::UpperBound,
-        IF::LowerBound => F::LowerBound,
         #[cfg(feature = "fused")]
         IF::Fused(f) => {
             assert_eq!(input.len(), 3);

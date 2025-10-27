@@ -3,7 +3,8 @@ pub mod allocator;
 
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
-pub static PYPOLARS_VERSION: &str = "1.34.0-beta.4";
+// example: 1.35.0-beta.1
+pub static PYPOLARS_VERSION: &str = "1.35.0";
 pub static RUNTIME_REPR: &str = "unknown";
 
 use pyo3::prelude::*;
@@ -183,6 +184,7 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::element)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::explain_all))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all_with_callback))

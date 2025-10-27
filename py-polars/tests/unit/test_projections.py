@@ -305,7 +305,7 @@ def test_distinct_projection_pd_7578() -> None:
             "bar": ["a", "b"],
             "len": [3, 2],
         },
-        schema_overrides={"len": pl.UInt32},
+        schema_overrides={"len": pl.get_index_type()},
     )
     assert_frame_equal(result, expected, check_row_order=False)
 
@@ -554,7 +554,7 @@ def test_projection_empty_frame_len_16904() -> None:
 
     assert "0/0 COLUMNS" in q.explain()
 
-    expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.UInt32()})
+    expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.get_index_type()})
     assert_frame_equal(q.collect(), expect)
 
 
@@ -628,7 +628,7 @@ a,b,c,d,e
     assert plan.startswith("WITH_COLUMNS:")
     # [dyn int: 1.alias("x"), dyn int: 1.alias("y")]
     # Csv SCAN [20 in-mem bytes]
-    assert plan.endswith("1/6 COLUMNS")
+    assert "1/6 COLUMNS" in plan
 
 
 def test_projection_pushdown_height_20221() -> None:

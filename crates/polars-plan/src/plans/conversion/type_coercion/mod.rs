@@ -354,6 +354,54 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            #[cfg(feature = "ewma")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::EwmMean {
+                        options: ewm_options,
+                    },
+                ref input,
+                options,
+            } => {
+                polars_ensure!(
+                    (0.0..=1.0).contains(&ewm_options.alpha),
+                    ComputeError: "alpha must be in [0; 1]"
+                );
+
+                let input_expr = match &input.as_slice() {
+                    &[first] => first,
+                    v => polars_bail!(
+                        ComputeError:
+                        "ewm_mean requires 1 input, got {} (input: {:?})",
+                        v.len(),
+                        v
+                    ),
+                };
+
+                let (_, dtype) = get_aexpr_and_type(expr_arena, input_expr.node(), schema).unwrap();
+
+                if dtype.is_float() {
+                    return Ok(None);
+                }
+
+                let input_expr = ExprIR::from_node(
+                    expr_arena.add(AExpr::Cast {
+                        expr: input_expr.node(),
+                        dtype: DataType::Float64,
+                        // FIXME: Non-strict to match legacy execution behavior, but should be strict.
+                        options: CastOptions::NonStrict,
+                    }),
+                    expr_arena,
+                );
+
+                Some(AExpr::Function {
+                    function: IRFunctionExpr::EwmMean {
+                        options: ewm_options,
+                    },
+                    input: vec![input_expr],
+                    options,
+                })
+            },
             // generic type coercion of any function.
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.
@@ -804,6 +852,34 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     )?;
                 }
 
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
+                ref input,
+                options,
+            } => {
+                let (_, type_input) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+
+                if matches!(type_input, DataType::Float64) {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let mut input = input.clone();
+                cast_expr_ir(
+                    &mut input[0],
+                    &type_input,
+                    &DataType::Float64,
+                    expr_arena,
+                    CastOptions::Strict,
+                )?;
                 Some(AExpr::Function {
                     function,
                     input,

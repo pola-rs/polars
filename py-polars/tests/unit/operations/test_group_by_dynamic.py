@@ -12,7 +12,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import Label, StartBy
+    from polars._typing import ClosedInterval, Label, StartBy
 
 
 @pytest.mark.parametrize(
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
                     ],
                     "num_points": [1, 2, 1],
                 },
-                schema={"dt": pl.Datetime, "num_points": pl.UInt32},
+                schema={"dt": pl.Datetime, "num_points": pl.get_index_type()},
             ).sort("dt"),
         )
     ],
@@ -597,7 +597,7 @@ def test_group_by_dynamic_when_conversion_crosses_dates_7274() -> None:
     expected = pl.DataFrame({"timestamp": [datetime(1970, 1, 1)], "value": [2]})
     expected = expected.with_columns(
         pl.col("timestamp").dt.replace_time_zone("Africa/Lagos"),
-        pl.col("value").cast(pl.UInt32),
+        pl.col("value").cast(pl.get_index_type()),
     )
     assert_frame_equal(result, expected)
     result = df.group_by_dynamic(
@@ -611,7 +611,7 @@ def test_group_by_dynamic_when_conversion_crosses_dates_7274() -> None:
     )
     expected = expected.with_columns(
         pl.col("timestamp_utc").dt.replace_time_zone("UTC"),
-        pl.col("value").cast(pl.UInt32),
+        pl.col("value").cast(pl.get_index_type()),
     )
     assert_frame_equal(result, expected)
 
@@ -1080,7 +1080,7 @@ def test_group_by_dynamic_single_row_22585() -> None:
     out = df.group_by_dynamic("date", every="1y", group_by=["group"]).agg(pl.len())
     expected = pl.DataFrame(
         {"group": ["x"], "date": [date(2025, 1, 1)], "len": [1]}
-    ).with_columns(pl.col("len").cast(pl.UInt32))
+    ).with_columns(pl.col("len").cast(pl.get_index_type()))
     assert_frame_equal(expected, out)
 
 
@@ -1131,3 +1131,125 @@ def test_group_by_dynamic_null_mean_22724() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_group_by_dynamic_ternary_cum_sum_with_agg_24566() -> None:
+    df = pl.DataFrame({"d": [10, 11, 12, 13, 14]}).with_row_index()
+
+    out = df.group_by_dynamic(index_column="d", period="3i", every="1i").agg(
+        pl.when(pl.col("d") >= pl.col("d"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last()
+    )
+
+    expected = pl.DataFrame({"d": [10, 11, 12, 13, 14], "index": [3, 6, 9, 7, 4]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("closed", "result"),
+    [
+        ("left", [0, 1, 2, 3, 4]),
+        ("both", [1, 3, 5, 7, 4]),
+    ],
+)
+def test_group_by_dynamic_closed_ternary_cum_sum_with_agg_24566(
+    closed: ClosedInterval, result: list[int]
+) -> None:
+    df = pl.DataFrame({"d": [10, 11, 12, 13, 14]}).with_row_index()
+
+    out = df.group_by_dynamic(
+        index_column="d", period="1i", every="1i", closed=closed
+    ).agg(
+        pl.when(pl.col("d") >= pl.col("d"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last()
+    )
+
+    expected = pl.DataFrame({"d": [10, 11, 12, 13, 14], "index": result})
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_dynamic_with_group_by_iter_24394() -> None:
+    df = pl.DataFrame(
+        {
+            "t": [0, 1, 2, 3],
+            "g": [10, 20, 10, 20],
+        }
+    )
+
+    groups_dynamic = df.group_by_dynamic(
+        "t", every="3i", group_by="g", start_by="datapoint"
+    )
+    for (_, _), sub_df in groups_dynamic:
+        assert len(sub_df["g"].unique()) == 1
+
+    groups_rolling = df.rolling("t", period="2i", group_by="g")
+    for (_, _), sub_df in groups_rolling:
+        assert len(sub_df["g"].unique()) == 1
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("every", ["1i", "2i"])
+@pytest.mark.parametrize("period", ["1i", "2i"])
+@pytest.mark.parametrize("closed", ["left", "right", "none", "both"])
+def test_group_by_dynamic_sparse_24541(
+    every: str, period: str, closed: ClosedInterval
+) -> None:
+    # For reference, at 100k, any of these queries took 10s of seconds prior to
+    # https://github.com/pola-rs/polars/pull/24916, but < 1 second for the entire
+    # suite with the PR
+    n = 10_000
+
+    df = pl.DataFrame({"n_date": (i * i for i in range(n))}).with_row_index()
+
+    out = df.group_by_dynamic("n_date", every=every, period=period, closed=closed).agg(
+        pl.col("index").count().alias("count")
+    )
+    total = out.select("count").sum().item()
+
+    # some easy checks
+    if every == "1i" and period == "1i":
+        if closed in ["left", "right"]:
+            assert out.shape == (n, 2)
+            assert total == n
+        elif closed == "both":
+            assert out.shape == (2 * n - 2, 2)
+            assert total == 2 * n - 1
+        elif closed == "none":
+            assert out.shape == (0, 2)
+            assert total == 0
+
+
+@pytest.mark.parametrize(
+    ("every", "period", "closed", "expected"),
+    [
+        ("1i", "1i", "left", 6),
+        ("1i", "1i", "right", 6),
+        ("1i", "1i", "both", 11),
+        ("1i", "1i", "none", 0),
+        ("1i", "2i", "left", 11),
+        ("1i", "2i", "right", 11),
+        ("1i", "2i", "both", 16),
+        ("1i", "2i", "none", 6),
+        ("2i", "1i", "left", 2),
+        ("2i", "1i", "right", 4),
+        ("2i", "1i", "both", 6),
+        ("2i", "1i", "none", 0),
+        ("2i", "2i", "left", 6),
+        ("2i", "2i", "right", 6),
+        ("2i", "2i", "both", 8),
+        ("2i", "2i", "none", 4),
+    ],
+)
+def test_group_by_dynamic_sparse_count_small_24541(
+    every: str, period: str, closed: ClosedInterval, expected: int
+) -> None:
+    df = pl.DataFrame({"n_date": [1, 1000, 1001, 2001, 2002, 2003]}).with_row_index()
+
+    out = df.group_by_dynamic(
+        "n_date", every=every, period=period, closed=closed, include_boundaries=True
+    ).agg(pl.col("index").count().alias("count"))
+    total = out.select("count").sum().item()
+
+    assert total == expected

@@ -1,10 +1,4 @@
-use std::ops::{AddAssign, MulAssign};
-
-use num_traits::Float;
-
-use crate::array::PrimitiveArray;
-use crate::legacy::utils::CustomIterTools;
-use crate::trusted_len::TrustedLen;
+use crate::array::{Array, PrimitiveArray};
 use crate::types::NativeType;
 
 pub fn ewm_mean<I, T>(
@@ -16,43 +10,117 @@ pub fn ewm_mean<I, T>(
 ) -> PrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
-    I::IntoIter: TrustedLen,
-    T: Float + NativeType + AddAssign + MulAssign,
+    T: num_traits::Float + NativeType + std::ops::MulAssign,
 {
-    let new_wt = if adjust { T::one() } else { alpha };
-    let old_wt_factor = T::one() - alpha;
-    let mut old_wt = T::one();
-    let mut weighted_avg = None;
-    let mut non_null_cnt = 0usize;
+    let mut state: EwmMeanState<T> = EwmMeanState::new(alpha, adjust, min_periods, ignore_nulls);
+    state.update_iter(xs).collect()
+}
 
-    xs.into_iter()
-        .enumerate()
-        .map(|(i, opt_x)| {
-            if opt_x.is_some() {
-                non_null_cnt += 1;
+pub struct EwmMeanState<T> {
+    weighted_mean: T,
+    weight: T,
+    alpha: T,
+    non_null_count: usize,
+    adjust: bool,
+    min_periods: usize,
+    ignore_nulls: bool,
+}
+
+impl<T> EwmMeanState<T>
+where
+    T: num_traits::Float,
+{
+    pub fn new(alpha: T, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+        Self {
+            weighted_mean: T::zero(),
+            weight: T::zero(),
+            alpha,
+            non_null_count: 0,
+            adjust,
+            min_periods: min_periods.max(1),
+            ignore_nulls,
+        }
+    }
+}
+
+impl<T> EwmMeanState<T>
+where
+    T: NativeType + num_traits::Float + std::ops::MulAssign,
+{
+    pub fn update(&mut self, values: &PrimitiveArray<T>) -> PrimitiveArray<T> {
+        self.update_iter(values.iter().map(|x| x.copied()))
+            .collect()
+    }
+
+    pub fn update_iter<I>(&mut self, values: I) -> impl Iterator<Item = Option<T>>
+    where
+        I: IntoIterator<Item = Option<T>>,
+    {
+        let new_value_weight = if self.adjust { T::one() } else { self.alpha };
+
+        values.into_iter().map(move |opt_v| {
+            if self.non_null_count == 0
+                && let Some(v) = opt_v
+            {
+                // Initialize
+                self.non_null_count = 1;
+                self.weighted_mean = v;
+                self.weight = T::one();
+            } else {
+                if opt_v.is_some() || !self.ignore_nulls {
+                    self.weight *= T::one() - self.alpha;
+                }
+
+                if let Some(new_v) = opt_v {
+                    let new_weight = self.weight + new_value_weight;
+
+                    self.weighted_mean = self.weighted_mean
+                        + (new_v - self.weighted_mean) * (new_value_weight / new_weight);
+
+                    self.weight = if self.adjust {
+                        self.weight + T::one()
+                    } else {
+                        T::one()
+                    };
+
+                    self.non_null_count += 1;
+                }
             }
-            match (i, weighted_avg) {
-                (0, _) | (_, None) => weighted_avg = opt_x,
-                (_, Some(w_avg)) => {
-                    if opt_x.is_some() || !ignore_nulls {
-                        old_wt *= old_wt_factor;
-                        if let Some(x) = opt_x {
-                            if w_avg != x {
-                                weighted_avg =
-                                    Some((old_wt * w_avg + new_wt * x) / (old_wt + new_wt));
-                            }
-                            old_wt = if adjust { old_wt + new_wt } else { T::one() };
-                        }
-                    }
-                },
-            }
-            match (non_null_cnt < min_periods, opt_x.is_some()) {
-                (_, false) => None,
-                (true, true) => None,
-                (false, true) => weighted_avg,
-            }
+
+            (opt_v.is_some() && self.non_null_count >= self.min_periods)
+                .then_some(self.weighted_mean)
         })
-        .collect_trusted()
+    }
+}
+
+pub enum DynEwmMeanState {
+    F32(EwmMeanState<f32>),
+    F64(EwmMeanState<f64>),
+}
+
+impl DynEwmMeanState {
+    pub fn update(&mut self, values: &dyn Array) -> Box<dyn Array> {
+        match self {
+            Self::F32(state) => state
+                .update(values.as_any().downcast_ref().unwrap())
+                .boxed(),
+            Self::F64(state) => state
+                .update(values.as_any().downcast_ref().unwrap())
+                .boxed(),
+        }
+    }
+}
+
+impl From<EwmMeanState<f32>> for DynEwmMeanState {
+    fn from(value: EwmMeanState<f32>) -> Self {
+        Self::F32(value)
+    }
+}
+
+impl From<EwmMeanState<f64>> for DynEwmMeanState {
+    fn from(value: EwmMeanState<f64>) -> Self {
+        Self::F64(value)
+    }
 }
 
 #[cfg(test)]

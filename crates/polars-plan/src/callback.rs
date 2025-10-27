@@ -5,7 +5,7 @@ use polars_error::PolarsResult;
 
 use crate::dsl::SpecialEq;
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, strum_macros::IntoStaticStr)]
 pub enum PlanCallback<Args, Out> {
     #[cfg(feature = "python")]
     Python(SpecialEq<Arc<polars_utils::python_function::PythonFunction>>),
@@ -15,7 +15,7 @@ pub enum PlanCallback<Args, Out> {
 impl<Args, Out> fmt::Debug for PlanCallback<Args, Out> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("PlanCallback::")?;
-        std::mem::discriminant(self).fmt(f)
+        f.write_str(<&'static str>::from(self))
     }
 }
 
@@ -239,7 +239,7 @@ impl<Args: PlanCallbackArgs, Out: PlanCallbackOut> PlanCallback<Args, Out> {
     pub fn call(&self, args: Args) -> PolarsResult<Out> {
         match self {
             #[cfg(feature = "python")]
-            Self::Python(pyfn) => pyo3::Python::with_gil(|py| {
+            Self::Python(pyfn) => pyo3::Python::attach(|py| {
                 let out = Out::from_pyany(pyfn.call1(py, (args.into_pyany(py)?,))?, py)?;
                 Ok(out)
             }),

@@ -444,6 +444,7 @@ impl ProjectionPushDown {
                 hive_parts,
                 scan_type,
                 predicate,
+                predicate_file_skip_applied,
                 mut unified_scan_args,
                 mut output_schema,
             } => {
@@ -572,6 +573,7 @@ impl ProjectionPushDown {
                     output_schema,
                     scan_type,
                     predicate,
+                    predicate_file_skip_applied,
                     unified_scan_args,
                 };
 

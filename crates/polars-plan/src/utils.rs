@@ -225,16 +225,32 @@ pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item 
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> PolarsResult<Schema> {
+pub fn expressions_to_schema<E>(
+    expr: &[Expr],
+    schema: &Schema,
+    duplicate_err_msg_func: E,
+) -> PolarsResult<Schema>
+where
+    E: Fn(&str) -> String,
+{
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
-    expr.iter()
-        .map(|expr| {
-            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
 
+    Schema::try_from_iter_check_duplicates(
+        expr.iter().map(|expr| {
+            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
             field.dtype = field.dtype.materialize_unknown(true)?;
             Ok(field)
-        })
-        .collect()
+        }),
+        |duplicate_name: &str| {
+            polars_err!(
+                Duplicate:
+                "{}. It's possible that multiple expressions are returning the same default column name. \
+                If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
+                duplicate column names.",
+                duplicate_err_msg_func(duplicate_name)
+            )
+        },
+    )
 }
 
 pub fn aexpr_to_leaf_names_iter(

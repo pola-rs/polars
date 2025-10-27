@@ -626,7 +626,9 @@ def test_predicate_pushdown_struct_unnest_19632() -> None:
 
     assert_frame_equal(
         q.collect(),
-        pl.DataFrame({"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.UInt32}),
+        pl.DataFrame(
+            {"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.get_index_type()}
+        ),
     )
 
 
@@ -1038,6 +1040,12 @@ def test_predicate_pushdown_split_pushable(
 def test_predicate_pushdown_fallible_literal_in_filter_expr() -> None:
     # Fallible operations on literals inside of the predicate expr should not
     # block pushdown.
+
+    # Pushdown will also push any fallible expression if it's the only accumulated
+    # predicate, we insert this dummy predicate to ensure the predicate is being
+    # pushed solely because it is considered infallible.
+    dummy_predicate = pl.lit(1) == pl.lit(1)
+
     lf = pl.LazyFrame(
         {"column": "2025-01-01", "column_date": datetime(2025, 1, 1), "integer": 1}
     )
@@ -1046,7 +1054,8 @@ def test_predicate_pushdown_fallible_literal_in_filter_expr() -> None:
         MARKER=1,
     ).filter(
         pl.col("column_date")
-        == pl.lit("2025-01-01").str.to_datetime("%Y-%m-%d", strict=True)
+        == pl.lit("2025-01-01").str.to_datetime("%Y-%m-%d", strict=True),
+        dummy_predicate,
     )
 
     plan = q.explain()
@@ -1057,7 +1066,22 @@ def test_predicate_pushdown_fallible_literal_in_filter_expr() -> None:
 
     q = lf.with_columns(
         MARKER=1,
-    ).filter(pl.col("integer") == pl.lit("1").cast(pl.Int64, strict=True))
+    ).filter(
+        pl.col("column_date") == pl.lit("2025-01-01").str.strptime(pl.Datetime),
+        dummy_predicate,
+    )
+
+    plan = q.explain()
+
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+    assert q.collect().height == 1
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("integer") == pl.lit("1").cast(pl.Int64, strict=True), dummy_predicate
+    )
 
     plan = q.explain()
 
