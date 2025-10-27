@@ -1839,11 +1839,14 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
         [True, False],
     ]
 
-    cl = cs.starts_with("^x")
+    cl = cs.starts_with("x")
     df = pl.DataFrame(
         [pl.Series("g", [1, 1])]
         + [pl.Series(f"x{i}", c, pl.Boolean()) for i, c in enumerate(combinations)]
     )
+
+    # verify that we are actually calculating something
+    assert len(df.lazy().select(expr(cl)).collect_schema()) == len(combinations)
 
     assert_frame_equal(
         df.select(expr(cl)),
@@ -1864,7 +1867,10 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
 
     assert_frame_equal(
         df.select(expr(cl)),
-        df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit"),
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(expr(pl.lit(pl.Series("x", [], pl.Boolean()))))
+        .drop("lit"),
     )
 
     assert_frame_equal(
@@ -1914,3 +1920,26 @@ def test_group_by_skew_kurtosis(s: pl.Series) -> None:
         [pl.col.f.list.agg(e(pl.element())).alias(n) for n, e in exprs.items()]
     )
     assert_frame_equal(sl, li)
+
+
+def test_group_by_rolling_fill_null_25036() -> None:
+    frame = pl.DataFrame(
+        {
+            "date": [date(2013, 1, 1), date(2013, 1, 2), date(2013, 1, 3)] * 2,
+            "group": ["A"] * 3 + ["B"] * 3,
+            "value": [None, None, 3, 4, None, None],
+        }
+    )
+    result = frame.rolling(index_column="date", period="2d", group_by="group").agg(
+        pl.col("value").forward_fill(limit=None).last()
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["A"] * 3 + ["B"] * 3,
+            "date": [date(2013, 1, 1), date(2013, 1, 2), date(2013, 1, 3)] * 2,
+            "value": [None, None, 3, 4, 4, None],
+        }
+    )
+
+    assert_frame_equal(result, expected)

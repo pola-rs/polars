@@ -664,6 +664,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
 
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
+                FunctionIR::Hint(_) => return Err(PyNotImplementedError::new_err("hint ir")),
             },
         }
         .into_py_any(py),

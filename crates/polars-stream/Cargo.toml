@@ -36,6 +36,7 @@ slotmap = { workspace = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["sync"] }
 
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
@@ -73,6 +74,7 @@ dtype-i16 = ["polars-core/dtype-i16", "polars-plan/dtype-i16"]
 dtype-i128 = ["polars-core/dtype-i128", "polars-plan/dtype-i128"]
 dtype-categorical = ["polars-core/dtype-categorical", "polars-plan/dtype-categorical"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-plan/dtype-decimal"]
+ewma = ["polars-plan/ewma"]
 mode = ["polars-plan/mode"]
 object = ["polars-ops/object"]
 physical_plan_visualization = [

@@ -1,3 +1,5 @@
+use std::io::{Read, Seek};
+
 use polars_utils::pl_serialize::deserialize_map_bytes;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -19,7 +21,7 @@ impl Series {
         Ok(buf)
     }
 
-    pub fn deserialize_from_reader(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+    pub fn deserialize_from_reader<T: Read + Seek>(reader: &mut T) -> PolarsResult<Self> {
         let df = DataFrame::deserialize_from_reader(reader)?;
 
         if df.width() != 1 {
@@ -59,7 +61,8 @@ impl<'de> Deserialize<'de> for Series {
     {
         deserialize_map_bytes(deserializer, |b| {
             let v = &mut b.as_ref();
-            Self::deserialize_from_reader(v)
+            let mut reader = std::io::Cursor::new(v);
+            Self::deserialize_from_reader(&mut reader)
         })?
         .map_err(D::Error::custom)
     }

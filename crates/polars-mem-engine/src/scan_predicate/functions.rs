@@ -361,7 +361,9 @@ pub fn apply_scan_predicate_to_scan_ir(
         let is_fully_applied = predicate_to_readers.is_none();
         *predicate_file_skip_applied = Some(is_fully_applied);
 
-        filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+        if skip_files_mask.num_skipped_files() > 0 {
+            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+        }
     }
 
     Ok(())
