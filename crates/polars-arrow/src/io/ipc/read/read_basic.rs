@@ -58,7 +58,7 @@ fn read_uncompressed_bytes<R: Read + Seek>(
             .read_to_end(&mut buffer)
             .unwrap();
 
-        assert_eq!(buffer.len(), buffer_length);
+        polars_ensure!(buffer.len() == buffer_length, ComputeError: "Malformed IPC file: expected compressed buffer of len {buffer_length}, got {}", buffer.len());
 
         Ok(buffer)
     } else {
@@ -281,7 +281,7 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
         .take(bytes as u64)
         .read_to_end(&mut buffer)?;
 
-    assert_eq!(bytes, buffer.len());
+    polars_ensure!(buffer.len() == bytes, ComputeError: "Malformed IPC file: expected compressed buffer of len {bytes}, got {}", buffer.len());
 
     Ok(buffer)
 }
@@ -318,8 +318,6 @@ fn read_compressed_bitmap<R: Read + Seek>(
     #[expect(clippy::slow_vector_initialization)] // Avoid alloc_zeroed, leads to syscall.
     let mut buffer = Vec::new();
     buffer.resize(decompressed_bytes, 0);
-
-    assert_eq!(bytes, scratch.len());
 
     let compression = compression
         .codec()
