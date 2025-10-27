@@ -1,7 +1,6 @@
 pub mod mean;
 
 #[cfg(test)]
-#[cfg(test)]
 macro_rules! assert_allclose {
     ($xs:expr, $ys:expr, $tol:expr) => {
         assert!($xs.iter().zip($ys.iter()).all(|(x, z)| {
