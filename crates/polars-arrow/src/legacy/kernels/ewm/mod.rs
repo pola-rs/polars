@@ -1,9 +1,7 @@
-mod average;
 mod variance;
 
 use std::hash::{Hash, Hasher};
 
-pub use average::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use variance::*;

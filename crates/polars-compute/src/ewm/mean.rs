@@ -1,5 +1,5 @@
-use crate::array::{Array, PrimitiveArray};
-use crate::types::NativeType;
+use arrow::array::{Array, PrimitiveArray};
+use arrow::types::NativeType;
 
 pub fn ewm_mean<I, T>(
     xs: I,
@@ -28,7 +28,7 @@ pub struct EwmMeanState<T> {
 
 impl<T> EwmMeanState<T>
 where
-    T: num_traits::Float,
+    T: NativeType + num_traits::Float + std::ops::MulAssign,
 {
     pub fn new(alpha: T, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
         Self {
@@ -41,12 +41,7 @@ where
             ignore_nulls,
         }
     }
-}
 
-impl<T> EwmMeanState<T>
-where
-    T: NativeType + num_traits::Float + std::ops::MulAssign,
-{
     pub fn update(&mut self, values: &PrimitiveArray<T>) -> PrimitiveArray<T> {
         self.update_iter(values.iter().map(|x| x.copied()))
             .collect()
@@ -125,7 +120,7 @@ impl From<EwmMeanState<f64>> for DynEwmMeanState {
 
 #[cfg(test)]
 mod test {
-    use super::super::assert_allclose;
+    use super::super::assert_all_close;
     use super::*;
     const ALPHA: f64 = 0.5;
     const EPS: f64 = 1e-15;
@@ -145,7 +140,7 @@ mod test {
                             Some(2.428_571_428_571_428_4),
                         ]),
                     };
-                    assert_allclose!(result, expected, 1e-15);
+                    assert_all_close(result, expected, 1e-15);
                 }
                 let result = ewm_mean(xs.clone(), ALPHA, adjust, 2, ignore_nulls);
                 let expected = match adjust {
@@ -156,7 +151,7 @@ mod test {
                         Some(2.428_571_428_571_428_4),
                     ]),
                 };
-                assert_allclose!(result, expected, EPS);
+                assert_all_close(result, expected, EPS);
             }
         }
     }
@@ -173,7 +168,7 @@ mod test {
             Some(1.0f64),
             Some(4.0f64),
         ];
-        assert_allclose!(
+        assert_all_close(
             ewm_mean(xs1.clone(), 0.5, true, 0, true),
             PrimitiveArray::from([
                 None,
@@ -185,9 +180,9 @@ mod test {
                 Some(2.333_333_333_333_333_5),
                 Some(3.193_548_387_096_774),
             ]),
-            EPS
+            EPS,
         );
-        assert_allclose!(
+        assert_all_close(
             ewm_mean(xs1.clone(), 0.5, true, 0, false),
             PrimitiveArray::from([
                 None,
@@ -199,11 +194,11 @@ mod test {
                 Some(1.888_888_888_888_888_8),
                 Some(3.033_898_305_084_745_7),
             ]),
-            EPS
+            EPS,
         );
-        assert_allclose!(
+        assert_all_close(
             ewm_mean(xs1.clone(), 0.5, false, 0, true),
-            PrimitiveArray::from([
+            [
                 None,
                 None,
                 Some(5.0),
@@ -212,12 +207,12 @@ mod test {
                 Some(4.0),
                 Some(2.5),
                 Some(3.25),
-            ]),
-            EPS
+            ],
+            EPS,
         );
-        assert_allclose!(
+        assert_all_close(
             ewm_mean(xs1, 0.5, false, 0, false),
-            PrimitiveArray::from([
+            [
                 None,
                 None,
                 Some(5.0),
@@ -226,8 +221,8 @@ mod test {
                 Some(3.333_333_333_333_333_5),
                 Some(2.166_666_666_666_667),
                 Some(3.083_333_333_333_333_5),
-            ]),
-            EPS
+            ],
+            EPS,
         );
     }
 }
