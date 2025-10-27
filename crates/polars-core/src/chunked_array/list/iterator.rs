@@ -93,9 +93,7 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
 
                 // SAFETY:
                 // inner belongs to Series.
-                unsafe {
-                    AmortSeries::new_with_chunk(self.series_container.clone(), self.inner.as_ref())
-                }
+                AmortSeries::new(self.series_container.clone())
             })
         })
     }
