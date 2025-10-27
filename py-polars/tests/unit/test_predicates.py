@@ -1217,3 +1217,29 @@ def test_no_predicate_pushdown_on_modified_groupby_keys_21439(
     )
     expected = pl.DataFrame({"a": [2, 3]})
     assert_frame_equal(q.collect(), expected, check_row_order=maintain_order)
+
+
+def test_no_predicate_pushdown_on_modified_groupby_keys_21439b() -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.datetime_range(
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 2),
+                timedelta(minutes=15),
+                eager=True,
+            )
+        }
+    )
+    eager = (
+        df.group_by(pl.col("time").dt.hour())
+        .agg()
+        .filter(pl.col("time").is_between(0, 10))
+    )
+    lazy = (
+        df.lazy()
+        .group_by(pl.col("time").dt.hour())
+        .agg()
+        .filter(pl.col("time").is_between(0, 10))
+        .collect()
+    )
+    assert_frame_equal(eager, lazy, check_row_order=False)
