@@ -143,6 +143,7 @@ if TYPE_CHECKING:
         MaintainOrderJoin,
         Orientation,
         ParquetMetadata,
+        PivotAgg,
         PlanStage,
         PolarsDataType,
         PythonDataType,
@@ -7727,6 +7728,87 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if subset is not None:
             selector_subset = parse_list_into_selector(subset)._pyselector
         return self._from_pyldf(self._ldf.drop_nulls(subset=selector_subset))
+
+    def pivot(
+        self,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        on_columns: Sequence[Any] | pl.Series | pl.DataFrame,
+        *,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        aggregate_function: PivotAgg | Expr | None = None,
+        maintain_order: bool = True,
+        separator: str = "_",
+    ) -> LazyFrame:
+        if index is None and values is None:
+            msg = "either `index or `values` needs to be specified"
+            raise ValueError(msg)
+
+        on_selector = parse_list_into_selector(on)
+        if values is not None:
+            values_selector = parse_list_into_selector(values)
+        if index is not None:
+            index_selector = parse_list_into_selector(index)
+
+        if values is None:
+            values_selector = cs.all() - on_selector - index_selector
+        if index is None:
+            index_selector = cs.all() - on_selector - values_selector
+
+        agg = F.element()
+        if isinstance(aggregate_function, str):
+            if aggregate_function == "first":
+                agg = agg.first()
+            elif aggregate_function == "item":
+                agg = agg.item()
+            elif aggregate_function == "sum":
+                agg = agg.sum()
+            elif aggregate_function == "max":
+                agg = agg.max()
+            elif aggregate_function == "min":
+                agg = agg.min()
+            elif aggregate_function == "mean":
+                agg = agg.mean()
+            elif aggregate_function == "median":
+                agg = agg.median()
+            elif aggregate_function == "last":
+                agg = agg.last()
+            elif aggregate_function == "len":
+                agg = agg.len()
+            elif aggregate_function == "count":
+                issue_deprecation_warning(
+                    "`aggregate_function='count'` input for `pivot` is deprecated."
+                    " Please use `aggregate_function='len'`.",
+                    version="0.20.5",
+                )
+                agg = agg.len()
+            else:
+                msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
+                raise ValueError(msg)
+        elif aggregate_function is None:
+            agg = agg.item(allow_empty=True)
+        else:
+            agg = aggregate_function
+
+        on_columns: pl.DataFrame
+        if isinstance(on_columns, pl.DataFrame):
+            on_columns = on_columns
+        elif isinstance(on_columns, pl.Series):
+            on_columns = on_columns.to_frame()
+        else:
+            on_columns = pl.Series(on_columns).to_frame()
+
+        return self._from_pyldf(
+            self._ldf.pivot(
+                on=on_selector._pyselector,
+                on_columns=on_columns._df,
+                index=index_selector._pyselector,
+                values=values_selector._pyselector,
+                agg=agg._pyexpr,
+                maintain_order=maintain_order,
+                separator=separator,
+            )
+        )
 
     def unpivot(
         self,

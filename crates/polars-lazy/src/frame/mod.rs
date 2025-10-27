@@ -1931,6 +1931,33 @@ impl LazyFrame {
         self.slice(neg_tail, n)
     }
 
+    #[cfg(feature = "pivot")]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    ) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .pivot(
+                on,
+                on_columns,
+                index,
+                values,
+                agg,
+                maintain_order,
+                separator,
+            )
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Unpivot the DataFrame from wide to long format.
     ///
     /// See [`UnpivotArgsIR`] for information on how to unpivot a DataFrame.

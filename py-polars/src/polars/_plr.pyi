@@ -1083,6 +1083,16 @@ class PyLazyFrame:
     def drop_nulls(self, subset: PySelector | None) -> PyLazyFrame: ...
     def slice(self, offset: int, len: int | None) -> PyLazyFrame: ...
     def tail(self, n: int) -> PyLazyFrame: ...
+    def pivot(
+        self,
+        on: PySelector,
+        on_columns: PyDataFrame,
+        index: PySelector,
+        values: PySelector,
+        agg: PyExpr,
+        maintain_order: bool,
+        separator: str,
+    ) -> PyLazyFrame: ...
     def unpivot(
         self,
         on: PySelector,

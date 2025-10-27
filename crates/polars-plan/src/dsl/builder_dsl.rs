@@ -305,6 +305,30 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "pivot")]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    ) -> Self {
+        DslPlan::Pivot {
+            input: Arc::new(self.0),
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
+        }
+        .into()
+    }
+
+    #[cfg(feature = "pivot")]
     pub fn unpivot(self, args: UnpivotArgsDSL) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),

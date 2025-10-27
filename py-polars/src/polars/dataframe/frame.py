@@ -9432,74 +9432,27 @@ class DataFrame:
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
         """  # noqa: W505
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         on = _expand_selectors(self, on)
 
-        if values is None and index is None:
-            msg = "either `values or `index` needs to be specified"
-            raise ValueError(msg)
-
-        if values is not None:
-            values = _expand_selectors(self, values)
-        if index is not None:
-            index = _expand_selectors(self, index)
-
-        if values is None:
-            values = set(self.columns) - set(index) - set(on)
-        if index is None:
-            index = set(self.columns) - set(values) - set(on)
-
-        if isinstance(aggregate_function, str):
-            if aggregate_function == "first":
-                agg_f = pl.Expr.first
-            elif aggregate_function == "sum":
-                agg_f = pl.Expr.sum
-            elif aggregate_function == "max":
-                agg_f = pl.Expr.max
-            elif aggregate_function == "min":
-                agg_f = pl.Expr.min
-            elif aggregate_function == "mean":
-                agg_f = pl.Expr.mean
-            elif aggregate_function == "median":
-                agg_f = pl.Expr.median
-            elif aggregate_function == "last":
-                agg_f = pl.Expr.last
-            elif aggregate_function == "len":
-                agg_f = pl.Expr.len
-            elif aggregate_function == "count":
-                issue_deprecation_warning(
-                    "`aggregate_function='count'` input for `pivot` is deprecated."
-                    " Please use `aggregate_function='len'`.",
-                    version="0.20.5",
-                )
-                agg_f = pl.Expr.len
-            else:
-                msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
-                raise ValueError(msg)
-        elif aggregate_function is None:
-            agg_f = pl.Expr.item
-        else:
-            agg_f = aggregate_function.meta._replace_element
-
-        on_values = self.select(on).unique(maintain_order=True)
+        on_columns = self.select(on).unique(maintain_order=True)
         if sort_columns:
-            on_values = on_values.sort()
-        on_titles = on_values.cast(String())
+            on_columns = on_columns.sort("*")
 
-        aggs = []
-        for value in values:
-            for on_value, on_title in zip(on_values.rows(), on_titles.rows()):
-                name = separator.join(on_title)
-                if len(values) > 1:
-                    name = value + separator + name
-                aggs += [
-                    agg_f(
-                        F.col(value).filter(
-                            *[F.col(on[i]) == on_value[i] for i in range(len(on))]
-                        )
-                    ).alias(name)
-                ]
-
-        return self.group_by(index, maintain_order=maintain_order).agg(aggs)
+        return (
+            self.lazy()
+            .pivot(
+                on=on,
+                on_columns=on_columns,
+                index=index,
+                values=values,
+                aggregate_function=aggregate_function,
+                maintain_order=maintain_order,
+                separator=separator,
+            )
+            .collect(optimizations=QueryOptFlags._eager())
+        )
 
     def unpivot(
         self,

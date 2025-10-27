@@ -104,6 +104,16 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
+    Pivot {
+        input: Arc<DslPlan>,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    },
     /// Remove duplicates from the table
     Distinct {
         input: Arc<DslPlan>,
@@ -184,6 +194,7 @@ impl Clone for DslPlan {
             Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
             Self::MatchToSchema { input, match_schema, per_column, extra_columns } => Self::MatchToSchema { input: input.clone(), match_schema: match_schema.clone(), per_column: per_column.clone(), extra_columns: *extra_columns },
             Self::PipeWithSchema { input, callback } => Self::PipeWithSchema { input: input.clone(), callback: callback.clone() },
+            Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order },
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
             Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
             Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },

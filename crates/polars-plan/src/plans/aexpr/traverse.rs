@@ -277,6 +277,102 @@ impl AExpr {
         *input = inputs[0];
         self
     }
+
+    pub fn replace_children(mut self, inputs: &[Node]) -> Self {
+        use AExpr::*;
+        let input = match &mut self {
+            Element | Column(_) | Literal(_) | Len => return self,
+            Cast { expr, .. } => expr,
+            Explode { expr, .. } => expr,
+            BinaryExpr { left, right, .. } => {
+                *left = inputs[0];
+                *right = inputs[1];
+                return self;
+            },
+            Gather { expr, idx, .. } => {
+                *expr = inputs[0];
+                *idx = inputs[1];
+                return self;
+            },
+            Sort { expr, .. } => expr,
+            SortBy { expr, by, .. } => {
+                *expr = inputs[0];
+                by.clear();
+                by.extend_from_slice(&inputs[1..]);
+                return self;
+            },
+            Filter { input, by, .. } => {
+                *input = inputs[0];
+                *by = inputs[1];
+                return self;
+            },
+            Agg(a) => {
+                match a {
+                    IRAggExpr::Quantile { expr, quantile, .. } => {
+                        *expr = inputs[0];
+                        *quantile = inputs[1];
+                    },
+                    _ => {
+                        a.set_input(inputs[0]);
+                    },
+                }
+                return self;
+            },
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
+                *truthy = inputs[0];
+                *falsy = inputs[1];
+                *predicate = inputs[2];
+                return self;
+            },
+            AnonymousFunction { input, .. } | Function { input, .. } => {
+                assert_eq!(input.len(), inputs.len());
+                for (e, node) in input.iter_mut().zip(inputs.iter()) {
+                    e.set_node(*node);
+                }
+                return self;
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                *expr = inputs[0];
+                *evaluation = inputs[1];
+                return self;
+            },
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                *input = inputs[0];
+                *offset = inputs[1];
+                *length = inputs[2];
+                return self;
+            },
+            Window {
+                function,
+                partition_by,
+                order_by,
+                ..
+            } => {
+                let offset = order_by.is_some() as usize;
+                *function = inputs[0];
+                partition_by.clear();
+                partition_by.extend_from_slice(&inputs[1..inputs.len() - offset]);
+                if let Some((_, options)) = order_by {
+                    *order_by = Some((*inputs.last().unwrap(), *options));
+                }
+                return self;
+            },
+        };
+        *input = inputs[0];
+        self
+    }
 }
 
 impl IRAggExpr {
