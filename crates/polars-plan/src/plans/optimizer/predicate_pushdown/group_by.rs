@@ -44,11 +44,9 @@ pub(super) fn process_group_by(
         .iter()
         .filter(
             |&key| matches!(expr_arena.get(key.node()), AExpr::Column(c) if c == key.output_name()),
-        )
-        .cloned()
-        .collect::<Vec<_>>();
+        );
     let key_schema = aexprs_to_schema(
-        &eligible_keys,
+        eligible_keys,
         lp_arena.get(input).schema(lp_arena).as_ref(),
         expr_arena,
     );
