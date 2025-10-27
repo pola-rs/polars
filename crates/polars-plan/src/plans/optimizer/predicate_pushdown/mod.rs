@@ -25,7 +25,9 @@ mod inner {
         // TODO: Remove unused
         #[expect(unused)]
         pub(super) verbose: bool,
-        pub(super) block_at_cache: bool,
+        // How many cache nodes a predicate may be pushed down to.
+        // Normally this is 0. Only needed for CSPE.
+        pub(super) caches_pass_allowance: u32,
         nodes_scratch: UnitVec<Node>,
         pub(super) new_streaming: bool,
         // Controls pushing filters past fallible projections
@@ -36,7 +38,7 @@ mod inner {
         pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
                 verbose: verbose(),
-                block_at_cache: true,
+                caches_pass_allowance: 0,
                 nodes_scratch: unitvec![],
                 new_streaming,
                 maintain_errors,
@@ -54,8 +56,8 @@ mod inner {
 pub use inner::PredicatePushDown;
 
 impl PredicatePushDown {
-    pub(crate) fn block_at_cache(mut self, toggle: bool) -> Self {
-        self.block_at_cache = toggle;
+    pub(crate) fn block_at_cache(mut self, count: u32) -> Self {
+        self.caches_pass_allowance = count;
         self
     }
 
@@ -609,9 +611,10 @@ impl PredicatePushDown {
             },
             // Caches will run predicate push-down in the `cache_states` run.
             Cache { .. } => {
-                if self.block_at_cache {
+                if self.caches_pass_allowance == 0 {
                     self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
                 } else {
+                    self.caches_pass_allowance = self.caches_pass_allowance.saturating_sub(1);
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 }
             },

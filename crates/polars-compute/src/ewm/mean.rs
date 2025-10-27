@@ -1,5 +1,5 @@
-use crate::array::{Array, PrimitiveArray};
-use crate::types::NativeType;
+use arrow::array::{Array, PrimitiveArray};
+use arrow::types::NativeType;
 
 pub fn ewm_mean<I, T>(
     xs: I,
@@ -28,7 +28,7 @@ pub struct EwmMeanState<T> {
 
 impl<T> EwmMeanState<T>
 where
-    T: num_traits::Float,
+    T: NativeType + num_traits::Float + std::ops::MulAssign,
 {
     pub fn new(alpha: T, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
         Self {
@@ -41,12 +41,7 @@ where
             ignore_nulls,
         }
     }
-}
 
-impl<T> EwmMeanState<T>
-where
-    T: NativeType + num_traits::Float + std::ops::MulAssign,
-{
     pub fn update(&mut self, values: &PrimitiveArray<T>) -> PrimitiveArray<T> {
         self.update_iter(values.iter().map(|x| x.copied()))
             .collect()

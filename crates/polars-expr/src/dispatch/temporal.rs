@@ -4,7 +4,6 @@ use polars_plan::plans::IRTemporalFunction;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
-use crate::{map, map_as_slice};
 
 pub fn temporal_func_to_udf(func: IRTemporalFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRTemporalFunction::*;

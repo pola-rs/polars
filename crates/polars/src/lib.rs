@@ -410,7 +410,7 @@
 //! ## User guide
 //!
 //! If you want to read more, check the [user guide](https://docs.pola.rs/).
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(ambiguous_glob_reexports)]
 pub mod docs;
 pub mod prelude;
