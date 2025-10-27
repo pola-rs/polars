@@ -57,6 +57,9 @@ fn read_uncompressed_bytes<R: Read + Seek>(
             .take(buffer_length as u64)
             .read_to_end(&mut buffer)
             .unwrap();
+
+        assert_eq!(buffer.len(), buffer_length);
+
         Ok(buffer)
     } else {
         unreachable!()
@@ -120,6 +123,8 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         .by_ref()
         .take(buffer_length as u64)
         .read_to_end(scratch)?;
+
+    assert_eq!(buffer_length, scratch.len());
 
     let length = output_length
         .unwrap_or_else(|| i64::from_le_bytes(scratch[..8].try_into().unwrap()) as usize);
@@ -261,6 +266,8 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
         .take(bytes as u64)
         .read_to_end(&mut buffer)?;
 
+    assert_eq!(bytes, buffer.len());
+
     Ok(buffer)
 }
 
@@ -278,6 +285,8 @@ fn read_compressed_bitmap<R: Read + Seek>(
     scratch.clear();
     scratch.try_reserve(bytes)?;
     reader.by_ref().take(bytes as u64).read_to_end(scratch)?;
+
+    assert_eq!(bytes, scratch.len());
 
     let compression = compression
         .codec()
