@@ -429,18 +429,7 @@ pub(crate) fn elim_cmn_subplans(
         // We could traverse all nodes, but it would be duplicate work.
         if let Some(cache) = caches_nodes.last() {
             if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
-                let (input_node, changed) = elim_cmn_subplans(*input, lp_arena, expr_arena);
-
-                // Ensure that the optimization is applied to (duplicate) all subgraphs
-                if changed {
-                    let ir = lp_arena.get(input_node).clone();
-
-                    for cache in caches_nodes.iter().rev().skip(1) {
-                        if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
-                            *lp_arena.get_mut(*input) = ir.clone();
-                        }
-                    }
-                }
+                let _ = elim_cmn_subplans(*input, lp_arena, expr_arena);
             }
         }
     }
