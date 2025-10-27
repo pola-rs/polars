@@ -1,4 +1,4 @@
-use arrow::legacy::kernels::ewm::{DynEwmMeanState, EwmMeanState};
+use polars_compute::ewm::mean::{DynEwmMeanState, EwmMeanState};
 use polars_core::prelude::{DataType, IntoColumn};
 use polars_core::series::Series;
 use polars_core::with_match_physical_float_type;

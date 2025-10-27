@@ -36,6 +36,7 @@ slotmap = { workspace = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["sync"] }
 
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
