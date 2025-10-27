@@ -91,8 +91,6 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                     series_mut_inner.compute_len();
                 }
 
-                // SAFETY:
-                // inner belongs to Series.
                 AmortSeries::new(self.series_container.clone())
             })
         })
