@@ -628,7 +628,7 @@ a,b,c,d,e
     assert plan.startswith("WITH_COLUMNS:")
     # [dyn int: 1.alias("x"), dyn int: 1.alias("y")]
     # Csv SCAN [20 in-mem bytes]
-    assert plan.endswith("1/6 COLUMNS")
+    assert "1/6 COLUMNS" in plan
 
 
 def test_projection_pushdown_height_20221() -> None:

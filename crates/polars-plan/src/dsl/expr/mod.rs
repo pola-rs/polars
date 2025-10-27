@@ -1,11 +1,11 @@
+pub mod anonymous;
 mod datatype_fn;
-mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+pub use anonymous::*;
 use bytes::Bytes;
 pub use datatype_fn::*;
-pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -13,10 +13,6 @@ use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-pub mod named_serde;
-#[cfg(feature = "serde")]
-mod serde_expr;
 
 use super::datatype_expr::DataTypeExpr;
 use crate::prelude::*;
@@ -738,11 +734,13 @@ impl Operator {
             Operator::NotEq => Operator::NotEq,
             Operator::EqValidity => Operator::EqValidity,
             Operator::NotEqValidity => Operator::NotEqValidity,
-            Operator::Divide => Operator::Multiply,
-            Operator::Multiply => Operator::Divide,
+            // Operator::Divide requires modifying the right operand: left / right == 1/right * left
+            Operator::Divide => unimplemented!(),
+            Operator::Multiply => Operator::Multiply,
             Operator::And => Operator::And,
-            Operator::Plus => Operator::Minus,
-            Operator::Minus => Operator::Plus,
+            Operator::Plus => Operator::Plus,
+            // Operator::Minus requires modifying the right operand: left - right == -right + left
+            Operator::Minus => unimplemented!(),
             Operator::Lt => Operator::Gt,
             _ => unimplemented!(),
         }

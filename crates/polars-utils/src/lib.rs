@@ -4,7 +4,7 @@
 )]
 #![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops, select_unpredictable.
 #![cfg_attr(feature = "nightly", allow(internal_features))]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod abs_diff;
 pub mod algebraic_ops;
 pub mod arena;
@@ -57,8 +57,6 @@ pub mod itertools;
 pub mod macros;
 pub mod option;
 pub mod vec;
-#[cfg(target_family = "wasm")]
-pub mod wasm;
 
 pub mod float;
 pub mod index;

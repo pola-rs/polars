@@ -25,6 +25,7 @@ pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
+mod sortedness;
 mod stack_opt;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
@@ -33,7 +34,6 @@ pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
-use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
@@ -46,7 +46,6 @@ pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
-use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;
 use crate::prelude::optimizer::collect_members::MemberCollector;
@@ -72,7 +71,11 @@ pub fn optimize(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    expr_eval: ExprEval<'_>,
+    apply_scan_predicate_to_scan_ir: fn(
+        Node,
+        &mut Arena<IR>,
+        &mut Arena<AExpr>,
+    ) -> PolarsResult<()>,
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
@@ -166,11 +169,8 @@ pub fn optimize(
     }
 
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt = PredicatePushDown::new(
-            expr_eval,
-            pushdown_maintain_errors,
-            opt_flags.new_streaming(),
-        );
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
@@ -232,7 +232,6 @@ pub fn optimize(
             lp_arena,
             expr_arena,
             scratch,
-            expr_eval,
             verbose,
             pushdown_maintain_errors,
             opt_flags.new_streaming(),
@@ -285,7 +284,12 @@ pub fn optimize(
         }
     }
 
-    expand_datasets::expand_datasets(lp_top, lp_arena, expr_arena)?;
+    expand_datasets::expand_datasets(
+        lp_top,
+        lp_arena,
+        expr_arena,
+        apply_scan_predicate_to_scan_ir,
+    )?;
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

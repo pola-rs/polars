@@ -246,7 +246,7 @@ impl VecHash for BinaryChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| hash_binview_array(arr, random_state, buf));
+            .for_each(|arr| hash_binview_array(arr, random_state.clone(), buf));
         Ok(())
     }
 
@@ -299,7 +299,7 @@ impl VecHash for BinaryOffsetChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| _hash_binary_array(arr, random_state, buf));
+            .for_each(|arr| _hash_binary_array(arr, random_state.clone(), buf));
         Ok(())
     }
 
@@ -484,7 +484,7 @@ pub fn _df_rows_to_hashes_threaded_vertical(
     let hashes = POOL.install(|| {
         keys.into_par_iter()
             .map(|df| {
-                let hb = build_hasher;
+                let hb = build_hasher.clone();
                 let mut hashes = vec![];
                 columns_to_hashes(df.get_columns(), Some(hb), &mut hashes)?;
                 Ok(UInt64Chunked::from_vec(PlSmallStr::EMPTY, hashes))
@@ -503,10 +503,10 @@ pub fn columns_to_hashes(
 
     let mut iter = keys.iter();
     let first = iter.next().expect("at least one key");
-    first.vec_hash(build_hasher, hashes)?;
+    first.vec_hash(build_hasher.clone(), hashes)?;
 
     for keys in iter {
-        keys.vec_hash_combine(build_hasher, hashes)?;
+        keys.vec_hash_combine(build_hasher.clone(), hashes)?;
     }
 
     Ok(build_hasher)

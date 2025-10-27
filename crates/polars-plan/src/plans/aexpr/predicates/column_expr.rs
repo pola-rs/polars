@@ -106,7 +106,7 @@ pub fn aexpr_to_column_predicates(
                                 options: _,
                             } => {
                                 assert_eq!(input.len(), 1);
-                                if into_column(input[0].node(), expr_arena, schema, 0)
+                                if into_column(input[0].node(), expr_arena)
                                     .is_some()
                                 {
                                     Some(SpecializedColumnPredicate::Equal(Scalar::null(
@@ -166,7 +166,7 @@ pub fn aexpr_to_column_predicates(
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
                                 options: _,
                             } => {
-                                into_column(input[0].node(), expr_arena, schema, 0)?;
+                                into_column(input[0].node(), expr_arena)?;
 
                                 let values = constant_evaluate(
                                     input[1].node(),
@@ -209,7 +209,7 @@ pub fn aexpr_to_column_predicates(
                                 }
 
                                 assert_eq!(input.len(), 1);
-                                if into_column(input[0].node(), expr_arena, schema, 0)
+                                if into_column(input[0].node(), expr_arena)
                                     .is_some()
                                 {
                                     Some(SpecializedColumnPredicate::Equal(false.into()))

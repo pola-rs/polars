@@ -403,6 +403,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             file_info: _,
             hive_parts: _,
             predicate,
+            predicate_file_skip_applied,
             output_schema: _,
             scan_type,
             unified_scan_args,
@@ -425,7 +426,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 },
                 // TODO: file info
                 file_info: py.None(),
-                predicate: predicate.as_ref().map(|e| e.into()),
+                predicate: predicate
+                    .as_ref()
+                    .filter(|_| *predicate_file_skip_applied != Some(true))
+                    .map(|e| e.into()),
                 file_options: PyFileOptions {
                     inner: (**unified_scan_args).clone(),
                 },
@@ -660,6 +664,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
 
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
+                FunctionIR::Hint(_) => return Err(PyNotImplementedError::new_err("hint ir")),
             },
         }
         .into_py_any(py),

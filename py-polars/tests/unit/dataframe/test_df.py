@@ -1790,7 +1790,7 @@ def test_reproducible_hash_with_seeds() -> None:
     seeds = (11, 22, 33, 44)
     expected = pl.Series(
         "s",
-        [10832467230526607564, 3044502640115867787, 17228373233104406792],
+        [7829205897147972687, 10151361788274345728, 17508017346787321581],
         dtype=pl.UInt64,
     )
     result = df.hash_rows(*seeds)

@@ -398,6 +398,7 @@ fn visualize_plan_rec(
             row_index,
             pre_slice,
             predicate,
+            predicate_file_skip_applied: _,
             hive_parts,
             include_file_paths,
             cast_columns_policy: _,
@@ -550,6 +551,8 @@ fn visualize_plan_rec(
             input_left,
             input_right,
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
     };
 
     let node_id = node_key.data().as_ffi();

@@ -10,7 +10,7 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "1.35.0b1"
+version = "1.35.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 
@@ -34,7 +34,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 1.35.0b1"]
+dependencies = ["polars-runtime-32 == 1.35.0"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -45,8 +45,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 1.35.0b1"]
-rtcompat = ["polars-runtime-compat == 1.35.0b1"]
+rt64 = ["polars-runtime-64 == 1.35.0"]
+rtcompat = ["polars-runtime-compat == 1.35.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.0.1a1"]
@@ -93,7 +93,7 @@ all = [
 ]
 
 [tool.mypy]
-files = ["polars", "tests"]
+files = ["src/polars", "tests"]
 strict = true
 enable_error_code = [
   "redundant-expr",

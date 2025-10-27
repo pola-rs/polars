@@ -219,6 +219,7 @@ impl SlicePushDown {
                 output_schema,
                 mut unified_scan_args,
                 predicate,
+                predicate_file_skip_applied,
                 scan_type,
             }, Some(state)) if predicate.is_none() && match &*scan_type {
                 #[cfg(feature = "parquet")]
@@ -249,6 +250,7 @@ impl SlicePushDown {
                     scan_type,
                     unified_scan_args,
                     predicate,
+                    predicate_file_skip_applied,
                 };
 
                 Ok(lp)

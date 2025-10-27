@@ -103,7 +103,7 @@ impl Identifier {
         Self {
             inner,
             last_node: Some(*ae),
-            hb: self.hb,
+            hb: self.hb.clone(),
         }
     }
 }

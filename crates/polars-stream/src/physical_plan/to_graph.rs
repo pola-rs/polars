@@ -9,7 +9,8 @@ use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
-use polars_mem_engine::{create_physical_plan, create_scan_predicate};
+use polars_mem_engine::create_physical_plan;
+use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR, IRAggExpr};
@@ -665,6 +666,7 @@ fn to_graph_rec<'a>(
             row_index,
             pre_slice,
             predicate,
+            predicate_file_skip_applied,
             hive_parts,
             missing_columns_policy,
             cast_columns_policy,
@@ -693,6 +695,7 @@ fn to_graph_rec<'a>(
                 })
                 .transpose()?
                 .map(|p| p.to_io(None, file_schema.clone()));
+            let predicate_file_skip_applied = *predicate_file_skip_applied;
 
             let sources = scan_sources.clone();
             let file_reader_builder = file_reader_builder.clone();
@@ -723,6 +726,7 @@ fn to_graph_rec<'a>(
                     row_index,
                     pre_slice,
                     predicate,
+                    predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
                     missing_columns_policy,
@@ -1160,6 +1164,7 @@ fn to_graph_rec<'a>(
             let row_index = None;
             let pre_slice = None;
             let predicate = None;
+            let predicate_file_skip_applied = None;
             let hive_parts = None;
             let include_file_paths = None;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
@@ -1179,6 +1184,7 @@ fn to_graph_rec<'a>(
                     row_index,
                     pre_slice,
                     predicate,
+                    predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
                     missing_columns_policy,
@@ -1193,6 +1199,17 @@ fn to_graph_rec<'a>(
                     verbose,
                 })),
                 [],
+            )
+        },
+
+        #[cfg(feature = "ewma")]
+        EwmMean { input, options } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let (_, dtype) = input_schema.get_at_index(0).unwrap();
+            ctx.graph.add_node(
+                nodes::ewm_mean::EwmMeanNode::new(dtype.clone(), options),
+                [(input_key, input.port)],
             )
         },
     };

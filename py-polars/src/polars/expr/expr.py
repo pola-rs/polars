@@ -1124,10 +1124,16 @@ class Expr:
         """
         Get the group indexes of the group by operation.
 
+        .. deprecated:: 1.35
+            use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.
+            This method will be removed in Polars 2.0.
+
         Should be used in aggregation context only.
 
         Examples
         --------
+        >>> import warnings
+        >>> warnings.filterwarnings("ignore", category=DeprecationWarning)
         >>> df = pl.DataFrame(
         ...     {
         ...         "group": [
@@ -1151,7 +1157,29 @@ class Expr:
         │ one   ┆ [0, 1, 2] │
         │ two   ┆ [3, 4, 5] │
         └───────┴───────────┘
+
+        New recommended approach:
+        >>> (
+        ...     df.with_row_index()
+        ...     .group_by("group", maintain_order=True)
+        ...     .agg(pl.col("index"))
+        ... )
+        shape: (2, 2)
+        ┌───────┬───────────┐
+        │ group ┆ index     │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[u32] │
+        ╞═══════╪═══════════╡
+        │ one   ┆ [0, 1, 2] │
+        │ two   ┆ [3, 4, 5] │
+        └───────┴───────────┘
         """
+        warnings.warn(
+            "agg_groups() is deprecated and will be removed in Polars 2.0. "
+            "Use df.with_row_index().group_by(...).agg(pl.col('index')) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return wrap_expr(self._pyexpr.agg_groups())
 
     def count(self) -> Expr:
@@ -9063,6 +9091,11 @@ Consider using {self}.implode() instead"""
         n
             periods to shift for forming percent change.
 
+        Notes
+        -----
+        Null values are preserved. If you're coming from pandas, this matches
+        their ``fill_method=None`` behaviour.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -9080,8 +9113,8 @@ Consider using {self}.implode() instead"""
         │ 10   ┆ null       │
         │ 11   ┆ 0.1        │
         │ 12   ┆ 0.090909   │
-        │ null ┆ 0.0        │
-        │ 12   ┆ 0.0        │
+        │ null ┆ null       │
+        │ 12   ┆ null       │
         └──────┴────────────┘
         """
         n_pyexpr = parse_into_expression(n)
