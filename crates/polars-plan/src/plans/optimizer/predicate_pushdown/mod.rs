@@ -21,6 +21,7 @@ mod inner {
     use polars_utils::idx_vec::UnitVec;
     use polars_utils::unitvec;
 
+    #[derive(Debug)]
     pub struct PredicatePushDown {
         // TODO: Remove unused
         #[expect(unused)]
