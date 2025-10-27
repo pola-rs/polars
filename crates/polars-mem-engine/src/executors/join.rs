@@ -78,74 +78,42 @@ impl Executor for JoinExec {
             Cow::Borrowed("")
         };
 
-        state.record(|| {
+        state.record(
+            || {
+                let left_on_series = self
+                    .left_on
+                    .iter()
+                    .map(|e| e.evaluate(&df_left, state))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
-            let left_on_series = self
-                .left_on
-                .iter()
-                .map(|e| e.evaluate(&df_left, state))
-                .collect::<PolarsResult<Vec<_>>>()?;
+                let right_on_series = self
+                    .right_on
+                    .iter()
+                    .map(|e| e.evaluate(&df_right, state))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
-            let right_on_series = self
-                .right_on
-                .iter()
-                .map(|e| e.evaluate(&df_right, state))
-                .collect::<PolarsResult<Vec<_>>>()?;
+                let df = df_left._join_impl(
+                    &df_right,
+                    left_on_series
+                        .into_iter()
+                        .map(|c| c.take_materialized_series())
+                        .collect(),
+                    right_on_series
+                        .into_iter()
+                        .map(|c| c.take_materialized_series())
+                        .collect(),
+                    self.args.clone(),
+                    self.options.clone(),
+                    true,
+                    state.verbose(),
+                );
 
-            // prepare the tolerance
-            // we must ensure that we use the right units
-            #[cfg(feature = "asof_join")]
-            {
-                if let JoinType::AsOf(options) = &mut self.args.how {
-                    use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
-                    if let Some(tol) = &options.tolerance_str {
-                        let duration = polars_time::Duration::try_parse(tol)?;
-                        polars_ensure!(
-                            duration.months() == 0,
-                            ComputeError: "cannot use month offset in timedelta of an asof join; \
-                            consider using 4 weeks"
-                        );
-                        use DataType::*;
-                        match left_on_series[0].dtype() {
-                            Datetime(tu, _) | Duration(tu) => {
-                                let tolerance = match tu {
-                                    TimeUnit::Nanoseconds => duration.duration_ns(),
-                                    TimeUnit::Microseconds => duration.duration_us(),
-                                    TimeUnit::Milliseconds => duration.duration_ms(),
-                                };
-                                options.tolerance = Some(Scalar::from(tolerance))
-                            }
-                            Date => {
-                                let days = (duration.duration_ms() / MILLISECONDS_IN_DAY) as i32;
-                                options.tolerance = Some(Scalar::from(days))
-                            }
-                            Time => {
-                                let tolerance = duration.duration_ns();
-                                options.tolerance = Some(Scalar::from(tolerance))
-                            }
-                            _ => {
-                                panic!("can only use timedelta string language with Date/Datetime/Duration/Time dtypes")
-                            }
-                        }
-                    }
-                }
-            }
-
-            let df = df_left._join_impl(
-                &df_right,
-                left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
-                right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
-                self.args.clone(),
-                self.options.clone(),
-                true,
-                state.verbose(),
-            );
-
-            if state.verbose() {
-                eprintln!("{:?} join dataframes finished", self.args.how);
-            };
-            df
-
-        }, profile_name)
+                if state.verbose() {
+                    eprintln!("{:?} join dataframes finished", self.args.how);
+                };
+                df
+            },
+            profile_name,
+        )
     }
 }
