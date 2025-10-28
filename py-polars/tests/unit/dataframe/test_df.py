@@ -1268,6 +1268,10 @@ def test_from_generator_or_iterable() -> None:
         for i in range(n):
             yield (str(i) if strkey else i), 1 * i, 2**i, 3**i
 
+    def gen_named(n: int, *, strkey: bool = True) -> Iterator[Any]:
+        for i in range(n):
+            yield {"a": (str(i) if strkey else i), "b": 1 * i, "c": 2**i, "d": 3**i}
+
     # iterable object
     class Rows:
         def __init__(self, n: int, *, strkey: bool = True) -> None:
@@ -1349,6 +1353,15 @@ def test_from_generator_or_iterable() -> None:
         pl.DataFrame(schema=["a", "b", "c", "d"]),
     )
 
+    # schema overrides
+    assert_frame_equal(
+        pl.DataFrame(
+            data=gen_named(1),
+            schema_overrides={"a": pl.Float64(), "c": pl.Float64()},
+        ),
+        pl.DataFrame([{"a": 0.0, "b": 0, "c": 1.0, "d": 1}]),
+    )
+
 
 def test_from_rows() -> None:
     df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]], orient="row")
@@ -1404,7 +1417,7 @@ def test_from_rows() -> None:
         ],
     ],
 )
-def test_from_rows_of_dicts(records: list[dict[str, Any]]) -> None:
+def test_from_rows_of_dicts(records: Sequence[Mapping[str, Any]]) -> None:
     for df_init in (pl.from_dicts, pl.DataFrame):
         df1 = df_init(records).remove(pl.col("id").is_null())
         assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
@@ -1777,7 +1790,7 @@ def test_reproducible_hash_with_seeds() -> None:
     seeds = (11, 22, 33, 44)
     expected = pl.Series(
         "s",
-        [10832467230526607564, 3044502640115867787, 17228373233104406792],
+        [7829205897147972687, 10151361788274345728, 17508017346787321581],
         dtype=pl.UInt64,
     )
     result = df.hash_rows(*seeds)
@@ -1921,7 +1934,7 @@ def test_group_by_agg_n_unique_empty_group_idx_path() -> None:
     expected = pl.DataFrame(
         {
             "key": [1, 2],
-            "n_unique": pl.Series([3, 0], dtype=pl.UInt32),
+            "n_unique": pl.Series([3, 0], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(out, expected)
@@ -1941,7 +1954,7 @@ def test_group_by_agg_n_unique_empty_group_slice_path() -> None:
     expected = pl.DataFrame(
         {
             "key": [1, 2],
-            "n_unique": pl.Series([0, 0], dtype=pl.UInt32),
+            "n_unique": pl.Series([0, 0], dtype=pl.get_index_type()),
         }
     )
     assert_frame_equal(out, expected)
@@ -1979,7 +1992,7 @@ def test_with_row_index_bad_offset() -> None:
     with pytest.raises(
         ValueError, match="cannot be greater than the maximum index value"
     ):
-        df.with_row_index(offset=2**32)
+        df.with_row_index(offset=2**64)
 
 
 def test_with_row_index_bad_offset_lazy() -> None:
@@ -1990,7 +2003,7 @@ def test_with_row_index_bad_offset_lazy() -> None:
     with pytest.raises(
         ValueError, match="cannot be greater than the maximum index value"
     ):
-        lf.with_row_index(offset=2**32)
+        lf.with_row_index(offset=2**64)
 
 
 def test_with_row_count_deprecated() -> None:
@@ -2082,7 +2095,7 @@ def test_group_by_order_dispatch(name: str | None) -> None:
     name = "len" if name is None else name
     expected = pl.DataFrame(
         data={"x": ["b", "a"], name: [2, 1]},
-        schema_overrides={name: pl.UInt32},
+        schema_overrides={name: pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
     assert_frame_equal(lazy_result.collect(), expected)
@@ -3164,7 +3177,8 @@ def test_window_deadlock() -> None:
 def test_sum_empty_column_names() -> None:
     df = pl.DataFrame({"x": [], "y": []}, schema={"x": pl.Boolean, "y": pl.Boolean})
     expected = pl.DataFrame(
-        {"x": [0], "y": [0]}, schema={"x": pl.UInt32, "y": pl.UInt32}
+        {"x": [0], "y": [0]},
+        schema={"x": pl.get_index_type(), "y": pl.get_index_type()},
     )
     assert_frame_equal(df.sum(), expected)
 

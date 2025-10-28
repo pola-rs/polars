@@ -11,7 +11,7 @@ use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-use pyo3::{Bound, FromPyObject, PyAny, PyObject, PyResult, Python, pyclass, pymethods};
+use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::expr::PyExpr;
 use crate::prelude::Wrap;
@@ -53,10 +53,10 @@ impl PyPartitioning {
     #[pyo3(signature = (base_path, file_path_cb, max_size, per_partition_sort_by, finish_callback))]
     pub fn new_max_size(
         base_path: Wrap<PlPath>,
-        file_path_cb: Option<PyObject>,
+        file_path_cb: Option<Py<PyAny>>,
         max_size: IdxSize,
         per_partition_sort_by: Option<Vec<PyExpr>>,
-        finish_callback: Option<PyObject>,
+        finish_callback: Option<Py<PyAny>>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         let finish_callback =
@@ -75,11 +75,11 @@ impl PyPartitioning {
     #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, finish_callback))]
     pub fn new_by_key(
         base_path: Wrap<PlPath>,
-        file_path_cb: Option<PyObject>,
+        file_path_cb: Option<Py<PyAny>>,
         by: Vec<PyExpr>,
         include_key: bool,
         per_partition_sort_by: Option<Vec<PyExpr>>,
-        finish_callback: Option<PyObject>,
+        finish_callback: Option<Py<PyAny>>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         let finish_callback =
@@ -101,11 +101,11 @@ impl PyPartitioning {
     #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, finish_callback))]
     pub fn new_parted(
         base_path: Wrap<PlPath>,
-        file_path_cb: Option<PyObject>,
+        file_path_cb: Option<Py<PyAny>>,
         by: Vec<PyExpr>,
         include_key: bool,
         per_partition_sort_by: Option<Vec<PyExpr>>,
-        finish_callback: Option<PyObject>,
+        finish_callback: Option<Py<PyAny>>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         let finish_callback =
@@ -129,7 +129,7 @@ impl<'py> FromPyObject<'py> for Wrap<polars_plan::dsl::SinkTarget> {
         if let Ok(v) = ob.extract::<PyBackedStr>() {
             Ok(Wrap(polars::prelude::SinkTarget::Path(PlPath::new(&v))))
         } else {
-            let writer = Python::with_gil(|py| {
+            let writer = Python::attach(|py| {
                 let py_f = ob.clone();
                 PyResult::Ok(
                     crate::file::try_get_pyfile(py, py_f, true)?
@@ -156,7 +156,7 @@ impl<'py> FromPyObject<'py> for Wrap<PartitionTargetCallbackResult> {
                 v.to_str().unwrap().to_string(),
             )))
         } else {
-            let writer = Python::with_gil(|py| {
+            let writer = Python::attach(|py| {
                 let py_f = ob.clone();
                 PyResult::Ok(
                     crate::file::try_get_pyfile(py, py_f, true)?

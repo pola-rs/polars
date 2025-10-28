@@ -372,9 +372,13 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer<'_> {
     let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
-    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        buf.extend_from_slice(fmt_buf.format(item, scale, trim_zeros).as_bytes());
+    let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
+    let f = move |&item, buf: &mut Vec<u8>, options: &SerializeOptions| {
+        buf.extend_from_slice(
+            fmt_buf
+                .format_dec128(item, scale, trim_zeros, options.decimal_comma)
+                .as_bytes(),
+        );
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -669,6 +673,17 @@ pub(super) fn serializer_for<'a>(
                 QuoteStyle::Never => false,
             }
         },
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, scale) => {
+            // Similar to logic for float data-types, but need to consider scale rather than precision
+            let should_quote = options.decimal_comma && options.separator == b',' && *scale > 0;
+
+            match options.quote_style {
+                QuoteStyle::Always => true,
+                QuoteStyle::Necessary | QuoteStyle::NonNumeric => should_quote,
+                QuoteStyle::Never => false,
+            }
+        },
         _ => options.quote_style == QuoteStyle::Always,
     };
 
@@ -907,7 +922,7 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
-            quote_wrapper!(decimal_serializer, scale.unwrap_or(0))
+            quote_wrapper!(decimal_serializer, *scale)
         },
         _ => {
             polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or a binary format.")

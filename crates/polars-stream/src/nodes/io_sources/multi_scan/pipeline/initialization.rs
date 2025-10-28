@@ -1,12 +1,10 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use arrow::bitmap::Bitmap;
 use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
-use polars_io::predicates::ScanIOPredicate;
-use polars_plan::plans::hive::HivePartitionsDf;
+use polars_mem_engine::scan_predicate::initialize_scan_predicate;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
@@ -72,11 +70,16 @@ async fn finish_initialize_multi_scan_pipeline(
 ) -> PolarsResult<()> {
     let verbose = config.verbose;
 
-    let (skip_files_mask, predicate) = initialize_predicate(
-        config.predicate.as_ref(),
-        config.hive_parts.as_deref(),
-        verbose,
-    )?;
+    let (skip_files_mask, predicate) = match config.predicate_file_skip_applied {
+        None => initialize_scan_predicate(
+            config.predicate.as_ref(),
+            config.hive_parts.as_deref(),
+            config.table_statistics.as_ref(),
+            verbose,
+        )?,
+        Some(false) => (None, config.predicate.as_ref()),
+        Some(true) => (None, None),
+    };
 
     if let Some(skip_files_mask) = &skip_files_mask {
         assert_eq!(skip_files_mask.len(), config.sources.len());
@@ -98,10 +101,10 @@ async fn finish_initialize_multi_scan_pipeline(
     loop {
         if skip_files_mask
             .as_ref()
-            .is_some_and(|x| x.unset_bits() == 0)
+            .is_some_and(|x| x.num_skipped_files() == x.len())
         {
             if verbose {
-                eprintln!("[MultiScanTaskInit]: early return (skip_files_mask / predicate)")
+                eprintln!("[MultiScanTaskInit]: early return (filter excludes all files)")
             }
         } else if config.pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
             if cfg!(debug_assertions) {
@@ -246,9 +249,9 @@ async fn finish_initialize_multi_scan_pipeline(
         };
 
         if verbose {
-            let n_filtered = skip_files_mask
-                .clone()
-                .map_or(0, |x| x.sliced(range.start, range.len()).set_bits());
+            let n_filtered = skip_files_mask.clone().map_or(0, |x| {
+                x.sliced(range.start, range.len()).num_skipped_files()
+            });
             let n_readers_init = range.len() - n_filtered;
 
             eprintln!(
@@ -265,14 +268,14 @@ async fn finish_initialize_multi_scan_pipeline(
         if let Some(skip_files_mask) = &skip_files_mask {
             range.end = range
                 .end
-                .min(skip_files_mask.len() - skip_files_mask.trailing_ones());
+                .min(skip_files_mask.len() - skip_files_mask.trailing_skipped_files());
         }
 
         let range = range.filter(move |scan_source_idx| {
             let can_skip = !has_row_index_or_slice
                 && skip_files_mask
                     .as_ref()
-                    .is_some_and(|x| x.get_bit(*scan_source_idx));
+                    .is_some_and(|x| x.is_skipped_file(*scan_source_idx));
 
             !can_skip
         });
@@ -396,53 +399,4 @@ async fn finish_initialize_multi_scan_pipeline(
     reader_starter_handle.await?;
 
     Ok(())
-}
-
-/// # Returns
-/// (skip_files_mask, predicate)
-fn initialize_predicate<'a>(
-    predicate: Option<&'a ScanIOPredicate>,
-    hive_parts: Option<&HivePartitionsDf>,
-    verbose: bool,
-) -> PolarsResult<(Option<Bitmap>, Option<&'a ScanIOPredicate>)> {
-    if let Some(predicate) = predicate {
-        if let Some(hive_parts) = hive_parts {
-            let mut skip_files_mask = None;
-
-            if let Some(predicate) = &predicate.hive_predicate {
-                let mask = predicate
-                    .evaluate_io(hive_parts.df())?
-                    .bool()?
-                    .rechunk()
-                    .into_owned()
-                    .downcast_into_iter()
-                    .next()
-                    .unwrap()
-                    .values()
-                    .clone();
-
-                // TODO: Optimize to avoid doing this
-                let mask = !&mask;
-
-                if verbose {
-                    eprintln!(
-                        "[MultiScan]: Predicate pushdown allows skipping {} / {} files",
-                        mask.set_bits(),
-                        mask.len()
-                    );
-                }
-
-                skip_files_mask = Some(mask);
-            }
-
-            let need_pred_for_inner_readers = !predicate.hive_predicate_is_full_predicate;
-
-            return Ok((
-                skip_files_mask,
-                need_pred_for_inner_readers.then_some(predicate),
-            ));
-        }
-    }
-
-    Ok((None, predicate))
 }

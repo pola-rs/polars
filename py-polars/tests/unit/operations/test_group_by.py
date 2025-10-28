@@ -7,14 +7,19 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
 import polars.selectors as cs
+from polars import Expr
 from polars.exceptions import ColumnNotFoundError
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 if TYPE_CHECKING:
+    from typing import Callable
+
     from polars._typing import PolarsDataType
 
 
@@ -687,7 +692,7 @@ def test_group_by_multiple_column_reference() -> None:
         ("mean", [], [1.0, None], pl.Float64),
         ("median", [], [1.0, None], pl.Float64),
         ("min", [], [1, None], pl.Int64),
-        ("n_unique", [], [1, 0], pl.UInt32),
+        ("n_unique", [], [1, 0], pl.get_index_type()),
         ("quantile", [0.5], [1.0, None], pl.Float64),
     ],
 )
@@ -1029,6 +1034,7 @@ def test_schema_on_agg() -> None:
         pl.col("b").sum().alias("sum"),
         pl.col("b").first().alias("first"),
         pl.col("b").last().alias("last"),
+        pl.col("b").item().alias("item"),
     )
     expected_schema = {
         "a": pl.String,
@@ -1037,6 +1043,7 @@ def test_schema_on_agg() -> None:
         "sum": pl.Int64,
         "first": pl.Int64,
         "last": pl.Int64,
+        "item": pl.Int64,
     }
     assert result.collect_schema() == expected_schema
 
@@ -1061,8 +1068,8 @@ def test_group_by_schema_err() -> None:
         (
             {"x": [True]},
             pl.col("x").sum(),
-            {"x": pl.UInt32},
-            {"x": pl.UInt32},
+            {"x": pl.get_index_type()},
+            {"x": pl.get_index_type()},
         ),
         (
             {"a": [[1, 2]]},
@@ -1557,8 +1564,404 @@ def test_group_by_first_nondet_24278() -> None:
         assert q.collect().to_series().sum() == fst_value
 
 
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_agg_on_lit(maintain_order: bool) -> None:
+    fs: list[Callable[[Expr], Expr]] = [
+        Expr.min,
+        Expr.max,
+        Expr.mean,
+        Expr.sum,
+        Expr.len,
+        Expr.count,
+        Expr.first,
+        Expr.last,
+        Expr.n_unique,
+        Expr.implode,
+        Expr.std,
+        Expr.var,
+        lambda e: e.quantile(0.5),
+        Expr.nan_min,
+        Expr.nan_max,
+        Expr.skew,
+        Expr.null_count,
+        Expr.product,
+        lambda e: pl.corr(e, e),
+    ]
+
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        pl.select(
+            [pl.lit(pl.Series("a", [1, 2]))]
+            + [f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)]
+        ),
+        check_row_order=maintain_order,
+    )
+
+    df = pl.DataFrame({"a": [1, 2], "b": [None, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        pl.select(
+            [pl.lit(pl.Series("a", [1, 2]))]
+            + [f(pl.lit(1)).alias(f"c{i}") for i, f in enumerate(fs)]
+        ),
+        check_row_order=maintain_order,
+    )
+
+
 def test_group_by_cum_sum_key_24489() -> None:
     df = pl.LazyFrame({"x": [1, 2]})
     out = df.group_by((pl.col.x > 1).cum_sum()).agg().collect()
     expected = pl.DataFrame({"x": [0, 1]}, schema={"x": pl.UInt32})
     assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_double_aggregations(maintain_order: bool) -> None:
+    fs: list[Callable[[pl.Expr], pl.Expr]] = [
+        Expr.min,
+        Expr.max,
+        Expr.mean,
+        Expr.sum,
+        Expr.len,
+        Expr.count,
+        Expr.first,
+        Expr.last,
+        Expr.n_unique,
+        Expr.implode,
+        Expr.std,
+        Expr.var,
+        lambda e: e.quantile(0.5),
+        Expr.nan_min,
+        Expr.nan_max,
+        Expr.skew,
+        Expr.null_count,
+        Expr.product,
+        lambda e: pl.corr(e, e),
+    ]
+
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b.first()).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        check_row_order=maintain_order,
+    )
+
+    df = pl.DataFrame({"a": [1, 2], "b": [None, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        df.group_by("a", maintain_order=maintain_order).agg(
+            f(pl.col.b.first()).alias(f"c{i}") for i, f in enumerate(fs)
+        ),
+        check_row_order=maintain_order,
+    )
+
+
+def test_group_by_length_preserving_on_scalar() -> None:
+    df = pl.DataFrame({"a": [[1], [2], [3]]})
+    df = df.group_by(pl.lit(1, pl.Int64)).agg(
+        a=pl.col.a.first().reverse(),
+        b=pl.col.a.first(),
+        c=pl.col.a.reverse(),
+        d=pl.lit(1, pl.Int64).reverse(),
+        e=pl.lit(1, pl.Int64).unique(),
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "literal": [1],
+                "a": [[1]],
+                "b": [[1]],
+                "c": [[[3], [2], [1]]],
+                "d": [1],
+                "e": [[1]],
+            }
+        ),
+    )
+
+
+def test_group_by_enum_min_max_18394() -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["a", "a", "b", "b", "c", "c"],
+            "degree": ["low", "high", "high", "mid", "mid", "low"],
+        }
+    ).with_columns(pl.col("degree").cast(pl.Enum(["low", "mid", "high"])))
+    out = df.group_by("id").agg(
+        min_degree=pl.col("degree").min(),
+        max_degree=pl.col("degree").max(),
+    )
+    expected = pl.DataFrame(
+        {
+            "id": ["a", "b", "c"],
+            "min_degree": ["low", "mid", "low"],
+            "max_degree": ["high", "high", "mid"],
+        },
+        schema={
+            "id": pl.String,
+            "min_degree": pl.Enum(["low", "mid", "high"]),
+            "max_degree": pl.Enum(["low", "mid", "high"]),
+        },
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_filter_24838(maintain_order: bool) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [1, 2, 1, 2, 1]})
+
+    assert_frame_equal(
+        df.group_by("a", maintain_order=maintain_order).agg(
+            b=pl.lit(2, pl.Int64).filter(pl.col.b != 1)
+        ),
+        pl.DataFrame(
+            [
+                pl.Series("a", [1, 2, 3], pl.Int64),
+                pl.Series("b", [[2], [2], []], pl.List(pl.Int64)),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize(
+    "lhs",
+    [
+        pl.lit(2),
+        pl.col.a,
+        pl.col.a.first(),
+        pl.col.a.reverse(),
+        pl.col.a.fill_null(strategy="forward"),
+    ],
+)
+@pytest.mark.parametrize(
+    "rhs",
+    [
+        pl.col.b == 3,
+        pl.col.b != 3,
+        pl.col.b.reverse() == 3,
+        pl.col.b.reverse() != 3,
+        pl.col.b.fill_null(1) != 3,
+        pl.col.b.fill_null(1) == 3,
+        pl.lit(True),
+        pl.lit(False),
+        pl.lit(pl.Series([True])),
+        pl.lit(pl.Series([False])),
+        pl.lit(pl.Series([True])).first(),
+        pl.lit(pl.Series([False])).first(),
+    ],
+)
+@pytest.mark.parametrize(
+    "agg",
+    [
+        Expr.implode,
+        Expr.sum,
+        Expr.first,
+    ],
+)
+def test_group_by_filter_parametric(
+    lhs: pl.Expr, rhs: pl.Expr, agg: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [1, 2, 1, 2, 1]})
+    gb = df.group_by(pl.lit(1)).agg(a=agg(lhs.filter(rhs))).to_series(1)
+    gb = gb.rename("a")
+    sl = df.select(a=agg(lhs.filter(rhs))).to_series()
+    assert_series_equal(gb, sl)
+
+
+@given(s=series(name="a", min_size=1))
+@pytest.mark.parametrize(
+    ("expr", "is_scalar", "maintain_order"),
+    [
+        (pl.Expr.n_unique, True, True),
+        (pl.Expr.unique, False, False),
+        (lambda e: e.unique(maintain_order=True), False, True),
+    ],
+)
+def test_group_by_unique_parametric(
+    s: pl.Series,
+    expr: Callable[[pl.Expr], pl.Expr],
+    is_scalar: bool,
+    maintain_order: bool,
+) -> None:
+    df = s.to_frame()
+
+    sl = df.select(expr(pl.col.a))
+    gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a)).drop("literal")
+    if not is_scalar:
+        gb = gb.select(pl.col.a.explode())
+    assert_frame_equal(sl, gb, check_row_order=maintain_order)
+
+    # check scalar case
+    sl_first = df.select(expr(pl.col.a.first()))
+    gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a.first())).drop("literal")
+    if not is_scalar:
+        gb = gb.select(pl.col.a.explode())
+    assert_frame_equal(sl_first, gb, check_row_order=maintain_order)
+
+    li = df.select(pl.col.a.implode().list.eval(expr(pl.element())))
+    li = li.select(pl.col.a.explode())
+    assert_frame_equal(sl, li, check_row_order=maintain_order)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.Expr.any,
+        pl.Expr.all,
+        lambda e: e.any(ignore_nulls=False),
+        lambda e: e.all(ignore_nulls=False),
+    ],
+)
+def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
+    combinations = [
+        [True, None],
+        [None, None],
+        [False, None],
+        [True, True],
+        [False, False],
+        [True, False],
+    ]
+
+    cl = cs.starts_with("x")
+    df = pl.DataFrame(
+        [pl.Series("g", [1, 1])]
+        + [pl.Series(f"x{i}", c, pl.Boolean()) for i, c in enumerate(combinations)]
+    )
+
+    # verify that we are actually calculating something
+    assert len(df.lazy().select(expr(cl)).collect_schema()) == len(combinations)
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit"),
+    )
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.group_by("g").agg(expr(cl)).drop("g"),
+    )
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.select(cl.implode().list.agg(expr(pl.element()))),
+    )
+
+    df = pl.Schema({"x": pl.Boolean()}).to_frame()
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(expr(pl.lit(pl.Series("x", [], pl.Boolean()))))
+        .drop("lit"),
+    )
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.select(cl.implode().list.agg(expr(pl.element()))),
+    )
+
+
+@given(
+    s=series(
+        name="f",
+        dtype=pl.Float64(),
+        allow_chunks=False,  # bug: See #24960
+    )
+)
+def test_group_by_skew_kurtosis(s: pl.Series) -> None:
+    df = s.to_frame()
+
+    exprs: dict[str, Callable[[pl.Expr], pl.Expr]] = {
+        "skew": lambda e: e.skew(),
+        "skew_b": lambda e: e.skew(bias=False),
+        "kurt": lambda e: e.kurtosis(),
+        "kurt_f": lambda e: e.kurtosis(fisher=False),
+        "kurt_b": lambda e: e.kurtosis(bias=False),
+        "kurt_fb": lambda e: e.kurtosis(fisher=False, bias=False),
+    }
+
+    sl = df.select([e(pl.col.f).alias(n) for n, e in exprs.items()])
+    if s.len() > 0:
+        gb = (
+            df.group_by(pl.lit(1))
+            .agg([e(pl.col.f).alias(n) for n, e in exprs.items()])
+            .drop("literal")
+        )
+        assert_frame_equal(sl, gb)
+
+        # check scalar case
+        sl_first = df.select([e(pl.col.f.first()).alias(n) for n, e in exprs.items()])
+        gb = (
+            df.group_by(pl.lit(1))
+            .agg([e(pl.col.f.first()).alias(n) for n, e in exprs.items()])
+            .drop("literal")
+        )
+        assert_frame_equal(sl_first, gb)
+
+    li = df.select(pl.col.f.implode()).select(
+        [pl.col.f.list.agg(e(pl.element())).alias(n) for n, e in exprs.items()]
+    )
+    assert_frame_equal(sl, li)
+
+
+def test_group_by_rolling_fill_null_25036() -> None:
+    frame = pl.DataFrame(
+        {
+            "date": [date(2013, 1, 1), date(2013, 1, 2), date(2013, 1, 3)] * 2,
+            "group": ["A"] * 3 + ["B"] * 3,
+            "value": [None, None, 3, 4, None, None],
+        }
+    )
+    result = frame.rolling(index_column="date", period="2d", group_by="group").agg(
+        pl.col("value").forward_fill(limit=None).last()
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["A"] * 3 + ["B"] * 3,
+            "date": [date(2013, 1, 1), date(2013, 1, 2), date(2013, 1, 3)] * 2,
+            "value": [None, None, 3, 4, 4, None],
+        }
+    )
+
+    assert_frame_equal(result, expected)
+
+
+exprs = [
+    pl.col.a,
+    pl.col.a.filter(pl.col.a <= 1),
+    pl.col.a.first(),
+    pl.lit(1).alias("one"),
+    pl.lit(pl.Series([1])),
+]
+
+
+@pytest.mark.parametrize("lhs", exprs)
+@pytest.mark.parametrize("rhs", exprs)
+@pytest.mark.parametrize("op", [pl.Expr.add, pl.Expr.pow])
+def test_group_broadcast_binary_apply_expr_25046(
+    lhs: pl.Expr, rhs: pl.Expr, op: Any
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3]})
+    groups = pl.lit(1)
+    out = df.group_by(groups).agg((op(lhs, rhs)).implode()).to_series(1)
+    expected = df.select((op(lhs, rhs)).implode()).to_series()
+    assert_series_equal(out, expected)

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
 use components::bridge::BridgeRecvPort;
 use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
@@ -10,6 +9,7 @@ use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_error::PolarsResult;
+use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -43,7 +43,7 @@ pub struct ReaderStarter {
         WaitToken,
     )>,
     pub max_concurrent_scans: usize,
-    pub skip_files_mask: Option<Bitmap>,
+    pub skip_files_mask: Option<SkipFilesMask>,
     pub extra_ops: ExtraOperations,
     pub constant_args: StartReaderArgsConstant,
     pub verbose: bool,
@@ -199,7 +199,7 @@ impl ReaderStarter {
             // &str that holds the reason
             let mut skip_read_reason: Option<&'static str> = skip_files_mask
                 .as_ref()
-                .is_some_and(|x| x.get_bit(scan_source_idx))
+                .is_some_and(|x| x.is_skipped_file(scan_source_idx))
                 .then_some("skip_files_mask");
 
             if skip_read_reason.is_some() {
@@ -287,10 +287,12 @@ impl ReaderStarter {
                         PolarsResult::Ok(file_row_count)
                     };
 
-                    if n_rows_in_file.is_none() {
+                    if let Some(n_rows_in_file) = n_rows_in_file
+                        && cfg!(debug_assertions)
+                    {
+                        assert_eq!(n_rows_in_file, get_row_count.await?)
+                    } else {
                         n_rows_in_file = Some(get_row_count.await?)
-                    } else if cfg!(debug_assertions) {
-                        assert_eq!(n_rows_in_file.unwrap(), get_row_count.await?)
                     }
 
                     *current_row_position = current_row_position.add(n_rows_in_file.unwrap());
@@ -610,8 +612,11 @@ async fn start_reader_impl(
 
     if let Some(forbid_extra_columns) = forbid_extra_columns {
         if let Ok(this_file_schema) = file_schema_rx.unwrap().recv().await {
-            forbid_extra_columns
-                .check_file_schema(&this_file_schema, file_iceberg_schema.as_ref())?;
+            forbid_extra_columns.check_file_schema(
+                &this_file_schema,
+                file_iceberg_schema.as_ref(),
+                scan_source.as_scan_source_ref().to_include_path_name(),
+            )?;
         } else {
             drop(reader_output_port);
             return Err(reader_handle.await.unwrap_err());

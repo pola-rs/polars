@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import re
+import sys
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Callable
 
@@ -283,6 +284,27 @@ def test_multiscan_row_index(
             [
                 pl.Series("ri", [start + 0, start + 1, start + 4], get_index_type()),
                 pl.Series("col", [5, 10, 13]),
+            ]
+        ),
+    )
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="'index' has more than one occurrence"
+    ):
+        scan(g).with_row_index().with_row_index().collect()
+
+    assert_frame_equal(
+        scan(g)
+        .with_row_index()
+        .with_row_index("index_1", offset=1)
+        .with_row_index("index_2", offset=2)
+        .collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index_2", [2, 3, 4, 5, 6, 7], get_index_type()),
+                pl.Series("index_1", [1, 2, 3, 4, 5, 6], get_index_type()),
+                pl.Series("index", [0, 1, 2, 3, 4, 5], get_index_type()),
+                col,
             ]
         ),
     )
@@ -640,7 +662,7 @@ def test_extra_columns_not_ignored_22218() -> None:
         pl.exceptions.SchemaError,
         match="extra column in file outside of expected schema: c, hint: specify .*or pass",
     ):
-        (pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect())
+        pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect()
 
     assert_frame_equal(
         pl.scan_parquet(
@@ -713,3 +735,167 @@ def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
             schema=schema,
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+    ],
+)
+@pytest.mark.parametrize("prefix", ["", "file:", "file://"])
+@pytest.mark.parametrize("use_glob", [True, False])
+def test_scan_ignore_hidden_files_21762(
+    tmp_path: Path, scan: Any, write: Any, use_glob: bool, prefix: str
+) -> None:
+    file_names: list[str] = ["a.ext", "_a.ext", ".a.ext", "a_.ext"]
+
+    for file_name in file_names:
+        write(pl.DataFrame({"rel_path": file_name}), tmp_path / file_name)
+
+    (tmp_path / "folder").mkdir()
+
+    for file_name in file_names:
+        write(
+            pl.DataFrame({"rel_path": f"folder/{file_name}"}),
+            tmp_path / "folder" / file_name,
+        )
+
+    (tmp_path / "_folder").mkdir()
+
+    for file_name in file_names:
+        write(
+            pl.DataFrame({"rel_path": f"_folder/{file_name}"}),
+            tmp_path / "_folder" / file_name,
+        )
+
+    if prefix.startswith("file:") and sys.platform == "win32":
+        pytest.skip("Unsupported on Windows")
+
+    suffix = "/**/*.ext" if use_glob else "/" if prefix.startswith("file:") else ""
+    root = f"{prefix}{tmp_path}{suffix}"
+
+    assert_frame_equal(
+        scan(root).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    ".a.ext",
+                    "_a.ext",
+                    "_folder/.a.ext",
+                    "_folder/_a.ext",
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/.a.ext",
+                    "folder/_a.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=".").sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_a.ext",
+                    "_folder/_a.ext",
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/_a.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=(".", "_")).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_folder/a.ext",
+                    "_folder/a_.ext",
+                    "a.ext",
+                    "a_.ext",
+                    "folder/a.ext",
+                    "folder/a_.ext",
+                ]
+            }
+        ),
+    )
+
+    # Top-level glob only
+    root = f"{tmp_path}/*.ext"
+
+    assert_frame_equal(
+        scan(root).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    ".a.ext",
+                    "_a.ext",
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=".").sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "_a.ext",
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        scan(root, hidden_file_prefix=[".", "_"]).sort("*"),
+        pl.LazyFrame(
+            {
+                "rel_path": [
+                    "a.ext",
+                    "a_.ext",
+                ]
+            }
+        ),
+    )
+
+    # Direct file passed
+    with pytest.raises(pl.exceptions.ComputeError, match="expanded paths were empty"):
+        scan(tmp_path / "_a.ext", hidden_file_prefix="_").collect()
+
+
+def test_row_count_estimate_multifile(io_files_path: Path) -> None:
+    src = io_files_path / "foods*.parquet"
+    # test that it doesn't check only the first file
+    assert "ESTIMATED ROWS: 54" in pl.scan_parquet(src).explain()

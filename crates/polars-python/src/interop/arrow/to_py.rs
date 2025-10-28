@@ -18,7 +18,7 @@ pub(crate) fn to_py_array(
     array: ArrayRef,
     field: &ArrowField,
     pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(field));
     let array = Box::new(ffi::export_array_to_c(array));
 
@@ -38,7 +38,7 @@ pub(crate) fn to_py_rb(
     rb: &RecordBatch,
     py: Python<'_>,
     pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let mut arrays = Vec::with_capacity(rb.width());
 
     for (array, field) in rb.columns().iter().zip(rb.schema().iter_values()) {

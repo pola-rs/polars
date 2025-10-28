@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 pub use field::{
     DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
-    DTYPE_ENUM_VALUES_NEW, Field, MAINTAIN_PL_TYPE, PL_KEY,
+    DTYPE_ENUM_VALUES_NEW, Field, MAINTAIN_PL_TYPE, PARQUET_EMPTY_STRUCT, PL_KEY,
 };
 pub use physical_type::*;
 use polars_utils::pl_str::PlSmallStr;
@@ -334,14 +334,17 @@ impl ArrowDataType {
     pub fn underlying_physical_type(&self) -> ArrowDataType {
         use ArrowDataType::*;
         match self {
-            Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => Int32,
-            Date64
+            Decimal32(_, _) | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => Int32,
+            Decimal64(_, _)
+            | Date64
             | Timestamp(_, _)
             | Time64(_)
             | Duration(_)
             | Interval(IntervalUnit::DayTime) => Int64,
             Interval(IntervalUnit::MonthDayNano) => unimplemented!(),
             Binary => Binary,
+            Decimal(_, _) => Int128,
+            Decimal256(_, _) => unimplemented!(),
             List(field) => List(Box::new(Field {
                 dtype: field.dtype.underlying_physical_type(),
                 ..*field.clone()
@@ -435,6 +438,10 @@ impl ArrowDataType {
                 | D::Decimal64(_, _)
                 | D::Decimal256(_, _)
         )
+    }
+
+    pub fn to_large_list(self, is_nullable: bool) -> ArrowDataType {
+        ArrowDataType::LargeList(Box::new(Field::new(LIST_VALUES_NAME, self, is_nullable)))
     }
 
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {

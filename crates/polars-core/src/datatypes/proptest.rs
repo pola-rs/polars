@@ -13,35 +13,26 @@ bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct DataTypeArbitrarySelection: u32 {
         const BOOLEAN = 1;
-        const UINT8 = 1 << 1;
-        const UINT16 = 1 << 2;
-        const UINT32 = 1 << 3;
-        const UINT64 = 1 << 4;
-        const UINT128 = 1 << 5;
-        const INT8 = 1 << 6;
-        const INT16 = 1 << 7;
-        const INT32 = 1 << 8;
-        const INT64 = 1 << 9;
-        const INT128 = 1 << 10;
-        const FLOAT32 = 1 << 11;
-        const FLOAT64 = 1 << 12;
-        const STRING = 1 << 13;
-        const BINARY = 1 << 14;
-        const BINARY_OFFSET = 1 << 15;
-        const DATE = 1 << 16;
-        const TIME = 1 << 17;
-        const NULL = 1 << 18;
+        const UINT = 1 << 1;
+        const INT = 1 << 2;
+        const FLOAT = 1 << 3;
+        const STRING = 1 << 4;
+        const BINARY = 1 << 5;
+        const BINARY_OFFSET = 1 << 6;
+        const DATE = 1 << 7;
+        const TIME = 1 << 8;
+        const NULL = 1 << 9;
 
-        const DECIMAL = 1 << 19;
-        const DATETIME = 1 << 20;
-        const DURATION = 1 << 21;
-        const CATEGORICAL = 1 << 22;
-        const ENUM = 1 << 23;
-        const OBJECT = 1 << 24;
+        const DECIMAL = 1 << 10;
+        const DATETIME = 1 << 11;
+        const DURATION = 1 << 12;
+        const CATEGORICAL = 1 << 13;
+        const ENUM = 1 << 14;
+        const OBJECT = 1 << 15;
 
-        const LIST = 1 << 25;
-        const ARRAY = 1 << 26;
-        const STRUCT = 1 << 27;
+        const LIST = 1 << 16;
+        const ARRAY = 1 << 17;
+        const STRUCT = 1 << 18;
     }
 }
 
@@ -94,18 +85,9 @@ pub fn dtypes(
 
         match selection {
             _ if selection == S::BOOLEAN => Just(DataType::Boolean).boxed(),
-            _ if selection == S::UINT8 => Just(DataType::UInt8).boxed(),
-            _ if selection == S::UINT16 => Just(DataType::UInt16).boxed(),
-            _ if selection == S::UINT32 => Just(DataType::UInt32).boxed(),
-            _ if selection == S::UINT64 => Just(DataType::UInt64).boxed(),
-            _ if selection == S::UINT128 => Just(DataType::UInt128).boxed(),
-            _ if selection == S::INT8 => Just(DataType::Int8).boxed(),
-            _ if selection == S::INT16 => Just(DataType::Int16).boxed(),
-            _ if selection == S::INT32 => Just(DataType::Int32).boxed(),
-            _ if selection == S::INT64 => Just(DataType::Int64).boxed(),
-            _ if selection == S::INT128 => Just(DataType::Int128).boxed(),
-            _ if selection == S::FLOAT32 => Just(DataType::Float32).boxed(),
-            _ if selection == S::FLOAT64 => Just(DataType::Float64).boxed(),
+            _ if selection == S::UINT => uint_strategy().boxed(),
+            _ if selection == S::INT => int_strategy().boxed(),
+            _ if selection == S::FLOAT => float_strategy().boxed(),
             _ if selection == S::STRING => Just(DataType::String).boxed(),
             _ if selection == S::BINARY => Just(DataType::Binary).boxed(),
             _ if selection == S::BINARY_OFFSET => Just(DataType::BinaryOffset).boxed(),
@@ -146,15 +128,38 @@ pub fn dtypes(
     })
 }
 
+fn uint_strategy() -> impl Strategy<Value = DataType> {
+    prop_oneof![
+        Just(DataType::UInt8),
+        Just(DataType::UInt16),
+        Just(DataType::UInt32),
+        Just(DataType::UInt64),
+        Just(DataType::UInt128),
+    ]
+}
+
+fn int_strategy() -> impl Strategy<Value = DataType> {
+    prop_oneof![
+        Just(DataType::Int8),
+        Just(DataType::Int16),
+        Just(DataType::Int32),
+        Just(DataType::Int64),
+        Just(DataType::Int128),
+    ]
+}
+
+fn float_strategy() -> impl Strategy<Value = DataType> {
+    prop_oneof![Just(DataType::Float32), Just(DataType::Float64),]
+}
+
 #[cfg(feature = "dtype-decimal")]
 fn decimal_strategy(
     decimal_precision_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = DataType> {
-    prop::option::of(decimal_precision_range.clone())
+    decimal_precision_range
+        .clone()
         .prop_flat_map(move |precision| {
-            let max_scale = precision.unwrap_or(*decimal_precision_range.end());
-            let scale_strategy = prop::option::of(0_usize..=max_scale);
-
+            let scale_strategy = 0_usize..=precision;
             (Just(precision), scale_strategy)
         })
         .prop_map(|(precision, scale)| DataType::Decimal(precision, scale))

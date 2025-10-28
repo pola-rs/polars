@@ -225,6 +225,7 @@ impl<'a> IRDotDisplay<'a> {
                 file_info,
                 hive_parts: _,
                 predicate,
+                predicate_file_skip_applied: _,
                 scan_type,
                 unified_scan_args,
                 output_schema: _,
@@ -291,6 +292,7 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| {
                     f.write_str(match payload {
                         SinkTypeIR::Memory => "SINK (MEMORY)",
+                        SinkTypeIR::Callback { .. } => "SINK (CALLBACK)",
                         SinkTypeIR::File { .. } => "SINK (FILE)",
                         SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
                     })

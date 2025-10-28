@@ -13,13 +13,22 @@ use polars_utils::{format_pl_smallstr, unitvec};
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
-use crate::plans::IR;
+use crate::plans::{AExpr, IR};
 
-pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResult<()> {
+pub(super) fn expand_datasets(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    apply_scan_predicate_to_scan_ir: fn(
+        Node,
+        &mut Arena<IR>,
+        &mut Arena<AExpr>,
+    ) -> PolarsResult<()>,
+) -> PolarsResult<()> {
     let mut stack = unitvec![root];
 
     while let Some(node) = stack.pop() {
-        lp_arena.get(node).copy_inputs(&mut stack);
+        ir_arena.get(node).copy_inputs(&mut stack);
 
         let IR::Scan {
             sources,
@@ -28,14 +37,26 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
 
             file_info: _,
             hive_parts: _,
-            predicate: _,
+            predicate,
+            predicate_file_skip_applied: _,
             output_schema: _,
-        } = lp_arena.get_mut(node)
+        } = ir_arena.get_mut(node)
         else {
             continue;
         };
 
-        let projection = unified_scan_args.projection.clone();
+        let mut projection = unified_scan_args.projection.clone();
+
+        if let Some(row_index) = &unified_scan_args.row_index
+            && let Some(projection) = projection.as_mut()
+        {
+            *projection = projection
+                .iter()
+                .filter(|x| *x != &row_index.name)
+                .cloned()
+                .collect();
+        }
+
         let limit = match unified_scan_args.pre_slice.clone() {
             Some(v @ Slice::Positive { .. }) => Some(v.end_position()),
             _ => None,
@@ -47,6 +68,8 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                 dataset_object,
                 cached_ir,
             } => {
+                use crate::plans::pyarrow::predicate_to_pa;
+
                 let cached_ir = cached_ir.clone();
                 let mut guard = cached_ir.lock().unwrap();
 
@@ -62,17 +85,65 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                     )
                 }
 
+                // Note
+                // row_index is removed from projection/live_columns set, and is therefore not
+                // considered when comparing cached expansion equality. This is safe as the
+                // `row_index_in_live_filter` variable does not depend on the cached values.
+
+                let mut row_index_in_live_filter = false;
+
+                let live_filter_columns: Option<Arc<[PlSmallStr]>> = predicate.as_ref().map(|x| {
+                    use polars_core::prelude::PlHashSet;
+
+                    use crate::utils::aexpr_to_leaf_names_iter;
+
+                    let mut out: Arc<[PlSmallStr]> =
+                        PlHashSet::from_iter(aexpr_to_leaf_names_iter(x.node(), expr_arena))
+                            .into_iter()
+                            .filter(|live_col| {
+                                if unified_scan_args
+                                    .row_index
+                                    .as_ref()
+                                    .is_some_and(|ri| live_col == &ri.name)
+                                {
+                                    row_index_in_live_filter = true;
+                                    false
+                                } else {
+                                    true
+                                }
+                            })
+                            .collect();
+
+                    Arc::get_mut(&mut out).unwrap().sort_unstable();
+
+                    out
+                });
+
+                let pyarrow_predicate: Option<String> = if !unified_scan_args
+                    .has_row_index_or_slice()
+                    && let Some(predicate) = &predicate
+                {
+                    predicate_to_pa(predicate.node(), expr_arena, Default::default())
+                } else {
+                    None
+                };
+
                 let existing_resolved_version_key = match guard.as_ref() {
                     Some(resolved) => {
                         let ExpandedDataset {
                             version,
                             limit: cached_limit,
                             projection: cached_projection,
+                            live_filter_columns: cached_live_filter_columns,
+                            pyarrow_predicate: cached_pyarrow_predicate,
                             expanded_dsl: _,
                             python_scan: _,
                         } = resolved;
 
-                        (cached_limit == &limit && cached_projection == &projection)
+                        (&limit == cached_limit
+                            && &projection == cached_projection
+                            && &live_filter_columns == cached_live_filter_columns
+                            && &pyarrow_predicate == cached_pyarrow_predicate)
                             .then_some(version.as_str())
                     },
 
@@ -83,11 +154,15 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                     existing_resolved_version_key,
                     limit,
                     projection.as_deref(),
+                    live_filter_columns.as_deref(),
+                    pyarrow_predicate.as_deref(),
                 )? {
                     *guard = Some(ExpandedDataset {
                         version,
                         limit,
                         projection,
+                        live_filter_columns,
+                        pyarrow_predicate,
                         expanded_dsl,
                         python_scan: None,
                     })
@@ -97,6 +172,8 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                     version: _,
                     limit: _,
                     projection: _,
+                    live_filter_columns: _,
+                    pyarrow_predicate: _,
                     expanded_dsl,
                     python_scan,
                 } = guard.as_mut().unwrap();
@@ -119,6 +196,7 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                             rechunk,
                             cache,
                             glob: _,
+                            hidden_file_prefix: _hidden_file_prefix @ None,
                             projection: _projection @ None,
                             column_mapping,
                             default_values,
@@ -129,6 +207,8 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                             extra_columns_policy,
                             include_file_paths: _include_file_paths @ None,
                             deletion_files,
+                            table_statistics,
+                            row_count,
                         } = resolved_unified_scan_args.as_ref()
                         else {
                             panic!(
@@ -146,10 +226,51 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                         unified_scan_args.column_mapping = column_mapping.clone();
                         unified_scan_args.default_values = default_values.clone();
                         unified_scan_args.deletion_files = deletion_files.clone();
+                        unified_scan_args.table_statistics = table_statistics.clone();
+                        unified_scan_args.row_count = *row_count;
+
+                        if row_index_in_live_filter {
+                            use polars_core::prelude::{Column, DataType, IdxCa, IntoColumn};
+                            use polars_core::series::IntoSeries;
+
+                            let row_index_name =
+                                &unified_scan_args.row_index.as_ref().unwrap().name;
+                            let table_statistics =
+                                unified_scan_args.table_statistics.as_mut().unwrap();
+
+                            let statistics_df = Arc::make_mut(&mut table_statistics.0);
+                            assert!(
+                                !statistics_df
+                                    .schema()
+                                    .contains(&format_pl_smallstr!("{}_nc", row_index_name))
+                            );
+
+                            statistics_df.clear_schema();
+
+                            unsafe { statistics_df.get_columns_mut() }.extend([
+                                IdxCa::from_vec(
+                                    format_pl_smallstr!("{}_nc", row_index_name),
+                                    vec![0],
+                                )
+                                .into_series()
+                                .into_column()
+                                .new_from_index(0, sources.len()),
+                                Column::full_null(
+                                    format_pl_smallstr!("{}_min", row_index_name),
+                                    sources.len(),
+                                    &DataType::IDX_DTYPE,
+                                ),
+                                Column::full_null(
+                                    format_pl_smallstr!("{}_max", row_index_name),
+                                    sources.len(),
+                                    &DataType::IDX_DTYPE,
+                                ),
+                            ]);
+                        }
 
                         *sources = resolved_sources.clone();
 
-                        *scan_type = Box::new(match *resolved_scan_type.clone() {
+                        **scan_type = match *resolved_scan_type.clone() {
                             #[cfg(feature = "csv")]
                             FileScanDsl::Csv { options } => FileScanIR::Csv { options },
 
@@ -181,7 +302,7 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
                                 function,
                                 file_info: _,
                             } => FileScanIR::Anonymous { options, function },
-                        });
+                        };
                     },
 
                     DslPlan::PythonScan { options } => {
@@ -204,6 +325,8 @@ pub(super) fn expand_datasts(root: Node, lp_arena: &mut Arena<IR>) -> PolarsResu
 
             _ => {},
         }
+
+        apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
     }
 
     Ok(())
@@ -216,6 +339,8 @@ pub struct ExpandedDataset {
     version: PlSmallStr,
     limit: Option<usize>,
     projection: Option<Arc<[PlSmallStr]>>,
+    live_filter_columns: Option<Arc<[PlSmallStr]>>,
+    pyarrow_predicate: Option<String>,
     expanded_dsl: DslPlan,
 
     /// Fallback python scan
@@ -246,6 +371,8 @@ impl Debug for ExpandedDataset {
             version,
             limit,
             projection,
+            live_filter_columns,
+            pyarrow_predicate,
             expanded_dsl,
 
             #[cfg(feature = "python")]
@@ -256,9 +383,15 @@ impl Debug for ExpandedDataset {
             version,
             limit,
             projection,
+            live_filter_columns,
             expanded_dsl: &match expanded_dsl.display() {
                 Ok(v) => v.to_string(),
                 Err(e) => e.to_string(),
+            },
+            pyarrow_predicate: if pyarrow_predicate.is_some() {
+                "Some(<redacted>)"
+            } else {
+                "None"
             },
             #[cfg(feature = "python")]
             python_scan: python_scan.as_ref().map(
@@ -285,6 +418,8 @@ impl Debug for ExpandedDataset {
                 pub version: &'a str,
                 pub limit: &'a Option<usize>,
                 pub projection: &'a Option<Arc<[PlSmallStr]>>,
+                pub live_filter_columns: &'a Option<Arc<[PlSmallStr]>>,
+                pub pyarrow_predicate: &'static str,
                 pub expanded_dsl: &'a str,
 
                 #[cfg(feature = "python")]

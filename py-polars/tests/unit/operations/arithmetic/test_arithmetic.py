@@ -662,7 +662,7 @@ def test_literal_subtract_schema_13284() -> None:
         .with_columns(pl.col("a") - pl.lit(1))
         .group_by("a")
         .len()
-    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.get_index_type())])
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
@@ -991,20 +991,3 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
         pl.Series("a", [81], dtype=dtype).log(b),
         pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
     )
-
-
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Float32,
-        pl.Int32,
-        pl.Int64,
-    ],
-)
-def test_log_broadcast_upcasting(dtype: pl.DataType) -> None:
-    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
-    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
-    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=Float64)
-
-    assert_series_equal(a.log(b.cast(Float64)), expected)
-    assert_series_equal(a.cast(Float64).log(b), expected)

@@ -25,7 +25,6 @@ use rayon::prelude::*;
 
 use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
 use crate::async_executor;
-use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
@@ -179,7 +178,7 @@ async fn select_keys(
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(
         &keys,
-        params.random_state,
+        params.random_state.clone(),
         params.args.nulls_equal,
         false,
     ))
@@ -257,7 +256,7 @@ struct SampleState {
 
 impl SampleState {
     async fn sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         morsels: &mut Vec<Morsel>,
         len: &mut usize,
         this_final_len: Arc<RelaxedCell<usize>>,
@@ -444,7 +443,7 @@ impl BuildState {
     }
 
     async fn partition_and_sink(
-        mut recv: Receiver<Morsel>,
+        mut recv: PortReceiver,
         local: &mut LocalBuilder,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
@@ -739,8 +738,8 @@ struct ProbeState {
 impl ProbeState {
     /// Returns the max morsel sequence sent.
     async fn partition_and_probe(
-        mut recv: Receiver<Morsel>,
-        mut send: Sender<Morsel>,
+        mut recv: PortReceiver,
+        mut send: PortSender,
         partitions: &[ProbeTable],
         unordered_morsel_seq: &AtomicU64,
         partitioner: HashPartitioner,
@@ -1083,7 +1082,7 @@ struct EmitUnmatchedState {
 impl EmitUnmatchedState {
     async fn emit_unmatched(
         &mut self,
-        mut send: Sender<Morsel>,
+        mut send: PortSender,
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {

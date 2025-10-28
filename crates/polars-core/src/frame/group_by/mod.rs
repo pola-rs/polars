@@ -88,7 +88,7 @@ impl DataFrame {
                 };
                 Ok(GroupsType::Slice {
                     groups,
-                    rolling: false,
+                    overlapping: false,
                 })
             } else {
                 let rows = if multithreaded {
@@ -274,8 +274,11 @@ impl<'a> GroupBy<'a> {
                             };
                             out
                         },
-                        GroupsType::Slice { groups, rolling } => {
-                            if *rolling && !groups.is_empty() {
+                        GroupsType::Slice {
+                            groups,
+                            overlapping,
+                        } => {
+                            if *overlapping && !groups.is_empty() {
                                 // Groups can be sliced.
                                 let offset = groups[0][0];
                                 let [upper_offset, upper_len] = groups[groups.len() - 1];
@@ -872,6 +875,7 @@ pub enum GroupByMethod {
     Mean,
     First,
     Last,
+    Item { allow_empty: bool },
     Sum,
     Groups,
     NUnique,
@@ -894,6 +898,7 @@ impl Display for GroupByMethod {
             Mean => "mean",
             First => "first",
             Last => "last",
+            Item { .. } => "item",
             Sum => "sum",
             Groups => "groups",
             NUnique => "n_unique",
@@ -919,6 +924,7 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Mean => format_pl_smallstr!("{name}_mean"),
         First => format_pl_smallstr!("{name}_first"),
         Last => format_pl_smallstr!("{name}_last"),
+        Item { .. } => format_pl_smallstr!("{name}_item"),
         Sum => format_pl_smallstr!("{name}_sum"),
         Groups => PlSmallStr::from_static("groups"),
         NUnique => format_pl_smallstr!("{name}_n_unique"),

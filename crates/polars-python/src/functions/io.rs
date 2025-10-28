@@ -13,7 +13,7 @@ use crate::file::{EitherRustPythonFile, get_either_file};
 
 #[cfg(feature = "ipc")]
 #[pyfunction]
-pub fn read_ipc_schema(py: Python<'_>, py_f: PyObject) -> PyResult<Bound<'_, PyDict>> {
+pub fn read_ipc_schema(py: Python<'_>, py_f: Py<PyAny>) -> PyResult<Bound<'_, PyDict>> {
     use arrow::io::ipc::read::read_file_metadata;
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(r) => {
@@ -31,9 +31,9 @@ pub fn read_ipc_schema(py: Python<'_>, py_f: PyObject) -> PyResult<Bound<'_, PyD
 #[pyfunction]
 pub fn read_parquet_metadata(
     py: Python,
-    py_f: PyObject,
+    py_f: Py<PyAny>,
     storage_options: Option<Vec<(String, String)>>,
-    credential_provider: Option<PyObject>,
+    credential_provider: Option<Py<PyAny>>,
     retries: usize,
 ) -> PyResult<Bound<PyDict>> {
     use std::io::Cursor;
@@ -62,20 +62,22 @@ pub fn read_parquet_metadata(
                     let file = polars_utils::open_file(&local).map_err(PyPolarsErr::from)?;
                     read_metadata(&mut BufReader::new(file)).map_err(PyPolarsErr::from)?
                 },
-                PlPath::Cloud(cloud) => {
+                PlPath::Cloud(_) => {
                     use polars::prelude::ParquetObjectStore;
                     use polars_error::PolarsResult;
 
                     feature_gated!("cloud", {
-                        get_runtime().block_on(async {
-                            let mut reader = ParquetObjectStore::from_uri(
-                                &cloud.to_string(),
-                                cloud_options.as_ref(),
-                                None,
-                            )
-                            .await?;
-                            let result = reader.get_metadata().await?;
-                            PolarsResult::Ok((**result).clone())
+                        py.detach(|| {
+                            get_runtime().block_on(async {
+                                let mut reader = ParquetObjectStore::from_uri(
+                                    p.as_ref(),
+                                    cloud_options.as_ref(),
+                                    None,
+                                )
+                                .await?;
+                                let result = reader.get_metadata().await?;
+                                PolarsResult::Ok((**result).clone())
+                            })
                         })
                     })
                     .map_err(PyPolarsErr::from)?
@@ -131,7 +133,7 @@ pub fn write_clipboard_string(s: &str) -> PyResult<()> {
 pub fn parse_cloud_options<'a>(
     first_path: Option<PlPathRef<'a>>,
     storage_options: Option<Vec<(String, String)>>,
-    credential_provider: Option<PyObject>,
+    credential_provider: Option<Py<PyAny>>,
     retries: usize,
 ) -> PyResult<Option<CloudOptions>> {
     let result = if let Some(first_path) = first_path {

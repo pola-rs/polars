@@ -13,8 +13,8 @@ use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR,
-    SinkTypeIR,
+    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR,
+    PartitionVariantIR, SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
@@ -32,6 +32,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
@@ -242,6 +243,22 @@ pub fn lower_ir(
             SinkTypeIR::Memory => {
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
+            },
+            SinkTypeIR::Callback(CallbackSinkType {
+                function,
+                maintain_order,
+                chunk_size,
+            }) => {
+                let function = function.clone();
+                let maintain_order = *maintain_order;
+                let chunk_size = *chunk_size;
+                let phys_input = lower_ir!(*input)?;
+                PhysNodeKind::CallbackSink {
+                    input: phys_input,
+                    function,
+                    maintain_order,
+                    chunk_size,
+                }
             },
             SinkTypeIR::File(FileSinkType {
                 target,
@@ -583,6 +600,7 @@ pub fn lower_ir(
                 output_schema: _,
                 scan_type,
                 predicate,
+                predicate_file_skip_applied,
                 unified_scan_args,
             } = v.clone()
             else {
@@ -596,7 +614,7 @@ pub fn lower_ir(
                     .is_some_and(|slice| slice.len() == 0)
             {
                 if config::verbose() {
-                    eprintln!("lower_ir: scan IR had empty sources")
+                    eprintln!("lower_ir: scan IR lowered as empty InMemorySource")
                 }
 
                 // If there are no sources, just provide an empty in-memory source with the right
@@ -604,8 +622,30 @@ pub fn lower_ir(
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
+            } else if output_schema.is_empty()
+                && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
+            {
+                // Fast-count for scan_iceberg will hit here.
+
+                // Note: These are currently always `None`, as projection pushdown runs before slice /
+                // predicate pushdown.
+                assert!(unified_scan_args.pre_slice.is_none() && predicate.is_none());
+
+                let row_counter = RowCounter::new(physical_rows, deleted_rows);
+                let num_rows = row_counter.num_rows()?;
+
+                if config::verbose() {
+                    eprintln!(
+                        "lower_ir: scan IR lowered as 0-width InMemorySource with height {} ({:?})",
+                        num_rows, &row_counter
+                    )
+                }
+
+                PhysNodeKind::InMemorySource {
+                    df: Arc::new(DataFrame::empty_with_height(num_rows)),
+                }
             } else {
-                let file_reader_builder = match &*scan_type {
+                let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet {
                         options,
@@ -615,7 +655,7 @@ pub fn lower_ir(
                             options: Arc::new(options.clone()),
                             first_metadata: first_metadata.clone(),
                         },
-                    ) as Arc<dyn FileReaderBuilder>,
+                    ) as _,
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {
@@ -623,17 +663,13 @@ pub fn lower_ir(
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         first_metadata: first_metadata.clone(),
-                    }) as Arc<dyn FileReaderBuilder>,
+                    }) as _,
 
                     #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => {
-                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
-                    },
+                    FileScanIR::Csv { options } => Arc::new(Arc::new(options.clone())) as _,
 
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => {
-                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
-                    },
+                    FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
 
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {
@@ -712,6 +748,8 @@ pub fn lower_ir(
                         unified_scan_args.column_mapping.as_ref(),
                     );
 
+                    let pre_slice = unified_scan_args.pre_slice.clone();
+
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
                         file_reader_builder,
@@ -719,8 +757,9 @@ pub fn lower_ir(
                         file_projection_builder,
                         output_schema: output_schema.clone(),
                         row_index: None,
-                        pre_slice: None,
-                        predicate: None,
+                        pre_slice,
+                        predicate,
+                        predicate_file_skip_applied,
                         hive_parts,
                         cast_columns_policy: unified_scan_args.cast_columns_policy,
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
@@ -730,6 +769,7 @@ pub fn lower_ir(
                         deletion_files: DeletionFilesList::filter_empty(
                             unified_scan_args.deletion_files,
                         ),
+                        table_statistics: unified_scan_args.table_statistics,
                         file_schema,
                     };
 
@@ -744,22 +784,11 @@ pub fn lower_ir(
                         unreachable!()
                     };
 
-                    let pre_slice = unified_scan_args.pre_slice.clone();
-
                     let mut row_index_post = unified_scan_args.row_index;
-                    let mut pre_slice_post = pre_slice.clone();
-                    let mut predicate_post = predicate;
-
-                    // Always send predicate and slice to multiscan as they can be used to prune files. If the
-                    // underlying reader does not support predicates, multiscan will apply it in post.
-                    *predicate_to_multiscan = predicate_post.take();
-                    // * Negative slice is resolved internally by the multiscan.
-                    //   * Note that is done via a row-count pass
-                    *pre_slice_to_multiscan = pre_slice_post.take();
 
                     // * If a predicate was pushed then we always push row index
                     if predicate_to_multiscan.is_some()
-                        || matches!(pre_slice, Some(Slice::Negative { .. }))
+                        || matches!(pre_slice_to_multiscan, Some(Slice::Negative { .. }))
                     {
                         *row_index_to_multiscan = row_index_post.take();
                     }
@@ -799,8 +828,8 @@ pub fn lower_ir(
                     let row_index_post_after_slice = (|| {
                         let mut row_index = row_index_post.take()?;
 
-                        let positive_offset = match pre_slice {
-                            Some(Slice::Positive { offset, .. }) => Some(offset),
+                        let positive_offset = match pre_slice_to_multiscan {
+                            Some(Slice::Positive { offset, .. }) => Some(*offset),
                             None => Some(0),
                             Some(Slice::Negative { .. }) => unreachable!(),
                         }?;
@@ -849,12 +878,6 @@ pub fn lower_ir(
                         }
                     }
 
-                    if let Some(pre_slice) = pre_slice_post {
-                        // TODO: Use native Slice enum in the slice node.
-                        let (offset, length) = <(i64, usize)>::try_from(pre_slice).unwrap();
-                        stream = build_slice_stream(stream, offset, length, phys_sm);
-                    }
-
                     if let Some(ri) = row_index_post_after_slice {
                         let node = PhysNodeKind::WithRowIndex {
                             input: stream,
@@ -884,22 +907,64 @@ pub fn lower_ir(
                         }
                     }
 
-                    if let Some(predicate) = predicate_post {
-                        stream = build_filter_stream(
-                            stream, predicate, expr_arena, phys_sm, expr_cache, ctx,
-                        )?;
-                    }
-
                     return Ok(stream);
                 }
             }
         },
 
         #[cfg(feature = "python")]
-        IR::PythonScan { options } => PhysNodeKind::PythonScan {
-            options: options.clone(),
-        },
+        v @ IR::PythonScan { options } => {
+            use polars_plan::dsl::python_dsl::PythonScanSource;
 
+            match options.python_source {
+                PythonScanSource::Pyarrow => {
+                    // Fallback to in-memory engine.
+                    let input = PhysNodeKind::InMemorySource {
+                        df: Arc::new(DataFrame::default()),
+                    };
+                    let input_key =
+                        phys_sm.insert(PhysNode::new(Arc::new(Schema::default()), input));
+                    let phys_input = PhysStream::first(input_key);
+
+                    let lmdf = Arc::new(LateMaterializedDataFrame::default());
+                    let mut lp_arena = Arena::default();
+                    let scan_lp_node = lp_arena.add(v.clone());
+
+                    let executor = Mutex::new(create_physical_plan(
+                        scan_lp_node,
+                        &mut lp_arena,
+                        expr_arena,
+                        None,
+                    )?);
+
+                    let format_str = ctx.prepare_visualization.then(|| {
+                        let mut buffer = String::new();
+                        write_ir_non_recursive(
+                            &mut buffer,
+                            ir_arena.get(node),
+                            expr_arena,
+                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
+                            0,
+                        )
+                        .unwrap();
+                        buffer
+                    });
+
+                    PhysNodeKind::InMemoryMap {
+                        input: phys_input,
+                        map: Arc::new(move |df| {
+                            lmdf.set_materialized_dataframe(df);
+                            let mut state = ExecutionState::new();
+                            executor.lock().execute(&mut state)
+                        }),
+                        format_str,
+                    }
+                },
+                _ => PhysNodeKind::PythonScan {
+                    options: options.clone(),
+                },
+            }
+        },
         IR::Cache { input, id } => {
             let id = *id;
             if let Some(cached) = cache_nodes.get(&id) {
@@ -1075,7 +1140,7 @@ pub fn lower_ir(
                     distinct_lp_node,
                     &mut lp_arena,
                     expr_arena,
-                    None,
+                    Some(crate::dispatch::build_streaming_query_executor),
                 )?);
 
                 let format_str = ctx.prepare_visualization.then(|| {

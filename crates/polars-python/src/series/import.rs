@@ -200,8 +200,7 @@ impl PySeries {
                 if value.abs() > max_abs_decimal_value {
                     return Err(PyValueError::new_err(format!(
                         "iceberg decoded value for decimal exceeded precision: \
-                        value: {}, precision: {}",
-                        value, precision
+                        value: {value}, precision: {precision}",
                     )));
                 }
 
@@ -213,7 +212,7 @@ impl PySeries {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
                 vec![PrimitiveArray::<i128>::from_vec(out).boxed()],
-                &DataType::Decimal(Some(precision), Some(scale)),
+                &DataType::Decimal(precision, scale),
             )
         }))
     }

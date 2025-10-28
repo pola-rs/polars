@@ -37,6 +37,8 @@ pub mod python_dsl;
 mod random;
 mod scan_sources;
 mod selector;
+#[cfg(feature = "serde")]
+mod serializable_plan;
 mod statistics;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -172,6 +174,15 @@ impl Expr {
     /// Get the last value in the group.
     pub fn last(self) -> Self {
         AggExpr::Last(Arc::new(self)).into()
+    }
+
+    /// Get the single value in the group. If there are multiple values, an error is returned.
+    pub fn item(self, allow_empty: bool) -> Self {
+        AggExpr::Item {
+            input: Arc::new(self),
+            allow_empty,
+        }
+        .into()
     }
 
     /// GroupBy the group to a Series.
@@ -1167,6 +1178,11 @@ impl Expr {
         self.rolling_quantile_by(by, QuantileMethod::Linear, 0.5, options)
     }
 
+    #[cfg(feature = "rolling_window_by")]
+    pub fn rolling_rank_by(self, by: Expr, options: RollingOptionsDynamicWindow) -> Expr {
+        self.finish_rolling_by(by, options, RollingFunctionBy::RankBy)
+    }
+
     /// Apply a rolling minimum.
     ///
     /// See: [`RollingAgg::rolling_min`]
@@ -1237,6 +1253,11 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptionsFixedWindow) -> Expr {
         self.finish_rolling(options, RollingFunction::Std)
+    }
+
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_rank(self, options: RollingOptionsFixedWindow) -> Expr {
+        self.finish_rolling(options, RollingFunction::Rank)
     }
 
     /// Apply a rolling skew.

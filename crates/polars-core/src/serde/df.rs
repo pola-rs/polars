@@ -1,3 +1,4 @@
+use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use arrow::datatypes::Metadata;
@@ -72,7 +73,7 @@ impl DataFrame {
         Ok(buf)
     }
 
-    pub fn deserialize_from_reader(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+    pub fn deserialize_from_reader<T: Read + Seek>(reader: &mut T) -> PolarsResult<Self> {
         let mut md = read_stream_metadata(reader)?;
 
         let custom_metadata = md.custom_schema_metadata.take();
@@ -167,7 +168,8 @@ impl<'de> Deserialize<'de> for DataFrame {
     {
         deserialize_map_bytes(deserializer, |b| {
             let v = &mut b.as_ref();
-            Self::deserialize_from_reader(v)
+            let mut reader = std::io::Cursor::new(v);
+            Self::deserialize_from_reader(&mut reader)
         })?
         .map_err(D::Error::custom)
     }

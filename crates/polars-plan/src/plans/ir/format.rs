@@ -71,6 +71,7 @@ fn write_scan(
     indent: usize,
     n_columns: i64,
     total_columns: usize,
+    row_estimation: Option<usize>,
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
@@ -107,6 +108,9 @@ fn write_scan(
     }
     if let Some(deletion_files) = deletion_files {
         write!(f, "\n{deletion_files}")?;
+    }
+    if let Some(row_estimation) = row_estimation {
+        write!(f, "\n{:indent$}ESTIMATED ROWS: {row_estimation}", "")?;
     }
     Ok(())
 }
@@ -338,6 +342,7 @@ impl Display for ExprIRDisplay<'_> {
 
         use AExpr::*;
         match root {
+            Element => f.write_str("element()"),
             Window {
                 function,
                 partition_by,
@@ -451,6 +456,14 @@ impl Display for ExprIRDisplay<'_> {
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
                     First(expr) => write!(f, "{}.first()", self.with_root(expr)),
                     Last(expr) => write!(f, "{}.last()", self.with_root(expr)),
+                    Item { input, allow_empty } => {
+                        self.with_root(input).fmt(f)?;
+                        if *allow_empty {
+                            write!(f, ".item(allow_empty=true)")
+                        } else {
+                            write!(f, ".item()")
+                        }
+                    },
                     Implode(expr) => write!(f, "{}.implode()", self.with_root(expr)),
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
@@ -529,6 +542,14 @@ impl Display for ExprIRDisplay<'_> {
                 let evaluation = self.with_root(evaluation);
                 match variant {
                     EvalVariant::List => write!(f, "{expr}.list.eval({evaluation})"),
+                    EvalVariant::ListAgg => write!(f, "{expr}.list.agg({evaluation})"),
+                    EvalVariant::Array { as_list: false } => {
+                        write!(f, "{expr}.array.eval({evaluation})")
+                    },
+                    EvalVariant::Array { as_list: true } => {
+                        write!(f, "{expr}.array.eval({evaluation}, as_list=true)")
+                    },
+                    EvalVariant::ArrayAgg => write!(f, "{expr}.array.agg({evaluation})"),
                     EvalVariant::Cumulative { min_samples } => write!(
                         f,
                         "{expr}.cumulative_eval({evaluation}, min_samples={min_samples})"
@@ -683,6 +704,7 @@ pub fn write_ir_non_recursive(
                 indent,
                 n_columns,
                 total_columns,
+                None,
                 &predicate,
                 options
                     .n_rows
@@ -711,6 +733,7 @@ pub fn write_ir_non_recursive(
             sources,
             file_info,
             predicate,
+            predicate_file_skip_applied: _,
             scan_type,
             unified_scan_args,
             hive_parts: _,
@@ -722,6 +745,12 @@ pub fn write_ir_non_recursive(
                 .map(|columns| columns.len() as i64)
                 .unwrap_or(-1);
 
+            let row_estimation = if file_info.row_estimation.1 != usize::MAX {
+                Some(file_info.row_estimation.1)
+            } else {
+                None
+            };
+
             let predicate = predicate.as_ref().map(|p| p.display(expr_arena));
 
             write_scan(
@@ -731,6 +760,7 @@ pub fn write_ir_non_recursive(
                 indent,
                 n_columns,
                 file_info.schema.len(),
+                row_estimation,
                 &predicate,
                 unified_scan_args.pre_slice.clone(),
                 unified_scan_args.row_index.as_ref(),
@@ -930,6 +960,7 @@ pub fn write_ir_non_recursive(
         IR::Sink { input: _, payload } => {
             let name = match payload {
                 SinkTypeIR::Memory => "SINK (memory)",
+                SinkTypeIR::Callback { .. } => "SINK (callback)",
                 SinkTypeIR::File { .. } => "SINK (file)",
                 SinkTypeIR::Partition { .. } => "SINK (partition)",
             };

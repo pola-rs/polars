@@ -269,7 +269,7 @@ def test_apply_custom_function() -> None:
             "cars_count": [3, 2],
         }
     )
-    expected = expected.with_columns(pl.col("cars_count").cast(pl.UInt32))
+    expected = expected.with_columns(pl.col("cars_count").cast(pl.get_index_type()))
     assert_frame_equal(df, expected)
 
 
@@ -297,7 +297,7 @@ def test_group_by() -> None:
 def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]
-    assert_series_equal(col_a_unique, pl.Series("a", [0, 1]).cast(pl.UInt32))
+    assert_series_equal(col_a_unique, pl.Series("a", [0, 1]).cast(pl.get_index_type()))
 
 
 def test_arg_sort() -> None:
@@ -1080,7 +1080,7 @@ def test_group_lengths() -> None:
             "unique_counts_sum": [1.0, 1.0],
             "unique_len": [2, 3],
         },
-        schema_overrides={"unique_len": pl.UInt32},
+        schema_overrides={"unique_len": pl.get_index_type()},
     )
     assert_frame_equal(result.collect(), expected)
 

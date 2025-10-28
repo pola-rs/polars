@@ -2,6 +2,7 @@
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
 )] // Maybe be caused by some feature
+pub mod dispatch;
 mod expressions;
 pub mod groups;
 pub mod hash_keys;

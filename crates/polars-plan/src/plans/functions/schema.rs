@@ -48,17 +48,25 @@ impl FunctionIR {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             Rechunk => Ok(Cow::Borrowed(input_schema)),
-            Unnest { columns: _columns } => {
+            Unnest { columns, separator } => {
                 #[cfg(feature = "dtype-struct")]
                 {
                     let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
                     for (name, dtype) in input_schema.iter() {
-                        if _columns.iter().any(|item| item == name) {
+                        if columns.iter().any(|item| item == name) {
                             match dtype {
                                 DataType::Struct(flds) => {
                                     for fld in flds {
-                                        new_schema
-                                            .with_column(fld.name().clone(), fld.dtype().clone());
+                                        let fld_name = match separator {
+                                            None => fld.name().clone(),
+                                            Some(sep) => {
+                                                polars_utils::format_pl_smallstr!(
+                                                    "{name}{sep}{}",
+                                                    fld.name()
+                                                )
+                                            },
+                                        };
+                                        new_schema.with_column(fld_name, fld.dtype().clone());
                                     }
                                 },
                                 DataType::Unknown(_) => {
@@ -90,6 +98,7 @@ impl FunctionIR {
             Explode { schema, columns } => explode_schema(schema, input_schema, columns),
             #[cfg(feature = "pivot")]
             Unpivot { schema, args } => unpivot_schema(args, schema, input_schema),
+            Hint(_) => Ok(Cow::Borrowed(input_schema)),
         }
     }
 }

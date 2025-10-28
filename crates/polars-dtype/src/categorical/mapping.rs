@@ -117,6 +117,8 @@ impl CategoricalMapping {
     }
 
     /// Returns the number of categories in this mapping.
+    ///
+    /// This requires exclusive `&mut` access to ensure there are no insertions in-flight.
     #[inline(always)]
     pub fn len(&mut self) -> usize {
         *self.upper_bound.get_mut()

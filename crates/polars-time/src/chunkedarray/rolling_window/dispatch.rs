@@ -532,6 +532,46 @@ pub trait SeriesOpsTime: AsSeries {
             s
         })
     }
+
+    /// Apply a rolling rank to a Series based on another Series.
+    #[cfg(feature = "rolling_window_by")]
+    fn rolling_rank_by(
+        &self,
+        by: &Series,
+        options: RollingOptionsDynamicWindow,
+    ) -> PolarsResult<Series> {
+        let s = self.as_series().clone();
+
+        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            let mut ca = ca.clone();
+
+            rolling_agg_by(
+                &ca,
+                by,
+                options,
+                &super::rolling_kernels::no_nulls::rolling_rank,
+            )
+        })
+    }
+
+    /// Apply a rolling rank to a Series.
+    #[cfg(feature = "rolling_window")]
+    fn rolling_rank(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
+        let s = self.as_series();
+
+        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            let mut ca = ca.clone();
+
+            rolling_agg(
+                &ca,
+                options,
+                &rolling::no_nulls::rolling_rank,
+                &rolling::nulls::rolling_rank,
+            )
+        })
+    }
 }
 
 impl SeriesOpsTime for Series {}

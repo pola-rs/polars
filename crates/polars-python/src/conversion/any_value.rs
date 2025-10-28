@@ -12,12 +12,13 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
+use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::sync::GILOnceCell;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList, PyMapping,
     PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
@@ -27,7 +28,7 @@ use pyo3::{IntoPyObjectExt, PyTypeCheck, intern};
 use super::datetime::{
     datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
 };
-use super::{ObjectValue, Wrap, decimal_to_digits, struct_dict};
+use super::{ObjectValue, Wrap, struct_dict};
 use crate::error::PyPolarsErr;
 use crate::py_modules::{pl_series, pl_utils};
 use crate::series::PySeries;
@@ -120,19 +121,11 @@ pub(crate) fn any_value_into_py_object<'py>(
         },
         AnyValue::Binary(v) => PyBytes::new(py, v).into_bound_py_any(py),
         AnyValue::BinaryOwned(v) => PyBytes::new(py, &v).into_bound_py_any(py),
-        AnyValue::Decimal(v, scale) => {
+        AnyValue::Decimal(v, prec, scale) => {
             let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
-            const N: usize = 3;
-            let mut buf = [0_u128; N];
-            let n_digits = decimal_to_digits(v.abs(), &mut buf);
-            let buf = unsafe {
-                std::slice::from_raw_parts(
-                    buf.as_slice().as_ptr() as *const u8,
-                    N * size_of::<u128>(),
-                )
-            };
-            let digits = PyTuple::new(py, buf.iter().take(n_digits))?;
-            convert.call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
+            let mut buf = DecimalFmtBuffer::new();
+            let s = buf.format_dec128(v, scale, false, false);
+            convert.call1((prec, s))
         },
     }
 }
@@ -331,27 +324,17 @@ pub(crate) fn py_object_to_any_value(
             digits: impl IntoIterator<Item = u8>,
             exp: i32,
         ) -> Option<(i128, usize)> {
-            const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
             let mut v = 0_i128;
-            for (i, d) in digits.into_iter().map(i128::from).enumerate() {
-                if i < 38 {
-                    v = v * 10 + d;
-                } else {
-                    v = v.checked_mul(10).and_then(|v| v.checked_add(d))?;
-                }
+            for d in digits {
+                v = v.checked_mul(10)?.checked_add(d as i128)?;
             }
-            // We only support non-negative scale (=> non-positive exponent).
             let scale = if exp > 0 {
-                // The decimal may be in a non-canonical representation, try to fix it first.
-                v = 10_i128
-                    .checked_pow(exp as u32)
-                    .and_then(|factor| v.checked_mul(factor))?;
+                v = 10_i128.checked_pow(exp as u32)?.checked_mul(v)?;
                 0
             } else {
                 (-exp) as usize
             };
-            // TODO: Do we care for checking if it fits in MAX_ABS_DEC? (if we set precision to None anyway?)
-            (v <= MAX_ABS_DEC).then_some((v, scale))
+            dec128_fits(v, DEC128_MAX_PREC).then_some((v, scale))
         }
 
         // Note: Using Vec<u8> is not the most efficient thing here (input is a tuple)
@@ -368,7 +351,7 @@ pub(crate) fn py_object_to_any_value(
         if sign > 0 {
             v = -v; // Won't overflow since -i128::MAX > i128::MIN
         }
-        Ok(AnyValue::Decimal(v, scale))
+        Ok(AnyValue::Decimal(v, DEC128_MAX_PREC, scale))
     }
 
     fn get_list(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
@@ -524,8 +507,8 @@ pub(crate) fn py_object_to_any_value(
         } else if PyMapping::type_check(ob) {
             Ok(get_mapping)
         }
-        // datetime must be checked before date because
-        // Python datetime is an instance of date.
+        // note: datetime must be checked *before* date
+        // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
             Ok(get_datetime as InitFn)
         } else if PyDate::type_check(ob) {
@@ -537,12 +520,19 @@ pub(crate) fn py_object_to_any_value(
         } else if ob.is_instance_of::<PyRange>() {
             Ok(get_list as InitFn)
         } else {
-            static DECIMAL_TYPE: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+            static NDARRAY_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+            if let Ok(ndarray_type) = NDARRAY_TYPE.import(py, "numpy", "ndarray") {
+                if ob.is_instance(ndarray_type)? {
+                    // will convert via Series -> mmap_numpy_array
+                    return Ok(get_list as InitFn);
+                }
+            }
+            static DECIMAL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
                 return Ok(get_decimal as InitFn);
             }
 
-            // Support NumPy scalars.
+            // support NumPy scalars
             if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
                 return Ok(get_int as InitFn);
             } else if ob.extract::<f64>().is_ok() {

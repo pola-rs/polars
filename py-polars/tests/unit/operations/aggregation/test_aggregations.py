@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -166,7 +168,7 @@ def test_literal_group_agg_chunked_7968() -> None:
         pl.DataFrame(
             [
                 pl.Series("A", [1], dtype=pl.Int64),
-                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.UInt32)),
+                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.get_index_type())),
             ]
         ),
     )
@@ -292,7 +294,9 @@ def test_horizontal_sum_null_to_identity() -> None:
 
 def test_horizontal_sum_bool_dtype() -> None:
     out = pl.DataFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
-    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.UInt32)}))
+    assert_frame_equal(
+        out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.get_index_type())})
+    )
 
 
 def test_horizontal_sum_in_group_by_15102() -> None:
@@ -315,8 +319,8 @@ def test_horizontal_sum_in_group_by_15102() -> None:
         out,
         pl.DataFrame(
             {
-                "num_null": pl.Series([0, 2, 3], dtype=pl.UInt32),
-                "len": pl.Series([nbr_records] * 3, dtype=pl.UInt32),
+                "num_null": pl.Series([0, 2, 3], dtype=pl.get_index_type()),
+                "len": pl.Series([nbr_records] * 3, dtype=pl.get_index_type()),
             }
         ),
     )
@@ -522,7 +526,7 @@ def test_horizontal_mean_in_group_by_15115() -> None:
         pl.DataFrame(
             {
                 "mean_null": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
-                "len": pl.Series([nbr_records] * 4, dtype=pl.UInt32),
+                "len": pl.Series([nbr_records] * 4, dtype=pl.get_index_type()),
             }
         ),
     )
@@ -815,3 +819,199 @@ def test_agg_with_slice_then_cast_23682(
             [{"a": 123, "b": [12]}], schema={"a": pl.Int64, "b": pl.List(pl.UInt8)}
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("op", "expr"),
+    [
+        ("any", pl.all().cast(pl.Boolean).any()),
+        ("all", pl.all().cast(pl.Boolean).all()),
+        ("arg_max", pl.all().arg_max()),
+        ("arg_min", pl.all().arg_min()),
+        ("min", pl.all().min()),
+        ("max", pl.all().max()),
+        ("mean", pl.all().mean()),
+        ("median", pl.all().median()),
+        ("product", pl.all().product()),
+        ("quantile", pl.all().quantile(0.5)),
+        ("std", pl.all().std()),
+        ("var", pl.all().var()),
+        ("sum", pl.all().sum()),
+        ("first", pl.all().first()),
+        ("last", pl.all().last()),
+        ("approx_n_unique", pl.all().approx_n_unique()),
+        ("bitwise_and", pl.all().bitwise_and()),
+        ("bitwise_or", pl.all().bitwise_or()),
+        ("bitwise_xor", pl.all().bitwise_xor()),
+    ],
+)
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [[10]]}, schema={"a": pl.Array(shape=(1,), inner=pl.Int32)}),
+        pl.DataFrame({"a": [[1]]}, schema={"a": pl.Struct(fields={"a": pl.Int32})}),
+        pl.DataFrame({"a": [True]}, schema={"a": pl.Boolean}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Categorical}),
+        pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Int32}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Float32}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Float64}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
+        pl.DataFrame({"a": [None]}, schema={"a": pl.Null}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Decimal()}),
+        pl.DataFrame({"a": [datetime.now()]}, schema={"a": pl.Datetime}),
+        pl.DataFrame({"a": [date.today()]}, schema={"a": pl.Date}),
+        pl.DataFrame({"a": [timedelta(seconds=10)]}, schema={"a": pl.Duration}),
+    ],
+)
+def test_agg_invalid_same_engines_behavior(
+    op: str, expr: pl.Expr, df: pl.DataFrame
+) -> None:
+    # If the in-memory engine produces a good result, then the streaming engine
+    # should also produce a good result, and then it should match the in-memory result.
+
+    if isinstance(df.schema["a"], pl.Struct) and op in {"any", "all"}:
+        # TODO: Remove this exception when #24509 is resolved
+        pytest.skip("polars/#24509")
+
+    if isinstance(df.schema["a"], pl.Duration) and op in {"std", "var"}:
+        # TODO: Remove this exception when std & var are implemented for Duration
+        pytest.skip(f"'{op}' aggregation not yet implemented for Duration")
+
+    inmemory_result, inmemory_error = None, None
+    streaming_result, streaming_error = None, None
+
+    try:
+        inmemory_result = df.select(expr)
+    except pl.exceptions.PolarsError as e:
+        inmemory_error = e
+
+    try:
+        streaming_result = df.lazy().select(expr).collect(engine="streaming")
+    except pl.exceptions.PolarsError as e:
+        streaming_error = e
+
+    assert (streaming_error is None) == (inmemory_error is None), (
+        f"mismatch in errors for: {streaming_error} != {inmemory_error}"
+    )
+    if inmemory_error:
+        assert streaming_error, (
+            f"streaming engine did not error (expected in-memory error: {inmemory_error})"
+        )
+        assert streaming_error.__class__ == inmemory_error.__class__
+
+    if not inmemory_error:
+        assert streaming_result is not None
+        assert inmemory_result is not None
+        assert_frame_equal(streaming_result, inmemory_result)
+
+
+@pytest.mark.parametrize(
+    ("op", "expr"),
+    [
+        ("sum", pl.all().sum()),
+        ("mean", pl.all().mean()),
+        ("median", pl.all().median()),
+        ("std", pl.all().std()),
+        ("var", pl.all().var()),
+        ("quantile", pl.all().quantile(0.5)),
+        ("cum_sum", pl.all().cum_sum()),
+    ],
+)
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [[10]]}, schema={"a": pl.Array(shape=(1), inner=pl.Int32)}),
+        pl.DataFrame({"a": [[1]]}, schema={"a": pl.Struct(fields={"a": pl.Int32})}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Categorical}),
+        pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
+        pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
+    ],
+)
+def test_invalid_agg_dtypes_should_raise(
+    op: str, expr: pl.Expr, df: pl.DataFrame
+) -> None:
+    with pytest.raises(
+        pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
+    ):
+        df.select(expr)
+    with pytest.raises(
+        pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
+    ):
+        df.lazy().select(expr).collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        excluded_dtypes=[
+            # TODO: polars/#24936
+            pl.Struct,
+        ],
+    )
+)
+def test_single(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).item())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+@given(df=dataframes(max_size=0))
+def test_single_empty(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all().item())
+    match = "aggregation 'item' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(df=dataframes(min_size=2))
+def test_item_too_many(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).item())
+    match = f"aggregation 'item' expected a single value, got {df.height} values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        allow_null=False,
+        excluded_dtypes=[
+            # TODO: polars/#24936
+            pl.Struct,
+        ],
+    )
+)
+def test_item_on_groups(df: pl.DataFrame) -> None:
+    df = df.with_columns(pl.col("col0").alias("key"))
+    q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).item())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+def test_item_on_groups_empty() -> None:
+    df = pl.DataFrame({"col0": [[]]})
+    q = df.lazy().select(pl.all().list.item())
+    match = "aggregation 'item' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+def test_item_on_groups_too_many() -> None:
+    df = pl.DataFrame({"col0": [[1, 2, 3]]})
+    q = df.lazy().select(pl.all().list.item())
+    match = "aggregation 'item' expected a single value, got 3 values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")

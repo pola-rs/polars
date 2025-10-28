@@ -47,6 +47,9 @@ impl PolarsTruncate for DatetimeChunked {
                         TimeUnit::Microseconds => every_parsed.duration_us(),
                         TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
+                    if every == 0 {
+                        return Ok(self.clone());
+                    }
                     return Ok(self
                         .physical()
                         .apply_values(|t| fast_truncate(t, every))
