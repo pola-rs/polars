@@ -1943,3 +1943,25 @@ def test_group_by_rolling_fill_null_25036() -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+exprs = [
+    pl.col.a,
+    pl.col.a.filter(pl.col.a <= 1),
+    pl.col.a.first(),
+    pl.lit(1).alias("one"),
+    pl.lit(pl.Series([1])),
+]
+
+
+@pytest.mark.parametrize("lhs", exprs)
+@pytest.mark.parametrize("rhs", exprs)
+@pytest.mark.parametrize("op", [pl.Expr.add, pl.Expr.pow])
+def test_group_broadcast_binary_apply_expr_25046(
+    lhs: pl.Expr, rhs: pl.Expr, op: Any
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3]})
+    groups = pl.lit(1)
+    out = df.group_by(groups).agg((op(lhs, rhs)).implode()).to_series(1)
+    expected = df.select((op(lhs, rhs)).implode()).to_series()
+    assert_series_equal(out, expected)
