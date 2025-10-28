@@ -216,16 +216,15 @@ impl MutableBooleanArray {
     }
 
     pub fn extend_null(&mut self, additional: usize) {
-        self.values.extend_constant(additional, false);
         if let Some(validity) = self.validity.as_mut() {
             validity.extend_constant(additional, false)
         } else {
-            self.init_validity();
-            self.validity
-                .as_mut()
-                .unwrap()
-                .extend_constant(additional, false)
+            let mut validity = MutableBitmap::with_capacity(self.values.capacity());
+            validity.extend_constant(self.len(), true);
+            validity.extend_constant(additional, false);
+            self.validity = Some(validity);
         };
+        self.values.extend_constant(additional, false);
     }
 
     fn init_validity(&mut self) {
