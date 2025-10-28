@@ -500,15 +500,16 @@ impl PhysicalExpr for ApplyExpr {
                     // - el + agg = elementwise, but must aggregate() NotAgg
                     // - ga = group_aware
                     // - alit = all_literal
+                    // - * = broadcast falls back to group_aware
                     // - ~ = same a smirror pair (symmetric)
                     //
-                    //              | AggList | NotAgg  | AggScalar | LitScalar
+                    //              | AggList | NotAgg   | AggScalar | LitScalar
                     //   --------------------------------------------------------
-                    //    AggList   |    el   | depends |    ga     |     el
-                    //    NotAgg    |    ~    | depends |    ga     |     el
-                    //    AggScalar |    ~    |    ~    |    el     |     el
-                    //    LitScalar |    ~    |    ~    |     ~     |    alit
-
+                    //    AggList   |   el*   | depends* |    ga     |     el
+                    //    NotAgg    |    ~    | depends* |    ga     |     el
+                    //    AggScalar |    ~    |    ~     |    el     |     el
+                    //    LitScalar |    ~    |    ~     |     ~     |    alit
+                    //
                     // In case it depends, extending to any combination of multiple aggstates
                     // (a) Multiple NotAggs, w/o AggList
                     //
@@ -523,6 +524,8 @@ impl PhysicalExpr for ApplyExpr {
                     //   -------------------------------------------------
                     //    groups match   |    el+agg    |     ga
                     //    groups diverge |    el+agg    |     ga
+                    //
+                    //  * Finally, when broadcast is required in non-scalar we switch to group_aware
 
                     // Collect statistics on input aggstates
                     let mut has_agg_list = false;
@@ -530,12 +533,14 @@ impl PhysicalExpr for ApplyExpr {
                     let mut has_not_agg = false;
                     let mut has_not_agg_with_overlapping_groups = false;
                     let mut not_agg_groups_may_diverge = false;
+                    let mut num_non_scalar_acs = 0;
 
                     let mut previous: Option<&AggregationContext<'_>> = None;
                     for ac in &acs {
                         match ac.state {
                             AggState::AggregatedList(_) => {
                                 has_agg_list = true;
+                                num_non_scalar_acs += 1;
                             },
                             AggState::AggregatedScalar(_) => has_agg_scalar = true,
                             AggState::NotAggregated(_) => {
@@ -548,6 +553,7 @@ impl PhysicalExpr for ApplyExpr {
                                 if ac.groups.is_overlapping() {
                                     has_not_agg_with_overlapping_groups = true;
                                 }
+                                num_non_scalar_acs += 1;
                             },
                             _ => {},
                         }
@@ -556,6 +562,28 @@ impl PhysicalExpr for ApplyExpr {
                     let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
                     let elementwise_must_aggregate =
                         has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
+
+                    // Broadcast in NotAgg or AggList requires group_aware
+                    let check_broadcast = num_non_scalar_acs > 1;
+                    let mut has_broadcast = false;
+                    if check_broadcast {
+                        let mut previous: Option<&AggregationContext<'_>> = None;
+                        for ac in acs.iter_mut() {
+                            if !ac.is_scalar() {
+                                let _ = ac.groups();
+                                if let Some(p) = previous {
+                                    has_broadcast |=
+                                        p.groups.iter().zip(ac.groups.iter()).any(|(l, r)| {
+                                            l.len() != r.len() && (l.len() == 1 || r.len() == 1)
+                                        });
+                                    if has_broadcast {
+                                        break;
+                                    }
+                                }
+                                previous = Some(ac);
+                            }
+                        }
+                    }
 
                     if all_literal {
                         // Fast path
@@ -570,6 +598,9 @@ impl PhysicalExpr for ApplyExpr {
                         && acs.iter_mut().any(|ac| !ac.groups_cover_all_values())
                     {
                         // Fallible expression and there are elements that are masked out.
+                        self.apply_multiple_group_aware(acs, df)
+                    } else if has_broadcast {
+                        // Broadcast.
                         self.apply_multiple_group_aware(acs, df)
                     } else {
                         self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
