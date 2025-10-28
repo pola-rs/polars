@@ -90,6 +90,7 @@ from polars.datatypes import (
     Float64,
     Int32,
     Int64,
+    List,
     Null,
     Object,
     String,
@@ -5471,7 +5472,7 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_as_string: Literal[False] = ...,
+        return_type: None = ...,
     ) -> None: ...
 
     @overload
@@ -5480,7 +5481,7 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_as_string: Literal[True],
+        return_type: Literal["string"],
     ) -> str: ...
 
     @overload
@@ -5489,16 +5490,17 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_as_string: bool,
-    ) -> str | None: ...
+        return_type: Literal["frame", "self"],
+    ) -> DataFrame: ...
 
+    @deprecate_renamed_parameter("return_as_string", "return_type", version="1.35.0")
     def glimpse(
         self,
         *,
         max_items_per_column: int = 10,
         max_colname_length: int = 50,
-        return_as_string: bool = False,
-    ) -> str | None:
+        return_type: Literal["frame", "self", "string"] | None = None,
+    ) -> str | DataFrame | None:
         """
         Return a dense preview of the DataFrame.
 
@@ -5506,15 +5508,24 @@ class DataFrame:
         cleanly. Each line shows the column name, the data type, and the first
         few values.
 
+        .. versionchanged:: 1.35.0
+            The `return_as_string` parameter was renamed `return_type` and now accepts
+            string values `'string'` and `'frame'` instead of boolean True or False.
+
         Parameters
         ----------
         max_items_per_column
             Maximum number of items to show per column.
         max_colname_length
-            Maximum length of the displayed column names; values that exceed this
-            value are truncated with a trailing ellipsis.
-        return_as_string
-            If True, return the preview as a string instead of printing to stdout.
+            Maximum length of the displayed column names; values that exceed
+            this value are truncated with a trailing ellipsis.
+        return_type
+            Modify the return format:
+
+            - `None` (default): Print the glimpse output to stdout, returning `None`.
+            - `"self"`: Print the glimpse output to stdout, returning the *original* frame.
+            - `"frame"`: Return the glimpse output as a new DataFrame.
+            - `"string"`: Return the glimpse output as a string.
 
         See Also
         --------
@@ -5533,51 +5544,130 @@ class DataFrame:
         ...         "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
         ...     }
         ... )
-        >>> df.glimpse()
+
+        Print glimpse-formatted output to stdout, returning `None`:
+
+        >>> res = df.glimpse()
         Rows: 3
         Columns: 6
         $ a  <f64> 1.0, 2.8, 3.0
-        $ b  <i64> 4, 5, None
+        $ b  <i64> 4, 5, null
         $ c <bool> True, False, True
-        $ d  <str> None, 'b', 'c'
-        $ e  <str> 'usd', 'eur', None
+        $ d  <str> null, 'b', 'c'
+        $ e  <str> 'usd', 'eur', null
         $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
-        """
+        >>> res is None
+        True
+
+        Return the glimpse output as a string:
+
+        >>> res = df.glimpse(return_type="string")
+        >>> isinstance(res, str)
+        True
+
+        Return the glimpse output as a DataFrame:
+
+        >>> df.glimpse(return_type="frame")
+        shape: (6, 3)
+        ┌────────┬───────┬─────────────────────────────────┐
+        │ column ┆ dtype ┆ values                          │
+        │ ---    ┆ ---   ┆ ---                             │
+        │ str    ┆ str   ┆ list[str]                       │
+        ╞════════╪═══════╪═════════════════════════════════╡
+        │ a      ┆ f64   ┆ ["1.0", "2.8", "3.0"]           │
+        │ b      ┆ i64   ┆ ["4", "5", null]                │
+        │ c      ┆ bool  ┆ ["True", "False", "True"]       │
+        │ d      ┆ str   ┆ [null, "'b'", "'c'"]            │
+        │ e      ┆ str   ┆ ["'usd'", "'eur'", null]        │
+        │ f      ┆ date  ┆ ["2020-01-01", "2021-01-02", "… │
+        └────────┴───────┴─────────────────────────────────┘
+
+        Print glimpse-formatted output to stdout, returning the *original* frame:
+
+        >>> res = df.glimpse(return_type="self")
+        Rows: 3
+        Columns: 6
+        $ a  <f64> 1.0, 2.8, 3.0
+        $ b  <i64> 4, 5, null
+        $ c <bool> True, False, True
+        $ d  <str> null, 'b', 'c'
+        $ e  <str> 'usd', 'eur', null
+        $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
+        >>> res
+        shape: (3, 6)
+        ┌─────┬──────┬───────┬──────┬──────┬────────────┐
+        │ a   ┆ b    ┆ c     ┆ d    ┆ e    ┆ f          │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
+        │ f64 ┆ i64  ┆ bool  ┆ str  ┆ str  ┆ date       │
+        ╞═════╪══════╪═══════╪══════╪══════╪════════════╡
+        │ 1.0 ┆ 4    ┆ true  ┆ null ┆ usd  ┆ 2020-01-01 │
+        │ 2.8 ┆ 5    ┆ false ┆ b    ┆ eur  ┆ 2021-01-02 │
+        │ 3.0 ┆ null ┆ true  ┆ c    ┆ null ┆ 2022-01-01 │
+        └─────┴──────┴───────┴──────┴──────┴────────────┘
+        """  # noqa: W505
+        # handle boolean value from now-deprecated `return_as_string` parameter
+        if isinstance(return_type, bool) or return_type is None:  # type: ignore[redundant-expr]
+            return_type = "string" if return_type else None  # type: ignore[redundant-expr]
+            return_frame = False
+        else:
+            return_frame = return_type == "frame"
+            if not return_frame and return_type not in ("self", "string"):
+                msg = f"invalid `return_type`; found {return_type!r}, expected one of 'string', 'frame', 'self', or None"
+                raise ValueError(msg)
+
         # always print at most this number of values (mainly ensures that
         # we do not cast long arrays to strings, which would be slow)
         max_n_values = min(max_items_per_column, self.height)
         schema = self.schema
 
-        def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
+        def _column_to_row_output(
+            col_name: str, dtype: PolarsDataType
+        ) -> tuple[str, str, list[str | None]]:
             fn = repr if schema[col_name] == String else str
             values = self[:max_n_values, col_name].to_list()
-            val_str = ", ".join(fn(v) for v in values)
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
-            return col_name, f"<{_dtype_str_repr(dtype)}>", val_str
-
-        data = [_parse_column(s, dtype) for s, dtype in self.schema.items()]
-
-        # determine column layout widths
-        max_col_name = max((len(col_name) for col_name, _, _ in data))
-        max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
-
-        # print header
-        output = StringIO()
-        output.write(f"Rows: {self.height}\nColumns: {self.width}\n")
-
-        # print individual columns: one row per column
-        for col_name, dtype_str, val_str in data:
-            output.write(
-                f"$ {col_name:<{max_col_name}} {dtype_str:>{max_col_dtype}} {val_str}\n"
+            dtype_str = _dtype_str_repr(dtype)
+            if not return_frame:
+                dtype_str = f"<{dtype_str}>"
+            return (
+                col_name,
+                dtype_str,
+                [(fn(v) if v is not None else v) for v in values],
             )
 
-        s = output.getvalue()
-        if return_as_string:
-            return s
+        data = [_column_to_row_output(s, dtype) for s, dtype in self.schema.items()]
 
-        print(s, end=None)
-        return None
+        # output one row per column
+        if return_frame:
+            return pl.DataFrame(
+                data=data,
+                orient="row",
+                schema={"column": String, "dtype": String, "values": List(String)},
+            )
+        else:
+            # determine column layout widths
+            max_col_name = max((len(col_name) for col_name, _, _ in data))
+            max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
+
+            # write column headers and data to the buffer
+            output = StringIO()
+            output.write(f"Rows: {self.height}\nColumns: {self.width}\n")
+            for col_name, dtype_str, values in data:
+                val_str = ", ".join(("null" if v is None else v) for v in values)
+                output.write(
+                    f"$ {col_name:<{max_col_name}} {dtype_str:>{max_col_dtype}} {val_str}\n"
+                )
+
+            s = output.getvalue()
+            if return_type == "string":
+                return s
+
+            print(s, end=None)
+
+            if return_type == "self":
+                return self
+            return None
 
     def describe(
         self,

@@ -958,7 +958,10 @@ def test_from_arrow_20271() -> None:
         pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
     )
     assert isinstance(df, pl.DataFrame)
-    assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
+    assert_series_equal(
+        df.to_series(),
+        pl.Series("b", ["D", "E"], pl.Categorical),
+    )
 
 
 def test_to_arrow_empty_chunks_20627() -> None:
@@ -975,12 +978,7 @@ def test_from_arrow_recorbatch() -> None:
     record_batch = pa.RecordBatch.from_arrays([n_legs, animals], names=names)
     assert_frame_equal(
         pl.DataFrame(record_batch),
-        pl.DataFrame(
-            {
-                "n_legs": n_legs,
-                "animals": animals,
-            }
-        ),
+        pl.DataFrame({"n_legs": n_legs, "animals": animals}),
     )
 
 
@@ -1047,7 +1045,6 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
     )
 
     out = pl.DataFrame(arrow_tbl)
-
     assert_frame_equal(out, expect)
 
 
