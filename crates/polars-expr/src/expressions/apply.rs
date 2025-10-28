@@ -576,7 +576,7 @@ impl PhysicalExpr for ApplyExpr {
                         self.apply_multiple_group_aware(acs, df)
                     } else {
                         // Broadcast in NotAgg or AggList requires group_aware
-                        acs.iter_mut().for_each(|ac| {
+                        acs.iter_mut().filter(|ac| !ac.is_literal()).for_each(|ac| {
                             ac.groups();
                         });
                         let has_broadcast =
