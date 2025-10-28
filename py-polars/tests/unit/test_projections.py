@@ -12,7 +12,7 @@ def test_projection_on_semi_join_4789() -> None:
 
     lfb = pl.DataFrame({"seq": [1], "p": [1]}).lazy()
 
-    ab = lfa.join(lfb, on="p", how="semi").inspect()
+    ab = lfa.join(lfb, on="p", how="semi")
 
     intermediate_agg = (ab.group_by("a").agg([pl.col("a").alias("seq")])).select(
         ["a", "seq"]
@@ -675,3 +675,98 @@ def test_projection_count_21154() -> None:
     assert lf.unique("a").select(pl.len()).collect().to_dict(as_series=False) == {
         "len": [3]
     }
+
+
+def test_join_projection_pushdown_drop_non_coalesced() -> None:
+    q = pl.LazyFrame({"a": "L", "b": "L", "x": "K", "y": 0}).join(
+        pl.LazyFrame({"a": "R", "b": "R", "x": "K", "y": 1}), on="x", coalesce=False
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": "L",
+                "b": "L",
+                "x": "K",
+                "y": 0,
+                "a_right": "R",
+                "b_right": "R",
+                "x_right": "K",
+                "y_right": 1,
+            }
+        ),
+    )
+
+    q = q.drop("b")
+
+    plan = q.explain()
+
+    assert (
+        plan.index('col("b").alias("b_right")')
+        < plan.index("LEFT PLAN")
+        < plan.index('PROJECT["a", "x", "y"] 3/4 COLUMNS')
+        < plan.index("RIGHT PLAN")
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": "L",
+                "x": "K",
+                "y": 0,
+                "a_right": "R",
+                "b_right": "R",
+                "x_right": "K",
+                "y_right": 1,
+            }
+        ),
+    )
+
+
+def test_join_projection_pushdown_struct_field_as_key_24446() -> None:
+    lhs = pl.LazyFrame(
+        [
+            pl.Series("key", ["A"], dtype=pl.String),
+            pl.Series(
+                "struct_val", [{"key": "A"}], dtype=pl.Struct({"key": pl.String})
+            ),
+        ]
+    )
+
+    rhs = pl.LazyFrame({"key": "A", "val": 1})
+
+    q = lhs.join(
+        rhs,
+        left_on=pl.col("struct_val").struct.field("key"),
+        right_on=pl.col("key"),
+    ).drop("struct_val")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("key", ["A"], dtype=pl.String),
+                pl.Series("key_right", ["A"], dtype=pl.String),
+                pl.Series("val", [1], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lhs.join(
+        rhs,
+        left_on=pl.lit("") + pl.lit("") + pl.col("key"),
+        right_on=pl.col("key"),
+    ).drop("struct_val")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("key", ["A"], dtype=pl.String),
+                pl.Series("key_right", ["A"], dtype=pl.String),
+                pl.Series("val", [1], dtype=pl.Int64),
+            ]
+        ),
+    )

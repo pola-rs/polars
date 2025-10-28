@@ -28,9 +28,9 @@ pub(crate) enum ExprOrigin {
 impl ExprOrigin {
     /// Errors with ColumnNotFound if a column cannot be found on either side.
     ///
-    /// The origin of coalesced join columns will be `Left`, except for right-joins.
-    /// For coalescing right-joins, `is_coalesced_to_right` must be passed to
-    /// properly identify the origin.
+    /// Note, for right-joins an `is_coalesced_to_right` function must be passed
+    /// to properly identify coalesced key columns as originating from the `ExprOrigin::Right`.
+    /// Otherwise they will be identified as `ExprOrigin::Left`.
     pub(crate) fn get_expr_origin(
         root: Node,
         expr_arena: &Arena<AExpr>,
@@ -58,9 +58,9 @@ impl ExprOrigin {
 
     /// Errors with ColumnNotFound if a column cannot be found on either side.
     ///
-    /// The origin of coalesced join columns will be `Left`, except for right-joins.
-    /// For coalescing right-joins, `is_coalesced_to_right` must be passed to
-    /// properly identify the origin.
+    /// Note, for right-joins an `is_coalesced_to_right` function must be passed
+    /// to properly identify coalesced key columns as originating from the `ExprOrigin::Right`.
+    /// Otherwise they will be identified as `ExprOrigin::Left`.
     pub(crate) fn get_column_origin(
         column_name: &str,
         left_schema: &Schema,
