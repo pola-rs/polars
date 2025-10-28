@@ -600,7 +600,7 @@ impl PhysicalExpr for ApplyExpr {
                         // Fallible expression and there are elements that are masked out.
                         self.apply_multiple_group_aware(acs, df)
                     } else if has_broadcast {
-                        // Broadcast.
+                        //  Broadcast fall-back.
                         self.apply_multiple_group_aware(acs, df)
                     } else {
                         self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
