@@ -186,6 +186,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            PhysNodeKind::RollingGroupBy { .. } => dbg!(todo!()),
             PhysNodeKind::InMemoryMap {
                 input,
                 map: _, // dyn DataFrameUdf

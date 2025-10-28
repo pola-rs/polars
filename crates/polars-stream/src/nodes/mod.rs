@@ -25,6 +25,7 @@ pub mod reduce;
 pub mod repeat;
 pub mod rle;
 pub mod rle_id;
+pub mod rolling_group_by;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;

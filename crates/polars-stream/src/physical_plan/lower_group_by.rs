@@ -527,6 +527,19 @@ pub fn build_group_by_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
+    if let Some(options) = options.as_ref().rolling && keys.is_empty() && apply.is_none() {
+        phys_sm.insert(PhysNode::new(
+            group_by_output_schema.clone(),
+            PhysNodeKind::GroupBy {
+                input: pre_select,
+                key: trans_keys,
+                aggs: trans_agg_exprs,
+            },
+        ));
+
+
+    }
+
     let streaming = try_build_streaming_group_by(
         input,
         keys,

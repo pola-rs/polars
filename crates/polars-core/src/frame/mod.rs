@@ -391,6 +391,13 @@ impl DataFrame {
     }
 
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_arc_schema(schema: Arc<Schema>) -> Self {
+        let mut df = Self::empty_with_schema(&schema);
+        df.cached_schema = OnceLock::from(schema);
+        df
+    }
+
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
     pub fn empty_with_schema(schema: &Schema) -> Self {
         let cols = schema
             .iter()

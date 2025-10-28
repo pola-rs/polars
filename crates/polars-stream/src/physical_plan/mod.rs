@@ -29,6 +29,7 @@ pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileType, PlanCallback};
+use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
@@ -300,6 +301,15 @@ pub enum PhysNodeKind {
         aggs: Vec<ExprIR>,
     },
 
+    RollingGroupBy {
+        input: PhysStream,
+        index_column: PlSmallStr,
+        period: Duration,
+        offset: Duration,
+        closed: ClosedWindow,
+        aggs: Vec<ExprIR>,
+    },
+
     EquiJoin {
         input_left: PhysStream,
         input_right: PhysStream,
@@ -390,6 +400,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. }
+            | PhysNodeKind::RollingGroupBy { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);

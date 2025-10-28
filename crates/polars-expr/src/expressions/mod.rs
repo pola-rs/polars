@@ -668,6 +668,17 @@ impl<'a> AggregationContext<'a> {
             },
         }
     }
+
+    pub fn into_static(&self) -> AggregationContext<'static> {
+        let groups: GroupPositions = GroupPositions::to_owned(&self.groups);
+        let groups: Cow<'static, GroupPositions> = Cow::Owned(groups);
+        AggregationContext {
+            state: self.state.clone(),
+            groups,
+            update_groups: self.update_groups,
+            original_len: self.original_len,
+        }
+    }
 }
 
 /// Take a DataFrame and evaluate the expressions.

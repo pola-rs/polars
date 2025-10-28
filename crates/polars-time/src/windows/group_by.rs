@@ -647,12 +647,12 @@ pub fn group_by_values(
         dbg!(ctime);
         dbg!(start);
         dbg!(end);
-        let time_offset = windower.insert(ctime, &mut windows)?;
+        let time_offset = windower.insert(&[ctime], &mut windows)?;
         start += time_offset as usize;
         end += INCREMENTS;
     }
-    start += windower.insert(&time[start..], &mut windows)? as usize;
-    windower.finalize(&time[start..], &mut windows);
+    start += windower.insert(&[&time[start..]], &mut windows)? as usize;
+    windower.finalize(&[&time[start..]], &mut windows);
 
     assert_eq!(&old, &windows);
     Ok(old)
@@ -847,16 +847,15 @@ pub struct RollingWindower {
     end: IdxSize,
     length: IdxSize,
 
-    current: VecDeque<CurWindow>,
+    active: VecDeque<ActiveWindow>,
 }
 
-#[derive(Debug)]
-struct CurWindow {
+struct ActiveWindow {
     start: i64,
     end: i64,
 }
 
-impl CurWindow {
+impl ActiveWindow {
     #[inline(always)]
     fn above_lower_bound(&self, t: i64, closed: ClosedWindow) -> bool {
         (t > self.start)
@@ -867,6 +866,22 @@ impl CurWindow {
     fn below_upper_bound(&self, t: i64, closed: ClosedWindow) -> bool {
         (t < self.end)
             | (matches!(closed, ClosedWindow::Right | ClosedWindow::Both) & (t == self.end))
+    }
+}
+
+fn skip_in_2d_list(x: &mut usize, y: &mut usize, l: &[&[i64]], mut n: usize) {
+    while *y < l.len() && (n > l[*y].len() || l[*y].is_empty()) {
+        n -= l[*y].len();
+        *y += 1;
+    }
+    assert!(n == 0 || *y < l.len());
+    *x = n;
+}
+fn increment_2d(x: &mut usize, y: &mut usize, l: &[&[i64]]) {
+    *x += 1;
+    while *y < l.len() && *x == l[*y].len() {
+        *y += 1;
+        *x = 0;
     }
 }
 
@@ -894,18 +909,34 @@ impl RollingWindower {
             end: 0,
             length: 0,
 
-            current: Default::default(),
+            active: Default::default(),
         }
     }
 
+    pub fn start(&self) -> IdxSize {
+        self.start
+    }
+
+    /// Insert new values into the windower.
+    ///
+    /// This should be given all the old values that were not processed yet.
     pub fn insert(
         &mut self,
-        time: &[i64],
+        time: &[&[i64]],
         windows: &mut Vec<[IdxSize; 2]>,
     ) -> PolarsResult<IdxSize> {
+        let (mut ix, mut iy) = (0, 0);
+        let (mut sx, mut sy) = (0, 0);
+        let (mut ex, mut ey) = (0, 0);
+
+        skip_in_2d_list(&mut ix, &mut iy, time, (self.length - self.start) as usize);
+        skip_in_2d_list(&mut sx, &mut sy, time, 0); // skip over empty lists
+        skip_in_2d_list(&mut ex, &mut ey, time, (self.end - self.start) as usize);
+
         let time_start = self.start;
         let mut i = self.length;
-        for &t in &time[(self.length - self.start) as usize..] {
+        while iy < time.len() {
+            let t = time[iy][ix];
             let window_start = (self.add)(&self.offset, t, self.tz.as_ref())?;
             // For datetime arithmetic, it does *NOT* hold 0 + a - a == 0. Therefore, we make sure
             // that if `offset` and `period` are inverses we keep the `t`.
@@ -915,31 +946,29 @@ impl RollingWindower {
                 (self.add)(&self.period, window_start, self.tz.as_ref())?
             };
 
-            self.current.push_back(CurWindow {
+            self.active.push_back(ActiveWindow {
                 start: window_start,
                 end: window_end,
             });
 
-            while let Some(window) = self.current.front() {
-                if window.below_upper_bound(t, self.closed) {
+            while let Some(w) = self.active.front() {
+                if w.below_upper_bound(t, self.closed) {
                     break;
                 }
 
-                let window = self.current.pop_front().unwrap();
-                while self.start < i
-                    && !window
-                        .above_lower_bound(time[(self.start - time_start) as usize], self.closed)
-                {
+                let w = self.active.pop_front().unwrap();
+                while self.start < i && !w.above_lower_bound(time[sy][sx], self.closed) {
+                    increment_2d(&mut sx, &mut sy, time);
                     self.start += 1;
                 }
-                while self.end <= i
-                    && window.below_upper_bound(time[(self.end - time_start) as usize], self.closed)
-                {
+                while self.end < i && w.below_upper_bound(time[ey][ex], self.closed) {
+                    increment_2d(&mut ex, &mut ey, time);
                     self.end += 1;
                 }
                 windows.push([self.start, self.end - self.start]);
             }
 
+            increment_2d(&mut ix, &mut iy, time);
             i += 1;
         }
 
@@ -947,22 +976,33 @@ impl RollingWindower {
         Ok(self.start - time_start)
     }
 
-    pub fn finalize(mut self, time: &[i64], windows: &mut Vec<[IdxSize; 2]>) {
-        assert_eq!(time.len() as IdxSize, self.length - self.start);
-        let time_offset = self.start;
-        windows.extend(self.current.into_iter().map(|w| {
-            while self.start < self.length
-                && !w.above_lower_bound(time[(self.start - time_offset) as usize], self.closed)
-            {
+    /// Process all remaining items and signal that no more items are coming.
+    pub fn finalize(&mut self, time: &[&[i64]], windows: &mut Vec<[IdxSize; 2]>) {
+        assert_eq!(
+            time.iter().map(|t| t.len()).sum::<usize>() as IdxSize,
+            self.length - self.start
+        );
+
+        let (mut sx, mut sy) = (0, 0);
+        let (mut ex, mut ey) = (0, 0);
+
+        skip_in_2d_list(&mut ex, &mut ey, time, (self.end - self.start) as usize);
+
+        windows.extend(self.active.drain(..).map(|w| {
+            while self.start < self.length && !w.above_lower_bound(time[sy][sx], self.closed) {
+                increment_2d(&mut sx, &mut sy, time);
                 self.start += 1;
             }
-            while self.end < self.length
-                && w.below_upper_bound(time[(self.end - time_offset) as usize], self.closed)
-            {
+            while self.end < self.length && w.below_upper_bound(time[ey][ex], self.closed) {
+                increment_2d(&mut ex, &mut ey, time);
                 self.end += 1;
             }
             [self.start, self.end - self.start]
         }));
+
+        self.start = 0;
+        self.end = 0;
+        self.length = 0;
     }
 }
 
