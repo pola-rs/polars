@@ -66,9 +66,16 @@ impl ToArrowConverter {
                     ArrowDataType::Struct(
                         fields
                             .iter()
-                            .map(|x| x.name())
+                            .map(|x| (x.name().clone(), x.dtype()))
                             .zip(values.iter().map(|x| x.dtype()))
-                            .map(|(name, dtype)| ArrowField::new(name.clone(), dtype.clone(), true))
+                            .map(|((name, dtype), converted_arrow_dtype)| {
+                                create_arrow_field(
+                                    name,
+                                    dtype,
+                                    converted_arrow_dtype,
+                                    self.compat_level,
+                                )
+                            })
                             .collect(),
                     ),
                     arr.len(),
@@ -82,7 +89,12 @@ impl ToArrowConverter {
                 let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
                 let arr = ListArray::<i64>::new(
-                    ListArray::<i64>::default_datatype(new_values.dtype().clone()),
+                    ArrowDataType::LargeList(Box::new(create_arrow_field(
+                        LIST_VALUES_NAME,
+                        inner.as_ref(),
+                        new_values.dtype(),
+                        self.compat_level,
+                    ))),
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
@@ -97,7 +109,15 @@ impl ToArrowConverter {
                 let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
                 let arr = FixedSizeListArray::new(
-                    FixedSizeListArray::default_datatype(new_values.dtype().clone(), *width),
+                    ArrowDataType::FixedSizeList(
+                        Box::new(create_arrow_field(
+                            LIST_VALUES_NAME,
+                            inner.as_ref(),
+                            new_values.dtype(),
+                            self.compat_level,
+                        )),
+                        *width,
+                    ),
                     arr.len(),
                     new_values,
                     arr.validity().cloned(),
@@ -162,5 +182,21 @@ impl ToArrowConverter {
                 array.to_boxed()
             },
         }
+    }
+}
+
+fn create_arrow_field(
+    name: PlSmallStr,
+    dtype: &DataType,
+    arrow_dtype: &ArrowDataType,
+    compat_level: CompatLevel,
+) -> ArrowField {
+    match (dtype, arrow_dtype) {
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(..) | DataType::Enum(..), ArrowDataType::Dictionary(_, _, _)) => {
+            // Sets _PL_ metadata
+            dtype.to_arrow_field(name, compat_level)
+        },
+        _ => ArrowField::new(name, arrow_dtype.clone(), true),
     }
 }
