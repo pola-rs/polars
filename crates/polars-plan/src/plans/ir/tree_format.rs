@@ -1,7 +1,7 @@
 use std::fmt;
 
 use polars_core::error::*;
-use polars_utils::{format_list_container_truncated, format_list_truncated};
+use polars_utils::format_list_truncated;
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;

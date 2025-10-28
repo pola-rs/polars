@@ -27,6 +27,7 @@ use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
@@ -37,7 +38,6 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{POOL, apply_method_physical_integer};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
