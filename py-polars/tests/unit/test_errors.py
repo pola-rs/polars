@@ -741,7 +741,7 @@ def test_raies_on_mismatch_column_length_24500() -> None:
         }
     )
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match="expressions must have matching group lengths",
     ):
         df.group_by("a").agg(
@@ -762,7 +762,7 @@ def test_raies_on_mismatch_column_length_binary_expr() -> None:
     )
 
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match="expressions must have matching group lengths",
     ):
         df.group_by("a").agg(
