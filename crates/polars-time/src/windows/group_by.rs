@@ -1,9 +1,12 @@
+use std::collections::VecDeque;
+
 use arrow::legacy::time_zone::Tz;
 use arrow::trusted_len::TrustedLen;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
+use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -623,6 +626,46 @@ pub fn group_by_values(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> PolarsResult<GroupsSlice> {
+    let old = group_by_values_old(
+        period.clone(),
+        offset.clone(),
+        time,
+        closed_window,
+        tu,
+        tz.clone(),
+    )?;
+    let mut windower = RollingWindower::new(period, offset, closed_window, tu, tz);
+
+    const INCREMENTS: usize = 2;
+
+    let mut start = 0;
+    let mut end = INCREMENTS;
+
+    let mut windows = Vec::new();
+    while end < time.len() {
+        let ctime = &time[start..end.min(time.len())];
+        dbg!(ctime);
+        dbg!(start);
+        dbg!(end);
+        let time_offset = windower.insert(ctime, &mut windows)?;
+        start += time_offset as usize;
+        end += INCREMENTS;
+    }
+    start += windower.insert(&time[start..], &mut windows)? as usize;
+    windower.finalize(&time[start..], &mut windows);
+
+    assert_eq!(&old, &windows);
+    Ok(old)
+}
+
+pub fn group_by_values_old(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+) -> PolarsResult<GroupsSlice> {
     if time.is_empty() {
         return Ok(GroupsSlice::from(vec![]));
     }
@@ -789,6 +832,137 @@ pub fn group_by_values(
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(flatten_par(&vals))
         })
+    }
+}
+
+pub struct RollingWindower {
+    period: Duration,
+    offset: Duration,
+    closed: ClosedWindow,
+
+    add: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
+    tz: Option<Tz>,
+
+    start: IdxSize,
+    end: IdxSize,
+    length: IdxSize,
+
+    current: VecDeque<CurWindow>,
+}
+
+#[derive(Debug)]
+struct CurWindow {
+    start: i64,
+    end: i64,
+}
+
+impl CurWindow {
+    #[inline(always)]
+    fn above_lower_bound(&self, t: i64, closed: ClosedWindow) -> bool {
+        (t > self.start)
+            | (matches!(closed, ClosedWindow::Left | ClosedWindow::Both) & (t == self.start))
+    }
+
+    #[inline(always)]
+    fn below_upper_bound(&self, t: i64, closed: ClosedWindow) -> bool {
+        (t < self.end)
+            | (matches!(closed, ClosedWindow::Right | ClosedWindow::Both) & (t == self.end))
+    }
+}
+
+impl RollingWindower {
+    pub fn new(
+        period: Duration,
+        offset: Duration,
+        closed: ClosedWindow,
+        tu: TimeUnit,
+        tz: Option<Tz>,
+    ) -> Self {
+        Self {
+            period,
+            offset,
+            closed,
+
+            add: match tu {
+                TimeUnit::Nanoseconds => Duration::add_ns,
+                TimeUnit::Microseconds => Duration::add_us,
+                TimeUnit::Milliseconds => Duration::add_ms,
+            },
+            tz,
+
+            start: 0,
+            end: 0,
+            length: 0,
+
+            current: Default::default(),
+        }
+    }
+
+    pub fn insert(
+        &mut self,
+        time: &[i64],
+        windows: &mut Vec<[IdxSize; 2]>,
+    ) -> PolarsResult<IdxSize> {
+        let time_start = self.start;
+        let mut i = self.length;
+        for &t in &time[(self.length - self.start) as usize..] {
+            let window_start = (self.add)(&self.offset, t, self.tz.as_ref())?;
+            // For datetime arithmetic, it does *NOT* hold 0 + a - a == 0. Therefore, we make sure
+            // that if `offset` and `period` are inverses we keep the `t`.
+            let window_end = if self.offset == -self.period {
+                t
+            } else {
+                (self.add)(&self.period, window_start, self.tz.as_ref())?
+            };
+
+            self.current.push_back(CurWindow {
+                start: window_start,
+                end: window_end,
+            });
+
+            while let Some(window) = self.current.front() {
+                if window.below_upper_bound(t, self.closed) {
+                    break;
+                }
+
+                let window = self.current.pop_front().unwrap();
+                while self.start < i
+                    && !window
+                        .above_lower_bound(time[(self.start - time_start) as usize], self.closed)
+                {
+                    self.start += 1;
+                }
+                while self.end <= i
+                    && window.below_upper_bound(time[(self.end - time_start) as usize], self.closed)
+                {
+                    self.end += 1;
+                }
+                windows.push([self.start, self.end - self.start]);
+            }
+
+            i += 1;
+        }
+
+        self.length = i;
+        Ok(self.start - time_start)
+    }
+
+    pub fn finalize(mut self, time: &[i64], windows: &mut Vec<[IdxSize; 2]>) {
+        assert_eq!(time.len() as IdxSize, self.length - self.start);
+        let time_offset = self.start;
+        windows.extend(self.current.into_iter().map(|w| {
+            while self.start < self.length
+                && !w.above_lower_bound(time[(self.start - time_offset) as usize], self.closed)
+            {
+                self.start += 1;
+            }
+            while self.end < self.length
+                && w.below_upper_bound(time[(self.end - time_offset) as usize], self.closed)
+            {
+                self.end += 1;
+            }
+            [self.start, self.end - self.start]
+        }));
     }
 }
 
