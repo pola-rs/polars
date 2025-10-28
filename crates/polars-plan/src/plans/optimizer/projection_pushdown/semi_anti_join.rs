@@ -1,6 +1,7 @@
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
+#[allow(unused)]
 pub(super) fn process_semi_anti_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,

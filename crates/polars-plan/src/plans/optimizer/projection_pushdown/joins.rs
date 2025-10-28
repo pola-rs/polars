@@ -1,3 +1,4 @@
+#![allow(unused)]
 #![allow(clippy::too_many_arguments)]
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -474,6 +475,7 @@ fn process_projection(
 // we have after the join. If we cannot then we modify the projection:
 //
 // col("foo_right")  to col("foo").alias("foo_right")
+#[allow(unused)]
 fn resolve_join_suffixes(
     input_left: Node,
     input_right: Node,
@@ -547,6 +549,33 @@ pub(super) fn process_join(
     let mut project_left = PlHashSet::with_capacity(input_schema_left.len());
     let mut project_right = PlHashSet::with_capacity(input_schema_right.len());
 
+    let mut coalesced_to_right: PlHashSet<PlSmallStr> = Default::default();
+    if options.args.should_coalesce()
+        && let JoinType::Right = &options.args.how
+    {
+        coalesced_to_right = left_on
+            .iter()
+            .map(|expr| {
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } => *expr,
+
+                    _ => expr.node(),
+                };
+
+                let AExpr::Column(name) = expr_arena.get(node) else {
+                    // All keys should be columns when coalesce=True
+                    unreachable!()
+                };
+
+                name.clone()
+            })
+            .collect()
+    }
+
     // Add accumulated projections
     for output_name in join_output_schema.iter_names() {
         if !is_projected(output_name) {
@@ -558,7 +587,7 @@ pub(super) fn process_join(
             &input_schema_left,
             &input_schema_right,
             options.args.suffix(),
-            None,
+            Some(&|name| coalesced_to_right.contains(name)),
         )? {
             ExprOrigin::None => {},
             ExprOrigin::Left => {
@@ -683,45 +712,51 @@ pub(super) fn process_join(
     )
     .unwrap();
 
-    let mut needs_post_project = proj_cx.acc_projections.len() != new_join_output_schema.len();
+    let post_project: Option<Vec<ExprIR>> = if proj_cx.has_pushed_down() {
+        let mut needs_post_project = proj_cx.acc_projections.len() != new_join_output_schema.len();
 
-    // Build post-projection to re-order the columns and add suffixes if necessary.
-    let post_project: Vec<ExprIR> = proj_cx
-        .acc_projections
-        .iter()
-        .enumerate()
-        .map(|(i, col_node)| {
-            let original_projected_name = column_node_to_name(*col_node, expr_arena);
+        // Build post-projection to re-order the columns and add suffixes if necessary.
+        let post_project: Vec<ExprIR> = proj_cx
+            .acc_projections
+            .iter()
+            .enumerate()
+            .map(|(i, col_node)| {
+                let original_projected_name = column_node_to_name(*col_node, expr_arena);
 
-            if new_join_output_schema.index_of(original_projected_name.as_str()) != Some(i) {
-                needs_post_project = true;
-            }
+                if new_join_output_schema.index_of(original_projected_name.as_str()) != Some(i) {
+                    needs_post_project = true;
+                }
 
-            if !new_join_output_schema.contains(original_projected_name.as_str()) {
-                // This name is no longer suffixed in the new output schema, we restore it with an
-                // alias here.
-                let new_output_name = PlSmallStr::from_str(
-                    original_projected_name
-                        .strip_suffix(options.args.suffix().as_str())
-                        .unwrap(),
-                );
+                if !new_join_output_schema.contains(original_projected_name.as_str()) {
+                    // This name is no longer suffixed in the new output schema, we restore it with an
+                    // alias here.
+                    let new_output_name = PlSmallStr::from_str(
+                        original_projected_name
+                            .strip_suffix(options.args.suffix().as_str())
+                            .unwrap(),
+                    );
 
-                debug_assert!(new_join_output_schema.contains(new_output_name.as_str()));
-                let original_projected_name = original_projected_name.clone();
+                    debug_assert!(new_join_output_schema.contains(new_output_name.as_str()));
+                    let original_projected_name = original_projected_name.clone();
 
-                ExprIR::new(
-                    expr_arena.add(AExpr::Column(new_output_name)),
-                    OutputName::Alias(original_projected_name),
-                )
-            } else {
-                ExprIR::from_node(col_node.0, expr_arena)
-            }
-        })
-        .collect();
+                    ExprIR::new(
+                        expr_arena.add(AExpr::Column(new_output_name)),
+                        OutputName::Alias(original_projected_name),
+                    )
+                } else {
+                    ExprIR::from_node(col_node.0, expr_arena)
+                }
+            })
+            .collect();
+
+        needs_post_project.then_some(post_project)
+    } else {
+        None
+    };
 
     *join_output_schema = new_join_output_schema;
 
-    let out: IR = if needs_post_project {
+    let out: IR = if let Some(post_project) = post_project {
         IRBuilder::from_lp(join_ir, expr_arena, ir_arena)
             .project(
                 post_project,

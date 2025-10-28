@@ -13,8 +13,6 @@ use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
-#[cfg(feature = "semi_anti_join")]
-use semi_anti_join::process_semi_anti_join;
 
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
@@ -277,6 +275,7 @@ impl ProjectionPushDown {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(unused)]
     fn join_push_down(
         &mut self,
         schema_left: &Schema,

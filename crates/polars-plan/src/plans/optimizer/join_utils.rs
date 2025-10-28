@@ -1,3 +1,4 @@
+#![allow(unused)]
 use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::schema::*;
 use polars_utils::arena::{Arena, Node};
