@@ -253,9 +253,9 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Last(input), output_name)
                 },
-                AggExpr::Item(input) => {
+                AggExpr::Item { input, allow_empty } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Item(input), output_name)
+                    (IRAggExpr::Item { input, allow_empty }, output_name)
                 },
                 AggExpr::Mean(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;

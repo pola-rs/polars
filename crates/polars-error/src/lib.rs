@@ -504,15 +504,21 @@ on startup."#.trim_start())
             ComputeError: "`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data.\n\nThis was previously allowed but led to unpredictable and erroneous results. Give a format string, set a time zone or perform the operation eagerly on a Series instead of on an Expr."
         )
     };
-    (item_agg_count_not_one = $n:expr) => {
-        if $n == 0 {
+    (item_agg_count_not_one = $n:expr, allow_empty = $allow_empty:expr) => {
+        if $n == 0 && !$allow_empty {
             polars_err!(ComputeError:
                 "aggregation 'item' expected a single value, got none"
             )
         } else if $n > 1 {
-            polars_err!(ComputeError:
-                "aggregation 'item' expected a single value, got {} values", $n
-            )
+            if $allow_empty {
+                polars_err!(ComputeError:
+                    "aggregation 'item' expected a no or a single value, got {} values", $n
+                )
+            } else {
+                polars_err!(ComputeError:
+                    "aggregation 'item' expected a single value, got {} values", $n
+                )
+            }
         } else {
             unreachable!()
         }
