@@ -633,7 +633,7 @@ pub(super) fn process_join(
             }
         }
 
-        if let Some(right_by) = asof_options.left_by.as_deref() {
+        if let Some(right_by) = asof_options.right_by.as_deref() {
             for name in right_by {
                 project_right.insert(name.clone());
             }
