@@ -230,13 +230,6 @@ impl<'a> AggregationContext<'a> {
         matches!(self.state, AggState::LiteralScalar(_))
     }
 
-    pub(crate) fn is_scalar(&self) -> bool {
-        matches!(
-            self.state,
-            AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
-        )
-    }
-
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
     ///   the columns dtype)

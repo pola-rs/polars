@@ -319,7 +319,12 @@ impl PhysicalExpr for BinaryExpr {
         let is_fallible = has_decimal_dtype && self.op.is_arithmetic();
 
         // Broadcast in NotAgg or AggList requires group_aware
-        let check_broadcast = !ac_l.is_scalar() && !ac_r.is_scalar();
+        let check_broadcast = [&ac_l, &ac_r].iter().all(|ac| {
+            matches!(
+                ac.agg_state(),
+                AggState::NotAggregated(_) | AggState::AggregatedList(_)
+            )
+        });
         let has_broadcast = check_broadcast
             && ac_l
                 .groups()

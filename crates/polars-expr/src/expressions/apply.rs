@@ -533,14 +533,12 @@ impl PhysicalExpr for ApplyExpr {
                     let mut has_not_agg = false;
                     let mut has_not_agg_with_overlapping_groups = false;
                     let mut not_agg_groups_may_diverge = false;
-                    let mut num_non_scalar_acs = 0;
 
                     let mut previous: Option<&AggregationContext<'_>> = None;
                     for ac in &acs {
                         match ac.state {
                             AggState::AggregatedList(_) => {
                                 has_agg_list = true;
-                                num_non_scalar_acs += 1;
                             },
                             AggState::AggregatedScalar(_) => has_agg_scalar = true,
                             AggState::NotAggregated(_) => {
@@ -553,7 +551,6 @@ impl PhysicalExpr for ApplyExpr {
                                 if ac.groups.is_overlapping() {
                                     has_not_agg_with_overlapping_groups = true;
                                 }
-                                num_non_scalar_acs += 1;
                             },
                             _ => {},
                         }
@@ -562,28 +559,6 @@ impl PhysicalExpr for ApplyExpr {
                     let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
                     let elementwise_must_aggregate =
                         has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
-
-                    // Broadcast in NotAgg or AggList requires group_aware
-                    let check_broadcast = num_non_scalar_acs > 1;
-                    let mut has_broadcast = false;
-                    if check_broadcast {
-                        let mut previous: Option<&AggregationContext<'_>> = None;
-                        for ac in acs.iter_mut() {
-                            if !ac.is_scalar() {
-                                let _ = ac.groups();
-                                if let Some(p) = previous {
-                                    has_broadcast |=
-                                        p.groups.iter().zip(ac.groups.iter()).any(|(l, r)| {
-                                            l.len() != r.len() && (l.len() == 1 || r.len() == 1)
-                                        });
-                                    if has_broadcast {
-                                        break;
-                                    }
-                                }
-                                previous = Some(ac);
-                            }
-                        }
-                    }
 
                     if all_literal {
                         // Fast path
@@ -599,11 +574,32 @@ impl PhysicalExpr for ApplyExpr {
                     {
                         // Fallible expression and there are elements that are masked out.
                         self.apply_multiple_group_aware(acs, df)
-                    } else if has_broadcast {
-                        //  Broadcast fall-back.
-                        self.apply_multiple_group_aware(acs, df)
                     } else {
-                        self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
+                        // Broadcast in NotAgg or AggList requires group_aware
+                        acs.iter_mut().for_each(|ac| {
+                            ac.groups();
+                        });
+                        let has_broadcast =
+                            if let Some(base_ac_idx) = acs.iter().position(|ac| !ac.is_literal()) {
+                                acs.iter()
+                                    .enumerate()
+                                    .filter(|(i, ac)| *i != base_ac_idx && !ac.is_literal())
+                                    .any(|(_, ac)| {
+                                        acs[base_ac_idx].groups.iter().zip(ac.groups.iter()).any(
+                                            |(l, r)| {
+                                                l.len() != r.len() && (l.len() == 1 || r.len() == 1)
+                                            },
+                                        )
+                                    })
+                            } else {
+                                false
+                            };
+                        if has_broadcast {
+                            //  Broadcast fall-back.
+                            self.apply_multiple_group_aware(acs, df)
+                        } else {
+                            self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
+                        }
                     }
                 },
             }
