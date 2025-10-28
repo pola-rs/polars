@@ -631,7 +631,7 @@ impl PyLazyFrame {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
 
-            polars_io::utils::spawn_blocking(move || {
+            std::thread::spawn(move || {
                 let result = ldf.collect_with_engine(engine.0).map_err(PyPolarsErr::from);
 
                 Python::attach(|py| match result {
