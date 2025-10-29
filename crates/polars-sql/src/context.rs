@@ -545,7 +545,7 @@ impl SQLContext {
                 .lazy())
             } else {
                 // apply constraint as inverted filter (drops rows matching the selection)
-                Ok(self.process_where(lf.clone(), selection, true)?)
+                Ok(self.process_where(lf.clone(), selection, true, None)?)
             }
         } else {
             polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
@@ -719,7 +719,7 @@ impl SQLContext {
 
         // Filter expression (WHERE clause)
         let schema = self.get_frame_schema(&mut lf)?;
-        lf = self.process_where(lf, &select_stmt.selection, false)?;
+        lf = self.process_where(lf, &select_stmt.selection, false, Some(schema.clone()))?;
 
         // 'SELECT *' modifiers
         let mut select_modifiers = SelectModifiers {
@@ -985,9 +985,13 @@ impl SQLContext {
         mut lf: LazyFrame,
         expr: &Option<SQLExpr>,
         invert_filter: bool,
+        schema: Option<SchemaRef>,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
-            let schema = self.get_frame_schema(&mut lf)?;
+            let schema = match schema {
+                None => self.get_frame_schema(&mut lf)?,
+                Some(s) => s,
+            };
 
             // shortcut filter evaluation if given expression is just TRUE or FALSE
             let (all_true, all_false) = match expr {
@@ -1697,25 +1701,18 @@ impl ExprSqlProjectionHeightBehavior {
 
         for e in expr.into_iter() {
             use Expr::*;
-
             has_column |= matches!(e, Column(_) | Selector(_));
-
             has_independent |= match e {
                 // @TODO: This is broken now with functions.
                 AnonymousFunction { options, .. } => {
                     options.returns_scalar() || !options.is_length_preserving()
                 },
-
                 Literal(v) => !v.is_scalar(),
-
                 Explode { .. } | Filter { .. } | Gather { .. } | Slice { .. } => true,
-
                 Agg { .. } | Len => true,
-
                 _ => false,
             }
         }
-
         if has_independent {
             Self::Independent
         } else if has_column {
