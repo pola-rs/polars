@@ -17,20 +17,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .pivot(
             Selector::ByName {
-                names: ["foo"].into(),
+                names: [PlSmallStr::from("foo")].into(),
                 strict: true,
             },
-            df!("" => ["A", "B", "C"]),
+            Arc::new(df!("" => ["A", "B", "C"])?),
             Selector::ByName {
-                names: ["bar"].into(),
+                names: [PlSmallStr::from("bar")].into(),
                 strict: true,
             },
             Selector::ByName {
-                names: ["N"].into(),
+                names: [PlSmallStr::from("N")].into(),
                 strict: true,
             },
             Expr::Agg(AggExpr::Item {
-                input: Expr::Element,
+                input: Arc::new(Expr::Element),
                 allow_empty: true,
             }),
             false,
@@ -44,20 +44,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let q = df.lazy();
     let q2 = q.pivot(
         Selector::ByName {
-            names: ["foo"].into(),
+            names: [PlSmallStr::from("foo")].into(),
             strict: true,
         },
-        df!("" => ["A", "B", "C"]),
+        Arc::new(df!("" => ["A", "B", "C"])?),
         Selector::ByName {
-            names: ["bar"].into(),
+            names: [PlSmallStr::from("bar")].into(),
             strict: true,
         },
         Selector::ByName {
-            names: ["N"].into(),
+            names: [PlSmallStr::from("N")].into(),
             strict: true,
         },
         Expr::Agg(AggExpr::Item {
-            input: Expr::Element,
+            input: Arc::new(Expr::Element),
             allow_empty: true,
         }),
         false,
