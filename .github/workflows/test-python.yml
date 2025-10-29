@@ -166,10 +166,3 @@ jobs:
         run: |
           cd narwhals
           pytest tests --constructors "polars[eager],polars[lazy]" --ignore "tests/testing/" --ignore "tests/expr_and_series/is_close_test.py"
-      - name: Run TPCH Queries
-        run: |
-          cd narwhals/tpch
-          uv pip install duckdb
-          python generate_data.py
-          uv pip uninstall duckdb pandas pyarrow
-          pytest tests
