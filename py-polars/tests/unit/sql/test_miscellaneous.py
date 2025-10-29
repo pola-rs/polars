@@ -184,6 +184,16 @@ def test_frame_sql_globals_error() -> None:
     assert res.to_dict(as_series=False) == {"a": [2, 3], "b": [7, 6]}
 
 
+def test_global_misc_lookup() -> None:
+    # check that `col` in global namespace is not incorrectly identified
+    # as supporting pycapsule (as it can look like it has *any* attr)
+    from polars import col  # noqa: F401
+
+    df = pl.DataFrame({"col": [90, 80, 70]})  # noqa: F841
+    df_res = pl.sql("SELECT col FROM df WHERE col > 75", eager=True)
+    assert df_res.rows() == [(90,), (80,)]
+
+
 def test_in_no_ops_11946() -> None:
     lf = pl.LazyFrame(
         [
