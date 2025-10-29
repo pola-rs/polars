@@ -137,12 +137,11 @@ pub fn count_rows_from_slice_par(
         let mut n = 0;
         let mut in_string = false;
         for pair in states {
-            let selected_state = pair[in_string as usize];
-            n += selected_state.newline_count;
-            in_string = selected_state.end_inside_string;
+            n += pair[in_string as usize].newline_count;
+            in_string = pair[in_string as usize].end_inside_string;
         }
-
-        if bytes.last().copied() != Some(b'\n')
+        if let Some(last) = bytes.last()
+            && *last != eol_char
             && (comment_prefix.is_none()
                 || !is_comment_line(
                     bytes.rsplit(|c| *c == b'\n').next().unwrap(),
