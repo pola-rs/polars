@@ -820,8 +820,6 @@ fn to_graph_rec<'a>(
                     force_parallel: false,
                     args: args.clone(),
                     options: options.clone(),
-                    rows_left: (None, 0),
-                    rows_right: (None, 0),
                 }),
             });
 
