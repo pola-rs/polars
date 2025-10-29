@@ -462,11 +462,11 @@ impl LineBatchSource {
         let global_bytes: &'static [u8] = unsafe { std::mem::transmute(global_bytes) };
         let comment_prefix = options.parse_options.comment_prefix.as_ref();
 
-        let i = {
-            let parse_options = options.parse_options.as_ref();
+        let parse_options = options.parse_options.as_ref();
+        let eol_char = parse_options.eol_char;
 
+        let i = {
             let quote_char = parse_options.quote_char;
-            let eol_char = parse_options.eol_char;
 
             let skip_lines = options.skip_lines;
             let skip_rows_before_header = options.skip_rows;
@@ -512,10 +512,17 @@ impl LineBatchSource {
 
             let (count, position) = line_counter.find_next(bytes, &mut chunk_size);
             let (count, position) = if count == 0 {
-                let c = if is_comment_line(bytes, comment_prefix) {
-                    0
-                } else {
+                let c = if *bytes.last().unwrap() != eol_char
+                    && !is_comment_line(
+                        bytes
+                            .rsplit(|c| *c == options.parse_options.eol_char)
+                            .next()
+                            .unwrap(),
+                        comment_prefix,
+                    ) {
                     1
+                } else {
+                    0
                 };
                 (c, bytes.len())
             } else {

@@ -113,7 +113,7 @@ pub fn count_rows_from_slice_par(
                         // Ensure we start at the start of a line.
                         if let Some(nl_off) = bytes[start_offset..next_start_offset]
                             .iter()
-                            .position(|b| *b == b'\n')
+                            .position(|b| *b == eol_char)
                         {
                             start_offset += nl_off + 1;
                         } else {
@@ -121,8 +121,9 @@ pub fn count_rows_from_slice_par(
                         }
                     }
 
-                    let stop_offset = if let Some(nl_off) =
-                        bytes[next_start_offset..].iter().position(|b| *b == b'\n')
+                    let stop_offset = if let Some(nl_off) = bytes[next_start_offset..]
+                        .iter()
+                        .position(|b| *b == eol_char)
                     {
                         next_start_offset + nl_off + 1
                     } else {
@@ -144,7 +145,7 @@ pub fn count_rows_from_slice_par(
             && *last != eol_char
             && (comment_prefix.is_none()
                 || !is_comment_line(
-                    bytes.rsplit(|c| *c == b'\n').next().unwrap(),
+                    bytes.rsplit(|c| *c == eol_char).next().unwrap(),
                     comment_prefix,
                 ))
         {
@@ -763,7 +764,10 @@ impl CountLines {
             // Skip comment line if needed.
             while bytes[scan_offset..].starts_with(pre_s) {
                 scan_offset += pre_s.len();
-                let Some(nl_off) = bytes[scan_offset..].iter().position(|c| *c == b'\n') else {
+                let Some(nl_off) = bytes[scan_offset..]
+                    .iter()
+                    .position(|c| *c == self.eol_char)
+                else {
                     break;
                 };
                 scan_offset += nl_off + 1;
