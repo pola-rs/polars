@@ -13,6 +13,7 @@ use pyo3::types::{PyList, PyType};
 
 use self::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use super::PyDataFrame;
+use crate::PyLazyFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::map::dataframe::{
@@ -23,7 +24,6 @@ use crate::prelude::strings_to_pl_smallstr;
 use crate::py_modules::polars;
 use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::utils::EnterPolarsExt;
-use crate::{PyExpr, PyLazyFrame};
 
 #[pymethods]
 impl PyDataFrame {
@@ -414,7 +414,7 @@ impl PyDataFrame {
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
-        use polars_ops::pivot::UnpivotDF;
+        use polars_ops::unpivot::UnpivotDF;
         let args = UnpivotArgsIR {
             on: strings_to_pl_smallstr(on),
             index: strings_to_pl_smallstr(index),
