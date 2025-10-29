@@ -688,6 +688,9 @@ pub fn lower_ir(
                         python_dataset_scan_to_reader_builder(expanded_scan)
                     },
 
+                    #[cfg(feature = "scan_lines")]
+                    FileScanIR::Lines { name: _ } => todo!(),
+
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };
 
