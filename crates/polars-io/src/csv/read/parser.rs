@@ -154,12 +154,28 @@ pub fn count_rows_from_slice_raw(
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
-) -> PolarsResult<usize> {
-    Ok(
-        CountLines::new(quote_char, eol_char, comment_prefix.cloned())
-            .count(bytes)
-            .0,
-    )
+) -> usize {
+    let cl = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
+
+    return if comment_prefix.is_some() {
+        let stats = cl.analyze_chunk_with_comment(bytes, false);
+
+        if bytes.len() - stats.last_newline_offset > 1
+            && !is_comment_line(&bytes[stats.last_newline_offset + 1..], comment_prefix)
+        {
+            stats.newline_count + 1
+        } else {
+            stats.newline_count
+        }
+    } else {
+        let (count, position) = cl.count(bytes);
+
+        if bytes.len() - position > 1 {
+            1 + count
+        } else {
+            count
+        }
+    };
 }
 
 /// Skip the utf-8 Byte Order Mark.

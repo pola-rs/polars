@@ -362,7 +362,7 @@ impl FileReader for CsvFileReader {
                             assert_eq!(slice, SLICE_ENDED);
 
                             let n_lines = if let Some(v) = alt_count_lines.as_deref() {
-                                v.count_lines(bytes)?
+                                v.count_lines(bytes)
                             } else {
                                 n_lines
                             };
@@ -653,7 +653,7 @@ impl ChunkReader {
         // If projection is empty create a DataFrame with the correct height by counting the lines.
         let mut df = if self.projection.is_empty() {
             let h = if let Some(v) = &self.alt_count_lines {
-                v.count_lines(chunk)?
+                v.count_lines(chunk)
             } else {
                 n_lines
             };
@@ -741,7 +741,7 @@ impl CountLinesWithComments {
             })
     }
 
-    fn count_lines(&self, bytes: &[u8]) -> PolarsResult<usize> {
+    fn count_lines(&self, bytes: &[u8]) -> usize {
         count_rows_from_slice_raw(
             bytes,
             self.quote_char,
