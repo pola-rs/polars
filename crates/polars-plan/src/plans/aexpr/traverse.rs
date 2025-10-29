@@ -328,7 +328,9 @@ impl AExpr {
                 *predicate = inputs[2];
                 return self;
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousStreamingAgg { input, .. }
+            | AnonymousFunction { input, .. }
+            | Function { input, .. } => {
                 assert_eq!(input.len(), inputs.len());
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
