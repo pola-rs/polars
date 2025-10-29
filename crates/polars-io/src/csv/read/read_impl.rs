@@ -407,13 +407,13 @@ impl<'a> CoreReader<'a> {
                         std::ptr::eq(b.as_ptr().add(b.len()), bytes.as_ptr().add(bytes.len()))
                     } {
                     total_offset = bytes.len();
-                    (b, 1)
+                    let c = if is_comment_line(bytes, self.parse_options.comment_prefix.as_ref()) {
+                        0
+                    } else {
+                        1
+                    };
+                    (b, c)
                 } else {
-                    if count == 0 {
-                        chunk_size *= 2;
-                        continue;
-                    }
-
                     let end = total_offset + position + 1;
                     let b = unsafe { bytes.get_unchecked(total_offset..end) };
 
@@ -440,12 +440,21 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
-
                                 // Check malformed
-                                if df.height() > count || (df.height() < count && slf.parse_options.comment_prefix.is_none()) {
+                                if df.height() > count
+                                    || (df.height() < count
+                                        && slf.parse_options.comment_prefix.is_none())
+                                {
                                     // Note: in case data is malformed, df.height() is more likely to be correct than count.
-                                    let msg = format!("CSV malformed: expected {} rows, actual {} rows, in chunk starting at byte offset {}, length {}",
-                                        count, df.height(), previous_total_offset, b.len());
+                                    let msg = format!(
+                                        "CSV malformed: expected {} rows, \
+                                        actual {} rows, in chunk starting at \
+                                        byte offset {}, length {}",
+                                        count,
+                                        df.height(),
+                                        previous_total_offset,
+                                        b.len()
+                                    );
                                     if slf.ignore_errors {
                                         polars_warn!(msg);
                                     } else {
@@ -482,9 +491,7 @@ impl<'a> CoreReader<'a> {
 
                     // Check just after we spawned a chunk. That mean we processed all data up until
                     // row count.
-                    if self.n_rows.is_some()
-                        && total_line_count.load() > self.n_rows.unwrap()
-                    {
+                    if self.n_rows.is_some() && total_line_count.load() > self.n_rows.unwrap() {
                         break;
                     }
                 }

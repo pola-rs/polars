@@ -137,45 +137,23 @@ pub fn count_rows_from_slice_par(
         let mut n = 0;
         let mut in_string = false;
         for pair in states {
-            n += pair[in_string as usize].newline_count;
-            in_string = pair[in_string as usize].end_inside_string;
+            let selected_state = pair[in_string as usize];
+            n += selected_state.newline_count;
+            in_string = selected_state.end_inside_string;
         }
-        if let Some(last) = bytes.last() {
-            n += (*last != eol_char) as usize;
+
+        if bytes.last().copied() != Some(b'\n')
+            && (comment_prefix.is_none()
+                || !is_comment_line(
+                    bytes.rsplit(|c| *c == b'\n').next().unwrap(),
+                    comment_prefix,
+                ))
+        {
+            n += 1
         }
+
         Ok(n)
     })
-}
-
-/// Read the number of rows without parsing columns, assuming bytes is at a
-/// newline starting point. Does not deal with start/header.
-pub fn count_rows_from_slice_raw(
-    bytes: &[u8],
-    quote_char: Option<u8>,
-    comment_prefix: Option<&CommentPrefix>,
-    eol_char: u8,
-) -> usize {
-    let cl = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
-
-    return if comment_prefix.is_some() {
-        let stats = cl.analyze_chunk_with_comment(bytes, false);
-
-        if bytes.len() - stats.last_newline_offset > 1
-            && !is_comment_line(&bytes[stats.last_newline_offset + 1..], comment_prefix)
-        {
-            stats.newline_count + 1
-        } else {
-            stats.newline_count
-        }
-    } else {
-        let (count, position) = cl.count(bytes);
-
-        if bytes.len() - position > 1 {
-            1 + count
-        } else {
-            count
-        }
-    };
 }
 
 /// Skip the utf-8 Byte Order Mark.
@@ -192,7 +170,7 @@ pub(super) fn skip_bom(input: &[u8]) -> &[u8] {
 ///
 /// This function is used during CSV parsing to determine whether a line should be ignored based on its starting characters.
 #[inline]
-pub(super) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
+pub fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
     match comment_prefix {
         Some(CommentPrefix::Single(c)) => line.first() == Some(c),
         Some(CommentPrefix::Multi(s)) => line.starts_with(s.as_bytes()),
@@ -815,13 +793,18 @@ impl CountLines {
         loop {
             let b = unsafe { bytes.get_unchecked(..(*chunk_size).min(bytes.len())) };
 
-            let (count, offset) = self.count(b);
+            let (count, offset) = if self.comment_prefix.is_some() {
+                let stats = self.analyze_chunk_with_comment(b, false);
+                (stats.newline_count, stats.last_newline_offset)
+            } else {
+                self.count(b)
+            };
 
             if count > 0 || b.len() == bytes.len() {
                 return (count, offset);
             }
 
-            *chunk_size *= 2;
+            *chunk_size = chunk_size.saturating_mul(2);
         }
     }
 
