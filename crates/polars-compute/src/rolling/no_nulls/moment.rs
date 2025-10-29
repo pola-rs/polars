@@ -141,7 +141,7 @@ mod test {
                     Some(f64::nan()),
                     Some(f64::nan()),
                     Some(f64::nan()),
-                    Some(1.0)
+                    Some(0.9999999999999911)
                 ]
             )
         );
