@@ -7818,7 +7818,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     on_columns=["maths", "physics"],
         ...     index="name",
         ...     values="test_1",
-        ... )
+        ... ).collect()
         shape: (2, 3)
         ┌───────┬───────┬─────────┐
         │ name  ┆ maths ┆ physics │
@@ -7836,7 +7836,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "subject",
         ...     on_columns=["maths", "physics"],
         ...     values=cs.starts_with("test"),
-        ... )
+        ... ).collect()
         shape: (2, 5)
         ┌───────┬──────────────┬────────────────┬──────────────┬────────────────┐
         │ name  ┆ test_1_maths ┆ test_1_physics ┆ test_2_maths ┆ test_2_physics │
@@ -7858,7 +7858,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "bar": [0, 2, 0, 0, 9, 4],
         ...     }
         ... )
-        >>> lf.pivot("col", on_columns=["a", "b"], index="ix", aggregate_function="sum")
+        >>> lf.pivot(
+        ...     "col", on_columns=["a", "b"], index="ix", aggregate_function="sum"
+        ... ).collect()
         shape: (2, 5)
         ┌─────┬───────┬───────┬───────┬───────┐
         │ ix  ┆ foo_a ┆ foo_b ┆ bar_a ┆ bar_b │
@@ -7885,7 +7887,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     index="col1",
         ...     values="col3",
         ...     aggregate_function=pl.element().tanh().mean(),
-        ... )
+        ... ).collect()
         shape: (2, 3)
         ┌──────┬──────────┬──────────┐
         │ col1 ┆ x        ┆ y        │
