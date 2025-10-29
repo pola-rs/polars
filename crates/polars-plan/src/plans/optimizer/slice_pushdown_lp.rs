@@ -237,6 +237,9 @@ impl SlicePushDown {
                 #[cfg(feature = "python")]
                 FileScanIR::PythonDataset { .. } => true,
 
+                #[cfg(feature = "scan_lines")]
+                FileScanIR::Lines { .. } => true,
+
                 // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                 FileScanIR::Anonymous { .. } => state.offset == 0,
             }  =>  {

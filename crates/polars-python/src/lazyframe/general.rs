@@ -367,6 +367,36 @@ impl PyLazyFrame {
         Ok(lf.into())
     }
 
+    #[cfg(feature = "scan_lines")]
+    #[staticmethod]
+    #[pyo3(signature = (sources, scan_options, name, file_cache_ttl))]
+    fn new_from_scan_lines(
+        sources: Wrap<ScanSources>,
+        scan_options: PyScanOptions,
+        name: PyBackedStr,
+        file_cache_ttl: Option<u64>,
+    ) -> PyResult<Self> {
+        let sources = sources.0;
+        let first_path = sources.first_path().map(|p| p.into_owned());
+
+        let mut unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.as_ref().map(|p| p.as_ref()))?;
+
+        if let Some(file_cache_ttl) = file_cache_ttl {
+            unified_scan_args
+                .cloud_options
+                .get_or_insert_default()
+                .file_cache_ttl = file_cache_ttl;
+        }
+
+        let dsl: DslPlan = DslBuilder::scan_lines(sources, unified_scan_args, (&*name).into())
+            .map_err(to_py_err)?
+            .build();
+        let lf: LazyFrame = dsl.into();
+
+        Ok(lf.into())
+    }
+
     #[staticmethod]
     #[pyo3(signature = (
         dataset_object

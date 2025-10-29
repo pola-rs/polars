@@ -470,6 +470,9 @@ where
                 cached_ir,
             } => *cached_ir.lock().unwrap() = None,
 
+            #[cfg(feature = "scan_lines")]
+            FileScanIR::Lines { name: _ } => {},
+
             FileScanIR::Anonymous {
                 options: _,
                 function: _,

@@ -47,6 +47,8 @@ fn scan_type_to_pyobject(
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             Ok(("ndjson", options).into_py_any(py)?)
         },
+        #[cfg(feature = "scan_lines")]
+        FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
         },

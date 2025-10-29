@@ -457,6 +457,8 @@ impl ProjectionPushDown {
                     FileScanIR::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet { .. } => true,
+                    #[cfg(feature = "scan_lines")]
+                    FileScanIR::Lines { .. } => true,
                     // MultiScan will handle it if the PythonDataset cannot do projections.
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset { .. } => true,

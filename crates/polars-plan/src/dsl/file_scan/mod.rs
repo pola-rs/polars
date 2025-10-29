@@ -58,6 +58,9 @@ pub enum FileScanDsl {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
     },
 
+    #[cfg(feature = "scan_lines")]
+    Lines { name: PlSmallStr },
+
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -96,6 +99,9 @@ pub enum FileScanIR {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
         cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
+
+    #[cfg(feature = "scan_lines")]
+    Lines { name: PlSmallStr },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -333,6 +339,9 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
+    #[cfg(feature = "scan_lines")]
+    use polars_utils::pl_str::PlSmallStr;
+
     use super::FileScanIR;
 
     impl Eq for FileScanIR {}
@@ -382,6 +391,9 @@ mod _file_scan_eq_hash {
             cached_ir: usize,
         },
 
+        #[cfg(feature = "scan_lines")]
+        Lines { name: &'a PlSmallStr },
+
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
             function: usize,
@@ -421,6 +433,9 @@ mod _file_scan_eq_hash {
                     dataset_object: arc_as_ptr(dataset_object),
                     cached_ir: arc_as_ptr(cached_ir),
                 },
+
+                #[cfg(feature = "scan_lines")]
+                FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,
