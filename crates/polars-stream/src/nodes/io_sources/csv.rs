@@ -514,10 +514,7 @@ impl LineBatchSource {
             let (count, position) = if count == 0 {
                 let c = if *bytes.last().unwrap() != eol_char
                     && !is_comment_line(
-                        bytes
-                            .rsplit(|c| *c == options.parse_options.eol_char)
-                            .next()
-                            .unwrap(),
+                        bytes.rsplit(|c| *c == eol_char).next().unwrap(),
                         comment_prefix,
                     ) {
                     1
