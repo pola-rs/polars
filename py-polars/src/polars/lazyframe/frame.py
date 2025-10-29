@@ -7946,18 +7946,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             agg = aggregate_function
 
-        on_columns: pl.DataFrame
+        on_cols: pl.DataFrame
         if isinstance(on_columns, pl.DataFrame):
-            on_columns = on_columns
+            on_cols = on_columns
         elif isinstance(on_columns, pl.Series):
-            on_columns = on_columns.to_frame()
+            on_cols = on_columns.to_frame()
         else:
-            on_columns = pl.Series(on_columns).to_frame()
+            on_cols = pl.Series(on_columns).to_frame()
 
         return self._from_pyldf(
             self._ldf.pivot(
                 on=on_selector._pyselector,
-                on_columns=on_columns._df,
+                on_columns=on_cols._df,
                 index=index_selector._pyselector,
                 values=values_selector._pyselector,
                 agg=agg._pyexpr,

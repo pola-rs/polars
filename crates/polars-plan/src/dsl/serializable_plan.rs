@@ -88,6 +88,7 @@ pub(crate) enum SerializableDslPlanNode {
         input: DslPlanKey,
         callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
+    #[cfg(feature = "pivot")]
     Pivot {
         input: DslPlanKey,
         on: Selector,
@@ -267,6 +268,7 @@ fn convert_dsl_plan_to_serializable_plan(
             input: dsl_plan_key(input, arenas),
             callback: callback.clone(),
         },
+        #[cfg(feature = "pivot")]
         DP::Pivot {
             input,
             on,
@@ -502,6 +504,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             callback: callback.clone(),
         }),
+        #[cfg(feature = "pivot")]
         SP::Pivot {
             input,
             on,

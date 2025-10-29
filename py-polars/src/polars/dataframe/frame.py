@@ -9445,7 +9445,7 @@ class DataFrame:
                 cols = cols.sort(on)
             on_cols = cols
         else:
-            on_cols = cols
+            on_cols = on_columns
 
         return (
             self.lazy()

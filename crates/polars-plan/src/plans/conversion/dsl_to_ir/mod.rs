@@ -686,6 +686,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input_adjusted = callback.call((input_owned, input_schema.into_owned()))?;
             return to_alp_impl(input_adjusted, ctxt);
         },
+        #[cfg(feature = "pivot")]
         DslPlan::Pivot {
             input,
             on,
