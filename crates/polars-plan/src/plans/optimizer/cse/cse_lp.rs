@@ -424,15 +424,16 @@ pub(crate) fn elim_cmn_subplans(
     // optimization
     // Below the inserted caches, might be more duplicates. So we recurse one time to find
     // inner duplicates as well.
-    for (_, (_count, caches_nodes)) in cid2c.iter() {
-        // The last node seems the one traversed by the planners. This is validated by tests.
-        // We could traverse all nodes, but it would be duplicate work.
-        if let Some(cache) = caches_nodes.last() {
-            if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
-                let _ = elim_cmn_subplans(*input, lp_arena, expr_arena);
-            }
-        }
-    }
+    // TODO! reactivate this and recursively deal with projection/predicate pushdown.
+    //for (_, (_count, caches_nodes)) in cid2c.iter() {
+    //    // The last node seems the one traversed by the planners. This is validated by tests.
+    //    // We could traverse all nodes, but it would be duplicate work.
+    //    if let Some(cache) = caches_nodes.last() {
+    //        if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
+    //            let _ = elim_cmn_subplans(*input, lp_arena, expr_arena);
+    //        }
+    //    }
+    //}
 
     (lp, changed)
 }
