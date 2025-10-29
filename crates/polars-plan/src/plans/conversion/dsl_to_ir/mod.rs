@@ -705,7 +705,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let values = values.into_columns(input_schema.as_ref(), &Default::default())?;
 
             polars_ensure!(on.len() > 0, InvalidOperation: "`pivot` called without `on` columns.");
-            // @TODO: check on vs. on_columns len and column names.
+            polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
+            if on.len() > 1 {
+                polars_ensure!(
+                    on_columns.get_columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
+                    InvalidOperation: "`pivot` has mismatching column names between `on` and `on_columns`."
+                );
+            }
             polars_ensure!(values.len() > 0, InvalidOperation: "`pivot` called without `values` columns.");
 
             let on_titles = DataFrame::new(
@@ -813,6 +819,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         if matches!(slf, AExpr::Element) {
                             return deep_clone_ae(replacement, arena);
                         } else if matches!(slf, AExpr::Len) {
+                            // For backwards-compatibility, we support providing `pl.len()` to mean
+                            // the length of the group here.
                             let element = deep_clone_ae(replacement, arena);
                             return AExprBuilder::new_from_node(element).len(arena).node();
                         }
