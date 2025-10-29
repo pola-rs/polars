@@ -119,10 +119,6 @@ pub struct JoinOptionsIR {
     pub force_parallel: bool,
     pub args: JoinArgs,
     pub options: Option<JoinTypeOptionsIR>,
-    /// Proxy of the number of rows in both sides of the joins
-    /// Holds `(Option<known_size>, estimated_size)`
-    pub rows_left: (Option<usize>, usize),
-    pub rows_right: (Option<usize>, usize),
 }
 
 impl From<JoinOptions> for JoinOptionsIR {
@@ -132,8 +128,6 @@ impl From<JoinOptions> for JoinOptionsIR {
             force_parallel: opts.force_parallel,
             args: opts.args,
             options: Default::default(),
-            rows_left: (None, usize::MAX),
-            rows_right: (None, usize::MAX),
         }
     }
 }

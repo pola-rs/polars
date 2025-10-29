@@ -328,8 +328,6 @@ impl IRVisualizationDataGenerator<'_> {
                             maintain_order,
                         },
                     options,
-                    rows_left: _,
-                    rows_right: _,
                 } = options.as_ref();
 
                 let properties = match how {
