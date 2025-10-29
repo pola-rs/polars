@@ -24,7 +24,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, unique_column_name};
+use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
 use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
@@ -472,7 +472,11 @@ pub fn lower_ir(
             sort_options,
         } => {
             let slice = *slice;
-            let mut by_column = by_column.clone();
+            let mut by_column = by_column
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i)))
+                .collect_vec();
             let mut sort_options = sort_options.clone();
             let phys_input = lower_ir!(*input)?;
 
