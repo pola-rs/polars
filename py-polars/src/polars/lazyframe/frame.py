@@ -7858,9 +7858,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "bar": [0, 2, 0, 0, 9, 4],
         ...     }
         ... )
-        >>> lf.pivot(
-        ...     "col", on_columns=["a", "b"], index="ix", aggregate_function="sum"
-        ... )
+        >>> lf.pivot("col", on_columns=["a", "b"], index="ix", aggregate_function="sum")
         shape: (2, 5)
         ┌─────┬───────┬───────┬───────┬───────┐
         │ ix  ┆ foo_a ┆ foo_b ┆ bar_a ┆ bar_b │
@@ -7883,7 +7881,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.pivot(
         ...     "col2",
-        ...     on_columns=['a', 'b'],
+        ...     on_columns=["a", "b"],
         ...     index="col1",
         ...     values="col3",
         ...     aggregate_function=pl.element().tanh().mean(),

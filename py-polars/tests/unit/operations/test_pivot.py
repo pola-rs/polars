@@ -211,7 +211,8 @@ def test_pivot_multiple_values_column_names_5116() -> None:
     )
 
     with pytest.raises(
-        ComputeError, match="aggregation 'item' expected a single value, got 2 values"
+        ComputeError,
+        match="aggregation 'item' expected no or a single value, got 2 values",
     ):
         df.pivot(
             index="c1",
@@ -360,15 +361,15 @@ def test_pivot_name_already_exists() -> None:
     df = pl.DataFrame(
         {
             "a": ["a", "b"],
-            "b": ["a", "b"],
+            "b": ["b", "a"],
             '{"a","b"}': [1, 2],
         }
     )
-    with pytest.raises(ComputeError, match="already exists in the DataFrame"):
+    with pytest.raises(DuplicateError, match="has more than one occurrence"):
         df.pivot(
-            values='{"a","b"}',
-            index="a",
-            on=["a", "b"],
+            ["a", "b"],
+            index='{"a","b"}',
+            values="a",
             aggregate_function="first",
         )
 
@@ -383,7 +384,10 @@ def test_pivot_floats() -> None:
         }
     )
 
-    with pytest.raises(ComputeError, match="aggregation 'item' expected a no or a single value, got 2 values"):
+    with pytest.raises(
+        ComputeError,
+        match="aggregation 'item' expected no or a single value, got 2 values",
+    ):
         result = df.pivot(
             index="weight", on="quantity", values="price", aggregate_function=None
         )
@@ -486,7 +490,10 @@ def test_pivot_negative_duration() -> None:
 
 def test_aggregate_function_default() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["foo", "foo"], "c": ["x", "x"]})
-    with pytest.raises(ComputeError, match="found multiple elements in the same group"):
+    with pytest.raises(
+        ComputeError,
+        match="aggregation 'item' expected no or a single value, got 2 values",
+    ):
         df.pivot(index="b", on="c", values="a")
 
 

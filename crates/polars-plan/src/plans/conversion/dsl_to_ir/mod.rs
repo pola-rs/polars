@@ -704,7 +704,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let index = index.into_columns(input_schema.as_ref(), &Default::default())?;
             let values = values.into_columns(input_schema.as_ref(), &Default::default())?;
 
-            polars_ensure!(on.len() > 0, InvalidOperation: "`pivot` called without `on` columns.");
+            polars_ensure!(!on.is_empty(), InvalidOperation: "`pivot` called without `on` columns.");
             polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
             if on.len() > 1 {
                 polars_ensure!(
@@ -712,7 +712,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     InvalidOperation: "`pivot` has mismatching column names between `on` and `on_columns`."
                 );
             }
-            polars_ensure!(values.len() > 0, InvalidOperation: "`pivot` called without `values` columns.");
+            polars_ensure!(!values.is_empty(), InvalidOperation: "`pivot` called without `values` columns.");
 
             let on_titles = if on_columns.width() == 1 {
                 on_columns.get_columns()[0].cast(&DataType::String)?
@@ -738,7 +738,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     &Default::default(),
                     &expr_schema,
                     &mut out,
-                    &mut ctxt.opt_flags,
+                    ctxt.opt_flags,
                 )?;
                 polars_ensure!(
                     out.len() == 1,

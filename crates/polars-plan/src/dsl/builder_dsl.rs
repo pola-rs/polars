@@ -305,6 +305,7 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "pivot")]
+    #[expect(clippy::too_many_arguments)]
     pub fn pivot(
         self,
         on: Selector,
