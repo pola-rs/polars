@@ -42,6 +42,9 @@ mod private {
         Arc(Arc<dyn std::fmt::Debug + Send + Sync>),
     }
 
+    /// Internal backing storage of a `MemSlice`.
+    pub struct MemSliceBacking(#[expect(unused)] MemSliceInner);
+
     impl Deref for MemSlice {
         type Target = [u8];
 
@@ -77,6 +80,10 @@ mod private {
         #[inline(always)]
         pub fn to_vec(self) -> Vec<u8> {
             <[u8]>::to_vec(self.deref())
+        }
+
+        pub fn into_backing(self) -> MemSliceBacking {
+            MemSliceBacking(self.inner)
         }
 
         /// Construct a `MemSlice` from an existing `Vec<u8>`. This is zero-copy.
@@ -156,7 +163,7 @@ use memmap::MmapOptions;
 use polars_error::PolarsResult;
 #[cfg(target_family = "unix")]
 use polars_error::polars_bail;
-pub use private::MemSlice;
+pub use private::{MemSlice, MemSliceBacking};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use crate::mem::PAGE_SIZE;
