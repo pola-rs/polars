@@ -709,6 +709,35 @@ def test_first_last(dtype: PolarsDataType) -> None:
     result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
     assert_frame_equal(result, expected)
 
+    # Test with no nulls
+    lf = pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int32).to_frame().lazy()
+    expected_value = pl.Series("a", [1])
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        expected_value = expected_value.cast(pl.String)
+        lf = lf.with_columns(pl.col("a").cast(pl.String))
+
+    lf = lf.with_columns(pl.col("a").cast(dtype))
+    expected = expected_value.cast(dtype).to_frame()
+
+    result = lf.select(pl.col("a").first(ignore_nulls=False)).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+    expected_value = pl.Series("a", [5])
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        expected_value = expected_value.cast(pl.String)
+    expected = expected_value.cast(dtype).to_frame()
+
+    result = lf.select(pl.col("a").last(ignore_nulls=False)).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
 
 def test_escape_regex() -> None:
     result = pl.escape_regex("abc(\\w+)")

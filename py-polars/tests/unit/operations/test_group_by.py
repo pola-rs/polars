@@ -2005,19 +2005,19 @@ def test_group_by_first_last(
                 [
                     *[None] * 0,
                     *list(range(1, n + 1)),
-                    *[None] * 0,  # idx = 0
+                    *[None] * 0,  # idx = 1
                     *[None] * 1,
                     *list(range(2, n - 0)),
-                    *[None] * 1,  # idx = 1
+                    *[None] * 1,  # idx = 2
                     *[None] * 2,
                     *list(range(3, n - 1)),
-                    *[None] * 2,  # idx = 2
+                    *[None] * 2,  # idx = 3
                     *[None] * 3,
                     *list(range(4, n - 2)),
-                    *[None] * 3,  # idx = 3
+                    *[None] * 3,  # idx = 4
                     *[None] * 4,
                     *list(range(5, n - 3)),
-                    *[None] * 4,  # idx = 4
+                    *[None] * 4,  # idx = 5
                 ],
                 dtype=pl.Int32,
             ),  # fmt: skip
@@ -2091,6 +2091,85 @@ def test_group_by_first_last(
         expected_vals = expected_vals.cast(pl.String)
     expected_vals = expected_vals.cast(dtype)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=True).collect()
+    assert_frame_equal(result, expected)
+
+    # Test with no nulls
+    lf = pl.LazyFrame(
+        {
+            "idx": pl.Series(
+                [1] * n + [2] * n + [3] * n + [4] * n + [5] * n, dtype=pl.Int32
+            ),
+            # Each successive group has an additional None spanning the elements
+            "a": pl.Series(
+                [
+                    *list(range(1, n + 1)),  # idx = 1
+                    *list(range(2, n + 2)),  # idx = 2
+                    *list(range(3, n + 3)),  # idx = 3
+                    *list(range(4, n + 4)),  # idx = 4
+                    *list(range(5, n + 5)),  # idx = 5
+                ],
+                dtype=pl.Int32,
+            ),
+        }
+    )
+    if group_as_slice:
+        lf = lf.set_sorted("idx")  # Use GroupSlice path
+
+    if dtype == pl.Categorical:
+        # for Categorical, we must first go through String
+        lf = lf.with_columns(pl.col("a").cast(pl.String))
+    lf = lf.with_columns(pl.col("a").cast(dtype))
+
+    # first()
+    expected_vals = pl.Series([1, 2, 3, 4, 5])
+    if dtype == pl.Categorical:
+        # for Categorical, we must first go through String
+        expected_vals = expected_vals.cast(pl.String)
+    expected_vals = expected_vals.cast(dtype)
+    expected = pl.DataFrame({"idx": idx, "a": expected_vals})
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("a").first(ignore_nulls=False))
+        .collect()
+    )
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).first().collect()
+    assert_frame_equal(result, expected)
+
+    # first(ignore_nulls=True)
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("a").first(ignore_nulls=True))
+        .collect()
+    )
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).first(ignore_nulls=True).collect()
+    assert_frame_equal(result, expected)
+
+    # last()
+    expected_vals = pl.Series([n, n + 1, n + 2, n + 3, n + 4])
+    if dtype == pl.Categorical:
+        # for Categorical, we must first go through String
+        expected_vals = expected_vals.cast(pl.String)
+    expected_vals = expected_vals.cast(dtype)
+    expected = pl.DataFrame({"idx": idx, "a": expected_vals})
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("a").last(ignore_nulls=False))
+        .collect()
+    )
+    assert_frame_equal(result, expected)
+    result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=False).collect()
+    assert_frame_equal(result, expected)
+
+    # last(ignore_nulls=True)
+    result = (
+        lf.group_by("idx", maintain_order=True)
+        .agg(pl.col("a").last(ignore_nulls=True))
+        .collect()
+    )
     assert_frame_equal(result, expected)
     result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=True).collect()
     assert_frame_equal(result, expected)
