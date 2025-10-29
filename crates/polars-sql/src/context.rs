@@ -222,13 +222,19 @@ impl SQLContext {
     }
 
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
+        // Resolve the table name in the current scope; multi-stage fallback
+        // * table name → cte name
+        // * table alias → cte alias
         let table = self.table_map.get(name).cloned();
         table
             .or_else(|| self.cte_map.get(name).cloned())
             .or_else(|| {
-                self.table_aliases
-                    .get(name)
-                    .and_then(|alias| self.table_map.get(alias).cloned())
+                self.table_aliases.get(name).and_then(|alias| {
+                    self.table_map
+                        .get(alias)
+                        .or_else(|| self.cte_map.get(alias))
+                        .cloned()
+                })
             })
     }
 

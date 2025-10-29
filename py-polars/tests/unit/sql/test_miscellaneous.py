@@ -134,6 +134,26 @@ def test_count() -> None:
     }
 
 
+def test_cte_aliasing() -> None:
+    df1 = pl.DataFrame({"colx": ["aa", "bb"], "coly": [40, 30]})  # noqa: F841
+    df2 = pl.DataFrame({"colx": "aa", "colz": 20})  # noqa: F841
+    df3 = pl.sql(
+        query="""
+            WITH
+              test1 AS (SELECT * FROM df1),
+              test2 AS (SELECT * FROM df2),
+              test3 AS (
+                SELECT t1.colx, t2.colz
+                FROM test1 t1
+                LEFT JOIN test2 t2 ON t1.colx = t2.colx
+            )
+            SELECT * FROM test3 t3 ORDER BY colx DESC
+        """,
+        eager=True,
+    )
+    assert df3.rows() == [("bb", None), ("aa", 20)]
+
+
 def test_distinct() -> None:
     df = pl.DataFrame(
         {
