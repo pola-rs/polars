@@ -714,13 +714,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
             polars_ensure!(values.len() > 0, InvalidOperation: "`pivot` called without `values` columns.");
 
-            let on_titles = DataFrame::new(
+            let on_titles = if on_columns.width() == 1 {
+                on_columns.get_columns()[0].cast(&DataType::String)?
+            } else {
                 on_columns
-                    .get_columns()
-                    .iter()
-                    .map(|c| c.cast(&DataType::String))
-                    .collect::<PolarsResult<Vec<_>>>()?,
-            )?;
+                    .as_ref()
+                    .clone()
+                    .into_struct(PlSmallStr::EMPTY)
+                    .cast(&DataType::String)?
+                    .into_column()
+            };
+            let on_titles = on_titles.str()?;
 
             let mut expr_schema = input_schema.as_ref().as_ref().clone();
             let mut out = Vec::with_capacity(1);
@@ -751,6 +755,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 )?
                 .node();
 
+                polars_ensure!(
+                    aexpr_to_leaf_names_iter(agg_ae, ctxt.expr_arena).count() == 0,
+                    InvalidOperation: "explicit column references are not allowed in the `aggregate_function` of `pivot`"
+                );
+
                 for i in 0..on_columns.height() {
                     let mut name = String::new();
                     if values.len() > 1 {
@@ -758,12 +767,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         name.push_str(separator.as_str());
                     }
 
-                    let titles = &on_titles.get_row(i).unwrap().0;
-                    name.push_str(titles[0].extract_str().unwrap());
-                    for title in &titles[1..] {
-                        name.push_str(separator.as_str());
-                        name.push_str(title.extract_str().unwrap());
-                    }
+                    name.push_str(on_titles.get(i).unwrap_or("null"));
 
                     fn on_predicate(
                         on: &PlSmallStr,

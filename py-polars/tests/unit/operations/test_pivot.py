@@ -383,7 +383,7 @@ def test_pivot_floats() -> None:
         }
     )
 
-    with pytest.raises(ComputeError, match="found multiple elements in the same group"):
+    with pytest.raises(ComputeError, match="aggregation 'item' expected a no or a single value, got 2 values"):
         result = df.pivot(
             index="weight", on="quantity", values="price", aggregate_function=None
         )
@@ -602,7 +602,7 @@ def test_pivot_string_17081() -> None:
 def test_pivot_invalid() -> None:
     with pytest.raises(
         pl.exceptions.InvalidOperationError,
-        match="`index` and `values` cannot both be None in `pivot` operation",
+        match="`pivot` needs either `index or `values` needs to be specified",
     ):
         pl.DataFrame({"a": [1, 2], "b": [2, 3], "c": [3, 4]}).pivot("a")
 
@@ -625,7 +625,7 @@ def test_pivot_agg_column_ref_invalid_22479() -> None:
     )
     with pytest.raises(
         pl.exceptions.InvalidOperationError,
-        match="explicit column references are not allowed in aggregate_function",
+        match="explicit column references are not allowed in the `aggregate_function` of `pivot`",
     ):
         df.pivot(
             on="a", index="b", values="c", aggregate_function=pl.element().sort_by("d")

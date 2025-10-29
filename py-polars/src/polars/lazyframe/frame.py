@@ -96,7 +96,7 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
-from polars.exceptions import PerformanceWarning
+from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
@@ -7899,8 +7899,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────────┴──────────┘
         """  # noqa: W505
         if index is None and values is None:
-            msg = "either `index or `values` needs to be specified"
-            raise ValueError(msg)
+            msg = "`pivot` needs either `index or `values` needs to be specified"
+            raise InvalidOperationError(msg)
 
         on_selector = parse_list_into_selector(on)
         if values is not None:
