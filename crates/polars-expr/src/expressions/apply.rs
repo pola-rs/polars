@@ -170,7 +170,7 @@ impl ApplyExpr {
             let lst = agg.list().unwrap();
             let iter = lst.par_iter().map(f);
 
-            if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null() {
+            if self.output_field.dtype.is_known() {
                 let dtype = self.output_field.dtype.clone();
                 let dtype = dtype.implode();
                 POOL.install(|| {

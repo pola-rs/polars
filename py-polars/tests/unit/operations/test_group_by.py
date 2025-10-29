@@ -1965,3 +1965,21 @@ def test_group_broadcast_binary_apply_expr_25046(
     out = df.group_by(groups).agg((op(lhs, rhs)).implode()).to_series(1)
     expected = df.select((op(lhs, rhs)).implode()).to_series()
     assert_series_equal(out, expected)
+
+
+def test_group_by_explode_none_dtype_25045() -> None:
+    df = pl.DataFrame({"a": [None, None, None], "b": [1.0, 2.0, None]})
+    out_a = df.group_by(pl.lit(1)).agg(pl.col.a.explode())
+    expected_a = pl.DataFrame({"literal": 1, "a": [[None, None, None]]})
+    assert_frame_equal(out_a, expected_a)
+
+    out_b = df.group_by(pl.lit(1)).agg(pl.col.b.explode())
+    assert len(out_a["a"][0]) == len(out_b["b"][0])
+
+    out_c = df.select(
+        pl.coalesce(pl.col.a.explode(), pl.col.b.explode())
+        .implode()
+        .over(pl.int_range(pl.len()))
+    )
+    expected_c = pl.DataFrame({"a": [[1.0], [2.0], [None]]})
+    assert_frame_equal(out_c, expected_c)
