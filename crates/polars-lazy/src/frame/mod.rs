@@ -6,8 +6,6 @@ mod cached_arenas;
 mod err;
 #[cfg(not(target_arch = "wasm32"))]
 mod exitable;
-#[cfg(feature = "pivot")]
-pub mod pivot;
 
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};

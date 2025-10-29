@@ -5,8 +5,6 @@ use either::Either;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use polars::prelude::*;
 use polars_ffi::version_0::SeriesExport;
-#[cfg(feature = "pivot")]
-use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
@@ -425,25 +423,6 @@ impl PyDataFrame {
         };
 
         py.enter_polars_df(|| self.df.read().unpivot2(args))
-    }
-
-    #[cfg(feature = "pivot")]
-    #[pyo3(signature = (on, index, values, maintain_order, sort_columns, aggregate_expr, separator))]
-    pub fn pivot_expr(
-        &self,
-        py: Python<'_>,
-        on: Vec<String>,
-        index: Option<Vec<String>>,
-        values: Option<Vec<String>>,
-        maintain_order: bool,
-        sort_columns: bool,
-        aggregate_expr: Option<PyExpr>,
-        separator: Option<&str>,
-    ) -> PyResult<Self> {
-        let df = self.df.read().clone(); // Clone to avoid dead lock on re-entrance in aggregate_expr.
-        let fun = if maintain_order { pivot_stable } else { pivot };
-        let agg_expr = aggregate_expr.map(|expr| expr.inner);
-        py.enter_polars_df(|| fun(&df, on, index, values, sort_columns, agg_expr, separator))
     }
 
     pub fn partition_by(
