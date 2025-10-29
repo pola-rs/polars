@@ -362,16 +362,17 @@ pub fn page_iter_to_array(
             let array = array
                 .into_iter()
                 .map(|array| {
-                    let array = array
-                        .as_any()
-                        .downcast_ref::<BinaryViewArray>()
-                        .unwrap();
+                    let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                     let values = array
                         .values_iter()
-                        .map(|value: &[u8]| if value.len() <= 16 {
-                            Ok(super::super::convert_i128(value, value.len()))
-                        } else {
-                            Err(ParquetError::OutOfSpec("value has too many bytes for Decimal128".to_string()))
+                        .map(|value: &[u8]| {
+                            if value.len() <= 16 {
+                                Ok(super::super::convert_i128(value, value.len()))
+                            } else {
+                                Err(ParquetError::OutOfSpec(
+                                    "value has too many bytes for Decimal128".to_string(),
+                                ))
+                            }
                         })
                         .collect::<ParquetResult<Vec<_>>>()?;
                     let validity = array.validity().cloned();
