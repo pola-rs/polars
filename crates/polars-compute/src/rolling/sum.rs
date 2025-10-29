@@ -18,11 +18,37 @@ pub struct SumWindow<'a, T, S> {
     last_end: usize,
 }
 
-impl<T, S> SumWindow<'_, T, S>
+impl<'a, T, S> SumWindow<'a, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
+    fn new_impl(slice: &'a [T], validity: Option<&'a Bitmap>) -> Self {
+        Self {
+            slice,
+            validity,
+            sum: S::zeroed(),
+            err_add: S::zeroed(),
+            err_sub: S::zeroed(),
+            non_finite_count: 0,
+            pos_inf_count: 0,
+            neg_inf_count: 0,
+            null_count: 0,
+            last_start: 0,
+            last_end: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.sum = S::zeroed();
+        self.err_add = S::zeroed();
+        self.err_sub = S::zeroed();
+        self.non_finite_count = 0;
+        self.pos_inf_count = 0;
+        self.neg_inf_count = 0;
+        self.null_count = 0;
+    }
+
     fn add_finite_kahan(&mut self, val: T) {
         let val: S = NumCast::from(val).unwrap();
         let y = val - self.err_add;
@@ -68,6 +94,18 @@ where
             self.sum -= val;
         }
     }
+
+    fn finalize(&self) -> Option<T> {
+        if self.non_finite_count == 0 {
+            NumCast::from(self.sum)
+        } else if self.non_finite_count == self.pos_inf_count {
+            Some(T::pos_inf_value())
+        } else if self.non_finite_count == self.neg_inf_count {
+            Some(T::neg_inf_value())
+        } else {
+            Some(T::nan_value())
+        }
+    }
 }
 
 impl<'a, T, S> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T, S>
@@ -82,19 +120,7 @@ where
         _params: Option<RollingFnParams>,
         _window_size: Option<usize>,
     ) -> Self {
-        let mut out = Self {
-            slice,
-            validity: None,
-            sum: S::zeroed(),
-            err_add: S::zeroed(),
-            err_sub: S::zeroed(),
-            non_finite_count: 0,
-            pos_inf_count: 0,
-            neg_inf_count: 0,
-            last_start: 0,
-            last_end: 0,
-            null_count: 0,
-        };
+        let mut out = Self::new_impl(slice, None);
         unsafe { RollingAggWindowNoNulls::update(&mut out, start, end) };
         out
     }
@@ -103,12 +129,7 @@ where
     // The start, end range must be in-bounds.
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         if start >= self.last_end {
-            self.sum = S::zeroed();
-            self.err_add = S::zeroed();
-            self.err_sub = S::zeroed();
-            self.non_finite_count = 0;
-            self.pos_inf_count = 0;
-            self.neg_inf_count = 0;
+            self.reset();
             self.last_start = start;
             self.last_end = start;
         }
@@ -123,15 +144,7 @@ where
 
         self.last_start = start;
         self.last_end = end;
-        if self.non_finite_count == 0 {
-            NumCast::from(self.sum)
-        } else if self.non_finite_count == self.pos_inf_count {
-            Some(T::pos_inf_value())
-        } else if self.non_finite_count == self.neg_inf_count {
-            Some(T::neg_inf_value())
-        } else {
-            Some(T::nan_value())
-        }
+        self.finalize()
     }
 }
 
@@ -148,19 +161,7 @@ where
         _params: Option<RollingFnParams>,
         _window_size: Option<usize>,
     ) -> Self {
-        let mut out = Self {
-            slice,
-            validity: Some(validity),
-            sum: S::zeroed(),
-            err_add: S::zeroed(),
-            err_sub: S::zeroed(),
-            non_finite_count: 0,
-            pos_inf_count: 0,
-            neg_inf_count: 0,
-            last_start: 0,
-            last_end: 0,
-            null_count: 0,
-        };
+        let mut out = Self::new_impl(slice, Some(validity));
         unsafe { RollingAggWindowNulls::update(&mut out, start, end) };
         out
     }
@@ -171,13 +172,7 @@ where
         let validity = unsafe { self.validity.unwrap_unchecked() };
 
         if start >= self.last_end {
-            self.sum = S::zeroed();
-            self.err_add = S::zeroed();
-            self.err_sub = S::zeroed();
-            self.non_finite_count = 0;
-            self.pos_inf_count = 0;
-            self.neg_inf_count = 0;
-            self.null_count = 0;
+            self.reset();
             self.last_start = start;
             self.last_end = start;
         }
@@ -202,15 +197,7 @@ where
 
         self.last_start = start;
         self.last_end = end;
-        if self.non_finite_count == 0 {
-            NumCast::from(self.sum)
-        } else if self.non_finite_count == self.pos_inf_count {
-            Some(T::pos_inf_value())
-        } else if self.non_finite_count == self.neg_inf_count {
-            Some(T::neg_inf_value())
-        } else {
-            Some(T::nan_value())
-        }
+        self.finalize()
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
