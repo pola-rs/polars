@@ -103,7 +103,7 @@ conversion where possible. Note that the protocol does not support all Polars da
 
 [Plotly](https://plotly.com/) can accept a Polars `DataFrame` by leveraging:
 
-- [Narwhals](https://github.com/narwhals-dev/narwhals), since plotly v6.0.0, and therefore running
+- [Narwhals](https://narwhals-dev.github.io/narwhals/), since plotly v6.0.0, and therefore running
   execution natively without any conversion overhead.
 - The [dataframe interchange protocol](https://data-apis.org/dataframe-api/), before plotly v6.0.0,
   which offers zero-copy conversion where possible. Note that the protocol does not support all
