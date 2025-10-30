@@ -869,13 +869,14 @@ impl ActiveWindow {
     }
 }
 
-fn skip_in_2d_list(x: &mut usize, y: &mut usize, l: &[&[i64]], mut n: usize) {
-    while *y < l.len() && (n > l[*y].len() || l[*y].is_empty()) {
-        n -= l[*y].len();
-        *y += 1;
+fn skip_in_2d_list(l: &[&[i64]], mut n: usize) -> (usize, usize) {
+    let mut y = 0;
+    while y < l.len() && (n >= l[y].len() || l[y].is_empty()) {
+        n -= l[y].len();
+        y += 1;
     }
-    assert!(n == 0 || *y < l.len());
-    *x = n;
+    assert!(n == 0 || y < l.len());
+    (n, y)
 }
 fn increment_2d(x: &mut usize, y: &mut usize, l: &[&[i64]]) {
     *x += 1;
@@ -913,10 +914,6 @@ impl RollingWindower {
         }
     }
 
-    pub fn start(&self) -> IdxSize {
-        self.start
-    }
-
     /// Insert new values into the windower.
     ///
     /// This should be given all the old values that were not processed yet.
@@ -925,13 +922,9 @@ impl RollingWindower {
         time: &[&[i64]],
         windows: &mut Vec<[IdxSize; 2]>,
     ) -> PolarsResult<IdxSize> {
-        let (mut ix, mut iy) = (0, 0);
-        let (mut sx, mut sy) = (0, 0);
-        let (mut ex, mut ey) = (0, 0);
-
-        skip_in_2d_list(&mut ix, &mut iy, time, (self.length - self.start) as usize);
-        skip_in_2d_list(&mut sx, &mut sy, time, 0); // skip over empty lists
-        skip_in_2d_list(&mut ex, &mut ey, time, (self.end - self.start) as usize);
+        let (mut ix, mut iy) = skip_in_2d_list(time, (self.length - self.start) as usize);
+        let (mut sx, mut sy) = skip_in_2d_list(time, 0); // skip over empty lists
+        let (mut ex, mut ey) = skip_in_2d_list(time, (self.end - self.start) as usize);
 
         let time_start = self.start;
         let mut i = self.length;
@@ -983,10 +976,8 @@ impl RollingWindower {
             self.length - self.start
         );
 
-        let (mut sx, mut sy) = (0, 0);
-        let (mut ex, mut ey) = (0, 0);
-
-        skip_in_2d_list(&mut ex, &mut ey, time, (self.end - self.start) as usize);
+        let (mut sx, mut sy) = skip_in_2d_list(time, 0);
+        let (mut ex, mut ey) = skip_in_2d_list(time, (self.end - self.start) as usize);
 
         windows.extend(self.active.drain(..).map(|w| {
             while self.start < self.length && !w.above_lower_bound(time[sy][sx], self.closed) {

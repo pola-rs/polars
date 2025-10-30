@@ -28,6 +28,7 @@ pub struct RollingGroupBy {
     schema: Arc<Schema>,
 
     buf_df: DataFrame,
+    buf_df_offset: IdxSize,
     buf_index_column: Column,
     buf_key_column: Column,
 
@@ -75,6 +76,7 @@ impl RollingGroupBy {
         Ok(Self {
             schema,
             buf_df,
+            buf_df_offset: 0,
             buf_index_column,
             buf_key_column,
             seq: MorselSeq::default(),
@@ -92,6 +94,9 @@ impl RollingGroupBy {
         df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         assert_eq!(windows.len(), key.len());
+
+        dbg!(&df);
+        dbg!(&windows);
 
         let groups = GroupsType::Slice {
             groups: windows,
@@ -155,6 +160,7 @@ impl ComputeNode for RollingGroupBy {
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let buf_df = std::mem::take(&mut self.buf_df);
+                let buf_df_offset = self.buf_df_offset;
                 let buf_index_column = std::mem::take(&mut self.buf_index_column);
 
                 let buf_index_col_dt = buf_index_column.datetime()?;
@@ -164,11 +170,22 @@ impl ComputeNode for RollingGroupBy {
                     .map(|arr| arr.values().as_slice())
                     .collect::<Vec<&[i64]>>();
 
-                let start = self.windower.start();
                 let mut windows = Vec::new();
                 self.windower.finalize(&time, &mut windows);
 
-                windows.iter_mut().for_each(|[s, _]| *s -= start);
+                if windows.is_empty() {
+                    return Ok(());
+                }
+
+                let offset = windows[0][0];
+                let end = windows.last().unwrap();
+                let end = end[0] + end[1];
+                windows.iter_mut().for_each(|[s, _]| *s -= offset);
+
+                let buf_df = buf_df.slice(
+                    (offset - buf_df_offset) as i64,
+                    (end - buf_df_offset) as usize,
+                );
 
                 let df = Self::evaluate_one(
                     windows,
@@ -190,11 +207,10 @@ impl ComputeNode for RollingGroupBy {
         let mut recv = recv.serial();
         let send = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, rxs) =
-            distributor_channel::<(Morsel, Column, Vec<[IdxSize; 2]>, IdxSize)>(
-                send.len(),
-                *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
-            );
+        let (mut distributor, rxs) = distributor_channel::<(Morsel, Column, Vec<[IdxSize; 2]>)>(
+            send.len(),
+            *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+        );
 
         // Worker tasks.
         //
@@ -204,8 +220,7 @@ impl ComputeNode for RollingGroupBy {
             let aggs = self.aggs.clone();
             let state = state.in_memory_exec_state.split();
             scope.spawn_task(TaskPriority::High, async move {
-                while let Ok((mut morsel, key, mut windows, start)) = rx.recv().await {
-                    windows.iter_mut().for_each(|[s, _]| *s -= start);
+                while let Ok((mut morsel, key, windows)) = rx.recv().await {
                     morsel = morsel
                         .async_try_map::<PolarsError, _, _>(async |df| {
                             Self::evaluate_one(windows, key, &aggs, &state, df).await
@@ -229,6 +244,7 @@ impl ComputeNode for RollingGroupBy {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await {
                 let (df, seq, source_token, wait_token) = morsel.into_inner();
+                self.seq = seq;
                 drop(wait_token);
 
                 if df.height() == 0 {
@@ -237,7 +253,7 @@ impl ComputeNode for RollingGroupBy {
 
                 use DataType as DT;
                 let morsel_index_column = df.column(&self.index_column).unwrap();
-                self.buf_key_column.append(&morsel_index_column);
+                self.buf_key_column.append(&morsel_index_column)?;
                 polars_ensure!(
                     morsel_index_column.null_count() == 0,
                     ComputeError: "null values in `rolling` not supported, fill nulls."
@@ -270,20 +286,34 @@ impl ComputeNode for RollingGroupBy {
                         .map(|arr| arr.values().as_slice()),
                 );
 
-                let start = self.windower.start();
                 let mut windows = Vec::new();
                 let num_retired = self.windower.insert(&time, &mut windows)?;
 
-                self.buf_index_column = buf_index_column.slice(num_retired as i64, usize::MAX);
+                if num_retired == 0 && windows.is_empty() {
+                    continue;
+                }
 
-                let df;
-                (df, self.buf_df) = self.buf_df.split_at(num_retired as i64);
+                self.buf_index_column = buf_index_column.slice(num_retired as i64, usize::MAX);
+                let data_offset = self.buf_df_offset;
+                let new_buf_df = self.buf_df.slice(num_retired as i64, usize::MAX);
+                let data = std::mem::replace(&mut self.buf_df, new_buf_df);
+                self.buf_df_offset += num_retired;
+                if windows.is_empty() {
+                    continue;
+                }
+
+                let offset = windows[0][0];
+                let end = windows.last().unwrap();
+                let end = end[0] + end[1];
+                windows.iter_mut().for_each(|[s, _]| *s -= offset);
+
+                let data = data.slice((offset - data_offset) as i64, (end - data_offset) as usize);
+
                 let key;
                 (key, self.buf_key_column) = self.buf_key_column.split_at(windows.len() as i64);
-                self.seq = seq;
 
                 if distributor
-                    .send((Morsel::new(df, seq, source_token), key, windows, start))
+                    .send((Morsel::new(data, seq, source_token), key, windows))
                     .await
                     .is_err()
                 {
