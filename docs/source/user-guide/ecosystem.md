@@ -116,7 +116,8 @@ transformations of Polars dataframes, or selecting points on a Polars-backed rea
 #### Narwhals
 
 [Narwhals](https://github.com/narwhals-dev/narwhals) is a lightweight compatibility layer between
-dataframe libraries. It mirrors the Polars API and allows to run Polars natively in libraries like
-Plotly and others that have adopted it for dataframe interoperability. Therefore, Polars can be
-used natively in these libraries without conversion overhead.
+dataframe libraries. It mirrors the Polars API and allows to run Polars natively, without any
+conversion overhead, in libraries like Plotly and others that have adopted it for dataframe
+interoperability.
+
 See the [Narwhals ecosystem](https://narwhals-dev.github.io/narwhals/ecosystem/) for more details.
