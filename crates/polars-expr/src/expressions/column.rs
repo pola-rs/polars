@@ -6,6 +6,7 @@ use polars_plan::constants::CSE_REPLACED;
 use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
 
+#[derive(Debug)]
 pub struct ColumnExpr {
     name: PlSmallStr,
     expr: Expr,
