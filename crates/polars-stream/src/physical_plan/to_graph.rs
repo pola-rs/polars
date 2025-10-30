@@ -804,7 +804,7 @@ fn to_graph_rec<'a>(
                 .map(|e| {
                     Ok((
                         e.output_name().clone(),
-                        create_stream_expr(e, ctx, &input_schema)?,
+                        create_stream_expr(e, ctx, input_schema)?,
                     ))
                 })
                 .collect::<PolarsResult<Arc<[_]>>>()?;
@@ -812,8 +812,8 @@ fn to_graph_rec<'a>(
                 nodes::rolling_group_by::RollingGroupBy::new(
                     input_schema.clone(),
                     index_column.clone(),
-                    period.clone(),
-                    offset.clone(),
+                    *period,
+                    *offset,
                     *closed,
                     aggs,
                 )?,

@@ -626,46 +626,6 @@ pub fn group_by_values(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> PolarsResult<GroupsSlice> {
-    let old = group_by_values_old(
-        period.clone(),
-        offset.clone(),
-        time,
-        closed_window,
-        tu,
-        tz.clone(),
-    )?;
-    let mut windower = RollingWindower::new(period, offset, closed_window, tu, tz);
-
-    const INCREMENTS: usize = 2;
-
-    let mut start = 0;
-    let mut end = INCREMENTS;
-
-    let mut windows = Vec::new();
-    while end < time.len() {
-        let ctime = &time[start..end.min(time.len())];
-        dbg!(ctime);
-        dbg!(start);
-        dbg!(end);
-        let time_offset = windower.insert(&[ctime], &mut windows)?;
-        start += time_offset as usize;
-        end += INCREMENTS;
-    }
-    start += windower.insert(&[&time[start..]], &mut windows)? as usize;
-    windower.finalize(&[&time[start..]], &mut windows);
-
-    assert_eq!(&old, &windows);
-    Ok(old)
-}
-
-pub fn group_by_values_old(
-    period: Duration,
-    offset: Duration,
-    time: &[i64],
-    closed_window: ClosedWindow,
-    tu: TimeUnit,
-    tz: Option<Tz>,
-) -> PolarsResult<GroupsSlice> {
     if time.is_empty() {
         return Ok(GroupsSlice::from(vec![]));
     }

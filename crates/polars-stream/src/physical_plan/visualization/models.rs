@@ -93,6 +93,13 @@ pub enum PhysNodeProperties {
         keys: Vec<PlSmallStr>,
         aggs: Vec<PlSmallStr>,
     },
+    RollingGroupBy {
+        index_column: PlSmallStr,
+        period: PlSmallStr,
+        offset: PlSmallStr,
+        closed_window: PlSmallStr,
+        aggs: Vec<PlSmallStr>,
+    },
     InMemoryMap {
         format_str: PlSmallStr,
     },

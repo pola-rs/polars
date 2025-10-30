@@ -536,9 +536,9 @@ pub fn build_group_by_stream(
             PhysNodeKind::RollingGroupBy {
                 input,
                 index_column: options.index_column.clone(),
-                period: options.period.clone(),
-                offset: options.offset.clone(),
-                closed: options.closed_window.clone(),
+                period: options.period,
+                offset: options.offset,
+                closed: options.closed_window,
                 aggs: aggs.to_vec(),
             },
         ))));

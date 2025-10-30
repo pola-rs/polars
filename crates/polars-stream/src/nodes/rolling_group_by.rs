@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use chrono_tz::Tz;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, GroupsType, TimeUnit, TimeZone};
+use polars_core::prelude::{Column, DataType, GroupsType, TimeUnit};
 use polars_core::schema::Schema;
-use polars_core::series::ChunkCompareEq;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
 use polars_expr::state::ExecutionState;
-use polars_ops::series::rle_lengths;
-use polars_time::prelude::RollingWindower;
+use polars_time::prelude::{RollingWindower, ensure_duration_matches_dtype};
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -24,12 +22,15 @@ use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{RecvPort, SendPort};
 
-pub struct RollingGroupBy {
-    schema: Arc<Schema>,
+type NextWindows = (Vec<[IdxSize; 2]>, DataFrame, Column);
 
+pub struct RollingGroupBy {
     buf_df: DataFrame,
+    /// How many `buf_df` rows did we discard of already?
     buf_df_offset: IdxSize,
+    /// Casted index column, which may need to keep around old values.
     buf_index_column: Column,
+    /// Uncasted index column.
     buf_key_column: Column,
 
     seq: MorselSeq,
@@ -47,10 +48,16 @@ impl RollingGroupBy {
         closed: ClosedWindow,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
     ) -> PolarsResult<Self> {
-        use DataType as DT;
+        polars_ensure!(
+            !period.is_zero() && !period.negative(),
+            ComputeError: "rolling window period should be strictly positive",
+        );
 
-        let buf_df = DataFrame::empty_with_arc_schema(schema.clone());
         let key_dtype = schema.get(&index_column).unwrap();
+        ensure_duration_matches_dtype(period, key_dtype, "period")?;
+        ensure_duration_matches_dtype(offset, key_dtype, "offset")?;
+
+        use DataType as DT;
         let (tu, tz) = match key_dtype {
             DT::Datetime(tu, tz) => (*tu, tz.clone()),
             DT::Date => (TimeUnit::Microseconds, None),
@@ -61,20 +68,18 @@ impl RollingGroupBy {
                 dt
             ),
         };
+
+        let buf_df = DataFrame::empty_with_arc_schema(schema.clone());
+        let buf_key_column = Column::new_empty(index_column.clone(), key_dtype);
         let buf_index_column =
             Column::new_empty(index_column.clone(), &DT::Datetime(tu, tz.clone()));
-        let buf_key_column = Column::new_empty(index_column.clone(), key_dtype);
 
-        let windower = RollingWindower::new(
-            period,
-            offset,
-            closed,
-            tu,
-            dbg!(tz.map(|tz| tz.parse::<Tz>().unwrap())),
-        );
+        // @NOTE: This is a bit strange since it ignores errors, but it mirrors the in-memory
+        // engine.
+        let tz = tz.and_then(|tz| tz.parse::<Tz>().ok());
+        let windower = RollingWindower::new(period, offset, closed, tu, tz);
 
         Ok(Self {
-            schema,
             buf_df,
             buf_df_offset: 0,
             buf_index_column,
@@ -91,18 +96,21 @@ impl RollingGroupBy {
         key: Column,
         aggs: &[(PlSmallStr, StreamExpr)],
         state: &ExecutionState,
-        df: DataFrame,
+        mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         assert_eq!(windows.len(), key.len());
-
-        dbg!(&df);
-        dbg!(&windows);
 
         let groups = GroupsType::Slice {
             groups: windows,
             overlapping: true,
         }
         .into_sliceable();
+
+        // @NOTE:
+        // Rechunk so we can use specialized rolling kernels.
+        //
+        // This can be removed if / when the rolling kernels are chunking aware.
+        df.rechunk_mut();
 
         let mut columns = Vec::with_capacity(1 + aggs.len());
         let height = key.len();
@@ -115,11 +123,61 @@ impl RollingGroupBy {
 
         Ok(unsafe { DataFrame::new_no_checks(height, columns) })
     }
+
+    /// Progress the state and get the next available evaluation windows, data and key.
+    fn next_windows(&mut self, finalize: bool) -> PolarsResult<Option<NextWindows>> {
+        let buf_index_col_dt = self.buf_index_column.datetime()?;
+        let mut time = Vec::new();
+        time.extend(
+            buf_index_col_dt
+                .physical()
+                .downcast_iter()
+                .map(|arr| arr.values().as_slice()),
+        );
+
+        let mut windows = Vec::new();
+        let num_retired = if finalize {
+            self.windower.insert(&time, &mut windows)?
+        } else {
+            self.windower.finalize(&time, &mut windows);
+            self.buf_key_column.len() as IdxSize
+        };
+
+        if num_retired == 0 && windows.is_empty() {
+            return Ok(None);
+        }
+
+        let start_row_offset = self.buf_df_offset;
+
+        self.buf_index_column = self.buf_index_column.slice(num_retired as i64, usize::MAX);
+        let new_buf_df = self.buf_df.slice(num_retired as i64, usize::MAX);
+        let data = std::mem::replace(&mut self.buf_df, new_buf_df);
+        self.buf_df_offset += num_retired;
+
+        if windows.is_empty() {
+            return Ok(None);
+        }
+
+        // Prune the data that is not covered by the windows and update the windows accordingly.
+        let offset = windows[0][0];
+        let end = windows.last().unwrap();
+        let end = end[0] + end[1];
+        windows.iter_mut().for_each(|[s, _]| *s -= offset);
+        let data = data.slice(
+            (offset - start_row_offset) as i64,
+            (end - start_row_offset) as usize,
+        );
+
+        let key;
+        (key, self.buf_key_column) = self.buf_key_column.split_at(windows.len() as i64);
+
+        Ok(Some((windows, data, key)))
+    }
 }
 
 impl ComputeNode for RollingGroupBy {
     fn name(&self) -> &str {
-        "range-group-by"
+        "rolling-group-by"
     }
 
     fn update_state(
@@ -157,48 +215,23 @@ impl ComputeNode for RollingGroupBy {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
 
         let Some(recv) = recv_ports[0].take() else {
+            // We no longer have to receive data. Finalize and send all remaining data.
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                let buf_df = std::mem::take(&mut self.buf_df);
-                let buf_df_offset = self.buf_df_offset;
-                let buf_index_column = std::mem::take(&mut self.buf_index_column);
+                if let Some((windows, df, key)) = self.next_windows(true)? {
+                    let df = Self::evaluate_one(
+                        windows,
+                        key,
+                        &self.aggs,
+                        &state.in_memory_exec_state,
+                        df,
+                    )
+                    .await?;
 
-                let buf_index_col_dt = buf_index_column.datetime()?;
-                let time = buf_index_col_dt
-                    .physical()
-                    .downcast_iter()
-                    .map(|arr| arr.values().as_slice())
-                    .collect::<Vec<&[i64]>>();
-
-                let mut windows = Vec::new();
-                self.windower.finalize(&time, &mut windows);
-
-                if windows.is_empty() {
-                    return Ok(());
+                    _ = send
+                        .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                        .await;
                 }
-
-                let offset = windows[0][0];
-                let end = windows.last().unwrap();
-                let end = end[0] + end[1];
-                windows.iter_mut().for_each(|[s, _]| *s -= offset);
-
-                let buf_df = buf_df.slice(
-                    (offset - buf_df_offset) as i64,
-                    (end - buf_df_offset) as usize,
-                );
-
-                let df = Self::evaluate_one(
-                    windows,
-                    self.buf_key_column.clone(),
-                    &self.aggs,
-                    &state.in_memory_exec_state,
-                    buf_df,
-                )
-                .await?;
-
-                _ = send
-                    .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
-                    .await;
                 Ok(())
             }));
             return;
@@ -251,73 +284,39 @@ impl ComputeNode for RollingGroupBy {
                     continue;
                 }
 
-                use DataType as DT;
-                let morsel_index_column = df.column(&self.index_column).unwrap();
-                self.buf_key_column.append(&morsel_index_column)?;
+                let morsel_index_column = df.column(&self.index_column)?;
                 polars_ensure!(
                     morsel_index_column.null_count() == 0,
                     ComputeError: "null values in `rolling` not supported, fill nulls."
                 );
+
+                self.buf_key_column.append(morsel_index_column)?;
+
+                use DataType as DT;
                 let morsel_index_column = match morsel_index_column.dtype() {
                     DT::Datetime(_, _) => morsel_index_column.clone(),
                     DT::Date => {
                         morsel_index_column.cast(&DT::Datetime(TimeUnit::Microseconds, None))?
                     },
                     DT::UInt32 | DT::UInt64 | DT::Int32 => morsel_index_column
-                        .cast(&DT::Int64)
-                        .unwrap()
-                        .cast(&DT::Datetime(TimeUnit::Nanoseconds, None))
-                        .unwrap(),
-                    DT::Int64 => morsel_index_column
-                        .cast(&DT::Datetime(TimeUnit::Nanoseconds, None))
-                        .unwrap(),
+                        .cast(&DT::Int64)?
+                        .cast(&DT::Datetime(TimeUnit::Nanoseconds, None))?,
+                    DT::Int64 => {
+                        morsel_index_column.cast(&DT::Datetime(TimeUnit::Nanoseconds, None))?
+                    },
                     _ => unreachable!(),
                 };
-                self.buf_index_column.append(&morsel_index_column).unwrap();
-                self.buf_df.vstack_mut_owned(df).unwrap();
+                self.buf_index_column.append(&morsel_index_column)?;
+                self.buf_df.vstack_mut_owned(df)?;
 
-                let buf_index_column = self.buf_index_column.clone();
-                let buf_index_col_dt = buf_index_column.datetime()?;
-                let mut time = Vec::new();
-                time.extend(
-                    buf_index_col_dt
-                        .physical()
-                        .downcast_iter()
-                        .map(|arr| arr.values().as_slice()),
-                );
-
-                let mut windows = Vec::new();
-                let num_retired = self.windower.insert(&time, &mut windows)?;
-
-                if num_retired == 0 && windows.is_empty() {
-                    continue;
-                }
-
-                self.buf_index_column = buf_index_column.slice(num_retired as i64, usize::MAX);
-                let data_offset = self.buf_df_offset;
-                let new_buf_df = self.buf_df.slice(num_retired as i64, usize::MAX);
-                let data = std::mem::replace(&mut self.buf_df, new_buf_df);
-                self.buf_df_offset += num_retired;
-                if windows.is_empty() {
-                    continue;
-                }
-
-                let offset = windows[0][0];
-                let end = windows.last().unwrap();
-                let end = end[0] + end[1];
-                windows.iter_mut().for_each(|[s, _]| *s -= offset);
-
-                let data = data.slice((offset - data_offset) as i64, (end - data_offset) as usize);
-
-                let key;
-                (key, self.buf_key_column) = self.buf_key_column.split_at(windows.len() as i64);
-
-                if distributor
-                    .send((Morsel::new(data, seq, source_token), key, windows))
-                    .await
-                    .is_err()
-                {
-                    break;
+                if let Some((windows, df, key)) = self.next_windows(false)? {
+                    if distributor
+                        .send((Morsel::new(df, seq, source_token), key, windows))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
             }
 
