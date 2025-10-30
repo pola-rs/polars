@@ -656,7 +656,19 @@ impl SQLExprVisitor<'_> {
             // general case
             (UnaryOperator::Plus, _) => lit(0) + expr,
             (UnaryOperator::Minus, _) => lit(0) - expr,
-            (UnaryOperator::Not, _) => expr.not(),
+            (UnaryOperator::Not, _) => match &expr {
+                Expr::Column(name)
+                    if self
+                        .active_schema
+                        .and_then(|schema| schema.get(name))
+                        .is_some_and(|dtype| matches!(dtype, DataType::Boolean)) =>
+                {
+                    // if already boolean, can operate bitwise
+                    expr.not()
+                },
+                // otherwise SQL "NOT" expects logical, not bitwise, behaviour (eg: on integers)
+                _ => expr.strict_cast(DataType::Boolean).not(),
+            },
             other => polars_bail!(SQLInterface: "unary operator {:?} is not supported", other),
         })
     }
