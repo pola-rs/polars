@@ -5,6 +5,7 @@ use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
+use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::default_values::{
@@ -269,7 +270,7 @@ pub fn initialize_scan_predicate<'a>(
         };
 
         if skip_files_mask.len() != expected_mask_len {
-            eprintln!(
+            polars_warn!(
                 "WARNING: \
                 initialize_scan_predicate: \
                 filter mask length mismatch (length: {}, expected: {}). Files \
