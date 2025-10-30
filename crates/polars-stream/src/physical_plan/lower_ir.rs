@@ -24,7 +24,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, unique_column_name};
+use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
 use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
@@ -518,9 +518,15 @@ pub fn lower_ir(
                     },
                 ));
 
-                let trans_by_column;
+                let mut trans_by_column;
                 (stream, trans_by_column) =
                     lower_exprs(stream, &by_column, expr_arena, phys_sm, expr_cache, ctx)?;
+
+                trans_by_column = trans_by_column
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i)))
+                    .collect_vec();
 
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
                     output_schema: phys_sm[stream.node].output_schema.clone(),
