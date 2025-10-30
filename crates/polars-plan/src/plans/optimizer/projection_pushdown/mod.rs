@@ -5,8 +5,6 @@ mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
-#[cfg(feature = "semi_anti_join")]
-mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
