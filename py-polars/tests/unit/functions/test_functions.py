@@ -648,7 +648,9 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     assert_series_equal(res_expr.to_series(), expected)
 
 
-@pytest.mark.parametrize("dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical])
+@pytest.mark.parametrize(
+    "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List]
+)
 def test_first_last(dtype: PolarsDataType) -> None:
     # Ensure multiple chunks.
     s1 = pl.Series("a", [None, None], dtype=pl.Int32)
