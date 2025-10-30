@@ -690,27 +690,116 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Distinct { input, options } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
-            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
 
-            let subset = options
-                .subset
-                .map(|s| {
-                    PolarsResult::Ok(
-                        s.into_columns(input_schema.as_ref(), &Default::default())?
-                            .into_iter()
-                            .collect(),
+            // "subset" param supports cols and/or arbitrary expressions
+            let (input, subset, temp_cols) = if let Some(exprs) = options.subset {
+                let exprs = rewrite_projections(
+                    exprs,
+                    &PlHashSet::default(),
+                    &input_schema,
+                    ctxt.opt_flags,
+                )?;
+
+                // identify cols and exprs in "subset" param
+                let mut subset_colnames = vec![];
+                let mut subset_exprs = vec![];
+                for expr in &exprs {
+                    match expr {
+                        Expr::Column(name) => {
+                            polars_ensure!(
+                                input_schema.contains(name),
+                                ColumnNotFound: "{name:?} not found"
+                            );
+                            subset_colnames.push(name.clone());
+                        },
+                        _ => subset_exprs.push(expr.clone()),
+                    }
+                }
+
+                if subset_exprs.is_empty() {
+                    // "subset" is a collection of basic cols (or empty)
+                    (input, Some(subset_colnames.into_iter().collect()), vec![])
+                } else {
+                    // "subset" contains exprs; add them as temporary cols
+                    let (aliased_exprs, temp_names): (Vec<_>, Vec<_>) = subset_exprs
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, expr)| {
+                            let temp_name =
+                                PlSmallStr::from_string(format!("__POLARS_UNIQUE_SUBSET_{}", idx));
+                            (expr.alias(temp_name.clone()), temp_name)
+                        })
+                        .unzip();
+
+                    subset_colnames.extend_from_slice(&temp_names);
+
+                    // integrate the temporary cols with the existing "input" node
+                    let (temp_expr_irs, schema) = resolve_with_columns(
+                        aliased_exprs,
+                        input,
+                        ctxt.lp_arena,
+                        ctxt.expr_arena,
+                        ctxt.opt_flags,
+                    )?;
+                    ctxt.conversion_optimizer
+                        .fill_scratch(&temp_expr_irs, ctxt.expr_arena);
+
+                    let input_with_exprs = ctxt.lp_arena.add(IR::HStack {
+                        input,
+                        exprs: temp_expr_irs,
+                        schema,
+                        options: ProjectionOptions {
+                            run_parallel: false,
+                            duplicate_check: false,
+                            should_broadcast: true,
+                        },
+                    });
+                    (
+                        input_with_exprs,
+                        Some(subset_colnames.into_iter().collect()),
+                        temp_names,
                     )
-                })
-                .transpose()?;
-
-            let options = DistinctOptionsIR {
-                subset,
-                maintain_order: options.maintain_order,
-                keep_strategy: options.keep_strategy,
-                slice: None,
+                }
+            } else {
+                (input, None, vec![])
             };
 
-            IR::Distinct { input, options }
+            // `distinct` definition (will contain temporary cols if we have "subset" exprs)
+            let distinct_node = ctxt.lp_arena.add(IR::Distinct {
+                input,
+                options: DistinctOptionsIR {
+                    subset,
+                    maintain_order: options.maintain_order,
+                    keep_strategy: options.keep_strategy,
+                    slice: None,
+                },
+            });
+
+            // if no temporary cols (eg: no "subset" exprs), we're done...
+            if temp_cols.is_empty() {
+                return Ok(distinct_node);
+            }
+
+            // ...otherwise, drop the temporary cols by selecting the original schema
+            let exprs = to_expr_irs(
+                input_schema
+                    .iter_names()
+                    .map(|name| Expr::Column(name.clone()))
+                    .collect(),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &input_schema,
+                    ctxt.opt_flags,
+                ),
+            )?;
+
+            return Ok(ctxt.lp_arena.add(IR::Select {
+                input: distinct_node,
+                expr: exprs,
+                schema: input_schema,
+                options: Default::default(),
+            }));
         },
         DslPlan::MapFunction { input, function } => {
             let input = to_alp_impl(owned(input), ctxt)

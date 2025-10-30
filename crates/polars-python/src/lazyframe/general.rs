@@ -1384,11 +1384,11 @@ impl PyLazyFrame {
     fn unique(
         &self,
         maintain_order: bool,
-        subset: Option<PySelector>,
+        subset: Option<Vec<PyExpr>>,
         keep: Wrap<UniqueKeepStrategy>,
     ) -> Self {
         let ldf = self.ldf.read().clone();
-        let subset = subset.map(|e| e.inner);
+        let subset = subset.map(|exprs| exprs.into_iter().map(|e| e.inner).collect());
         match maintain_order {
             true => ldf.unique_stable_generic(subset, keep.0),
             false => ldf.unique_generic(subset, keep.0),
