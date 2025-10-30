@@ -37,6 +37,11 @@ pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType> {
     _phantom: PhantomData<Logical>,
 }
 
+pub struct Extension {
+    pub storage: Series,
+    pub dtype: DataType,
+}
+
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
         Self {
