@@ -11,7 +11,6 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::plans::{
     AExpr, ColumnNode, ExprIR, ExprOrigin, IR, IRBuilder, OutputName, PlHashSet, det_join_schema,
 };
-use crate::prelude::optimizer::join_utils::split_suffix;
 use crate::prelude::optimizer::projection_pushdown::ProjectionContext;
 use crate::prelude::{ProjectionOptions, ProjectionPushDown};
 use crate::utils::{aexpr_to_leaf_names_iter, column_node_to_name};
