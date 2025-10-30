@@ -2768,6 +2768,7 @@ impl DataFrame {
         (a, b)
     }
 
+    #[must_use]
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
         unsafe { DataFrame::new_no_checks(0, col) }

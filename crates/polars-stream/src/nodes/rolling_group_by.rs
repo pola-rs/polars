@@ -137,10 +137,10 @@ impl RollingGroupBy {
 
         let mut windows = Vec::new();
         let num_retired = if finalize {
-            self.windower.insert(&time, &mut windows)?
-        } else {
             self.windower.finalize(&time, &mut windows);
             self.buf_key_column.len() as IdxSize
+        } else {
+            self.windower.insert(&time, &mut windows)?
         };
 
         if num_retired == 0 && windows.is_empty() {
@@ -216,6 +216,7 @@ impl ComputeNode for RollingGroupBy {
 
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
+            assert!(!self.buf_df.is_empty());
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 if let Some((windows, df, key)) = self.next_windows(true)? {
@@ -232,6 +233,11 @@ impl ComputeNode for RollingGroupBy {
                         .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
                         .await;
                 }
+
+                self.buf_df = self.buf_df.clear();
+                self.buf_key_column = self.buf_key_column.clear();
+                self.buf_index_column = self.buf_index_column.clear();
+
                 Ok(())
             }));
             return;

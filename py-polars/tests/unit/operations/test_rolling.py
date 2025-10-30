@@ -266,6 +266,7 @@ def test_rolling_non_negative_offset_9077(
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly

@@ -6,7 +6,6 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
-use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
