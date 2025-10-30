@@ -881,14 +881,14 @@ impl RollingWindower {
         time: &[&[i64]],
         windows: &mut Vec<[IdxSize; 2]>,
     ) -> PolarsResult<IdxSize> {
-        let (mut ix, mut iy) = skip_in_2d_list(time, (self.length - self.start) as usize);
-        let (mut sx, mut sy) = skip_in_2d_list(time, 0); // skip over empty lists
-        let (mut ex, mut ey) = skip_in_2d_list(time, (self.end - self.start) as usize);
+        let (mut i_x, mut i_y) = skip_in_2d_list(time, (self.length - self.start) as usize);
+        let (mut s_x, mut s_y) = skip_in_2d_list(time, 0); // skip over empty lists
+        let (mut e_x, mut e_y) = skip_in_2d_list(time, (self.end - self.start) as usize);
 
         let time_start = self.start;
         let mut i = self.length;
-        while iy < time.len() {
-            let t = time[iy][ix];
+        while i_y < time.len() {
+            let t = time[i_y][i_x];
             let window_start = (self.add)(&self.offset, t, self.tz.as_ref())?;
             // For datetime arithmetic, it does *NOT* hold 0 + a - a == 0. Therefore, we make sure
             // that if `offset` and `period` are inverses we keep the `t`.
@@ -909,18 +909,18 @@ impl RollingWindower {
                 }
 
                 let w = self.active.pop_front().unwrap();
-                while self.start < i && !w.above_lower_bound(time[sy][sx], self.closed) {
-                    increment_2d(&mut sx, &mut sy, time);
+                while self.start < i && !w.above_lower_bound(time[s_y][s_x], self.closed) {
+                    increment_2d(&mut s_x, &mut s_y, time);
                     self.start += 1;
                 }
-                while self.end < i && w.below_upper_bound(time[ey][ex], self.closed) {
-                    increment_2d(&mut ex, &mut ey, time);
+                while self.end < i && w.below_upper_bound(time[e_y][e_x], self.closed) {
+                    increment_2d(&mut e_x, &mut e_y, time);
                     self.end += 1;
                 }
                 windows.push([self.start, self.end - self.start]);
             }
 
-            increment_2d(&mut ix, &mut iy, time);
+            increment_2d(&mut i_x, &mut i_y, time);
             i += 1;
         }
 
@@ -935,16 +935,16 @@ impl RollingWindower {
             self.length - self.start
         );
 
-        let (mut sx, mut sy) = skip_in_2d_list(time, 0);
-        let (mut ex, mut ey) = skip_in_2d_list(time, (self.end - self.start) as usize);
+        let (mut s_x, mut s_y) = skip_in_2d_list(time, 0);
+        let (mut e_x, mut e_y) = skip_in_2d_list(time, (self.end - self.start) as usize);
 
         windows.extend(self.active.drain(..).map(|w| {
-            while self.start < self.length && !w.above_lower_bound(time[sy][sx], self.closed) {
-                increment_2d(&mut sx, &mut sy, time);
+            while self.start < self.length && !w.above_lower_bound(time[s_y][s_x], self.closed) {
+                increment_2d(&mut s_x, &mut s_y, time);
                 self.start += 1;
             }
-            while self.end < self.length && w.below_upper_bound(time[ey][ex], self.closed) {
-                increment_2d(&mut ex, &mut ey, time);
+            while self.end < self.length && w.below_upper_bound(time[e_y][e_x], self.closed) {
+                increment_2d(&mut e_x, &mut e_y, time);
                 self.end += 1;
             }
             [self.start, self.end - self.start]
