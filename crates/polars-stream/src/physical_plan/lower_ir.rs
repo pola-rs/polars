@@ -472,11 +472,7 @@ pub fn lower_ir(
             sort_options,
         } => {
             let slice = *slice;
-            let mut by_column = by_column
-                .iter()
-                .enumerate()
-                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i)))
-                .collect_vec();
+            let mut by_column = by_column.clone();
             let mut sort_options = sort_options.clone();
             let phys_input = lower_ir!(*input)?;
 
@@ -522,9 +518,15 @@ pub fn lower_ir(
                     },
                 ));
 
-                let trans_by_column;
+                let mut trans_by_column;
                 (stream, trans_by_column) =
                     lower_exprs(stream, &by_column, expr_arena, phys_sm, expr_cache, ctx)?;
+
+                trans_by_column = trans_by_column
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i)))
+                    .collect_vec();
 
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
                     output_schema: phys_sm[stream.node].output_schema.clone(),
