@@ -270,15 +270,16 @@ pub fn initialize_scan_predicate<'a>(
         };
 
         if skip_files_mask.len() != expected_mask_len {
-            polars_warn!(
+            let msg = format!(
                 "WARNING: \
                 initialize_scan_predicate: \
                 filter mask length mismatch (length: {}, expected: {}). Files \
                 will not be skipped. This is a bug; please open an issue with \
                 a reproducible example if possible.",
                 skip_files_mask.len(),
-                expected_mask_len,
+                expected_mask_len
             );
+            polars_warn!(msg);
             return Ok((None, Some(predicate)));
         }
 
