@@ -669,7 +669,7 @@ pub fn lower_ir(
                     FileScanIR::Csv { options } => Arc::new(Arc::new(options.clone())) as _,
 
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
+                    FileScanIR::NDJson { options } => Arc::new(options.clone()) as _,
 
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {

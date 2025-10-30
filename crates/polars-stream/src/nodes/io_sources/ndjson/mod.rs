@@ -5,15 +5,13 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chunk_reader::ChunkReader;
 use line_batch_processor::{LineBatchProcessor, LineBatchProcessorOutputPort};
 use negative_slice_pass::MorselStreamReverser;
-use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::estimate_n_lines_in_file;
 use polars_io::utils::compression::maybe_decompress_bytes;
-use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
+use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::mmap::MemSlice;
@@ -30,8 +28,9 @@ use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 use crate::nodes::{MorselSeq, TaskPriority};
-mod chunk_reader;
+pub(super) mod chunk_reader;
 mod line_batch_distributor;
 mod line_batch_processor;
 mod negative_slice_pass;
@@ -39,13 +38,14 @@ mod row_index_limit_pass;
 
 #[derive(Clone)]
 pub struct NDJsonFileReader {
-    scan_source: ScanSource,
+    pub scan_source: ScanSource,
     #[expect(unused)] // Will be used when implementing cloud streaming.
-    cloud_options: Option<Arc<CloudOptions>>,
-    options: Arc<NDJsonReadOptions>,
-    verbose: bool,
+    pub cloud_options: Option<Arc<CloudOptions>>,
+    pub chunk_reader_builder: ChunkReaderBuilder,
+    pub count_rows_fn: fn(&[u8]) -> usize,
+    pub verbose: bool,
     // Cached on first access - we may be called multiple times e.g. on negative slice.
-    cached_bytes: Option<MemSlice>,
+    pub cached_bytes: Option<MemSlice>,
 }
 
 #[async_trait]
@@ -282,8 +282,7 @@ impl FileReader for NDJsonFileReader {
             None
         };
 
-        let schema = Arc::new(schema);
-        let chunk_reader = Arc::new(self.try_init_chunk_reader(&schema)?);
+        let chunk_reader = self.chunk_reader_builder.build(schema);
 
         if !is_negative_slice {
             get_memory_prefetch_func(verbose)(global_bytes.as_ref());
@@ -310,6 +309,7 @@ impl FileReader for NDJsonFileReader {
             .map(|(worker_idx, line_batch_rx)| {
                 let global_bytes = global_bytes.clone();
                 let chunk_reader = chunk_reader.clone();
+                let count_rows_fn = self.count_rows_fn;
                 // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
                 let source_token = SourceToken::new();
 
@@ -320,6 +320,7 @@ impl FileReader for NDJsonFileReader {
 
                         global_bytes,
                         chunk_reader,
+                        count_rows_fn,
 
                         line_batch_rx,
                         output_port: if output_to_linearizer {
@@ -347,6 +348,7 @@ impl FileReader for NDJsonFileReader {
             line_batch_distributor::LineBatchDistributor {
                 global_bytes,
                 chunk_size,
+                max_chunk_size: self.chunk_reader_builder.max_chunk_size(),
                 n_rows_to_skip,
                 reverse: is_negative_slice,
                 line_batch_distribute_tx,
@@ -435,10 +437,6 @@ impl FileReader for NDJsonFileReader {
 }
 
 impl NDJsonFileReader {
-    fn try_init_chunk_reader(&self, schema: &SchemaRef) -> PolarsResult<ChunkReader> {
-        ChunkReader::try_new(&self.options, schema)
-    }
-
     fn get_bytes_maybe_decompress(&mut self) -> PolarsResult<MemSlice> {
         if self.cached_bytes.is_none() {
             let run_async = self.scan_source.run_async();

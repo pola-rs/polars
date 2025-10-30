@@ -1,5 +1,5 @@
 use polars_core::config;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
 use polars_io::prelude::json_lines;
 use polars_utils::idx_mapper::IdxMapper;
 use polars_utils::mmap::MemSlice;
@@ -7,9 +7,12 @@ use polars_utils::mmap::MemSlice;
 use super::line_batch_processor::LineBatch;
 use crate::async_primitives::distributor_channel;
 
+const EOL_CHAR: u8 = b'\n';
+
 pub(super) struct LineBatchDistributor {
     pub(super) global_bytes: MemSlice,
     pub(super) chunk_size: usize,
+    pub(super) max_chunk_size: usize,
     pub(super) n_rows_to_skip: usize,
     pub(super) reverse: bool,
     pub(super) line_batch_distribute_tx: distributor_channel::Sender<LineBatch>,
@@ -19,18 +22,25 @@ impl LineBatchDistributor {
     /// Returns the number of rows skipped (i.e. were not sent to LineBatchProcessors).
     pub(super) async fn run(self) -> PolarsResult<usize> {
         let LineBatchDistributor {
-            global_bytes: global_bytes_mem_slice,
+            global_bytes: global_bytes_buffer,
             chunk_size,
+            max_chunk_size,
             n_rows_to_skip,
             reverse,
             mut line_batch_distribute_tx,
         } = self;
 
-        // Safety: All receivers (LineBatchProcessors) hold a MemSlice ref to this.
+        // Safety: All receivers (LineBatchProcessors) hold a ref to global_bytes_buffer.
         let global_bytes: &'static [u8] =
-            unsafe { std::mem::transmute(global_bytes_mem_slice.as_ref()) };
+            unsafe { std::mem::transmute(global_bytes_buffer.as_ref()) };
         let n_chunks = global_bytes.len().div_ceil(chunk_size);
         let verbose = config::verbose();
+
+        let max_chunk_size =
+            std::env::var("POLARS_FORCE_NDJSON_MAX_CHUNK_SIZE").map_or(max_chunk_size, |x| {
+                x.parse::<usize>()
+                    .expect("expected `POLARS_FORCE_NDJSON_MAX_CHUNK_SIZE` to be an integer")
+            });
 
         if verbose {
             eprintln!(
@@ -38,12 +48,14 @@ impl LineBatchDistributor {
                 [NDJSON LineBatchDistributor]: \
                 global_bytes.len(): {}, \
                 chunk_size: {}, \
+                max_chunk_size: {}, \
                 n_chunks: {}, \
                 n_rows_to_skip: {}, \
                 reverse: {} \
                 ",
                 global_bytes.len(),
                 chunk_size,
+                max_chunk_size,
                 n_chunks,
                 n_rows_to_skip,
                 reverse
@@ -62,7 +74,9 @@ impl LineBatchDistributor {
             reverse,
         };
 
-        for chunk_idx in 0..n_chunks {
+        let mut morsel_idx: u64 = 0;
+
+        'chunk_loop: for chunk_idx in 0..n_chunks {
             let offset = chunk_idx.saturating_mul(chunk_size);
             let range = offset..offset.saturating_add(chunk_size).min(global_bytes.len());
             let range = global_idx_map.map_range(range);
@@ -77,11 +91,11 @@ impl LineBatchDistributor {
                 // Remainder is on the left because we are parsing lines in reverse:
                 // chunk:     ---\n---------
                 // remainder: ---
-                &chunk[..chunk.split(|&c| c == b'\n').next().unwrap().len()]
+                &chunk[..chunk.split(|&c| c == EOL_CHAR).next().unwrap().len()]
             } else {
                 // chunk:     ---------\n---
                 // remainder:            ---
-                &chunk[chunk.len() - chunk.rsplit(|&c| c == b'\n').next().unwrap().len()..]
+                &chunk[chunk.len() - chunk.rsplit(|&c| c == EOL_CHAR).next().unwrap().len()..]
             };
 
             let n_chars_without_remainder = chunk.len() - chunk_remainder.len();
@@ -90,29 +104,62 @@ impl LineBatchDistributor {
                 let range = 0..n_chars_without_remainder;
                 let range = IdxMapper::new(chunk.len(), reverse).map_range(range);
 
-                let full_chunk = &chunk[range];
+                // Holds a complete set of lines (remainder trimmed above).
+                let lines_chunk = &chunk[range];
 
-                let mut full_chunk = if prev_remainder.is_empty() {
-                    full_chunk
+                let mut lines_chunk = if prev_remainder.is_empty() {
+                    lines_chunk
                 } else if reverse {
-                    unsafe { merge_adjacent_non_empty_slices(full_chunk, prev_remainder) }
+                    unsafe { merge_adjacent_non_empty_slices(lines_chunk, prev_remainder) }
                 } else {
-                    unsafe { merge_adjacent_non_empty_slices(prev_remainder, full_chunk) }
+                    unsafe { merge_adjacent_non_empty_slices(prev_remainder, lines_chunk) }
                 };
 
                 prev_remainder = &[];
-                row_skipper.skip_rows(&mut full_chunk);
+                row_skipper.skip_rows(&mut lines_chunk);
 
-                if !full_chunk.is_empty()
-                    && line_batch_distribute_tx
+                while !lines_chunk.is_empty() {
+                    let next_chunk: &[u8];
+
+                    if lines_chunk.len() <= max_chunk_size {
+                        next_chunk = std::mem::take(&mut lines_chunk);
+                    } else {
+                        let split_idx = max_chunk_size
+                            - lines_chunk[..max_chunk_size]
+                                .rsplit(|c| *c == EOL_CHAR)
+                                .next()
+                                .unwrap()
+                                .len();
+
+                        if split_idx == 0 {
+                            let line_length = max_chunk_size
+                                + lines_chunk[max_chunk_size..]
+                                    .split(|c| *c == EOL_CHAR)
+                                    .next()
+                                    .unwrap()
+                                    .len();
+                            polars_bail!(
+                                ComputeError:
+                                "line byte length of {} exceeded max chunk size of {}",
+                                line_length, max_chunk_size
+                            )
+                        }
+
+                        (next_chunk, lines_chunk) = lines_chunk.split_at(split_idx);
+                    }
+
+                    if line_batch_distribute_tx
                         .send(LineBatch {
-                            bytes: full_chunk,
-                            chunk_idx,
+                            bytes: next_chunk,
+                            morsel_idx,
                         })
                         .await
                         .is_err()
-                {
-                    break;
+                    {
+                        break 'chunk_loop;
+                    }
+
+                    morsel_idx = morsel_idx.saturating_add(1);
                 }
             }
 
@@ -178,7 +225,7 @@ impl RowSkipper {
     /// Skip lines in reverse (right to left).
     fn _skip_reversed(&mut self, chunk: &mut &[u8]) {
         // Note: This is `rsplit`
-        let mut iter = chunk.rsplit(|&c| c == b'\n').filter(|&bytes| {
+        let mut iter = chunk.rsplit(|&c| c == EOL_CHAR).filter(|&bytes| {
             bytes
                 .iter()
                 .any(|&byte| !matches!(byte, b' ' | b'\t' | b'\r'))

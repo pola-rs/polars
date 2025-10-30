@@ -7,9 +7,10 @@ use polars_plan::dsl::ScanSource;
 use super::{FileReader, NDJsonFileReader};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 
 #[cfg(feature = "json")]
-impl FileReaderBuilder for Arc<polars_plan::dsl::NDJsonReadOptions> {
+impl FileReaderBuilder for polars_plan::dsl::NDJsonReadOptions {
     fn reader_name(&self) -> &str {
         "ndjson"
     }
@@ -27,13 +28,16 @@ impl FileReaderBuilder for Arc<polars_plan::dsl::NDJsonReadOptions> {
         _scan_source_idx: usize,
     ) -> Box<dyn FileReader> {
         let scan_source = source;
-        let options = self.clone();
+        let chunk_reader_builder = ChunkReaderBuilder::NDJson {
+            ignore_errors: self.ignore_errors,
+        };
         let verbose = config::verbose();
 
         let reader = NDJsonFileReader {
             scan_source,
             cloud_options,
-            options,
+            chunk_reader_builder,
+            count_rows_fn: polars_io::ndjson::count_rows,
             cached_bytes: None,
             verbose,
         };
