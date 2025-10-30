@@ -7883,7 +7883,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.pivot(
         ...     "col2",
-        ...     on_columns=["a", "b"],
+        ...     on_columns=["x", "y"],
         ...     index="col1",
         ...     values="col3",
         ...     aggregate_function=pl.element().tanh().mean(),

@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             false,
             "_".into(),
         )
-        .collect();
+        .collect()?;
     println!("{}", &out);
     // --8<-- [end:eager]
 
