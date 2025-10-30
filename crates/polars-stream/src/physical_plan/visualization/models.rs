@@ -93,6 +93,7 @@ pub enum PhysNodeProperties {
         keys: Vec<PlSmallStr>,
         aggs: Vec<PlSmallStr>,
     },
+    #[cfg(feature = "dynamic_group_by")]
     RollingGroupBy {
         index_column: PlSmallStr,
         period: PlSmallStr,

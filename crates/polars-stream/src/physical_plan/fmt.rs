@@ -475,6 +475,7 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
+        #[cfg(feature = "dynamic_group_by")]
         PhysNodeKind::RollingGroupBy {
             input,
             index_column,

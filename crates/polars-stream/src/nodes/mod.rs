@@ -25,6 +25,7 @@ pub mod reduce;
 pub mod repeat;
 pub mod rle;
 pub mod rle_id;
+#[cfg(feature = "dynamic_group_by")]
 pub mod rolling_group_by;
 pub mod select;
 pub mod shift;

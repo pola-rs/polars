@@ -186,6 +186,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            #[cfg(feature = "dynamic_group_by")]
             PhysNodeKind::RollingGroupBy {
                 input,
                 index_column,

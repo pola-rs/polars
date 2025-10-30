@@ -527,6 +527,7 @@ pub fn build_group_by_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
+    #[cfg(feature = "dynamic_group_by")]
     if let Some(options) = options.as_ref().rolling.as_ref()
         && keys.is_empty()
         && apply.is_none()

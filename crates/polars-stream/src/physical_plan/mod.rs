@@ -301,6 +301,7 @@ pub enum PhysNodeKind {
         aggs: Vec<ExprIR>,
     },
 
+    #[cfg(feature = "dynamic_group_by")]
     RollingGroupBy {
         input: PhysStream,
         index_column: PlSmallStr,
@@ -400,8 +401,13 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. }
-            | PhysNodeKind::RollingGroupBy { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::RollingGroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },

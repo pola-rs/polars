@@ -789,6 +789,7 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "dynamic_group_by")]
         RollingGroupBy {
             input,
             index_column,
