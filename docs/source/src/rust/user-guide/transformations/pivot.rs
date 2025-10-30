@@ -12,9 +12,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &df);
     // --8<-- [end:df]
 
-    let df = df.clone();
     // --8<-- [start:eager]
     let out = df
+        .clone()
         .lazy()
         .pivot(
             Selector::ByName {
@@ -41,9 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &out);
     // --8<-- [end:eager]
 
-    let df = df.clone();
     // --8<-- [start:lazy]
-    let q = df.lazy();
+    let q = df.clone().lazy();
     let q2 = q.pivot(
         Selector::ByName {
             names: [PlSmallStr::from("foo")].into(),
