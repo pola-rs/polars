@@ -70,7 +70,8 @@ def from_dict(
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of {name:type} pairs; if type is None or `pl.Unknown`, it will
+          be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
@@ -132,7 +133,8 @@ def from_dicts(
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of {name:type} pairs; if type is None or `pl.Unknown`, it will
+          be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
@@ -244,7 +246,8 @@ def from_records(
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of {name:type} pairs; if type is None or `pl.Unknown`, it will
+          be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
@@ -326,7 +329,8 @@ def from_numpy(
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of {name:type} pairs; if type is None or `pl.Unknown`, it will
+          be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
@@ -390,7 +394,8 @@ def from_torch(
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of {name:type} pairs; if type is None or `pl.Unknown`, it will
+          be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
@@ -487,7 +492,8 @@ def from_arrow(
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of {name:type} pairs; if type is None or `pl.Unknown`, it will
+          be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 

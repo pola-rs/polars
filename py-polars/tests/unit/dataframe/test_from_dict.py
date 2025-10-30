@@ -255,3 +255,15 @@ def test_from_dict_cast_logical_type(dtype: pl.DataType, data: Any) -> None:
     )
 
     assert_frame_equal(df_from_dicts, df)
+
+
+def test_auto_infer_schema() -> None:
+    result = pl.from_dict(
+        {"a": [1], "b": [2], "c": [3]},
+        schema={"a": pl.Int32, "b": None, "c": pl.Unknown},
+    )
+    expected = pl.from_dict(
+        {"a": [1], "b": [2], "c": [3]},
+        schema={"a": pl.Int32, "b": pl.Int64, "c": pl.Int64},
+    )
+    assert_frame_equal(result, expected)

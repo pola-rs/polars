@@ -39,7 +39,8 @@ def read_json(
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a dict of {name:type} pairs; if type is None or `pl.Unknown`, it will
+          be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
