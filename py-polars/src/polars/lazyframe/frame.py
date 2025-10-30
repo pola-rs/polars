@@ -7453,16 +7453,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "foo": [1, 2, 3, 1],
-        ...         "bar": ["a", "a", "a", "x"],
-        ...         "ham": ["b", "b", "b", "y"],
+        ...         "foo": [1, 2, 3, 1, 1],
+        ...         "bar": ["a", "a", "a", "x", "x"],
+        ...         "ham": ["b", "b", "b", "y", "y"],
         ...     }
         ... )
 
         By default, all columns are considered when determining which rows are unique:
 
         >>> lf.unique(maintain_order=True).collect()
-        shape: (3, 3)
+        shape: (4, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -7471,12 +7471,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ a   ┆ b   │
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
 
         We can also consider only a subset of columns when determining uniqueness,
         controlling which row we keep when duplicates are found:
 
-        >>> lf.unique(maintain_order=True, subset="foo", keep="first").collect()
+        >>> lf.unique(subset="foo", keep="first", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7487,7 +7488,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> lf.unique(maintain_order=True, subset="foo", keep="last").collect()
+        >>> lf.unique(subset="foo", keep="last", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7498,7 +7499,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ a   ┆ b   │
         │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
-        >>> lf.unique(maintain_order=True, subset="foo", keep="none").collect()
+        >>> lf.unique(subset="foo", keep="none", maintain_order=True).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7512,14 +7513,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Selectors can be used to define the "subset" parameter:
 
         >>> import polars.selectors as cs
-        >>> lf.unique(subset=cs.string()).collect()
-        shape: (1, 3)
+        >>> lf.unique(subset=cs.string(), maintain_order=True).collect()
+        shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ str ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
 
         We can also use an arbitrary expression in the "subset" parameter; in this
@@ -7532,7 +7534,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.unique(
-        ...     subset=pl.col("label").str.extract("^(\w+):"),
+        ...     subset=pl.col("label").str.extract(r"^(\w+):"),
+        ...     maintain_order=True,
         ...     keep="first",
         ... ).collect()
         shape: (2, 2)

@@ -10906,7 +10906,7 @@ class DataFrame:
         maintain_order: bool = False,
     ) -> DataFrame:
         r"""
-        Drop duplicate rows from this dataframe.
+        Drop duplicate rows from this DataFrame.
 
         Parameters
         ----------
@@ -10945,16 +10945,16 @@ class DataFrame:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3, 1],
-        ...         "bar": ["a", "a", "a", "x"],
-        ...         "ham": ["b", "b", "b", "y"],
+        ...         "foo": [1, 2, 3, 1, 1],
+        ...         "bar": ["a", "a", "a", "x", "x"],
+        ...         "ham": ["b", "b", "b", "y", "y"],
         ...     }
         ... )
 
         By default, all columns are considered when determining which rows are unique:
 
         >>> df.unique(maintain_order=True)
-        shape: (3, 3)
+        shape: (4, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -10963,12 +10963,13 @@ class DataFrame:
         │ 1   ┆ a   ┆ b   │
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
 
         We can also consider only a subset of columns when determining uniqueness,
         controlling which row we keep when duplicates are found:
 
-        >>> df.unique(maintain_order=True, subset="foo", keep="first")
+        >>> df.unique(subset="foo", keep="first", maintain_order=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -10979,7 +10980,7 @@ class DataFrame:
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.unique(maintain_order=True, subset="foo", keep="last")
+        >>> df.unique(subset="foo", keep="last", maintain_order=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -10990,7 +10991,7 @@ class DataFrame:
         │ 3   ┆ a   ┆ b   │
         │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
-        >>> df.unique(maintain_order=True, subset="foo", keep="none")
+        >>> df.unique(subset="foo", keep="none", maintain_order=True)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -11004,14 +11005,15 @@ class DataFrame:
         Selectors can be used to define the "subset" parameter:
 
         >>> import polars.selectors as cs
-        >>> df.unique(subset=cs.string())
-        shape: (1, 3)
+        >>> df.unique(subset=cs.string(), maintain_order=True)
+        shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ str ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
 
         We can also use an arbitrary expression in the "subset" parameter; in this
@@ -11024,7 +11026,8 @@ class DataFrame:
         ...     }
         ... )
         >>> df.unique(
-        ...     subset=pl.col("label").str.extract("^(\w+):"),
+        ...     subset=pl.col("label").str.extract(r"^(\w+):"),
+        ...     maintain_order=True,
         ...     keep="first",
         ... )
         shape: (2, 2)
