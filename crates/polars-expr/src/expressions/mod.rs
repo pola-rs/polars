@@ -168,10 +168,7 @@ impl<'a> AggregationContext<'a> {
                     // sliced groups are already in correct order,
                     // Update offsets in the case of overlapping groups
                     // e.g. [0,2], [1,3], [2,4] becomes [0,2], [2,3], [5,4]
-                    GroupsType::Slice {
-                        overlapping: true,
-                        groups,
-                    } => {
+                    GroupsType::Slice { groups, .. } => {
                         // unroll
                         let groups = groups
                             .iter()
@@ -190,7 +187,6 @@ impl<'a> AggregationContext<'a> {
                             .into_sliceable(),
                         )
                     },
-                    GroupsType::Slice { .. } => {},
                 }
                 self.update_groups = UpdateGroups::No;
             },
