@@ -4,6 +4,7 @@ use polars_plan::dsl::PartitionVariantIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
+use polars_time::ClosedWindow;
 use polars_utils::arena::Arena;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -470,6 +471,22 @@ fn visualize_plan_rec(
             format!(
                 "group-by\\nkey:\\n{}\\naggs:\\n{}",
                 fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            ),
+            from_ref(input),
+        ),
+        #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::RollingGroupBy {
+            input,
+            index_column,
+            period,
+            offset,
+            closed,
+            aggs,
+        } => (
+            format!(
+                "rolling-group-by\\nindex column: {index_column}\\nperiod: {period}\\noffset: {offset}\\nclosed: {}\\naggs:\\n{}",
+                <ClosedWindow as Into<&'static str>>::into(*closed),
                 fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
             ),
             from_ref(input),
