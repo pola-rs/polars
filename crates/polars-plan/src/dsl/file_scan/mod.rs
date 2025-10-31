@@ -297,6 +297,8 @@ pub struct UnifiedScanArgs {
     pub table_statistics: Option<TableStatistics>,
     /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
     /// This allows for row-count queries to succeed without scanning all files.
+    ///
+    /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
 }
 
