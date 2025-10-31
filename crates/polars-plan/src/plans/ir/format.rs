@@ -344,12 +344,18 @@ impl Display for ExprIRDisplay<'_> {
         match root {
             Element => f.write_str("element()"),
             #[cfg(feature = "dynamic_group_by")]
-            Rolling { function, options } => {
+            Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window: _,
+            } => {
                 let function = self.with_root(function);
+                let index_column = self.with_root(index_column);
                 write!(
                     f,
-                    "{function}.rolling(by='{}', offset={}, period={})",
-                    options.index_column, options.offset, options.period
+                    "{function}.rolling(by='{index_column}', offset={offset}, period={period})",
                 )
             },
             Over {

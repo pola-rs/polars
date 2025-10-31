@@ -242,10 +242,7 @@ pub fn pushdown_eligibility(
 
             match ae {
                 #[cfg(feature = "dynamic_group_by")]
-                AExpr::Rolling {
-                    function: _,
-                    options: _,
-                } => return ExprPushdownGroup::Barrier,
+                AExpr::Rolling { .. } => return ExprPushdownGroup::Barrier,
                 AExpr::Over {
                     function: _,
                     partition_by,

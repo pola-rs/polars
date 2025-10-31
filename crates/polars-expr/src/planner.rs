@@ -169,7 +169,21 @@ fn create_physical_expr_inner(
     match expr_arena.get(expression) {
         Len => Ok(Arc::new(phys_expr::CountExpr::new())),
         #[cfg(feature = "dynamic_group_by")]
-        aexpr @ Rolling { function, options } => {
+        aexpr @ Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let index_column = create_physical_expr_inner(
+                *index_column,
+                Context::Default,
+                expr_arena,
+                schema,
+                state,
+            )?;
+
             let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
             let function = *function;
             state.set_window();
@@ -182,7 +196,10 @@ fn create_physical_expr_inner(
             state.set_window();
             Ok(Arc::new(RollingExpr {
                 phys_function,
-                options: options.clone(),
+                index_column,
+                period: *period,
+                offset: *offset,
+                closed_window: *closed_window,
                 expr,
                 output_field,
             }))

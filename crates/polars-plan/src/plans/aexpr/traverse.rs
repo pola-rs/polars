@@ -50,9 +50,12 @@ impl AExpr {
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
                 function,
-                options: _,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
             } => {
-                container.extend([*function]);
+                container.extend([*index_column, *function]);
             },
             Over {
                 function,
@@ -131,9 +134,12 @@ impl AExpr {
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
                 function,
-                options: _,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
             } => {
-                container.extend([*function]);
+                container.extend([*index_column, *function]);
             },
             Over {
                 function,
@@ -241,8 +247,15 @@ impl AExpr {
                 return self;
             },
             #[cfg(feature = "dynamic_group_by")]
-            Rolling { function, .. } => {
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
                 *function = inputs[0];
+                *index_column = inputs[1];
                 return self;
             },
             Over {

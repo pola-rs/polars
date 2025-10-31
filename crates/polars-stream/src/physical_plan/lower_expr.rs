@@ -221,8 +221,14 @@ pub fn is_input_independent_rec(
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
             function,
-            options: _,
-        } => is_input_independent_rec(*function, arena, cache),
+            index_column,
+            period: _,
+            offset: _,
+            closed_window: _,
+        } => {
+            is_input_independent_rec(*function, arena, cache)
+                && is_input_independent_rec(*index_column, arena, cache)
+        },
         AExpr::Over {
             function,
             partition_by,
@@ -358,7 +364,10 @@ pub fn is_length_preserving_rec(
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
             function: _,
-            options: _,
+            index_column: _,
+            period: _,
+            offset: _,
+            closed_window: _,
         } => true,
         AExpr::Over {
             function: _, // Actually shouldn't matter for window functions.

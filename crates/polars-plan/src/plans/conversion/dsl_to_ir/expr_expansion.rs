@@ -705,16 +705,25 @@ fn expand_expression_rec(
             )?
         },
         #[cfg(feature = "dynamic_group_by")]
-        Expr::Rolling { function, options } => {
-            _ = expand_single(
-                function.as_ref(),
+        Expr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            _ = expand_expression_by_combination(
+                &[function.as_ref().clone(), index_column.as_ref().clone()],
                 ignored_selector_columns,
                 schema,
                 out,
                 opt_flags,
                 |e| Expr::Rolling {
-                    function: Arc::new(e),
-                    options: options.clone(),
+                    function: Arc::new(e[0].clone()),
+                    index_column: Arc::new(e[1].clone()),
+                    period: *period,
+                    offset: *offset,
+                    closed_window: *closed_window,
                 },
             )?
         },

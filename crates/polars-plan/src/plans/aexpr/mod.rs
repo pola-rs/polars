@@ -258,7 +258,10 @@ pub enum AExpr {
     #[cfg(feature = "dynamic_group_by")]
     Rolling {
         function: Node,
-        options: RollingGroupOptions,
+        index_column: Node,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Node,

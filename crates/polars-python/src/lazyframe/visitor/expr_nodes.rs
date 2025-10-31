@@ -1407,28 +1407,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             options: py.None(),
         }
         .into_py_any(py),
-        AExpr::Rolling { function, options } => {
-            let function = function.0;
-            let partition_by = Vec::new();
-            let order_by_descending = false;
-            let order_by_nulls_last = false;
-            let order_by = None;
-
-            let options = PyRollingGroupOptions {
-                inner: options.clone(),
-            }
-            .into_py_any(py)?;
-
-            Window {
-                function,
-                partition_by,
-                order_by,
-                order_by_descending,
-                order_by_nulls_last,
-                options,
-            }
-            .into_py_any(py)
-        },
+        AExpr::Rolling { .. } => Err(PyNotImplementedError::new_err("rolling")),
         AExpr::Over {
             function,
             partition_by,

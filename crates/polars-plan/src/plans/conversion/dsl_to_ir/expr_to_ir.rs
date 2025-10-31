@@ -371,9 +371,25 @@ pub(super) fn to_aexpr_impl(
             return convert_functions(input, function, ctx);
         },
         #[cfg(feature = "dynamic_group_by")]
-        Expr::Rolling { function, options } => {
+        Expr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
             let (function, output_name) = recurse_arc!(function)?;
-            (AExpr::Rolling { function, options }, output_name)
+            let (index_column, _) = to_aexpr_mat_lit_arc!(index_column)?;
+            (
+                AExpr::Rolling {
+                    function,
+                    index_column,
+                    period,
+                    offset,
+                    closed_window,
+                },
+                output_name,
+            )
         },
         Expr::Over {
             function,

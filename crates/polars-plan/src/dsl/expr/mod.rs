@@ -153,7 +153,10 @@ pub enum Expr {
     #[cfg(feature = "dynamic_group_by")]
     Rolling {
         function: Arc<Expr>,
-        options: RollingGroupOptions,
+        index_column: Arc<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Arc<Expr>,
@@ -341,9 +344,18 @@ impl Hash for Expr {
                 input.hash(state)
             },
             #[cfg(feature = "dynamic_group_by")]
-            Expr::Rolling { function, options } => {
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            } => {
                 function.hash(state);
-                options.hash(state);
+                index_column.hash(state);
+                period.hash(state);
+                offset.hash(state);
+                closed_window.hash(state);
             },
             Expr::Over {
                 function,

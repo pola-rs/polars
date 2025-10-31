@@ -14,11 +14,17 @@ impl fmt::Debug for Expr {
         match self {
             Element => f.write_str("element()"),
             #[cfg(feature = "dynamic_group_by")]
-            Rolling { function, options } => {
+            Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window: _,
+            } => {
                 write!(
                     f,
                     "{:?}.rolling(by='{}', offset={}, period={})",
-                    function, options.index_column, options.offset, options.period
+                    function, index_column, offset, period
                 )
             },
             Over {

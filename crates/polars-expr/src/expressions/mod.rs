@@ -684,6 +684,10 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
+    fn as_column(&self) -> Option<PlSmallStr> {
+        None
+    }
+
     /// Take a DataFrame and evaluate the expression.
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
 

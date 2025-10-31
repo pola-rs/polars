@@ -249,8 +249,6 @@ pub fn aexpr_to_leaf_names_iter(
 ) -> impl Iterator<Item = PlSmallStr> + '_ {
     aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
         AExpr::Column(name) => name.clone(),
-        #[cfg(feature = "dynamic_group_by")]
-        AExpr::Rolling { options, .. } => options.index_column.clone(),
         _ => unreachable!(),
     })
 }

@@ -307,9 +307,12 @@ impl<'a> ObservableOrdersResolver<'a> {
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling {
                 function,
-                options: _,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
             } => {
-                let input = rec!(*function);
+                let input = zip([*function, *index_column].into_iter().map(|e| Ok(rec!(e))))?;
 
                 // @Performance.
                 // All of the code below might be a bit pessimistic, several window function variants

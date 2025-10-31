@@ -846,10 +846,19 @@ impl Expr {
     }
 
     #[cfg(feature = "dynamic_group_by")]
-    pub fn rolling(self, options: RollingGroupOptions) -> Self {
+    pub fn rolling(
+        self,
+        index_column: impl Into<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
+    ) -> Self {
         Expr::Rolling {
             function: Arc::new(self),
-            options,
+            index_column: Arc::new(index_column.into()),
+            period,
+            offset,
+            closed_window,
         }
     }
 

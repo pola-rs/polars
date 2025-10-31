@@ -317,7 +317,10 @@ impl AExpr {
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
                 function,
-                options: _,
+                index_column: _,
+                period: _,
+                offset: _,
+                closed_window: _,
             } => expr_arena.get(*function).to_name(expr_arena),
             Over {
                 function: expr,

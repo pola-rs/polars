@@ -220,9 +220,22 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             ir_function_to_dsl(input, function)
         },
         #[cfg(feature = "dynamic_group_by")]
-        AExpr::Rolling { function, options } => {
+        AExpr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
             let function = Arc::new(node_to_expr(function, expr_arena));
-            Expr::Rolling { function, options }
+            let index_column = Arc::new(node_to_expr(index_column, expr_arena));
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            }
         },
         AExpr::Over {
             function,
