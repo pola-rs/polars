@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 from polars._utils.construction.dataframe import dataframe_to_pydf
 from polars._utils.wrap import wrap_df, wrap_s
+from polars.datatypes import Struct
+from polars.exceptions import SchemaError
 
 with contextlib.suppress(ImportError):
     from polars._plr import PySeries
@@ -31,21 +33,22 @@ def pycapsule_to_frame(
 ) -> DataFrame:
     """Convert PyCapsule object to DataFrame."""
     if hasattr(obj, "__arrow_c_array__"):
-        # This uses the fact that PySeries.from_arrow_c_array will create a
-        # struct-typed Series. Then we unpack that to a DataFrame.
-        tmp_col_name = ""
         s = wrap_s(PySeries.from_arrow_c_array(obj))
-        df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
-
     elif hasattr(obj, "__arrow_c_stream__"):
-        # This uses the fact that PySeries.from_arrow_c_stream will create a
-        # struct-typed Series. Then we unpack that to a DataFrame.
-        tmp_col_name = ""
         s = wrap_s(PySeries.from_arrow_c_stream(obj))
-        df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
     else:
         msg = f"object does not support PyCapsule interface; found {obj!r} "
         raise TypeError(msg)
+
+    if isinstance(s.dtype, Struct):
+        tmp_col_name = ""
+        df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+    else:
+        msg = (
+            f"Cannot create DataFrame from single column data (got {s.dtype}). "
+            f"Use series.to_frame('column_name') or pl.DataFrame({{'col': series}}) instead."
+        )
+        raise SchemaError(msg)
 
     if rechunk:
         df = df.rechunk()
