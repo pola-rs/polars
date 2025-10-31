@@ -346,35 +346,30 @@ impl DslPlan {
     }
 
     #[cfg(feature = "dsl-schema")]
-    pub fn dsl_schema() -> schemars::schema::RootSchema {
-        use schemars::r#gen::SchemaSettings;
-        use schemars::schema::SchemaObject;
-        use schemars::visit::{Visitor, visit_schema_object};
+    pub fn dsl_schema() -> schemars::Schema {
+        use schemars::Schema;
+        use schemars::generate::SchemaSettings;
+        use schemars::transform::{Transform, transform_subschemas};
 
         #[derive(Clone, Copy, Debug)]
-        struct MyVisitor;
+        struct MyTransform;
 
-        impl Visitor for MyVisitor {
-            fn visit_schema_object(&mut self, schema: &mut SchemaObject) {
+        impl Transform for MyTransform {
+            fn transform(&mut self, schema: &mut Schema) {
                 // Remove descriptions auto-generated from doc comments
-                if schema.metadata.is_some() {
-                    schema.metadata().description = None;
-                }
+                schema.remove("description");
 
-                visit_schema_object(self, schema);
+                transform_subschemas(self, schema);
             }
         }
 
         let mut schema = SchemaSettings::default()
-            .with_visitor(MyVisitor)
+            .with_transform(MyTransform)
             .into_generator()
             .into_root_schema_for::<DslPlan>();
 
         // Add the DSL schema hash as a top level field
-        schema
-            .schema
-            .extensions
-            .insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
+        schema.insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
 
         schema
     }
