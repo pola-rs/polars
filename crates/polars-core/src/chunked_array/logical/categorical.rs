@@ -7,6 +7,7 @@ use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::chunked_array::ops::ChunkFullNull;
 use crate::prelude::*;
+use crate::series::implementations::SeriesWrap;
 use crate::utils::handle_casting_failures;
 
 pub type CategoricalChunked<T> = Logical<T, <T as PolarsCategoricalType>::PolarsPhysical>;

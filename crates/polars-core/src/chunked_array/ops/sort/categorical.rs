@@ -1,6 +1,8 @@
 use num_traits::Zero;
 
 use super::*;
+use crate::series::implementations::SeriesWrap;
+use crate::sort_with_fast_path;
 
 impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     #[must_use]
@@ -10,6 +12,24 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             // SAFETY: we only reordered the indexes so we are still in bounds.
             return unsafe {
                 CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
+            };
+        }
+
+        let flags = self.get_flags();
+
+        if flags.is_sorted_any()
+            && (!self.physical().has_nulls()
+                || self.physical().first().is_none() == !options.nulls_last)
+        {
+            return if flags.is_sorted_ascending() == !options.descending {
+                self.clone()
+            } else {
+                unsafe {
+                    CategoricalChunked::<T>::from_cats_and_dtype_unchecked(
+                        self.physical().reverse(),
+                        self.dtype().clone(),
+                    )
+                }
             };
         }
 
