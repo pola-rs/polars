@@ -183,11 +183,65 @@ impl CloudType {
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 fn get_retry_config(max_retries: usize) -> RetryConfig {
-    RetryConfig {
-        backoff: BackoffConfig::default(),
+    use std::cell::LazyCell;
+    use std::time::Duration;
+
+    use polars_core::config;
+
+    let mut out = RetryConfig::default();
+
+    out.max_retries = max_retries;
+
+    let RetryConfig {
+        backoff:
+            BackoffConfig {
+                init_backoff,
+                max_backoff,
+                base,
+            },
         max_retries,
-        retry_timeout: std::time::Duration::from_secs(10),
+        retry_timeout,
+    } = &mut out;
+
+    *retry_timeout = std::time::Duration::from_secs(10);
+
+    if let Ok(v) = std::env::var("POLARS_STORAGE_BACKOFF_INIT_MS").as_deref() {
+        let v: u64 = v.parse().unwrap_or_else(|_| {
+            panic!("failed to parse u64 from POLARS_STORAGE_BACKOFF_INIT_MS={v}")
+        });
+
+        *init_backoff = Duration::from_millis(v);
+    };
+
+    if let Ok(v) = std::env::var("POLARS_STORAGE_BACKOFF_MAX_MS").as_deref() {
+        let v: u64 = v.parse().unwrap_or_else(|_| {
+            panic!("failed to parse u64 from POLARS_STORAGE_BACKOFF_MAX_MS={v}")
+        });
+
+        *max_backoff = Duration::from_millis(v);
+    };
+
+    if let Ok(v) = std::env::var("POLARS_STORAGE_BACKOFF_BASE_MULTIPLIER").as_deref() {
+        let v: f64 = v.parse().unwrap_or_else(|_| {
+            panic!("failed to parse f64 from POLARS_STORAGE_BACKOFF_BASE_MULTIPLIER={v}")
+        });
+
+        *base = v;
+    };
+
+    if let Ok(v) = std::env::var("POLARS_STORAGE_RETRY_TIMEOUT_MS").as_deref() {
+        let v: u64 = v.parse().unwrap_or_else(|_| {
+            panic!("failed to parse u64 from POLARS_STORAGE_RETRY_TIMEOUT_MS={v}")
+        });
+
+        *retry_timeout = Duration::from_millis(v);
+    };
+
+    if config::verbose() {
+        eprintln!("get_retry_config: {:?}", &out)
     }
+
+    return out;
 }
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
