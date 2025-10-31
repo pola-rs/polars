@@ -770,6 +770,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
 pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
     let has_window_function = if let Some(expr) = expr.as_expression() {
         expr.into_iter().any(|expr| {
+            #[cfg(feature = "dynamic_group_by")]
             if matches!(expr, Expr::Rolling { .. }) {
                 return true;
             }

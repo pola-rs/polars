@@ -1936,12 +1936,22 @@ fn lower_exprs_with_ctx(
             },
 
             #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { function, options } => {
+            AExpr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            } => {
                 let out_name = unique_column_name();
+                let index_column_name = unique_column_name();
 
-                let input_columns = aexpr_to_leaf_names(function, ctx.expr_arena).into_iter()
-                    .chain(std::iter::once(options.index_column.clone()))
+                let index_column_expr_ir =
+                    AExprBuilder::new_from_node(index_column).expr_ir(index_column_name.clone());
+                let input_columns = aexpr_to_leaf_names(function, ctx.expr_arena)
+                    .into_iter()
                     .map(|n| AExprBuilder::col(n.clone(), ctx.expr_arena).expr_ir(n))
+                    .chain(std::iter::once(index_column_expr_ir.clone()))
                     .collect::<Vec<_>>();
                 let input = build_select_stream_with_ctx(input, &input_columns, ctx)?;
 
@@ -1954,16 +1964,16 @@ fn lower_exprs_with_ctx(
                     output_dtype = output_dtype.implode();
                 }
                 let output_schema = Schema::from_iter([
-                    input_schema.try_get_field(&options.index_column)?,
+                    index_column_expr_ir.field(input_schema, ctx.expr_arena)?,
                     Field::new(out_name.clone(), output_dtype),
                 ]);
 
                 let kind = PhysNodeKind::RollingGroupBy {
                     input,
-                    index_column: options.index_column.clone(),
-                    period: options.period,
-                    offset: options.offset,
-                    closed: options.closed_window,
+                    index_column: index_column_name,
+                    period,
+                    offset,
+                    closed: closed_window,
                     aggs: vec![AExprBuilder::new_from_node(function).expr_ir(out_name.clone())],
                 };
                 let node_key = ctx
@@ -1973,8 +1983,9 @@ fn lower_exprs_with_ctx(
 
                 let input = build_select_stream_with_ctx(
                     input,
-                    &[AExprBuilder::col(out_name.clone(), ctx.expr_arena).expr_ir(out_name.clone())],
-                    ctx
+                    &[AExprBuilder::col(out_name.clone(), ctx.expr_arena)
+                        .expr_ir(out_name.clone())],
+                    ctx,
                 )?;
                 input_streams.insert(input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
