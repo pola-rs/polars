@@ -124,7 +124,6 @@ fn create_validity(len: usize, null_count: usize, nulls_last: bool) -> Bitmap {
     validity.freeze()
 }
 
-#[macro_export]
 macro_rules! sort_with_fast_path {
     ($ca:ident, $options:expr) => {{
         if $ca.is_empty() {

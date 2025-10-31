@@ -1,8 +1,6 @@
 use num_traits::Zero;
 
 use super::*;
-use crate::series::implementations::SeriesWrap;
-use crate::sort_with_fast_path;
 
 impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     #[must_use]
