@@ -112,3 +112,12 @@ data. Learn about integration between Polars and Mage at
 dataflow graphs. It offers built-in support for Polars, allowing seamless integration of Polars
 dataframes in an interactive, reactive environment - such as displaying rich Polars tables, no-code
 transformations of Polars dataframes, or selecting points on a Polars-backed reactive chart.
+
+#### Narwhals
+
+[Narwhals](https://narwhals-dev.github.io/narwhals/) is a lightweight compatibility layer between
+dataframe libraries. It mirrors the Polars API and allows to run Polars natively, without any
+conversion overhead, in libraries like Plotly and others that have adopted it for dataframe
+interoperability.
+
+See the [Narwhals ecosystem](https://narwhals-dev.github.io/narwhals/ecosystem/) for more details.
