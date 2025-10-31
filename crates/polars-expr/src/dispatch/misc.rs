@@ -427,8 +427,10 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
         IsSorted::Ascending | IsSorted::Descending
-            if !needle.is_null()
-                && !(dtype.is_decimal() || dtype.is_categorical() || dtype.is_enum()) =>
+            if !(needle.is_null()
+                || dtype.is_decimal()
+                || dtype.is_categorical()
+                || dtype.is_enum()) =>
         {
             use polars_ops::series::SearchSortedSide;
 
