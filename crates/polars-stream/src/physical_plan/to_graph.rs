@@ -1204,12 +1204,12 @@ fn to_graph_rec<'a>(
         ewm_variant @ EwmMean { input, options }
         | ewm_variant @ EwmVar { input, options }
         | ewm_variant @ EwmStd { input, options } => {
-            use arrow::legacy::kernels::ewm::{DynEwmStdState, DynEwmVarState, EwmCovState};
+            use arrow::legacy::kernels::ewm::{
+                EwmCovState, EwmStateUpdate, EwmStdState, EwmVarState,
+            };
             use nodes::ewm::EwmNode;
-            use polars_compute::ewm::mean::{DynEwmMeanState, EwmMeanState};
+            use polars_compute::ewm::mean::EwmMeanState;
             use polars_core::with_match_physical_float_type;
-
-            use crate::nodes::ewm::DynEwmState;
 
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
@@ -1225,9 +1225,9 @@ fn to_graph_rec<'a>(
                             options.ignore_nulls,
                         );
 
-                        let state: DynEwmMeanState = state.into();
+                        let state: Box<dyn EwmStateUpdate> = Box::new(state);
 
-                        EwmNode::new(DynEwmState::Mean(state))
+                        EwmNode::new("ewm-mean", state)
                     })
                 },
                 _ => {
@@ -1240,13 +1240,13 @@ fn to_graph_rec<'a>(
                             options.ignore_nulls,
                         );
 
-                        let state: DynEwmState = match ewm_variant {
-                            EwmVar { .. } => DynEwmState::Var(DynEwmVarState::from(state)),
-                            EwmStd { .. } => DynEwmState::Std(DynEwmStdState::from(state)),
+                        let (name, state): (&'static str, Box<dyn EwmStateUpdate>) = match ewm_variant {
+                            EwmVar { .. } => ("ewm-var", Box::new(EwmVarState::new(state))),
+                            EwmStd { .. } => ("ewm-std", Box::new(EwmStdState::new(state))),
                             _ => unreachable!(),
                         };
 
-                        EwmNode::new(state)
+                        EwmNode::new(name, state)
                     })
                 },
             };

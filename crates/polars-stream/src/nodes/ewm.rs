@@ -1,6 +1,4 @@
-use arrow::array::Array;
-use arrow::legacy::kernels::ewm::{DynEwmStdState, DynEwmVarState};
-use polars_compute::ewm::mean::DynEwmMeanState;
+use arrow::legacy::kernels::ewm::EwmStateUpdate;
 use polars_core::prelude::IntoColumn;
 use polars_core::series::Series;
 use polars_error::PolarsResult;
@@ -11,25 +9,20 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
 
-pub enum DynEwmState {
-    Mean(DynEwmMeanState),
-    Var(DynEwmVarState),
-    Std(DynEwmStdState),
-}
-
 pub struct EwmNode {
-    state: DynEwmState,
+    name: &'static str,
+    state: Box<dyn EwmStateUpdate>,
 }
 
 impl EwmNode {
-    pub fn new(state: DynEwmState) -> Self {
-        Self { state }
+    pub fn new(name: &'static str, state: Box<dyn EwmStateUpdate>) -> Self {
+        Self { name, state }
     }
 }
 
 impl ComputeNode for EwmNode {
     fn name(&self) -> &str {
-        self.state.name()
+        self.name
     }
 
     fn update_state(
@@ -68,10 +61,9 @@ impl ComputeNode for EwmNode {
 
                     *c = Series::from_chunks_and_dtype_unchecked(
                         c.name().clone(),
-                        vec![
-                            self.state
-                                .update(c.as_materialized_series().rechunk().chunks()[0].as_ref()),
-                        ],
+                        vec![self.state.ewm_state_update(
+                            c.as_materialized_series().rechunk().chunks()[0].as_ref(),
+                        )],
                         c.dtype(),
                     )
                     .into_column()
@@ -84,23 +76,5 @@ impl ComputeNode for EwmNode {
 
             Ok(())
         }));
-    }
-}
-
-impl DynEwmState {
-    fn name(&self) -> &str {
-        match self {
-            Self::Mean(_) => "ewm-mean",
-            Self::Var(_) => "ewm-var",
-            Self::Std(_) => "ewm-std",
-        }
-    }
-
-    fn update(&mut self, values: &dyn Array) -> Box<dyn Array> {
-        match self {
-            Self::Mean(state) => state.update(values),
-            Self::Var(state) => state.update(values),
-            Self::Std(state) => state.update(values),
-        }
     }
 }
