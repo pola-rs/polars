@@ -201,6 +201,11 @@ pub fn is_input_independent_rec(
             options: _,
             fmt_str: _,
         }
+        | AExpr::AnonymousStreamingAgg {
+            input,
+            function: _,
+            fmt_str: _,
+        }
         | AExpr::Function {
             input,
             function: _,
@@ -326,6 +331,7 @@ pub fn is_length_preserving_rec(
                 || is_length_preserving_rec(*truthy, arena, cache)
                 || is_length_preserving_rec(*falsy, arena, cache)
         },
+        AExpr::AnonymousStreamingAgg { .. } => false,
         AExpr::AnonymousFunction {
             input,
             function: _,
