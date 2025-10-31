@@ -2,7 +2,7 @@ use std::ops::{AddAssign, DivAssign, MulAssign};
 
 use num_traits::Float;
 
-use crate::array::PrimitiveArray;
+use crate::array::{Array, PrimitiveArray};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
@@ -76,6 +76,17 @@ where
         + std::ops::DivAssign
         + std::ops::MulAssign,
 {
+    pub fn update_var(&mut self, values: &PrimitiveArray<T>) -> PrimitiveArray<T> {
+        self.update_iter(values.iter().map(|x| x.map(|x| (*x, *x))))
+            .collect()
+    }
+
+    pub fn update_std(&mut self, values: &PrimitiveArray<T>) -> PrimitiveArray<T> {
+        self.update_iter(values.iter().map(|x| x.map(|x| (*x, *x))))
+            .map(|x| x.map(|x| x.sqrt()))
+            .collect()
+    }
+
     pub fn update_iter<I>(&mut self, values: I) -> impl Iterator<Item = Option<T>>
     where
         I: IntoIterator<Item = Option<(T, T)>>,
@@ -148,6 +159,66 @@ where
                     }
                 })
         })
+    }
+}
+
+pub enum DynEwmVarState {
+    F32(EwmCovState<f32>),
+    F64(EwmCovState<f64>),
+}
+
+pub enum DynEwmStdState {
+    F32(EwmCovState<f32>),
+    F64(EwmCovState<f64>),
+}
+
+impl DynEwmVarState {
+    pub fn update(&mut self, values: &dyn Array) -> Box<dyn Array> {
+        match self {
+            Self::F32(state) => state
+                .update_var(values.as_any().downcast_ref().unwrap())
+                .boxed(),
+            Self::F64(state) => state
+                .update_var(values.as_any().downcast_ref().unwrap())
+                .boxed(),
+        }
+    }
+}
+
+impl DynEwmStdState {
+    pub fn update(&mut self, values: &dyn Array) -> Box<dyn Array> {
+        match self {
+            Self::F32(state) => state
+                .update_std(values.as_any().downcast_ref().unwrap())
+                .boxed(),
+            Self::F64(state) => state
+                .update_std(values.as_any().downcast_ref().unwrap())
+                .boxed(),
+        }
+    }
+}
+
+impl From<EwmCovState<f32>> for DynEwmVarState {
+    fn from(value: EwmCovState<f32>) -> Self {
+        Self::F32(value)
+    }
+}
+
+impl From<EwmCovState<f64>> for DynEwmVarState {
+    fn from(value: EwmCovState<f64>) -> Self {
+        Self::F64(value)
+    }
+}
+
+impl From<EwmCovState<f32>> for DynEwmStdState {
+    fn from(value: EwmCovState<f32>) -> Self {
+        Self::F32(value)
+    }
+}
+
+impl From<EwmCovState<f64>> for DynEwmStdState {
+    fn from(value: EwmCovState<f64>) -> Self {
+        Self::F64(value)
     }
 }
 

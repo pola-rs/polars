@@ -1201,14 +1201,57 @@ fn to_graph_rec<'a>(
         },
 
         #[cfg(feature = "ewma")]
-        EwmMean { input, options } => {
+        ewm_variant @ EwmMean { input, options }
+        | ewm_variant @ EwmVar { input, options }
+        | ewm_variant @ EwmStd { input, options } => {
+            use arrow::legacy::kernels::ewm::{DynEwmStdState, DynEwmVarState, EwmCovState};
+            use nodes::ewm_mean::EwmNode;
+            use polars_compute::ewm::mean::{DynEwmMeanState, EwmMeanState};
+            use polars_core::with_match_physical_float_type;
+
+            use crate::nodes::ewm_mean::DynEwmState;
+
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
-            ctx.graph.add_node(
-                nodes::ewm_mean::EwmMeanNode::new(dtype.clone(), options),
-                [(input_key, input.port)],
-            )
+
+            let node: EwmNode = match ewm_variant {
+                EwmMean { .. } => {
+                    with_match_physical_float_type!(dtype, |$T| {
+                        let state: EwmMeanState<$T> = EwmMeanState::new(
+                            options.alpha as $T,
+                            options.adjust,
+                            options.min_periods,
+                            options.ignore_nulls,
+                        );
+
+                        let state: DynEwmMeanState = state.into();
+
+                        EwmNode::new(DynEwmState::Mean(state))
+                    })
+                },
+                _ => {
+                    with_match_physical_float_type!(dtype, |$T| {
+                        let state: EwmCovState<$T> = EwmCovState::new(
+                            options.alpha as $T,
+                            options.adjust,
+                            options.bias,
+                            options.min_periods,
+                            options.ignore_nulls,
+                        );
+
+                        let state: DynEwmState = match ewm_variant {
+                            EwmVar { .. } => DynEwmState::Var(DynEwmVarState::from(state)),
+                            EwmStd { .. } => DynEwmState::Std(DynEwmStdState::from(state)),
+                            _ => unreachable!(),
+                        };
+
+                        EwmNode::new(state)
+                    })
+                },
+            };
+
+            ctx.graph.add_node(node, [(input_key, input.port)])
         },
     };
 
