@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
@@ -51,7 +52,7 @@ def test_equal_not_equal() -> None:
     df = pl.DataFrame({"a": [1, None, 3, 6, 5], "b": [1, None, 3, 4, None]})
 
     with pl.SQLContext(frame_data=df) as ctx:
-        out = ctx.execute(
+        res = ctx.execute(
             """
             SELECT
               -- not null-aware
@@ -66,10 +67,10 @@ def test_equal_not_equal() -> None:
             """
         ).collect()
 
-    assert out.select(cs.contains("_aware").null_count().sum()).row(0) == (0, 0, 0)
-    assert out.select(cs.contains("_unaware").null_count().sum()).row(0) == (2, 2, 2)
+    assert res.select(cs.contains("_aware").null_count().sum()).row(0) == (0, 0, 0)
+    assert res.select(cs.contains("_unaware").null_count().sum()).row(0) == (2, 2, 2)
 
-    assert out.to_dict(as_series=False) == {
+    assert res.to_dict(as_series=False) == {
         "1_eq_unaware": [True, None, True, False, None],
         "2_neq_unaware": [False, None, False, True, None],
         "3_neq_unaware": [False, None, False, True, None],
@@ -120,7 +121,7 @@ def test_is_between(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
     ctx = pl.SQLContext(foods1=lf, eager=True)
-    out = ctx.execute(
+    res = ctx.execute(
         """
         SELECT *
         FROM foods1
@@ -128,7 +129,7 @@ def test_is_between(foods_ipc_path: Path) -> None:
         ORDER BY "calories" DESC, "sugars_g" DESC
         """
     )
-    assert out.rows() == [
+    assert res.rows() == [
         ("fruit", 30, 0.0, 5),
         ("vegetables", 30, 0.0, 5),
         ("fruit", 30, 0.0, 3),
@@ -137,7 +138,7 @@ def test_is_between(foods_ipc_path: Path) -> None:
         ("vegetables", 25, 0.0, 2),
         ("vegetables", 22, 0.0, 3),
     ]
-    out = ctx.execute(
+    res = ctx.execute(
         """
         SELECT *
         FROM foods1
@@ -145,7 +146,52 @@ def test_is_between(foods_ipc_path: Path) -> None:
         ORDER BY "calories" ASC
         """
     )
-    assert not any((22 <= cal <= 30) for cal in out["calories"])
+    assert not any((22 <= cal <= 30) for cal in res["calories"])
+
+
+def test_logical_not() -> None:
+    lf = pl.LazyFrame(
+        {
+            "valid": [True, False, None, False, True],
+            "int_code": [1, 0, 2, None, -1],
+        },
+    )
+    res = lf.sql(
+        """
+        SELECT
+          valid,
+          NOT valid AS not_valid,
+          int_code,
+          NOT int_code AS int_code_zero
+        FROM self
+        ORDER BY int_code NULLS FIRST
+        """
+    ).collect()
+    # ┌───────┬───────────┬──────────┬───────────────┐
+    # │ valid ┆ not_valid ┆ int_code ┆ int_code_zero │
+    # │ ---   ┆ ---       ┆ ---      ┆ ---           │
+    # │ bool  ┆ bool      ┆ i64      ┆ bool          │
+    # ╞═══════╪═══════════╪══════════╪═══════════════╡
+    # │ false ┆ true      ┆ null     ┆ null          │
+    # │ true  ┆ false     ┆ -1       ┆ false         │
+    # │ false ┆ true      ┆ 0        ┆ true          │
+    # │ true  ┆ false     ┆ 1        ┆ false         │
+    # │ null  ┆ null      ┆ 2        ┆ false         │
+    # └───────┴───────────┴──────────┴───────────────┘
+    assert res.to_dict(as_series=False) == {
+        "valid": [False, True, False, True, None],
+        "not_valid": [True, False, True, False, None],
+        "int_code": [None, -1, 0, 1, 2],
+        "int_code_zero": [None, False, True, False, False],
+    }
+
+    # expect failure when applying logical 'NOT' to an incompatible dtype
+    for invalid_literal in ("'foo'", "'2026-12-31'::date"):
+        with pytest.raises(
+            InvalidOperationError,
+            match="cast.* to Boolean not supported",
+        ):
+            pl.sql(f"SELECT NOT {invalid_literal}", eager=True)
 
 
 def test_starts_with() -> None:

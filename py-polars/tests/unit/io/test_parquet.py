@@ -603,7 +603,7 @@ def test_decimal_parquet(tmp_path: Path) -> None:
         }
     )
 
-    df = df.with_columns(pl.col("bar").cast(pl.Decimal))
+    df = df.with_columns(pl.col("bar").cast(pl.Decimal(scale=3)))
 
     df.write_parquet(path, statistics=True)
     out = pl.scan_parquet(path).filter(foo=2).collect().to_dict(as_series=False)
@@ -1608,6 +1608,8 @@ def test_predicate_filtering(
         min_size=1,
         max_size=10,
         excluded_dtypes=[
+            pl.Int128,
+            pl.UInt128,
             pl.Decimal,
             pl.Categorical,
             pl.Enum,
@@ -1903,7 +1905,7 @@ def test_empty_parquet() -> None:
 )
 @pytest.mark.write_disk
 def test_row_index_projection_pushdown_18463(
-    tmp_path: Path, strategy: pl.ParallelStrategy
+    tmp_path: Path, strategy: ParallelStrategy
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     f = tmp_path / "test.parquet"
@@ -2141,7 +2143,7 @@ def test_decimal_precision_nested_roundtrip(
 @pytest.mark.may_fail_cloud  # reason: sortedness flag
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
 def test_conserve_sortedness(
-    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: pl.ParallelStrategy
+    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: ParallelStrategy
 ) -> None:
     f = io.BytesIO()
 
@@ -3347,7 +3349,7 @@ def test_field_overwrites_metadata() -> None:
     assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"
 
 
-def multiple_test_sorting_columns() -> None:
+def test_multiple_sorting_columns() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 1, 2, 2, 2],
@@ -3529,3 +3531,71 @@ def test_literal_predicate_23901() -> None:
 
     f.seek(0)
     assert_frame_equal(pl.scan_parquet(f).filter(pl.lit(1) == 1).collect(), df)
+
+
+def test_str_plain_is_in_more_than_4_values_24167() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": ["a"]})
+    pq.write_table(df.to_arrow(), f, use_dictionary=False)
+
+    f.seek(0)
+    lf = pl.scan_parquet(f).filter(pl.col.a.is_in(["a", "y", "z", "w", "x"]))
+
+    assert_frame_equal(
+        lf.collect(),
+        lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+def test_binary_offset_roundtrip() -> None:
+    f = io.BytesIO()
+    pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    ).select(pl.col.a._row_encode()).sink_parquet(f)
+
+    f.seek(0)
+    lf = pl.scan_parquet(f)
+
+    assert "binary[offset]" in str(lf.collect())
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.Series("a", [], pl.Struct([])).to_frame(),
+        pl.Series("a", [{}]).to_frame(),
+        pl.Series("a", [{}, None, {}]).to_frame(),
+        pl.Series("a", [[{}, None], [{}]], pl.List(pl.Struct([]))).to_frame(),
+        pl.Series("a", [[{}, None], None, []], pl.List(pl.Struct([]))).to_frame(),
+        pl.DataFrame(
+            {
+                "a": [{}, None, {}],
+                "b": [1, 2, 3],
+            }
+        ),
+        pl.DataFrame(
+            {
+                "b": [1, 2, 3],
+                "a": [{}, None, {}],
+            }
+        ),
+        pl.DataFrame(
+            {
+                "x": [2, 3, 4],
+                "a": [{}, None, {}],
+                "b": [1, 2, 3],
+            }
+        ),
+    ],
+)
+def test_empty_struct_roundtrip(df: pl.DataFrame, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_ALLOW_PQ_EMPTY_STRUCT", "1")
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))

@@ -1,5 +1,3 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:read]
     use polars::prelude::*;

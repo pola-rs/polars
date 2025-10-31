@@ -376,28 +376,17 @@ impl<'a> CoreReader<'a> {
         // We have to do this after parsing as there can be comments.
         let total_line_count = &RelaxedCell::new_usize(0);
 
-        #[cfg(not(target_family = "wasm"))]
-        let pool;
-        #[cfg(not(target_family = "wasm"))]
-        let pool = if n_threads == POOL.current_num_threads() {
-            &POOL
-        } else {
-            pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(n_threads)
-                .build()
-                .map_err(|_| polars_err!(ComputeError: "could not spawn threads"))?;
-            &pool
-        };
-        #[cfg(target_family = "wasm")]
-        let pool = &POOL;
-
-        let counter = CountLines::new(self.parse_options.quote_char, self.parse_options.eol_char);
+        let counter = CountLines::new(
+            self.parse_options.quote_char,
+            self.parse_options.eol_char,
+            None,
+        );
         let mut total_offset = 0;
         let mut previous_total_offset = 0;
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
-        pool.scope(|s| {
+        POOL.scope(|s| {
             // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };
@@ -502,6 +491,7 @@ impl<'a> CoreReader<'a> {
                 total_bytes_offset += b.len();
             }
         });
+
         let mut results = std::mem::take(&mut *results.lock().unwrap());
         results.sort_unstable_by_key(|k| k.0);
         let mut dfs = results

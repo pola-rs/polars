@@ -7,7 +7,8 @@ from contextlib import suppress
 from datetime import date
 from pathlib import Path
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
+from unittest.mock import Mock, patch
 
 with suppress(ModuleNotFoundError):  # not available on windows
     import adbc_driver_sqlite.dbapi
@@ -128,7 +129,7 @@ class MockResultSet:
 class DatabaseReadTestParams(NamedTuple):
     """Clarify read test params."""
 
-    read_method: str
+    read_method: Literal["read_database", "read_database_uri"]
     connect_using: Any
     expected_dtypes: SchemaDefinition
     expected_dates: list[date | str]
@@ -146,6 +147,7 @@ class ExceptionTestParams(NamedTuple):
     errmsg: str
     engine: str | None = None
     execute_options: dict[str, Any] | None = None
+    pre_execution_query: str | list[str] | None = None
     kwargs: dict[str, Any] | None = None
 
 
@@ -223,7 +225,7 @@ class ExceptionTestParams(NamedTuple):
                 schema_overrides={"id": pl.Int32, "value": pl.Float32},
                 batch_size=1,
             ),
-            id="conn: sqlite3",
+            id="conn: sqlite3 (batched)",
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -282,7 +284,7 @@ class ExceptionTestParams(NamedTuple):
     ],
 )
 def test_read_database(
-    read_method: str,
+    read_method: Literal["read_database", "read_database_uri"],
     connect_using: Any,
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
@@ -342,6 +344,154 @@ def test_read_database(
 
     # note: 'cursor.description' is not reliable when no query
     # data is returned, so no point comparing expected dtypes
+    assert df_empty.columns == ["id", "name", "value", "date"]
+    assert df_empty.shape == (0, 4)
+    assert df_empty["date"].to_list() == []
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    (
+        "read_method",
+        "connect_using",
+        "expected_dtypes",
+        "expected_dates",
+        "schema_overrides",
+        "batch_size",
+    ),
+    [
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: sqlite3.connect(path, detect_types=True),
+                expected_dtypes={
+                    "id": pl.Int32,
+                    "name": pl.String,
+                    "value": pl.Float32,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.Int32, "value": pl.Float32},
+                batch_size=1,
+            ),
+            id="conn: sqlite3",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: create_engine(
+                    f"sqlite:///{path}",
+                    connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
+                ).connect(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                batch_size=1,
+            ),
+            id="conn: sqlalchemy",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=adbc_sqlite_connect,
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="conn: adbc",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=adbc_sqlite_connect,
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.String,
+                    "value": pl.Float64,
+                    "date": pl.String,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+                batch_size=1,
+            ),
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
+            ),
+            id="conn: adbc (ignore batch_size)",
+        ),
+    ],
+)
+def test_read_database_iter_batches(
+    read_method: Literal["read_database"],
+    connect_using: Any,
+    expected_dtypes: dict[str, pl.DataType],
+    expected_dates: list[date | str],
+    schema_overrides: SchemaDict | None,
+    batch_size: int | None,
+    tmp_sqlite_db: Path,
+) -> None:
+    if "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
+        # externally instantiated adbc connections
+        with connect_using(tmp_sqlite_db) as conn:
+            dfs = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data",
+                schema_overrides=schema_overrides,
+                iter_batches=True,
+                batch_size=batch_size,
+            )
+            empty_dfs = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+                schema_overrides=schema_overrides,
+                iter_batches=True,
+                batch_size=batch_size,
+            )
+            # must consume the iterators while the connection is open
+            dfs = iter(list(dfs))
+            empty_dfs = iter(list(empty_dfs))
+    else:
+        # other user-supplied connections
+        dfs = pl.read_database(
+            connection=connect_using(tmp_sqlite_db),
+            query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
+            schema_overrides=schema_overrides,
+            iter_batches=True,
+            batch_size=batch_size,
+        )
+        empty_dfs = pl.read_database(
+            connection=connect_using(tmp_sqlite_db),
+            query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+            schema_overrides=schema_overrides,
+            iter_batches=True,
+            batch_size=batch_size,
+        )
+
+    df: pl.DataFrame = pl.concat(dfs)
+    # validate the expected query return (data and schema)
+    assert df.schema == expected_dtypes
+    assert df.shape == (2, 4)
+    assert df["date"].to_list() == expected_dates
+
+    # some drivers return an empty iterator when there is no result
+    try:
+        df_empty: pl.DataFrame = pl.concat(empty_dfs)
+    except ValueError:
+        return
+    # # note: 'cursor.description' is not reliable when no query
+    # # data is returned, so no point comparing expected dtypes
     assert df_empty.columns == ["id", "name", "value", "date"]
     assert df_empty.shape == (0, 4)
     assert df_empty["date"].to_list() == []
@@ -728,9 +878,36 @@ def test_read_database_uri_parameterised_multiple(
         ("turbodbc", None, False, "fetchallarrow"),
         ("turbodbc", 50_000, False, "fetchallarrow"),
         ("turbodbc", 50_000, True, "fetcharrowbatches"),
-        ("adbc_driver_postgresql", None, False, "fetch_arrow_table"),
-        ("adbc_driver_postgresql", 75_000, False, "fetch_arrow_table"),
-        ("adbc_driver_postgresql", 75_000, True, "fetch_arrow_table"),
+        pytest.param(
+            "adbc_driver_postgresql",
+            None,
+            False,
+            "fetch_arrow",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_postgresql not available on Windows",
+            ),
+        ),
+        pytest.param(
+            "adbc_driver_postgresql",
+            75_000,
+            False,
+            "fetch_arrow",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_postgresql not available on Windows",
+            ),
+        ),
+        pytest.param(
+            "adbc_driver_postgresql",
+            75_000,
+            True,
+            "fetch_record_batch",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc_driver_postgresql not available on Windows",
+            ),
+        ),
     ],
 )
 def test_read_database_mocked(
@@ -740,7 +917,7 @@ def test_read_database_mocked(
     # mock them so we can check that we're calling the expected methods
     arrow = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
 
-    reg = ARROW_DRIVER_REGISTRY.get(driver, {})  # type: ignore[var-annotated]
+    reg = ARROW_DRIVER_REGISTRY.get(driver, [{}])[0]  # type: ignore[var-annotated]
     exact_batch_size = reg.get("exact_batch_size", False)
     repeat_batch_calls = reg.get("repeat_batch_calls", False)
 
@@ -775,6 +952,7 @@ def test_read_database_mocked(
         "errmsg",
         "engine",
         "execute_options",
+        "pre_execution_query",
         "kwargs",
     ),
     [
@@ -795,7 +973,7 @@ def test_read_database_mocked(
                 query=["SELECT * FROM test_data", "SELECT * FROM test_data"],
                 protocol="sqlite",
                 errclass=ValueError,
-                errmsg="only a single SQL query string is accepted for adbc",
+                errmsg="only a single SQL query string is accepted for adbc, got a 'list' type",
                 engine="adbc",
             ),
             id="Unavailable list of queries for adbc",
@@ -806,7 +984,7 @@ def test_read_database_mocked(
                 query="SELECT * FROM test_data",
                 protocol="mysql",
                 errclass=ModuleNotFoundError,
-                errmsg="ADBC 'adbc_driver_mysql.dbapi' driver not detected.",
+                errmsg="ADBC 'adbc_driver_mysql' driver not detected.",
                 engine="adbc",
             ),
             id="Unavailable adbc driver",
@@ -896,6 +1074,18 @@ def test_read_database_mocked(
             ),
             id="Invalid ODBC string",
         ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database_uri",
+                query="SELECT * FROM test_data",
+                protocol="sqlite",
+                errclass=ValueError,
+                errmsg="the 'adbc' engine does not support use of `pre_execution_query`",
+                engine="adbc",
+                pre_execution_query="SET statement_timeout = 2151",
+            ),
+            id="Unavailable `pre_execution_query` for adbc",
+        ),
     ],
 )
 def test_read_database_exceptions(
@@ -906,11 +1096,17 @@ def test_read_database_exceptions(
     errmsg: str,
     engine: DbReadEngine | None,
     execute_options: dict[str, Any] | None,
+    pre_execution_query: str | list[str] | None,
     kwargs: dict[str, Any] | None,
 ) -> None:
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
-        params = {"uri": conn, "query": query, "engine": engine}
+        params = {
+            "uri": conn,
+            "query": query,
+            "engine": engine,
+            "pre_execution_query": pre_execution_query,
+        }
     else:
         params = {"connection": protocol, "query": query}
         if execute_options:
@@ -1054,3 +1250,69 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
             pl.Series([row._mapping for row in query_result]),
         ):
             assert_series_equal(expected_series, s)
+
+
+@patch("polars.io.database._utils.from_arrow")
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_pre_execution_query_success(
+    import_mock: Mock, from_arrow_mock: Mock
+) -> None:
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.2"
+
+    import_mock.return_value = cx_mock
+
+    pre_execution_query = "SET statement_timeout = 2151"
+
+    pl.read_database_uri(
+        query="SELECT 1",
+        uri="mysql://test",
+        engine="connectorx",
+        pre_execution_query=pre_execution_query,
+    )
+
+    assert (
+        cx_mock.read_sql.call_args.kwargs["pre_execution_query"] == pre_execution_query
+    )
+
+
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_pre_execution_not_supported_exception(
+    import_mock: Mock,
+) -> None:
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.0"
+
+    import_mock.return_value = cx_mock
+
+    with (
+        pytest.raises(
+            ValueError,
+            match="'pre_execution_query' is only supported in connectorx version 0.4.2 or later",
+        ),
+    ):
+        pl.read_database_uri(
+            query="SELECT 1",
+            uri="mysql://test",
+            engine="connectorx",
+            pre_execution_query="SET statement_timeout = 2151",
+        )
+
+
+@patch("polars.io.database._utils.from_arrow")
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_pre_execution_query_not_supported_success(
+    import_mock: Mock, from_arrow_mock: Mock
+) -> None:
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.0"
+
+    import_mock.return_value = cx_mock
+
+    pl.read_database_uri(
+        query="SELECT 1",
+        uri="mysql://test",
+        engine="connectorx",
+    )
+
+    assert cx_mock.read_sql.call_args.kwargs.get("pre_execution_query") is None

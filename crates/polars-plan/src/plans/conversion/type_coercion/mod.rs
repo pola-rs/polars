@@ -65,7 +65,11 @@ fn get_aexpr_and_type<'a>(
     input_schema: &Schema,
 ) -> Option<(&'a AExpr, DataType)> {
     let ae = expr_arena.get(e);
-    Some((ae, ae.get_dtype(input_schema, expr_arena).ok()?))
+    Some((
+        ae,
+        ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+            .ok()?,
+    ))
 }
 
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
@@ -100,7 +104,7 @@ impl OptimizationRule for TypeCoercionRule {
                     if let CastOptions::Strict = options {
                         let cast_from = expr_arena
                             .get(input_expr)
-                            .to_field(schema, expr_arena)?
+                            .to_field(&ToFieldContext::new(expr_arena, schema))?
                             .dtype;
                         let cast_to = &dtype;
 
@@ -111,6 +115,8 @@ impl OptimizationRule for TypeCoercionRule {
                             datetime_nanoseconds_downcast: true,
                             datetime_microseconds_downcast: true,
                             datetime_convert_timezone: true,
+                            null_upcast: true,
+                            categorical_to_string: true,
                             missing_struct_fields: MissingColumnsPolicy::Insert,
                             extra_struct_fields: ExtraColumnsPolicy::Ignore,
                         }
@@ -300,6 +306,49 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            AExpr::Function {
+                ref function,
+                ref input,
+                options,
+            } if matches!(
+                function,
+                IRFunctionExpr::Boolean(
+                    IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. }
+                )
+            ) =>
+            {
+                // Ensure the input to boolean aggregations is boolean; try cast if possible.
+                let (_, in_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+
+                if in_dtype.is_bool() {
+                    return Ok(None);
+                }
+
+                // If input cannot be cast to boolean, raise a error.
+                polars_ensure!(
+                    in_dtype.can_cast_to(&DataType::Boolean) != Some(false),
+                    InvalidOperation: "expected boolean input for '{}()' (got {})",
+                    function,
+                    in_dtype
+                );
+
+                let function = function.clone();
+                let mut input = input.clone();
+                cast_expr_ir(
+                    &mut input[0],
+                    &in_dtype,
+                    &DataType::Boolean,
+                    expr_arena,
+                    CastOptions::NonStrict,
+                )?;
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
             // shift and fill should only cast left and fill value to super type.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,
@@ -345,6 +394,54 @@ impl OptimizationRule for TypeCoercionRule {
                 Some(AExpr::Function {
                     function: IRFunctionExpr::ShiftAndFill,
                     input,
+                    options,
+                })
+            },
+            #[cfg(feature = "ewma")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::EwmMean {
+                        options: ewm_options,
+                    },
+                ref input,
+                options,
+            } => {
+                polars_ensure!(
+                    (0.0..=1.0).contains(&ewm_options.alpha),
+                    ComputeError: "alpha must be in [0; 1]"
+                );
+
+                let input_expr = match &input.as_slice() {
+                    &[first] => first,
+                    v => polars_bail!(
+                        ComputeError:
+                        "ewm_mean requires 1 input, got {} (input: {:?})",
+                        v.len(),
+                        v
+                    ),
+                };
+
+                let (_, dtype) = get_aexpr_and_type(expr_arena, input_expr.node(), schema).unwrap();
+
+                if dtype.is_float() {
+                    return Ok(None);
+                }
+
+                let input_expr = ExprIR::from_node(
+                    expr_arena.add(AExpr::Cast {
+                        expr: input_expr.node(),
+                        dtype: DataType::Float64,
+                        // FIXME: Non-strict to match legacy execution behavior, but should be strict.
+                        options: CastOptions::NonStrict,
+                    }),
+                    expr_arena,
+                );
+
+                Some(AExpr::Function {
+                    function: IRFunctionExpr::EwmMean {
+                        options: ewm_options,
+                    },
+                    input: vec![input_expr],
                     options,
                 })
             },
@@ -420,10 +517,7 @@ impl OptimizationRule for TypeCoercionRule {
                         },
                     }
 
-                    if matches!(
-                        super_type,
-                        DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc)
-                    ) {
+                    if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
                         raise_supertype(&function, &input, schema, expr_arena)?;
                         unreachable!()
                     }
@@ -456,40 +550,51 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                for (i, expr) in input.iter().enumerate() {
-                    let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
+                let no_cast_needed = input.iter().all(|expr| {
+                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
+                    matches!(dtype, DataType::Int64 | DataType::Float64)
+                });
+                if no_cast_needed {
+                    return Ok(None);
+                }
 
-                    if !matches!(dtype, DataType::Int64) {
-                        let function = function.clone();
-                        let mut input = input.to_vec();
-                        cast_expr_ir(
-                            &mut input[i],
-                            &dtype,
-                            &DataType::Int64,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
-                        for expr in &mut input[i + 1..] {
-                            let (_, dtype) =
-                                unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
+                let function = function.clone();
+                let input = input.clone().into_iter().enumerate().map(|(i, expr)| {
+                    let mut expr = expr.to_owned();
+                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
+                    Ok(match &dtype {
+                        DataType::Int64 | DataType::Float64 => expr,
+                        dt if dt.is_integer() => {
                             cast_expr_ir(
-                                expr,
+                                &mut expr,
                                 &dtype,
                                 &DataType::Int64,
                                 expr_arena,
                                 CastOptions::Strict,
                             )?;
-                        }
+                            expr
+                        },
+                        dt if dt.is_float() => {
+                            cast_expr_ir(
+                                &mut expr,
+                                &dtype,
+                                &DataType::Float64,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                            expr
+                        },
+                        dt => {
+                            polars_bail!(InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration")
+                        },
+                    })
+                }).try_collect()?;
 
-                        return Ok(Some(AExpr::Function {
-                            function,
-                            input,
-                            options,
-                        }));
-                    }
-                }
-
-                None
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
             },
             #[cfg(feature = "list_gather")]
             AExpr::Function {
@@ -796,6 +901,34 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
+                ref input,
+                options,
+            } => {
+                let (_, type_input) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+
+                if matches!(type_input, DataType::Float64) {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let mut input = input.clone();
+                cast_expr_ir(
+                    &mut input[0],
+                    &type_input,
+                    &DataType::Float64,
+                    expr_arena,
+                    CastOptions::Strict,
+                )?;
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
             AExpr::Slice { offset, length, .. } => {
                 let (_, offset_dtype) = unpack!(get_aexpr_and_type(expr_arena, offset, schema));
                 polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice expression, not {}", offset_dtype);
@@ -827,7 +960,7 @@ fn inline_or_prune_cast(
 
             match op {
                 LogicalOr | LogicalAnd => {
-                    let field = aexpr.to_field(input_schema, expr_arena)?;
+                    let field = aexpr.to_field(&ToFieldContext::new(expr_arena, input_schema))?;
                     if field.dtype == *dtype {
                         return Ok(Some(aexpr.clone()));
                     }

@@ -35,10 +35,11 @@ impl GroupedReduction for LenReduce {
     unsafe fn update_groups_while_evicting(
         &mut self,
         _values: &Column,
-        _subset: &[IdxSize],
+        subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(subset.len() == group_idxs.len());
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for g in group_idxs.iter() {

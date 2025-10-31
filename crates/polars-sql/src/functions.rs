@@ -7,7 +7,7 @@ use polars_core::prelude::{
 use polars_lazy::dsl::Expr;
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
-use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
+use polars_plan::dsl::{coalesce, concat_str, element, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
 use polars_utils::pl_str::PlSmallStr;
@@ -50,6 +50,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// Returns the bitwise OR of the input expressions.
     /// ```sql
     /// SELECT BIT_OR(column_1, column_2) FROM df;
+    /// ```
+    BitNot,
+    /// SQL 'bit_not' function.
+    /// Returns the bitwise Not of the input expression.
+    /// ```sql
+    /// SELECT BIT_Not(column_1) FROM df;
     /// ```
     BitOr,
     /// SQL 'bit_xor' function.
@@ -821,6 +827,7 @@ impl PolarsSQLFunctions {
             "bit_and" | "bitand" => Self::BitAnd,
             #[cfg(feature = "bitwise")]
             "bit_count" | "bitcount" => Self::BitCount,
+            "bit_not" | "bitnot" => Self::BitNot,
             "bit_or" | "bitor" => Self::BitOr,
             "bit_xor" | "bitxor" | "xor" => Self::BitXor,
 
@@ -968,6 +975,8 @@ impl PolarsSQLFunctions {
 impl SQLFunctionVisitor<'_> {
     pub(crate) fn visit_function(&mut self) -> PolarsResult<Expr> {
         use PolarsSQLFunctions::*;
+        use polars_lazy::prelude::Literal;
+
         let function_name = PolarsSQLFunctions::try_from_sql(self.func, self.ctx)?;
         let function = self.func;
 
@@ -982,6 +991,9 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLInterface: "'IGNORE|RESPECT NULLS' is not currently supported")
         }
 
+        let log_with_base =
+            |e: Expr, base: f64| e.log(LiteralValue::Dyn(DynLiteralValue::Float(base)).lit());
+
         match function_name {
             // ----
             // Bitwise functions
@@ -989,6 +1001,7 @@ impl SQLFunctionVisitor<'_> {
             BitAnd => self.visit_binary::<Expr>(Expr::and),
             #[cfg(feature = "bitwise")]
             BitCount => self.visit_unary(Expr::bitwise_count_ones),
+            BitNot => self.visit_unary(Expr::not),
             BitOr => self.visit_binary::<Expr>(Expr::or),
             BitXor => self.visit_binary::<Expr>(Expr::xor),
 
@@ -1001,11 +1014,11 @@ impl SQLFunctionVisitor<'_> {
             Div => self.visit_binary(|e, d| e.floor_div(d).cast(DataType::Int64)),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
-            Ln => self.visit_unary(|e| e.log(std::f64::consts::E)),
+            Ln => self.visit_unary(|e| log_with_base(e, std::f64::consts::E)),
             Log => self.visit_binary(Expr::log),
-            Log10 => self.visit_unary(|e| e.log(10.0)),
+            Log10 => self.visit_unary(|e| log_with_base(e, 10.0)),
             Log1p => self.visit_unary(Expr::log1p),
-            Log2 => self.visit_unary(|e| e.log(2.0)),
+            Log2 => self.visit_unary(|e| log_with_base(e, 2.0)),
             Pi => self.visit_nullary(Expr::pi),
             Mod => self.visit_binary(|e1, e2| e1 % e2),
             Pow => self.visit_binary::<Expr>(Expr::pow),
@@ -1806,7 +1819,7 @@ impl SQLFunctionVisitor<'_> {
                     } else {
                         e.cast(DataType::List(Box::from(DataType::String)))
                             .list()
-                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())))
+                            .eval(element().fill_null(lit(lv.extract_str().unwrap())))
                             .list()
                             .join(sep, false)
                     })

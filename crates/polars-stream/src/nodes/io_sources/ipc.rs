@@ -60,7 +60,7 @@ pub mod builder {
         fn reader_capabilities(&self) -> ReaderCapabilities {
             use ReaderCapabilities as RC;
 
-            RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
+            RC::NEEDS_FILE_CACHE_INIT | RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
         }
 
         fn build_file_reader(
@@ -98,7 +98,7 @@ pub mod builder {
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
     "\
 IPC file produces more than 2^32 rows; \
-consider compiling with polars-bigidx feature (polars-u64-idx package on python)",
+consider compiling with polars-bigidx feature (pip install polars[rt64])",
 ));
 
 struct IpcFileReader {
@@ -156,7 +156,7 @@ impl FileReader for IpcFileReader {
         // TODO: Streaming reads
         if let ScanSourceRef::Path(addr) = self.scan_source.as_scan_source_ref() {
             polars_io::file_cache::init_entries_from_uri_list(
-                &[Arc::from(addr.to_str())],
+                [Arc::from(addr.to_str())].into_iter(),
                 self.cloud_options.as_deref(),
             )?;
         }

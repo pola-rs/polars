@@ -365,6 +365,7 @@ impl CommentPrefix {
 
     /// Creates a new `CommentPrefix` from a `&str`.
     pub fn new_from_str(prefix: &str) -> Self {
+        assert!(!prefix.contains("\n"));
         if prefix.len() == 1 && prefix.chars().next().unwrap().is_ascii() {
             let c = prefix.as_bytes()[0];
             CommentPrefix::Single(c)

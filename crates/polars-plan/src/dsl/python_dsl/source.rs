@@ -21,12 +21,13 @@ pub struct PythonOptionsDsl {
     pub schema_fn: Option<SpecialEq<Arc<Either<PythonFunction, SchemaRef>>>>,
     pub python_source: PythonScanSource,
     pub validate_schema: bool,
+    pub is_pure: bool,
 }
 
 impl PythonOptionsDsl {
     pub fn get_schema(&self) -> PolarsResult<SchemaRef> {
         match self.schema_fn.as_ref().expect("should be set").as_ref() {
-            Either::Left(func) => Python::with_gil(|py| {
+            Either::Left(func) => Python::attach(|py| {
                 let schema = func
                     .0
                     .call0(py)
@@ -38,7 +39,7 @@ impl PythonOptionsDsl {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum PythonScanSource {

@@ -152,6 +152,9 @@ impl PyExpr {
     fn last(&self) -> Self {
         self.inner.clone().last().into()
     }
+    fn item(&self, allow_empty: bool) -> Self {
+        self.inner.clone().item(allow_empty).into()
+    }
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
     }
@@ -453,10 +456,7 @@ impl PyExpr {
     }
 
     fn rechunk(&self) -> Self {
-        self.inner
-            .clone()
-            .map(|s| Ok(s.rechunk()), |_, f| Ok(f.clone()))
-            .into()
+        self.inner.clone().rechunk().into()
     }
 
     fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
@@ -847,8 +847,8 @@ impl PyExpr {
         self.inner.clone().all(ignore_nulls).into()
     }
 
-    fn log(&self, base: f64) -> Self {
-        self.inner.clone().log(base).into()
+    fn log(&self, base: PyExpr) -> Self {
+        self.inner.clone().log(base.inner).into()
     }
 
     fn log1p(&self) -> Self {

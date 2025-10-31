@@ -37,6 +37,17 @@ impl HivePartitionsDf {
         self.0 = self.0.select(projected_schema.iter_names_cloned()).unwrap();
     }
 
+    /// Filter the columns to those contained in `projected_columns`.
+    pub fn filter_columns(&self, projected_columns: &Schema) -> Self {
+        self.df()
+            .get_columns()
+            .iter()
+            .filter(|c| projected_columns.contains(c.name()))
+            .cloned()
+            .collect::<DataFrame>()
+            .into()
+    }
+
     pub fn take_indices(&self, row_indexes: &[IdxSize]) -> Self {
         if !row_indexes.is_empty() {
             let mut max_idx = 0;
@@ -211,7 +222,7 @@ pub fn hive_partitions_from_paths(
 
             let buf = buffers.get_mut(index).unwrap();
 
-            if !value.is_empty() && value != "__HIVE_DEFAULT_PARTITION__" {
+            if value != "__HIVE_DEFAULT_PARTITION__" {
                 buf.add(value.as_bytes(), false, false, false)?;
             } else {
                 buf.add_null(false);

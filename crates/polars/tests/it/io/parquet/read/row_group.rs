@@ -115,7 +115,7 @@ pub fn to_deserializer(
     columns: Vec<(&ColumnChunkMetadata, Vec<u8>)>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<Box<dyn Array>> {
+) -> PolarsResult<Vec<Box<dyn Array>>> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
@@ -151,7 +151,7 @@ pub fn read_columns_many<R: Read + Seek>(
     row_group: &RowGroupMetadata,
     fields: &ArrowSchema,
     filter: Option<Filter>,
-) -> PolarsResult<Vec<Box<dyn Array>>> {
+) -> PolarsResult<Vec<Vec<Box<dyn Array>>>> {
     // reads all the necessary columns for all fields from the row group
     // This operation is IO-bounded `O(C)` where C is the number of columns in the row group
     let field_columns = fields

@@ -7,13 +7,13 @@ pub use serde_wrap::{
 
 /// Wrapper around PyObject from pyo3 with additional trait impls.
 #[derive(Debug)]
-pub struct PythonObject(pub PyObject);
+pub struct PythonObject(pub Py<PyAny>);
 // Note: We have this because the struct itself used to be called `PythonFunction`, so it's
 // referred to as such from a lot of places.
 pub type PythonFunction = PythonObject;
 
 impl std::ops::Deref for PythonObject {
-    type Target = PyObject;
+    type Target = Py<PyAny>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -28,12 +28,12 @@ impl std::ops::DerefMut for PythonObject {
 
 impl Clone for PythonObject {
     fn clone(&self) -> Self {
-        Python::with_gil(|py| Self(self.0.clone_ref(py)))
+        Python::attach(|py| Self(self.0.clone_ref(py)))
     }
 }
 
-impl From<PyObject> for PythonObject {
-    fn from(value: PyObject) -> Self {
+impl From<Py<PyAny>> for PythonObject {
+    fn from(value: Py<PyAny>) -> Self {
         Self(value)
     }
 }
@@ -62,7 +62,7 @@ impl Eq for PythonObject {}
 
 impl PartialEq for PythonObject {
     fn eq(&self, other: &Self) -> bool {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let eq = self.0.getattr(py, "__eq__").unwrap();
             eq.call1(py, (other.0.clone_ref(py),))
                 .unwrap()
@@ -213,7 +213,7 @@ mod serde_wrap {
 
 /// Get the [minor, micro] Python3 version from the `sys` module.
 fn get_python3_version() -> [u8; 2] {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let version_info = PyModule::import(py, "sys")
             .unwrap()
             .getattr("version_info")

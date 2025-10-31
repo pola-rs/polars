@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, DuplicateError, UnstableWarning
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    PanicException,
+    UnstableWarning,
+)
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
@@ -261,10 +268,10 @@ def test_from_arrow_with_bigquery_metadata() -> None:
 
 
 def test_from_optional_not_available() -> None:
-    from polars.dependencies import _LazyModule
+    from polars._dependencies import _LazyModule
 
     # proxy module is created dynamically if the required module is not available
-    # (see the polars.dependencies source code for additional detail/comments)
+    # (see the polars._dependencies source code for additional detail/comments)
 
     np = _LazyModule("numpy", module_available=False)
     with pytest.raises(ImportError, match=r"np\.array requires 'numpy'"):
@@ -951,7 +958,10 @@ def test_from_arrow_20271() -> None:
         pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
     )
     assert isinstance(df, pl.DataFrame)
-    assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
+    assert_series_equal(
+        df.to_series(),
+        pl.Series("b", ["D", "E"], pl.Categorical),
+    )
 
 
 def test_to_arrow_empty_chunks_20627() -> None:
@@ -968,12 +978,7 @@ def test_from_arrow_recorbatch() -> None:
     record_batch = pa.RecordBatch.from_arrays([n_legs, animals], names=names)
     assert_frame_equal(
         pl.DataFrame(record_batch),
-        pl.DataFrame(
-            {
-                "n_legs": n_legs,
-                "animals": animals,
-            }
-        ),
+        pl.DataFrame({"n_legs": n_legs, "animals": animals}),
     )
 
 
@@ -1040,7 +1045,6 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
     )
 
     out = pl.DataFrame(arrow_tbl)
-
     assert_frame_equal(out, expect)
 
 
@@ -1052,6 +1056,11 @@ def test_schema_constructor_from_schema_capsule() -> None:
     assert pl.Schema(arrow_schema) == {
         "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
     }
+
+    # Test __arrow_c_schema__ implementation on `pl.Schema`
+    assert pa.schema(pl.Schema({"x": pl.Int32})) == pa.schema(
+        [pa.field("x", pa.int32())]
+    )
 
     arrow_schema = pa.schema([pa.field("a", pa.int32()), pa.field("a", pa.int32())])
 
@@ -1077,3 +1086,312 @@ def test_schema_constructor_from_schema_capsule() -> None:
         match="iterable passed to pl.Schema contained duplicate name 'a'",
     ):
         pl.Schema([pa.field("a", pa.int32()), pa.field("a", pa.int64())])
+
+
+def test_to_arrow_24142() -> None:
+    df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
+    df.to_arrow(compat_level=CompatLevel.oldest())
+
+
+def test_pycapsule_stream_interface_all_types() -> None:
+    """Test all data types via Arrow C Stream PyCapsule interface."""
+    import datetime
+    from decimal import Decimal
+
+    df = pl.DataFrame(
+        [
+            pl.Series("bool", [True, False, None], dtype=pl.Boolean),
+            pl.Series("int8", [1, 2, None], dtype=pl.Int8),
+            pl.Series("int16", [1, 2, None], dtype=pl.Int16),
+            pl.Series("int32", [1, 2, None], dtype=pl.Int32),
+            pl.Series("int64", [1, 2, None], dtype=pl.Int64),
+            pl.Series("uint8", [1, 2, None], dtype=pl.UInt8),
+            pl.Series("uint16", [1, 2, None], dtype=pl.UInt16),
+            pl.Series("uint32", [1, 2, None], dtype=pl.UInt32),
+            pl.Series("uint64", [1, 2, None], dtype=pl.UInt64),
+            pl.Series(
+                "float32",
+                [1.100000023841858, 2.200000047683716, None],
+                dtype=pl.Float32,
+            ),
+            pl.Series("float64", [1.1, 2.2, None], dtype=pl.Float64),
+            pl.Series("string", ["hello", "world", None], dtype=pl.String),
+            pl.Series("binary", [b"hello", b"world", None], dtype=pl.Binary),
+            pl.Series(
+                "decimal",
+                [Decimal("1.23"), Decimal("4.56"), None],
+                dtype=pl.Decimal(precision=10, scale=2),
+            ),
+            pl.Series(
+                "date",
+                [datetime.date(2023, 1, 1), datetime.date(2023, 1, 2), None],
+                dtype=pl.Date,
+            ),
+            pl.Series(
+                "datetime",
+                [
+                    datetime.datetime(2023, 1, 1, 12, 0),
+                    datetime.datetime(2023, 1, 2, 13, 30),
+                    None,
+                ],
+                dtype=pl.Datetime(time_unit="us", time_zone=None),
+            ),
+            pl.Series(
+                "time",
+                [datetime.time(12, 0), datetime.time(13, 30), None],
+                dtype=pl.Time,
+            ),
+            pl.Series(
+                "duration_us",
+                [datetime.timedelta(days=1), datetime.timedelta(seconds=7200), None],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+            pl.Series(
+                "duration_ms",
+                [datetime.timedelta(microseconds=100000), datetime.timedelta(0), None],
+                dtype=pl.Duration(time_unit="ms"),
+            ),
+            pl.Series(
+                "duration_ns",
+                [
+                    datetime.timedelta(seconds=1),
+                    datetime.timedelta(microseconds=1000),
+                    None,
+                ],
+                dtype=pl.Duration(time_unit="ns"),
+            ),
+            pl.Series(
+                "categorical", ["apple", "banana", "apple"], dtype=pl.Categorical
+            ),
+            pl.Series(
+                "categorical_named",
+                ["apple", "banana", "apple"],
+                dtype=pl.Categorical(pl.Categories(name="test")),
+            ),
+        ]
+    )
+
+    assert_frame_equal(
+        df.map_columns(
+            pl.selectors.all(), lambda s: pl.Series(PyCapsuleStreamHolder(s))
+        ),
+        df,
+    )
+
+    assert_frame_equal(
+        df.map_columns(
+            pl.selectors.all(),
+            lambda s: pl.Series(
+                PyCapsuleStreamHolder(pl.select(pl.struct(pl.lit(s))).to_series())
+            )
+            .struct.unnest()
+            .to_series(),
+        ),
+        df,
+    )
+
+    assert_frame_equal(
+        df.map_columns(
+            pl.selectors.all(),
+            lambda s: pl.Series(PyCapsuleStreamHolder(s.implode())).explode(),
+        ),
+        df,
+    )
+
+    assert_frame_equal(
+        df.map_columns(
+            pl.selectors.all(),
+            lambda s: pl.Series(PyCapsuleStreamHolder(s.reshape((1, 1)))).reshape((1,)),
+        ),
+        df,
+    )
+
+    assert_frame_equal(pl.DataFrame(PyCapsuleStreamHolder(df)), df)
+    assert_frame_equal(
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.struct("*")))).unnest("*"), df
+    )
+    assert_frame_equal(
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().implode()))).explode("*"),
+        df,
+    )
+    assert_frame_equal(
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().reshape((1, 1))))).select(
+            pl.all().reshape((1,))
+        ),
+        df,
+    )
+
+
+def pyarrow_table_to_ipc_bytes(tbl: pa.Table) -> bytes:
+    f = io.BytesIO()
+    batches = tbl.to_batches()
+
+    with pa.ipc.new_file(f, batches[0].schema) as writer:
+        for batch in batches:
+            writer.write_batch(batch)
+
+    return f.getvalue()
+
+
+@pytest.mark.write_disk
+def test_month_day_nano_from_ffi_15969(monkeypatch: pytest.MonkeyPatch) -> None:
+    import datetime
+
+    def new_interval_scalar(months: int, days: int, nanoseconds: int) -> pa.Scalar:
+        return pa.scalar((months, days, nanoseconds), type=pa.month_day_nano_interval())
+
+    arrow_tbl = pa.Table.from_pydict(
+        {
+            "interval": [
+                new_interval_scalar(1, 0, 0),
+                new_interval_scalar(0, 1, 0),
+                new_interval_scalar(0, 0, 1_000),
+                new_interval_scalar(1, 1, 1_000_001_000),
+                new_interval_scalar(-1, 0, 0),
+                new_interval_scalar(0, -1, 0),
+                new_interval_scalar(0, 0, -1_000),
+                new_interval_scalar(-1, -1, -1_000_001_000),
+                new_interval_scalar(3558, 0, 0),
+                new_interval_scalar(-3558, 0, 0),
+                new_interval_scalar(1, -1, 1_999_999_000),
+            ]
+        },
+        schema=pa.schema([pa.field("interval", pa.month_day_nano_interval())]),
+    )
+
+    ipc_bytes = pyarrow_table_to_ipc_bytes(arrow_tbl)
+
+    import_err_msg = (
+        "could not import from `month_day_nano_interval` type. "
+        "Hint: This can be imported by setting "
+        "POLARS_IMPORT_INTERVAL_AS_STRUCT=1 in the environment. "
+        "Note however that this is unstable functionality "
+        "that may change at any time."
+    )
+
+    with pytest.raises(PanicException, match=import_err_msg):
+        pl.scan_ipc(ipc_bytes).collect_schema()
+
+    with pytest.raises(PanicException, match=import_err_msg):
+        pl.scan_ipc(ipc_bytes).collect()
+
+    with pytest.raises(PanicException, match=import_err_msg):
+        pl.DataFrame(
+            pa.Table.from_pydict(
+                {"interval": pa.array([], type=pa.month_day_nano_interval())}
+            )
+        )
+
+    with pytest.raises(ComputeError, match=import_err_msg):
+        pl.Series(pa.array([], type=pa.month_day_nano_interval()))
+
+    monkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
+
+    expect = pl.DataFrame(
+        [
+            pl.Series(
+                "interval",
+                [
+                    {"months": 1, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": 0, "days": 1, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 0,
+                        "days": 0,
+                        "nanoseconds": datetime.timedelta(microseconds=1),
+                    },
+                    {
+                        "months": 1,
+                        "days": 1,
+                        "nanoseconds": datetime.timedelta(seconds=1, microseconds=1),
+                    },
+                    {"months": -1, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": 0, "days": -1, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 0,
+                        "days": 0,
+                        "nanoseconds": datetime.timedelta(
+                            days=-1, seconds=86399, microseconds=999999
+                        ),
+                    },
+                    {
+                        "months": -1,
+                        "days": -1,
+                        "nanoseconds": datetime.timedelta(
+                            days=-1, seconds=86398, microseconds=999999
+                        ),
+                    },
+                    {"months": 3558, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {"months": -3558, "days": 0, "nanoseconds": datetime.timedelta(0)},
+                    {
+                        "months": 1,
+                        "days": -1,
+                        "nanoseconds": datetime.timedelta(
+                            seconds=1, microseconds=999999
+                        ),
+                    },
+                ],
+                dtype=pl.Struct(
+                    {
+                        "months": pl.Int32,
+                        "days": pl.Int32,
+                        "nanoseconds": pl.Duration(time_unit="ns"),
+                    }
+                ),
+            ),
+        ]
+    )
+
+    assert_frame_equal(pl.DataFrame(arrow_tbl), expect)
+    assert_series_equal(
+        pl.Series(arrow_tbl.column(0)).alias("interval"), expect.to_series()
+    )
+
+    # Test IPC scan
+    assert pl.scan_ipc(ipc_bytes).collect_schema() == {
+        "interval": pl.Struct(
+            {
+                "months": pl.Int32,
+                "days": pl.Int32,
+                "nanoseconds": pl.Duration(time_unit="ns"),
+            }
+        )
+    }
+    assert_frame_equal(pl.scan_ipc(ipc_bytes).collect(), expect)
+
+    assert_frame_equal(
+        pl.DataFrame(
+            pa.Table.from_pydict(
+                {"interval": pa.array([], type=pa.month_day_nano_interval())}
+            )
+        ),
+        pl.DataFrame(
+            schema={
+                "interval": pl.Struct(
+                    {
+                        "months": pl.Int32,
+                        "days": pl.Int32,
+                        "nanoseconds": pl.Duration(time_unit="ns"),
+                    }
+                )
+            }
+        ),
+    )
+
+    assert_series_equal(
+        pl.Series(pa.array([], type=pa.month_day_nano_interval())),
+        pl.Series(
+            dtype=pl.Struct(
+                {
+                    "months": pl.Int32,
+                    "days": pl.Int32,
+                    "nanoseconds": pl.Duration(time_unit="ns"),
+                }
+            )
+        ),
+    )
+
+    f = io.BytesIO()
+
+    # TODO: Add Parquet round-trip test if this starts working.
+    with pytest.raises(pa.ArrowNotImplementedError):
+        pq.write_table(arrow_tbl, f)

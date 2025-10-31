@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn binary() -> ParquetResult<()> {
-        let iter = vec![
+        let iter = [
             BinaryStatistics {
                 primitive_type: PrimitiveType::from_physical("bla".into(), PhysicalType::ByteArray),
                 null_count: Some(0),
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn fixed_len_binary() -> ParquetResult<()> {
-        let iter = vec![
+        let iter = [
             FixedLenStatistics {
                 primitive_type: PrimitiveType::from_physical(
                     "bla".into(),

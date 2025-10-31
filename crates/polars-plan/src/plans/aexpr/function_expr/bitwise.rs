@@ -1,12 +1,10 @@
 use std::fmt;
-use std::sync::Arc;
 
 use polars_core::prelude::*;
 use strum_macros::IntoStaticStr;
 
-use super::{ColumnsUdf, SpecialEq};
-use crate::map;
 use crate::plans::aexpr::function_expr::{FieldsMapper, FunctionOptions};
+use crate::prelude::FunctionFlags;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, IntoStaticStr)]
@@ -27,56 +25,10 @@ pub enum IRBitwiseFunction {
     Xor,
 }
 
-impl fmt::Display for IRBitwiseFunction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        use IRBitwiseFunction as B;
-
-        let s = match self {
-            B::CountOnes => "count_ones",
-            B::CountZeros => "count_zeros",
-            B::LeadingOnes => "leading_ones",
-            B::LeadingZeros => "leading_zeros",
-            B::TrailingOnes => "trailing_ones",
-            B::TrailingZeros => "trailing_zeros",
-
-            B::And => "and",
-            B::Or => "or",
-            B::Xor => "xor",
-        };
-
-        f.write_str(s)
-    }
-}
-
-impl From<IRBitwiseFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
-    fn from(func: IRBitwiseFunction) -> Self {
-        use IRBitwiseFunction as B;
-
-        match func {
-            B::CountOnes => map!(count_ones),
-            B::CountZeros => map!(count_zeros),
-            B::LeadingOnes => map!(leading_ones),
-            B::LeadingZeros => map!(leading_zeros),
-            B::TrailingOnes => map!(trailing_ones),
-            B::TrailingZeros => map!(trailing_zeros),
-
-            B::And => map!(reduce_and),
-            B::Or => map!(reduce_or),
-            B::Xor => map!(reduce_xor),
-        }
-    }
-}
-
 impl IRBitwiseFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         mapper.try_map_dtype(|dtype| {
-            let is_valid = match dtype {
-                DataType::Boolean => true,
-                dt if dt.is_integer() => true,
-                dt if dt.is_float() => true,
-                _ => false,
-            };
-
+            let is_valid = dtype.is_bool() || dtype.is_integer();
             if !is_valid {
                 polars_bail!(InvalidOperation: "dtype {} not supported in '{}' operation", dtype, self);
             }
@@ -104,43 +56,29 @@ impl IRBitwiseFunction {
             | B::LeadingZeros
             | B::TrailingOnes
             | B::TrailingZeros => FunctionOptions::elementwise(),
-            B::And | B::Or | B::Xor => FunctionOptions::aggregation(),
+            B::And | B::Or | B::Xor => FunctionOptions::aggregation()
+                .with_flags(|f| f | FunctionFlags::NON_ORDER_OBSERVING),
         }
     }
 }
 
-fn count_ones(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::count_ones)
-}
+impl fmt::Display for IRBitwiseFunction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        use IRBitwiseFunction as B;
 
-fn count_zeros(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::count_zeros)
-}
+        let s = match self {
+            B::CountOnes => "count_ones",
+            B::CountZeros => "count_zeros",
+            B::LeadingOnes => "leading_ones",
+            B::LeadingZeros => "leading_zeros",
+            B::TrailingOnes => "trailing_ones",
+            B::TrailingZeros => "trailing_zeros",
 
-fn leading_ones(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::leading_ones)
-}
+            B::And => "and",
+            B::Or => "or",
+            B::Xor => "xor",
+        };
 
-fn leading_zeros(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::leading_zeros)
-}
-
-fn trailing_ones(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::trailing_ones)
-}
-
-fn trailing_zeros(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::trailing_zeros)
-}
-
-fn reduce_and(c: &Column) -> PolarsResult<Column> {
-    c.and_reduce().map(|v| v.into_column(c.name().clone()))
-}
-
-fn reduce_or(c: &Column) -> PolarsResult<Column> {
-    c.or_reduce().map(|v| v.into_column(c.name().clone()))
-}
-
-fn reduce_xor(c: &Column) -> PolarsResult<Column> {
-    c.xor_reduce().map(|v| v.into_column(c.name().clone()))
+        f.write_str(s)
+    }
 }

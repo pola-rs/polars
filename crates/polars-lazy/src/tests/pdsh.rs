@@ -11,7 +11,8 @@ fn region() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
         PlPath::new(&format!("{base_path}/region.feather")),
-        ScanArgsIpc::default(),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }
@@ -19,7 +20,8 @@ fn nation() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
         PlPath::new(&format!("{base_path}/nation.feather")),
-        ScanArgsIpc::default(),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }
@@ -28,7 +30,8 @@ fn supplier() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
         PlPath::new(&format!("{base_path}/supplier.feather")),
-        ScanArgsIpc::default(),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }
@@ -37,7 +40,8 @@ fn part() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
         PlPath::new(&format!("{base_path}/part.feather")),
-        ScanArgsIpc::default(),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }
@@ -46,7 +50,8 @@ fn partsupp() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
         PlPath::new(&format!("{base_path}/partsupp.feather")),
-        ScanArgsIpc::default(),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }

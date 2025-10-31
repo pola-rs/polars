@@ -332,6 +332,22 @@ pub(super) fn optimize_functions(
                 _ => None,
             }
         },
+        IRFunctionExpr::GatherEvery { n: 1, offset: 0 } => {
+            Some(expr_arena.get(input[0].node()).clone())
+        },
+        IRFunctionExpr::GatherEvery { n: 1, offset } => {
+            let offset_i64: i64 = offset.try_into().unwrap_or(i64::MAX);
+            let offset_node =
+                expr_arena.add(AExpr::Literal(LiteralValue::Scalar(offset_i64.into())));
+            let length_node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(
+                (usize::MAX as u64).into(),
+            )));
+            Some(AExpr::Slice {
+                input: input[0].node(),
+                offset: offset_node,
+                length: length_node,
+            })
+        },
         _ => None,
     };
     Ok(out)

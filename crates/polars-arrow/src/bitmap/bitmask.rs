@@ -4,7 +4,7 @@ use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 use polars_utils::slice::load_padded_le_u64;
 
 use super::iterator::FastU56BitmapIter;
-use super::utils::{BitmapIter, count_zeros, fmt};
+use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt};
 use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
@@ -39,12 +39,14 @@ pub fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
         let set_per_8 = (set_per_4 + (set_per_4 >> 4)) & 0x0f0f0f0f;
         let set_per_16 = (set_per_8 + (set_per_8 >> 8)) & 0x00ff00ff;
         let set_per_32 = (set_per_16 + (set_per_16 >> 16)) & 0xff;
+
         if n >= set_per_32 {
             return None;
         }
 
         let mut idx = 0;
         let mut n = n;
+
         let next16 = set_per_16 & 0xff;
         if n >= next16 {
             n -= next16;
@@ -73,7 +75,73 @@ pub fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
     }
 }
 
-#[derive(Default, Clone)]
+#[inline]
+pub fn nth_set_bit_u64(w: u64, n: u64) -> Option<u64> {
+    #[cfg(all(not(miri), target_feature = "bmi2"))]
+    {
+        if n >= 64 {
+            return None;
+        }
+
+        let nth_set_bit = unsafe { core::arch::x86_64::_pdep_u64(1 << n, w) };
+        if nth_set_bit == 0 {
+            return None;
+        }
+
+        Some(nth_set_bit.trailing_zeros().into())
+    }
+
+    #[cfg(any(miri, not(target_feature = "bmi2")))]
+    {
+        // Each block of 2/4/8/16/32 bits contains how many set bits there are in that block.
+        let set_per_2 = w - ((w >> 1) & 0x5555555555555555);
+        let set_per_4 = (set_per_2 & 0x3333333333333333) + ((set_per_2 >> 2) & 0x3333333333333333);
+        let set_per_8 = (set_per_4 + (set_per_4 >> 4)) & 0x0f0f0f0f0f0f0f0f;
+        let set_per_16 = (set_per_8 + (set_per_8 >> 8)) & 0x00ff00ff00ff00ff;
+        let set_per_32 = (set_per_16 + (set_per_16 >> 16)) & 0x0000ffff0000ffff;
+        let set_per_64 = (set_per_32 + (set_per_32 >> 32)) & 0xffffffff;
+
+        if n >= set_per_64 {
+            return None;
+        }
+
+        let mut idx = 0;
+        let mut n = n;
+
+        let next32 = set_per_32 & 0xffff;
+        if n >= next32 {
+            n -= next32;
+            idx += 32;
+        }
+        let next16 = (set_per_16 >> idx) & 0xffff;
+        if n >= next16 {
+            n -= next16;
+            idx += 16;
+        }
+        let next8 = (set_per_8 >> idx) & 0xff;
+        if n >= next8 {
+            n -= next8;
+            idx += 8;
+        }
+        let next4 = (set_per_4 >> idx) & 0b1111;
+        if n >= next4 {
+            n -= next4;
+            idx += 4;
+        }
+        let next2 = (set_per_2 >> idx) & 0b11;
+        if n >= next2 {
+            n -= next2;
+            idx += 2;
+        }
+        let next1 = (w >> idx) & 0b1;
+        if n >= next1 {
+            idx += 1;
+        }
+        Some(idx)
+    }
+}
+
+#[derive(Default, Clone, Copy)]
 pub struct BitMask<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -294,20 +362,67 @@ impl<'a> BitMask<'a> {
 
     #[inline]
     pub fn get(&self, idx: usize) -> bool {
-        let byte_idx = (self.offset + idx) / 8;
-        let byte_shift = (self.offset + idx) % 8;
-
         if idx < self.len {
             // SAFETY: we know this is in-bounds.
-            let byte = unsafe { *self.bytes.get_unchecked(byte_idx) };
-            (byte >> byte_shift) & 1 == 1
+            unsafe { self.get_bit_unchecked(idx) }
         } else {
             false
         }
     }
 
-    pub fn iter(&self) -> BitmapIter<'_> {
+    #[inline]
+    /// Get a bit at a certain idx.
+    ///
+    /// # Safety
+    ///
+    /// `idx` should be smaller than `len`
+    pub unsafe fn get_bit_unchecked(&self, idx: usize) -> bool {
+        let byte_idx = (self.offset + idx) / 8;
+        let byte_shift = (self.offset + idx) % 8;
+
+        // SAFETY: we know this is in-bounds.
+        let byte = unsafe { *self.bytes.get_unchecked(byte_idx) };
+        (byte >> byte_shift) & 1 == 1
+    }
+
+    pub fn iter(self) -> BitmapIter<'a> {
         BitmapIter::new(self.bytes, self.offset, self.len)
+    }
+
+    /// Returns the number of zero bits from the start before a one bit is seen
+    pub fn leading_zeros(self) -> usize {
+        utils::leading_zeros(self.bytes, self.offset, self.len)
+    }
+    /// Returns the number of one bits from the start before a zero bit is seen
+    pub fn leading_ones(self) -> usize {
+        utils::leading_ones(self.bytes, self.offset, self.len)
+    }
+    /// Returns the number of zero bits from the back before a one bit is seen
+    pub fn trailing_zeros(self) -> usize {
+        utils::trailing_zeros(self.bytes, self.offset, self.len)
+    }
+    /// Returns the number of one bits from the back before a zero bit is seen
+    pub fn trailing_ones(self) -> usize {
+        utils::trailing_ones(self.bytes, self.offset, self.len)
+    }
+
+    /// Checks whether two [`Bitmap`]s have shared set bits.
+    ///
+    /// This is an optimized version of `(self & other) != 0000..`.
+    pub fn intersects_with(self, other: Self) -> bool {
+        self.num_intersections_with(other) != 0
+    }
+
+    /// Calculates the number of shared set bits between two [`Bitmap`]s.
+    pub fn num_intersections_with(self, other: Self) -> usize {
+        super::num_intersections_with(self, other)
+    }
+
+    /// Returns an iterator over bits in bit chunks [`BitChunk`].
+    ///
+    /// This iterator is useful to operate over multiple bits via e.g. bitwise.
+    pub fn chunks<T: BitChunk>(self) -> BitChunks<'a, T> {
+        BitChunks::new(self.bytes, self.offset, self.len)
     }
 }
 
@@ -315,8 +430,21 @@ impl<'a> BitMask<'a> {
 mod test {
     use super::*;
 
-    fn naive_nth_bit_set(mut w: u32, mut n: u32) -> Option<u32> {
+    fn naive_nth_bit_set_u32(mut w: u32, mut n: u32) -> Option<u32> {
         for i in 0..32 {
+            if w & (1 << i) != 0 {
+                if n == 0 {
+                    return Some(i);
+                }
+                n -= 1;
+                w ^= 1 << i;
+            }
+        }
+        None
+    }
+
+    fn naive_nth_bit_set_u64(mut w: u64, mut n: u64) -> Option<u64> {
+        for i in 0..64 {
             if w & (1 << i) != 0 {
                 if n == 0 {
                     return Some(i);
@@ -342,7 +470,26 @@ mod test {
         for i in 0..10000 {
             let rnd = (0xbdbc9d8ec9d5c461u64.wrapping_mul(i as u64) >> 32) as u32;
             for i in 0..=32 {
-                assert_eq!(nth_set_bit_u32(rnd, i), naive_nth_bit_set(rnd, i));
+                assert_eq!(nth_set_bit_u32(rnd, i), naive_nth_bit_set_u32(rnd, i));
+            }
+        }
+    }
+
+    #[test]
+    fn test_nth_set_bit_u64() {
+        for n in 0..256 {
+            assert_eq!(nth_set_bit_u64(0, n), None);
+        }
+
+        for i in 0..64 {
+            assert_eq!(nth_set_bit_u64(1 << i, 0), Some(i));
+            assert_eq!(nth_set_bit_u64(1 << i, 1), None);
+        }
+
+        for i in 0..10000 {
+            let rnd = 0xbdbc9d8ec9d5c461u64.wrapping_mul(i as u64) >> 32;
+            for i in 0..=64 {
+                assert_eq!(nth_set_bit_u64(rnd, i), naive_nth_bit_set_u64(rnd, i));
             }
         }
     }

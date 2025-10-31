@@ -7,7 +7,7 @@ use polars_error::{PolarsResult, polars_bail, to_compute_err};
 use polars_utils::plpath::PlPath;
 
 use crate::cloud::{
-    CloudConfig, CloudOptions, Matcher, extract_prefix_expansion,
+    CloudConfig, CloudOptions, Matcher, USER_AGENT, extract_prefix_expansion,
     try_build_http_header_map_from_items_slice,
 };
 use crate::path_utils::HiveIdxTracker;
@@ -215,12 +215,15 @@ impl GetPages<'_> {
 pub(super) async fn expand_paths_hf(
     paths: &[PlPath],
     check_directory_level: bool,
-    cloud_options: Option<&CloudOptions>,
+    cloud_options: &Option<CloudOptions>,
     glob: bool,
 ) -> PolarsResult<(usize, Vec<PlPath>)> {
     assert!(!paths.is_empty());
 
-    let client = reqwest::ClientBuilder::new().http1_only().https_only(true);
+    let client = reqwest::ClientBuilder::new()
+        .user_agent(USER_AGENT)
+        .http1_only()
+        .https_only(true);
 
     let client = if let Some(CloudOptions {
         config: Some(CloudConfig::Http { headers }),

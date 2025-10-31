@@ -33,7 +33,7 @@ df = pl.scan_parquet(source, storage_options=storage_options).collect()
 lf = pl.scan_parquet(
     "s3://.../...",
     credential_provider=pl.CredentialProviderAWS(
-        profile_name="..."
+        profile_name="...",
         assume_role={
             "RoleArn": f"...",
             "RoleSessionName": "...",
@@ -43,6 +43,18 @@ lf = pl.scan_parquet(
 
 df = lf.collect()
 # --8<-- [end:credential_provider_class]
+
+# --8<-- [start:credential_provider_class_global_default]
+pl.Config.set_default_credential_provider(
+    pl.CredentialProviderAWS(
+        profile_name="...",
+        assume_role={
+            "RoleArn": f"...",
+            "RoleSessionName": "...",
+        },
+    )
+)
+# --8<-- [end:credential_provider_class_global_default]
 
 # --8<-- [start:credential_provider_custom_func]
 def get_credentials() -> pl.CredentialProviderFunctionReturn:

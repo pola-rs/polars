@@ -225,33 +225,6 @@ def test_err_bubbling_up_to_lit() -> None:
         df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg,operator]
 
 
-def test_error_on_double_agg() -> None:
-    for e in [
-        "mean",
-        "max",
-        "min",
-        "sum",
-        "std",
-        "var",
-        "n_unique",
-        "last",
-        "first",
-        "median",
-        "skew",  # this one is comes from Apply
-    ]:
-        with pytest.raises(ComputeError, match="the column is already aggregated"):
-            (
-                pl.DataFrame(
-                    {
-                        "a": [1, 1, 1, 2, 2],
-                        "b": [1, 2, 3, 4, 5],
-                    }
-                )
-                .group_by("a")
-                .agg([getattr(pl.col("b").min(), e)()])
-            )
-
-
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
@@ -383,7 +356,7 @@ def test_sort_by_different_lengths() -> None:
     )
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -393,7 +366,7 @@ def test_sort_by_different_lengths() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=r"the expression in `sort_by` argument must result in the same length",
+        match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
@@ -514,11 +487,6 @@ def test_cast_err_column_value_highlighting(
         test_df.with_columns(pl.all().cast(type))
 
 
-def test_lit_agg_err() -> None:
-    with pytest.raises(ComputeError, match=r"cannot aggregate a literal"):
-        pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
-
-
 def test_invalid_group_by_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
@@ -613,7 +581,7 @@ def test_sort_by_error() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="expressions in 'sort_by' produced a different number of groups",
+        match="expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
@@ -743,4 +711,63 @@ def test_raise_on_different_results_20104() -> None:
             result=pl.col("x")
             .gather_every(2, offset=1)
             .map_batches(pl.Series.min, return_dtype=pl.Float64)
+        )
+
+
+@pytest.mark.parametrize("fill_value", [None, -1])
+def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    df_shift = None
+    with pytest.deprecated_call(  # @2.0
+        match=r"shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+    ):
+        df_shift = df.select(
+            pl.col.x.shift(pl.col.x.filter(pl.col.x > 3).first(), fill_value=fill_value)
+        )
+    # Check that the result is a column of nulls, even if the fill_value is different
+    assert_frame_equal(
+        df_shift,
+        pl.DataFrame({"x": [None, None, None]}),
+        check_dtypes=False,
+    )
+
+
+def test_raies_on_mismatch_column_length_24500() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [10, 10, 10, 20, 20, 20],
+            "b": [2, 2, 99, 3, 3, 3],
+            "c": [3, 3, 3, 2, 2, 99],
+        }
+    )
+    with pytest.raises(
+        ShapeError,
+        match="expressions must have matching group lengths",
+    ):
+        df.group_by("a").agg(
+            pl.struct(
+                pl.col("b").head(pl.col("b").first()),
+                pl.col("c").head(pl.col("c").first()),
+            )
+        )
+
+
+def test_raies_on_mismatch_column_length_binary_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [10, 10, 10, 20, 20, 20],
+            "b": [2, 0, 99, 0, 0, 0],
+            "c": [3, 0, 0, 2, 0, 99],
+        }
+    )
+
+    with pytest.raises(
+        ShapeError,
+        match="expressions must have matching group lengths",
+    ):
+        df.group_by("a").agg(
+            pl.Expr.add(
+                pl.col("b").head(pl.col("b").first()),
+                pl.col("c").head(pl.col("c").first()),
+            )
         )

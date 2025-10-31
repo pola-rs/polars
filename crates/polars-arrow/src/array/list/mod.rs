@@ -105,6 +105,17 @@ impl<O: Offset> ListArray<O> {
             Some(Bitmap::new_zeroed(length)),
         )
     }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        ArrowDataType,
+        Box<dyn Array>,
+        OffsetsBuffer<O>,
+        Option<Bitmap>,
+    ) {
+        (self.dtype, self.values, self.offsets, self.validity)
+    }
 }
 
 impl<O: Offset> ListArray<O> {

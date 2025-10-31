@@ -17,8 +17,8 @@ pub fn assert_dataframe_equal_py(
     abs_tol: f64,
     categorical_as_str: bool,
 ) -> PyResult<()> {
-    let left_df = &left.df;
-    let right_df = &right.df;
+    let left_df = &left.df.read();
+    let right_df = &right.df.read();
 
     let options = DataFrameEqualOptions {
         check_row_order,

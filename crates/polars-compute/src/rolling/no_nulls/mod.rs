@@ -1,8 +1,3 @@
-mod mean;
-mod min_max;
-mod moment;
-mod quantile;
-mod sum;
 use std::fmt::Debug;
 
 use arrow::array::PrimitiveArray;
@@ -10,16 +5,25 @@ use arrow::datatypes::ArrowDataType;
 use arrow::legacy::error::PolarsResult;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
+use num_traits::{Float, Num, NumCast};
+
+mod mean;
+mod min_max;
+mod moment;
+mod quantile;
+pub mod rank;
+mod sum;
+
 pub use mean::*;
 pub use min_max::*;
 pub use moment::*;
-use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
+pub use rank::*;
 pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
+pub trait RollingAggWindowNoNulls<'a, T: NativeType, Out: NativeType = T> {
     fn new(
         slice: &'a [T],
         start: usize,
@@ -32,11 +36,11 @@ pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
 }
 
 // Use an aggregation window that maintains the state
-pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
+pub(super) fn rolling_apply_agg_window<'a, Agg, T, O, Fo>(
     values: &'a [T],
     window_size: usize,
     min_periods: usize,
@@ -45,21 +49,13 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
 ) -> PolarsResult<ArrayRef>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T, O>,
     T: Debug + NativeType + Num,
+    O: Debug + NativeType + Num,
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     let mut agg_window = Agg::new(values, start, end, params, Some(window_size));
-    if let Some(validity) = create_validity(min_periods, len, window_size, &det_offsets_fn) {
-        if validity.iter().all(|x| !x) {
-            return Ok(Box::new(PrimitiveArray::<T>::new_null(
-                T::PRIMITIVE.into(),
-                len,
-            )));
-        }
-    }
-
     let out = (0..len).map(|idx| {
         let (start, end) = det_offsets_fn(idx, window_size, len);
         if end - start < min_periods {
@@ -81,6 +77,7 @@ pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     det_offsets_fn: Fo,
     aggregator: Fa,
     weights: &[T],
+    centered: bool,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + num_traits::Zero + std::ops::Div<Output = T> + Copy,
@@ -94,16 +91,23 @@ where
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
             let win_len = end - start;
-            let weights_slice = if start == 0 {
-                // Truncated at the start: take the last win_len weights
-                &weights[weights.len() - win_len..]
-            } else if end == len {
-                // Truncated at the end: take the first win_len weights
-                &weights[..win_len]
+            let weights_start = if centered {
+                // When using centered weights, we need to find the right location
+                // in the weights array specifically by aligning the center of the
+                // window with idx, to handle cases where the window is smaller than
+                // weights array.
+                let center = (window_size / 2) as isize;
+                let offset = center - (idx as isize - start as isize);
+                offset.max(0) as usize
+            } else if start == 0 {
+                // When start is 0, we need to work backwards from the end of the
+                // weights array to ensure we are lined up correctly (since the
+                // start of the values array is implicitly cut off)
+                weights.len() - win_len
             } else {
-                // Full window
-                weights
+                0
             };
+            let weights_slice = &weights[weights_start..weights_start + win_len];
             aggregator(vals, weights_slice)
         })
         .collect_trusted::<Vec<T>>();
@@ -126,10 +130,11 @@ where
         |(wssq, wsum, wtot), (&v, &w)| (wssq + v * v * w, wsum + v * w, wtot + w),
     );
     if total_weight.is_zero() {
-        panic!("Weighted variance is undefined if weights sum to 0");
+        T::zero() // Will get masked to null.
+    } else {
+        let mean = wmean / total_weight;
+        (wssq / total_weight) - (mean * mean)
     }
-    let mean = wmean / total_weight;
-    (wssq / total_weight) - (mean * mean)
 }
 
 pub(crate) fn compute_sum_weights<T>(values: &[T], weights: &[T]) -> T
@@ -156,9 +161,10 @@ where
             (wsum + v * w, wtot + w)
         });
     if total_weight.is_zero() {
-        panic!("Weighted mean is undefined if weights sum to 0");
+        T::zero() // Will get masked to null.
+    } else {
+        weighted_sum / total_weight
     }
-    weighted_sum / total_weight
 }
 
 pub(super) fn coerce_weights<T: NumCast>(weights: &[f64]) -> Vec<T>

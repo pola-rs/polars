@@ -5,7 +5,14 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.datatypes.group import NUMERIC_DTYPES, TEMPORAL_DTYPES
 from polars.testing.asserts.frame import assert_frame_equal
+
+# Used by test_lazy_collect_schema_matches_computed_schema
+_TEST_COLLECT_SCHEMA_M_DTYPES = sorted(
+    ({pl.Boolean, pl.String} | NUMERIC_DTYPES | TEMPORAL_DTYPES) - {pl.Decimal},
+    key=repr,
+)
 
 
 def test_schema() -> None:
@@ -137,6 +144,62 @@ def test_schema_in_map_elements_returns_scalar() -> None:
     assert q.collect().schema == schema
 
 
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # TODO: Add more (bitwise) operators once their types are resolved correctly
+        pl.col("col0") > pl.col("col1"),
+        pl.col("col0") >= pl.col("col1"),
+        pl.col("col0") < pl.col("col1"),
+        pl.col("col0") <= pl.col("col1"),
+        pl.col("col0") == pl.col("col1"),
+        pl.col("col0") != pl.col("col1"),
+        pl.col("col0") + pl.col("col1"),
+        pl.col("col0") - pl.col("col1"),
+        pl.col("col0") * pl.col("col1"),
+        pl.col("col0") / pl.col("col1"),
+        pl.col("col0").truediv(pl.col("col1")),
+        pl.col("col0") // pl.col("col1"),
+        pl.col("col0") % pl.col("col1"),
+    ],
+)
+@pytest.mark.parametrize("dtype1", _TEST_COLLECT_SCHEMA_M_DTYPES)
+@pytest.mark.parametrize("dtype2", _TEST_COLLECT_SCHEMA_M_DTYPES)
+def test_lazy_collect_schema_matches_computed_schema(
+    expr: pl.Expr, dtype1: pl.DataType, dtype2: pl.DataType
+) -> None:
+    df = pl.DataFrame(
+        {
+            "col0": [None],
+            "col1": [None],
+        },
+        schema={
+            "col0": dtype1,
+            "col1": dtype2,
+        },
+    )
+    lazy_df = df.lazy().select(expr)
+
+    expected_schema = None
+    try:
+        expected_schema = lazy_df.collect().schema
+    except (
+        # Applying the operator to these dtypes will result in an error,
+        # so they their output dtype is undefined
+        pl.exceptions.InvalidOperationError,
+        pl.exceptions.SchemaError,
+        pl.exceptions.ComputeError,
+    ):
+        return
+
+    actual_schema = lazy_df.collect_schema()
+    assert actual_schema == expected_schema, (
+        f"{expr} on {df.dtypes} results in {actual_schema} instead of {expected_schema}\n"
+        f"result of computation is:\n{lazy_df.collect()}\n"
+    )
+
+
 def test_ir_cache_unique_18198() -> None:
     lf = pl.LazyFrame({"a": [1]})
     lf.collect_schema()
@@ -229,7 +292,7 @@ def test_lazy_nested_function_expr_agg_schema() -> None:
 def test_lazy_agg_scalar_return_schema() -> None:
     q = pl.LazyFrame({"k": [1]}).group_by("k").agg(pl.col("k").null_count().alias("o"))
 
-    schema = {"k": pl.Int64, "o": pl.UInt32}
+    schema = {"k": pl.Int64, "o": pl.get_index_type()}
     assert q.collect_schema() == schema
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
 
@@ -295,16 +358,16 @@ def test_lazy_agg_to_scalar_schema_19752(lhs: pl.Expr, expr_op: str) -> None:
 def test_lazy_agg_schema_after_elementwise_19984() -> None:
     lf = pl.LazyFrame({"a": 1, "b": 1})
 
-    q = lf.group_by("a").agg(pl.col("b").first().fill_null(0))
+    q = lf.group_by("a").agg(pl.col("b").item().fill_null(0))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").first().fill_null(0).fill_null(0))
+    q = lf.group_by("a").agg(pl.col("b").item().fill_null(0).fill_null(0))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").first() + 1)
+    q = lf.group_by("a").agg(pl.col("b").item() + 1)
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(1 + pl.col("b").first())
+    q = lf.group_by("a").agg(1 + pl.col("b").item())
     assert q.collect_schema() == q.collect().collect_schema()
 
 
@@ -370,7 +433,22 @@ def test_scalar_agg_schema_20044() -> None:
     ).schema == pl.Schema([("c", pl.String), ("d", pl.Float64)])
 
 
-def test_mean_on_invalid_type_24008() -> None:
-    df = pl.DataFrame({"s": ["bob", "foo"]})
-    q = df.lazy().select(pl.col("s").mean())
-    assert q.collect_schema() == q.collect().schema
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [None, True, False], "b": 3 * [128]}),
+        pl.DataFrame(
+            {"a": [[None, True, False]], "b": [3 * [128]]},
+            schema={"a": pl.Array(pl.Boolean, 3), "b": pl.Array(pl.Int64, 3)},
+        ),
+        pl.DataFrame(
+            {"a": [[None, True, False]], "b": [3 * [128]]},
+            schema={"a": pl.List(pl.Boolean), "b": pl.List(pl.Int64)},
+        ),
+    ],
+)
+def test_div_collect_schema_matches_23993(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.col("a") / pl.col("b"))
+    expected = q.collect().schema
+    actual = q.collect_schema()
+    assert actual == expected

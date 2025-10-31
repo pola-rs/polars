@@ -7,6 +7,7 @@ use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use polars_error::PolarsResult;
 use polars_utils::file::WriteClose;
+use polars_utils::plpath::PlPathRef;
 use tokio::io::AsyncWriteExt;
 
 use super::{CloudOptions, object_path_from_str};
@@ -45,14 +46,10 @@ impl BlockingCloudWriter {
     ///
     /// Wrapper around `BlockingCloudWriter::new_with_object_store` that is useful if you only have a single write task.
     /// TODO: Naming?
-    pub async fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        if let Some(local_path) = uri.strip_prefix("file://") {
-            // Local paths must be created first, otherwise object store will not write anything.
-            if !matches!(std::fs::exists(local_path), Ok(true)) {
-                panic!("[BlockingCloudWriter] Expected local file to be created: {local_path}");
-            }
-        }
-
+    pub async fn new(
+        uri: PlPathRef<'_>,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options, false).await?;
         Self::new_with_object_store(
@@ -195,7 +192,7 @@ mod tests {
 
         let mut cloud_writer = get_runtime()
             .block_on(BlockingCloudWriter::new(
-                format!("file://{path}").as_str(),
+                PlPathRef::new(&format!("file://{path}")),
                 None,
             ))
             .unwrap();

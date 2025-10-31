@@ -75,9 +75,9 @@ impl Default for StrptimeOptions {
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    // Fused cross join and filter (only in in-memory engine)
-    Cross {
-        predicate: ExprIR,
+    // Fused cross join and filter (only used in the in-memory engine)
+    CrossAndFilter {
+        predicate: ExprIR, // Must be elementwise.
     },
 }
 
@@ -87,7 +87,9 @@ impl Hash for JoinTypeOptionsIR {
         match self {
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => opt.hash(state),
-            Cross { predicate } => predicate.node().hash(state),
+            CrossAndFilter { predicate } => {
+                predicate.node().hash(state);
+            },
         }
     }
 }
@@ -99,7 +101,7 @@ impl JoinTypeOptionsIR {
     ) -> PolarsResult<JoinTypeOptions> {
         use JoinTypeOptionsIR::*;
         match self {
-            Cross { predicate } => {
+            CrossAndFilter { predicate } => {
                 let predicate = plan(&predicate)?;
 
                 Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
@@ -117,10 +119,6 @@ pub struct JoinOptionsIR {
     pub force_parallel: bool,
     pub args: JoinArgs,
     pub options: Option<JoinTypeOptionsIR>,
-    /// Proxy of the number of rows in both sides of the joins
-    /// Holds `(Option<known_size>, estimated_size)`
-    pub rows_left: (Option<usize>, usize),
-    pub rows_right: (Option<usize>, usize),
 }
 
 impl From<JoinOptions> for JoinOptionsIR {
@@ -130,8 +128,6 @@ impl From<JoinOptions> for JoinOptionsIR {
             force_parallel: opts.force_parallel,
             args: opts.args,
             options: Default::default(),
-            rows_left: (None, usize::MAX),
-            rows_right: (None, usize::MAX),
         }
     }
 }
@@ -261,7 +257,7 @@ impl Engine {
     }
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub slice: Option<(i64, usize)>,
@@ -272,6 +268,20 @@ pub struct UnionOptions {
     pub flattened_by_opt: bool,
     pub rechunk: bool,
     pub maintain_order: bool,
+}
+
+impl Default for UnionOptions {
+    fn default() -> Self {
+        Self {
+            slice: None,
+            rows: (None, 0),
+            parallel: true,
+            from_partitioned_ds: false,
+            flattened_by_opt: false,
+            rechunk: false,
+            maintain_order: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
@@ -351,7 +361,7 @@ pub struct AnonymousScanOptions {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),

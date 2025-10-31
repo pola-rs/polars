@@ -202,7 +202,7 @@ def test_init_structured_objects() -> None:
     # validate init from dataclass, namedtuple, and pydantic model objects
     from typing import NamedTuple
 
-    from polars.dependencies import dataclasses, pydantic
+    from polars._dependencies import dataclasses, pydantic
 
     @dataclasses.dataclass
     class TeaShipmentDC:
@@ -419,7 +419,9 @@ def test_various() -> None:
     a.sort(in_place=True)
     assert_series_equal(a, pl.Series("a", [1, 2, 4]))
     a = pl.Series("a", [2, 1, 1, 4, 4, 4])
-    assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
+    assert_series_equal(
+        a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=pl.get_index_type())
+    )
 
     assert_series_equal(a.gather([2, 3]), pl.Series("a", [1, 4]))
 
@@ -1031,29 +1033,28 @@ def test_mode() -> None:
 
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    expected = pl.Series("a", [1, 1, -1, 0, 1, -3])
 
-    assert_series_equal(s.diff(null_behavior="drop"), expected)
-
-    df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").diff())["a"], pl.Series("a", [None, 1, 1, -1, 0, 1, -3])
+        s.diff(),
+        pl.Series("a", [None, 1, 1, -1, 0, 1, -3]),
+    )
+    assert_series_equal(
+        s.diff(null_behavior="drop"),
+        pl.Series("a", [1, 1, -1, 0, 1, -3]),
     )
 
 
-def test_pct_change() -> None:
-    s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
-    expected = pl.Series("a", [None, None, 3.0, 3.0, 3.0, 3.0, 3.0])
-    assert_series_equal(s.pct_change(2), expected)
-    assert_series_equal(s.pct_change(pl.Series([2])), expected)
-    # negative
-    assert pl.Series(range(5)).pct_change(-1).to_list() == [
-        -1.0,
-        -0.5,
-        -0.3333333333333333,
-        -0.25,
-        None,
-    ]
+def test_diff_negative() -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+
+    assert_series_equal(
+        s.diff(-1),
+        pl.Series("a", [-1, -1, 1, 0, -1, 3, None]),
+    )
+    assert_series_equal(
+        s.diff(-1, null_behavior="drop"),
+        pl.Series("a", [-1, -1, 1, 0, -1, 3]),
+    )
 
 
 def test_skew() -> None:
@@ -1428,11 +1429,11 @@ def test_gather_every() -> None:
 
 def test_arg_sort() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
-    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
+    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=pl.get_index_type())
 
     assert_series_equal(s.arg_sort(), expected)
 
-    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
+    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=pl.get_index_type())
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
@@ -1671,29 +1672,6 @@ def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
         assert srs_nested.dtype == dtype
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Float64,
-        pl.Int32,
-        pl.Decimal(21, 3),
-    ],
-)
-def test_log_exp(dtype: pl.DataType) -> None:
-    a = pl.Series("a", [1, 100, 1000], dtype=dtype)
-    b = pl.Series("a", [0, 2, 3], dtype=dtype)
-    assert_series_equal(a.log10(), b.cast(pl.Float64))
-
-    expected = pl.Series("a", np.log(a.cast(pl.Float64).to_numpy()))
-    assert_series_equal(a.log(), expected)
-
-    expected = pl.Series("a", np.exp(b.cast(pl.Float64).to_numpy()))
-    assert_series_equal(b.exp(), expected)
-
-    expected = pl.Series("a", np.log1p(a.cast(pl.Float64).to_numpy()))
-    assert_series_equal(a.log1p(), expected)
-
-
 def test_to_physical() -> None:
     # casting an int result in an int
     s = pl.Series("a", [1, 2, 3])
@@ -1865,6 +1843,17 @@ def test_sign() -> None:
     a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
     expected = pl.Series("a", [-1.0, 0.0, 0.0, 1.0, float("nan"), None])
     assert_series_equal(a.sign(), expected)
+
+    # Decimal
+    s = pl.Series("a", [1, -1, 10, -10])
+    for scale in [0, 1, 2, 3, 7, 16, 20, 30]:
+        dtype = pl.Decimal(scale=scale)
+        assert_series_equal(s.sign().cast(dtype), s.cast(dtype).sign())
+
+        s = pl.Series("a", ["1.00", "20.00", "-1", "0", "-7"], dtype)
+        assert_series_equal(
+            s.sign(), pl.Series("a", ["1", "1", "-1", "0", "-1"], dtype)
+        )
 
     # Invalid input
     a = pl.Series("a", [date(1950, 2, 1), date(1970, 1, 1), date(2022, 12, 12), None])
@@ -2195,7 +2184,9 @@ def test_search_sorted(
     assert single_s == single_expected
 
     multiple_s = s.search_sorted(multiple)
-    assert_series_equal(multiple_s, pl.Series(multiple_expected, dtype=pl.UInt32))
+    assert_series_equal(
+        multiple_s, pl.Series(multiple_expected, dtype=pl.get_index_type())
+    )
 
 
 def test_series_from_pandas_with_dtype() -> None:

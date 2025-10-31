@@ -98,7 +98,7 @@ impl<'py> FromPyObject<'py> for PyTimeUnit {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(PyTimeUnit(parsed))
@@ -180,10 +180,17 @@ impl<'a> FromPyObject<'a> for PySeries {
 
         let kwargs = PyDict::new(ob.py());
         if let Ok(compat_level) = ob.call_method0("_newest_compat_level") {
+            // Choose the maximum supported between both us and Python's compatibility level.
             let compat_level = compat_level.extract().unwrap();
             let compat_level =
                 CompatLevel::with_level(compat_level).unwrap_or(CompatLevel::newest());
-            kwargs.set_item("compat_level", compat_level.get_level())?;
+            let compat_level_type = POLARS_INTERCHANGE
+                .bind(ob.py())
+                .getattr("CompatLevel")
+                .unwrap();
+            let py_compat_level =
+                compat_level_type.call_method1("_with_version", (compat_level.get_level(),))?;
+            kwargs.set_item("compat_level", py_compat_level)?;
         }
         let arr = ob.call_method("to_arrow", (), Some(&kwargs))?;
         let arr = ffi::to_rust::array_to_rust(&arr)?;
@@ -391,7 +398,7 @@ impl<'py> IntoPyObject<'py> for PyExpr {
 }
 
 #[cfg(feature = "dtype-categorical")]
-pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
+pub(crate) fn to_series(py: Python, s: PySeries) -> Py<PyAny> {
     let series = SERIES.bind(py);
     let constructor = series
         .getattr(intern!(series.py(), "_from_pyseries"))
@@ -447,6 +454,10 @@ impl<'py> IntoPyObject<'py> for PyDataType {
             },
             DataType::UInt64 => {
                 let class = pl.getattr(intern!(py, "UInt64")).unwrap();
+                class.call0()
+            },
+            DataType::UInt128 => {
+                let class = pl.getattr(intern!(py, "UInt128")).unwrap();
                 class.call0()
             },
             DataType::Float32 => {
@@ -591,13 +602,16 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,
                     "UInt64" => DataType::UInt64,
+                    "UInt128" => DataType::UInt128,
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     "Boolean" => DataType::Boolean,
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
                     #[cfg(feature = "dtype-categorical")]
-                    "Categorical" => DataType::Categorical(Categories::global(), Categories::global().mapping()),
+                    "Categorical" => {
+                        DataType::Categorical(Categories::global(), Categories::global().mapping())
+                    },
                     #[cfg(feature = "dtype-categorical")]
                     "Enum" => {
                         let categories = FrozenCategories::new([]).unwrap();
@@ -609,7 +623,9 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
                     #[cfg(feature = "dtype-decimal")]
-                    "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
+                    "Decimal" => {
+                        return Err(PyTypeError::new_err("Decimal without specifying precision and scale is not a valid Polars data type".to_string()));
+                    },
                     "List" => DataType::List(Box::new(DataType::Null)),
                     #[cfg(feature = "dtype-array")]
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
@@ -622,7 +638,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     dt => {
                         return Err(PyTypeError::new_err(format!(
                             "'{dt}' is not a Polars data type, or the plugin isn't compiled with the right features",
-                        )))
+                        )));
                     },
                 }
             },
@@ -635,6 +651,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
+            "UInt128" => DataType::UInt128,
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Boolean" => DataType::Boolean,
@@ -672,7 +689,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
                 let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
-                DataType::Decimal(precision, Some(scale))
+                DataType::Decimal(precision, scale)
             },
             "List" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();
@@ -704,7 +721,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type, or the plugin isn't compiled with the right features",
-                )))
+                )));
             },
         };
         Ok(PyDataType(dtype))
