@@ -27,7 +27,9 @@ impl Hash for AExpr {
             AExpr::Cast {
                 options: strict, ..
             } => strict.hash(state),
-            AExpr::Window { options, .. } => options.hash(state),
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { options, .. } => options.hash(state),
+            AExpr::Over { mapping, .. } => mapping.hash(state),
             AExpr::BinaryExpr { op, .. } => op.hash(state),
             _ => {},
         }

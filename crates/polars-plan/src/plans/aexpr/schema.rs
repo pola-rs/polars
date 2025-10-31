@@ -47,11 +47,21 @@ impl AExpr {
                 .ok_or_else(|| polars_err!(invalid_element_use)),
 
             Len => Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE)),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, .. } => {
+                let e = ctx.arena.get(*function);
+                let mut field = e.to_field_impl(ctx)?;
+                // Implicit implode
+                if !is_scalar_ae(*function, ctx.arena) {
+                    field.dtype = field.dtype.implode();
+                }
+                Ok(field)
+            },
+            Over {
                 function,
-                options,
                 partition_by,
                 order_by,
+                mapping,
             } => {
                 for node in partition_by {
                     validate_expr(*node, ctx)?;
@@ -63,15 +73,7 @@ impl AExpr {
                 let e = ctx.arena.get(*function);
                 let mut field = e.to_field_impl(ctx)?;
 
-                let mut implicit_implode = false;
-
-                implicit_implode |= matches!(options, WindowType::Over(WindowMapping::Join));
-                #[cfg(feature = "dynamic_group_by")]
-                {
-                    implicit_implode |= matches!(options, WindowType::Rolling(_));
-                }
-
-                if implicit_implode && !is_scalar_ae(*function, ctx.arena) {
+                if matches!(mapping, WindowMapping::Join) && !is_scalar_ae(*function, ctx.arena) {
                     field.dtype = field.dtype.implode();
                 }
 
@@ -312,11 +314,16 @@ impl AExpr {
         match self {
             Element => PlSmallStr::EMPTY,
             Len => crate::constants::get_len_name(),
-            Window {
-                function: expr,
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
                 options: _,
+            } => expr_arena.get(*function).to_name(expr_arena),
+            Over {
+                function: expr,
                 partition_by: _,
                 order_by: _,
+                mapping: _,
             }
             | BinaryExpr { left: expr, .. }
             | Explode { expr, .. }

@@ -304,11 +304,28 @@ impl<'a> ObservableOrdersResolver<'a> {
                 },
             },
 
-            AExpr::Window {
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling {
+                function,
+                options: _,
+            } => {
+                let input = rec!(*function);
+
+                // @Performance.
+                // All of the code below might be a bit pessimistic, several window function variants
+                // are length preserving and/or propagate order in specific ways.
+                if input.column_ordering_observable() {
+                    return Err(ColumnOrderObserved);
+                }
+
+                O::Independent
+            },
+
+            AExpr::Over {
                 function,
                 partition_by,
                 order_by,
-                options: _,
+                mapping: _,
             } => {
                 let input = rec!(*function);
 

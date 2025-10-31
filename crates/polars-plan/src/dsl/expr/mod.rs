@@ -143,12 +143,17 @@ pub enum Expr {
         by: Arc<Expr>,
     },
     /// Polars flavored window functions.
-    Window {
+    Over {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
         order_by: Option<(Arc<Expr>, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Arc<Expr>,
+        options: RollingGroupOptions,
     },
     Slice {
         input: Arc<Expr>,
@@ -335,16 +340,21 @@ impl Hash for Expr {
                 skip_empty.hash(state);
                 input.hash(state)
             },
-            Expr::Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling { function, options } => {
+                function.hash(state);
+                options.hash(state);
+            },
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
                 order_by.hash(state);
-                options.hash(state);
+                mapping.hash(state);
             },
             Expr::Slice {
                 input,

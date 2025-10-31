@@ -218,11 +218,16 @@ pub fn is_input_independent_rec(
             evaluation: _,
             variant: _,
         } => is_input_independent_rec(*expr, arena, cache),
-        AExpr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling {
+            function,
+            options: _,
+        } => is_input_independent_rec(*function, arena, cache),
+        AExpr::Over {
             function,
             partition_by,
             order_by,
-            options: _,
+            mapping: _,
         } => {
             is_input_independent_rec(*function, arena, cache)
                 && partition_by
@@ -350,12 +355,17 @@ pub fn is_length_preserving_rec(
                     .all(|expr| is_length_preserving_rec(expr.node(), arena, cache))
         },
         AExpr::Eval { .. } => true,
-        AExpr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling {
+            function: _,
+            options: _,
+        } => true,
+        AExpr::Over {
             function: _, // Actually shouldn't matter for window functions.
             partition_by: _,
             order_by: _,
-            options,
-        } => !matches!(options, WindowType::Over(WindowMapping::Explode)),
+            mapping,
+        } => !matches!(mapping, WindowMapping::Explode),
     };
 
     cache.insert(expr_key, ret);
@@ -1917,15 +1927,7 @@ fn lower_exprs_with_ctx(
             },
 
             #[cfg(feature = "dynamic_group_by")]
-            AExpr::Window {
-                function,
-                partition_by,
-                order_by: None,
-                options: WindowType::Rolling(options),
-            } if partition_by.first().is_some_and(
-                |n| matches!(ctx.expr_arena.get(*n), AExpr::Column(c) if c == &options.index_column),
-            ) =>
-            {
+            AExpr::Rolling { function, options } => {
                 let out_name = unique_column_name();
 
                 let input_columns = aexpr_to_leaf_names(function, ctx.expr_arena).into_iter()
@@ -1971,7 +1973,7 @@ fn lower_exprs_with_ctx(
 
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }
-            | AExpr::Window { .. }
+            | AExpr::Over { .. }
             | AExpr::Gather { .. } => {
                 let out_name = unique_column_name();
                 fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));

@@ -79,7 +79,13 @@ fn window_evaluate(
                 e.as_expression()
                     .unwrap()
                     .into_iter()
-                    .filter(|e| matches!(e, Expr::Window { .. }))
+                    .filter(|e| {
+                        #[cfg(feature = "dynamic_group_by")]
+                        if matches!(e, Expr::Rolling { .. }) {
+                            return true;
+                        }
+                        matches!(e, Expr::Over { .. })
+                    })
                     .count()
                     == 1
             });
@@ -151,34 +157,38 @@ fn execute_projection_cached_window_fns(
         let mut is_window = false;
         if let Some(e) = phys.as_expression() {
             for e in e.into_iter() {
-                if let Expr::Window {
-                    partition_by,
-                    options,
-                    order_by,
-                    ..
-                } = e
-                {
-                    let entry = match options {
-                        WindowType::Over(g) => {
-                            let g: &str = g.into();
-                            let mut key = format!("{:?}_{}", partition_by.as_slice(), g);
-                            if let Some((e, k)) = order_by {
-                                polars_expr::prelude::window_function_format_order_by(
-                                    &mut key,
-                                    e.as_ref(),
-                                    k,
-                                )
-                            }
-                            windows.entry(key).or_insert_with(Vec::new)
-                        },
-                        #[cfg(feature = "dynamic_group_by")]
-                        WindowType::Rolling(options) => {
-                            rolling.entry(options).or_insert_with(Vec::new)
-                        },
-                    };
-                    entry.push((index, phys.clone()));
-                    is_window = true;
-                    break;
+                match e {
+                    #[cfg(feature = "dynamic_group_by")]
+                    Expr::Rolling {
+                        function: _,
+                        options,
+                    } => {
+                        let entry = rolling.entry(options).or_insert_with(Vec::new);
+                        entry.push((index, phys.clone()));
+                        is_window = true;
+                        break;
+                    },
+                    Expr::Over {
+                        function: _,
+                        partition_by,
+                        order_by,
+                        mapping,
+                    } => {
+                        let mapping: &str = mapping.into();
+                        let mut key = format!("{:?}_{mapping}", partition_by.as_slice());
+                        if let Some((e, k)) = order_by {
+                            polars_expr::prelude::window_function_format_order_by(
+                                &mut key,
+                                e.as_ref(),
+                                k,
+                            )
+                        }
+                        let entry = windows.entry(key).or_insert_with(Vec::new);
+                        entry.push((index, phys.clone()));
+                        is_window = true;
+                        break;
+                    },
+                    _ => {},
                 }
             }
         } else {
