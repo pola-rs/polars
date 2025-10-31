@@ -261,11 +261,9 @@ impl SQLExprVisitor<'_> {
         }
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
-        let mut lf = self
+        let (mut lf, schema) = self
             .ctx
             .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
-
-        let schema = self.ctx.get_frame_schema(&mut lf)?;
 
         if restriction == SubqueryRestriction::SingleColumn {
             if schema.len() != 1 {

@@ -238,9 +238,10 @@ impl SQLContext {
             .cloned()
     }
 
-    /// Execute a query in an isolated context.
-    /// This prevents subqueries from mutating arenas and other context state.
-    pub(crate) fn execute_isolated<F>(&mut self, query: F) -> PolarsResult<LazyFrame>
+    /// Execute a query in an isolated context. This prevents subqueries from mutating
+    /// arenas and other context state. Returns both the LazyFrame *and* its associated
+    /// Schema (so that the correct arenas are used when determining schema).
+    pub(crate) fn execute_isolated<F>(&mut self, query: F) -> PolarsResult<(LazyFrame, SchemaRef)>
     where
         F: FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
     {
@@ -256,7 +257,8 @@ impl SQLContext {
         );
 
         // Execute query with clean state (eg: nested/subquery)
-        let lf = query(self)?;
+        let mut lf = query(self)?;
+        let schema = self.get_frame_schema(&mut lf)?;
 
         // Restore saved state
         lf.set_cached_arena(
@@ -267,7 +269,7 @@ impl SQLContext {
         self.table_aliases = table_aliases;
         self.table_map = table_map;
 
-        Ok(lf)
+        Ok((lf, schema))
     }
 
     fn expr_or_ordinal(
