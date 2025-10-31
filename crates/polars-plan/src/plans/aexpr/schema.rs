@@ -5,7 +5,6 @@ use recursive::recursive;
 
 use super::*;
 use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
-use crate::dsl::agg::AnonymousStreamingAgg;
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())

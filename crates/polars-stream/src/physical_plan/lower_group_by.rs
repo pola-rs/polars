@@ -290,7 +290,9 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(new_node))
         },
 
-        AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,
+        AExpr::Function { .. }
+        | AExpr::AnonymousFunction { .. }
+        | AExpr::AnonymousStreamingAgg { .. } => None,
 
         AExpr::Cast {
             expr,

@@ -1,6 +1,5 @@
 use polars_core::prelude::*;
 use polars_plan::constants::PL_ELEMENT_NAME;
-use polars_plan::dsl::agg::AnonymousStreamingAgg;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;

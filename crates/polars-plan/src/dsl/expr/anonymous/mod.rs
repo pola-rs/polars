@@ -1,8 +1,8 @@
-pub mod agg;
+mod agg;
 mod expr;
 use std::sync::Arc;
 
-pub use agg::OpaqueStreamingAgg;
+pub use agg::{AnonymousStreamingAgg, OpaqueStreamingAgg};
 pub use expr::*;
 
 use super::LazySerde;
