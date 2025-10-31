@@ -1215,7 +1215,7 @@ fn to_graph_rec<'a>(
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
 
-            let node: EwmNode = match ewm_variant {
+            let state: Box<dyn EwmStateUpdate + Send> = match ewm_variant {
                 EwmMean { .. } => {
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmMeanState<$T> = EwmMeanState::new(
@@ -1225,31 +1225,34 @@ fn to_graph_rec<'a>(
                             options.ignore_nulls,
                         );
 
-                        let state: Box<dyn EwmStateUpdate + Send> = Box::new(state);
-
-                        EwmNode::new("ewm-mean", state)
+                        Box::new(state)
                     })
                 },
-                _ => {
-                    with_match_physical_float_type!(dtype, |$T| {
-                        let state: EwmCovState<$T> = EwmCovState::new(
-                            options.alpha as $T,
-                            options.adjust,
-                            options.bias,
-                            options.min_periods,
-                            options.ignore_nulls,
-                        );
+                _ => with_match_physical_float_type!(dtype, |$T| {
+                    let state: EwmCovState<$T> = EwmCovState::new(
+                        options.alpha as $T,
+                        options.adjust,
+                        options.bias,
+                        options.min_periods,
+                        options.ignore_nulls,
+                    );
 
-                        let (name, state): (&'static str, Box<dyn EwmStateUpdate + Send>) = match ewm_variant {
-                            EwmVar { .. } => ("ewm-var", Box::new(EwmVarState::new(state))),
-                            EwmStd { .. } => ("ewm-std", Box::new(EwmStdState::new(state))),
-                            _ => unreachable!(),
-                        };
-
-                        EwmNode::new(name, state)
-                    })
-                },
+                    match ewm_variant {
+                        EwmVar { .. } => Box::new(EwmVarState::new(state)),
+                        EwmStd { .. } => Box::new(EwmStdState::new(state)),
+                        _ => unreachable!(),
+                    }
+                }),
             };
+
+            let name = match ewm_variant {
+                EwmMean { .. } => "ewm-mean",
+                EwmVar { .. } => "ewm-var",
+                EwmStd { .. } => "ewm-std",
+                _ => unreachable!(),
+            };
+
+            let node = EwmNode::new(name, state);
 
             ctx.graph.add_node(node, [(input_key, input.port)])
         },
