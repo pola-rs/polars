@@ -960,7 +960,9 @@ impl SQLExprVisitor<'_> {
         subquery: &Subquery,
         negated: bool,
     ) -> PolarsResult<Expr> {
-        let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
+        let subquery_result = self
+            .visit_subquery(subquery, SubqueryRestriction::SingleColumn)?
+            .implode();
         let expr = self.visit_expr(expr)?;
         Ok(if negated {
             expr.is_in(subquery_result, false).not()
