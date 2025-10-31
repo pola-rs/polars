@@ -78,7 +78,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => "rolling",
-            AExpr::Over { .. } => "over",
+            AExpr::Over { .. } => "window",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
         };
