@@ -183,7 +183,6 @@ impl CloudType {
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 fn get_retry_config(max_retries: usize) -> RetryConfig {
-    use std::cell::LazyCell;
     use std::time::Duration;
 
     use polars_core::config;
