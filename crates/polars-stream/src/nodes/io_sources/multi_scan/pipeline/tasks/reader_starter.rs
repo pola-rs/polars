@@ -12,6 +12,7 @@ use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
@@ -23,7 +24,6 @@ use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err
 use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };

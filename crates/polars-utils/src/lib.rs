@@ -34,6 +34,7 @@ pub mod plpath;
 pub mod priority;
 pub mod regex_cache;
 pub mod relaxed_cell;
+pub mod row_counter;
 pub mod select;
 pub mod slice;
 pub mod slice_enum;
