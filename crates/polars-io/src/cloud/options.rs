@@ -187,9 +187,10 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
 
     use polars_core::config;
 
-    let mut out = RetryConfig::default();
-
-    out.max_retries = max_retries;
+    let mut out = RetryConfig {
+        max_retries,
+        ..Default::default()
+    };
 
     let RetryConfig {
         backoff:
@@ -198,7 +199,7 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
                 max_backoff,
                 base,
             },
-        max_retries,
+        max_retries: _,
         retry_timeout,
     } = &mut out;
 
@@ -240,7 +241,7 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
         eprintln!("get_retry_config: {:?}", &out)
     }
 
-    return out;
+    out
 }
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
