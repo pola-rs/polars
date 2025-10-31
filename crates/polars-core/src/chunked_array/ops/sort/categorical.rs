@@ -14,12 +14,13 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         }
 
         let flags = self.get_flags();
+        let nulls_first = !options.nulls_last;
+        let options_ascending = !options.descending;
 
         if flags.is_sorted_any()
-            && (!self.physical().has_nulls()
-                || self.physical().first().is_none() == !options.nulls_last)
+            && (!self.physical().has_nulls() || self.physical().first().is_none() == nulls_first)
         {
-            return if flags.is_sorted_ascending() == !options.descending {
+            return if flags.is_sorted_ascending() == options_ascending {
                 self.clone()
             } else {
                 unsafe {
