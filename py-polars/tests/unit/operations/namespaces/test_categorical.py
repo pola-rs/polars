@@ -248,3 +248,17 @@ def test_cat_order_flag_csv_read_23823() -> None:
         schema_overrides={"colx": pl.Categorical},
     )
     assert_frame_equal(expected, lf.sort("colx", descending=False).collect())
+
+
+def test_cat_sort_flag() -> None:
+    s = pl.Series(["B", "A"], dtype=pl.Categorical(pl.Categories.random()))
+    s = s.sort()
+    assert s.flags["SORTED_ASC"]
+    assert not s.to_physical().flags["SORTED_ASC"]
+
+
+def test_enum_sort_flag() -> None:
+    s = pl.Series(["B", "A"], dtype=pl.Enum(["A", "B"]))
+    s = s.sort()
+    assert s.flags["SORTED_ASC"]
+    assert s.to_physical().flags["SORTED_ASC"]
