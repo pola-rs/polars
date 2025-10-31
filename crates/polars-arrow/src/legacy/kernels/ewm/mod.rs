@@ -87,6 +87,6 @@ pub(crate) use assert_allclose;
 
 use crate::array::Array;
 
-pub trait EwmStateUpdate: Send {
+pub trait EwmStateUpdate {
     fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array>;
 }

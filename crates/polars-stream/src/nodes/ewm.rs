@@ -11,11 +11,11 @@ use crate::pipe::{RecvPort, SendPort};
 
 pub struct EwmNode {
     name: &'static str,
-    state: Box<dyn EwmStateUpdate>,
+    state: Box<dyn EwmStateUpdate + Send>,
 }
 
 impl EwmNode {
-    pub fn new(name: &'static str, state: Box<dyn EwmStateUpdate>) -> Self {
+    pub fn new(name: &'static str, state: Box<dyn EwmStateUpdate + Send>) -> Self {
         Self { name, state }
     }
 }

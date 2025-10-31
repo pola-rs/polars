@@ -1225,7 +1225,7 @@ fn to_graph_rec<'a>(
                             options.ignore_nulls,
                         );
 
-                        let state: Box<dyn EwmStateUpdate> = Box::new(state);
+                        let state: Box<dyn EwmStateUpdate + Send> = Box::new(state);
 
                         EwmNode::new("ewm-mean", state)
                     })
@@ -1240,7 +1240,7 @@ fn to_graph_rec<'a>(
                             options.ignore_nulls,
                         );
 
-                        let (name, state): (&'static str, Box<dyn EwmStateUpdate>) = match ewm_variant {
+                        let (name, state): (&'static str, Box<dyn EwmStateUpdate + Send>) = match ewm_variant {
                             EwmVar { .. } => ("ewm-var", Box::new(EwmVarState::new(state))),
                             EwmStd { .. } => ("ewm-std", Box::new(EwmStdState::new(state))),
                             _ => unreachable!(),
