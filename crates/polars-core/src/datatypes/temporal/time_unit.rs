@@ -1,15 +1,16 @@
 use crate::prelude::ArrowTimeUnit;
 
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
+// These must be listed from smallest to largest for Ord/PartialOrd to derive proper ordering.
+#[derive(Copy, Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde-lazy", feature = "serde"),
     derive(serde::Serialize, serde::Deserialize)
 )]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum TimeUnit {
-    Nanoseconds,
-    Microseconds,
     Milliseconds,
+    Microseconds,
+    Nanoseconds,
 }
 
 impl From<&ArrowTimeUnit> for TimeUnit {

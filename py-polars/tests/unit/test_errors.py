@@ -25,6 +25,8 @@ from polars.testing import assert_frame_equal
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
+    from warnings import WarningMessage
+
     from polars._typing import ConcatMethod
 
 
@@ -523,39 +525,90 @@ def test_empty_inputs_error() -> None:
 
 
 @pytest.mark.parametrize(
-    ("colname", "values", "expected"),
+    ("colname", "values", "expected", "warnings"),
     [
-        ("a", [2], [False, True, False]),
-        ("a", [True, False], None),
-        ("a", ["2", "3", "4"], None),
-        ("b", [Decimal("3.14")], None),
-        ("c", [-2, -1, 0, 1, 2], None),
+        ("a", [2], [False, True, False], None),
+        ("a", [True, False], None, None),
+        ("a", ["2", "3", "4"], None, None),
+        ("b", [Decimal("3.14")], None, None),
+        ("c", [-2, -1, 0, 1, 2], None, None),
+        ("d", [time(10, 30)], None, None),
+        # datetime.is_in(date) --> Error
+        ("d", [date(1999, 12, 31)], None, None),
+        # date.is_in(date) --> OK
+        ("e", [date(1999, 12, 31)], [False, None, True], None),
         (
+            # us.is_in(ms) --> Error
             "d",
-            pl.datetime_range(
-                datetime.now(),
-                datetime.now(),
-                interval="2345ns",
-                time_unit="ns",
-                eager=True,
+            pl.Series(
+                [datetime(1999, 12, 31, 10, 30), None, datetime(2001, 1, 1)],
+                dtype=pl.Datetime("ms"),
             ),
             None,
+            None,
         ),
-        ("d", [time(10, 30)], None),
-        ("e", [datetime(1999, 12, 31, 10, 30)], None),
-        ("f", ["xx", "zz"], None),
+        (
+            # us.is_in(us) --> OK (no conversion)
+            "d",
+            pl.Series(
+                [datetime(1999, 12, 31, 10, 30), None, datetime(2001, 1, 1)],
+                dtype=pl.Datetime("us"),
+            ),
+            [False, None, False],
+            [
+                (
+                    DeprecationWarning,
+                    "`is_in` with a collection of the same datatype is ambiguous and deprecated. Please use `implode` to return to previous behavior.\nSee https://github.com/pola-rs/polars/issues/22149 for more information.",
+                ),
+            ],
+        ),
+        (
+            # us.is_in(ns) -> OK (with downcast warning)
+            "d",
+            pl.Series(
+                [datetime(1999, 12, 31, 10, 30), None, datetime(2001, 1, 1)],
+                dtype=pl.Datetime("ns"),
+            ),
+            [False, None, False],
+            [
+                (
+                    DeprecationWarning,
+                    "`is_in` with a collection of the same datatype is ambiguous and deprecated. Please use `implode` to return to previous behavior.\nSee https://github.com/pola-rs/polars/issues/22149 for more information.",
+                ),
+                (
+                    UserWarning,
+                    "Values in the right-hand side of `is_in` have Nanoseconds precision and must be converted to Microseconds precision. This may result in loss of precision.",
+                ),
+            ],
+        ),
+        # date.is_in(datetime) --> Ok (with downcast warning)
+        (
+            "e",
+            [datetime(1999, 12, 31, 10, 30), None, datetime(2001, 1, 1)],
+            [False, None, True],
+            [
+                (
+                    UserWarning,
+                    "Datetime values in the right-hand side of `is_in` must be converted to Date. This may result in loss of precision.",
+                )
+            ],
+        ),
+        ("f", ["xx", "zz"], None, None),
     ],
 )
 def test_invalid_is_in_dtypes(
-    colname: str, values: list[Any], expected: list[Any] | None
+    colname: str,
+    values: list[Any],
+    expected: list[Any] | None,
+    warnings: list[tuple[WarningMessage, str]] | None,
 ) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],
             "b": [-2.5, 0.0, 2.5],
             "c": [True, None, False],
-            "d": [datetime(2001, 10, 30), None, datetime(2009, 7, 5)],
-            "e": [date(2029, 12, 31), date(1999, 12, 31), None],
+            "d": [datetime(2001, 10, 30), None, datetime(1999, 12, 31)],
+            "e": [date(2029, 12, 31), None, date(1999, 12, 31)],
             "f": [b"xx", b"yy", b"zz"],
         }
     )
@@ -566,7 +619,23 @@ def test_invalid_is_in_dtypes(
         ):
             df.select(pl.col(colname).is_in(values))
     else:
-        assert df.select(pl.col(colname).is_in(values))[colname].to_list() == expected
+        if warnings:
+            with pytest.warns() as records:
+                assert (
+                    df.select(pl.col(colname).is_in(values))[colname].to_list()
+                    == expected
+                )
+            assert len(records) == len(warnings)
+            for record, expected_warning in zip(records, warnings):
+                assert record.category == expected_warning[0]  # type: ignore[comparison-overlap]
+                assert (
+                    record.message.args[0] == expected_warning[1]  # type: ignore[union-attr]
+                )
+
+        else:
+            assert (
+                df.select(pl.col(colname).is_in(values))[colname].to_list() == expected
+            )
 
 
 def test_sort_by_error() -> None:
