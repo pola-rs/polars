@@ -893,21 +893,6 @@ class PyLazyFrame:
     def describe_optimized_plan_tree(self) -> str: ...
     def to_dot(self, optimized: bool) -> str: ...
     def to_dot_streaming_phys(self, optimized: bool) -> str: ...
-    def optimization_toggle(
-        self,
-        type_coercion: bool,
-        type_check: bool,
-        predicate_pushdown: bool,
-        projection_pushdown: bool,
-        simplify_expression: bool,
-        slice_pushdown: bool,
-        comm_subplan_elim: bool,
-        comm_subexpr_elim: bool,
-        cluster_with_columns: bool,
-        _eager: bool,
-        _check_order: bool,
-        new_streaming: bool,
-    ) -> PyLazyFrame: ...
     def sort(
         self,
         by_column: str,
