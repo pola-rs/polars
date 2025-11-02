@@ -1,11 +1,11 @@
+use std::sync::Arc;
+
+use polars_core::schema::SchemaRef;
 use polars_testing::asserts::{DataFrameEqualOptions, assert_dataframe_equal, assert_schema_equal};
 use pyo3::prelude::*;
 
-use std::sync::Arc;
-
-use crate::{PyDataFrame, PySchema};
-use polars_core::schema::SchemaRef;
 use crate::error::PyPolarsErr;
+use crate::{PyDataFrame, PySchema};
 
 #[pyfunction]
 #[pyo3(signature = (left, right, *, check_row_order, check_column_order, check_dtypes, check_exact, rel_tol, abs_tol, categorical_as_str))]

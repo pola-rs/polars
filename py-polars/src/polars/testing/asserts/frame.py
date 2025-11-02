@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import contextlib
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from polars._utils.deprecation import deprecate_renamed_parameter
-from polars.dataframe import DataFrame 
+from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
-from polars import Schema
 from polars.testing.asserts.utils import raise_assertion_error
+
+if TYPE_CHECKING:
+    from polars import Schema
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import assert_dataframe_equal_py, assert_schema_equal_py
@@ -204,7 +206,7 @@ def assert_frame_not_equal(
     >>> from polars.testing import assert_frame_not_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 2, 3]})
-    >>> assert_frame_not_equal(df1.schema, df2.schema)
+    >>> assert_frame_not_equal(df1, df2)
     Traceback (most recent call last):
     ...
     AssertionError: DataFrames are equal (but are expected not to be)
@@ -269,7 +271,6 @@ def assert_schema_equal(
     [left]: ["b", "a"]
     [right]: ["a", "b"]
     """
-
     # Tell type checker these are now DataFrames to prevent type errors
 
     assert_schema_equal_py(
