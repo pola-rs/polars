@@ -332,7 +332,7 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(testing::assert_dataframe_equal_py))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(testing::assert_dataframe_schema_equal_py))
+    m.add_wrapped(wrap_pyfunction!(testing::assert_schema_equal_py))
         .unwrap();
 
     // Exceptions - Errors

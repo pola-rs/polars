@@ -4,12 +4,13 @@ import contextlib
 from typing import cast
 
 from polars._utils.deprecation import deprecate_renamed_parameter
-from polars.dataframe import DataFrame
+from polars.dataframe import DataFrame 
 from polars.lazyframe import LazyFrame
+from polars import Schema
 from polars.testing.asserts.utils import raise_assertion_error
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import assert_dataframe_equal_py, assert_dataframe_schema_equal_py
+    from polars._plr import assert_dataframe_equal_py, assert_schema_equal_py
 
 
 def _assert_correct_input_type(
@@ -203,7 +204,7 @@ def assert_frame_not_equal(
     >>> from polars.testing import assert_frame_not_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 2, 3]})
-    >>> assert_frame_not_equal(df1, df2)
+    >>> assert_frame_not_equal(df1.schema, df2.schema)
     Traceback (most recent call last):
     ...
     AssertionError: DataFrames are equal (but are expected not to be)
@@ -231,9 +232,9 @@ def assert_frame_not_equal(
         raise AssertionError(msg)
 
 
-def assert_frame_schema_equal(
-    left: DataFrame | LazyFrame,
-    right: DataFrame | LazyFrame,
+def assert_schema_equal(
+    left_schema: Schema,
+    right_schema: Schema,
     *,
     check_column_order: bool = True,
     check_dtypes: bool = True,
@@ -246,9 +247,9 @@ def assert_frame_schema_equal(
 
     Parameters
     ----------
-    left
+    left_schema
         The first DataFrame or LazyFrame to compare.
-    right
+    right_schema
         The second DataFrame or LazyFrame to compare.
     check_column_order
         Requires column order to match.
@@ -258,28 +259,22 @@ def assert_frame_schema_equal(
     Examples
     --------
     >>> import polars as pl
-    >>> from polars.testing import assert_frame_schema_equal
+    >>> from polars.testing import assert_schema_equal
     >>> df1 = pl.DataFrame({"b": [3, 4], "a": [1, 2]})
     >>> df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    >>> assert_frame_schema_equal(df1, df2)
+    >>> assert_schema_equal(df1.schema, df2.schema)
     Traceback (most recent call last):
     ...
     AssertionError: DataFrames are different (columns are not in the same order)
     [left]: ["b", "a"]
     [right]: ["a", "b"]
     """
-    lazy = _assert_correct_input_type(left, right)
-
-    # Rust back-end function expects DataFrames so LazyFrames must be collected
-    if lazy:
-        left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
     # Tell type checker these are now DataFrames to prevent type errors
-    left, right = cast("DataFrame", left), cast("DataFrame", right)
 
-    assert_dataframe_schema_equal_py(
-        left._df,
-        right._df,
+    assert_schema_equal_py(
+        left_schema,
+        right_schema,
         check_column_order=check_column_order,
         check_dtypes=check_dtypes,
     )

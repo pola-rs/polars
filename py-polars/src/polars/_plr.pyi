@@ -2481,7 +2481,7 @@ def assert_dataframe_equal_py(
     abs_tol: float,
     categorical_as_str: bool,
 ) -> None: ...
-def assert_dataframe_schema_equal_py(
+def assert_schema_equal_py(
     left: PyDataFrame,
     right: PyDataFrame,
     *,
