@@ -199,13 +199,15 @@ def test_predicate_pushdown_group_by_keys() -> None:
     df = pl.LazyFrame(
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
-    assert (
-        "SELECTION: None"
-        not in df.group_by("group")
+    q = (
+        df.group_by("group")
         .agg([pl.len().alias("str_list")])
         .filter(pl.col("group") == 1)
-        .explain()
     )
+    assert not q.explain().startswith("FILTER")
+    assert q.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=False)
+    ).startswith("FILTER")
 
 
 def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
@@ -1200,3 +1202,55 @@ def test_duplicate_filter_removal_23243() -> None:
     assert plan.split("\n", 1)[0] == 'FILTER [(col("x")) == (2)]'
 
     assert_frame_equal(q.collect(), expect)
+
+
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_no_predicate_pushdown_on_modified_groupby_keys_21439(
+    maintain_order: bool,
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    q = (
+        df.lazy()
+        .group_by(pl.col.a + 1, maintain_order=maintain_order)
+        .agg()
+        .filter(pl.col.a <= 3)
+    )
+    expected = pl.DataFrame({"a": [2, 3]})
+    assert_frame_equal(q.collect(), expected, check_row_order=maintain_order)
+
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    q = (
+        df.lazy()
+        .group_by([(pl.col.a + 1).alias("b"), pl.col.b.alias("a")], maintain_order=True)
+        .agg()
+        .filter(pl.col.b <= 2)
+        .select(pl.col.b)
+    )
+    expected = pl.DataFrame({"b": [2]})
+    assert_frame_equal(q.collect(), expected, check_row_order=maintain_order)
+
+
+def test_no_predicate_pushdown_on_modified_groupby_keys_21439b() -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.datetime_range(
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 2),
+                timedelta(minutes=15),
+                eager=True,
+            )
+        }
+    )
+    eager = (
+        df.group_by(pl.col("time").dt.hour())
+        .agg()
+        .filter(pl.col("time").is_between(0, 10))
+    )
+    lazy = (
+        df.lazy()
+        .group_by(pl.col("time").dt.hour())
+        .agg()
+        .filter(pl.col("time").is_between(0, 10))
+        .collect()
+    )
+    assert_frame_equal(eager, lazy, check_row_order=False)

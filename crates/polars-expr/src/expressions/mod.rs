@@ -168,10 +168,7 @@ impl<'a> AggregationContext<'a> {
                     // sliced groups are already in correct order,
                     // Update offsets in the case of overlapping groups
                     // e.g. [0,2], [1,3], [2,4] becomes [0,2], [2,3], [5,4]
-                    GroupsType::Slice {
-                        overlapping: true,
-                        groups,
-                    } => {
+                    GroupsType::Slice { groups, .. } => {
                         // unroll
                         let groups = groups
                             .iter()
@@ -190,7 +187,6 @@ impl<'a> AggregationContext<'a> {
                             .into_sliceable(),
                         )
                     },
-                    GroupsType::Slice { .. } => {},
                 }
                 self.update_groups = UpdateGroups::No;
             },
@@ -668,6 +664,17 @@ impl<'a> AggregationContext<'a> {
             },
         }
     }
+
+    pub fn into_static(&self) -> AggregationContext<'static> {
+        let groups: GroupPositions = GroupPositions::to_owned(&self.groups);
+        let groups: Cow<'static, GroupPositions> = Cow::Owned(groups);
+        AggregationContext {
+            state: self.state.clone(),
+            groups,
+            update_groups: self.update_groups,
+            original_len: self.original_len,
+        }
+    }
 }
 
 /// Take a DataFrame and evaluate the expressions.
@@ -712,11 +719,6 @@ pub trait PhysicalExpr: Send + Sync {
 
     /// Get the output field of this expr
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field>;
-
-    /// Convert to a partitioned aggregator.
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        None
-    }
 
     fn is_literal(&self) -> bool {
         false
@@ -772,30 +774,4 @@ pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoEx
         expr,
         has_window_function,
     }) as Arc<dyn PhysicalIoExpr>
-}
-
-pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
-    /// This is called in partitioned aggregation.
-    /// Partitioned results may differ from aggregation results.
-    /// For instance, for a `mean` operation a partitioned result
-    /// needs to return the `sum` and the `valid_count` (length - null count).
-    ///
-    /// A final aggregation can then take the sum of sums and sum of valid_counts
-    /// to produce a final mean.
-    #[allow(clippy::ptr_arg)]
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column>;
-
-    /// Called to merge all the partitioned results in a final aggregate.
-    #[allow(clippy::ptr_arg)]
-    fn finalize(
-        &self,
-        partitioned: Column,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column>;
 }

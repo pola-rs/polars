@@ -566,8 +566,33 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
             let ignore_nulls = *ignore_nulls;
             wrap_groups!(groups_dispatch::all, (ignore_nulls, v: bool))
         },
+        #[cfg(feature = "bitwise")]
+        F::Bitwise(f) => {
+            use polars_plan::plans::IRBitwiseFunction as B;
+            match f {
+                B::And => wrap_groups!(groups_dispatch::bitwise_and),
+                B::Or => wrap_groups!(groups_dispatch::bitwise_or),
+                B::Xor => wrap_groups!(groups_dispatch::bitwise_xor),
+                _ => return None,
+            }
+        },
         F::DropNans => wrap_groups!(groups_dispatch::drop_nans),
         F::DropNulls => wrap_groups!(groups_dispatch::drop_nulls),
+
+        #[cfg(feature = "moment")]
+        F::Skew(bias) => wrap_groups!(groups_dispatch::skew, (*bias, v: bool)),
+        #[cfg(feature = "moment")]
+        F::Kurtosis(fisher, bias) => {
+            wrap_groups!(groups_dispatch::kurtosis, (*fisher, v1: bool), (*bias, v2: bool))
+        },
+
+        F::Unique(stable) => wrap_groups!(groups_dispatch::unique, (*stable, v: bool)),
+        F::FillNullWithStrategy(polars_core::prelude::FillNullStrategy::Forward(limit)) => {
+            wrap_groups!(groups_dispatch::forward_fill_null, (*limit, v: Option<IdxSize>))
+        },
+        F::FillNullWithStrategy(polars_core::prelude::FillNullStrategy::Backward(limit)) => {
+            wrap_groups!(groups_dispatch::backward_fill_null, (*limit, v: Option<IdxSize>))
+        },
 
         _ => return None,
     })

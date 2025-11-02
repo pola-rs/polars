@@ -4,9 +4,7 @@ use polars_core::prelude::*;
 use polars_ops::prelude::floor_div_series;
 
 use super::*;
-use crate::expressions::{
-    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
-};
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 
 #[derive(Clone)]
 pub struct BinaryExpr {
@@ -139,7 +137,7 @@ impl BinaryExpr {
         }
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
-            (_, AggState::AggregatedList(s)) | (AggState::AggregatedList(s), _) => {
+            (AggState::AggregatedList(s), _) | (_, AggState::AggregatedList(s)) => {
                 let ca = s.list().unwrap();
                 let [col_l, col_r] = [&ac_l, &ac_r].map(|ac| ac.flat_naive().into_owned());
 
@@ -320,6 +318,20 @@ impl PhysicalExpr for BinaryExpr {
             ac_l.get_values().dtype().is_decimal() || ac_r.get_values().dtype().is_decimal();
         let is_fallible = has_decimal_dtype && self.op.is_arithmetic();
 
+        // Broadcast in NotAgg or AggList requires group_aware
+        let check_broadcast = [&ac_l, &ac_r].iter().all(|ac| {
+            matches!(
+                ac.agg_state(),
+                AggState::NotAggregated(_) | AggState::AggregatedList(_)
+            )
+        });
+        let has_broadcast = check_broadcast
+            && ac_l
+                .groups()
+                .iter()
+                .zip(ac_r.groups().iter())
+                .any(|(l, r)| l.len() != r.len() && (l.len() == 1 || r.len() == 1));
+
         // Dispatch
         // See ApplyExpr for reference logic, except that we do any required
         // aggregation inline. All BinaryExprs are elementwise.
@@ -346,7 +358,11 @@ impl PhysicalExpr for BinaryExpr {
                 }
                 aggregated = true;
             }
-            self.apply_elementwise(ac_l, ac_r, aggregated)
+            if has_broadcast {
+                self.apply_group_aware(ac_l, ac_r)
+            } else {
+                self.apply_elementwise(ac_l, ac_r, aggregated)
+            }
         }
     }
 
@@ -356,33 +372,5 @@ impl PhysicalExpr for BinaryExpr {
 
     fn is_scalar(&self) -> bool {
         self.is_scalar
-    }
-
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-}
-
-impl PartitionedAggregation for BinaryExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let left = self.left.as_partitioned_aggregator().unwrap();
-        let right = self.right.as_partitioned_aggregator().unwrap();
-        let left = left.evaluate_partitioned(df, groups, state)?;
-        let right = right.evaluate_partitioned(df, groups, state)?;
-        apply_operator(&left, &right, self.op)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

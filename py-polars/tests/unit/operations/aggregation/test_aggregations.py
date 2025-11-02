@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -939,3 +941,97 @@ def test_invalid_agg_dtypes_should_raise(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
         df.lazy().select(expr).collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        excluded_dtypes=[
+            # TODO: polars/#24936
+            pl.Struct,
+        ],
+    )
+)
+def test_single(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).item())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+@given(df=dataframes(max_size=0))
+def test_single_empty(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all().item())
+    match = "aggregation 'item' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(df=dataframes(min_size=2))
+def test_item_too_many(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).item())
+    match = f"aggregation 'item' expected a single value, got {df.height} values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        allow_null=False,
+        excluded_dtypes=[
+            # TODO: polars/#24936
+            pl.Struct,
+        ],
+    )
+)
+def test_item_on_groups(df: pl.DataFrame) -> None:
+    df = df.with_columns(pl.col("col0").alias("key"))
+    q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).item())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+def test_item_on_groups_empty() -> None:
+    df = pl.DataFrame({"col0": [[]]})
+    q = df.lazy().select(pl.all().list.item())
+    match = "aggregation 'item' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+def test_item_on_groups_too_many() -> None:
+    df = pl.DataFrame({"col0": [[1, 2, 3]]})
+    q = df.lazy().select(pl.all().list.item())
+    match = "aggregation 'item' expected a single value, got 3 values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+def test_all_any_on_list_raises_error() -> None:
+    # Ensure boolean reductions on non-boolean columns raise an error.
+    # (regression for #24942).
+    lf = pl.LazyFrame({"x": [[True]]}, schema={"x": pl.List(pl.Boolean)})
+
+    # for in-memory engine
+    for expr in (pl.col("x").all(), pl.col("x").any()):
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match=r"expected boolean"
+        ):
+            lf.select(expr).collect()
+
+    # for streaming engine
+    for expr in (pl.col("x").all(), pl.col("x").any()):
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match=r"expected boolean"
+        ):
+            lf.select(expr).collect(engine="streaming")

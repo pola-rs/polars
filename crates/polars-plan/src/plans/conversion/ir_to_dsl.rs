@@ -122,6 +122,14 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
             },
+            IRAggExpr::Item { input, allow_empty } => {
+                let exp = node_to_expr(input, expr_arena);
+                AggExpr::Item {
+                    input: Arc::new(exp),
+                    allow_empty,
+                }
+                .into()
+            },
             IRAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Implode(Arc::new(exp)).into()

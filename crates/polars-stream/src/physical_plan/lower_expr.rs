@@ -1661,6 +1661,7 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::Last(_)
+                | IRAggExpr::Item { .. }
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Var { .. }
@@ -1862,6 +1863,86 @@ fn lower_exprs_with_ctx(
                 ));
 
                 input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            #[cfg(feature = "ewma")]
+            AExpr::Function {
+                input: input_exprs,
+                function: IRFunctionExpr::EwmMean { options },
+                options: _,
+            } => {
+                let out_name = unique_column_name();
+
+                let input = match input_exprs.as_slice() {
+                    [input_expr] => build_select_stream_with_ctx(
+                        input,
+                        &[input_expr.with_alias(out_name.clone())],
+                        ctx,
+                    )?,
+                    _ => panic!("{:?}", input_exprs),
+                };
+
+                let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+                assert_eq!(input_schema.len(), 1);
+                let output_schema = input_schema;
+
+                let kind = PhysNodeKind::EwmMean { input, options };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Window {
+                function,
+                partition_by,
+                order_by: None,
+                options: WindowType::Rolling(options),
+            } if partition_by.first().is_some_and(
+                |n| matches!(ctx.expr_arena.get(*n), AExpr::Column(c) if c == &options.index_column),
+            ) =>
+            {
+                let out_name = unique_column_name();
+
+                let input_columns = aexpr_to_leaf_names(function, ctx.expr_arena).into_iter()
+                    .chain(std::iter::once(options.index_column.clone()))
+                    .map(|n| AExprBuilder::col(n.clone(), ctx.expr_arena).expr_ir(n))
+                    .collect::<Vec<_>>();
+                let input = build_select_stream_with_ctx(input, &input_columns, ctx)?;
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let mut output_dtype = ctx
+                    .expr_arena
+                    .get(function)
+                    .to_dtype(&ToFieldContext::new(ctx.expr_arena, input_schema))?;
+                if !is_scalar_ae(function, ctx.expr_arena) {
+                    output_dtype = output_dtype.implode();
+                }
+                let output_schema = Schema::from_iter([
+                    input_schema.try_get_field(&options.index_column)?,
+                    Field::new(out_name.clone(), output_dtype),
+                ]);
+
+                let kind = PhysNodeKind::RollingGroupBy {
+                    input,
+                    index_column: options.index_column.clone(),
+                    period: options.period,
+                    offset: options.offset,
+                    closed: options.closed_window,
+                    aggs: vec![AExprBuilder::new_from_node(function).expr_ir(out_name.clone())],
+                };
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), kind));
+                let input = PhysStream::first(node_key);
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[AExprBuilder::col(out_name.clone(), ctx.expr_arena).expr_ir(out_name.clone())],
+                    ctx
+                )?;
+                input_streams.insert(input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 

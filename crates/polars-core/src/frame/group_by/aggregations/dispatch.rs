@@ -1,4 +1,7 @@
+use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
+
 use super::*;
+use crate::prelude::row_encode::encode_rows_unordered;
 
 // implemented on the series because we don't need types
 impl Series {
@@ -90,35 +93,51 @@ impl Series {
 
     #[doc(hidden)]
     pub unsafe fn agg_n_unique(&self, groups: &GroupsType) -> Series {
-        // Prevent a rechunk for every individual group.
-        let s = if groups.len() > 1 {
-            self.rechunk()
+        let values = self.to_physical_repr();
+        let dtype = values.dtype();
+        let values = if dtype.contains_objects() {
+            panic!("{}", polars_err!(opq = unique, dtype));
+        } else if let Some(ca) = values.try_str() {
+            ca.as_binary().into_column()
+        } else if dtype.is_nested() {
+            encode_rows_unordered(&[values.into_owned().into_column()])
+                .unwrap()
+                .into_column()
         } else {
-            self.clone()
+            values.into_owned().into_column()
         };
 
-        match groups {
-            GroupsType::Idx(groups) => agg_helper_idx_on_all_no_null::<IdxType, _>(groups, |idx| {
-                debug_assert!(idx.len() <= s.len());
-                if idx.is_empty() {
-                    0
-                } else {
-                    let take = s.take_slice_unchecked(idx);
-                    take.n_unique().unwrap() as IdxSize
-                }
-            }),
-            GroupsType::Slice { groups, .. } => {
-                _agg_helper_slice_no_null::<IdxType, _>(groups, |[first, len]| {
-                    debug_assert!(len <= s.len() as IdxSize);
-                    if len == 0 {
-                        0
-                    } else {
-                        let take = s.slice_from_offsets(first, len);
-                        take.n_unique().unwrap() as IdxSize
-                    }
-                })
-            },
+        let values = values.rechunk_to_arrow(CompatLevel::newest());
+        let values = values.as_ref();
+        let state = amortized_unique_from_dtype(values.dtype());
+
+        struct CloneWrapper(Box<dyn AmortizedUnique>);
+        impl Clone for CloneWrapper {
+            fn clone(&self) -> Self {
+                Self(self.0.new_empty())
+            }
         }
+
+        POOL.install(|| match groups {
+            GroupsType::Idx(idx) => idx
+                .all()
+                .into_par_iter()
+                .map_with(CloneWrapper(state), |state, idxs| unsafe {
+                    state.0.n_unique_idx(values, idxs.as_slice())
+                })
+                .collect::<NoNull<IdxCa>>(),
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+            } => groups
+                .into_par_iter()
+                .map_with(CloneWrapper(state), |state, [start, len]| {
+                    state.0.n_unique_slice(values, *start, *len)
+                })
+                .collect::<NoNull<IdxCa>>(),
+        })
+        .into_inner()
+        .into_series()
     }
 
     #[doc(hidden)]

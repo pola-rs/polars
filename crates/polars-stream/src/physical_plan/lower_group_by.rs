@@ -54,7 +54,7 @@ fn build_group_by_fallback(
         group_by_lp_node,
         &mut lp_arena,
         expr_arena,
-        None,
+        Some(crate::dispatch::build_streaming_query_executor),
     )?);
 
     let group_by_node = PhysNode {
@@ -312,6 +312,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::Last(_)
+                | IRAggExpr::Item { .. }
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Var(..)
@@ -526,6 +527,24 @@ pub fn build_group_by_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
+    #[cfg(feature = "dynamic_group_by")]
+    if let Some(options) = options.as_ref().rolling.as_ref()
+        && keys.is_empty()
+        && apply.is_none()
+    {
+        return Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
+            output_schema.clone(),
+            PhysNodeKind::RollingGroupBy {
+                input,
+                index_column: options.index_column.clone(),
+                period: options.period,
+                offset: options.offset,
+                closed: options.closed_window,
+                aggs: aggs.to_vec(),
+            },
+        ))));
+    }
+
     let streaming = try_build_streaming_group_by(
         input,
         keys,

@@ -26,8 +26,8 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::RowIndex;
+use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
@@ -543,18 +543,7 @@ impl LazyFrame {
             lp_arena,
             expr_arena,
             scratch,
-            Some(&|expr, expr_arena, schema| {
-                let phys_expr = create_physical_expr(
-                    expr,
-                    Context::Default,
-                    expr_arena,
-                    schema,
-                    &mut ExpressionConversionState::new(true),
-                )
-                .ok()?;
-                let io_expr = phys_expr_to_io_expr(phys_expr);
-                Some(io_expr)
-            }),
+            apply_scan_predicate_to_scan_ir,
         )?;
 
         Ok(lp_top)
@@ -2091,6 +2080,14 @@ impl LazyFrame {
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
+
+    pub fn hint(self, hint: HintIR) -> PolarsResult<LazyFrame> {
+        let lp = DslPlan::MapFunction {
+            input: Arc::new(self.logical_plan),
+            function: DslFunction::Hint(hint),
+        };
+        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
+    }
 }
 
 /// Utility struct for lazy group_by operation.
@@ -2457,78 +2454,6 @@ pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorB
     }
     #[cfg(feature = "new_streaming")]
     {
-        Some(streaming_dispatch::build_streaming_query_executor)
+        Some(polars_stream::build_streaming_query_executor)
     }
 };
-#[cfg(feature = "new_streaming")]
-pub use streaming_dispatch::build_streaming_query_executor;
-
-#[cfg(feature = "new_streaming")]
-mod streaming_dispatch {
-    use std::sync::{Arc, Mutex};
-
-    use polars_core::POOL;
-    use polars_core::error::PolarsResult;
-    use polars_core::frame::DataFrame;
-    use polars_expr::state::ExecutionState;
-    use polars_mem_engine::Executor;
-    use polars_plan::dsl::SinkTypeIR;
-    use polars_plan::plans::{AExpr, IR};
-    use polars_utils::arena::{Arena, Node};
-
-    pub fn build_streaming_query_executor(
-        node: Node,
-        ir_arena: &mut Arena<IR>,
-        expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<Box<dyn Executor>> {
-        let rechunk = match ir_arena.get(node) {
-            IR::Scan {
-                unified_scan_args, ..
-            } => unified_scan_args.rechunk,
-            _ => false,
-        };
-
-        let node = match ir_arena.get(node) {
-            IR::SinkMultiple { .. } => panic!("SinkMultiple not supported"),
-            IR::Sink { .. } => node,
-            _ => ir_arena.add(IR::Sink {
-                input: node,
-                payload: SinkTypeIR::Memory,
-            }),
-        };
-
-        polars_stream::StreamingQuery::build(node, ir_arena, expr_arena)
-            .map(Some)
-            .map(Mutex::new)
-            .map(Arc::new)
-            .map(|x| StreamingQueryExecutor {
-                executor: x,
-                rechunk,
-            })
-            .map(|x| Box::new(x) as Box<dyn Executor>)
-    }
-
-    // Note: Arc/Mutex is because Executor requires Sync, but SlotMap is not Sync.
-    struct StreamingQueryExecutor {
-        executor: Arc<Mutex<Option<polars_stream::StreamingQuery>>>,
-        rechunk: bool,
-    }
-
-    impl Executor for StreamingQueryExecutor {
-        fn execute(&mut self, _cache: &mut ExecutionState) -> PolarsResult<DataFrame> {
-            // Must not block rayon thread on pending new-streaming future.
-            assert!(POOL.current_thread_index().is_none());
-
-            let mut df = { self.executor.try_lock().unwrap().take() }
-                .expect("unhandled: execute() more than once")
-                .execute()
-                .map(|x| x.unwrap_single())?;
-
-            if self.rechunk {
-                df.as_single_chunk_par();
-            }
-
-            Ok(df)
-        }
-    }
-}

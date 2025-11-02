@@ -176,6 +176,15 @@ impl Expr {
         AggExpr::Last(Arc::new(self)).into()
     }
 
+    /// Get the single value in the group. If there are multiple values, an error is returned.
+    pub fn item(self, allow_empty: bool) -> Self {
+        AggExpr::Item {
+            input: Arc::new(self),
+            allow_empty,
+        }
+        .into()
+    }
+
     /// GroupBy the group to a Series.
     pub fn implode(self) -> Self {
         AggExpr::Implode(Arc::new(self)).into()

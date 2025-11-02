@@ -8,6 +8,7 @@ import polars._reexport as pl
 from polars import exceptions
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
+from polars._utils.unstable import unstable
 from polars._utils.various import issue_warning
 from polars._utils.wrap import wrap_expr
 
@@ -682,6 +683,56 @@ class ExprListNameSpace:
         └───────────┴──────┘
         """
         return self.get(-1, null_on_oob=True)
+
+    @unstable()
+    def item(self, *, allow_empty: bool = False) -> Expr:
+        """
+        Get the single value of the sublists.
+
+        This errors if the sublist length is not exactly one.
+
+        Parameters
+        ----------
+        allow_empty
+            Allow having no values to return `null`.
+
+        See Also
+        --------
+        :meth:`Expr.list.get` : Get the value by index in the sublists.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[3], [1], [2]]})
+        >>> df.with_columns(item=pl.col("a").list.item())
+        shape: (3, 2)
+        ┌───────────┬──────┐
+        │ a         ┆ item │
+        │ ---       ┆ ---  │
+        │ list[i64] ┆ i64  │
+        ╞═══════════╪══════╡
+        │ [3]       ┆ 3    │
+        │ [1]       ┆ 1    │
+        │ [2]       ┆ 2    │
+        └───────────┴──────┘
+        >>> df = pl.DataFrame({"a": [[3, 2, 1], [1], [2]]})
+        >>> df.select(pl.col("a").list.item())
+        Traceback (most recent call last):
+        ...
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        >>> df = pl.DataFrame({"a": [[], [1], [2]]})
+        >>> df.select(pl.col("a").list.item(allow_empty=True))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        │ 1    │
+        │ 2    │
+        └──────┘
+        """  # noqa: W505
+        return self.agg(F.element().item(allow_empty=allow_empty))
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """

@@ -1,9 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::array::*;
-use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
-use arrow::offset::Offsets;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
 use polars_core::prelude::*;
@@ -15,9 +12,7 @@ use rayon::prelude::*;
 
 use super::*;
 use crate::expressions::AggState::AggregatedScalar;
-use crate::expressions::{
-    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
-};
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AggregationType {
@@ -129,6 +124,11 @@ impl PhysicalExpr for AggregationExpr {
                 Column::full_null(s.name().clone(), 1, s.dtype())
             } else {
                 s.tail(Some(1))
+            }),
+            GroupByMethod::Item { allow_empty } => Ok(match s.len() {
+                0 if allow_empty => Column::full_null(s.name().clone(), 1, s.dtype()),
+                1 => s,
+                n => polars_bail!(item_agg_count_not_one = n, allow_empty = allow_empty),
             }),
             GroupByMethod::Sum => parallel_op_columns(
                 |s| s.sum_reduce().map(|sc| sc.into_column(s.name().clone())),
@@ -337,6 +337,20 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = s.agg_last(&groups);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
+                GroupByMethod::Item { allow_empty } => {
+                    let (s, groups) = ac.get_final_aggregation();
+                    for gc in groups.group_count().iter() {
+                        match gc {
+                            Some(0) if allow_empty => continue,
+                            None | Some(1) => continue,
+                            Some(n) => {
+                                polars_bail!(item_agg_count_not_one = n, allow_empty = allow_empty);
+                            },
+                        }
+                    }
+                    let agg_s = s.agg_first(&groups);
+                    AggregatedScalar(agg_s.with_name(keep_name))
+                },
                 GroupByMethod::NUnique => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_n_unique(&groups);
@@ -421,228 +435,6 @@ impl PhysicalExpr for AggregationExpr {
 
     fn is_scalar(&self) -> bool {
         true
-    }
-
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-}
-
-impl PartitionedAggregation for AggregationExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let expr = self.input.as_partitioned_aggregator().unwrap();
-        let column = expr.evaluate_partitioned(df, groups, state)?;
-
-        // SAFETY:
-        // groups are in bounds
-        unsafe {
-            match self.agg_type.groupby {
-                #[cfg(feature = "dtype-struct")]
-                GroupByMethod::Mean => {
-                    let new_name = column.name().clone();
-
-                    // ensure we don't overflow
-                    // the all 8 and 16 bits integers are already upcasted to int16 on `agg_sum`
-                    let mut agg_s = if matches!(column.dtype(), DataType::Int32 | DataType::UInt32)
-                    {
-                        column.cast(&DataType::Int64).unwrap().agg_sum(groups)
-                    } else {
-                        column.agg_sum(groups)
-                    };
-                    agg_s.rename(new_name.clone());
-
-                    if !agg_s.dtype().is_primitive_numeric() {
-                        Ok(agg_s)
-                    } else {
-                        let agg_s = match agg_s.dtype() {
-                            DataType::Float32 => agg_s,
-                            _ => agg_s.cast(&DataType::Float64).unwrap(),
-                        };
-                        let mut count_s = column.agg_valid_count(groups);
-                        count_s.rename(PlSmallStr::from_static("__POLARS_COUNT"));
-                        Ok(
-                            StructChunked::from_columns(new_name, agg_s.len(), &[agg_s, count_s])
-                                .unwrap()
-                                .into_column(),
-                        )
-                    }
-                },
-                GroupByMethod::Implode => {
-                    let new_name = column.name().clone();
-                    let mut agg = column.agg_list(groups);
-                    agg.rename(new_name);
-                    Ok(agg)
-                },
-                GroupByMethod::First => {
-                    let mut agg = column.agg_first(groups);
-                    agg.rename(column.name().clone());
-                    Ok(agg)
-                },
-                GroupByMethod::Last => {
-                    let mut agg = column.agg_last(groups);
-                    agg.rename(column.name().clone());
-                    Ok(agg)
-                },
-                GroupByMethod::Max => {
-                    let mut agg = column.agg_max(groups);
-                    agg.rename(column.name().clone());
-                    Ok(agg)
-                },
-                GroupByMethod::Min => {
-                    let mut agg = column.agg_min(groups);
-                    agg.rename(column.name().clone());
-                    Ok(agg)
-                },
-                GroupByMethod::Sum => {
-                    let mut agg = column.agg_sum(groups);
-                    agg.rename(column.name().clone());
-                    Ok(agg)
-                },
-                GroupByMethod::Count {
-                    include_nulls: true,
-                } => {
-                    let mut ca = groups.group_count();
-                    ca.rename(column.name().clone());
-                    Ok(ca.into_column())
-                },
-                _ => {
-                    unimplemented!()
-                },
-            }
-        }
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        match self.agg_type.groupby {
-            GroupByMethod::Count {
-                include_nulls: true,
-            }
-            | GroupByMethod::Sum => {
-                let mut agg = unsafe { partitioned.agg_sum(groups) };
-                agg.rename(partitioned.name().clone());
-                Ok(agg)
-            },
-            #[cfg(feature = "dtype-struct")]
-            GroupByMethod::Mean => {
-                let new_name = partitioned.name().clone();
-                match partitioned.dtype() {
-                    DataType::Struct(_) => {
-                        let ca = partitioned.struct_().unwrap();
-                        let fields = ca.fields_as_series();
-                        let sum = &fields[0];
-                        let count = &fields[1];
-                        let (agg_count, agg_s) =
-                            unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
-
-                        // Ensure that we don't divide by zero by masking out zeros.
-                        let agg_count = agg_count.idx().unwrap();
-                        let mask = agg_count.equal(0 as IdxSize);
-                        let agg_count = agg_count.set(&mask, None).unwrap().into_series();
-
-                        let agg_s = &agg_s / &agg_count.cast(agg_s.dtype()).unwrap();
-                        Ok(agg_s?.with_name(new_name).into_column())
-                    },
-                    _ => Ok(Column::full_null(
-                        new_name,
-                        groups.len(),
-                        partitioned.dtype(),
-                    )),
-                }
-            },
-            GroupByMethod::Implode => {
-                // the groups are scattered over multiple groups/sub dataframes.
-                // we now must collect them into a single group
-                let ca = partitioned.list().unwrap();
-                let new_name = partitioned.name().clone();
-
-                let mut values = Vec::with_capacity(groups.len());
-                let mut can_fast_explode = true;
-
-                let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
-                let mut length_so_far = 0i64;
-                offsets.push(length_so_far);
-
-                let mut process_group = |ca: ListChunked| -> PolarsResult<()> {
-                    let s = ca.explode(false)?;
-                    length_so_far += s.len() as i64;
-                    offsets.push(length_so_far);
-                    values.push(s.chunks()[0].clone());
-
-                    if s.is_empty() {
-                        can_fast_explode = false;
-                    }
-                    Ok(())
-                };
-
-                match groups.as_ref() {
-                    GroupsType::Idx(groups) => {
-                        for (_, idx) in groups {
-                            let ca = unsafe {
-                                // SAFETY:
-                                // The indexes of the group_by operation are never out of bounds
-                                ca.take_unchecked(idx)
-                            };
-                            process_group(ca)?;
-                        }
-                    },
-                    GroupsType::Slice { groups, .. } => {
-                        for [first, len] in groups {
-                            let len = *len as usize;
-                            let ca = ca.slice(*first as i64, len);
-                            process_group(ca)?;
-                        }
-                    },
-                }
-
-                let vals = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                let values = concatenate(&vals).unwrap();
-
-                let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
-                // SAFETY: offsets are monotonically increasing.
-                let arr = ListArray::<i64>::new(
-                    dtype,
-                    unsafe { Offsets::new_unchecked(offsets).into() },
-                    values,
-                    None,
-                );
-                let mut ca = ListChunked::with_chunk(new_name, arr);
-                if can_fast_explode {
-                    ca.set_fast_explode()
-                }
-                Ok(ca.into_series().as_list().into_column())
-            },
-            GroupByMethod::First => {
-                let mut agg = unsafe { partitioned.agg_first(groups) };
-                agg.rename(partitioned.name().clone());
-                Ok(agg)
-            },
-            GroupByMethod::Last => {
-                let mut agg = unsafe { partitioned.agg_last(groups) };
-                agg.rename(partitioned.name().clone());
-                Ok(agg)
-            },
-            GroupByMethod::Max => {
-                let mut agg = unsafe { partitioned.agg_max(groups) };
-                agg.rename(partitioned.name().clone());
-                Ok(agg)
-            },
-            GroupByMethod::Min => {
-                let mut agg = unsafe { partitioned.agg_min(groups) };
-                agg.rename(partitioned.name().clone());
-                Ok(agg)
-            },
-            _ => unimplemented!(),
-        }
     }
 }
 

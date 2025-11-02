@@ -451,60 +451,60 @@ fn try_rewrite_join_type(
             return Ok(());
         }
 
-        // Try converting to IEJoin
+        // Try converting cross join to IEJoin
         #[cfg(feature = "iejoin")]
+        if matches!(options.args.maintain_order, MaintainOrderJoin::None)
+            && left_on.len() < IEJOIN_MAX_PREDICATES
         {
-            if left_on.len() < IEJOIN_MAX_PREDICATES {
-                let ie_conditions = take_iejoin_compatible_filters(
-                    acc_predicates,
-                    expr_arena,
-                    schema_left,
-                    schema_right,
-                    output_schema,
-                    &suffix,
-                )?;
+            let ie_conditions = take_iejoin_compatible_filters(
+                acc_predicates,
+                expr_arena,
+                schema_left,
+                schema_right,
+                output_schema,
+                &suffix,
+            )?;
 
-                for IEJoinCompatiblePredicate {
-                    input_lhs,
-                    input_rhs,
-                    ie_op,
-                    source_node,
-                } in ie_conditions
-                {
-                    let join_options = Arc::make_mut(options);
-                    join_options.args.how = JoinType::IEJoin;
+            for IEJoinCompatiblePredicate {
+                input_lhs,
+                input_rhs,
+                ie_op,
+                source_node,
+            } in ie_conditions
+            {
+                let join_options = Arc::make_mut(options);
+                join_options.args.how = JoinType::IEJoin;
 
-                    if left_on.len() >= IEJOIN_MAX_PREDICATES {
-                        // Important: Place these back into acc_predicates.
-                        insert_predicate_dedup(
-                            acc_predicates,
-                            &ExprIR::from_node(source_node, expr_arena),
-                            expr_arena,
-                        );
-                    } else {
-                        left_on.push(ExprIR::from_node(input_lhs, expr_arena));
-                        let mut rexpr = ExprIR::from_node(input_rhs, expr_arena);
-                        remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
-                        right_on.push(rexpr);
+                if left_on.len() >= IEJOIN_MAX_PREDICATES {
+                    // Important: Place these back into acc_predicates.
+                    insert_predicate_dedup(
+                        acc_predicates,
+                        &ExprIR::from_node(source_node, expr_arena),
+                        expr_arena,
+                    );
+                } else {
+                    left_on.push(ExprIR::from_node(input_lhs, expr_arena));
+                    let mut rexpr = ExprIR::from_node(input_rhs, expr_arena);
+                    remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
+                    right_on.push(rexpr);
 
-                        let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
-                            .options
-                            .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
-                        else {
-                            unreachable!()
-                        };
+                    let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
+                        .options
+                        .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
+                    else {
+                        unreachable!()
+                    };
 
-                        match left_on.len() {
-                            1 => ie_options.operator1 = ie_op,
-                            2 => ie_options.operator2 = Some(ie_op),
-                            _ => unreachable!("{}", IEJOIN_MAX_PREDICATES),
-                        };
-                    }
+                    match left_on.len() {
+                        1 => ie_options.operator1 = ie_op,
+                        2 => ie_options.operator2 = Some(ie_op),
+                        _ => unreachable!("{}", IEJOIN_MAX_PREDICATES),
+                    };
                 }
+            }
 
-                if options.args.how == JoinType::IEJoin {
-                    return Ok(());
-                }
+            if options.args.how == JoinType::IEJoin {
+                return Ok(());
             }
         }
 

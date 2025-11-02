@@ -24,9 +24,12 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
+#[cfg(feature = "physical_plan_visualization")]
+pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileType, PlanCallback};
+use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
@@ -78,7 +81,7 @@ pub struct PhysStream {
 }
 
 impl PhysStream {
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn new(node: PhysNodeKey, port: usize) -> Self {
         Self { node, port }
     }
@@ -271,6 +274,7 @@ pub enum PhysNodeKind {
         row_index: Option<RowIndex>,
         pre_slice: Option<Slice>,
         predicate: Option<ExprIR>,
+        predicate_file_skip_applied: Option<bool>,
 
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
@@ -294,6 +298,16 @@ pub enum PhysNodeKind {
         input: PhysStream,
         key: Vec<ExprIR>,
         // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
+        aggs: Vec<ExprIR>,
+    },
+
+    #[cfg(feature = "dynamic_group_by")]
+    RollingGroupBy {
+        input: PhysStream,
+        index_column: PlSmallStr,
+        period: Duration,
+        offset: Duration,
+        closed: ClosedWindow,
         aggs: Vec<ExprIR>,
     },
 
@@ -336,6 +350,12 @@ pub enum PhysNodeKind {
     MergeSorted {
         input_left: PhysStream,
         input_right: PhysStream,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
     },
 }
 
@@ -382,6 +402,12 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::RollingGroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -486,6 +512,12 @@ fn visit_node_inputs_mut(
                     rec!(*sink);
                     visit(&mut PhysStream::first(*sink));
                 }
+            },
+
+            #[cfg(feature = "ewma")]
+            PhysNodeKind::EwmMean { input, options: _ } => {
+                rec!(input.node);
+                visit(input)
             },
         }
     }

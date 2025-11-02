@@ -374,3 +374,14 @@ def test_list_agg_parametric(expr: pl.Expr, is_scalar: bool) -> None:
     test_case(pl.Series("a", [[], [0], None]))
     test_case(pl.Series("a", [None, [0], None]))
     test_case(pl.Series("a", [[1, 2, 3], [4, 5]]))
+
+
+def test_list_eval_matching_slice_lengths() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]]})
+    out = df.select(
+        pl.col.a.list.eval(
+            (pl.element().slice(0, 1) * (pl.element().slice(1, 1))).sum()
+        )
+    )
+    expected = pl.DataFrame({"a": [[2], [12]]})
+    assert_frame_equal(out, expected)

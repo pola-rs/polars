@@ -893,3 +893,9 @@ def test_scan_ignore_hidden_files_21762(
     # Direct file passed
     with pytest.raises(pl.exceptions.ComputeError, match="expanded paths were empty"):
         scan(tmp_path / "_a.ext", hidden_file_prefix="_").collect()
+
+
+def test_row_count_estimate_multifile(io_files_path: Path) -> None:
+    src = io_files_path / "foods*.parquet"
+    # test that it doesn't check only the first file
+    assert "ESTIMATED ROWS: 54" in pl.scan_parquet(src).explain()

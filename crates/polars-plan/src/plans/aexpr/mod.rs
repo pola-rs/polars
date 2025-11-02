@@ -27,6 +27,7 @@ pub use traverse::*;
 mod properties;
 pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
+pub use evaluate::into_column;
 pub use properties::*;
 pub use schema::ToFieldContext;
 
@@ -48,6 +49,10 @@ pub enum IRAggExpr {
     NUnique(Node),
     First(Node),
     Last(Node),
+    Item {
+        input: Node,
+        allow_empty: bool,
+    },
     Mean(Node),
     Implode(Node),
     Quantile {
@@ -146,6 +151,7 @@ impl From<IRAggExpr> for GroupByMethod {
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
             Last(_) => GroupByMethod::Last,
+            Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,
             Sum(_) => GroupByMethod::Sum,

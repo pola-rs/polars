@@ -72,6 +72,7 @@ async = ["polars-io/async", "futures"]
 cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
+scan_lines = []
 csv = ["polars-io/csv"]
 temporal = [
   "chrono",

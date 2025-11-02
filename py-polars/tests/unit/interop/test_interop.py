@@ -958,7 +958,10 @@ def test_from_arrow_20271() -> None:
         pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
     )
     assert isinstance(df, pl.DataFrame)
-    assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
+    assert_series_equal(
+        df.to_series(),
+        pl.Series("b", ["D", "E"], pl.Categorical),
+    )
 
 
 def test_to_arrow_empty_chunks_20627() -> None:
@@ -975,12 +978,7 @@ def test_from_arrow_recorbatch() -> None:
     record_batch = pa.RecordBatch.from_arrays([n_legs, animals], names=names)
     assert_frame_equal(
         pl.DataFrame(record_batch),
-        pl.DataFrame(
-            {
-                "n_legs": n_legs,
-                "animals": animals,
-            }
-        ),
+        pl.DataFrame({"n_legs": n_legs, "animals": animals}),
     )
 
 
@@ -1047,7 +1045,6 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
     )
 
     out = pl.DataFrame(arrow_tbl)
-
     assert_frame_equal(out, expect)
 
 
@@ -1096,85 +1093,133 @@ def test_to_arrow_24142() -> None:
     df.to_arrow(compat_level=CompatLevel.oldest())
 
 
-def test_comprehensive_pycapsule_interface() -> None:
+def test_pycapsule_stream_interface_all_types() -> None:
     """Test all data types via Arrow C Stream PyCapsule interface."""
-    from datetime import date, datetime, time, timedelta
+    import datetime
     from decimal import Decimal
 
-    class PyCapsuleStreamWrap:
-        def __init__(self, v: Any) -> None:
-            self.capsule = v.__arrow_c_stream__()
-
-        def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
-            return self.capsule
-
-    def roundtrip_series_pycapsule(s: pl.Series) -> pl.Series:
-        return pl.Series(PyCapsuleStreamWrap(s))
-
     df = pl.DataFrame(
-        {
-            "bool": [True, False, None],
-            "int8": pl.Series([1, 2, None], dtype=pl.Int8),
-            "int16": pl.Series([1, 2, None], dtype=pl.Int16),
-            "int32": pl.Series([1, 2, None], dtype=pl.Int32),
-            "int64": pl.Series([1, 2, None], dtype=pl.Int64),
-            "uint8": pl.Series([1, 2, None], dtype=pl.UInt8),
-            "uint16": pl.Series([1, 2, None], dtype=pl.UInt16),
-            "uint32": pl.Series([1, 2, None], dtype=pl.UInt32),
-            "uint64": pl.Series([1, 2, None], dtype=pl.UInt64),
-            "float32": pl.Series([1.1, 2.2, None], dtype=pl.Float32),
-            "float64": pl.Series([1.1, 2.2, None], dtype=pl.Float64),
-            "string": ["hello", "world", None],
-            "binary": [b"hello", b"world", None],
-            "decimal": pl.Series(
-                [Decimal("1.23"), Decimal("4.56"), None], dtype=pl.Decimal(10, 2)
+        [
+            pl.Series("bool", [True, False, None], dtype=pl.Boolean),
+            pl.Series("int8", [1, 2, None], dtype=pl.Int8),
+            pl.Series("int16", [1, 2, None], dtype=pl.Int16),
+            pl.Series("int32", [1, 2, None], dtype=pl.Int32),
+            pl.Series("int64", [1, 2, None], dtype=pl.Int64),
+            pl.Series("uint8", [1, 2, None], dtype=pl.UInt8),
+            pl.Series("uint16", [1, 2, None], dtype=pl.UInt16),
+            pl.Series("uint32", [1, 2, None], dtype=pl.UInt32),
+            pl.Series("uint64", [1, 2, None], dtype=pl.UInt64),
+            pl.Series(
+                "float32",
+                [1.100000023841858, 2.200000047683716, None],
+                dtype=pl.Float32,
             ),
-            "date": [date(2023, 1, 1), date(2023, 1, 2), None],
-            "datetime": [
-                datetime(2023, 1, 1, 12, 0),
-                datetime(2023, 1, 2, 13, 30),
-                None,
-            ],
-            "time": [time(12, 0, 0), time(13, 30, 0), None],
-            "duration_us": pl.Series(
-                [timedelta(days=1), timedelta(hours=2), None], dtype=pl.Duration("us")
+            pl.Series("float64", [1.1, 2.2, None], dtype=pl.Float64),
+            pl.Series("string", ["hello", "world", None], dtype=pl.String),
+            pl.Series("binary", [b"hello", b"world", None], dtype=pl.Binary),
+            pl.Series(
+                "decimal",
+                [Decimal("1.23"), Decimal("4.56"), None],
+                dtype=pl.Decimal(precision=10, scale=2),
             ),
-            "duration_ms": pl.Series(
-                [timedelta(milliseconds=100), timedelta(microseconds=500), None],
-                dtype=pl.Duration("ms"),
+            pl.Series(
+                "date",
+                [datetime.date(2023, 1, 1), datetime.date(2023, 1, 2), None],
+                dtype=pl.Date,
             ),
-            "duration_ns": pl.Series(
-                [timedelta(seconds=1), timedelta(microseconds=1000), None],
-                dtype=pl.Duration("ns"),
+            pl.Series(
+                "datetime",
+                [
+                    datetime.datetime(2023, 1, 1, 12, 0),
+                    datetime.datetime(2023, 1, 2, 13, 30),
+                    None,
+                ],
+                dtype=pl.Datetime(time_unit="us", time_zone=None),
             ),
-            "categorical": pl.Series(
-                ["apple", "banana", "apple"], dtype=pl.Categorical
+            pl.Series(
+                "time",
+                [datetime.time(12, 0), datetime.time(13, 30), None],
+                dtype=pl.Time,
             ),
-            "list_duration": [
-                [timedelta(days=1), timedelta(hours=2)],
-                [timedelta(minutes=30)],
-                None,
-            ],
-            "struct_with_duration": [
-                {"x": timedelta(days=1), "y": 1},
-                {"x": timedelta(hours=2), "y": 2},
-                None,
-            ],
-        }
-    ).cast(
-        {
-            "list_duration": pl.List(pl.Duration("us")),
-            "struct_with_duration": pl.Struct({"x": pl.Duration("ns"), "y": pl.Int32}),
-        }
+            pl.Series(
+                "duration_us",
+                [datetime.timedelta(days=1), datetime.timedelta(seconds=7200), None],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+            pl.Series(
+                "duration_ms",
+                [datetime.timedelta(microseconds=100000), datetime.timedelta(0), None],
+                dtype=pl.Duration(time_unit="ms"),
+            ),
+            pl.Series(
+                "duration_ns",
+                [
+                    datetime.timedelta(seconds=1),
+                    datetime.timedelta(microseconds=1000),
+                    None,
+                ],
+                dtype=pl.Duration(time_unit="ns"),
+            ),
+            pl.Series(
+                "categorical", ["apple", "banana", "apple"], dtype=pl.Categorical
+            ),
+            pl.Series(
+                "categorical_named",
+                ["apple", "banana", "apple"],
+                dtype=pl.Categorical(pl.Categories(name="test")),
+            ),
+        ]
     )
 
-    df_roundtrip = df.map_columns(pl.selectors.all(), roundtrip_series_pycapsule)
+    assert_frame_equal(
+        df.map_columns(
+            pl.selectors.all(), lambda s: pl.Series(PyCapsuleStreamHolder(s))
+        ),
+        df,
+    )
 
-    assert_frame_equal(df_roundtrip, df)
+    assert_frame_equal(
+        df.map_columns(
+            pl.selectors.all(),
+            lambda s: pl.Series(
+                PyCapsuleStreamHolder(pl.select(pl.struct(pl.lit(s))).to_series())
+            )
+            .struct.unnest()
+            .to_series(),
+        ),
+        df,
+    )
 
-    df_roundtrip_direct = pl.DataFrame(PyCapsuleStreamWrap(df))
+    assert_frame_equal(
+        df.map_columns(
+            pl.selectors.all(),
+            lambda s: pl.Series(PyCapsuleStreamHolder(s.implode())).explode(),
+        ),
+        df,
+    )
 
-    assert_frame_equal(df_roundtrip_direct, df)
+    assert_frame_equal(
+        df.map_columns(
+            pl.selectors.all(),
+            lambda s: pl.Series(PyCapsuleStreamHolder(s.reshape((1, 1)))).reshape((1,)),
+        ),
+        df,
+    )
+
+    assert_frame_equal(pl.DataFrame(PyCapsuleStreamHolder(df)), df)
+    assert_frame_equal(
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.struct("*")))).unnest("*"), df
+    )
+    assert_frame_equal(
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().implode()))).explode("*"),
+        df,
+    )
+    assert_frame_equal(
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().reshape((1, 1))))).select(
+            pl.all().reshape((1,))
+        ),
+        df,
+    )
 
 
 def pyarrow_table_to_ipc_bytes(tbl: pa.Table) -> bytes:

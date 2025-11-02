@@ -378,6 +378,9 @@ fn create_physical_expr_inner(
                         I::NUnique(_) => GBM::NUnique,
                         I::First(_) => GBM::First,
                         I::Last(_) => GBM::Last,
+                        I::Item { allow_empty, .. } => GBM::Item {
+                            allow_empty: *allow_empty,
+                        },
                         I::Mean(_) => GBM::Mean,
                         I::Implode(_) => GBM::Implode,
                         I::Quantile { .. } => unreachable!(),

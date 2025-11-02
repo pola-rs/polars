@@ -12,6 +12,7 @@ description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
 arrow = { workspace = true }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, optional = true }
@@ -108,6 +109,8 @@ object = ["polars-core/object", "polars-lazy?/object", "polars-io/object"]
 
 # support for arrows json parsing
 json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql?/json", "dtype-struct", "new_streaming"]
+
+scan_lines = ["polars-io", "polars-io/scan_lines", "polars-lazy?/scan_lines", "new_streaming"]
 
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql?/ipc", "new_streaming"]

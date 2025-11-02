@@ -58,6 +58,9 @@ pub enum FileScanDsl {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
     },
 
+    #[cfg(feature = "scan_lines")]
+    Lines { name: PlSmallStr },
+
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -96,6 +99,9 @@ pub enum FileScanIR {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
         cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
+
+    #[cfg(feature = "scan_lines")]
+    Lines { name: PlSmallStr },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -289,6 +295,15 @@ pub struct UnifiedScanArgs {
 
     pub deletion_files: Option<DeletionFilesList>,
     pub table_statistics: Option<TableStatistics>,
+    /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
+    /// This allows for row-count queries to succeed without scanning all files.
+    pub row_count: Option<(IdxSize, IdxSize)>,
+}
+
+impl UnifiedScanArgs {
+    pub fn has_row_index_or_slice(&self) -> bool {
+        self.row_index.is_some() || self.pre_slice.is_some()
+    }
 }
 
 // Manual default, we have `glob: true` by default.
@@ -313,6 +328,7 @@ impl Default for UnifiedScanArgs {
             include_file_paths: None,
             deletion_files: None,
             table_statistics: None,
+            row_count: None,
         }
     }
 }
@@ -322,6 +338,9 @@ impl Default for UnifiedScanArgs {
 mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
+
+    #[cfg(feature = "scan_lines")]
+    use polars_utils::pl_str::PlSmallStr;
 
     use super::FileScanIR;
 
@@ -372,6 +391,9 @@ mod _file_scan_eq_hash {
             cached_ir: usize,
         },
 
+        #[cfg(feature = "scan_lines")]
+        Lines { name: &'a PlSmallStr },
+
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
             function: usize,
@@ -411,6 +433,9 @@ mod _file_scan_eq_hash {
                     dataset_object: arc_as_ptr(dataset_object),
                     cached_ir: arc_as_ptr(cached_ir),
                 },
+
+                #[cfg(feature = "scan_lines")]
+                FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,

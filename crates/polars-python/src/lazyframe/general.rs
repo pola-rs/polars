@@ -8,10 +8,10 @@ use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
-use polars_plan::plans::{AExpr, IR};
+use polars_plan::plans::{AExpr, HintIR, IR, Sorted};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::python_function::PythonObject;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyDictMethods, PyList};
@@ -364,6 +364,36 @@ impl PyLazyFrame {
 
         let lf = LazyFrame::scan_ipc_sources(sources, options, unified_scan_args)
             .map_err(PyPolarsErr::from)?;
+        Ok(lf.into())
+    }
+
+    #[cfg(feature = "scan_lines")]
+    #[staticmethod]
+    #[pyo3(signature = (sources, scan_options, name, file_cache_ttl))]
+    fn new_from_scan_lines(
+        sources: Wrap<ScanSources>,
+        scan_options: PyScanOptions,
+        name: PyBackedStr,
+        file_cache_ttl: Option<u64>,
+    ) -> PyResult<Self> {
+        let sources = sources.0;
+        let first_path = sources.first_path().map(|p| p.into_owned());
+
+        let mut unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.as_ref().map(|p| p.as_ref()))?;
+
+        if let Some(file_cache_ttl) = file_cache_ttl {
+            unified_scan_args
+                .cloud_options
+                .get_or_insert_default()
+                .file_cache_ttl = file_cache_ttl;
+        }
+
+        let dsl: DslPlan = DslBuilder::scan_lines(sources, unified_scan_args, (&*name).into())
+            .map_err(to_py_err)?
+            .build();
+        let lf: LazyFrame = dsl.into();
+
         Ok(lf.into())
     }
 
@@ -1539,6 +1569,61 @@ impl PyLazyFrame {
             .read()
             .clone()
             .merge_sorted(other.ldf.into_inner(), key)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    fn hint_sorted(
+        &self,
+        columns: Vec<String>,
+        descending: Vec<bool>,
+        nulls_last: Vec<bool>,
+    ) -> PyResult<Self> {
+        if columns.len() != descending.len() && descending.len() != 1 {
+            return Err(PyValueError::new_err(
+                "`set_sorted` expects the same amount of `columns` as `descending` values.",
+            ));
+        }
+        if columns.len() != nulls_last.len() && nulls_last.len() != 1 {
+            return Err(PyValueError::new_err(
+                "`set_sorted` expects the same amount of `columns` as `nulls_last` values.",
+            ));
+        }
+
+        let mut sorted = columns
+            .iter()
+            .map(|c| Sorted {
+                column: PlSmallStr::from_str(c.as_str()),
+                descending: false,
+                nulls_last: false,
+            })
+            .collect::<Vec<_>>();
+
+        if !columns.is_empty() {
+            if descending.len() != 1 {
+                sorted
+                    .iter_mut()
+                    .zip(descending)
+                    .for_each(|(s, d)| s.descending = d);
+            } else if descending[0] {
+                sorted.iter_mut().for_each(|s| s.descending = true);
+            }
+
+            if nulls_last.len() != 1 {
+                sorted
+                    .iter_mut()
+                    .zip(nulls_last)
+                    .for_each(|(s, d)| s.nulls_last = d);
+            } else if nulls_last[0] {
+                sorted.iter_mut().for_each(|s| s.nulls_last = true);
+            }
+        }
+
+        let out = self
+            .ldf
+            .read()
+            .clone()
+            .hint(HintIR::Sorted(sorted.into()))
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

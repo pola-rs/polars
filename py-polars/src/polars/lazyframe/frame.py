@@ -2685,10 +2685,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - `True`: enable default set of statistics (default). Some
               statistics may be disabled.
             - `False`: disable all statistics
-            - "full": calculate and write all available statistics. Cannot be
-              combined with `use_pyarrow`.
-            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
-              `use_pyarrow`. Available keys:
+            - "full": calculate and write all available statistics.
+            - `{ "statistic-key": True / False, ... }`. Available keys:
 
               - "min": column minimum value (default: `True`)
               - "max": column maximum value (default: `True`)
@@ -2796,6 +2794,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
+
+        Sink to a `BytesIO` object.
+
+        >>> import io
+        >>> buf = io.BytesIO()  # doctest: +SKIP
+        >>> pl.LazyFrame({"x": [1, 2, 1]}).sink_parquet(buf)  # doctest: +SKIP
+
+        Split into a hive-partitioning style partition:
+
+        >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_parquet(
+        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     mkdir=True
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        PartitionByKey
         """
         engine = _select_engine(engine)
         if metadata is not None:
@@ -3053,6 +3068,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
+
+        Sink to a `BytesIO` object.
+
+        >>> import io
+        >>> buf = io.BytesIO()  # doctest: +SKIP
+        >>> pl.LazyFrame({"x": [1, 2, 1]}).sink_ipc(buf)  # doctest: +SKIP
+
+        Split into a hive-partitioning style partition:
+
+        >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_ipc(
+        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     mkdir=True
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        PartitionByKey
         """
         engine = _select_engine(engine)
 
@@ -3342,6 +3374,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
+
+        Sink to a `BytesIO` object.
+
+        >>> import io
+        >>> buf = io.BytesIO()  # doctest: +SKIP
+        >>> pl.LazyFrame({"x": [1, 2, 1]}).sink_csv(buf)  # doctest: +SKIP
+
+        Split into a hive-partitioning style partition:
+
+        >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_csv(
+        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     mkdir=True
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        PartitionByKey
         """
         from polars.io.csv._utils import _check_arg_is_1byte
 
@@ -3541,6 +3590,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ndjson("out.ndjson")  # doctest: +SKIP
+
+        Sink to a `BytesIO` object.
+
+        >>> import io
+        >>> buf = io.BytesIO()  # doctest: +SKIP
+        >>> pl.LazyFrame({"x": [1, 2, 1]}).sink_ndjson(buf)  # doctest: +SKIP
+
+        Split into a hive-partitioning style partition:
+
+        >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_ndjson(
+        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     mkdir=True
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        PartitionByKey
         """
         engine = _select_engine(engine)
 
@@ -6282,6 +6348,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             and throw an exception if any do not. (Note that this parameter
             is a no-op when passing a function to `mapping`).
 
+        See Also
+        --------
+        Expr.name.replace
+
         Notes
         -----
         If existing names are swapped (e.g. 'A' points to 'B' and 'B' points to 'A'),
@@ -7981,8 +8051,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def set_sorted(
         self,
         column: str,
-        *,
-        descending: bool = False,
+        *more_columns: str,
+        descending: bool | list[bool] = False,
+        nulls_last: bool | list[bool] = False,
     ) -> LazyFrame:
         """
         Flag a column as sorted.
@@ -7993,8 +8064,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         column
             Column that is sorted
+        more_columns
+            Columns that are sorted over after `column`.
         descending
             Whether the column is sorted in descending order.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -8007,7 +8082,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not isinstance(column, str):
             msg = "expected a 'str' for argument 'column' in 'set_sorted'"
             raise TypeError(msg)
-        return self.with_columns(F.col(column).set_sorted(descending=descending))
+
+        ds: list[bool]
+        nl: list[bool]
+        if isinstance(descending, bool):
+            ds = [descending]
+        else:
+            ds = descending
+        if isinstance(nulls_last, bool):
+            nl = [nulls_last]
+        else:
+            nl = nulls_last
+
+        return self._from_pyldf(
+            self._ldf.hint_sorted(
+                [column] + list(more_columns), descending=ds, nulls_last=nl
+            )
+        )
 
     @unstable()
     def update(

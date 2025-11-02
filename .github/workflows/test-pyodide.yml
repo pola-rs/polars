@@ -40,7 +40,7 @@ jobs:
       - name: Disable incompatible features
         env:
           # Note: If you change this line, you must also copy the change to `release-python.yml`.
-          FEATURES: csv|ipc|ipc_streaming|parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
+          FEATURES: csv|ipc|ipc_streaming|parquet|async|scan_lines|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
         run: |
           sed -i 's/serde_json = { workspace = true, optional = true }/serde_json = { workspace = true }/' crates/polars-python/Cargo.toml
           sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml

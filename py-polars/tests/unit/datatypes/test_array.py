@@ -27,6 +27,7 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_array_in_group_by_iter() -> None:
     df = pl.DataFrame(
         [

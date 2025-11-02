@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
+use polars_core::prelude::sort::perfect_sort;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
@@ -10,7 +11,6 @@ use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
-use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
@@ -108,7 +108,7 @@ impl WindowExpr {
         }
         // SAFETY:
         // we only have unique indices ranging from 0..len
-        unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
+        unsafe { perfect_sort(&idx_mapping, &mut take_idx) };
         Ok(IdxCa::from_vec(PlSmallStr::EMPTY, take_idx))
     }
 
@@ -286,10 +286,10 @@ impl WindowExpr {
 
     fn determine_map_strategy(
         &self,
-        agg_state: &AggState,
+        ac: &mut AggregationContext,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.mapping, agg_state) {
+        match (self.mapping, ac.agg_state()) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
             (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
@@ -307,6 +307,7 @@ impl WindowExpr {
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
                 if let GroupsType::Slice { .. } = gb.get_groups().as_ref() {
                     // Result can be directly exploded if the input was sorted.
+                    ac.groups().as_ref().check_lengths(gb.get_groups())?;
                     Ok(MapStrategy::Explode)
                 } else {
                     Ok(MapStrategy::Map)
@@ -386,7 +387,7 @@ impl PhysicalExpr for WindowExpr {
             }
         }
 
-        let group_by_columns = self
+        let mut group_by_columns = self
             .group_by
             .iter()
             .map(|e| e.evaluate(df, state))
@@ -473,12 +474,25 @@ impl PhysicalExpr for WindowExpr {
                 .window_cache
                 .insert_groups(cache_key.clone(), groups.clone());
         }
+
+        // broadcast if required
+        for col in group_by_columns.iter_mut() {
+            if col.len() != df.height() {
+                polars_ensure!(
+                    col.len() == 1,
+                    ShapeMismatch: "columns used as `partition_by` must have the same length as the DataFrame"
+                );
+                *col = col.new_from_index(0, df.height())
+            }
+        }
+
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
 
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), &gb)? {
+
+        match self.determine_map_strategy(&mut ac, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
 
