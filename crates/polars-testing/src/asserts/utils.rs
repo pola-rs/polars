@@ -1,4 +1,4 @@
-use std::ops::{Deref, Not};
+use std::ops::Not;
 
 use polars_core::datatypes::unpack_dtypes;
 use polars_core::prelude::*;
