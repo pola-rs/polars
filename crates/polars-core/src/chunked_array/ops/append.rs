@@ -93,45 +93,48 @@ where
                     // if there are nulls, they are all on one end
                     && !(ca.first_non_null().unwrap() != 0 && 1 + other.last_non_null().unwrap() != other.len());
 
-                if !null_pos_check {
-                    IsSorted::Not
-                } else {
-                    #[allow(unused_assignments)]
-                    let mut out = IsSorted::Not;
+                match () {
+                    _ if !null_pos_check => IsSorted::Not,
+                    // TODO: Implement this
+                    #[cfg(feature = "dtype-categorical")]
+                    _ if matches!(ca.dtype(), DataType::Categorical(..)) => IsSorted::Not,
+                    _ => {
+                        let mut out = IsSorted::Not;
 
-                    // This can be relatively expensive because of chunks, so delay as much as possible.
-                    let l_val = unsafe { ca.value_unchecked(l_idx) };
-                    let r_val = unsafe { other.value_unchecked(r_idx) };
+                        // This can be relatively expensive because of chunks, so delay as much as possible.
+                        let l_val = unsafe { ca.value_unchecked(l_idx) };
+                        let r_val = unsafe { other.value_unchecked(r_idx) };
 
-                    match (
-                        ca.len() - ca.null_count() == 1,
-                        other.len() - other.null_count() == 1,
-                    ) {
-                        (true, true) => {
-                            out = [IsSorted::Descending, IsSorted::Ascending]
-                                [l_val.tot_le(&r_val) as usize];
-                            drop(l_val);
-                            drop(r_val);
-                            ca.set_sorted_flag(out);
-                            return;
-                        },
-                        (true, false) => out = other.is_sorted_flag(),
-                        _ => out = ca.is_sorted_flag(),
-                    }
+                        match (
+                            ca.len() - ca.null_count() == 1,
+                            other.len() - other.null_count() == 1,
+                        ) {
+                            (true, true) => {
+                                out = [IsSorted::Descending, IsSorted::Ascending]
+                                    [l_val.tot_le(&r_val) as usize];
+                                drop(l_val);
+                                drop(r_val);
+                                ca.set_sorted_flag(out);
+                                return;
+                            },
+                            (true, false) => out = other.is_sorted_flag(),
+                            _ => out = ca.is_sorted_flag(),
+                        }
 
-                    debug_assert!(!matches!(out, IsSorted::Not));
+                        debug_assert!(!matches!(out, IsSorted::Not));
 
-                    let check = if matches!(out, IsSorted::Ascending) {
-                        l_val.tot_le(&r_val)
-                    } else {
-                        l_val.tot_ge(&r_val)
-                    };
+                        let check = if matches!(out, IsSorted::Ascending) {
+                            l_val.tot_le(&r_val)
+                        } else {
+                            l_val.tot_ge(&r_val)
+                        };
 
-                    if !check {
-                        out = IsSorted::Not
-                    }
+                        if !check {
+                            out = IsSorted::Not
+                        }
 
-                    out
+                        out
+                    },
                 }
             }
         },
