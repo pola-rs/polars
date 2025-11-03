@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import itertools
 import os
 import pickle
@@ -2054,3 +2055,30 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
         pl.scan_iceberg(tbl, reader_override="native").select(pl.len()).collect().item()
         == 5
     )
+
+
+def test_scan_iceberg_idxsize_limit() -> None:
+    if isinstance(pl.get_index_type(), pl.UInt64):
+        assert (
+            pl.scan_parquet([b""], schema={}, _row_count=(1 << 32, 0))
+            .select(pl.len())
+            .collect()
+            .item()
+            == 1 << 32
+        )
+
+        return
+
+    f = io.BytesIO()
+
+    pl.DataFrame({"x": 1}).write_parquet(f)
+
+    q = pl.scan_parquet([f.getvalue()], schema={"x": pl.Int64}, _row_count=(1 << 32, 0))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"row count \(4294967296\) exceeded maximum supported of 4294967295.*Consider installing 'polars\[rt64\]'.",
+    ):
+        q.select(pl.len()).collect()
