@@ -195,7 +195,7 @@ where
 }
 
 // TODO: [amber] I feel like this could be chunked together maybe?
-
+#[cfg(feature = "dtype-f16")]
 impl ChunkQuantile<pf16> for Float16Chunked {
     fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
@@ -286,6 +286,7 @@ impl Float32Chunked {
     }
 }
 
+#[cfg(feature = "dtype-f16")]
 impl Float16Chunked {
     pub(crate) fn quantile_faster(
         mut self,

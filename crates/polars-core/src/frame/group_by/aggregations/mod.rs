@@ -232,6 +232,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
 impl QuantileDispatcher<pf16> for Float16Chunked {
     fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
         self.quantile_faster(quantile, method)

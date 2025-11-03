@@ -6,7 +6,6 @@ use arrow::datatypes::{
 };
 use arrow::types::{days_ms, i256};
 use ethnum::I256;
-use num_traits::AsPrimitive;
 use polars_compute::cast::CastOptionsImpl;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;

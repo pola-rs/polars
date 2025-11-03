@@ -371,8 +371,8 @@ impl Debug for Series {
                     format_array!(f, self.i128().unwrap(), "i128", self.name(), "Series")
                 )
             },
+            #[cfg(feature = "dtype-f16")]
             DataType::Float16 => {
-                // TODO: [amber] Feature gate
                 format_array!(f, self.f16().unwrap(), "f16", self.name(), "Series")
             },
             DataType::Float32 => {
@@ -447,7 +447,7 @@ impl Debug for Series {
                     "Series"
                 )
             },
-            dt @ DataType::Unknown(_) => panic!("{dt:?} not impl"),
+            dt => panic!("{dt:?} not impl"),
         }
     }
 }

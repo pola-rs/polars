@@ -298,6 +298,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
 impl VarAggSeries for Float16Chunked {
     fn var_reduce(&self, ddof: u8) -> Scalar {
         let v = self.var(ddof).map(AsPrimitive::<pf16>::as_);
@@ -350,6 +351,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
 impl QuantileAggSeries for Float16Chunked {
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;

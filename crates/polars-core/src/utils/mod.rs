@@ -407,6 +407,8 @@ macro_rules! match_dtype_to_logical_apply_macro {
             DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => $macro!(Int128Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => $macro!(Float16Type $(, $opt_args)*),
             DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),

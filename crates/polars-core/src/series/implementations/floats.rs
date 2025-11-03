@@ -403,6 +403,7 @@ macro_rules! impl_dyn_series {
     };
 }
 
+#[cfg(feature = "dtype-f16")]
 impl_dyn_series!(Float16Chunked, Float16Type);
 impl_dyn_series!(Float32Chunked, Float32Type);
 impl_dyn_series!(Float64Chunked, Float64Type);

@@ -119,6 +119,7 @@ impl Series {
             DataType::UInt128 => {
                 any_values_to_integer::<UInt128Type>(values, strict)?.into_series()
             },
+            #[cfg(feature = "dtype-f16")]
             DataType::Float16 => any_values_to_f16(values, strict)?.into_series(),
             DataType::Float32 => any_values_to_f32(values, strict)?.into_series(),
             DataType::Float64 => any_values_to_f64(values, strict)?.into_series(),
@@ -154,7 +155,7 @@ impl Series {
             #[cfg(feature = "object")]
             DataType::Object(_) => any_values_to_object(values)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
-            dt @ DataType::Unknown(_) => {
+            dt => {
                 polars_bail!(
                     InvalidOperation:
                     "constructing a Series with data type {dt:?} from AnyValues is not supported"
@@ -205,6 +206,7 @@ fn any_values_to_integer<T: PolarsIntegerType>(
     }
 }
 
+#[cfg(feature = "dtype-f16")]
 fn any_values_to_f16(values: &[AnyValue], strict: bool) -> PolarsResult<Float16Chunked> {
     fn any_values_to_f16_strict(values: &[AnyValue]) -> PolarsResult<Float16Chunked> {
         let mut builder =

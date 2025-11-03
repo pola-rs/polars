@@ -69,6 +69,7 @@ impl Series {
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float16`]
+    #[cfg(feature = "dtype-f16")]
     pub fn try_f16(&self) -> Option<&Float16Chunked> {
         try_unpack_chunked!(self, DataType::Float16 => Float16Chunked)
     }
@@ -254,6 +255,7 @@ impl Series {
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float16`]
+    #[cfg(feature = "dtype-f16")]
     pub fn f16(&self) -> PolarsResult<&Float16Chunked> {
         self.try_f16()
             .ok_or_else(|| unpack_chunked_err!(self => "Float16"))

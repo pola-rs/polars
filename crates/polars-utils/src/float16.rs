@@ -14,6 +14,7 @@ use num_traits::{AsPrimitive, Bounded, One, Pow, Zero};
 use schemars::schema::Schema;
 #[cfg(feature = "dsl-schema")]
 use schemars::{JsonSchema, SchemaGenerator};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::nulls::IsNull;
