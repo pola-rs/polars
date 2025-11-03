@@ -319,6 +319,7 @@ impl DslPlan {
         reader.read_exact(&mut schema_hash).map_err(
             |e| polars_err!(ComputeError: "failed to read incoming DSL_SCHEMA_HASH: {e}"),
         )?;
+
         let incoming_hash = SchemaHash::new(&schema_hash).ok_or_else(
             || polars_err!(ComputeError: "failed to read incoming DSL schema hash, not a valid hex string")
         )?;
@@ -329,7 +330,9 @@ impl DslPlan {
             );
         }
 
-        if incoming_hash != DSL_SCHEMA_HASH {
+        if std::env::var("POLARS_SKIP_DSL_HASH_VERIFICATION").as_deref() != Ok("1")
+            && incoming_hash != DSL_SCHEMA_HASH
+        {
             polars_bail!(ComputeError:
                 "deserialization failed\n\ngiven DSL_SCHEMA_HASH: {incoming_hash} is not compatible with this Polars version which uses DSL_SCHEMA_HASH: {DSL_SCHEMA_HASH}\n{}",
                 "error: can't deserialize DSL with incompatible schema"
