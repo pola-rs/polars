@@ -25,7 +25,7 @@ pub fn split_lines_to_rows(bytes: &[u8]) -> PolarsResult<Series> {
 
 fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResult<Series> {
     if bytes.is_empty() {
-        return Ok(Series::full_null(PlSmallStr::EMPTY, 0, &DataType::String));
+        return Ok(Series::new_empty(PlSmallStr::EMPTY, &DataType::String));
     };
 
     let first_line_len = bytes.split(|c| *c == EOL_CHAR).next().unwrap().len();
