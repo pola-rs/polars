@@ -41,7 +41,9 @@ impl AExpr {
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
             Explode { expr: e, .. } => container.extend([*e]),
@@ -113,7 +115,9 @@ impl AExpr {
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
             Explode { expr: e, .. } => container.extend([*e]),
@@ -194,7 +198,9 @@ impl AExpr {
                 *predicate = inputs[2];
                 return self;
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 assert_eq!(input.len(), inputs.len());
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);

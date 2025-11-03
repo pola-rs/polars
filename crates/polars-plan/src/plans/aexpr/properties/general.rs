@@ -28,6 +28,7 @@ impl AExpr {
             Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
             Agg { .. }
+            | AnonymousStreamingAgg { .. }
             | Explode { .. }
             | Filter { .. }
             | Gather { .. }

@@ -143,6 +143,20 @@ pub fn into_reduction(
                 _ => unreachable!(),
             }
         },
+        AExpr::AnonymousStreamingAgg {
+            input: inner_exprs,
+            fmt_str: _,
+            function,
+        } => {
+            let ann_agg = function.materialize()?;
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let reduction = ann_agg.as_any();
+            let reduction = reduction
+                .downcast_ref::<Box<dyn GroupedReduction>>()
+                .unwrap();
+            (reduction.new_empty(), input)
+        },
         _ => unreachable!(),
     };
     Ok(out)

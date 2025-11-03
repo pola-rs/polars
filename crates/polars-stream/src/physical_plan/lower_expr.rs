@@ -201,6 +201,11 @@ pub fn is_input_independent_rec(
             options: _,
             fmt_str: _,
         }
+        | AExpr::AnonymousStreamingAgg {
+            input,
+            function: _,
+            fmt_str: _,
+        }
         | AExpr::Function {
             input,
             function: _,
@@ -326,6 +331,7 @@ pub fn is_length_preserving_rec(
                 || is_length_preserving_rec(*truthy, arena, cache)
                 || is_length_preserving_rec(*falsy, arena, cache)
         },
+        AExpr::AnonymousStreamingAgg { .. } => false,
         AExpr::AnonymousFunction {
             input,
             function: _,
@@ -1654,6 +1660,15 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            AExpr::AnonymousStreamingAgg {
+                input: _,
+                fmt_str: _,
+                function: _,
+            } => {
+                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
             // Aggregates.
             AExpr::Agg(agg) => match agg {
                 // Change agg mutably so we can share the codepath for all of these.
