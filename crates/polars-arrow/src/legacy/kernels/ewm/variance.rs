@@ -2,7 +2,8 @@ use std::ops::{AddAssign, DivAssign, MulAssign};
 
 use num_traits::Float;
 
-use crate::array::PrimitiveArray;
+use crate::array::{Array, PrimitiveArray};
+use crate::legacy::kernels::ewm::EwmStateUpdate;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
@@ -148,6 +149,63 @@ where
                     }
                 })
         })
+    }
+}
+
+pub struct EwmVarState<T>(EwmCovState<T>);
+
+impl<T> EwmVarState<T> {
+    pub fn new(cov_state: EwmCovState<T>) -> Self {
+        Self(cov_state)
+    }
+}
+
+impl<T> EwmStateUpdate for EwmVarState<T>
+where
+    T: NativeType
+        + num_traits::Float
+        + std::ops::AddAssign
+        + std::ops::DivAssign
+        + std::ops::MulAssign,
+{
+    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
+        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
+
+        let out: PrimitiveArray<T> = self
+            .0
+            .update_iter(values.iter().map(|x| x.map(|x| (*x, *x))))
+            .collect();
+
+        out.boxed()
+    }
+}
+
+pub struct EwmStdState<T>(EwmCovState<T>);
+
+impl<T> EwmStdState<T> {
+    pub fn new(cov_state: EwmCovState<T>) -> Self {
+        Self(cov_state)
+    }
+}
+
+impl<T> EwmStateUpdate for EwmStdState<T>
+where
+    T: NativeType
+        + num_traits::Float
+        + std::ops::AddAssign
+        + std::ops::DivAssign
+        + std::ops::MulAssign,
+{
+    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
+        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
+
+        let out: PrimitiveArray<T> = self
+            .0
+            .update_iter(values.iter().map(|x| x.map(|x| (*x, *x))))
+            .map(|x| x.map(|x| x.sqrt()))
+            .collect();
+
+        out.boxed()
     }
 }
 

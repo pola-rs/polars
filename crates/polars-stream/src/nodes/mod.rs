@@ -3,7 +3,7 @@ pub mod callback_sink;
 pub mod cum_agg;
 pub mod dynamic_slice;
 #[cfg(feature = "ewma")]
-pub mod ewm_mean;
+pub mod ewm;
 pub mod filter;
 pub mod gather_every;
 pub mod group_by;

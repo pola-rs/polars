@@ -1884,7 +1884,10 @@ fn lower_exprs_with_ctx(
             #[cfg(feature = "ewma")]
             AExpr::Function {
                 input: input_exprs,
-                function: IRFunctionExpr::EwmMean { options },
+                function:
+                    ewm_variant @ IRFunctionExpr::EwmMean { options }
+                    | ewm_variant @ IRFunctionExpr::EwmVar { options }
+                    | ewm_variant @ IRFunctionExpr::EwmStd { options },
                 options: _,
             } => {
                 let out_name = unique_column_name();
@@ -1902,7 +1905,12 @@ fn lower_exprs_with_ctx(
                 assert_eq!(input_schema.len(), 1);
                 let output_schema = input_schema;
 
-                let kind = PhysNodeKind::EwmMean { input, options };
+                let kind = match ewm_variant {
+                    IRFunctionExpr::EwmMean { .. } => PhysNodeKind::EwmMean { input, options },
+                    IRFunctionExpr::EwmVar { .. } => PhysNodeKind::EwmVar { input, options },
+                    IRFunctionExpr::EwmStd { .. } => PhysNodeKind::EwmStd { input, options },
+                    _ => unreachable!(),
+                };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));

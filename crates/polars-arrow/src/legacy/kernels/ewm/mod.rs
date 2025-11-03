@@ -84,3 +84,9 @@ macro_rules! assert_allclose {
 }
 #[cfg(test)]
 pub(crate) use assert_allclose;
+
+use crate::array::Array;
+
+pub trait EwmStateUpdate {
+    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array>;
+}

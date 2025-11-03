@@ -400,7 +400,13 @@ impl OptimizationRule for TypeCoercionRule {
             #[cfg(feature = "ewma")]
             AExpr::Function {
                 function:
-                    IRFunctionExpr::EwmMean {
+                    ref ewm_variant @ IRFunctionExpr::EwmMean {
+                        options: ewm_options,
+                    }
+                    | ref ewm_variant @ IRFunctionExpr::EwmVar {
+                        options: ewm_options,
+                    }
+                    | ref ewm_variant @ IRFunctionExpr::EwmStd {
                         options: ewm_options,
                     },
                 ref input,
@@ -427,6 +433,19 @@ impl OptimizationRule for TypeCoercionRule {
                     return Ok(None);
                 }
 
+                let new_function = match ewm_variant {
+                    IRFunctionExpr::EwmMean { .. } => IRFunctionExpr::EwmMean {
+                        options: ewm_options,
+                    },
+                    IRFunctionExpr::EwmVar { .. } => IRFunctionExpr::EwmVar {
+                        options: ewm_options,
+                    },
+                    IRFunctionExpr::EwmStd { .. } => IRFunctionExpr::EwmStd {
+                        options: ewm_options,
+                    },
+                    _ => unreachable!(),
+                };
+
                 let input_expr = ExprIR::from_node(
                     expr_arena.add(AExpr::Cast {
                         expr: input_expr.node(),
@@ -438,9 +457,7 @@ impl OptimizationRule for TypeCoercionRule {
                 );
 
                 Some(AExpr::Function {
-                    function: IRFunctionExpr::EwmMean {
-                        options: ewm_options,
-                    },
+                    function: new_function,
                     input: vec![input_expr],
                     options,
                 })

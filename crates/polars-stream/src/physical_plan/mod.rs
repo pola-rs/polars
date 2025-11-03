@@ -93,6 +93,10 @@ impl PhysStream {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(strum_macros::IntoStaticStr)
+)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
@@ -357,6 +361,18 @@ pub enum PhysNodeKind {
         input: PhysStream,
         options: polars_ops::series::EWMOptions,
     },
+
+    #[cfg(feature = "ewma")]
+    EwmVar {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmStd {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
 }
 
 fn visit_node_inputs_mut(
@@ -515,7 +531,9 @@ fn visit_node_inputs_mut(
             },
 
             #[cfg(feature = "ewma")]
-            PhysNodeKind::EwmMean { input, options: _ } => {
+            PhysNodeKind::EwmMean { input, options: _ }
+            | PhysNodeKind::EwmVar { input, options: _ }
+            | PhysNodeKind::EwmStd { input, options: _ } => {
                 rec!(input.node);
                 visit(input)
             },

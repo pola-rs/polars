@@ -256,7 +256,8 @@ pub enum PhysNodeProperties {
         kind: PlSmallStr,
     },
     #[cfg(feature = "ewma")]
-    EwmMean {
+    Ewm {
+        variant: PlSmallStr,
         alpha: f64,
         adjust: bool,
         bias: bool,
