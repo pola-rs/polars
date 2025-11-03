@@ -2234,12 +2234,18 @@ def plugin_v2_generate[T](
     *,
     data: T,
     initialize: Callable[[T, Schema], Any],
+    new_empty: Callable[[T, Any], Any],
     insert: Callable[[T, Any, list[PySeries]], PySeries | None],
     finalize: Callable[[T, Any], PySeries | None],
     combine: Callable[[T, Any, Any], Any] | None,
-    new_empty: Callable[[T, Any], Any],
     to_field: Callable[[T, Schema], tuple[str, DataType]],
-    format: Callable[[T], str],
+    format: str,
+    length_preserving: bool,
+    row_separable: bool,
+    returns_scalar: bool,
+    zippable_inputs: bool,
+    insert_has_output: bool,
+    selection_expansion: bool,
 ) -> PyExpr: ...
 
 # functions.random

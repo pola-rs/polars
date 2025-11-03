@@ -81,6 +81,7 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
+#[cfg(feature = "ffi_plugin")]
 use crate::dsl::v2::{StatefulUdf, UdfV2Flags};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
@@ -310,6 +311,7 @@ pub enum IRFunctionExpr {
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
+    #[cfg(feature = "ffi_plugin")]
     PluginV2(SpecialEq<Arc<StatefulUdf>>),
 
     FoldHorizontal {
@@ -439,6 +441,7 @@ impl Hash for IRFunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
+            #[cfg(feature = "ffi_plugin")]
             PluginV2(udf) => udf.hash(state),
 
             FoldHorizontal {
@@ -846,6 +849,7 @@ impl Display for IRFunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            #[cfg(feature = "ffi_plugin")]
             PluginV2(udf) => return f.write_str(&udf.format_string()),
 
             FoldHorizontal { .. } => "fold",
@@ -1155,6 +1159,7 @@ impl IRFunctionExpr {
             F::SetSortedFlag(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "ffi_plugin")]
             F::FfiPlugin { flags, .. } => *flags,
+            #[cfg(feature = "ffi_plugin")]
             F::PluginV2(udf) => {
                 let flags = udf.flags();
                 FunctionOptions::groupwise().with_flags(|mut f: FunctionFlags| {

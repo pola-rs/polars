@@ -3032,6 +3032,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugin_v2"
+version = "0.1.0"
+dependencies = [
+ "num",
+ "polars",
+ "polars-arrow",
+ "pyo3",
+ "pyo3-polars",
+ "rayon",
+ "serde",
+]
+
+[[package]]
 name = "polars"
 version = "0.52.0"
 dependencies = [

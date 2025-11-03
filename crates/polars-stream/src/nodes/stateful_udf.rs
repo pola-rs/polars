@@ -157,11 +157,17 @@ impl ComputeNode for StatefulUdfNode {
             },
         };
 
-        if matches!(self.action, Action::Insert) && !flags.contains(UdfV2Flags::INSERT_HAS_OUTPUT) {
-            send[0] = P::Blocked;
-        } else if matches!(self.action, Action::Done) {
-            recv[0] = P::Done;
-            send[0] = P::Done;
+        match self.action {
+            Action::Insert => {
+                if !flags.contains(UdfV2Flags::INSERT_HAS_OUTPUT) {
+                    send[0] = P::Blocked
+                }
+            },
+            Action::Finalize => send[0] = P::Ready,
+            Action::Done => {
+                recv[0] = P::Done;
+                send[0] = P::Done;
+            },
         }
 
         Ok(())

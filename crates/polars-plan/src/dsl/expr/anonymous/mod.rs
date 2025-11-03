@@ -10,4 +10,5 @@ mod json_schema;
 pub mod named_serde;
 #[cfg(feature = "serde")]
 mod serde_expr;
+#[cfg(feature = "ffi_plugin")]
 pub mod v2;

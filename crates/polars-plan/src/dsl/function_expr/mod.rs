@@ -67,6 +67,7 @@ pub use self::strings::StringFunction;
 pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::TrigonometricFunction;
+#[cfg(feature = "ffi_plugin")]
 use super::v2::StatefulUdf;
 use super::*;
 
@@ -299,6 +300,7 @@ pub enum FunctionExpr {
         kwargs: Arc<[u8]>,
     },
 
+    #[cfg(feature = "ffi_plugin")]
     PluginV2(SpecialEq<Arc<StatefulUdf>>),
 
     FoldHorizontal {
@@ -426,6 +428,7 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
+            #[cfg(feature = "ffi_plugin")]
             PluginV2(udf) => udf.hash(state),
 
             FoldHorizontal {
@@ -829,6 +832,7 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            #[cfg(feature = "ffi_plugin")]
             PluginV2(udf) => return f.write_str(&udf.format_string()),
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",

@@ -160,17 +160,36 @@ def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
 T = TypeVar("T")
 
 
+def register_plugin_v2_function(
+    *,
+    plugin_path: Path | str,
+    args: IntoExpr | Iterable[IntoExpr],
+    info: (str, int),
+    use_abs_path: bool = False,
+) -> Expr:
+    pyexprs = parse_into_list_of_expressions(args)
+    plugin_path = _resolve_plugin_path(plugin_path, use_abs_path=use_abs_path)
+
+    return wrap_expr(
+        plr.register_plugin_v2_function(
+            plugin_path=str(plugin_path),
+            args=pyexprs,
+            name=info[0],
+            data_ptr=info[1],
+        )
+    )
+
+
 def new_v2_plugin(
     *inputs: Expr,
     data: T,
     initialize: Callable[[T, pl.Schema], Any],
+    new_empty: Callable[[T, Any], Any],
     insert: Callable[[T, Any, list[Series]], Series | None],
     finalize: Callable[[T, Any], Series | None] | None,
     combine: Callable[[T, Any, Any], Any] | None,
-    new_empty: Callable[[T, Any, pl.Schema], Any],
     to_field: Callable[[T, pl.Schema], tuple[str, DataType]],
-    format: Callable[[T], str],
-
+    format: str,
     length_preserving: bool = False,
     row_separable: bool = False,
     returns_scalar: bool = False,
@@ -201,9 +220,6 @@ def new_v2_plugin(
         else:
             return out._s
 
-    def wrap_new_empty(data: T, state: Any, schema: dict[str, DataType]) -> Any:
-        return new_empty(data, state, pl.Schema(schema))
-
     def wrap_to_field(data: T, schema: dict[str, DataType]) -> (str, DataType):
         return to_field(data, pl.Schema(schema))
 
@@ -218,7 +234,6 @@ def new_v2_plugin(
             new_empty=new_empty,
             to_field=wrap_to_field,
             format=format,
-
             length_preserving=length_preserving,
             row_separable=row_separable,
             returns_scalar=returns_scalar,

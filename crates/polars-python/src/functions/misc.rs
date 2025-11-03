@@ -62,6 +62,29 @@ pub fn register_plugin_function(
     .into())
 }
 
+#[cfg(feature = "ffi_plugin")]
+#[pyfunction]
+pub fn register_plugin_v2_function(
+    plugin_path: String,
+    args: Vec<PyExpr>,
+    name: String,
+    data_ptr: usize,
+) -> PyResult<PyExpr> {
+    use std::sync::Arc;
+
+    use polars::prelude::v2::StatefulUdf;
+
+    use crate::error::PyPolarsErr;
+
+    let udf = unsafe { StatefulUdf::new_shared_object(&plugin_path, &name, data_ptr) }
+        .map_err(PyPolarsErr::from)?;
+    Ok(Expr::Function {
+        input: args.to_exprs(),
+        function: FunctionExpr::PluginV2(SpecialEq::new(Arc::new(udf))),
+    }
+    .into())
+}
+
 #[pyfunction]
 pub fn __register_startup_deps() {
     #[cfg(feature = "object")]
