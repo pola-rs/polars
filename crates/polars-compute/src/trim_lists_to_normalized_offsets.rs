@@ -33,7 +33,7 @@ pub fn trim_lists_to_normalized_offsets_list<O: Offset>(
         let values = trim_lists_to_normalized_offsets(values.as_ref())?;
         (values, offsets.clone())
     } else {
-        let first_idx = *offsets.first();
+        let first_idx: O = *offsets.first();
 
         let offsets = if first_idx.to_usize() == 0 {
             offsets.clone()
