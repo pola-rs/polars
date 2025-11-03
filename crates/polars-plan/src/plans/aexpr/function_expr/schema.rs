@@ -59,7 +59,7 @@ impl IRFunctionExpr {
             Sign => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric(), "sign")?
                 .with_same_dtype(),
-            FillNull => mapper.map_to_supertype(),
+            FillNull => mapper.with_same_dtype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
                 use IRRollingFunction::*;

@@ -6,7 +6,9 @@ mod is_in;
 use binary::process_binary;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
+use polars_core::utils::{
+    get_supertype, get_supertype_with_options, materialize_dyn_int, try_get_supertype,
+};
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
@@ -349,6 +351,57 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+
+            AExpr::Function {
+                function: IRFunctionExpr::FillNull,
+                ref input,
+                options,
+            } => {
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_value) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                let dtype = if (type_left.is_categorical() || type_left.is_enum())
+                    && type_value.is_string()
+                {
+                    type_left.clone()
+                } else {
+                    try_get_supertype(&type_left, &type_value)?
+                };
+
+                if type_left == dtype && type_value == dtype {
+                    return Ok(None);
+                }
+
+                let mut input = input.clone();
+
+                if type_left != dtype {
+                    cast_expr_ir(
+                        &mut input[0],
+                        &type_left,
+                        &dtype,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+                if type_value != dtype {
+                    cast_expr_ir(
+                        &mut input[1],
+                        &type_value,
+                        &dtype,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+
+                Some(AExpr::Function {
+                    function: IRFunctionExpr::FillNull,
+                    input,
+                    options,
+                })
+            },
+
             // shift and fill should only cast left and fill value to super type.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,

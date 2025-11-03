@@ -121,3 +121,11 @@ def test_self_broadcast() -> None:
         pl.Series([None]).fill_null(pl.Series(range(3))),
         pl.Series(range(3)),
     )
+
+
+def test_fill_null_enum_24348() -> None:
+    lf = pl.LazyFrame({"col": ["a", "b", "c"]}).with_columns(
+        pl.col("col").cast(pl.Enum(["a", "b"]), strict=False).fill_null("a")
+    )
+
+    assert_frame_equal(lf.collect_schema().to_frame(), lf.collect().schema.to_frame())
