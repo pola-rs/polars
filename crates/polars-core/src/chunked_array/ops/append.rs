@@ -99,7 +99,7 @@ where
                     #[cfg(feature = "dtype-categorical")]
                     _ if matches!(ca.dtype(), DataType::Categorical(..)) => IsSorted::Not,
                     _ => {
-                        let mut out = IsSorted::Not;
+                        let out;
 
                         // This can be relatively expensive because of chunks, so delay as much as possible.
                         let l_val = unsafe { ca.value_unchecked(l_idx) };
@@ -129,11 +129,7 @@ where
                             l_val.tot_ge(&r_val)
                         };
 
-                        if !check {
-                            out = IsSorted::Not
-                        }
-
-                        out
+                        if check { out } else { IsSorted::Not }
                     },
                 }
             }
