@@ -40,6 +40,7 @@ from polars.datatypes import (
     Duration,
     Enum,
     Field,
+    Float16,
     Float32,
     Float64,
     Int8,
@@ -103,7 +104,7 @@ def integers(
 
 
 def floats(
-    bit_width: Literal[32, 64] = 64,
+    bit_width: Literal[16, 32, 64] = 64,
     *,
     allow_nan: bool = True,
     allow_infinity: bool = True,
@@ -401,15 +402,10 @@ def data(
     """
     if (strategy := _STATIC_STRATEGIES.get(dtype.base_type())) is not None:
         strategy = strategy
-    elif dtype == Float32:
+    elif dtype.is_float():
+        bit_width = {Float16: 16, Float32: 32, Float64: 64}[dtype]
         strategy = floats(
-            32,
-            allow_nan=kwargs.pop("allow_nan", True),
-            allow_infinity=kwargs.pop("allow_infinity", True),
-        )
-    elif dtype == Float64:
-        strategy = floats(
-            64,
+            bit_width=bit_width,
             allow_nan=kwargs.pop("allow_nan", True),
             allow_infinity=kwargs.pop("allow_infinity", True),
         )

@@ -407,7 +407,24 @@ class UInt128(UnsignedIntegerType):
 
 
 class Float16(FloatType):
-    """16-bit floating point type."""
+    """16-bit floating point type.
+
+    .. warning::
+    This functionality is considered **unstable**. It may be changed
+    at any point without it being considered a breaking change.
+    """
+
+    def __init__(self) -> None:
+        # Issuing the warning on `__init__` does not trigger when the class is used
+        # without being instantiated, but it's better than nothing
+        from polars._utils.unstable import issue_unstable_warning
+
+        issue_unstable_warning(
+            "the Decimal data type is considered unstable."
+            " It is a work-in-progress feature and may not always work as expected."
+        )
+
+        super().__init__()
 
 
 class Float32(FloatType):

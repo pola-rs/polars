@@ -4,7 +4,7 @@ use arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
     DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
-use arrow::types::{NativeType, days_ms, i256};
+use arrow::types::{days_ms, i256};
 use ethnum::I256;
 use num_traits::AsPrimitive;
 use polars_compute::cast::CastOptionsImpl;
@@ -507,7 +507,9 @@ pub fn page_iter_to_array(
         .collect_boxed(filter)?,
 
         // Float16
-        (PhysicalType::FixedLenByteArray(2), Float32) => {
+        // TODO: [amber] I am not yet convinded that this is right
+        // [amber] https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#float16
+        (PhysicalType::FixedLenByteArray(2), Float16) => {
             // @NOTE: To reduce code bloat, we just use the FixedSizeBinary decoder.
 
             let (nested, array, ptm) = PageDecoder::new(
@@ -530,11 +532,10 @@ pub fn page_iter_to_array(
                         .map(|v| {
                             // SAFETY: We know that `v` is always of size two.
                             let le_bytes: [u8; 2] = unsafe { v.try_into().unwrap_unchecked() };
-                            let v = pf16::from_le_bytes(le_bytes);
-                            v.as_()
+                            pf16::from_le_bytes(le_bytes)
                         })
                         .collect();
-                    Ok(PrimitiveArray::<f32>::new(dtype.clone(), values, validity).to_boxed())
+                    Ok(PrimitiveArray::<pf16>::new(dtype.clone(), values, validity).to_boxed())
                 })
                 .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 

@@ -540,6 +540,7 @@ pub fn cast(
                 Int64 => utf8view_to_primitive_dyn::<i64>(arr, to_type, options),
                 #[cfg(feature = "dtype-i128")]
                 Int128 => utf8view_to_primitive_dyn::<i128>(arr, to_type, options),
+                Float16 => utf8view_to_primitive_dyn::<pf16>(arr, to_type, options),
                 Float32 => utf8view_to_primitive_dyn::<f32>(arr, to_type, options),
                 Float64 => utf8view_to_primitive_dyn::<f64>(arr, to_type, options),
                 Timestamp(time_unit, None) => {
@@ -576,6 +577,7 @@ pub fn cast(
             Int64 => primitive_to_boolean_dyn::<i64>(array, to_type.clone()),
             #[cfg(feature = "dtype-i128")]
             Int128 => primitive_to_boolean_dyn::<i128>(array, to_type.clone()),
+            Float16 => primitive_to_boolean_dyn::<pf16>(array, to_type.clone()),
             Float32 => primitive_to_boolean_dyn::<f32>(array, to_type.clone()),
             Float64 => primitive_to_boolean_dyn::<f64>(array, to_type.clone()),
             #[cfg(feature = "dtype-decimal")]
@@ -597,6 +599,7 @@ pub fn cast(
             Int64 => boolean_to_primitive_dyn::<i64>(array),
             #[cfg(feature = "dtype-i128")]
             Int128 => boolean_to_primitive_dyn::<i128>(array),
+            Float16 => boolean_to_primitive_dyn::<pf16>(array),
             Float32 => boolean_to_primitive_dyn::<f32>(array),
             Float64 => boolean_to_primitive_dyn::<f64>(array),
             Utf8View => boolean_to_utf8view_dyn(array),
@@ -671,6 +674,7 @@ pub fn cast(
             Int64 => binary_to_primitive_dyn::<i64, i64>(array, to_type, options),
             #[cfg(feature = "dtype-i128")]
             Int128 => binary_to_primitive_dyn::<i64, i128>(array, to_type, options),
+            Float16 => binary_to_primitive_dyn::<i64, pf16>(array, to_type, options),
             Float32 => binary_to_primitive_dyn::<i64, f32>(array, to_type, options),
             Float64 => binary_to_primitive_dyn::<i64, f64>(array, to_type, options),
             Binary => {
@@ -712,6 +716,7 @@ pub fn cast(
         (UInt8, Int64) => primitive_to_primitive_dyn::<u8, i64>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (UInt8, Int128) => primitive_to_primitive_dyn::<u8, i128>(array, to_type, options),
+        (UInt8, Float16) => primitive_to_primitive_dyn::<u8, pf16>(array, to_type, as_options),
         (UInt8, Float32) => primitive_to_primitive_dyn::<u8, f32>(array, to_type, as_options),
         (UInt8, Float64) => primitive_to_primitive_dyn::<u8, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
@@ -728,6 +733,7 @@ pub fn cast(
         (UInt16, Int64) => primitive_to_primitive_dyn::<u16, i64>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (UInt16, Int128) => primitive_to_primitive_dyn::<u16, i128>(array, to_type, options),
+        (UInt16, Float16) => primitive_to_primitive_dyn::<u16, pf16>(array, to_type, as_options),
         (UInt16, Float32) => primitive_to_primitive_dyn::<u16, f32>(array, to_type, as_options),
         (UInt16, Float64) => primitive_to_primitive_dyn::<u16, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
@@ -744,6 +750,7 @@ pub fn cast(
         (UInt32, Int64) => primitive_to_primitive_dyn::<u32, i64>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (UInt32, Int128) => primitive_to_primitive_dyn::<u32, i128>(array, to_type, options),
+        (UInt32, Float16) => primitive_to_primitive_dyn::<u32, pf16>(array, to_type, as_options),
         (UInt32, Float32) => primitive_to_primitive_dyn::<u32, f32>(array, to_type, as_options),
         (UInt32, Float64) => primitive_to_primitive_dyn::<u32, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
@@ -760,6 +767,7 @@ pub fn cast(
         (UInt64, Int64) => primitive_to_primitive_dyn::<u64, i64>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (UInt64, Int128) => primitive_to_primitive_dyn::<u64, i128>(array, to_type, options),
+        (UInt64, Float16) => primitive_to_primitive_dyn::<u64, pf16>(array, to_type, as_options),
         (UInt64, Float32) => primitive_to_primitive_dyn::<u64, f32>(array, to_type, as_options),
         (UInt64, Float64) => primitive_to_primitive_dyn::<u64, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
@@ -784,6 +792,8 @@ pub fn cast(
         #[cfg(all(feature = "dtype-u128", feature = "dtype-i128"))]
         (UInt128, Int128) => primitive_to_primitive_dyn::<u128, i128>(array, to_type, options),
         #[cfg(feature = "dtype-u128")]
+        (UInt128, Float16) => primitive_to_primitive_dyn::<u128, pf16>(array, to_type, as_options),
+        #[cfg(feature = "dtype-u128")]
         (UInt128, Float32) => primitive_to_primitive_dyn::<u128, f32>(array, to_type, as_options),
         #[cfg(feature = "dtype-u128")]
         (UInt128, Float64) => primitive_to_primitive_dyn::<u128, f64>(array, to_type, as_options),
@@ -801,6 +811,7 @@ pub fn cast(
         (Int8, Int64) => primitive_to_primitive_dyn::<i8, i64>(array, to_type, as_options),
         #[cfg(feature = "dtype-i128")]
         (Int8, Int128) => primitive_to_primitive_dyn::<i8, i128>(array, to_type, as_options),
+        (Int8, Float16) => primitive_to_primitive_dyn::<i8, pf16>(array, to_type, as_options),
         (Int8, Float32) => primitive_to_primitive_dyn::<i8, f32>(array, to_type, as_options),
         (Int8, Float64) => primitive_to_primitive_dyn::<i8, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
@@ -817,6 +828,7 @@ pub fn cast(
         (Int16, Int64) => primitive_to_primitive_dyn::<i16, i64>(array, to_type, as_options),
         #[cfg(feature = "dtype-i128")]
         (Int16, Int128) => primitive_to_primitive_dyn::<i16, i128>(array, to_type, as_options),
+        (Int16, Float16) => primitive_to_primitive_dyn::<i16, pf16>(array, to_type, as_options),
         (Int16, Float32) => primitive_to_primitive_dyn::<i16, f32>(array, to_type, as_options),
         (Int16, Float64) => primitive_to_primitive_dyn::<i16, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
@@ -833,6 +845,7 @@ pub fn cast(
         (Int32, Int64) => primitive_to_primitive_dyn::<i32, i64>(array, to_type, as_options),
         #[cfg(feature = "dtype-i128")]
         (Int32, Int128) => primitive_to_primitive_dyn::<i32, i128>(array, to_type, as_options),
+        (Int32, Float16) => primitive_to_primitive_dyn::<i32, pf16>(array, to_type, as_options),
         (Int32, Float32) => primitive_to_primitive_dyn::<i32, f32>(array, to_type, as_options),
         (Int32, Float64) => primitive_to_primitive_dyn::<i32, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
@@ -849,6 +862,7 @@ pub fn cast(
         (Int64, Int32) => primitive_to_primitive_dyn::<i64, i32>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (Int64, Int128) => primitive_to_primitive_dyn::<i64, i128>(array, to_type, options),
+        (Int64, Float16) => primitive_to_primitive_dyn::<i64, pf16>(array, to_type, as_options),
         (Int64, Float32) => primitive_to_primitive_dyn::<i64, f32>(array, to_type, options),
         (Int64, Float64) => primitive_to_primitive_dyn::<i64, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
@@ -873,17 +887,30 @@ pub fn cast(
         #[cfg(feature = "dtype-i128")]
         (Int128, Int64) => primitive_to_primitive_dyn::<i128, i64>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
+        (Int128, Float16) => primitive_to_primitive_dyn::<i128, pf16>(array, to_type, as_options),
+        #[cfg(feature = "dtype-i128")]
         (Int128, Float32) => primitive_to_primitive_dyn::<i128, f32>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (Int128, Float64) => primitive_to_primitive_dyn::<i128, f64>(array, to_type, as_options),
         #[cfg(all(feature = "dtype-i128", feature = "dtype-decimal"))]
         (Int128, Decimal(p, s)) => integer_to_decimal_dyn::<i128>(array, *p, *s),
 
-        // (Float16, Float32) => {
-        //     let from = array.as_any().downcast_ref().unwrap();
-        //     Ok(f16_to_f32(from).boxed())
-        // },
+        (Float16, UInt8) => primitive_to_primitive_dyn::<pf16, u8>(array, to_type, options),
+        (Float16, UInt16) => primitive_to_primitive_dyn::<pf16, u16>(array, to_type, options),
+        (Float16, UInt32) => primitive_to_primitive_dyn::<pf16, u32>(array, to_type, options),
+        (Float16, UInt64) => primitive_to_primitive_dyn::<pf16, u64>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (Float16, UInt128) => primitive_to_primitive_dyn::<pf16, u128>(array, to_type, options),
+        (Float16, Int8) => primitive_to_primitive_dyn::<pf16, i8>(array, to_type, options),
+        (Float16, Int16) => primitive_to_primitive_dyn::<pf16, i16>(array, to_type, options),
+        (Float16, Int32) => primitive_to_primitive_dyn::<pf16, i32>(array, to_type, options),
+        (Float16, Int64) => primitive_to_primitive_dyn::<pf16, i64>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Float16, Int128) => primitive_to_primitive_dyn::<pf16, i128>(array, to_type, options),
         (Float16, Float32) => primitive_to_primitive_dyn::<pf16, f32>(array, to_type, as_options),
+        (Float16, Float64) => primitive_to_primitive_dyn::<pf16, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
+        (Float16, Decimal(p, s)) => float_to_decimal_dyn::<pf16>(array, *p, *s),
 
         (Float32, UInt8) => primitive_to_primitive_dyn::<f32, u8>(array, to_type, options),
         (Float32, UInt16) => primitive_to_primitive_dyn::<f32, u16>(array, to_type, options),
@@ -897,6 +924,7 @@ pub fn cast(
         (Float32, Int64) => primitive_to_primitive_dyn::<f32, i64>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (Float32, Int128) => primitive_to_primitive_dyn::<f32, i128>(array, to_type, options),
+        (Float32, Float16) => primitive_to_primitive_dyn::<f32, pf16>(array, to_type, as_options),
         (Float32, Float64) => primitive_to_primitive_dyn::<f32, f64>(array, to_type, as_options),
         #[cfg(feature = "dtype-decimal")]
         (Float32, Decimal(p, s)) => float_to_decimal_dyn::<f32>(array, *p, *s),
@@ -913,6 +941,7 @@ pub fn cast(
         (Float64, Int64) => primitive_to_primitive_dyn::<f64, i64>(array, to_type, options),
         #[cfg(feature = "dtype-i128")]
         (Float64, Int128) => primitive_to_primitive_dyn::<f64, i128>(array, to_type, options),
+        (Float64, Float16) => primitive_to_primitive_dyn::<f64, pf16>(array, to_type, as_options),
         (Float64, Float32) => primitive_to_primitive_dyn::<f64, f32>(array, to_type, options),
         #[cfg(feature = "dtype-decimal")]
         (Float64, Decimal(p, s)) => float_to_decimal_dyn::<f64>(array, *p, *s),
@@ -937,6 +966,8 @@ pub fn cast(
         (Decimal(_, _), Int64) => decimal_to_integer_dyn::<i64>(array),
         #[cfg(all(feature = "dtype-decimal", feature = "dtype-i128"))]
         (Decimal(_, _), Int128) => decimal_to_integer_dyn::<i128>(array),
+        #[cfg(feature = "dtype-decimal")]
+        (Decimal(_, _), Float16) => decimal_to_float_dyn::<pf16>(array),
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Float32) => decimal_to_float_dyn::<f32>(array),
         #[cfg(feature = "dtype-decimal")]

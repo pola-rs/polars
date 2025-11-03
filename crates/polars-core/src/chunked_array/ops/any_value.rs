@@ -1,5 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
+use core::panic;
+
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
@@ -45,6 +47,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
         DataType::Int128 => downcast_and_pack!(Int128Array, Int128),
+        DataType::Float16 => downcast_and_pack!(Float16Array, Float16),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
@@ -142,7 +145,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         },
         DataType::Null => AnyValue::Null,
         DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),
-        dt => panic!("not implemented for {dt:?}"),
+        dt @ DataType::Unknown(_) => panic!("not implemented for {dt:?}"),
     }
 }
 

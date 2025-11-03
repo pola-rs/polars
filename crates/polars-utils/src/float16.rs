@@ -94,6 +94,16 @@ impl pf16 {
     }
 
     #[inline]
+    pub fn to_le_bytes(&self) -> [u8; 2] {
+        self.0.to_le_bytes()
+    }
+
+    #[inline]
+    pub fn from_le_bytes(bytes: [u8; 2]) -> Self {
+        pf16(half::f16::from_le_bytes(bytes))
+    }
+
+    #[inline]
     pub fn is_nan(self) -> bool {
         self.0.is_nan()
     }
@@ -237,13 +247,46 @@ impl Bounded for pf16 {
     }
 }
 
-impl<T: Copy + 'static> AsPrimitive<T> for pf16
-where
-    half::f16: AsPrimitive<T>,
-{
+macro_rules! impl_as_primitive {
+    ($ty:ty) => {
+        impl AsPrimitive<$ty> for pf16 {
+            #[inline]
+            fn as_(self) -> $ty {
+                self.0.as_()
+            }
+        }
+    };
+}
+
+impl_as_primitive!(u8);
+impl_as_primitive!(u16);
+impl_as_primitive!(u32);
+impl_as_primitive!(u64);
+impl_as_primitive!(i8);
+impl_as_primitive!(i16);
+impl_as_primitive!(i32);
+impl_as_primitive!(i64);
+impl_as_primitive!(f32);
+impl_as_primitive!(f64);
+
+impl AsPrimitive<pf16> for pf16 {
     #[inline]
-    fn as_(self) -> T {
-        self.0.as_()
+    fn as_(self) -> pf16 {
+        self
+    }
+}
+
+impl AsPrimitive<u128> for pf16 {
+    #[inline]
+    fn as_(self) -> u128 {
+        self.0.to_f64() as u128
+    }
+}
+
+impl AsPrimitive<i128> for pf16 {
+    #[inline]
+    fn as_(self) -> i128 {
+        self.0.to_f64() as i128
     }
 }
 

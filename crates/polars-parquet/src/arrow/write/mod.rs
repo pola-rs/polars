@@ -544,6 +544,7 @@ pub fn array_to_page_simple(
                 encoding,
             );
         },
+        ArrowDataType::Float16 => todo!("[amber] Float16 page writing not yet implemented"),
         ArrowDataType::Float32 => primitive::array_to_page_plain::<f32, f32>(
             array.as_any().downcast_ref().unwrap(),
             options,
