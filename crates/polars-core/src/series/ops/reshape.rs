@@ -227,7 +227,6 @@ impl Series {
             Cow::Borrowed(s)
         };
 
-        dbg!(&s);
 
         let s_ref = s.as_ref();
 
