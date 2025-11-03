@@ -24,7 +24,6 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
-    Int128,
     List,
     Null,
     String,
@@ -34,7 +33,6 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
-    UInt128,
 )
 
 if TYPE_CHECKING:
@@ -52,7 +50,7 @@ _SIMPLE_DTYPES: list[DataTypeClass] = [
     Int16,
     Int32,
     Int64,
-    Int128,
+    # TODO: Enable Int128
     Float16,
     Float32,
     Float64,
@@ -61,7 +59,7 @@ _SIMPLE_DTYPES: list[DataTypeClass] = [
     UInt16,
     UInt32,
     UInt64,
-    UInt128,
+    # TODO: Enable UInt128
     String,
     Binary,
     Date,

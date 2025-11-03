@@ -16,6 +16,7 @@ pub(super) mod dtypes {
                 Int128 => Int128,
                 UInt32 => UInt32,
                 UInt64 => UInt64,
+                Float16 => Float16,
                 Float32 => Float32,
                 Float64 => Float64,
                 Unknown(kind) => match kind {
@@ -33,6 +34,7 @@ pub(super) mod dtypes {
             Boolean => Int64,
             UInt64 => UInt64,
             Int128 => Int128,
+            Float16 => Float16,
             Float32 => Float32,
             Float64 => Float64,
             _ => Int64,

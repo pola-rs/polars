@@ -62,7 +62,7 @@ pub enum ArrowDataType {
     UInt64,
     /// An [`u128`]
     UInt128,
-    /// An 16-bit float
+    /// A 16-bit float
     Float16,
     /// A [`f32`]
     Float32,
@@ -431,6 +431,7 @@ impl ArrowDataType {
                 | D::UInt32
                 | D::UInt64
                 | D::UInt128
+                | D::Float16
                 | D::Float32
                 | D::Float64
                 | D::Decimal(_, _)

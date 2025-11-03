@@ -376,6 +376,8 @@ macro_rules! match_dtype_to_physical_apply_macro {
             DataType::Int64 => $macro!(i64 $(, $opt_args)*),
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => $macro!(i128 $(, $opt_args)*),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => $macro!(pf16 $(, $opt_args)*),
             DataType::Float32 => $macro!(f32 $(, $opt_args)*),
             DataType::Float64 => $macro!(f64 $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
@@ -439,6 +441,8 @@ macro_rules! match_arrow_dtype_apply_macro_ca {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => $macro!($self.i128().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => $macro!($self.f16().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
@@ -451,6 +455,7 @@ macro_rules! with_match_physical_numeric_type {(
     $dtype:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
     match $dtype {
         #[cfg(feature = "dtype-i8")]
@@ -469,6 +474,8 @@ macro_rules! with_match_physical_numeric_type {(
         UInt64 => __with_ty__! { u64 },
         #[cfg(feature = "dtype-u128")]
         UInt128 => __with_ty__! { u128 },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => __with_ty__! { pf16 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -480,6 +487,7 @@ macro_rules! with_match_physical_integer_type {(
     $dtype:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
     match $dtype {
         #[cfg(feature = "dtype-i8")]
@@ -507,8 +515,11 @@ macro_rules! with_match_physical_float_type {(
     $dtype:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
     match $dtype {
+        #[cfg(feature = "dtype-f16")]
+        Float16 => __with_ty__! { pf16 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -522,6 +533,8 @@ macro_rules! with_match_physical_float_polars_type {(
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $key_type {
+        #[cfg(feature = "dtype-f16")]
+        Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -551,6 +564,8 @@ macro_rules! with_match_physical_numeric_polars_type {(
         UInt64 => __with_ty__! { UInt64Type },
             #[cfg(feature = "dtype-u128")]
         UInt128 => __with_ty__! { UInt128Type },
+            #[cfg(feature = "dtype-f16")]
+        Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -619,6 +634,8 @@ macro_rules! downcast_as_macro_arg_physical {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => $macro!($self.i128().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => $macro!($self.f16().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
             dt => panic!("not implemented for {:?}", dt),
@@ -679,6 +696,11 @@ macro_rules! downcast_as_macro_arg_physical_mut {
                 let ca: &mut Int128Chunked = $self.as_mut();
                 $macro!(Int128Type, ca $(, $opt_args)*)
             },
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                let ca: &mut Float16Chunked = $self.as_mut();
+                $macro!(Float16Type, ca $(, $opt_args)*)
+            },
             DataType::Float32 => {
                 let ca: &mut Float32Chunked = $self.as_mut();
                 $macro!(Float32Type, ca $(, $opt_args)*)
@@ -714,6 +736,8 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => $self.i128().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => $self.f16().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Time => $self.time().unwrap().$method($($args),*),
@@ -756,6 +780,8 @@ macro_rules! apply_method_physical_integer {
 macro_rules! apply_method_physical_numeric {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => $self.f16().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             _ => apply_method_physical_integer!($self, $method, $($args),*),

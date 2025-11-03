@@ -73,6 +73,7 @@ macro_rules! impl_eq_compare {
             Int32 => lhs.i32().unwrap().$method(rhs.i32().unwrap()),
             Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
             Int128 => feature_gated!("dtype-i128", lhs.i128().unwrap().$method(rhs.i128().unwrap())),
+            Float16 => feature_gated!("dtype-f16", lhs.f16().unwrap().$method(rhs.f16().unwrap())),
             Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
             List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
@@ -172,6 +173,7 @@ macro_rules! impl_ineq_compare {
             Int32 => lhs.i32().unwrap().$method(rhs.i32().unwrap()),
             Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
             Int128 => feature_gated!("dtype-i128", lhs.i128().unwrap().$method(rhs.i128().unwrap())),
+            Float16 => feature_gated!("dtype-f16", lhs.f16().unwrap().$method(rhs.f16().unwrap())),
             Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
             List(_) => bail_invalid_ineq!(lhs, rhs, $op),
@@ -180,7 +182,7 @@ macro_rules! impl_ineq_compare {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => bail_invalid_ineq!(lhs, rhs, $op),
 
-            dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
+            dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}'; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
         };
         out.rename(lhs.name().clone());
         PolarsResult::Ok(out)

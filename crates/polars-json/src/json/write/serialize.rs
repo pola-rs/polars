@@ -469,6 +469,9 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::UInt64 => {
             primitive_serializer::<u64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
+        ArrowDataType::Float16 => {
+            todo!("[amber]")
+        },
         ArrowDataType::Float32 => {
             float_serializer::<f32>(array.as_any().downcast_ref().unwrap(), offset, take)
         },

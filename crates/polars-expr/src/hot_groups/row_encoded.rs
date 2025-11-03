@@ -44,6 +44,7 @@ impl HotGrouper for RowEncodedHashHotGrouper {
         cold_idxs: &mut Vec<IdxSize>,
         force_hot: bool,
     ) {
+        dbg!(keys);
         let HashKeys::RowEncoded(keys) = keys else {
             unreachable!()
         };

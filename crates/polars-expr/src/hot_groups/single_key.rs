@@ -76,11 +76,11 @@ where
                 vec![Box::new(keys)],
                 &self.dtype,
             );
-            HashKeys::Single(SingleKeys {
+            dbg!(HashKeys::Single(SingleKeys {
                 keys: s,
                 null_is_valid: self.null_idx < IdxSize::MAX,
                 random_state: self.random_state.clone(),
-            })
+            }))
         }
     }
 }

@@ -2,6 +2,7 @@
 use std::borrow::Cow;
 
 use arrow::types::PrimitiveType;
+use num_traits::ToBytes;
 use polars_compute::cast::SerPrimitive;
 use polars_error::feature_gated;
 use polars_utils::float16::pf16;
@@ -295,6 +296,8 @@ impl<'a> AnyValue<'a> {
             UInt32(v) => NumCast::from(*v),
             UInt64(v) => NumCast::from(*v),
             UInt128(v) => NumCast::from(*v),
+            #[cfg(feature = "dtype-f16")]
+            Float16(v) => NumCast::from(*v),
             Float32(v) => NumCast::from(*v),
             Float64(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-date")]
@@ -345,7 +348,10 @@ impl<'a> AnyValue<'a> {
     }
 
     pub fn is_float(&self) -> bool {
-        matches!(self, AnyValue::Float32(_) | AnyValue::Float64(_))
+        matches!(
+            self,
+            AnyValue::Float16(_) | AnyValue::Float32(_) | AnyValue::Float64(_)
+        )
     }
 
     pub fn is_integer(&self) -> bool {
@@ -376,6 +382,7 @@ impl<'a> AnyValue<'a> {
 
     pub fn is_nan(&self) -> bool {
         match self {
+            AnyValue::Float16(f) => f.is_nan(),
             AnyValue::Float32(f) => f.is_nan(),
             AnyValue::Float64(f) => f.is_nan(),
             _ => false,
@@ -413,6 +420,7 @@ impl<'a> AnyValue<'a> {
             (av, DataType::Int32) => AnyValue::Int32(av.extract::<i32>()?),
             (av, DataType::Int64) => AnyValue::Int64(av.extract::<i64>()?),
             (av, DataType::Int128) => AnyValue::Int128(av.extract::<i128>()?),
+            (av, DataType::Float16) => AnyValue::Float16(av.extract::<pf16>()?),
             (av, DataType::Float32) => AnyValue::Float32(av.extract::<f32>()?),
             (av, DataType::Float64) => AnyValue::Float64(av.extract::<f64>()?),
 
@@ -427,6 +435,7 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Int32(v), DataType::Boolean) => AnyValue::Boolean(*v != i32::default()),
             (AnyValue::Int64(v), DataType::Boolean) => AnyValue::Boolean(*v != i64::default()),
             (AnyValue::Int128(v), DataType::Boolean) => AnyValue::Boolean(*v != i128::default()),
+            (AnyValue::Float16(v), DataType::Boolean) => AnyValue::Boolean(*v != pf16::default()),
             (AnyValue::Float32(v), DataType::Boolean) => AnyValue::Boolean(*v != f32::default()),
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
@@ -939,6 +948,7 @@ impl<'a> AnyValue<'a> {
 
     pub(crate) fn to_f64(&self) -> Option<f64> {
         match self {
+            AnyValue::Float16(v) => Some((*v).into()),
             AnyValue::Float32(v) => Some((*v).into()),
             AnyValue::Float64(v) => Some(*v),
             _ => None,
@@ -955,6 +965,7 @@ impl<'a> AnyValue<'a> {
             (Int64(l), Int64(r)) => Int64(l + r),
             (UInt32(l), UInt32(r)) => UInt32(l + r),
             (UInt64(l), UInt64(r)) => UInt64(l + r),
+            (Float16(l), Float16(r)) => Float16(*l + *r),
             (Float32(l), Float32(r)) => Float32(l + r),
             (Float64(l), Float64(r)) => Float64(l + r),
             #[cfg(feature = "dtype-duration")]
@@ -1176,6 +1187,7 @@ impl AnyValue<'_> {
             (Int32(l), Int32(r)) => *l == *r,
             (Int64(l), Int64(r)) => *l == *r,
             (Int128(l), Int128(r)) => *l == *r,
+            (Float16(l), Float16(r)) => l.to_total_ord() == r.to_total_ord(),
             (Float32(l), Float32(r)) => l.to_total_ord() == r.to_total_ord(),
             (Float64(l), Float64(r)) => l.to_total_ord() == r.to_total_ord(),
             (String(l), String(r)) => l == r,
@@ -1332,6 +1344,7 @@ impl PartialOrd for AnyValue<'_> {
             (Int32(l), Int32(r)) => l.partial_cmp(r),
             (Int64(l), Int64(r)) => l.partial_cmp(r),
             (Int128(l), Int128(r)) => l.partial_cmp(r),
+            (Float16(l), Float16(r)) => Some(l.tot_cmp(r)),
             (Float32(l), Float32(r)) => Some(l.tot_cmp(r)),
             (Float64(l), Float64(r)) => Some(l.tot_cmp(r)),
             (String(l), String(r)) => l.partial_cmp(r),
@@ -1538,6 +1551,16 @@ impl GetAnyValue for ArrayRef {
                     Some(v) => AnyValue::UInt128(v),
                 }
             },
+            ArrowDataType::Float16 => {
+                let arr = self
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<pf16>>()
+                    .unwrap_unchecked();
+                match arr.get_unchecked(index) {
+                    None => AnyValue::Null,
+                    Some(v) => AnyValue::Float16(v),
+                }
+            },
             ArrowDataType::Float32 => {
                 let arr = self
                     .as_any()
@@ -1598,6 +1621,9 @@ impl<K: NumericNative> From<K> for AnyValue<'static> {
                 PrimitiveType::UInt64 => AnyValue::UInt64(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt128 => {
                     AnyValue::UInt128(NumCast::from(value).unwrap_unchecked())
+                },
+                PrimitiveType::Float16 => {
+                    AnyValue::Float16(NumCast::from(value).unwrap_unchecked())
                 },
                 PrimitiveType::Float32 => {
                     AnyValue::Float32(NumCast::from(value).unwrap_unchecked())

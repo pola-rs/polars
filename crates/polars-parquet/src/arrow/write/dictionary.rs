@@ -457,6 +457,9 @@ pub fn array_to_pages<K: DictionaryKey>(
                 ArrowDataType::UInt16 => dyn_prim!(u16, i32, array, options, type_),
                 ArrowDataType::UInt32 => dyn_prim!(u32, i32, array, options, type_),
                 ArrowDataType::UInt64 => dyn_prim!(u64, i64, array, options, type_),
+                ArrowDataType::Float16 => {
+                    todo!("[amber] implement dictionary encoding for Float16")
+                },
                 ArrowDataType::Float32 => dyn_prim!(f32, f32, array, options, type_),
                 ArrowDataType::Float64 => dyn_prim!(f64, f64, array, options, type_),
                 ArrowDataType::LargeUtf8 => {

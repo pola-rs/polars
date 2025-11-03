@@ -7,7 +7,7 @@ use arrow::array::{
 use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
 use arrow::types::{days_ms, i256};
 use ethnum::I256;
-use num_traits::AsPrimitive;
+use num_traits::{AsPrimitive, FromBytes};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -227,7 +227,7 @@ impl ColumnStatistics {
                     Some(PrimitiveLogicalType::Float16)
                 ) =>
             {
-                rmap!(expect_fixedlen, @prim Vec<u8>, |v| pf16::from_le_bytes([v[0], v[1]]))
+                rmap!(expect_fixedlen, @prim Vec<u8>, |v| pf16::from_le_bytes(&[v[0], v[1]]))
             },
             (D::Float32, _) => rmap!(expect_float, @prim f32),
             (D::Float64, _) => rmap!(expect_double, @prim f64),
@@ -474,7 +474,7 @@ pub fn deserialize_all(
                 (D::Float16, _) => {
                     rmap!(expect_fixedlen, MutablePrimitiveArray::<pf16>, @prim Vec<u8>, |v| {
                         let le_bytes: [u8; 2] = [v[0], v[1]];
-                        pf16::from_le_bytes(le_bytes)
+                        pf16::from_le_bytes(&le_bytes)
                     })
                 },
                 (D::Float32, _) => rmap!(expect_float, MutablePrimitiveArray::<f32>, @prim f32),

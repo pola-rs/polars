@@ -460,6 +460,10 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 let class = pl.getattr(intern!(py, "UInt128")).unwrap();
                 class.call0()
             },
+            DataType::Float16 => {
+                let class = pl.getattr(intern!(py, "Float16")).unwrap();
+                class.call0()
+            },
             DataType::Float32 => {
                 let class = pl.getattr(intern!(py, "Float32")).unwrap();
                 class.call0()

@@ -113,6 +113,8 @@ impl Series {
                 })
             },
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Float16Chunked::from_chunks(name, chunks).into_series(),
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
@@ -233,6 +235,13 @@ impl Series {
                 "dtype-i128",
                 Ok(Int128Chunked::from_chunks(name, chunks).into_series())
             ),
+            #[cfg(feature = "dtype-f16")]
+            ArrowDataType::Float16 => {
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Float16, CastOptions::NonStrict).unwrap();
+                Ok(Float16Chunked::from_chunks(name, chunks).into_series())
+            },
+            #[cfg(not(feature = "dtype-f16"))]
             ArrowDataType::Float16 => {
                 let chunks =
                     cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();
@@ -459,6 +468,7 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let (chunks, dtype) = to_physical_and_dtype(chunks, md);
+                dbg!(&dtype);
 
                 unsafe {
                     let mut ca =
@@ -543,7 +553,7 @@ unsafe fn to_physical_and_dtype(
     arrays: Vec<ArrayRef>,
     md: Option<&Metadata>,
 ) -> (Vec<ArrayRef>, DataType) {
-    match arrays[0].dtype() {
+    match dbg!(arrays[0].dtype()) {
         ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
             let chunks = cast_chunks(&arrays, &DataType::String, CastOptions::NonStrict).unwrap();
             (chunks, DataType::String)

@@ -1,7 +1,6 @@
 #[cfg(feature = "dsl-schema")]
 use std::borrow::Cow;
-use std::fmt::Display;
-use std::hash::{Hash, Hasher};
+use std::fmt::{Display, LowerExp};
 use std::iter::Sum;
 use std::ops::*;
 
@@ -9,7 +8,8 @@ use bytemuck::{Pod, Zeroable};
 use half;
 use num_derive::*;
 use num_traits::real::Real;
-use num_traits::{AsPrimitive, Bounded, One, Pow, Zero};
+use num_traits::{AsPrimitive, Bounded, FromBytes, One, Pow, ToBytes, Zero};
+use pyo3::IntoPyObject;
 #[cfg(feature = "dsl-schema")]
 use schemars::schema::Schema;
 #[cfg(feature = "dsl-schema")]
@@ -18,7 +18,6 @@ use schemars::{JsonSchema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 
 use crate::nulls::IsNull;
-use crate::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrd, TotalOrdWrap};
 
 /// Type representation of the Float16 physical type
 /// TODO: [amber] comment
@@ -67,41 +66,14 @@ impl JsonSchema for pf16 {
     }
 }
 
-/// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
-/// the same value.
-#[inline]
-pub fn canonical_f16(x: pf16) -> pf16 {
-    let convert_zero = x.0.abs(); // zero out the sign bit if the f16 is zero.
-    pf16(if convert_zero.is_nan() {
-        half::f16::from_bits(0x7c00) // Canonical quiet NaN.
-    } else {
-        convert_zero
-    })
-}
-
 impl pf16 {
     pub const NAN: Self = pf16(half::f16::NAN);
     pub const INFINITY: Self = pf16(half::f16::INFINITY);
     pub const NEG_INFINITY: Self = pf16(half::f16::NEG_INFINITY);
 
     #[inline]
-    pub fn to_ne_bytes(&self) -> [u8; 2] {
-        self.0.to_ne_bytes()
-    }
-
-    #[inline]
-    pub fn from_ne_bytes(bytes: [u8; 2]) -> Self {
-        pf16(half::f16::from_ne_bytes(bytes))
-    }
-
-    #[inline]
     pub fn to_le_bytes(&self) -> [u8; 2] {
         self.0.to_le_bytes()
-    }
-
-    #[inline]
-    pub fn from_le_bytes(bytes: [u8; 2]) -> Self {
-        pf16(half::f16::from_le_bytes(bytes))
     }
 
     #[inline]
@@ -140,6 +112,11 @@ impl pf16 {
     }
 
     #[inline]
+    pub fn log(self, base: Self) -> Self {
+        pf16(self.0.log(base.0))
+    }
+
+    #[inline]
     pub fn to_bits(self) -> u16 {
         self.0.to_bits()
     }
@@ -163,7 +140,7 @@ impl pf16 {
 impl Display for pf16 {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.to_f32().fmt(f)
+        Display::fmt(&self.0.to_f32(), f)
     }
 }
 
@@ -235,6 +212,20 @@ impl From<bool> for pf16 {
     #[inline]
     fn from(value: bool) -> Self {
         if value { One::one() } else { Zero::zero() }
+    }
+}
+
+impl From<pf16> for f32 {
+    #[inline]
+    fn from(value: pf16) -> Self {
+        value.0.to_f32()
+    }
+}
+
+impl From<pf16> for f64 {
+    #[inline]
+    fn from(value: pf16) -> Self {
+        value.0.to_f64()
     }
 }
 
@@ -328,31 +319,6 @@ impl AsPrimitive<pf16> for u128 {
     }
 }
 
-impl TotalHash for pf16 {
-    #[inline]
-    fn tot_hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        canonical_f16(*self).0.to_bits().hash(state)
-    }
-}
-
-impl ToTotalOrd for pf16 {
-    type TotalOrdItem = TotalOrdWrap<pf16>;
-    type SourceItem = pf16;
-
-    #[inline]
-    fn to_total_ord(&self) -> Self::TotalOrdItem {
-        TotalOrdWrap(*self)
-    }
-
-    #[inline]
-    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
-        ord_item.0
-    }
-}
-
 impl IsNull for pf16 {
     const HAS_NULLS: bool = false;
     type Inner = pf16;
@@ -367,20 +333,51 @@ impl IsNull for pf16 {
     }
 }
 
-impl TotalEq for pf16 {
+impl ToBytes for pf16 {
+    type Bytes = [u8; 2];
+
     #[inline]
-    fn tot_eq(&self, other: &Self) -> bool {
-        if self.0.is_nan() {
-            other.0.is_nan()
-        } else {
-            self == other
-        }
+    fn to_be_bytes(&self) -> Self::Bytes {
+        self.0.to_be_bytes()
+    }
+
+    #[inline]
+    fn to_le_bytes(&self) -> Self::Bytes {
+        self.0.to_le_bytes()
+    }
+
+    #[inline]
+    fn to_ne_bytes(&self) -> Self::Bytes {
+        self.0.to_ne_bytes()
     }
 }
 
-impl TotalOrd for pf16 {
+impl FromBytes for pf16 {
+    type Bytes = [u8; 2];
+
     #[inline]
-    fn tot_cmp(&self, _other: &Self) -> std::cmp::Ordering {
-        unimplemented!()
+    fn from_be_bytes(bytes: &Self::Bytes) -> Self {
+        pf16(half::f16::from_be_bytes(*bytes))
     }
+
+    #[inline]
+    fn from_le_bytes(bytes: &Self::Bytes) -> Self {
+        pf16(half::f16::from_le_bytes(*bytes))
+    }
+
+    #[inline]
+    fn from_ne_bytes(bytes: &Self::Bytes) -> Self {
+        pf16(half::f16::from_ne_bytes(*bytes))
+    }
+}
+
+impl LowerExp for pf16 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        LowerExp::fmt(&self.0.to_f32(), f)
+    }
+}
+
+// TODO: [amber] LEFT HERE
+impl IntoPyObject for pf16 {
+    type Target = pyo3::PyObject;
 }

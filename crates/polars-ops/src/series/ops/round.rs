@@ -1,3 +1,4 @@
+use num_traits::AsPrimitive;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "serde")]
@@ -264,9 +265,9 @@ pub trait RoundSeries: SeriesSealed {
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let s = ca.apply_values(|value| {
-                let value = value as f64;
+                let value = AsPrimitive::<f64>::as_(value);
                 if value == 0.0 {
-                    return value as <$T as PolarsNumericType>::Native;
+                    return AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(value);
                 }
                 // To deal with very large/small numbers we split up 10^n in 5^n and 2^n.
                 // The scaling by 2^n is almost always lossless.
@@ -274,11 +275,9 @@ pub trait RoundSeries: SeriesSealed {
                 let pow5 = 5.0_f64.powi(exp);
                 let scaled = libm::scalbn(value, exp) * pow5;
                 let descaled = libm::scalbn(scaled.round() / pow5, -exp);
-                if descaled.is_finite() {
-                    descaled as <$T as PolarsNumericType>::Native
-                } else {
-                    value as <$T as PolarsNumericType>::Native
-                }
+                AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(
+                    if descaled.is_finite() { descaled } else { value }
+                )
             }).into_series();
             return Ok(s);
         });

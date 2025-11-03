@@ -118,18 +118,7 @@ macro_rules! impl_float_min_max {
     };
 }
 
-impl MinMax for pf16 {
-    #[inline]
-    fn nan_min_lt(&self, _other: &Self) -> bool {
-        unimplemented!()
-    }
-
-    #[inline]
-    fn nan_max_lt(&self, _other: &Self) -> bool {
-        unimplemented!()
-    }
-}
-
+impl_float_min_max!(pf16);
 impl_float_min_max!(f32);
 impl_float_min_max!(f64);
 

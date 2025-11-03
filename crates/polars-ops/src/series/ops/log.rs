@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-f16")]
+use num_traits::real::Real;
 use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
@@ -54,6 +56,8 @@ pub trait LogSeries: SeriesSealed {
                     log1p(ca).into_series()
                 })
             },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => s.f16().unwrap().apply_values(|v| v.ln_1p()).into_series(),
             Float32 => s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series(),
             Float64 => s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series(),
             _ => s.cast(&DataType::Float64).unwrap().log1p(),
@@ -78,6 +82,8 @@ pub trait LogSeries: SeriesSealed {
                     exp(ca).into_series()
                 })
             },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => s.f16().unwrap().apply_values(|v| v.exp()).into_series(),
             Float32 => s.f32().unwrap().apply_values(|v| v.exp()).into_series(),
             Float64 => s.f64().unwrap().apply_values(|v| v.exp()).into_series(),
             _ => s.cast(&DataType::Float64).unwrap().exp(),

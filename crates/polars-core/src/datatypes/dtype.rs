@@ -664,7 +664,10 @@ impl DataType {
     pub fn is_float(&self) -> bool {
         matches!(
             self,
-            DataType::Float32 | DataType::Float64 | DataType::Unknown(UnknownKind::Float)
+            DataType::Float16
+                | DataType::Float32
+                | DataType::Float64
+                | DataType::Unknown(UnknownKind::Float)
         )
     }
 
@@ -799,6 +802,7 @@ impl DataType {
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
             UInt128 => Scalar::from(u128::MAX),
+            Float16 => Scalar::from(pf16::INFINITY),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -822,6 +826,7 @@ impl DataType {
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
             UInt128 => Scalar::from(u128::MIN),
+            Float16 => Scalar::from(pf16::NEG_INFINITY),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
             #[cfg(feature = "dtype-time")]

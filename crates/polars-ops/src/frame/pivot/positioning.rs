@@ -264,6 +264,14 @@ pub(super) fn compute_col_idx(
                 .as_ref();
             compute_col_idx_numeric(ca)
         },
+        #[cfg(feature = "dtype-f16")]
+        T::Float16 => {
+            let ca: &ChunkedArray<Float16Type> = column_agg_physical
+                .as_materialized_series()
+                .as_ref()
+                .as_ref();
+            compute_col_idx_numeric(ca)
+        },
         T::Struct(_) => {
             let ca = column_agg_physical.struct_().unwrap();
             let ca = ca.get_row_encoded(Default::default())?;
@@ -430,6 +438,14 @@ pub(super) fn compute_row_idx(
             },
             T::Float32 => {
                 let ca: &ChunkedArray<Float32Type> = index_agg_physical
+                    .as_materialized_series()
+                    .as_ref()
+                    .as_ref();
+                compute_row_index(index, ca, count, index_s.dtype())
+            },
+            #[cfg(feature = "dtype-f16")]
+            T::Float16 => {
+                let ca: &ChunkedArray<Float16Type> = index_agg_physical
                     .as_materialized_series()
                     .as_ref()
                     .as_ref();
