@@ -26,7 +26,7 @@ impl StatefulUdfTrait for ByteRev {
         let field = fields.iter_fields().next().unwrap();
         polars_ensure!(
             field.dtype() == &DataType::Int64,
-            InvalidOperation: "rolling_product can only be performed on i64"
+            InvalidOperation: "`byte_rev` can only be performed on i64"
         );
         Ok(field)
     }

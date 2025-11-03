@@ -41,6 +41,16 @@ def byte_rev(expr: IntoExprColumn) -> pl.Expr:
     )
 
 
+def vertical_scan(expr: IntoExprColumn, *, init: int) -> pl.Expr:
+    from plugin_v2 import plugin_v2
+
+    return register_plugin_v2_function(
+        plugin_path=LIB,
+        args=[expr],
+        info=plugin_v2.vertical_scan(init),
+    )
+
+
 def hamming_distance(expr: IntoExprColumn, other: IntoExprColumn) -> pl.Expr:
     return register_plugin_function(
         plugin_path=LIB,

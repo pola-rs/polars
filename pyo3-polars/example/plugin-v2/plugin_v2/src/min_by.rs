@@ -1,4 +1,4 @@
-use polars::error::PolarsResult;
+use polars::error::{polars_bail, PolarsResult};
 use polars::prelude::{AnyValue, ArgAgg, Field, PlSmallStr, Scalar, Schema, SchemaExt};
 use polars::series::Series;
 use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
@@ -41,6 +41,20 @@ impl StatefulUdfTrait for MinBy {
 
     fn insert(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
         assert_eq!(inputs.len(), 2);
+
+        let mut inputs = inputs.to_vec();
+
+        // Broadcasting behavior.
+        if inputs[0].len() != inputs[1].len() {
+            if inputs[0].len() == 1 {
+                inputs[0] = inputs[0].new_from_index(0, inputs[1].len());
+            } else if inputs[1].len() == 1 {
+                inputs[1] = inputs[1].new_from_index(0, inputs[0].len());
+            } else {
+                polars_bail!(length_mismatch = "min_by", inputs[0].len(), inputs[1].len());
+            }
+        }
+
         if let Some(arg_min) = inputs[1].arg_min() {
             let new_by = inputs[1].get(arg_min)?;
 

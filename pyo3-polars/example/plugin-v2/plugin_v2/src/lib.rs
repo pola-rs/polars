@@ -8,6 +8,7 @@ mod expressions;
 mod min_by;
 mod rolling_product;
 mod byte_rev;
+mod vertical_scan;
 
 #[global_allocator]
 static ALLOC: PolarsAllocator = PolarsAllocator::new();
@@ -18,5 +19,6 @@ fn plugin_v2(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(min_by::min_by, m)?)?;
     m.add_function(wrap_pyfunction!(rolling_product::rolling_product, m)?)?;
     m.add_function(wrap_pyfunction!(byte_rev::byte_rev, m)?)?;
+    m.add_function(wrap_pyfunction!(vertical_scan::vertical_scan, m)?)?;
     Ok(())
 }
