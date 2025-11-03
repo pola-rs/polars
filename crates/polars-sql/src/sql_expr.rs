@@ -259,8 +259,11 @@ impl SQLExprVisitor<'_> {
         if subquery.with.is_some() {
             polars_bail!(SQLSyntax: "SQL subquery cannot be a CTE 'WITH' clause");
         }
-        let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
-        let schema = self.ctx.get_frame_schema(&mut lf)?;
+        // note: we have to execute subqueries in an isolated scope to prevent
+        // propagating any context/arena mutation into the rest of the query
+        let (mut lf, schema) = self
+            .ctx
+            .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
 
         if restriction == SubqueryRestriction::SingleColumn {
             if schema.len() != 1 {
@@ -953,7 +956,7 @@ impl SQLExprVisitor<'_> {
         })
     }
 
-    /// Visit a SQL subquery inside and `IN` expression.
+    /// Visit a SQL subquery inside an `IN` expression.
     fn visit_in_subquery(
         &mut self,
         expr: &SQLExpr,

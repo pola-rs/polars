@@ -147,3 +147,14 @@ def test_in_subquery() -> None:
             """,
             eager=True,
         )
+
+
+def test_subquery_20732() -> None:
+    lf = pl.concat(  # noqa: F841
+        [
+            pl.LazyFrame([{"id": 1, "s": "a"}]),
+            pl.LazyFrame([{"id": 2, "s": "b"}]),
+        ]
+    )
+    res = pl.sql("SELECT * FROM lf WHERE id IN (SELECT MAX(id) FROM lf)", eager=True)
+    assert res.to_dict(as_series=False) == {"id": [2], "s": ["b"]}

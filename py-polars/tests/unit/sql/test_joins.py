@@ -682,6 +682,45 @@ def test_nested_join(join_clause: str) -> None:
         ]
 
 
+def test_miscellaneous_cte_join_aliasing() -> None:
+    ctx = pl.SQLContext()
+    res = ctx.execute(
+        """
+        WITH t AS (SELECT a FROM (VALUES(1),(2)) tbl(a))
+        SELECT * FROM t CROSS JOIN t
+        """,
+        eager=True,
+    )
+    assert sorted(res.rows()) == [
+        (1, 1),
+        (1, 2),
+        (2, 1),
+        (2, 2),
+    ]
+
+
+def test_nested_joins_17381() -> None:
+    df = pl.DataFrame({"id": ["one", "two"]})
+
+    ctx = pl.SQLContext({"a": df})
+    res = ctx.execute(
+        """
+        -- the interaction of the (unused) CTE and the nested subquery resulted
+        -- in arena mutation/cleanup that wasn't accounted for, affecting state
+        WITH c AS (SELECT a.id FROM a)
+        SELECT *
+        FROM a
+        WHERE id IN (
+            SELECT id
+            FROM a
+            INNER JOIN a AS a2 ON a.id = a2.id
+        )
+        """,
+        eager=True,
+    )
+    assert set(res["id"]) == {"one", "two"}
+
+
 def test_sql_forbid_nested_join_unnamed_relation() -> None:
     df = pl.DataFrame({"a": 1})
 
@@ -690,12 +729,12 @@ def test_sql_forbid_nested_join_unnamed_relation() -> None:
         pytest.raises(SQLInterfaceError, match="cannot join on unnamed relation"),
     ):
         ctx.execute(
-            """\
-SELECT *
-FROM left
-JOIN (right JOIN right ON right.a = right.a)
-ON left.a = right.a
-"""
+            """
+            SELECT *
+            FROM left
+            JOIN (right JOIN right ON right.a = right.a)
+            ON left.a = right.a
+            """
         )
 
 

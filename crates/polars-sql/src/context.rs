@@ -169,8 +169,8 @@ impl SQLContext {
         Ok(res)
     }
 
-    /// add a function registry to the SQLContext
-    /// the registry provides the ability to add custom functions to the SQLContext
+    /// Add a function registry to the SQLContext.
+    /// The registry provides the ability to add custom functions to the SQLContext.
     pub fn with_function_registry(mut self, function_registry: Arc<dyn FunctionRegistry>) -> Self {
         self.function_registry = function_registry;
         self
@@ -236,6 +236,40 @@ impl SQLContext {
                 })
             })
             .cloned()
+    }
+
+    /// Execute a query in an isolated context. This prevents subqueries from mutating
+    /// arenas and other context state. Returns both the LazyFrame *and* its associated
+    /// Schema (so that the correct arenas are used when determining schema).
+    pub(crate) fn execute_isolated<F>(&mut self, query: F) -> PolarsResult<(LazyFrame, SchemaRef)>
+    where
+        F: FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
+    {
+        // Save key state (arenas and lookups)
+        let (joined_aliases, table_aliases, lp_arena, expr_arena, table_map) = (
+            // "take" to ensure subqueries start with clean state
+            std::mem::take(&mut self.joined_aliases),
+            std::mem::take(&mut self.table_aliases),
+            std::mem::take(&mut self.lp_arena),
+            std::mem::take(&mut self.expr_arena),
+            // "clone" to allow subqueries to see registered tables
+            self.table_map.clone(),
+        );
+
+        // Execute query with clean state (eg: nested/subquery)
+        let mut lf = query(self)?;
+        let schema = self.get_frame_schema(&mut lf)?;
+
+        // Restore saved state
+        lf.set_cached_arena(
+            std::mem::replace(&mut self.lp_arena, lp_arena),
+            std::mem::replace(&mut self.expr_arena, expr_arena),
+        );
+        self.joined_aliases = joined_aliases;
+        self.table_aliases = table_aliases;
+        self.table_map = table_map;
+
+        Ok((lf, schema))
     }
 
     fn expr_or_ordinal(
