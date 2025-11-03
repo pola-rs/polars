@@ -4,21 +4,23 @@ import contextlib
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
+import polars._reexport as pl
 from polars._utils.parse import parse_into_list_of_expressions
-from polars._utils.wrap import wrap_expr
+from polars._utils.wrap import wrap_expr, wrap_s
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from typing import Callable
 
-    from polars import Expr
+    from polars import DataType, Expr, Series
     from polars._typing import IntoExpr
 
-__all__ = ["register_plugin_function"]
+__all__ = ["register_plugin_function", "new_v2_plugin"]
 
 
 def register_plugin_function(
@@ -153,3 +155,75 @@ def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
             file_path = path.resolve()
 
     return file_path
+
+
+T = TypeVar("T")
+
+
+def new_v2_plugin(
+    *inputs: Expr,
+    data: T,
+    initialize: Callable[[T, pl.Schema], Any],
+    insert: Callable[[T, Any, list[Series]], Series | None],
+    finalize: Callable[[T, Any], Series | None] | None,
+    combine: Callable[[T, Any, Any], Any] | None,
+    new_empty: Callable[[T, Any, pl.Schema], Any],
+    to_field: Callable[[T, pl.Schema], tuple[str, DataType]],
+    format: Callable[[T], str],
+
+    length_preserving: bool = False,
+    row_separable: bool = False,
+    returns_scalar: bool = False,
+    zippable_inputs: bool = True,
+    insert_has_output: bool = True,
+    selection_expansion: bool = False,
+) -> Expr:
+    def wrap_initialize(data: T, schema: dict[str, DataType]) -> Any:
+        return initialize(data, pl.Schema(schema))
+
+    def wrap_insert(
+        data: T, state: Any, inputs: list[plr.PySeries]
+    ) -> plr.PySeries | None:
+        inputs_s = [wrap_s(s) for s in inputs]
+        out = insert(data, state, inputs_s)
+        if out is None:
+            return None
+        else:
+            return out._s
+
+    def wrap_finalize(data: T, state: Any) -> plr.PySeries | None:
+        if finalize is None:
+            return None
+
+        out = finalize(data, state)
+        if out is None:
+            return None
+        else:
+            return out._s
+
+    def wrap_new_empty(data: T, state: Any, schema: dict[str, DataType]) -> Any:
+        return new_empty(data, state, pl.Schema(schema))
+
+    def wrap_to_field(data: T, schema: dict[str, DataType]) -> (str, DataType):
+        return to_field(data, pl.Schema(schema))
+
+    return wrap_expr(
+        plr.plugin_v2_generate(
+            inputs=[i._pyexpr for i in inputs],
+            data=data,
+            initialize=wrap_initialize,
+            insert=wrap_insert,
+            finalize=None if finalize is None else wrap_finalize,
+            combine=combine,
+            new_empty=new_empty,
+            to_field=wrap_to_field,
+            format=format,
+
+            length_preserving=length_preserving,
+            row_separable=row_separable,
+            returns_scalar=returns_scalar,
+            zippable_inputs=zippable_inputs,
+            insert_has_output=insert_has_output,
+            selection_expansion=selection_expansion,
+        )
+    )

@@ -10,3 +10,4 @@ mod json_schema;
 pub mod named_serde;
 #[cfg(feature = "serde")]
 mod serde_expr;
+pub mod v2;

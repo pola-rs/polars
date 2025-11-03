@@ -81,6 +81,7 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
+use crate::dsl::v2::{StatefulUdf, UdfV2Flags};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -309,6 +310,7 @@ pub enum IRFunctionExpr {
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
+    PluginV2(SpecialEq<Arc<StatefulUdf>>),
 
     FoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
@@ -437,6 +439,7 @@ impl Hash for IRFunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
+            PluginV2(udf) => udf.hash(state),
 
             FoldHorizontal {
                 callback,
@@ -843,6 +846,7 @@ impl Display for IRFunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            PluginV2(udf) => return f.write_str(&udf.format_string()),
 
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",
@@ -1151,6 +1155,28 @@ impl IRFunctionExpr {
             F::SetSortedFlag(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "ffi_plugin")]
             F::FfiPlugin { flags, .. } => *flags,
+            F::PluginV2(udf) => {
+                let flags = udf.flags();
+                FunctionOptions::groupwise().with_flags(|mut f: FunctionFlags| {
+                    f.set(
+                        FunctionFlags::LENGTH_PRESERVING,
+                        flags.contains(UdfV2Flags::LENGTH_PRESERVING),
+                    );
+                    f.set(
+                        FunctionFlags::ROW_SEPARABLE,
+                        flags.contains(UdfV2Flags::ROW_SEPARABLE),
+                    );
+                    f.set(
+                        FunctionFlags::RETURNS_SCALAR,
+                        flags.contains(UdfV2Flags::RETURNS_SCALAR),
+                    );
+                    f.set(
+                        FunctionFlags::INPUT_WILDCARD_EXPANSION,
+                        flags.contains(UdfV2Flags::SELECTOR_EXPANSION),
+                    );
+                    f
+                })
+            },
             F::MaxHorizontal | F::MinHorizontal => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_RENAME
             }),

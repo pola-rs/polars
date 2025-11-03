@@ -935,6 +935,7 @@ pub(super) fn convert_functions(
             symbol,
             kwargs,
         },
+        F::PluginV2(udf) => I::PluginV2(udf),
 
         F::FoldHorizontal {
             callback,

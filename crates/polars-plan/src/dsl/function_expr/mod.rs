@@ -67,6 +67,7 @@ pub use self::strings::StringFunction;
 pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::TrigonometricFunction;
+use super::v2::StatefulUdf;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -298,6 +299,8 @@ pub enum FunctionExpr {
         kwargs: Arc<[u8]>,
     },
 
+    PluginV2(SpecialEq<Arc<StatefulUdf>>),
+
     FoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
         returns_scalar: bool,
@@ -423,6 +426,7 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
+            PluginV2(udf) => udf.hash(state),
 
             FoldHorizontal {
                 callback,
@@ -825,6 +829,7 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            PluginV2(udf) => return f.write_str(&udf.format_string()),
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",
             #[cfg(feature = "dtype-struct")]

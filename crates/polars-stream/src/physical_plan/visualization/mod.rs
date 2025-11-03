@@ -114,6 +114,11 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            PhysNodeKind::StatefulUdf {
+                input: _,
+                udf: _,
+                output_name: _,
+            } => dbg!(todo!()),
             PhysNodeKind::FileSink {
                 target,
                 sink_options:

@@ -9,10 +9,9 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
+use polars_plan::dsl::v2::StatefulUdf;
 use polars_plan::dsl::{
-    CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
-    PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
-    TableStatistics,
+    CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback, PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR, SpecialEq, TableStatistics
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -251,6 +250,12 @@ pub enum PhysNodeKind {
         inputs: Vec<PhysStream>,
     },
 
+    StatefulUdf {
+        input: PhysStream,
+        udf: SpecialEq<Arc<StatefulUdf>>,
+        output_name: PlSmallStr,
+    },
+
     Zip {
         inputs: Vec<PhysStream>,
         /// If true shorter inputs are extended with nulls to the longest input,
@@ -410,6 +415,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::StatefulUdf { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }

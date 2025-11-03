@@ -110,6 +110,7 @@ mod groups_dispatch;
 mod horizontal;
 mod list;
 mod misc;
+mod plugin;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
@@ -440,6 +441,9 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
                 symbol.as_ref(),
                 kwargs.as_ref()
             )
+        },
+        F::PluginV2(udf) => {
+            map_as_slice!(plugin::call, (&*udf).clone())
         },
 
         F::FoldHorizontal {

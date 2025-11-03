@@ -2228,6 +2228,20 @@ def register_plugin_function(
 ) -> PyExpr: ...
 def __register_startup_deps() -> None: ...
 
+# functions.plugin
+def plugin_v2_generate[T](
+    inputs: list[PyExpr],
+    *,
+    data: T,
+    initialize: Callable[[T, Schema], Any],
+    insert: Callable[[T, Any, list[PySeries]], PySeries | None],
+    finalize: Callable[[T, Any], PySeries | None],
+    combine: Callable[[T, Any, Any], Any] | None,
+    new_empty: Callable[[T, Any], Any],
+    to_field: Callable[[T, Schema], tuple[str, DataType]],
+    format: Callable[[T], str],
+) -> PyExpr: ...
+
 # functions.random
 def set_random_seed(seed: int) -> None: ...
 
