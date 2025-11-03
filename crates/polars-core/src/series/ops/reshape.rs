@@ -227,7 +227,6 @@ impl Series {
             Cow::Borrowed(s)
         };
 
-
         let s_ref = s.as_ref();
 
         // let dimensions = dimensions.to_vec();
