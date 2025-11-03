@@ -1,7 +1,4 @@
-use std::sync::Arc;
-
-use arrow::array::{BinaryViewArray, BinaryViewArrayGenericBuilder, View};
-use arrow::buffer::Buffer;
+use arrow::array::BinaryViewArrayGenericBuilder;
 use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::DataType;
 use polars_core::series::Series;
