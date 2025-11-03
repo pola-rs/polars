@@ -1,10 +1,10 @@
+use std::ptr::NonNull;
 use std::sync::Arc;
 
-use polars::prelude::v2::{StatefulUdfTrait, UdfV2Flags};
+use polars::prelude::v2::{DataPtr, StatefulUdfTrait, UdfV2Flags, new_udf_vtable};
 use polars::prelude::{DataType, Expr, Field, FunctionExpr, Schema, SpecialEq};
 use polars::series::Series;
 use polars_error::PolarsResult;
-use polars_plan::create_stateful_udf;
 use pyo3::{Py, PyAny, PyResult, Python};
 
 use crate::prelude::Wrap;
@@ -21,7 +21,7 @@ pub fn plugin_v2_generate(
     new_empty: Py<PyAny>,
 
     to_field: Py<PyAny>,
-    format: Py<PyAny>,
+    format: String,
 
     length_preserving: bool,
     row_separable: bool,
@@ -38,7 +38,7 @@ pub fn plugin_v2_generate(
         combine: Option<Py<PyAny>>,
         new_empty: Py<PyAny>,
         to_field: Py<PyAny>,
-        format: Py<PyAny>,
+        format: String,
         flags: UdfV2Flags,
     }
     struct State(Py<PyAny>);
@@ -49,15 +49,8 @@ pub fn plugin_v2_generate(
         fn flags(&self) -> UdfV2Flags {
             self.flags
         }
-        fn format(&self) -> String {
-            Python::attach(|py| {
-                PolarsResult::Ok(
-                    self.format
-                        .call1(py, (self.data.clone_ref(py),))?
-                        .extract::<String>(py)?,
-                )
-            })
-            .unwrap()
+        fn format(&self) -> &str {
+            &self.format
         }
         fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
             let (name, dtype) = Python::attach(|py| {
@@ -119,25 +112,21 @@ pub fn plugin_v2_generate(
                 }),
             }
         }
-        fn new_empty(&self, state: &Self::State, fields: &Schema) -> PolarsResult<Self::State> {
+        fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State> {
             Python::attach(|py| {
                 Ok(State(self.new_empty.call1(
                     py,
-                    (
-                        self.data.clone_ref(py),
-                        state.0.clone_ref(py),
-                        Wrap(fields.clone()),
-                    ),
+                    (self.data.clone_ref(py), state.0.clone_ref(py)),
                 )?))
             })
         }
-        fn reset(&self, state: &mut Self::State, fields: &Schema) -> PolarsResult<()> {
-            *state = self.new_empty(state, fields)?;
+        fn reset(&self, state: &mut Self::State) -> PolarsResult<()> {
+            *state = self.new_empty(state)?;
             Ok(())
         }
     }
 
-    create_stateful_udf!(Data, State);
+    let vtable = new_udf_vtable::<Data>();
 
     let mut flags = UdfV2Flags::empty();
     flags.set(UdfV2Flags::LENGTH_PRESERVING, length_preserving);
@@ -161,9 +150,16 @@ pub fn plugin_v2_generate(
         flags,
     };
 
+    let udf = unsafe {
+        vtable.new_udf(DataPtr::_new(
+            NonNull::new(Box::into_raw(Box::new(data)) as *mut u8).unwrap(),
+        ))
+    };
+    let udf = Arc::new(udf);
+
     Ok(Expr::Function {
         input: inputs.into_iter().map(|e| e.inner).collect(),
-        function: FunctionExpr::PluginV2(SpecialEq::new(Arc::new(data.into()))),
+        function: FunctionExpr::PluginV2(SpecialEq::new(udf)),
     }
     .into())
 }

@@ -124,7 +124,7 @@ impl ComputeNode for StatefulUdfNode {
                 for _ in 1..state.num_pipelines {
                     self.buffer.push((
                         Series::new_empty(self.output_name.clone(), &field.dtype),
-                        udf_state.new_empty(&self.input_schema)?,
+                        udf_state.new_empty()?,
                         MorselSeq::default(),
                     ));
                 }
