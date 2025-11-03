@@ -405,8 +405,9 @@ pub fn drop_nans<'a>(
         values.rechunk_mut();
         values.downcast_as_array().values().clone()
     } else {
-        Bitmap::new_with_value(true, 1)
+        Bitmap::new_with_value(false, 1)
     };
+    let predicate = !&predicate;
     drop_items(ac, &predicate)
 }
 
