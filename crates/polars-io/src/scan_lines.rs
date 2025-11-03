@@ -33,9 +33,10 @@ fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResul
 
     let first_line_len = bytes.split(|c| *c == EOL_CHAR).next().unwrap().len();
     let last_line_len = bytes.rsplit(|c| *c == EOL_CHAR).next().unwrap().len();
-    let estimate_line_len = first_line_len.max(last_line_len).max(1);
 
-    let n_lines_estimate = bytes.len().div_ceil(estimate_line_len);
+    let n_lines_estimate = bytes
+        .len()
+        .div_ceil(first_line_len.min(last_line_len).max(1));
 
     use arrow::array::builder::StaticArrayBuilder;
 
