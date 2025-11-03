@@ -16,6 +16,7 @@ use polars_plan::dsl::{
     CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR,
     PartitionVariantIR, SinkTypeIR,
 };
+use crate::physical_plan::unique::create_streaming_unique_node;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
 use polars_plan::prelude::GroupbyOptions;
@@ -140,6 +141,7 @@ pub fn build_row_idx_stream(
 #[derive(Debug, Clone, Copy)]
 pub struct StreamingLowerIRContext {
     pub prepare_visualization: bool,
+    pub streaming: bool,
 }
 
 #[recursive::recursive]
@@ -1126,13 +1128,42 @@ pub fn lower_ir(
             let options = options.clone();
             let phys_input = lower_ir!(*input)?;
 
-            // We don't have a dedicated distinct operator (yet), lower to group
-            // by with an aggregate for each column.
             let input_schema = &phys_sm[phys_input.node].output_schema;
             if input_schema.is_empty() {
                 // Can't group (or have duplicates) if dataframe has zero-width.
                 return Ok(phys_input);
             }
+            
+            // Use the streaming unique node when possible
+            if ctx.streaming {
+                // Convert from CoreUniqueKeepStrategy to StreamUniqueKeepStrategy
+                let keep_strategy = match options.keep_strategy {
+                    UniqueKeepStrategy::First => crate::nodes::unique::UniqueKeepStrategy::First,
+                    UniqueKeepStrategy::Last => crate::nodes::unique::UniqueKeepStrategy::Last,
+                    UniqueKeepStrategy::Any | UniqueKeepStrategy::None => crate::nodes::unique::UniqueKeepStrategy::Any,
+                };
+                
+                let node_key = create_streaming_unique_node(
+                    phys_sm,
+                    phys_input.node,
+                    options.subset,
+                    keep_strategy,
+                    options.maintain_order,
+                );
+                
+                let stream = PhysStream::first(node_key);
+                
+                // Apply slice if needed
+                if let Some((offset, length)) = options.slice {
+                    return Ok(build_slice_stream(stream, offset, length, phys_sm));
+                }
+                
+                return Ok(stream);
+            }
+            
+            // Legacy implementation for non-streaming path
+            // We don't have a dedicated distinct operator (yet), lower to group
+            // by with an aggregate for each column.
 
             if options.maintain_order && options.keep_strategy == UniqueKeepStrategy::Last {
                 // Unfortunately the order-preserving groupby always orders by the first occurrence

@@ -32,6 +32,7 @@ pub mod shift;
 pub mod simple_projection;
 pub mod streaming_slice;
 pub mod top_k;
+pub mod unique;
 pub mod with_row_index;
 pub mod zip;
 
