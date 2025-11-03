@@ -1283,3 +1283,12 @@ def test_group_by_multiple_chunks_25063() -> None:
     )
 
     assert_frame_equal(df.select("id", "date", "value"), result, check_row_order=False)
+
+
+@pytest.mark.parametrize("col", ["g", "index"])
+def test_group_by_iterate_index_column_name_25137(col: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [10, 20, 30], "index": [0, 1, 2]})
+
+    assert len(list(df.group_by(col))) == 3
+    assert len(list(df.group_by_dynamic(col, every="1i"))) == 3
+    assert len(list(df.rolling(col, period="1i"))) == 3
