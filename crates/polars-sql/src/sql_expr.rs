@@ -469,6 +469,18 @@ impl SQLExprVisitor<'_> {
         op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
+        // check for (unsupported) scalar subquery comparisons
+        if matches!(left, SQLExpr::Subquery(_)) || matches!(right, SQLExpr::Subquery(_)) {
+            let (suggestion, str_op) = match op {
+                SQLBinaryOperator::NotEq => ("; use 'NOT IN' instead", "!=".to_string()),
+                SQLBinaryOperator::Eq => ("; use 'IN' instead", format!("{op}")),
+                _ => ("", format!("{op}")),
+            };
+            polars_bail!(
+                SQLSyntax: "subquery comparisons with '{str_op}' are not supported{suggestion}"
+            );
+        }
+
         // need special handling for interval offsets and comparisons
         let (lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
