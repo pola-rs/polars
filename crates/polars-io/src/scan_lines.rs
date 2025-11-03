@@ -52,7 +52,7 @@ fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResul
         if line_bytes.len() > max_buffer_size {
             polars_bail!(
                 ComputeError:
-                "line length {} exceeds max buffer size {}",
+                "line byte length {} exceeds max buffer size {}",
                 line_bytes.len(), max_buffer_size,
             )
         }
@@ -121,7 +121,7 @@ EEEEEFFFFFGGGGGHHHHH
             unreachable!()
         };
 
-        assert_eq!(&*err_str, "line length 20 exceeds max buffer size 19");
+        assert_eq!(&*err_str, "line byte length 20 exceeds max buffer size 19");
     }
 
     #[test]
