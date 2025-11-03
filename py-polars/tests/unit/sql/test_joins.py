@@ -814,6 +814,7 @@ def test_join_on_expression_conditions(expression: str, expected_length: int) ->
         SELECT df1.text AS text1, df2.text AS text2
         FROM df1
         INNER JOIN df2 ON {expression}
+        ORDER BY text1
     """
     res = pl.sql(query, eager=True)
     assert len(res) == expected_length
@@ -872,6 +873,7 @@ def test_join_on_mixed_expression_conditions(
         SELECT {select_cols}
         FROM df1
         INNER JOIN df2 ON {join_constraint}
+        ORDER BY ALL
     """
     df_expected = pl.DataFrame(expected, schema=schema, orient="row")
     res = pl.sql(query, eager=True)
@@ -972,6 +974,7 @@ def test_join_on_expression_with_literals(
         SELECT {select_cols}
         FROM df1
         INNER JOIN df2 ON {join_constraint}
+        ORDER BY ALL
     """
     df_expected = pl.DataFrame(
         expected,
@@ -1035,6 +1038,7 @@ def test_join_on_reversed_constraint_order(
                 SELECT {select_cols}
                 FROM df1
                 INNER JOIN df2 ON {constraint}
+                ORDER BY ALL
             """,
             eager=True,
         )
@@ -1081,6 +1085,7 @@ def test_join_on_unqualified_expressions(
         SELECT {df1_cols}, {df2_cols}
         FROM df1
         INNER JOIN df2 ON {join_constraint}
+        ORDER BY ALL
     """
     df_expected = pl.DataFrame(
         expected,
