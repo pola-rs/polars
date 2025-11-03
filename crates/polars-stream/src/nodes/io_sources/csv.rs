@@ -8,13 +8,11 @@ use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
-    CountLines, NullValuesCompiled, cast_columns, find_starting_point, prepare_csv_schema,
-    read_chunk,
+    CountLines, NullValuesCompiled, cast_columns, find_starting_point, is_comment_line,
+    prepare_csv_schema, read_chunk,
 };
 use polars_io::prelude::buffer::validate_utf8;
-use polars_io::prelude::{
-    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, count_rows_from_slice_raw,
-};
+use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::ScanSource;
@@ -251,15 +249,11 @@ impl FileReader for CsvFileReader {
             )
         }
 
-        // Only used on empty projection, or if we need the exact row count.
-        let alt_count_lines: Option<Arc<CountLinesWithComments>> =
-            CountLinesWithComments::opt_new(&self.options.parse_options).map(Arc::new);
         let chunk_reader = Arc::new(ChunkReader::try_new(
             self.options.clone(),
             inferred_schema.clone(),
             projection,
             row_index,
-            alt_count_lines.clone(),
         )?);
 
         let needs_full_row_count = n_rows_in_file_tx.is_some();
@@ -304,7 +298,6 @@ impl FileReader for CsvFileReader {
                 let chunk_reader = chunk_reader.clone();
                 // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
                 let source_token = SourceToken::new();
-                let alt_count_lines = alt_count_lines.clone();
 
                 AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
                     while let Ok(LineBatch {
@@ -352,7 +345,7 @@ impl FileReader for CsvFileReader {
                         }
 
                         while let Ok(LineBatch {
-                            bytes,
+                            bytes: _,
                             n_lines,
                             slice,
                             row_offset: _,
@@ -360,12 +353,6 @@ impl FileReader for CsvFileReader {
                         }) = line_batch_rx.recv().await
                         {
                             assert_eq!(slice, SLICE_ENDED);
-
-                            let n_lines = if let Some(v) = alt_count_lines.as_deref() {
-                                v.count_lines(bytes)?
-                            } else {
-                                n_lines
-                            };
 
                             n_rows_processed = n_rows_processed.saturating_add(n_lines);
                         }
@@ -473,17 +460,18 @@ impl LineBatchSource {
 
         let global_bytes: &[u8] = memslice.as_ref();
         let global_bytes: &'static [u8] = unsafe { std::mem::transmute(global_bytes) };
+        let comment_prefix = options.parse_options.comment_prefix.as_ref();
+
+        let parse_options = options.parse_options.as_ref();
+        let eol_char = parse_options.eol_char;
 
         let i = {
-            let parse_options = options.parse_options.as_ref();
-
             let quote_char = parse_options.quote_char;
-            let eol_char = parse_options.eol_char;
 
             let skip_lines = options.skip_lines;
             let skip_rows_before_header = options.skip_rows;
             let skip_rows_after_header = options.skip_rows_after_header;
-            let comment_prefix = parse_options.comment_prefix.clone();
+            let comment_prefix = comment_prefix.cloned();
             let has_header = options.has_header;
 
             find_starting_point(
@@ -524,7 +512,16 @@ impl LineBatchSource {
 
             let (count, position) = line_counter.find_next(bytes, &mut chunk_size);
             let (count, position) = if count == 0 {
-                (1, bytes.len())
+                let c = if *bytes.last().unwrap() != eol_char
+                    && !is_comment_line(
+                        bytes.rsplit(|c| *c == eol_char).next().unwrap(),
+                        comment_prefix,
+                    ) {
+                    1
+                } else {
+                    0
+                };
+                (c, bytes.len())
             } else {
                 let pos = (position + 1).min(bytes.len()); // +1 for '\n'
                 (count, pos)
@@ -596,8 +593,6 @@ struct ChunkReader {
     null_values: Option<NullValuesCompiled>,
     validate_utf8: bool,
     row_index: Option<RowIndex>,
-    // Alternate line counter when there are comments. This is used on empty projection.
-    alt_count_lines: Option<Arc<CountLinesWithComments>>,
 }
 
 impl ChunkReader {
@@ -606,7 +601,6 @@ impl ChunkReader {
         mut reader_schema: SchemaRef,
         projection: Vec<usize>,
         row_index: Option<RowIndex>,
-        alt_count_lines: Option<Arc<CountLinesWithComments>>,
     ) -> PolarsResult<Self> {
         let mut fields_to_cast: Vec<Field> = options.fields_to_cast.clone();
         prepare_csv_schema(&mut reader_schema, &mut fields_to_cast)?;
@@ -633,7 +627,6 @@ impl ChunkReader {
             null_values,
             validate_utf8,
             row_index,
-            alt_count_lines,
         })
     }
 
@@ -652,13 +645,7 @@ impl ChunkReader {
 
         // If projection is empty create a DataFrame with the correct height by counting the lines.
         let mut df = if self.projection.is_empty() {
-            let h = if let Some(v) = &self.alt_count_lines {
-                v.count_lines(chunk)?
-            } else {
-                n_lines
-            };
-
-            DataFrame::empty_with_height(h)
+            DataFrame::empty_with_height(n_lines)
         } else {
             read_chunk(
                 chunk,
@@ -679,9 +666,7 @@ impl ChunkReader {
         let n_lines_is_correct = df.height() == n_lines;
 
         // Check malformed
-        if df.height() > n_lines
-            || (df.height() < n_lines && self.parse_options.comment_prefix.is_none())
-        {
+        if !n_lines_is_correct {
             // Note: in case data is malformed, df.height() is more likely to be correct than n_lines.
             let msg = format!(
                 "CSV malformed: expected {} rows, actual {} rows, in chunk starting at row_offset {}, length {}",
@@ -720,33 +705,5 @@ impl ChunkReader {
         }
 
         Ok((df, height))
-    }
-}
-
-struct CountLinesWithComments {
-    quote_char: Option<u8>,
-    eol_char: u8,
-    comment_prefix: CommentPrefix,
-}
-
-impl CountLinesWithComments {
-    fn opt_new(parse_options: &CsvParseOptions) -> Option<Self> {
-        parse_options
-            .comment_prefix
-            .clone()
-            .map(|comment_prefix| CountLinesWithComments {
-                quote_char: parse_options.quote_char,
-                eol_char: parse_options.eol_char,
-                comment_prefix,
-            })
-    }
-
-    fn count_lines(&self, bytes: &[u8]) -> PolarsResult<usize> {
-        count_rows_from_slice_raw(
-            bytes,
-            self.quote_char,
-            Some(&self.comment_prefix),
-            self.eol_char,
-        )
     }
 }

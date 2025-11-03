@@ -27,10 +27,11 @@ def assert_fast_count(
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     capfd.readouterr()  # resets stderr
-    result = lf.collect()
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        result = lf.collect()
     capture = capfd.readouterr().err
     project_logs = set(re.findall(r"project: \d+", capture))
 
@@ -49,7 +50,11 @@ def assert_fast_count(
     monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "0")
 
     capfd.readouterr()
-    lf.collect()
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        assert lf.collect().item() == expected_count
+
     capture = capfd.readouterr().err
     project_logs = set(re.findall(r"project: \d+", capture))
 
@@ -59,7 +64,11 @@ def assert_fast_count(
     monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "1")
 
     capfd.readouterr()
-    lf.collect()
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        assert lf.collect().item() == expected_count
+
     capture = capfd.readouterr().err
     project_logs = set(re.findall(r"project: \d+", capture))
 
@@ -128,6 +137,41 @@ def test_commented_csv(
 
         lf = pl.scan_csv(csv_a.name, comment_prefix="#").select(pl.len())
         assert_fast_count(lf, 2, capfd=capfd, monkeypatch=monkeypatch)
+
+    lf = pl.scan_csv(
+        b"AAA",
+        has_header=False,
+        comment_prefix="#",
+    ).select(pl.len())
+    assert_fast_count(lf, 1, capfd=capfd, monkeypatch=monkeypatch)
+
+    lf = pl.scan_csv(
+        b"AAA\nBBB",
+        has_header=False,
+        comment_prefix="#",
+    ).select(pl.len())
+    assert_fast_count(lf, 2, capfd=capfd, monkeypatch=monkeypatch)
+
+    lf = pl.scan_csv(
+        b"AAA\n#comment\nBBB\n#comment",
+        has_header=False,
+        comment_prefix="#",
+    ).select(pl.len())
+    assert_fast_count(lf, 2, capfd=capfd, monkeypatch=monkeypatch)
+
+    lf = pl.scan_csv(
+        b"AAA\n#comment\nBBB\n#comment\nCCC\n#comment",
+        has_header=False,
+        comment_prefix="#",
+    ).select(pl.len())
+    assert_fast_count(lf, 3, capfd=capfd, monkeypatch=monkeypatch)
+
+    lf = pl.scan_csv(
+        b"AAA\n#comment\nBBB\n#comment\nCCC\n#comment\n",
+        has_header=False,
+        comment_prefix="#",
+    ).select(pl.len())
+    assert_fast_count(lf, 3, capfd=capfd, monkeypatch=monkeypatch)
 
 
 @pytest.mark.parametrize(
