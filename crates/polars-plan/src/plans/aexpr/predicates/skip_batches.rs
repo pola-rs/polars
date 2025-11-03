@@ -293,7 +293,7 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Gather { .. } => None,
             AExpr::SortBy { .. } => None,
             AExpr::Filter { .. } => None,
-            AExpr::Agg(..) => None,
+            AExpr::Agg(..) | AExpr::AnonymousStreamingAgg { .. } => None,
             AExpr::Ternary { .. } => None,
             AExpr::AnonymousFunction { .. } => None,
             AExpr::Eval { .. } => None,

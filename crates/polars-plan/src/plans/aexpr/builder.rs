@@ -55,6 +55,18 @@ impl AExprBuilder {
         )
     }
 
+    pub fn map_as_expr_ir<F: Fn(ExprIR, &mut Arena<AExpr>) -> AExpr>(
+        self,
+        mapper: F,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        let eir = ExprIR::from_node(self.node, arena);
+
+        let ae = mapper(eir, arena);
+        let node = arena.add(ae);
+        Self { node }
+    }
+
     pub fn row_encode_unary(
         self,
         variant: RowEncodingVariant,

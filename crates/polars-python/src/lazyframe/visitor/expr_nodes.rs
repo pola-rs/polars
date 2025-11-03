@@ -752,6 +752,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         }
         .into_py_any(py),
         AExpr::AnonymousFunction { .. } => Err(PyNotImplementedError::new_err("anonymousfunction")),
+        AExpr::AnonymousStreamingAgg { .. } => {
+            Err(PyNotImplementedError::new_err("anonymous_streaming_agg"))
+        },
         AExpr::Function {
             input,
             function,

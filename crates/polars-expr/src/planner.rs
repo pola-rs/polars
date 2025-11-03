@@ -634,5 +634,8 @@ fn create_physical_expr_inner(
                 false,
             )))
         },
+        AnonymousStreamingAgg { .. } => {
+            polars_bail!(ComputeError: "anonymous agg not supported in in-memory engine")
+        },
     }
 }
