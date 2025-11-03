@@ -20,12 +20,12 @@ pub mod ffi;
 #[macro_export]
 macro_rules! polars_plugin_expr_info {
     (
-        $name:literal <= $data:expr, $data_struct:path
+        $name:literal, $data:expr, $data_ty:ty
     ) => {{
         #[unsafe(export_name = concat!("_PL_PLUGIN_V2::", $name))]
         pub static VTABLE: $crate::prelude::v2::PresentedUdf = $crate::prelude::v2::PresentedUdf {
             version: $crate::prelude::v2::STUDF_VERSION,
-            vtable: $crate::prelude::v2::ffi::VTable::new::<$data_struct>(),
+            vtable: $crate::prelude::v2::ffi::VTable::new::<$data_ty>(),
         };
 
         let data = ::std::boxed::Box::new($data);

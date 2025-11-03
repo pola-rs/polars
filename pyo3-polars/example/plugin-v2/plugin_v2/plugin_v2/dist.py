@@ -11,12 +11,33 @@ if TYPE_CHECKING:
     from expression_lib._typing import IntoExprColumn
 
 
-def new_expr(expr: IntoExprColumn, by: IntoExprColumn) -> pl.Expr:
+def min_by(expr: IntoExprColumn, *, by: IntoExprColumn) -> pl.Expr:
     from plugin_v2 import plugin_v2
+
     return register_plugin_v2_function(
         plugin_path=LIB,
         args=[expr, by],
         info=plugin_v2.min_by(),
+    )
+
+
+def rolling_product(expr: IntoExprColumn, *, n: int) -> pl.Expr:
+    from plugin_v2 import plugin_v2
+
+    return register_plugin_v2_function(
+        plugin_path=LIB,
+        args=[expr],
+        info=plugin_v2.rolling_product(n),
+    )
+
+
+def byte_rev(expr: IntoExprColumn) -> pl.Expr:
+    from plugin_v2 import plugin_v2
+
+    return register_plugin_v2_function(
+        plugin_path=LIB,
+        args=[expr],
+        info=plugin_v2.byte_rev(),
     )
 
 
