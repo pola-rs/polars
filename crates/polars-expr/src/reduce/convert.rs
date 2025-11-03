@@ -145,7 +145,7 @@ pub fn into_reduction(
         },
         AExpr::AnonymousStreamingAgg {
             input: inner_exprs,
-            fmt_str,
+            fmt_str: _,
             function,
         } => {
             let ann_agg = function.materialize()?;
