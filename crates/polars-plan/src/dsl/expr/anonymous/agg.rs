@@ -9,7 +9,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::SpecialEq;
 use crate::dsl::LazySerde;
-use crate::dsl::anonymous::serde_expr;
 
 pub trait AnonymousStreamingAgg: Send + Sync {
     fn as_any(&self) -> &dyn Any;
@@ -42,7 +41,12 @@ impl OpaqueStreamingAgg {
                     )),
                 }
             }),
-            Self::Bytes(_b) => serde_expr::deserialize_anon_agg(_b.as_ref()).map(SpecialEq::new),
+            Self::Bytes(_b) => {
+                feature_gated!("serde", {
+                    use crate::dsl::anonymous::serde_expr;
+                    serde_expr::deserialize_anon_agg(_b.as_ref()).map(SpecialEq::new)
+                })
+            },
         }
     }
 }
