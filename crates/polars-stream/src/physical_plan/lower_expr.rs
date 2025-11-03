@@ -1936,37 +1936,42 @@ fn lower_exprs_with_ctx(
             },
 
             #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling {
+            rolling_function @ AExpr::Rolling {
                 function,
                 index_column,
                 period,
                 offset,
                 closed_window,
             } => {
+                // function.rolling(index_column=index_column)
+                //
+                // ->
+                //
+                // .select(*LIVE_COLUMNS(function), _tmp0 = index_column)
+                // .rolling(_tmp0)
+                // .agg(_tmp1 = function)
+                // .select(_tmp1)
+
                 let out_name = unique_column_name();
                 let index_column_name = unique_column_name();
 
                 let index_column_expr_ir =
                     AExprBuilder::new_from_node(index_column).expr_ir(index_column_name.clone());
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let output_dtype = rolling_function
+                    .to_dtype(&ToFieldContext::new(ctx.expr_arena, input_schema))?;
+                let output_schema = Schema::from_iter([
+                    index_column_expr_ir.field(input_schema, ctx.expr_arena)?,
+                    Field::new(out_name.clone(), output_dtype),
+                ]);
+
                 let input_columns = aexpr_to_leaf_names(function, ctx.expr_arena)
                     .into_iter()
                     .map(|n| AExprBuilder::col(n.clone(), ctx.expr_arena).expr_ir(n))
                     .chain(std::iter::once(index_column_expr_ir.clone()))
                     .collect::<Vec<_>>();
                 let input = build_select_stream_with_ctx(input, &input_columns, ctx)?;
-
-                let input_schema = &ctx.phys_sm[input.node].output_schema;
-                let mut output_dtype = ctx
-                    .expr_arena
-                    .get(function)
-                    .to_dtype(&ToFieldContext::new(ctx.expr_arena, input_schema))?;
-                if !is_scalar_ae(function, ctx.expr_arena) {
-                    output_dtype = output_dtype.implode();
-                }
-                let output_schema = Schema::from_iter([
-                    index_column_expr_ir.field(input_schema, ctx.expr_arena)?,
-                    Field::new(out_name.clone(), output_dtype),
-                ]);
 
                 let kind = PhysNodeKind::RollingGroupBy {
                     input,
