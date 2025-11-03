@@ -494,47 +494,6 @@ impl PyLazyFrame {
         py.enter_polars(|| self.ldf.read().to_dot_streaming_phys(optimized))
     }
 
-    fn optimization_toggle(
-        &self,
-        type_coercion: bool,
-        type_check: bool,
-        predicate_pushdown: bool,
-        projection_pushdown: bool,
-        simplify_expression: bool,
-        slice_pushdown: bool,
-        comm_subplan_elim: bool,
-        comm_subexpr_elim: bool,
-        cluster_with_columns: bool,
-        _eager: bool,
-        _check_order: bool,
-        #[allow(unused_variables)] new_streaming: bool,
-    ) -> Self {
-        let ldf = self.ldf.read().clone();
-        let mut ldf = ldf
-            .with_type_coercion(type_coercion)
-            .with_type_check(type_check)
-            .with_predicate_pushdown(predicate_pushdown)
-            .with_simplify_expr(simplify_expression)
-            .with_slice_pushdown(slice_pushdown)
-            .with_cluster_with_columns(cluster_with_columns)
-            .with_check_order(_check_order)
-            ._with_eager(_eager)
-            .with_projection_pushdown(projection_pushdown);
-
-        #[cfg(feature = "new_streaming")]
-        {
-            ldf = ldf.with_new_streaming(new_streaming);
-        }
-
-        #[cfg(feature = "cse")]
-        {
-            ldf = ldf.with_comm_subplan_elim(comm_subplan_elim);
-            ldf = ldf.with_comm_subexpr_elim(comm_subexpr_elim);
-        }
-
-        ldf.into()
-    }
-
     fn sort(
         &self,
         by_column: &str,
