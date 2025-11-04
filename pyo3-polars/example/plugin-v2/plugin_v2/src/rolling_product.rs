@@ -6,9 +6,7 @@ use polars::prelude::{
 };
 use polars::series::{IntoSeries, Series};
 use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
-use pyo3_polars::export::polars_plan::prelude::v2::{
-    PolarsPluginExprInfo, StatefulUdfTrait, UdfV2Flags,
-};
+use pyo3_polars::export::polars_plan::prelude::v2::{PolarsPluginExprInfo, StatefulUdfTrait};
 
 struct RollingProduct {
     n: usize,
@@ -21,14 +19,6 @@ struct RollingProductState {
 
 impl StatefulUdfTrait for RollingProduct {
     type State = RollingProductState;
-
-    fn flags(&self) -> UdfV2Flags {
-        use UdfV2Flags as F;
-        F::LENGTH_PRESERVING | F::ZIPPABLE_INPUTS | F::INSERT_HAS_OUTPUT
-    }
-    fn format(&self) -> &str {
-        "coastalwhite.rolling_product"
-    }
 
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
         assert_eq!(fields.len(), 1);
@@ -84,6 +74,17 @@ impl StatefulUdfTrait for RollingProduct {
         Ok(())
     }
 }
+
+// fn insert_on_groups(&self, state: &mut [Self::State], data: Series, groups: )
+
+// None
+// Array[idx32, 2]
+// Array[idx64, 2]
+// List[idx32]
+// List[idx64]
+// fn evaluate_on_groups(&self, data: &[(Series, Array)]) -> PolarsResult<(Series, Array)> {
+// fn insert_on_groups(&self, data: &[(Series, Array)]) -> PolarsResult<Vec<State>> {
+// }
 
 #[pyo3::pyfunction]
 pub fn rolling_product(n: usize) -> PolarsPluginExprInfo {

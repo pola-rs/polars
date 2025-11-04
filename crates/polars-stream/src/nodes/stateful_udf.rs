@@ -31,7 +31,7 @@ impl StatefulUdfNode {
         input_schema: Arc<Schema>,
         output_name: PlSmallStr,
     ) -> PolarsResult<Self> {
-        let name = udf.format_string().into();
+        let name = udf.name().into();
         Ok(Self {
             name,
             action: Action::Insert,

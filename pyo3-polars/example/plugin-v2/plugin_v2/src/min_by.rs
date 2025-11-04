@@ -2,9 +2,7 @@ use polars::error::{polars_bail, PolarsResult};
 use polars::prelude::{AnyValue, ArgAgg, Field, PlSmallStr, Scalar, Schema, SchemaExt};
 use polars::series::Series;
 use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
-use pyo3_polars::export::polars_plan::prelude::v2::{
-    PolarsPluginExprInfo, StatefulUdfTrait, UdfV2Flags,
-};
+use pyo3_polars::export::polars_plan::prelude::v2::{PolarsPluginExprInfo, StatefulUdfTrait};
 
 struct MinBy;
 #[derive(Clone)]
@@ -16,14 +14,6 @@ struct MinByState {
 
 impl StatefulUdfTrait for MinBy {
     type State = MinByState;
-
-    fn flags(&self) -> UdfV2Flags {
-        use UdfV2Flags as F;
-        F::RETURNS_SCALAR | F::ZIPPABLE_INPUTS | F::STATES_COMBINABLE | F::NEEDS_FINALIZE
-    }
-    fn format(&self) -> &str {
-        "coastalwhite.min_by"
-    }
 
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
         assert_eq!(fields.len(), 2);

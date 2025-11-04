@@ -614,7 +614,11 @@ fn to_graph_rec<'a>(
             )
         },
 
-        StatefulUdf { input, udf, output_name } => {
+        StatefulUdf {
+            input,
+            udf,
+            output_name,
+        } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             ctx.graph.add_node(

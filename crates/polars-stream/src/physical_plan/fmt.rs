@@ -183,10 +183,7 @@ fn visualize_plan_rec(
             udf,
             output_name,
         } => (
-            format!(
-                "udf '{}'\\n{output_name}",
-                udf.format_string()
-            ),
+            format!("udf '{}'\\n{output_name}", udf.name()),
             from_ref(input),
         ),
         PhysNodeKind::Select {

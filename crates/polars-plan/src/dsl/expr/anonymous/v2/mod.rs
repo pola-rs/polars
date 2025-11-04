@@ -40,6 +40,11 @@ pub struct DataPtr(NonNull<u8>);
 pub struct StatePtr(NonNull<u8>);
 
 impl DataPtr {
+    #[doc(hidden)]
+    pub fn _new(ptr: NonNull<u8>) -> Self {
+        Self(ptr)
+    }
+
     pub unsafe fn as_ref<T>(&self) -> &T {
         unsafe { self.0.as_ptr().cast::<T>().as_ref() }.unwrap()
     }
@@ -77,21 +82,23 @@ impl StatePtr {
 pub trait StatefulUdfTrait: Send + Sync + Sized {
     type State: Send + Sync + Sized;
 
-    // Planning methods
-    fn flags(&self) -> UdfV2Flags;
-    fn format(&self) -> &str;
+    // (De)serialization methods.
+
+    // Planning methods.
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field>;
 
-    // Execution methods
+    // State management methods.
     fn initialize(&self, fields: &Schema) -> PolarsResult<Self::State>;
-    fn insert(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>>;
-    fn finalize(&self, state: &mut Self::State) -> PolarsResult<Option<Series>>;
+    fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State>;
+    fn reset(&self, state: &mut Self::State) -> PolarsResult<()>;
     fn combine(&self, state: &mut Self::State, other: &Self::State) -> PolarsResult<()> {
         _ = (state, other);
         Ok(())
     }
-    fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State>;
-    fn reset(&self, state: &mut Self::State) -> PolarsResult<()>;
+
+    // Execution methods.
+    fn insert(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>>;
+    fn finalize(&self, state: &mut Self::State) -> PolarsResult<Option<Series>>;
 }
 
 pub const fn new_udf_vtable<Data: StatefulUdfTrait>() -> UdfVTable<Data> {
@@ -148,6 +155,8 @@ bitflags::bitflags! {
         const ROW_SEPARABLE       = 0x02;
         /// Output is always a single row.
         const RETURNS_SCALAR      = 0x04;
+
+
         /// All inputs are expected to be of equal length or scalars.
         const ZIPPABLE_INPUTS     = 0x08;
 
@@ -183,11 +192,19 @@ impl UdfV2Flags {
     pub fn allows_concurrent_evaluation(&self) -> bool {
         self.is_elementwise() || self.contains(Self::STATES_COMBINABLE)
     }
+
+    pub fn verify_coherency(&self) -> PolarsResult<()> {
+        if self.contains(Self::LENGTH_PRESERVING | Self::RETURNS_SCALAR) {
+            polars_bail!(InvalidOperation: "expression cannot be both `length_preserving` and `returns_scalar`");
+        }
+
+        Ok(())
+    }
 }
 
 pub struct StatefulUdf {
     flags: UdfV2Flags,
-    formatted: Box<str>,
+    function_name: PlSmallStr,
     data: DataPtr,
     // Ensures that the library stays open.
     library: Option<libloading::Library>,
@@ -210,10 +227,15 @@ pub struct PresentedUdf {
 }
 
 impl<Data: StatefulUdfTrait> UdfVTable<Data> {
-    pub unsafe fn new_udf(self, data: DataPtr) -> StatefulUdf {
+    pub unsafe fn new_udf(
+        self,
+        data: DataPtr,
+        flags: UdfV2Flags,
+        function_name: PlSmallStr,
+    ) -> StatefulUdf {
         StatefulUdf {
-            flags: unsafe { self.vtable.flags(data.ptr_clone()) },
-            formatted: unsafe { self.vtable.format(data.ptr_clone()) },
+            flags,
+            function_name,
             data,
             library: None,
             vtable: self.vtable,
@@ -273,7 +295,11 @@ impl StatefulUdf {
         library: &str,
         udf: &str,
         data: usize,
+        flags: UdfV2Flags,
+        function_name: PlSmallStr,
     ) -> PolarsResult<StatefulUdf> {
+        flags.verify_coherency()?;
+
         let data = DataPtr(NonNull::new(data as *mut u8).unwrap());
         let lib = unsafe { libloading::Library::new(library) }.unwrap();
         let name = format!("_PL_PLUGIN_V2::{udf}");
@@ -282,8 +308,8 @@ impl StatefulUdf {
         let vtable = unsafe { udf.as_ref() }.vtable.clone();
 
         Ok(StatefulUdf {
-            flags: unsafe { vtable.flags(data.ptr_clone()) },
-            formatted: unsafe { vtable.format(data.ptr_clone()) },
+            flags,
+            function_name,
             data,
             library: Some(lib),
             vtable,
@@ -303,8 +329,8 @@ impl StatefulUdf {
         self.flags
     }
 
-    pub fn format_string(&self) -> &str {
-        &self.formatted
+    pub fn name(&self) -> &str {
+        &self.function_name
     }
 }
 

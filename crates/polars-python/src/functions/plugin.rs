@@ -38,20 +38,12 @@ pub fn plugin_v2_generate(
         combine: Option<Py<PyAny>>,
         new_empty: Py<PyAny>,
         to_field: Py<PyAny>,
-        format: String,
-        flags: UdfV2Flags,
     }
     struct State(Py<PyAny>);
 
     impl StatefulUdfTrait for Data {
         type State = State;
 
-        fn flags(&self) -> UdfV2Flags {
-            self.flags
-        }
-        fn format(&self) -> &str {
-            &self.format
-        }
         fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
             let (name, dtype) = Python::attach(|py| {
                 PolarsResult::Ok(
@@ -146,14 +138,14 @@ pub fn plugin_v2_generate(
         combine,
         new_empty,
         to_field,
-        format,
-        flags,
     };
 
     let udf = unsafe {
-        vtable.new_udf(DataPtr::_new(
-            NonNull::new(Box::into_raw(Box::new(data)) as *mut u8).unwrap(),
-        ))
+        vtable.new_udf(
+            DataPtr::_new(NonNull::new(Box::into_raw(Box::new(data)) as *mut u8).unwrap()),
+            flags,
+            format.into(),
+        )
     };
     let udf = Arc::new(udf);
 

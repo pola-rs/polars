@@ -850,7 +850,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             #[cfg(feature = "ffi_plugin")]
-            PluginV2(udf) => return f.write_str(&udf.format_string()),
+            PluginV2(udf) => return f.write_str(&udf.name()),
 
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",

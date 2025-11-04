@@ -165,7 +165,16 @@ def register_plugin_v2_function(
     plugin_path: Path | str,
     args: IntoExpr | Iterable[IntoExpr],
     info: (str, int),
+    function_name: str,
     use_abs_path: bool = False,
+    length_preserving: bool = False,
+    row_separable: bool = False,
+    returns_scalar: bool = False,
+    zippable_inputs: bool = True,
+    insert_has_output: bool = True,
+    needs_finalize: bool = True,
+    states_combinable: bool = False,
+    selector_expansion: bool = False,
 ) -> Expr:
     pyexprs = parse_into_list_of_expressions(args)
     plugin_path = _resolve_plugin_path(plugin_path, use_abs_path=use_abs_path)
@@ -176,6 +185,15 @@ def register_plugin_v2_function(
             args=pyexprs,
             name=info[0],
             data_ptr=info[1],
+            function_name=function_name,
+            length_preserving=length_preserving,
+            row_separable=row_separable,
+            returns_scalar=returns_scalar,
+            zippable_inputs=zippable_inputs,
+            insert_has_output=insert_has_output,
+            needs_finalize=needs_finalize,
+            states_combinable=states_combinable,
+            selector_expansion=selector_expansion,
         )
     )
 

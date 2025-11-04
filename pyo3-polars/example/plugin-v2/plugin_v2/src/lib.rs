@@ -5,9 +5,9 @@ use pyo3_polars::PolarsAllocator;
 mod distances;
 mod expressions;
 
+mod byte_rev;
 mod min_by;
 mod rolling_product;
-mod byte_rev;
 mod vertical_scan;
 
 #[global_allocator]

@@ -1,8 +1,8 @@
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 
-use arrow::ffi::ArrowSchema;
 use ::polars_ffi::version_0::SeriesExport;
+use arrow::ffi::ArrowSchema;
 
 use super::{DataPtr, StatePtr, StatefulUdfTrait};
 
@@ -14,6 +14,7 @@ pub struct VTable {
     pub(super) _new_empty:
         unsafe extern "C" fn(DataPtr, StatePtr, NonNull<MaybeUninit<StatePtr>>) -> u32,
     pub(super) _reset: unsafe extern "C" fn(DataPtr, StatePtr) -> u32,
+    pub(super) _combine: unsafe extern "C" fn(DataPtr, StatePtr, StatePtr) -> u32,
 
     pub(super) _insert: unsafe extern "C" fn(
         DataPtr,
@@ -29,15 +30,12 @@ pub struct VTable {
         NonNull<bool>,
         NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32,
-    pub(super) _combine: unsafe extern "C" fn(DataPtr, StatePtr, StatePtr) -> u32,
 
     pub(super) _to_field: unsafe extern "C" fn(
         DataPtr,
         NonNull<ArrowSchema>,
         NonNull<MaybeUninit<ArrowSchema>>,
     ) -> u32,
-    pub(super) _flags: unsafe extern "C" fn(DataPtr, NonNull<u64>) -> u32,
-    pub(super) _format: unsafe extern "C" fn(DataPtr, NonNull<*const u8>, NonNull<usize>) -> u32,
     pub(super) _drop_state: unsafe extern "C" fn(StatePtr) -> u32,
     pub(super) _drop_data: unsafe extern "C" fn(DataPtr) -> u32,
 
@@ -70,8 +68,6 @@ impl VTable {
             _combine: _callee::combine::<Data>,
 
             _to_field: _callee::to_field::<Data>,
-            _flags: _callee::flags::<Data>,
-            _format: _callee::format::<Data>,
             _drop_state: _callee::drop_state::<Data>,
             _drop_data: _callee::drop_data::<Data>,
 
@@ -107,12 +103,14 @@ mod _callee {
     use ::polars_core::prelude::{Field, Schema};
     use ::polars_core::series::Series;
     use ::polars_error::PolarsResult;
+    use ::polars_ffi::version_0::{
+        SeriesExport, export_series, import_series, import_series_buffer,
+    };
     use arrow::datatypes::ArrowDataType;
     use arrow::ffi::{ArrowSchema, export_field_to_c, import_field_from_c};
     use polars_core::prelude::CompatLevel;
     use polars_core::schema::SchemaExt;
     use polars_error::{PolarsError, polars_bail};
-    use ::polars_ffi::version_0::{SeriesExport, export_series, import_series, import_series_buffer};
 
     use super::super::StatefulUdfTrait;
     use super::{DataPtr, ReturnValue, StatePtr};
@@ -326,32 +324,6 @@ mod _callee {
         })
     }
 
-    pub unsafe extern "C" fn flags<Data: StatefulUdfTrait>(
-        data: DataPtr,
-        out: NonNull<u64>,
-    ) -> u32 {
-        wrap_callee_function(|| {
-            let data = unsafe { data.as_ref::<Data>() };
-            let flags = data.flags().bits();
-            unsafe { out.write(flags) };
-            Ok(())
-        })
-    }
-
-    pub unsafe extern "C" fn format<Data: StatefulUdfTrait>(
-        data: DataPtr,
-        out_ptr: NonNull<*const u8>,
-        out_len: NonNull<usize>,
-    ) -> u32 {
-        wrap_callee_function(|| {
-            let data = unsafe { data.as_ref::<Data>() };
-            let format = data.format();
-            unsafe { out_ptr.write(format.as_ptr()) };
-            unsafe { out_len.write(format.len()) };
-            Ok(())
-        })
-    }
-
     pub unsafe extern "C" fn drop_state<Data: StatefulUdfTrait>(state: StatePtr) -> u32 {
         wrap_callee_function(|| {
             let state = unsafe { state.as_ptr::<Data::State>() };
@@ -375,13 +347,13 @@ mod _caller {
     use std::mem::MaybeUninit;
     use std::ptr::NonNull;
 
+    use ::polars_ffi::version_0::{SeriesExport, export_series, import_series};
     use arrow::datatypes::{ArrowDataType, Field as ArrowField};
     use arrow::ffi::ArrowSchema;
     use polars_core::prelude::{CompatLevel, Field, Schema};
     use polars_core::schema::SchemaExt;
     use polars_core::series::Series;
     use polars_error::{PolarsResult, polars_bail};
-    use ::polars_ffi::version_0::{SeriesExport, export_series, import_series};
     use polars_utils::pl_str::PlSmallStr;
 
     use super::super::StatefulUdfTrait;
@@ -570,29 +542,6 @@ mod _caller {
             let field = unsafe { field.assume_init() };
             let field = unsafe { arrow::ffi::import_field_from_c(&field) }?;
             Ok(Field::from(&field))
-        }
-
-        pub unsafe fn flags(&self, data: DataPtr) -> UdfV2Flags {
-            let mut flags = 0;
-            let rv = unsafe { (self._flags)(data, NonNull::from_mut(&mut flags)) };
-            unsafe { self.handle_return_value_panic(rv) };
-            UdfV2Flags::from_bits_truncate(flags)
-        }
-
-        pub unsafe fn format(&self, data: DataPtr) -> Box<str> {
-            let mut ptr = std::ptr::null();
-            let mut len = 0;
-            let rv = unsafe {
-                (self._format)(
-                    data,
-                    NonNull::from_mut(&mut ptr),
-                    NonNull::from_mut(&mut len),
-                )
-            };
-            unsafe { self.handle_return_value_panic(rv) };
-            let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
-            let s = unsafe { std::str::from_utf8_unchecked(slice) };
-            s.into()
         }
 
         pub unsafe fn drop_state(&self, state: StatePtr) {

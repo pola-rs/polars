@@ -4,22 +4,12 @@ use polars::prelude::{
 };
 use polars::series::{IntoSeries, Series};
 use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
-use pyo3_polars::export::polars_plan::prelude::v2::{
-    PolarsPluginExprInfo, StatefulUdfTrait, UdfV2Flags,
-};
+use pyo3_polars::export::polars_plan::prelude::v2::{PolarsPluginExprInfo, StatefulUdfTrait};
 
 struct ByteRev;
 
 impl StatefulUdfTrait for ByteRev {
     type State = ();
-
-    fn flags(&self) -> UdfV2Flags {
-        use UdfV2Flags as F;
-        F::LENGTH_PRESERVING | F::ROW_SEPARABLE | F::ZIPPABLE_INPUTS | F::INSERT_HAS_OUTPUT
-    }
-    fn format(&self) -> &str {
-        "coastalwhite.byte_rev"
-    }
 
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
         assert_eq!(fields.len(), 1);
