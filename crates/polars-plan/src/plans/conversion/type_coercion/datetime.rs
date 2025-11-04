@@ -64,20 +64,24 @@ pub(super) fn replace_tz(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<()> {
     let replacement_expr = match &dtype {
-        // Wrap our node in a ReplaceTimezone node
-        &DataType::Datetime(_, tz @ Some(_)) => AExpr::Function {
-            input: {
-                // We must add the ambiguous input argument.
-                let scalar = Scalar::new(DataType::String, AnyValue::from("raise"));
-                let node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(scalar)));
-                let ambiguous = ExprIR::from_node(node, expr_arena);
-                vec![e.clone(), ambiguous]
-            },
-            function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::ReplaceTimeZone(
+        &DataType::Datetime(_, tz @ Some(_)) => {
+            // Wrap our node in a ReplaceTimezone node
+            let function = IRFunctionExpr::TemporalExpr(IRTemporalFunction::ReplaceTimeZone(
                 tz.clone(),
                 NonExistent::Raise,
-            )),
-            options: FunctionOptions::elementwise(),
+            ));
+            let options = function.function_options();
+            AExpr::Function {
+                input: {
+                    // We must add the ambiguous input argument.
+                    let scalar = Scalar::new(DataType::String, AnyValue::from("raise"));
+                    let node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(scalar)));
+                    let ambiguous = ExprIR::from_node(node, expr_arena);
+                    vec![e.clone(), ambiguous]
+                },
+                function,
+                options,
+            }
         },
         dt => polars_bail!(ComputeError: "cannot replace time zone of dtype {:?}", dt),
     };
@@ -95,10 +99,15 @@ pub(super) fn convert_tz(
 ) -> PolarsResult<()> {
     let replacement_expr = match &dtype {
         // Wrap our node in a ReplaceTimezone node
-        &DataType::Datetime(_, Some(tz)) => AExpr::Function {
-            input: vec![e.clone()],
-            function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::ConvertTimeZone(tz.clone())),
-            options: FunctionOptions::elementwise(),
+        &DataType::Datetime(_, Some(tz)) => {
+            let function =
+                IRFunctionExpr::TemporalExpr(IRTemporalFunction::ConvertTimeZone(tz.clone()));
+            let options = function.function_options();
+            AExpr::Function {
+                input: vec![e.clone()],
+                function,
+                options,
+            }
         },
         dt => polars_bail!(ComputeError: "cannot convert time zone of dtype {:?}", dt),
     };
