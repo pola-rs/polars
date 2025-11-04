@@ -101,6 +101,8 @@ pub trait PlanCallbackOut: Sized {
 
 #[cfg(feature = "python")]
 mod _python {
+    use std::sync::Arc;
+
     use polars_utils::pl_str::PlSmallStr;
     use pyo3::types::{PyAnyMethods, PyTuple};
     use pyo3::*;
@@ -226,6 +228,18 @@ mod _python {
         (polars_core::frame::DataFrame, df, df),
         (crate::dsl::DslPlan, dsl_plan, dsl_plan),
         (polars_core::schema::Schema, schema, schema)
+    }
+
+    impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Arc<T> {
+        fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+            Arc::unwrap_or_clone(self).into_pyany(py)
+        }
+    }
+
+    impl<T: super::PlanCallbackOut> super::PlanCallbackOut for Arc<T> {
+        fn from_pyany<'py>(pyany: Py<PyAny>, py: Python<'py>) -> PyResult<Self> {
+            T::from_pyany(pyany, py).map(Arc::from)
+        }
     }
 }
 
