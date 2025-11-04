@@ -1037,7 +1037,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             kwargs,
         },
         #[cfg(feature = "ffi_plugin")]
-        IF::PluginV2(udf) => F::PluginV2(udf),
+        IF::PluginV1(udf) => F::PluginV1(udf),
 
         IF::FoldHorizontal {
             callback,

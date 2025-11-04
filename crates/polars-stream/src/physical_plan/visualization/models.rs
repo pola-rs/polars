@@ -201,6 +201,10 @@ pub enum PhysNodeProperties {
         maintain_order: bool,
         mkdir: bool,
     },
+    Plugin {
+        name: PlSmallStr,
+        output_name: PlSmallStr,
+    },
     PeakMin,
     PeakMax,
     Reduce {

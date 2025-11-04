@@ -614,16 +614,16 @@ fn to_graph_rec<'a>(
             )
         },
 
-        StatefulUdf {
+        Plugin {
             input,
-            udf,
+            plugin,
             output_name,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             ctx.graph.add_node(
-                nodes::stateful_udf::StatefulUdfNode::new(
-                    (&**udf).clone(),
+                nodes::plugin::PluginNode::new(
+                    (&**plugin).clone(),
                     input_schema.clone(),
                     output_name.clone(),
                 )?,

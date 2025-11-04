@@ -82,7 +82,7 @@ pub use self::struct_::IRStructFunction;
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
 #[cfg(feature = "ffi_plugin")]
-use crate::dsl::v2::{PluginV2, PluginV2Flags};
+use crate::dsl::v1::{PluginV1, PluginV1Flags};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -312,7 +312,7 @@ pub enum IRFunctionExpr {
         kwargs: Arc<[u8]>,
     },
     #[cfg(feature = "ffi_plugin")]
-    PluginV2(SpecialEq<Arc<PluginV2>>),
+    PluginV1(SpecialEq<Arc<PluginV1>>),
 
     FoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
@@ -442,7 +442,7 @@ impl Hash for IRFunctionExpr {
                 symbol.hash(state);
             },
             #[cfg(feature = "ffi_plugin")]
-            PluginV2(udf) => udf.hash(state),
+            PluginV1(udf) => udf.hash(state),
 
             FoldHorizontal {
                 callback,
@@ -850,7 +850,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             #[cfg(feature = "ffi_plugin")]
-            PluginV2(udf) => return f.write_str(&udf.name()),
+            PluginV1(udf) => return f.write_str(&udf.function_name()),
 
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",
@@ -1160,24 +1160,24 @@ impl IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             F::FfiPlugin { flags, .. } => *flags,
             #[cfg(feature = "ffi_plugin")]
-            F::PluginV2(udf) => {
+            F::PluginV1(udf) => {
                 let flags = udf.flags();
                 FunctionOptions::groupwise().with_flags(|mut f: FunctionFlags| {
                     f.set(
                         FunctionFlags::LENGTH_PRESERVING,
-                        flags.contains(PluginV2Flags::LENGTH_PRESERVING),
+                        flags.contains(PluginV1Flags::LENGTH_PRESERVING),
                     );
                     f.set(
                         FunctionFlags::ROW_SEPARABLE,
-                        flags.contains(PluginV2Flags::ROW_SEPARABLE),
+                        flags.contains(PluginV1Flags::ROW_SEPARABLE),
                     );
                     f.set(
                         FunctionFlags::RETURNS_SCALAR,
-                        flags.contains(PluginV2Flags::RETURNS_SCALAR),
+                        flags.contains(PluginV1Flags::RETURNS_SCALAR),
                     );
                     f.set(
                         FunctionFlags::INPUT_WILDCARD_EXPANSION,
-                        flags.contains(PluginV2Flags::SELECTOR_EXPANSION),
+                        flags.contains(PluginV1Flags::SELECTOR_EXPANSION),
                     );
                     f
                 })

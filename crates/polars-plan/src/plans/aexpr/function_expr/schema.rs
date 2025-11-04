@@ -343,7 +343,7 @@ impl IRFunctionExpr {
                 kwargs,
             } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
             #[cfg(feature = "ffi_plugin")]
-            PluginV2(udf) => udf.to_field(&Schema::from_iter(fields.iter().cloned())),
+            PluginV1(udf) => udf.to_field(&Schema::from_iter(fields.iter().cloned())),
 
             FoldHorizontal { return_dtype, .. } => match return_dtype {
                 None => mapper.with_same_dtype(),

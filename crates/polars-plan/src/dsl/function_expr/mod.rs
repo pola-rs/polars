@@ -68,7 +68,7 @@ pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::TrigonometricFunction;
 #[cfg(feature = "ffi_plugin")]
-use super::v2::PluginV2;
+use super::v1::PluginV1;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -301,7 +301,7 @@ pub enum FunctionExpr {
     },
 
     #[cfg(feature = "ffi_plugin")]
-    PluginV2(SpecialEq<Arc<PluginV2>>),
+    PluginV1(SpecialEq<Arc<PluginV1>>),
 
     FoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
@@ -429,7 +429,7 @@ impl Hash for FunctionExpr {
                 symbol.hash(state);
             },
             #[cfg(feature = "ffi_plugin")]
-            PluginV2(udf) => udf.hash(state),
+            PluginV1(udf) => udf.hash(state),
 
             FoldHorizontal {
                 callback,
@@ -833,7 +833,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             #[cfg(feature = "ffi_plugin")]
-            PluginV2(udf) => return f.write_str(&udf.name()),
+            PluginV1(udf) => return f.write_str(&udf.function_name()),
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",
             #[cfg(feature = "dtype-struct")]

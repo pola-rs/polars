@@ -6,9 +6,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
-import polars._reexport as pl
 from polars._utils.parse import parse_into_list_of_expressions
-from polars._utils.wrap import wrap_expr, wrap_s
+from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr

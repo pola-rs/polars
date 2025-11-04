@@ -35,7 +35,7 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::StatefulUdf { .. }
+            | K::Plugin { .. }
             | K::Multiplexer { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
@@ -178,12 +178,12 @@ fn visualize_plan_rec(
             }
             return;
         },
-        PhysNodeKind::StatefulUdf {
+        PhysNodeKind::Plugin {
             input,
-            udf,
+            plugin,
             output_name,
         } => (
-            format!("udf '{}'\\n{output_name}", udf.name()),
+            format!("udf '{}'\\n{output_name}", plugin.function_name()),
             from_ref(input),
         ),
         PhysNodeKind::Select {

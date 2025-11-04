@@ -2,7 +2,7 @@ use polars_error::{PolarsError, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 
-use super::{LibrarySymbol, PluginV2, PluginV2Flags};
+use super::{LibrarySymbol, PluginV1, PluginV1Flags};
 
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize)]
@@ -11,13 +11,13 @@ pub struct PluginV2Serde {
     symbol: PlSmallStr,
     data: Vec<u8>,
     function_name: PlSmallStr,
-    flags: PluginV2Flags,
+    flags: PluginV1Flags,
 }
 
-impl TryFrom<&PluginV2> for PluginV2Serde {
+impl TryFrom<&PluginV1> for PluginV2Serde {
     type Error = PolarsError;
 
-    fn try_from(value: &PluginV2) -> Result<Self, Self::Error> {
+    fn try_from(value: &PluginV1) -> Result<Self, Self::Error> {
         let Some(LibrarySymbol {
             lib,
             symbol,
@@ -47,7 +47,7 @@ impl TryFrom<&PluginV2> for PluginV2Serde {
     }
 }
 
-impl TryFrom<PluginV2Serde> for PluginV2 {
+impl TryFrom<PluginV2Serde> for PluginV1 {
     type Error = PolarsError;
     fn try_from(value: PluginV2Serde) -> Result<Self, Self::Error> {
         let PluginV2Serde {
@@ -61,7 +61,7 @@ impl TryFrom<PluginV2Serde> for PluginV2 {
         let (library, vtable) = super::load_vtable(&lib, &symbol)?;
         let data_ptr = unsafe { vtable.deserialize_data(&data) }?;
 
-        Ok(PluginV2 {
+        Ok(PluginV1 {
             flags,
             function_name,
             data: data_ptr,
@@ -75,7 +75,7 @@ impl TryFrom<PluginV2Serde> for PluginV2 {
     }
 }
 
-impl Serialize for PluginV2 {
+impl Serialize for PluginV1 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -86,7 +86,7 @@ impl Serialize for PluginV2 {
     }
 }
 
-impl<'de> Deserialize<'de> for PluginV2 {
+impl<'de> Deserialize<'de> for PluginV1 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -98,7 +98,7 @@ impl<'de> Deserialize<'de> for PluginV2 {
 }
 
 #[cfg(feature = "dsl-schema")]
-impl schemars::JsonSchema for PluginV2 {
+impl schemars::JsonSchema for PluginV1 {
     fn schema_name() -> String {
         "StatefulUdf".to_owned()
     }
@@ -113,7 +113,7 @@ impl schemars::JsonSchema for PluginV2 {
 }
 
 #[cfg(feature = "dsl-schema")]
-impl schemars::JsonSchema for PluginV2Flags {
+impl schemars::JsonSchema for PluginV1Flags {
     fn schema_name() -> String {
         "UdfV2Flags".to_owned()
     }

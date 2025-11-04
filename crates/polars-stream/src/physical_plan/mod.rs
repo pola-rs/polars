@@ -9,7 +9,7 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::v2::PluginV2;
+use polars_plan::dsl::v1::PluginV1;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
     PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
@@ -252,9 +252,9 @@ pub enum PhysNodeKind {
         inputs: Vec<PhysStream>,
     },
 
-    StatefulUdf {
+    Plugin {
         input: PhysStream,
-        udf: SpecialEq<Arc<PluginV2>>,
+        plugin: SpecialEq<Arc<PluginV1>>,
         output_name: PlSmallStr,
     },
 
@@ -417,7 +417,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
-            | PhysNodeKind::StatefulUdf { input, .. }
+            | PhysNodeKind::Plugin { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }

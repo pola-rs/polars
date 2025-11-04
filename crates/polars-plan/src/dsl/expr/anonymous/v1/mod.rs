@@ -19,12 +19,17 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 mod serde;
 
-pub struct PluginV2 {
-    flags: PluginV2Flags,
+pub struct PluginV1 {
+    flags: PluginV1Flags,
     function_name: PlSmallStr,
     data: ffi::DataPtr,
     library: Option<Box<LibrarySymbol>>,
     vtable: ffi::VTable,
+}
+
+pub struct PluginV1State {
+    ptr: ffi::StatePtr,
+    plugin: Arc<PluginV1>,
 }
 
 struct LibrarySymbol {
@@ -33,15 +38,10 @@ struct LibrarySymbol {
     library: libloading::Library,
 }
 
-pub struct PluginV2State {
-    ptr: ffi::StatePtr,
-    plugin: Arc<PluginV2>,
-}
-
 bitflags::bitflags! {
     #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
     #[derive(Debug, Clone, Copy)]
-    pub struct PluginV2Flags: u64 {
+    pub struct PluginV1Flags: u64 {
         // Function flags.
         /// Preserves length of first non-scalar input.
         ///
@@ -79,7 +79,7 @@ bitflags::bitflags! {
     }
 }
 
-impl PluginV2Flags {
+impl PluginV1Flags {
     pub fn is_elementwise(&self) -> bool {
         self.contains(Self::LENGTH_PRESERVING | Self::ROW_SEPARABLE)
     }
@@ -101,11 +101,11 @@ impl PluginV2Flags {
     }
 }
 
-unsafe impl Sync for PluginV2 {}
-unsafe impl Send for PluginV2 {}
+unsafe impl Sync for PluginV1 {}
+unsafe impl Send for PluginV1 {}
 
-unsafe impl Send for PluginV2State {}
-unsafe impl Sync for PluginV2State {}
+unsafe impl Send for PluginV1State {}
+unsafe impl Sync for PluginV1State {}
 
 fn load_vtable(lib: &str, symbol: &str) -> PolarsResult<(libloading::Library, ffi::VTable)> {
     let lib = unsafe { libloading::Library::new(lib) }.unwrap();
@@ -117,20 +117,20 @@ fn load_vtable(lib: &str, symbol: &str) -> PolarsResult<(libloading::Library, ff
     Ok((lib, vtable))
 }
 
-impl PluginV2 {
+impl PluginV1 {
     pub unsafe fn new_shared_object(
         library: &str,
         symbol: &str,
         data: usize,
-        flags: PluginV2Flags,
+        flags: PluginV1Flags,
         function_name: PlSmallStr,
-    ) -> PolarsResult<PluginV2> {
+    ) -> PolarsResult<PluginV1> {
         flags.verify_coherency()?;
 
         let data = ffi::DataPtr::_new(NonNull::new(data as *mut u8).unwrap());
         let (lib, vtable) = load_vtable(&library, &symbol)?;
 
-        Ok(PluginV2 {
+        Ok(PluginV1 {
             flags,
             function_name,
             data,
@@ -147,33 +147,33 @@ impl PluginV2 {
         unsafe { self.vtable.to_field(self.data.ptr_clone(), fields) }
     }
 
-    pub fn initialize(self: Arc<Self>, fields: &Schema) -> PolarsResult<PluginV2State> {
+    pub fn initialize(self: Arc<Self>, fields: &Schema) -> PolarsResult<PluginV1State> {
         let ptr = unsafe { self.vtable.initialize(self.data.ptr_clone(), fields) }?;
-        Ok(PluginV2State { ptr, plugin: self })
+        Ok(PluginV1State { ptr, plugin: self })
     }
 
-    pub fn flags(&self) -> PluginV2Flags {
+    pub fn flags(&self) -> PluginV1Flags {
         self.flags
     }
 
-    pub fn name(&self) -> &str {
+    pub fn function_name(&self) -> &str {
         &self.function_name
     }
 }
 
-impl Drop for PluginV2 {
+impl Drop for PluginV1 {
     fn drop(&mut self) {
         unsafe { self.vtable.drop_data(self.data.ptr_clone()) }
     }
 }
 
-impl Drop for PluginV2State {
+impl Drop for PluginV1State {
     fn drop(&mut self) {
         unsafe { self.plugin.vtable.drop_state(self.ptr.ptr_clone()) }
     }
 }
 
-impl PluginV2State {
+impl PluginV1State {
     pub fn insert(&mut self, inputs: &[Series]) -> PolarsResult<Option<Series>> {
         unsafe {
             self.plugin
@@ -183,7 +183,7 @@ impl PluginV2State {
     }
 
     pub fn finalize(&mut self) -> PolarsResult<Option<Series>> {
-        assert!(self.plugin.flags.contains(PluginV2Flags::NEEDS_FINALIZE));
+        assert!(self.plugin.flags.contains(PluginV1Flags::NEEDS_FINALIZE));
         unsafe {
             self.plugin
                 .vtable
@@ -193,7 +193,7 @@ impl PluginV2State {
 
     pub fn combine(&mut self, other: &Self) -> PolarsResult<()> {
         assert_eq!(Arc::as_ptr(&self.plugin), Arc::as_ptr(&other.plugin));
-        assert!(self.plugin.flags.contains(PluginV2Flags::STATES_COMBINABLE));
+        assert!(self.plugin.flags.contains(PluginV1Flags::STATES_COMBINABLE));
         unsafe {
             self.plugin.vtable.combine(
                 self.plugin.data.ptr_clone(),
@@ -203,14 +203,14 @@ impl PluginV2State {
         }
     }
 
-    pub fn new_empty(&self) -> PolarsResult<PluginV2State> {
+    pub fn new_empty(&self) -> PolarsResult<PluginV1State> {
         let plugin = self.plugin.clone();
         let ptr = unsafe {
             self.plugin
                 .vtable
                 .new_empty(plugin.data.ptr_clone(), self.ptr.ptr_clone())
         }?;
-        Ok(PluginV2State { ptr, plugin })
+        Ok(PluginV1State { ptr, plugin })
     }
 
     pub fn reset(&mut self) -> PolarsResult<()> {
@@ -231,12 +231,12 @@ impl PluginV2State {
         }
     }
 
-    pub fn deserialize(plugin: Arc<PluginV2>, buffer: &[u8]) -> PolarsResult<Self> {
+    pub fn deserialize(plugin: Arc<PluginV1>, buffer: &[u8]) -> PolarsResult<Self> {
         let ptr = unsafe {
             plugin
                 .vtable
                 .deserialize_state(plugin.data.ptr_clone(), buffer)
         }?;
-        Ok(PluginV2State { ptr, plugin })
+        Ok(PluginV1State { ptr, plugin })
     }
 }

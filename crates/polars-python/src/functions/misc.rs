@@ -81,27 +81,27 @@ pub fn register_plugin_v2_function(
 ) -> PyResult<PyExpr> {
     use std::sync::Arc;
 
-    use polars::prelude::v2::{PluginV2, PluginV2Flags};
+    use polars::prelude::v1::{StatefulUdf, UdfV2Flags};
 
     use crate::error::PyPolarsErr;
 
-    let mut flags = PluginV2Flags::empty();
-    flags.set(PluginV2Flags::LENGTH_PRESERVING, length_preserving);
-    flags.set(PluginV2Flags::ROW_SEPARABLE, row_separable);
-    flags.set(PluginV2Flags::RETURNS_SCALAR, returns_scalar);
-    flags.set(PluginV2Flags::ZIPPABLE_INPUTS, zippable_inputs);
-    flags.set(PluginV2Flags::INSERT_HAS_OUTPUT, insert_has_output);
-    flags.set(PluginV2Flags::NEEDS_FINALIZE, needs_finalize);
-    flags.set(PluginV2Flags::STATES_COMBINABLE, states_combinable);
-    flags.set(PluginV2Flags::SELECTOR_EXPANSION, selector_expansion);
+    let mut flags = UdfV2Flags::empty();
+    flags.set(UdfV2Flags::LENGTH_PRESERVING, length_preserving);
+    flags.set(UdfV2Flags::ROW_SEPARABLE, row_separable);
+    flags.set(UdfV2Flags::RETURNS_SCALAR, returns_scalar);
+    flags.set(UdfV2Flags::ZIPPABLE_INPUTS, zippable_inputs);
+    flags.set(UdfV2Flags::INSERT_HAS_OUTPUT, insert_has_output);
+    flags.set(UdfV2Flags::NEEDS_FINALIZE, needs_finalize);
+    flags.set(UdfV2Flags::STATES_COMBINABLE, states_combinable);
+    flags.set(UdfV2Flags::SELECTOR_EXPANSION, selector_expansion);
 
     let udf = unsafe {
-        PluginV2::new_shared_object(&plugin_path, &name, data_ptr, flags, function_name.into())
+        StatefulUdf::new_shared_object(&plugin_path, &name, data_ptr, flags, function_name.into())
     }
     .map_err(PyPolarsErr::from)?;
     Ok(Expr::Function {
         input: args.to_exprs(),
-        function: FunctionExpr::PluginV2(SpecialEq::new(Arc::new(udf))),
+        function: FunctionExpr::PluginV1(SpecialEq::new(Arc::new(udf))),
     }
     .into())
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::schema::Schema;
 use polars_core::series::Series;
-use polars_plan::dsl::v2::{PluginV2, PluginV2State, PluginV2Flags};
+use polars_plan::dsl::v1::{PluginV1, PluginV1State, PluginV1Flags};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
@@ -16,35 +16,35 @@ enum Action {
     Done,
 }
 
-pub struct StatefulUdfNode {
+pub struct PluginNode {
     name: PlSmallStr,
     action: Action,
-    buffer: Vec<(Series, PluginV2State, MorselSeq)>,
+    buffer: Vec<(Series, PluginV1State, MorselSeq)>,
     input_schema: Arc<Schema>,
-    udf: Arc<PluginV2>,
+    plugin: Arc<PluginV1>,
     output_name: PlSmallStr,
 }
 
-impl StatefulUdfNode {
+impl PluginNode {
     pub fn new(
-        udf: Arc<PluginV2>,
+        plugin: Arc<PluginV1>,
         input_schema: Arc<Schema>,
         output_name: PlSmallStr,
     ) -> PolarsResult<Self> {
-        let name = udf.name().into();
+        let name = plugin.function_name().into();
         Ok(Self {
             name,
             action: Action::Insert,
             buffer: Vec::new(),
             input_schema,
-            udf,
+            plugin,
             output_name,
         })
     }
 
     pub async fn task(
         output_name: PlSmallStr,
-        (buffer, state, state_seq): &mut (Series, PluginV2State, MorselSeq),
+        (buffer, state, state_seq): &mut (Series, PluginV1State, MorselSeq),
         rx: Option<PortReceiver>,
         mut tx: Option<PortSender>,
     ) -> PolarsResult<()> {
@@ -95,7 +95,7 @@ impl StatefulUdfNode {
     }
 }
 
-impl ComputeNode for StatefulUdfNode {
+impl ComputeNode for PluginNode {
     fn name(&self) -> &str {
         &self.name
     }
@@ -114,11 +114,11 @@ impl ComputeNode for StatefulUdfNode {
             return Ok(());
         }
 
-        let flags = self.udf.flags();
+        let flags = self.plugin.flags();
 
         if matches!(self.action, Action::Insert) && self.buffer.is_empty() {
-            let udf_state = self.udf.clone().initialize(&self.input_schema)?;
-            let field = self.udf.to_field(&self.input_schema)?;
+            let udf_state = self.plugin.clone().initialize(&self.input_schema)?;
+            let field = self.plugin.to_field(&self.input_schema)?;
             self.buffer = Vec::with_capacity(state.num_pipelines);
             if flags.allows_concurrent_evaluation() {
                 for _ in 1..state.num_pipelines {
@@ -159,7 +159,7 @@ impl ComputeNode for StatefulUdfNode {
 
         match self.action {
             Action::Insert => {
-                if !flags.contains(PluginV2Flags::INSERT_HAS_OUTPUT) {
+                if !flags.contains(PluginV1Flags::INSERT_HAS_OUTPUT) {
                     send[0] = P::Blocked
                 }
             },
@@ -183,7 +183,7 @@ impl ComputeNode for StatefulUdfNode {
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
 
-        let flags = self.udf.flags();
+        let flags = self.plugin.flags();
 
         match &mut self.action {
             Action::Done => unreachable!(),
@@ -220,8 +220,8 @@ impl ComputeNode for StatefulUdfNode {
             },
             Action::Finalize => {
                 assert!(!self.buffer.is_empty());
-                assert!(flags.contains(PluginV2Flags::NEEDS_FINALIZE));
-                assert!(self.buffer.len() == 1 || flags.contains(PluginV2Flags::STATES_COMBINABLE));
+                assert!(flags.contains(PluginV1Flags::NEEDS_FINALIZE));
+                assert!(self.buffer.len() == 1 || flags.contains(PluginV1Flags::STATES_COMBINABLE));
 
                 let mut send = send_ports[0].take().unwrap().serial();
 

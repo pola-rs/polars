@@ -1326,7 +1326,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"));
                 },
-                IRFunctionExpr::PluginV2(_) => {
+                IRFunctionExpr::PluginV1(_) => {
                     return Err(PyNotImplementedError::new_err("stateful plugin"));
                 },
                 IRFunctionExpr::FoldHorizontal { .. } => {
