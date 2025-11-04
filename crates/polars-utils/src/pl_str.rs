@@ -27,7 +27,7 @@ pub struct PlSmallStr(Inner);
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PlSmallStr {
     fn inline_schema() -> bool {
-        false
+        String::inline_schema()
     }
 
     fn schema_name() -> std::borrow::Cow<'static, str> {
