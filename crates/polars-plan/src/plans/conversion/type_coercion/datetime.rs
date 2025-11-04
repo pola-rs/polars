@@ -120,12 +120,12 @@ pub(super) fn convert_tz(
 #[cfg(feature = "dtype-datetime")]
 // Determines the output data type, including user-specified t tz, and interval.
 pub(super) fn build_datetime_supertype(
-    default: DataType,
+    start_end_supertype: DataType,
     tu: &Option<TimeUnit>,
     tz: &Option<TimeZone>,
     interval: &Duration,
 ) -> PolarsResult<DataType> {
-    let mut dtype_out = match (&default, tu) {
+    let mut dtype_out = match (&start_end_supertype, tu) {
         (DataType::Date, time_unit) => {
             if let Some(tu) = time_unit {
                 DataType::Datetime(*tu, None)
@@ -137,7 +137,7 @@ pub(super) fn build_datetime_supertype(
             }
         },
         // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => default,
+        (DataType::Datetime(_, _), None) => start_end_supertype,
         // overwrite time unit, keep timezone
         (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(*tu, tz.clone()),
         (dt, _) => {
