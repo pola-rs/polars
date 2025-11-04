@@ -71,7 +71,10 @@ impl ArgAgg for Series {
                 arg_min_bool(ca)
             },
             #[cfg(feature = "dtype-f16")]
-            Float16 => todo!("[amber]"),
+            Float16 => {
+                // TODO: Dispatch to ArgMinMax directly
+                phys_s.cast(&DataType::Float32).unwrap().arg_min()
+            },
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
@@ -112,7 +115,10 @@ impl ArgAgg for Series {
                 arg_max_bool(ca)
             },
             #[cfg(feature = "dtype-f16")]
-            Float16 => todo!("[amber]"),
+            Float16 => {
+                // TODO: Dispatch to ArgMinMax directly
+                phys_s.cast(&DataType::Float32).unwrap().arg_max()
+            },
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
