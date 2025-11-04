@@ -13,7 +13,7 @@ use binary::process_binary;
     feature = "range",
     any(feature = "dtype-date", feature = "dtype-datetime")
 ))]
-use datetime::{coerce_dt, update_date_range_types, update_datetime_range_types};
+use datetime::{coerce_temporal_dt, update_date_range_types, update_datetime_range_types};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -988,7 +988,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
                     if from_dtype != to_dtype {
                         modified = true;
-                        coerce_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
+                        coerce_temporal_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
                     }
                 }
 
@@ -1032,7 +1032,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
                     if from_dtype != to_dtype {
                         modified = true;
-                        coerce_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
+                        coerce_temporal_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
                     }
                 }
 

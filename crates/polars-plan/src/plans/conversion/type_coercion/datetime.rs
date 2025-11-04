@@ -16,7 +16,7 @@ use crate::prelude::FunctionOptions;
 ///   * If the source is a Datetime with a different time zone, we convert time zone.
 ///
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-pub fn coerce_dt(
+pub fn coerce_temporal_dt(
     from_type: &DataType,
     to_type: &DataType,
     expr: &mut ExprIR,
