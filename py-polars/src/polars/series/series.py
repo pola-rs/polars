@@ -8350,14 +8350,15 @@ class Series:
             Accepts expression input. Non-expression inputs are parsed as literals.
 
             .. deprecated:: 0.20.31
-                Use :meth:`replace_all` instead to set a default while replacing values.
+                Use :meth:`replace_strict` instead to set a default while
+                replacing values.
 
         return_dtype
             The data type of the resulting expression. If set to `None` (default),
             the data type is determined automatically based on the other inputs.
 
             .. deprecated:: 0.20.31
-                Use :meth:`replace_all` instead to set a return data type while
+                Use :meth:`replace_strict` instead to set a return data type while
                 replacing values.
 
 
