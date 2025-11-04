@@ -221,7 +221,7 @@ class Schema(BaseSchema):
         x: string_view
         """
 
-        class SchemaCapsule:
+        class SchemaCapsuleProvider:
             def __init__(self, schema: Schema, compat_level: CompatLevel) -> None:
                 self.schema = schema
                 self.compat_level = compat_level
@@ -232,7 +232,7 @@ class Schema(BaseSchema):
                 )
 
         return pa.schema(
-            SchemaCapsule(
+            SchemaCapsuleProvider(
                 self, CompatLevel.newest() if compat_level is None else compat_level
             )
         )
