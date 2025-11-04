@@ -7,7 +7,6 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
-#[cfg(feature = "simd")]
 use polars_utils::float16::pf16;
 
 const STRIPE: usize = 16;
@@ -287,6 +286,18 @@ where
             })
             .sum();
         mainsum + restsum
+    }
+}
+
+pub fn sum_arr_as_f16<T>(arr: &PrimitiveArray<T>) -> pf16
+where
+    T: NativeType + FloatSum<pf16>,
+{
+    let validity = arr.validity().filter(|_| arr.null_count() > 0);
+    if let Some(mask) = validity {
+        FloatSum::sum_with_validity(arr.values(), mask)
+    } else {
+        FloatSum::sum(arr.values())
     }
 }
 

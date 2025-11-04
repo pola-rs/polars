@@ -140,10 +140,7 @@ def test_entropy() -> None:
 
 @pytest.mark.parametrize(
     "dtype",
-    [
-        pl.Float64,
-        pl.Float32,
-    ],
+    FLOAT_DTYPES,
 )
 def test_log_broadcast(dtype: pl.DataType) -> None:
     a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
@@ -165,6 +162,7 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
     [
         (pl.Float64, pl.Float64),
         (pl.Float32, pl.Float32),
+        (pl.Float16, pl.Float16),
         (pl.Int32, pl.Float64),
         (pl.Int64, pl.Float64),
     ],

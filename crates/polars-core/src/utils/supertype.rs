@@ -277,6 +277,15 @@ pub fn get_supertype_with_options(
             (Boolean, UInt32) => Some(UInt32),
             (Boolean, UInt64) => Some(UInt64),
 
+            #[cfg(all(feature = "dtype-f16", feature = "dtype-u8"))]
+            (Float16, UInt8) => Some(Float16),
+            #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
+            (Float16, UInt16) => Some(Float16),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, UInt32) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, UInt64) => Some(Float64),
+
             #[cfg(feature = "dtype-u8")]
             (Float32, UInt8) => Some(Float32),
             #[cfg(feature = "dtype-u16")]
@@ -284,19 +293,19 @@ pub fn get_supertype_with_options(
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
 
-            #[cfg(feature = "dtype-f16")]
-            (Float16, Float32) => Some(Float32),
-            #[cfg(feature = "dtype-f16")]
-            (Float16, Float64) => Some(Float64),
-            (Float32, Float64) => Some(Float64),
-
+            
             #[cfg(feature = "dtype-u8")]
             (Float64, UInt8) => Some(Float64),
             #[cfg(feature = "dtype-u16")]
             (Float64, UInt16) => Some(Float64),
             (Float64, UInt32) => Some(Float64),
             (Float64, UInt64) => Some(Float64),
-
+            
+            #[cfg(feature = "dtype-f16")]
+            (Float16, Float32) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, Float64) => Some(Float64),
+            (Float32, Float64) => Some(Float64),
             #[cfg(feature = "dtype-f16")]
             (Float32, Float16) => Some(Float32),
             #[cfg(feature = "dtype-f16")]

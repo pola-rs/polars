@@ -23,6 +23,14 @@ pub trait RoundSeries: SeriesSealed {
     fn round(&self, decimals: u32, mode: RoundMode) -> PolarsResult<Series> {
         let s = self.as_series();
 
+        // TODO: [amber] optimize Float16 rounding
+        if s.dtype() == &DataType::Float16 {
+            return s
+                .cast(&DataType::Float32)?
+                .round(decimals, mode)
+                .and_then(|s| s.cast(&DataType::Float16));
+        }
+
         if let Ok(ca) = s.f32() {
             match mode {
                 RoundMode::HalfToEven => {

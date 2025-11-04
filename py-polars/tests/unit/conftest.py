@@ -35,7 +35,7 @@ UNSIGNED_INTEGER_DTYPES = [
     pl.UInt128(),
 ]
 INTEGER_DTYPES = SIGNED_INTEGER_DTYPES + UNSIGNED_INTEGER_DTYPES
-FLOAT_DTYPES = [pl.Float32(), pl.Float64()]
+FLOAT_DTYPES = [pl.Float16(), pl.Float32(), pl.Float64()]
 NUMERIC_DTYPES = INTEGER_DTYPES + FLOAT_DTYPES
 
 DATETIME_DTYPES = [pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")]

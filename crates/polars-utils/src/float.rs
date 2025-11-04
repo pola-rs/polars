@@ -95,9 +95,9 @@ macro_rules! impl_is_float {
                 true
             }
 
-            // fn is_f16() -> bool {
-            //     $is_f16
-            // }
+            fn is_f16() -> bool {
+                $is_f16
+            }
 
             fn is_f32() -> bool {
                 $is_f32
