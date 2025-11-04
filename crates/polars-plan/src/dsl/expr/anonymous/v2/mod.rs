@@ -152,38 +152,36 @@ bitflags::bitflags! {
         /// Preserves length of first non-scalar input.
         ///
         /// If all inputs are scalars, the output is also a scalar.
-        const LENGTH_PRESERVING   = 0x01;
+        const LENGTH_PRESERVING   = 0x001;
         /// Given a function f and a column of values [v1, ..., vn]
         /// f is row-separable i.f.f.
         /// f([v1, ..., vn]) = concat(f(v1, ... vm), f(vm+1, ..., vn))
         /// where scalar input are broadcasted over the length of the other inputs.
         ///
         /// Only makes sense if the inputs are zippable.
-        const ROW_SEPARABLE       = 0x02;
+        const ROW_SEPARABLE       = 0x002;
         /// Output is always a single row.
-        const RETURNS_SCALAR      = 0x04;
-
-
+        const RETURNS_SCALAR      = 0x004;
         /// All inputs are expected to be of equal length or scalars.
-        const ZIPPABLE_INPUTS     = 0x08;
+        const ZIPPABLE_INPUTS     = 0x008;
 
         // Evaluation related flags.
         /// Inserting can yield data.
-        const INSERT_HAS_OUTPUT   = 0x10;
+        const INSERT_HAS_OUTPUT   = 0x010;
         /// Finalize needs to be called and may yield data.
         ///
         /// Expressions that are both LENGTH_PRESERVING and ROW_SEPARABLE are never finalized.
-        const NEEDS_FINALIZE      = 0x20;
+        const NEEDS_FINALIZE      = 0x020;
         /// States can be inserted separately and combined later.
         ///
         /// If a finalization is needed, it is only called one state that has combined all states.
         ///
         /// Expressions that are both LENGTH_PRESERVING and ROW_SEPARABLE are never combined.
-        const STATES_COMBINABLE   = 0x40;
+        const STATES_COMBINABLE   = 0x040;
 
         // Expression expansion related flags.
         /// Expand selectors as individual inputs.
-        const SELECTOR_EXPANSION  = 0x80;
+        const SELECTOR_EXPANSION  = 0x080;
     }
 }
 

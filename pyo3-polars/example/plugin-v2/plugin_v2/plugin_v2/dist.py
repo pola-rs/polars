@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars as pl
-from polars.plugins import register_plugin_function, register_plugin_v2_function
+from polars.plugins import register_plugin_v2_function
 
 from plugin_v2._utils import LIB
 
@@ -68,34 +68,17 @@ def vertical_scan(expr: IntoExprColumn, *, init: int) -> pl.Expr:
     )
 
 
-def hamming_distance(expr: IntoExprColumn, other: IntoExprColumn) -> pl.Expr:
-    return register_plugin_function(
+def horizontal_count(*expr: pl.Expr) -> pl.Expr:
+    from plugin_v2 import plugin_v2
+
+    return register_plugin_v2_function(
         plugin_path=LIB,
-        args=[expr, other],
-        function_name="hamming_distance",
-        is_elementwise=True,
-    )
-
-
-def jaccard_similarity(expr: IntoExprColumn, other: IntoExprColumn) -> pl.Expr:
-    return register_plugin_function(
-        plugin_path=LIB,
-        args=[expr, other],
-        function_name="jaccard_similarity",
-        is_elementwise=True,
-    )
-
-
-def haversine(
-    start_lat: IntoExprColumn,
-    start_long: IntoExprColumn,
-    end_lat: IntoExprColumn,
-    end_long: IntoExprColumn,
-) -> pl.Expr:
-    return register_plugin_function(
-        plugin_path=LIB,
-        args=[start_lat, start_long, end_lat, end_long],
-        function_name="haversine",
-        is_elementwise=True,
-        cast_to_supertype=True,
+        args=list(expr),
+        info=plugin_v2.horizontal_count(),
+        function_name="horizontal_count",
+        length_preserving=True,
+        row_separable=True,
+        needs_finalize=False,
+        states_combinable=False,
+        selector_expansion=True,
     )
