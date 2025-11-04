@@ -4,6 +4,7 @@ use expr_expansion::rewrite_projections;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_utils::format_pl_smallstr;
 use polars_utils::plpath::PlPath;
 use polars_utils::unique_id::UniqueId;
 
@@ -64,11 +65,9 @@ pub fn to_alp(
                 // where in the query plan it went wrong. It is clear from the backtrace anyway.
                 return Err(err.remove_context());
             };
-
             let Some(ir_until_then) = lp_arena.last_node() else {
                 return Err(err);
             };
-
             let node_name = if let PolarsError::Context { msg, .. } = &err {
                 msg
             } else {
@@ -726,8 +725,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .into_iter()
                         .enumerate()
                         .map(|(idx, expr)| {
-                            let temp_name =
-                                format_pl_smallstr!("__POLARS_UNIQUE_SUBSET_{}", idx);
+                            let temp_name = format_pl_smallstr!("__POLARS_UNIQUE_SUBSET_{}", idx);
                             (expr.alias(temp_name.clone()), temp_name)
                         })
                         .unzip();
@@ -776,29 +774,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
             });
 
-            // if no temporary cols (eg: no "subset" exprs), we're done...
+            // if no temporary cols (eg: we had no "subset" exprs), we're done...
             if temp_cols.is_empty() {
                 return Ok(distinct_node);
             }
 
-            // ...otherwise, drop the temporary cols by selecting the original schema
-            let exprs = to_expr_irs(
-                input_schema
-                    .iter_names()
-                    .map(|name| Expr::Column(name.clone()))
-                    .collect(),
-                &mut ExprToIRContext::new_with_opt_eager(
-                    ctxt.expr_arena,
-                    &input_schema,
-                    ctxt.opt_flags,
-                ),
-            )?;
-
-            return Ok(ctxt.lp_arena.add(IR::Select {
+            // ...otherwise, drop them by projecting the original schema
+            return Ok(ctxt.lp_arena.add(IR::SimpleProjection {
                 input: distinct_node,
-                expr: exprs,
-                schema: input_schema,
-                options: Default::default(),
+                columns: input_schema,
             }));
         },
         DslPlan::MapFunction { input, function } => {
