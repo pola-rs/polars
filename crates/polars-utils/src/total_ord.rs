@@ -15,7 +15,7 @@ pub fn canonical_f16(x: pf16) -> pf16 {
     // -0.0 + 0.0 becomes 0.0.
     let convert_zero = x + pf16::zero(); // zero out the sign bit if the f16 is zero.
     if convert_zero.is_nan() {
-        pf16(half::f16::from_bits(0x7c00)) // Canonical quiet NaN.
+        pf16(half::f16::from_bits(0x7e00)) // Canonical quiet NaN.
     } else {
         convert_zero
     }
