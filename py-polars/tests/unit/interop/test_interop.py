@@ -1395,3 +1395,13 @@ def test_month_day_nano_from_ffi_15969(monkeypatch: pytest.MonkeyPatch) -> None:
     # TODO: Add Parquet round-trip test if this starts working.
     with pytest.raises(pa.ArrowNotImplementedError):
         pq.write_table(arrow_tbl, f)
+
+
+def test_schema_to_arrow_15563() -> None:
+    assert pl.Schema({"x": pl.String}).to_arrow() == pa.schema(
+        [pa.field("x", pa.string_view())]
+    )
+
+    assert pl.Schema({"x": pl.String}).to_arrow(
+        compat_level=CompatLevel.oldest()
+    ) == pa.schema([pa.field("x", pa.large_string())])
