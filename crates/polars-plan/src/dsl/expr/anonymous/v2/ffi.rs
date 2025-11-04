@@ -31,13 +31,13 @@ pub struct VTable {
         StatePtr,
         *mut SeriesExport,
         usize,
-        NonNull<bool>,
+        NonNull<u32>,
         NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32,
     pub(super) _finalize: unsafe extern "C" fn(
         DataPtr,
         StatePtr,
-        NonNull<bool>,
+        NonNull<u32>,
         NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32,
 
@@ -49,6 +49,7 @@ pub struct VTable {
     pub(super) _drop_state: unsafe extern "C" fn(StatePtr) -> u32,
     pub(super) _drop_data: unsafe extern "C" fn(DataPtr) -> u32,
 
+    pub(super) _set_version: unsafe extern "C" fn(u32),
     pub(super) _get_error: unsafe extern "C" fn(NonNull<*const u8>, NonNull<isize>),
 }
 
@@ -64,6 +65,23 @@ enum ReturnValue {
     AssertionError = 5,
 
     OtherError = 6,
+}
+
+#[repr(u32)]
+enum Value {
+    None = 0,
+    Series = 1,
+}
+
+impl TryFrom<u32> for Value {
+    type Error = ();
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Series),
+            _ => Err(()),
+        }
+    }
 }
 
 impl VTable {
@@ -87,6 +105,7 @@ impl VTable {
             _drop_state: _callee::drop_state::<Data>,
             _drop_data: _callee::drop_data::<Data>,
 
+            _set_version: _callee::set_version,
             _get_error: _callee::get_error,
         }
     }
@@ -115,6 +134,7 @@ mod _callee {
     use std::mem::MaybeUninit;
     use std::panic::{AssertUnwindSafe, UnwindSafe};
     use std::ptr::NonNull;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     use ::polars_core::prelude::{Field, Schema};
     use ::polars_core::series::Series;
@@ -129,8 +149,12 @@ mod _callee {
     use polars_error::{PolarsError, polars_bail};
 
     use super::super::StatefulUdfTrait;
-    use super::{DataPtr, ReturnValue, StatePtr};
+    use super::{DataPtr, ReturnValue, StatePtr, Value};
 
+    /// Plugin version of the *caller*.
+    ///
+    /// This can be used to assess whether certain features are usable or not.
+    static POLARS_PLUGIN_VERSION: AtomicU32 = AtomicU32::new(0);
     thread_local! { static ERROR_MESSAGE: RefCell<Option<Box<str>>> = RefCell::new(None); }
 
     pub unsafe extern "C" fn get_error(ptr: NonNull<*const u8>, length: NonNull<isize>) {
@@ -145,6 +169,10 @@ mod _callee {
                 length.write(n_len);
             }
         })
+    }
+
+    pub unsafe extern "C" fn set_version(version: u32) {
+        POLARS_PLUGIN_VERSION.store(version, Ordering::Relaxed);
     }
 
     unsafe fn import_pl_schema(schema: NonNull<ArrowSchema>) -> PolarsResult<Schema> {
@@ -162,9 +190,7 @@ mod _callee {
 
         let set_msg = match &result {
             Ok(Ok(_)) => Ok(()),
-            Err(panic) => std::panic::catch_unwind(|| {
-                ERROR_MESSAGE.with_borrow_mut(|b| *b = Some("panicked".into()))
-            }),
+            Err(_) => Ok(()),
             Ok(Err(err)) => {
                 let (kind, msg) = match err {
                     PolarsError::InvalidOperation(msg)
@@ -349,7 +375,7 @@ mod _callee {
         inputs_series: *mut SeriesExport,
         inputs_len: usize,
 
-        out_series_is_some: NonNull<bool>,
+        out_series_kind: NonNull<u32>,
         out_series: NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32 {
         wrap_callee_function(|| {
@@ -358,7 +384,11 @@ mod _callee {
             let inputs = unsafe { import_series_buffer(inputs_series, inputs_len) }?;
 
             let out = data.insert(state, &inputs)?;
-            unsafe { out_series_is_some.write(out.is_some()) };
+            let kind = match out {
+                None => Value::None as u32,
+                Some(_) => Value::Series as u32,
+            };
+            unsafe { out_series_kind.write(kind) };
             if let Some(series) = out {
                 let exported = export_series(&series);
                 unsafe { out_series.write(MaybeUninit::new(exported)) };
@@ -370,14 +400,18 @@ mod _callee {
     pub unsafe extern "C" fn finalize<Data: StatefulUdfTrait>(
         data: DataPtr,
         state: StatePtr,
-        out_series_is_some: NonNull<bool>,
+        out_series_kind: NonNull<u32>,
         out_series: NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32 {
         wrap_callee_function(|| {
             let data = unsafe { data.as_ref::<Data>() };
             let state = unsafe { state.as_mut::<Data::State>() };
             let out = data.finalize(state)?;
-            unsafe { out_series_is_some.write(out.is_some()) };
+            let kind = match out {
+                None => Value::None as u32,
+                Some(_) => Value::Series as u32,
+            };
+            unsafe { out_series_kind.write(kind) };
             if let Some(series) = out {
                 let exported = export_series(&series);
                 unsafe { out_series.write(MaybeUninit::new(exported)) };
@@ -448,7 +482,7 @@ mod _caller {
     use polars_utils::pl_str::PlSmallStr;
 
     use super::super::StatefulUdfTrait;
-    use super::{DataPtr, ReturnValue, StatePtr, VTable};
+    use super::{DataPtr, ReturnValue, StatePtr, VTable, Value};
     use crate::dsl::v2::UdfV2Flags;
 
     impl VTable {
@@ -464,10 +498,16 @@ mod _caller {
             Some(s.into())
         }
 
+        pub unsafe fn set_version(&self, version: u32) {
+            unsafe { (self._set_version)(version) }
+        }
+
         unsafe fn handle_return_value(&self, rv: u32) -> PolarsResult<()> {
             match ReturnValue::from(rv) {
                 ReturnValue::Ok => Ok(()),
-                ReturnValue::Panic => panic!("plugin panicked"),
+                ReturnValue::Panic => {
+                    panic!("plugin panicked")
+                },
                 ReturnValue::InvalidOperation => {
                     let msg = unsafe { self.get_error() }.unwrap();
                     polars_bail!(InvalidOperation: "{msg}")
@@ -631,7 +671,7 @@ mod _caller {
             let inputs_ptr = inputs_export.as_mut_ptr();
             let inputs_len = inputs_export.len();
 
-            let mut out_series_is_some = false;
+            let mut out_series_kind = 0u32;
             let mut out_series = MaybeUninit::uninit();
 
             let rv = unsafe {
@@ -640,7 +680,7 @@ mod _caller {
                     state,
                     inputs_ptr,
                     inputs_len,
-                    NonNull::from_mut(&mut out_series_is_some),
+                    NonNull::from_mut(&mut out_series_kind),
                     NonNull::from_mut(&mut out_series),
                 )
             };
@@ -648,12 +688,16 @@ mod _caller {
             // Already deallocated in insert function
             unsafe { inputs_export.set_len(0) };
 
-            if !out_series_is_some {
-                return Ok(None);
+            let Ok(out_series_kind) = Value::try_from(out_series_kind) else {
+                panic!("invalid series kind value");
+            };
+            match out_series_kind {
+                Value::None => Ok(None),
+                Value::Series => {
+                    let out_series = unsafe { import_series(out_series.assume_init()) }?;
+                    Ok(Some(out_series))
+                },
             }
-
-            let out_series = unsafe { import_series(out_series.assume_init()) }?;
-            Ok(Some(out_series))
         }
 
         pub unsafe fn finalize(
@@ -661,25 +705,29 @@ mod _caller {
             data: DataPtr,
             state: StatePtr,
         ) -> PolarsResult<Option<Series>> {
-            let mut out_series_is_some = false;
+            let mut out_series_kind = 0u32;
             let mut out_series = MaybeUninit::uninit();
 
             let rv = unsafe {
                 (self._finalize)(
                     data,
                     state,
-                    NonNull::from_mut(&mut out_series_is_some),
+                    NonNull::from_mut(&mut out_series_kind),
                     NonNull::from_mut(&mut out_series),
                 )
             };
             unsafe { self.handle_return_value(rv) }?;
 
-            if !out_series_is_some {
-                return Ok(None);
+            let Ok(out_series_kind) = Value::try_from(out_series_kind) else {
+                panic!("invalid series kind value");
+            };
+            match out_series_kind {
+                Value::None => Ok(None),
+                Value::Series => {
+                    let out_series = unsafe { import_series(out_series.assume_init()) }?;
+                    Ok(Some(out_series))
+                },
             }
-
-            let out_series = unsafe { import_series(out_series.assume_init()) }?;
-            Ok(Some(out_series))
         }
 
         pub unsafe fn combine(

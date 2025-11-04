@@ -267,6 +267,7 @@ fn load_vtable(lib: &str, symbol: &str) -> PolarsResult<(libloading::Library, ff
     let udf: libloading::Symbol<NonNull<PresentedUdf>> =
         unsafe { lib.get(name.as_bytes()) }.unwrap();
     let vtable = unsafe { udf.as_ref() }.vtable.clone();
+    unsafe { vtable.set_version(STUDF_VERSION) };
     Ok((lib, vtable))
 }
 
