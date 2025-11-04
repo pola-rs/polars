@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::SchemaExtPl;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
-use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -22,7 +22,6 @@ use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
