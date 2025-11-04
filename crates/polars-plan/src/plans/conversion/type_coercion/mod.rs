@@ -13,9 +13,16 @@ use binary::process_binary;
     feature = "range",
     any(feature = "dtype-date", feature = "dtype-datetime")
 ))]
-use datetime::{coerce_temporal_dt, update_date_range_types, update_datetime_range_types};
+use datetime::coerce_temporal_dt;
+#[cfg(all(feature = "range", feature = "dtype-datetime"))]
+use datetime::temporal_range_output_type;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+use polars_core::utils::try_get_supertype;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
@@ -979,9 +986,13 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let mut input = input.clone();
                 let function = function.clone();
 
-                let (from_types, to_types) =
-                    update_date_range_types(&mut input, expr_arena, schema)?;
+                // Determine the current and target dtypes.
+                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                let from_types = vec![type_start, type_end];
+                let to_types = vec![DataType::Date, DataType::Date];
 
+                // Upcast input expressions if necessary.
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();
                 let mut modified = false;
@@ -1023,9 +1034,15 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let mut input = input.clone();
                 let function = function.clone();
 
-                let (from_types, to_types) =
-                    update_datetime_range_types(&mut input, expr_arena, schema, interval, tu, tz)?;
+                // Determine the current and target dtypes.
+                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                let default = try_get_supertype(&type_start, &type_end)?;
+                let supertype = temporal_range_output_type(default, tu, tz, interval)?;
+                let from_types = vec![type_start, type_end];
+                let to_types = vec![supertype.clone(), supertype];
 
+                // Upcast input expressions if necessary.
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();
                 let mut modified = false;

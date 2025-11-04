@@ -152,34 +152,3 @@ pub(super) fn temporal_range_output_type(
     };
     Ok(dtype_out)
 }
-
-#[cfg(all(feature = "dtype-date", feature = "range"))]
-pub(super) fn update_date_range_types(
-    input: &mut [ExprIR],
-    expr_arena: &Arena<AExpr>,
-    schema: &Schema,
-) -> PolarsResult<(Vec<DataType>, Vec<DataType>)> {
-    let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
-    let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
-    let from_types = vec![type_start, type_end];
-    let to_types = vec![DataType::Date, DataType::Date];
-    Ok((from_types, to_types))
-}
-
-#[cfg(all(feature = "dtype-datetime", feature = "range"))]
-pub(super) fn update_datetime_range_types(
-    input: &mut [ExprIR],
-    expr_arena: &Arena<AExpr>,
-    schema: &Schema,
-    interval: &Duration,
-    tu: &Option<TimeUnit>,
-    tz: &Option<TimeZone>,
-) -> PolarsResult<(Vec<DataType>, Vec<DataType>)> {
-    let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
-    let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
-    let default = try_get_supertype(&type_start, &type_end)?;
-    let supertype = temporal_range_output_type(default, tu, tz, interval)?;
-    let from_types = vec![type_start, type_end];
-    let to_types = vec![supertype.clone(), supertype];
-    Ok((from_types, to_types))
-}
