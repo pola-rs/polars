@@ -1308,50 +1308,97 @@ pub(crate) fn resolve_compound_identifier(
     let mut remaining_idents = idents.iter().skip(1);
     let mut lf = ctx.get_table_from_current_scope(&ident_root.value);
 
+    // get schema from table (or the active/default schema)
     let schema = if let Some(ref mut lf) = lf {
-        lf.schema_with_arenas(&mut ctx.lp_arena, &mut ctx.expr_arena)
+        lf.schema_with_arenas(&mut ctx.lp_arena, &mut ctx.expr_arena)?
     } else {
-        Ok(Arc::new(if let Some(active_schema) = active_schema {
-            active_schema.clone()
-        } else {
-            Schema::default()
-        }))
-    }?;
+        Arc::new(active_schema.cloned().unwrap_or_default())
+    };
 
-    let col_dtype: PolarsResult<(Expr, Option<&DataType>)> = if lf.is_none() && schema.is_empty() {
-        Ok((col(ident_root.value.as_str()), None))
-    } else {
-        let name = &remaining_idents.next().unwrap().value;
-        if lf.is_some() && name == "*" {
-            return Ok(schema
-                .iter_names_and_dtypes()
-                .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).unwrap().0)
-                .collect::<Vec<_>>());
-        };
-        let root_is_field = schema.get(&ident_root.value).is_some();
-        if lf.is_none() && root_is_field {
+    // handle simple/unqualified column reference with no schema
+    if lf.is_none() && schema.is_empty() {
+        let (mut column, mut dtype): (Expr, Option<&DataType>) =
+            (col(ident_root.value.as_str()), None);
+
+        // traverse the remaining struct field path (if any)
+        for ident in remaining_idents {
+            let name = ident.value.as_str();
+            match dtype {
+                Some(DataType::Struct(fields)) if name == "*" => {
+                    return Ok(fields
+                        .iter()
+                        .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                        .collect());
+                },
+                Some(DataType::Struct(fields)) => {
+                    dtype = fields
+                        .iter()
+                        .find(|fld| fld.name == name)
+                        .map(|fld| &fld.dtype);
+                },
+                Some(dtype) if name == "*" => {
+                    polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
+                },
+                _ => dtype = None,
+            }
+            column = column.struct_().field_by_name(name);
+        }
+        return Ok(vec![column]);
+    }
+
+    let name = &remaining_idents.next().unwrap().value;
+
+    // handle "table.*" wildcard expansion
+    if lf.is_some() && name == "*" {
+        return schema
+            .iter_names_and_dtypes()
+            .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).map(|(expr, _)| expr))
+            .collect();
+    }
+
+    // resolve column/struct reference
+    let col_dtype: PolarsResult<(Expr, Option<&DataType>)> = match (
+        lf.is_none(),
+        schema.get(&ident_root.value),
+    ) {
+        // root is a column/struct in schema (no table)
+        (true, Some(dtype)) => {
             remaining_idents = idents.iter().skip(1);
-            Ok((
-                col(ident_root.value.as_str()),
-                schema.get(&ident_root.value),
-            ))
-        } else if lf.is_none() && !root_is_field {
+            Ok((col(ident_root.value.as_str()), Some(dtype)))
+        },
+        // root is not in schema and no table found
+        (true, None) => {
             polars_bail!(
                 SQLInterface: "no table or struct column named '{}' found",
                 ident_root
             )
-        } else if let Some((_, name, dtype)) = schema.get_full(name) {
-            resolve_column(ctx, ident_root, name, dtype)
-        } else {
-            polars_bail!(
-                SQLInterface: "no column named '{}' found in table '{}'",
-                name,
-                ident_root
-            )
-        }
+        },
+        // root is a table, resolve column from table (or active) schema
+        (false, _) => {
+            if let Some((_, col_name, dtype)) = schema.get_full(name) {
+                resolve_column(ctx, ident_root, col_name, dtype)
+            } else if let Some(active_schema) = active_schema {
+                // fallback for chained/multi joins; look in the active schema
+                // (as this is where the accumulated join columns can be found)
+                active_schema
+                    .get_full(name)
+                    .map(|(_, col_name, dtype)| (col(col_name.clone()), Some(dtype)))
+                    .ok_or_else(|| {
+                        polars_err!(
+                            SQLInterface: "no column named '{}' found in table '{}' (or in the active schema)",
+                            name, ident_root
+                        )
+                    })
+            } else {
+                polars_bail!(
+                    SQLInterface: "no column named '{}' found in table '{}'",
+                    name, ident_root
+                )
+            }
+        },
     };
 
-    // additional ident levels index into struct fields
+    // additional ident levels index into struct fields (eg: "df.col.field.nested_field")
     let (mut column, mut dtype) = col_dtype?;
     for ident in remaining_idents {
         let name = ident.value.as_str();
