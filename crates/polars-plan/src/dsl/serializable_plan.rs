@@ -86,7 +86,7 @@ pub(crate) enum SerializableDslPlanNode {
     },
     PipeWithSchema {
         input: DslPlanKey,
-        callback: PlanCallback<(DslPlan, Schema), DslPlan>,
+        callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
     Distinct {
         input: DslPlanKey,

@@ -683,8 +683,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
 
             // Adjust the input and start conversion again
-            let input_adjusted =
-                callback.call((input_owned, Arc::unwrap_or_clone(input_schema.into_owned())))?;
+            let input_adjusted = callback.call((input_owned, input_schema.into_owned()))?;
             return to_alp_impl(input_adjusted, ctxt);
         },
         DslPlan::Distinct { input, options } => {

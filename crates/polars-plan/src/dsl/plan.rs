@@ -102,7 +102,7 @@ pub enum DslPlan {
     },
     PipeWithSchema {
         input: Arc<DslPlan>,
-        callback: PlanCallback<(DslPlan, Schema), DslPlan>,
+        callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
     /// Remove duplicates from the table
     Distinct {
