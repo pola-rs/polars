@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::schema::Schema;
 use polars_core::series::Series;
-use polars_plan::dsl::v1::{PluginV1, PluginV1State, PluginV1Flags};
+use polars_plan::dsl::v1::{PluginV1, PluginV1Flags, PluginV1State};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;

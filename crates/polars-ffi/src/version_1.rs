@@ -229,7 +229,7 @@ mod _callee {
     ///
     /// This can be used to assess whether certain features are usable or not.
     static POLARS_PLUGIN_VERSION: AtomicU32 = AtomicU32::new(0);
-    thread_local! { static ERROR_MESSAGE: RefCell<Option<Box<str>>> = RefCell::new(None); }
+    thread_local! { static ERROR_MESSAGE: RefCell<Option<Box<str>>> = const { RefCell::new(None) }; }
 
     pub unsafe extern "C" fn get_error(ptr: NonNull<*const u8>, length: NonNull<isize>) {
         ERROR_MESSAGE.with_borrow(|v| {
@@ -260,7 +260,7 @@ mod _callee {
     }
 
     fn wrap_callee_function(f: impl FnOnce() -> PolarsResult<()> + UnwindSafe) -> u32 {
-        let result = std::panic::catch_unwind(|| f());
+        let result = std::panic::catch_unwind(f);
 
         let set_msg = match &result {
             Ok(Ok(_)) => Ok(()),

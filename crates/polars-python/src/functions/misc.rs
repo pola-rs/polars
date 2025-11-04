@@ -81,27 +81,27 @@ pub fn register_plugin_v2_function(
 ) -> PyResult<PyExpr> {
     use std::sync::Arc;
 
-    use polars::prelude::v1::{StatefulUdf, UdfV2Flags};
+    use PluginV1Flags as F;
+    use polars::prelude::v1::{PluginV1, PluginV1Flags};
 
     use crate::error::PyPolarsErr;
+    let mut flags = F::empty();
+    flags.set(F::LENGTH_PRESERVING, length_preserving);
+    flags.set(F::ROW_SEPARABLE, row_separable);
+    flags.set(F::RETURNS_SCALAR, returns_scalar);
+    flags.set(F::ZIPPABLE_INPUTS, zippable_inputs);
+    flags.set(F::INSERT_HAS_OUTPUT, insert_has_output);
+    flags.set(F::NEEDS_FINALIZE, needs_finalize);
+    flags.set(F::STATES_COMBINABLE, states_combinable);
+    flags.set(F::SELECTOR_EXPANSION, selector_expansion);
 
-    let mut flags = UdfV2Flags::empty();
-    flags.set(UdfV2Flags::LENGTH_PRESERVING, length_preserving);
-    flags.set(UdfV2Flags::ROW_SEPARABLE, row_separable);
-    flags.set(UdfV2Flags::RETURNS_SCALAR, returns_scalar);
-    flags.set(UdfV2Flags::ZIPPABLE_INPUTS, zippable_inputs);
-    flags.set(UdfV2Flags::INSERT_HAS_OUTPUT, insert_has_output);
-    flags.set(UdfV2Flags::NEEDS_FINALIZE, needs_finalize);
-    flags.set(UdfV2Flags::STATES_COMBINABLE, states_combinable);
-    flags.set(UdfV2Flags::SELECTOR_EXPANSION, selector_expansion);
-
-    let udf = unsafe {
-        StatefulUdf::new_shared_object(&plugin_path, &name, data_ptr, flags, function_name.into())
+    let plugin = unsafe {
+        PluginV1::new_shared_object(&plugin_path, &name, data_ptr, flags, function_name.into())
     }
     .map_err(PyPolarsErr::from)?;
     Ok(Expr::Function {
         input: args.to_exprs(),
-        function: FunctionExpr::PluginV1(SpecialEq::new(Arc::new(udf))),
+        function: FunctionExpr::PluginV1(SpecialEq::new(Arc::new(plugin))),
     }
     .into())
 }
