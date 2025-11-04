@@ -2,7 +2,35 @@ from __future__ import annotations
 
 import polars as pl
 from polars import col
+from polars.datatypes.group import NUMERIC_DTYPES
 from polars.testing import assert_frame_equal
+
+
+def test_col_as_attribute() -> None:
+    df = pl.DataFrame({"lower": 1, "UPPER": 2, "_underscored": 3})
+
+    result = df.select(col.lower, col.UPPER, col._underscored)
+    expected = df.select("lower", "UPPER", "_underscored")
+    assert_frame_equal(result, expected)
+
+
+def test_col_as_attribute_edge_cases() -> None:
+    df = pl.DataFrame(
+        {
+            "__misc": "x",
+            "__wrapped__col": "y",
+            "_other__col__": "z",
+        }
+    )
+    for select_cols in (
+        (pl.col("_other__col__"), pl.col("__wrapped__col"), pl.col("__misc")),
+        (pl.col._other__col__, pl.col.__wrapped__col, pl.col.__misc),
+    ):
+        assert df.select(select_cols).columns == [
+            "_other__col__",
+            "__wrapped__col",
+            "__misc",
+        ]
 
 
 def test_col_select() -> None:
@@ -17,21 +45,24 @@ def test_col_select() -> None:
 
     # Single column
     assert df.select(pl.col("foo")).columns == ["foo"]
+
     # Regex
     assert df.select(pl.col("*")).columns == ["ham", "hamburger", "foo", "bar"]
     assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
     assert df.select(pl.col("*").exclude("ham")).columns == ["hamburger", "foo", "bar"]
+
     # Multiple inputs
     assert df.select(pl.col(["hamburger", "foo"])).columns == ["hamburger", "foo"]
     assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
     assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
+
     # Dtypes
     assert df.select(pl.col(pl.String)).columns == ["bar"]
-    assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
-        "ham",
-        "hamburger",
-        "foo",
-    ]
+    for dtype_col in (
+        pl.col(NUMERIC_DTYPES),
+        pl.col(pl.Int64, pl.Float64),
+    ):
+        assert df.select(dtype_col).columns == ["ham", "hamburger", "foo"]
 
 
 def test_col_series_selection() -> None:
@@ -39,16 +70,3 @@ def test_col_series_selection() -> None:
     srs = pl.Series(["b", "c"])
 
     assert ldf.select(pl.col(srs)).collect_schema().names() == ["b", "c"]
-
-
-def test_col_dot_style() -> None:
-    df = pl.DataFrame({"lower": 1, "UPPER": 2, "_underscored": 3})
-
-    result = df.select(
-        col.lower,
-        col.UPPER,
-        col._underscored,
-    )
-
-    expected = df.select("lower", "UPPER", "_underscored")
-    assert_frame_equal(result, expected)

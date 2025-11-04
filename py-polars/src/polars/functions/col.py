@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import sys
 from collections.abc import Iterable
 from datetime import datetime, timedelta
@@ -366,9 +367,25 @@ class Col:
         │ 6   │
         └─────┘
         """
-        # For autocomplete to work with IPython
-        if name.startswith("__wrapped__"):
-            return getattr(type(self), name)
+        # detect if "name" has been mangled by class scoping
+        if re.match(r"^_\w+__", name):
+            import inspect
+
+            frame = inspect.currentframe()
+            while frame is not None:
+                frame = frame.f_back
+                if f_self := frame.f_locals.get("self"):  # type: ignore[union-attr]
+                    # we are inside class scope; confirm the col has been mangled
+                    # with the *specific* class name associated with that scope
+                    mangled_prefix = f"_{type(f_self).__name__}"
+                    if name.startswith(mangled_prefix):
+                        name = name.removeprefix(mangled_prefix)
+                    break
+
+        # help autocomplete work with IPython
+        with contextlib.suppress(AttributeError):
+            if name.startswith("__wrapped__"):
+                return getattr(type(self), name)
 
         return _create_col(name)
 
