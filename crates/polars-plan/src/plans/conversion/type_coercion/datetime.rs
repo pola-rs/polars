@@ -1,12 +1,9 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::try_get_supertype;
 use polars_time::Duration;
 use polars_utils::arena::Arena;
 
-use super::try_get_dtype;
 use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction, LiteralValue};
-use crate::prelude::FunctionOptions;
 
 /// Cast a date or datetime node to a supertype.
 ///
