@@ -397,13 +397,13 @@ impl IRFunctionExpr {
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
                 match f.dtype {
-                    dt @ (DataType::Float16 | DataType::Float32) => {
-                        f.dtype = dt;
-                    },
+                    #[cfg(feature = "dtype-f16")]
+                    DataType::Float16 => {},
+                    DataType::Float32 => {},
                     _ => {
                         f.dtype = DataType::Float64;
                     },
-                };
+                }
                 f
             }),
             #[cfg(feature = "ewma")]
