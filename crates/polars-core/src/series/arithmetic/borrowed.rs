@@ -201,6 +201,7 @@ pub mod checked {
         }
     }
 
+    #[cfg(feature = "dtype-f16")]
     impl NumOpsDispatchCheckedInner for Float16Type {
         fn checked_div(lhs: &Float16Chunked, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:

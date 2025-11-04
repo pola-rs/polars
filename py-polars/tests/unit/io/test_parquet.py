@@ -2267,7 +2267,7 @@ def test_decode_f16() -> None:
         }
     )
 
-    df = pl.Series("x", values, pl.Float32).to_frame()
+    df = pl.Series("x", values, pl.Float16).to_frame()
 
     f = io.BytesIO()
     pq.write_table(table, f)

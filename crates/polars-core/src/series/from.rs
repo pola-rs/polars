@@ -468,7 +468,6 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let (chunks, dtype) = to_physical_and_dtype(chunks, md);
-                dbg!(&dtype);
 
                 unsafe {
                     let mut ca =
@@ -553,7 +552,7 @@ unsafe fn to_physical_and_dtype(
     arrays: Vec<ArrayRef>,
     md: Option<&Metadata>,
 ) -> (Vec<ArrayRef>, DataType) {
-    match dbg!(arrays[0].dtype()) {
+    match arrays[0].dtype() {
         ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
             let chunks = cast_chunks(&arrays, &DataType::String, CastOptions::NonStrict).unwrap();
             (chunks, DataType::String)

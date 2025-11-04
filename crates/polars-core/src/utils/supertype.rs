@@ -218,7 +218,7 @@ pub fn get_supertype_with_options(
             (Int32, UInt64) => Some(Float64), // Follow numpy
             #[cfg(feature = "bigidx")]
             (Int32, UInt64) => Some(Int64), // Needed for bigidx
-            #[cfg(feature = "dtype-f16")] 
+            #[cfg(feature = "dtype-f16")]
             (Int32, Float16) => Some(Float64), // Follow (Int32, Float32) case
             (Int32, Float32) => Some(Float64), // Follow numpy
             (Int32, Float64) => Some(Float64),
@@ -239,7 +239,7 @@ pub fn get_supertype_with_options(
             (Int64, UInt64) => Some(Float64), // Follow numpy
             #[cfg(feature = "bigidx")]
             (Int64, UInt64) => Some(Int64), // Needed for bigidx
-            #[cfg(feature = "dtype-f16")] 
+            #[cfg(feature = "dtype-f16")]
             (Int64, Float16) => Some(Float64), // Follow (Int64, Float32) case
             (Int64, Float32) => Some(Float64), // Follow numpy
             (Int64, Float64) => Some(Float64),
@@ -284,9 +284,9 @@ pub fn get_supertype_with_options(
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
 
-            #[cfg(feature = "dtype-f16")] 
+            #[cfg(feature = "dtype-f16")]
             (Float16, Float32) => Some(Float32),
-            #[cfg(feature = "dtype-f16")] 
+            #[cfg(feature = "dtype-f16")]
             (Float16, Float64) => Some(Float64),
             (Float32, Float64) => Some(Float64),
 
@@ -297,9 +297,9 @@ pub fn get_supertype_with_options(
             (Float64, UInt32) => Some(Float64),
             (Float64, UInt64) => Some(Float64),
 
-            #[cfg(feature = "dtype-f16")] 
+            #[cfg(feature = "dtype-f16")]
             (Float32, Float16) => Some(Float32),
-            #[cfg(feature = "dtype-f16")] 
+            #[cfg(feature = "dtype-f16")]
             (Float64, Float16) => Some(Float64),
             (Float64, Float32) => Some(Float64),
 

@@ -22,6 +22,7 @@ use polars_compute::rolling::{
     SumWindow, quantile_filter,
 };
 use polars_utils::float::IsFloat;
+#[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::kahan_sum::KahanSum;

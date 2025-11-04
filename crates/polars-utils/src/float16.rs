@@ -1,5 +1,7 @@
 #[cfg(feature = "dsl-schema")]
 use std::borrow::Cow;
+#[cfg(feature = "python")]
+use std::convert::Infallible;
 use std::fmt::{Display, LowerExp};
 use std::iter::Sum;
 use std::ops::*;
@@ -9,7 +11,10 @@ use half;
 use num_derive::*;
 use num_traits::real::Real;
 use num_traits::{AsPrimitive, Bounded, FromBytes, One, Pow, ToBytes, Zero};
-use pyo3::IntoPyObject;
+#[cfg(feature = "python")]
+use pyo3::types::{PyAnyMethods, PyFloat};
+#[cfg(feature = "python")]
+use pyo3::{FromPyObject, IntoPyObject, Python};
 #[cfg(feature = "dsl-schema")]
 use schemars::schema::Schema;
 #[cfg(feature = "dsl-schema")]
@@ -198,7 +203,6 @@ impl Sum for pf16 {
     }
 }
 
-// TODO: [amber] Maybe implement more combinations?
 impl Pow<pf16> for pf16 {
     type Output = Self;
 
@@ -226,6 +230,20 @@ impl From<pf16> for f64 {
     #[inline]
     fn from(value: pf16) -> Self {
         value.0.to_f64()
+    }
+}
+
+impl From<f32> for pf16 {
+    #[inline]
+    fn from(value: f32) -> Self {
+        pf16(half::f16::from_f32(value))
+    }
+}
+
+impl From<f64> for pf16 {
+    #[inline]
+    fn from(value: f64) -> Self {
+        pf16(half::f16::from_f64(value))
     }
 }
 
@@ -377,7 +395,22 @@ impl LowerExp for pf16 {
     }
 }
 
-// TODO: [amber] LEFT HERE
-impl IntoPyObject for pf16 {
-    type Target = pyo3::PyObject;
+#[cfg(feature = "python")]
+impl<'py> IntoPyObject<'py> for pf16 {
+    type Target = PyFloat;
+    type Output = pyo3::Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    #[inline]
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        f32::into_pyobject(self.into(), py)
+    }
+}
+
+#[cfg(feature = "python")]
+impl<'py> FromPyObject<'py> for pf16 {
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        let v: f32 = ob.extract()?;
+        Ok(v.as_())
+    }
 }

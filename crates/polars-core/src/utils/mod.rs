@@ -455,6 +455,7 @@ macro_rules! with_match_physical_numeric_type {(
     $dtype:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    #[cfg(feature = "dtype-f16")]
     use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
     match $dtype {
@@ -487,6 +488,7 @@ macro_rules! with_match_physical_integer_type {(
     $dtype:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    #[cfg(feature = "dtype-f16")]
     use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
     match $dtype {

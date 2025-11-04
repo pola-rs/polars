@@ -1,5 +1,6 @@
 use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
+#[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
 
 use super::*;

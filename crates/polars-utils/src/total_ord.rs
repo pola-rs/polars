@@ -8,7 +8,7 @@ use crate::float16::pf16;
 use crate::hashing::{BytesHash, DirtyHash};
 use crate::nulls::IsNull;
 
-/// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
+/// Converts an pf16 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
 #[inline]
 pub fn canonical_f16(x: pf16) -> pf16 {

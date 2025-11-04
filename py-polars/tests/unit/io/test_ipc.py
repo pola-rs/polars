@@ -246,7 +246,7 @@ def test_from_float16() -> None:
     f = io.BytesIO()
     pandas_df.to_feather(f)
     f.seek(0)
-    assert pl.read_ipc(f, use_pyarrow=False).dtypes == [pl.Float32]
+    assert pl.read_ipc(f, use_pyarrow=False).dtypes == [pl.Float16]
 
 
 @pytest.mark.write_disk

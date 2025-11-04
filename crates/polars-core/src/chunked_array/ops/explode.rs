@@ -149,6 +149,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
 impl ExplodeByOffsets for Float16Chunked {
     fn explode_by_offsets(&self, offsets: &[i64], skip_empty: bool) -> Series {
         self.apply_as_ints(|s| {

@@ -145,7 +145,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         },
         DataType::Null => AnyValue::Null,
         DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),
-        dt @ DataType::Unknown(_) => panic!("not implemented for {dt:?}"),
+        dt => panic!("not implemented for {dt:?}"),
     }
 }
 

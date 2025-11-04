@@ -6,7 +6,6 @@ use arrow::compute::arity::unary;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::{Offset, Offsets};
 use arrow::types::NativeType;
-#[cfg(any(feature = "dtype-decimal", feature = "dtype-f16"))]
 use num_traits::AsPrimitive;
 #[cfg(feature = "dtype-decimal")]
 use num_traits::Float;

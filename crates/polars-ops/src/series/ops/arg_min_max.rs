@@ -34,8 +34,6 @@ macro_rules! with_match_physical_numeric_polars_type {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
-            #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -72,6 +70,8 @@ impl ArgAgg for Series {
                 let ca = self.bool().unwrap();
                 arg_min_bool(ca)
             },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => todo!("[amber]"),
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
@@ -111,6 +111,8 @@ impl ArgAgg for Series {
                 let ca = self.bool().unwrap();
                 arg_max_bool(ca)
             },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => todo!("[amber]"),
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();

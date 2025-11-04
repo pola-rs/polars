@@ -163,11 +163,11 @@ impl HashKeys {
                 null_is_valid,
             })
         } else {
-            dbg!(Self::Single(SingleKeys {
+            Self::Single(SingleKeys {
                 random_state,
                 keys: df[0].as_materialized_series().rechunk(),
                 null_is_valid,
-            }))
+            })
         }
     }
 

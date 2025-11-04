@@ -275,9 +275,15 @@ pub trait RoundSeries: SeriesSealed {
                 let pow5 = 5.0_f64.powi(exp);
                 let scaled = libm::scalbn(value, exp) * pow5;
                 let descaled = libm::scalbn(scaled.round() / pow5, -exp);
-                AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(
-                    if descaled.is_finite() { descaled } else { value }
-                )
+                // TODO: [amber] Maybe cleanup?
+                if descaled.is_finite() {
+                    AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(descaled)
+                } else {
+                    AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(value)
+                }
+                // AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(
+                //     if descaled.is_finite() { descaled } else { value }
+                // )
             }).into_series();
             return Ok(s);
         });
