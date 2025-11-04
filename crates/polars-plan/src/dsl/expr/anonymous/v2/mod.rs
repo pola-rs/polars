@@ -16,6 +16,8 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 pub mod ffi;
+#[cfg(feature = "serde")]
+mod serde;
 
 #[macro_export]
 macro_rules! polars_plugin_expr_info {
@@ -83,6 +85,10 @@ pub trait StatefulUdfTrait: Send + Sync + Sized {
     type State: Send + Sync + Sized;
 
     // (De)serialization methods.
+    fn serialize(&self) -> PolarsResult<Box<[u8]>>;
+    fn deserialize(data: &[u8]) -> PolarsResult<Self>;
+    fn serialize_state(&self, state: &Self::State) -> PolarsResult<Box<[u8]>>;
+    fn deserialize_state(&self, data: &[u8]) -> PolarsResult<Self::State>;
 
     // Planning methods.
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field>;
@@ -139,6 +145,7 @@ impl<'py> pyo3::IntoPyObject<'py> for PolarsPluginExprInfo {
 }
 
 bitflags::bitflags! {
+    #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
     #[derive(Debug, Clone, Copy)]
     pub struct UdfV2Flags: u64 {
         // Function flags.
@@ -202,12 +209,17 @@ impl UdfV2Flags {
     }
 }
 
+struct LibrarySymbol {
+    lib: PlSmallStr,
+    symbol: PlSmallStr,
+    library: libloading::Library,
+}
+
 pub struct StatefulUdf {
     flags: UdfV2Flags,
     function_name: PlSmallStr,
     data: DataPtr,
-    // Ensures that the library stays open.
-    library: Option<libloading::Library>,
+    library: Option<Box<LibrarySymbol>>,
     vtable: ffi::VTable,
 }
 
@@ -249,51 +261,19 @@ unsafe impl Send for StatefulUdf {}
 unsafe impl Send for UdfState {}
 unsafe impl Sync for UdfState {}
 
-#[cfg(feature = "serde")]
-impl serde::Serialize for StatefulUdf {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::Error;
-        Err(S::Error::custom(
-            "serialization not supported for this 'opaque' function",
-        ))
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for StatefulUdf {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::Error;
-        Err(D::Error::custom(
-            "deserialization not supported for this 'opaque' function",
-        ))
-    }
-}
-
-#[cfg(feature = "dsl-schema")]
-impl schemars::JsonSchema for StatefulUdf {
-    fn schema_name() -> String {
-        "StatefulUdf".to_owned()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "StatefulUdf"))
-    }
-
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-        Vec::<u8>::json_schema(generator)
-    }
+fn load_vtable(lib: &str, symbol: &str) -> PolarsResult<(libloading::Library, ffi::VTable)> {
+    let lib = unsafe { libloading::Library::new(lib) }.unwrap();
+    let name = format!("_PL_PLUGIN_V2::{symbol}");
+    let udf: libloading::Symbol<NonNull<PresentedUdf>> =
+        unsafe { lib.get(name.as_bytes()) }.unwrap();
+    let vtable = unsafe { udf.as_ref() }.vtable.clone();
+    Ok((lib, vtable))
 }
 
 impl StatefulUdf {
     pub unsafe fn new_shared_object(
         library: &str,
-        udf: &str,
+        symbol: &str,
         data: usize,
         flags: UdfV2Flags,
         function_name: PlSmallStr,
@@ -301,17 +281,17 @@ impl StatefulUdf {
         flags.verify_coherency()?;
 
         let data = DataPtr(NonNull::new(data as *mut u8).unwrap());
-        let lib = unsafe { libloading::Library::new(library) }.unwrap();
-        let name = format!("_PL_PLUGIN_V2::{udf}");
-        let udf: libloading::Symbol<NonNull<PresentedUdf>> =
-            unsafe { lib.get(name.as_bytes()) }.unwrap();
-        let vtable = unsafe { udf.as_ref() }.vtable.clone();
+        let (lib, vtable) = load_vtable(&library, &symbol)?;
 
         Ok(StatefulUdf {
             flags,
             function_name,
             data,
-            library: Some(lib),
+            library: Some(Box::new(LibrarySymbol {
+                lib: library.into(),
+                symbol: symbol.into(),
+                library: lib,
+            })),
             vtable,
         })
     }

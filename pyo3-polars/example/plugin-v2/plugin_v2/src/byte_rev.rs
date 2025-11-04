@@ -11,6 +11,22 @@ struct ByteRev;
 impl StatefulUdfTrait for ByteRev {
     type State = ();
 
+    fn serialize(&self) -> PolarsResult<Box<[u8]>> {
+        Ok(Default::default())
+    }
+
+    fn deserialize(_buff: &[u8]) -> PolarsResult<Self> {
+        Ok(ByteRev)
+    }
+
+    fn serialize_state(&self, _state: &Self::State) -> PolarsResult<Box<[u8]>> {
+        Ok(Default::default())
+    }
+
+    fn deserialize_state(&self, _buff: &[u8]) -> PolarsResult<Self::State> {
+        Ok(())
+    }
+
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
         assert_eq!(fields.len(), 1);
         let field = fields.iter_fields().next().unwrap();

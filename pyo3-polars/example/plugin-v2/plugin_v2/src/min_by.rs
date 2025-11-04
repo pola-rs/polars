@@ -1,11 +1,12 @@
-use polars::error::{polars_bail, PolarsResult};
+use polars::error::{polars_bail, polars_err, PolarsResult};
 use polars::prelude::{AnyValue, ArgAgg, Field, PlSmallStr, Scalar, Schema, SchemaExt};
 use polars::series::Series;
 use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
 use pyo3_polars::export::polars_plan::prelude::v2::{PolarsPluginExprInfo, StatefulUdfTrait};
+use serde::{Deserialize, Serialize};
 
 struct MinBy;
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct MinByState {
     name: PlSmallStr,
     value: Scalar,
@@ -14,6 +15,30 @@ struct MinByState {
 
 impl StatefulUdfTrait for MinBy {
     type State = MinByState;
+
+    fn serialize(&self) -> PolarsResult<Box<[u8]>> {
+        Ok(Default::default())
+    }
+
+    fn deserialize(_data: &[u8]) -> PolarsResult<Self> {
+        Ok(MinBy)
+    }
+
+    fn serialize_state(&self, state: &Self::State) -> PolarsResult<Box<[u8]>> {
+        Ok(
+            bincode::serde::encode_to_vec(state, bincode::config::standard())
+                .map_err(|err| polars_err!(InvalidOperation: "failed to serialize: {err}"))?
+                .into(),
+        )
+    }
+
+    fn deserialize_state(&self, data: &[u8]) -> PolarsResult<Self::State> {
+        let (state, num_bytes) =
+            bincode::serde::decode_from_slice(data, bincode::config::standard())
+                .map_err(|err| polars_err!(InvalidOperation: "failed to deserialize: {err}"))?;
+        assert_eq!(num_bytes, data.len());
+        Ok(state)
+    }
 
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
         assert_eq!(fields.len(), 2);

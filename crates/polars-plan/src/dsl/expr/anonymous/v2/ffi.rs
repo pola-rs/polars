@@ -9,6 +9,16 @@ use super::{DataPtr, StatePtr, StatefulUdfTrait};
 #[derive(Clone)]
 #[repr(C)]
 pub struct VTable {
+    pub(super) _serialize_data:
+        unsafe extern "C" fn(DataPtr, NonNull<*mut u8>, NonNull<usize>) -> u32,
+    pub(super) _deserialize_data:
+        unsafe extern "C" fn(*const u8, usize, NonNull<MaybeUninit<DataPtr>>) -> u32,
+    pub(super) _serialize_state:
+        unsafe extern "C" fn(DataPtr, StatePtr, NonNull<*mut u8>, NonNull<usize>) -> u32,
+    pub(super) _deserialize_state:
+        unsafe extern "C" fn(DataPtr, *const u8, usize, NonNull<MaybeUninit<StatePtr>>) -> u32,
+    pub(super) _drop_box_byte_slice: unsafe extern "C" fn(*mut u8, usize) -> u32,
+
     pub(super) _initialize:
         unsafe extern "C" fn(DataPtr, NonNull<ArrowSchema>, NonNull<MaybeUninit<StatePtr>>) -> u32,
     pub(super) _new_empty:
@@ -59,6 +69,12 @@ enum ReturnValue {
 impl VTable {
     pub const fn new<Data: StatefulUdfTrait>() -> Self {
         Self {
+            _serialize_data: _callee::serialize_data::<Data>,
+            _deserialize_data: _callee::deserialize_data::<Data>,
+            _serialize_state: _callee::serialize_state::<Data>,
+            _deserialize_state: _callee::deserialize_state::<Data>,
+            _drop_box_byte_slice: _callee::drop_box_byte_slice,
+
             _initialize: _callee::initialize::<Data>,
             _new_empty: _callee::new_empty::<Data>,
             _reset: _callee::reset::<Data>,
@@ -207,6 +223,81 @@ mod _callee {
                 _ => ReturnValue::OtherError,
             },
         }) as u32
+    }
+
+    pub unsafe extern "C" fn serialize_data<Data: StatefulUdfTrait>(
+        data: DataPtr,
+        buffer: NonNull<*mut u8>,
+        length: NonNull<usize>,
+    ) -> u32 {
+        wrap_callee_function(|| {
+            let data = unsafe { data.as_ref::<Data>() };
+            let out = data.serialize()?;
+            let out = Box::leak(out);
+            unsafe { buffer.write(out.as_mut_ptr()) };
+            unsafe { length.write(out.len()) };
+            Ok(())
+        })
+    }
+
+    pub unsafe extern "C" fn deserialize_data<Data: StatefulUdfTrait>(
+        buffer: *const u8,
+        length: usize,
+        data: NonNull<MaybeUninit<DataPtr>>,
+    ) -> u32 {
+        wrap_callee_function(|| {
+            let buffer = unsafe { std::slice::from_raw_parts(buffer, length) };
+            let out = Data::deserialize(buffer)?;
+            let out = Box::new(out);
+            let out = Box::into_raw(out);
+            let out = NonNull::new(out as *mut u8).unwrap();
+            unsafe { data.write(MaybeUninit::new(DataPtr(out))) };
+            Ok(())
+        })
+    }
+
+    pub unsafe extern "C" fn serialize_state<Data: StatefulUdfTrait>(
+        data: DataPtr,
+        state: StatePtr,
+        buffer: NonNull<*mut u8>,
+        length: NonNull<usize>,
+    ) -> u32 {
+        wrap_callee_function(|| {
+            let data = unsafe { data.as_ref::<Data>() };
+            let state = unsafe { state.as_ref::<Data::State>() };
+            let out = data.serialize_state(state)?;
+            let out = Box::leak(out);
+            unsafe { buffer.write(out.as_mut_ptr()) };
+            unsafe { length.write(out.len()) };
+            Ok(())
+        })
+    }
+
+    pub unsafe extern "C" fn deserialize_state<Data: StatefulUdfTrait>(
+        data: DataPtr,
+        buffer: *const u8,
+        length: usize,
+        state: NonNull<MaybeUninit<StatePtr>>,
+    ) -> u32 {
+        wrap_callee_function(|| {
+            let data = unsafe { data.as_ref::<Data>() };
+            let buffer = unsafe { std::slice::from_raw_parts(buffer, length) };
+            let out = data.deserialize_state(buffer)?;
+            let out = Box::new(out);
+            let out = Box::into_raw(out);
+            let out = NonNull::new(out as *mut u8).unwrap();
+            unsafe { state.write(MaybeUninit::new(StatePtr(out))) };
+            Ok(())
+        })
+    }
+
+    pub unsafe extern "C" fn drop_box_byte_slice(buffer: *mut u8, length: usize) -> u32 {
+        wrap_callee_function(|| {
+            let buffer = unsafe { std::slice::from_raw_parts_mut(buffer, length) };
+            let buffer = unsafe { Box::from_raw(buffer as *mut [u8]) };
+            drop(buffer);
+            Ok(())
+        })
     }
 
     pub unsafe extern "C" fn initialize<Data: StatefulUdfTrait>(
@@ -406,6 +497,89 @@ mod _caller {
                 ReturnValue::Panic => panic!("plugin panicked"),
                 _ => panic!("did not expect error"),
             }
+        }
+
+        pub unsafe fn serialize_data(&self, data: DataPtr, out: &mut Vec<u8>) -> PolarsResult<()> {
+            let mut buffer = std::ptr::null_mut();
+            let mut length = 0;
+
+            let rv = unsafe {
+                (self._serialize_data)(
+                    data,
+                    NonNull::from_mut(&mut buffer),
+                    NonNull::from_mut(&mut length),
+                )
+            };
+            unsafe { self.handle_return_value(rv) }?;
+
+            let slice = unsafe { std::slice::from_raw_parts(buffer, length) };
+            out.extend_from_slice(slice);
+
+            let rv = unsafe { (self._drop_box_byte_slice)(buffer, length) };
+            unsafe { self.handle_return_value_panic(rv) };
+            Ok(())
+        }
+
+        pub unsafe fn deserialize_data(&self, buffer: &[u8]) -> PolarsResult<DataPtr> {
+            let mut data = MaybeUninit::uninit();
+
+            let rv = unsafe {
+                (self._deserialize_data)(
+                    buffer.as_ptr(),
+                    buffer.len(),
+                    NonNull::from_mut(&mut data),
+                )
+            };
+            unsafe { self.handle_return_value(rv) }?;
+
+            Ok(unsafe { data.assume_init() })
+        }
+
+        pub unsafe fn serialize_state(
+            &self,
+            data: DataPtr,
+            state: StatePtr,
+            out: &mut Vec<u8>,
+        ) -> PolarsResult<()> {
+            let mut buffer = std::ptr::null_mut();
+            let mut length = 0;
+
+            let rv = unsafe {
+                (self._serialize_state)(
+                    data,
+                    state,
+                    NonNull::from_mut(&mut buffer),
+                    NonNull::from_mut(&mut length),
+                )
+            };
+            unsafe { self.handle_return_value(rv) }?;
+
+            let slice = unsafe { std::slice::from_raw_parts(buffer, length) };
+            out.extend_from_slice(slice);
+
+            let rv = unsafe { (self._drop_box_byte_slice)(buffer, length) };
+            unsafe { self.handle_return_value_panic(rv) };
+            Ok(())
+        }
+
+        pub unsafe fn deserialize_state(
+            &self,
+            data: DataPtr,
+            buffer: &[u8],
+        ) -> PolarsResult<StatePtr> {
+            let mut state = MaybeUninit::uninit();
+
+            let rv = unsafe {
+                (self._deserialize_state)(
+                    data,
+                    buffer.as_ptr(),
+                    buffer.len(),
+                    NonNull::from_mut(&mut state),
+                )
+            };
+            unsafe { self.handle_return_value(rv) }?;
+
+            Ok(unsafe { state.assume_init() })
         }
 
         pub unsafe fn initialize(&self, data: DataPtr, fields: &Schema) -> PolarsResult<StatePtr> {

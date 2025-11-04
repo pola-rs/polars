@@ -3035,6 +3035,7 @@ dependencies = [
 name = "plugin_v2"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "num",
  "polars",
  "polars-arrow",

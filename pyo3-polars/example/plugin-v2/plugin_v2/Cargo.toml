@@ -16,3 +16,4 @@ pyo3 = { workspace = true }
 pyo3-polars = { workspace = true, features = ["derive", "ffi_plugin"] }
 rayon = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+bincode = { workspace = true }

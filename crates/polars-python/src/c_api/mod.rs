@@ -250,8 +250,6 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::py_get_engine_affinity))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::plugin_v2_generate))
-        .unwrap();
 
     #[cfg(feature = "sql")]
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
