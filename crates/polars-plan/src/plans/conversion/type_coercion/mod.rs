@@ -989,17 +989,20 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 // Determine the current and target dtypes.
                 let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
                 let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
-                let from_types = vec![type_start, type_end];
-                let to_types = vec![DataType::Date, DataType::Date];
+                let from_types = [type_start, type_end];
 
                 // Upcast input expressions if necessary.
                 let from_iter = from_types.into_iter();
-                let to_iter = to_types.into_iter();
                 let mut modified = false;
-                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
-                    if from_dtype != to_dtype {
+                for (i, from_dtype) in from_iter.enumerate() {
+                    if from_dtype != DataType::Date {
                         modified = true;
-                        coerce_temporal_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
+                        coerce_temporal_dt(
+                            &from_dtype,
+                            &DataType::Date,
+                            &mut input[i],
+                            expr_arena,
+                        )?;
                     }
                 }
 
@@ -1039,17 +1042,15 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
                 let default = try_get_supertype(&type_start, &type_end)?;
                 let supertype = temporal_range_output_type(default, tu, tz, interval)?;
-                let from_types = vec![type_start, type_end];
-                let to_types = vec![supertype.clone(), supertype];
+                let from_types = [type_start, type_end];
 
                 // Upcast input expressions if necessary.
                 let from_iter = from_types.into_iter();
-                let to_iter = to_types.into_iter();
                 let mut modified = false;
-                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
-                    if from_dtype != to_dtype {
+                for (i, from_dtype) in from_iter.enumerate() {
+                    if from_dtype != supertype {
                         modified = true;
-                        coerce_temporal_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
+                        coerce_temporal_dt(&from_dtype, &supertype, &mut input[i], expr_arena)?;
                     }
                 }
 
