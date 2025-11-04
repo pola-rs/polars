@@ -117,9 +117,9 @@ pub(super) fn convert_tz(
     Ok(())
 }
 
-#[cfg(feature = "dtype-datetime")]
 // Determines the output data type, including user-specified t tz, and interval.
-pub(super) fn build_datetime_supertype(
+#[cfg(feature = "dtype-datetime")]
+pub(super) fn temporal_range_output_type(
     start_end_supertype: DataType,
     tu: &Option<TimeUnit>,
     tz: &Option<TimeZone>,
@@ -178,7 +178,7 @@ pub(super) fn update_datetime_range_types(
     let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
     let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
     let default = try_get_supertype(&type_start, &type_end)?;
-    let supertype = build_datetime_supertype(default, tu, tz, interval)?;
+    let supertype = temporal_range_output_type(default, tu, tz, interval)?;
     let from_types = vec![type_start, type_end];
     let to_types = vec![supertype.clone(), supertype];
     Ok((from_types, to_types))
