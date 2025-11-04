@@ -23,7 +23,7 @@ pub trait RoundSeries: SeriesSealed {
     fn round(&self, decimals: u32, mode: RoundMode) -> PolarsResult<Series> {
         let s = self.as_series();
 
-        // TODO: [amber] optimize Float16 rounding
+        // TODO: Implement for Float16 directly
         if s.dtype() == &DataType::Float16 {
             return s
                 .cast(&DataType::Float32)?
