@@ -391,7 +391,6 @@ dtype-u128 = [
 ]
 dtype-f16 = [
   "polars-core/dtype-f16",
-  # TODO: [amber] Enable these other ones too
   "polars-io/dtype-f16",
   "polars-lazy?/dtype-f16",
   "polars-ops/dtype-f16",

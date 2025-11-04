@@ -603,39 +603,3 @@ impl NativeType for pf16 {
         pf16(half::f16::from_be_bytes(bytes))
     }
 }
-
-// impl<T> From<T> for pf16
-// where
-//     half::f16: From<T>,
-// {
-//     #[inline]
-//     fn from(value: T) -> Self {
-//         pf16(half::f16::from(value))
-//     }
-// }
-
-// TODO: [amber] Re-enable test
-// #[cfg(test)]
-// mod test {
-//     use super::*;
-//     #[test]
-//     fn test_f16_to_f32() {
-//         let f = f16::from_f32(7.0);
-//         assert_eq!(f.to_f32(), 7.0f32);
-
-//         // 7.1 is NOT exactly representable in 16-bit, it's rounded
-//         let f = f16::from_f32(7.1);
-//         let diff = (f.to_f32() - 7.1f32).abs();
-//         // diff must be <= 4 * EPSILON, as 7 has two more significant bits than 1
-//         assert!(diff <= 4.0 * half::f16::EPSILON.to_f32());
-
-//         assert_eq!(f16(0x0000_0001).to_f32(), 2.0f32.powi(-24));
-//         assert_eq!(f16(0x0000_0005).to_f32(), 5.0 * 2.0f32.powi(-24));
-
-//         assert_eq!(f16(0x0000_0001), f16::from_f32(2.0f32.powi(-24)));
-//         assert_eq!(f16(0x0000_0005), f16::from_f32(5.0 * 2.0f32.powi(-24)));
-
-//         assert_eq!(format!("{}", f16::from_f32(7.0)), "7".to_string());
-//         assert_eq!(format!("{:?}", f16::from_f32(7.0)), "7.0".to_string());
-//     }
-// }

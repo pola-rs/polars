@@ -219,8 +219,6 @@ impl ColumnStatistics {
                 })
             },
 
-            // Read Float16, since we don't have a f16 type in Polars we read it to a Float32.
-            // TODO: [amber] Should be go, now there is a separate Float16 arm?
             (_, PPT::FixedLenByteArray(2))
                 if matches!(
                     self.logical_type.as_ref(),

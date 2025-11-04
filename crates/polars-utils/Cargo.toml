@@ -16,7 +16,7 @@ compact_str = { workspace = true }
 either = { workspace = true }
 flate2 = { workspace = true, default-features = true, optional = true }
 foldhash = { workspace = true }
-half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] } # TODO: [amber] Check if optional=false is ok
+half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }

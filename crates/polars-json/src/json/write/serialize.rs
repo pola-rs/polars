@@ -470,6 +470,7 @@ pub(crate) fn new_serializer<'a>(
             primitive_serializer::<u64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Float16 => {
+            // Regular float serializer requires ryu, so maybe just cast first?
             todo!("[amber]")
         },
         ArrowDataType::Float32 => {
