@@ -2,22 +2,22 @@ use polars_error::{PolarsError, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 
-use super::{LibrarySymbol, StatefulUdf, UdfV2Flags};
+use super::{LibrarySymbol, PluginV2, PluginV2Flags};
 
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize)]
-pub struct StatefulUdfSerde {
+pub struct PluginV2Serde {
     lib: PlSmallStr,
     symbol: PlSmallStr,
     data: Vec<u8>,
     function_name: PlSmallStr,
-    flags: UdfV2Flags,
+    flags: PluginV2Flags,
 }
 
-impl TryFrom<&StatefulUdf> for StatefulUdfSerde {
+impl TryFrom<&PluginV2> for PluginV2Serde {
     type Error = PolarsError;
 
-    fn try_from(value: &StatefulUdf) -> Result<Self, Self::Error> {
+    fn try_from(value: &PluginV2) -> Result<Self, Self::Error> {
         let Some(LibrarySymbol {
             lib,
             symbol,
@@ -47,10 +47,10 @@ impl TryFrom<&StatefulUdf> for StatefulUdfSerde {
     }
 }
 
-impl TryFrom<StatefulUdfSerde> for StatefulUdf {
+impl TryFrom<PluginV2Serde> for PluginV2 {
     type Error = PolarsError;
-    fn try_from(value: StatefulUdfSerde) -> Result<Self, Self::Error> {
-        let StatefulUdfSerde {
+    fn try_from(value: PluginV2Serde) -> Result<Self, Self::Error> {
+        let PluginV2Serde {
             lib,
             symbol,
             data,
@@ -61,7 +61,7 @@ impl TryFrom<StatefulUdfSerde> for StatefulUdf {
         let (library, vtable) = super::load_vtable(&lib, &symbol)?;
         let data_ptr = unsafe { vtable.deserialize_data(&data) }?;
 
-        Ok(StatefulUdf {
+        Ok(PluginV2 {
             flags,
             function_name,
             data: data_ptr,
@@ -75,30 +75,30 @@ impl TryFrom<StatefulUdfSerde> for StatefulUdf {
     }
 }
 
-impl Serialize for StatefulUdf {
+impl Serialize for PluginV2 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         use serde::ser::Error;
-        let slf = StatefulUdfSerde::try_from(self).map_err(S::Error::custom)?;
+        let slf = PluginV2Serde::try_from(self).map_err(S::Error::custom)?;
         slf.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for StatefulUdf {
+impl<'de> Deserialize<'de> for PluginV2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         use serde::de::Error;
-        let slf = StatefulUdfSerde::deserialize(deserializer)?;
+        let slf = PluginV2Serde::deserialize(deserializer)?;
         slf.try_into().map_err(D::Error::custom)
     }
 }
 
 #[cfg(feature = "dsl-schema")]
-impl schemars::JsonSchema for StatefulUdf {
+impl schemars::JsonSchema for PluginV2 {
     fn schema_name() -> String {
         "StatefulUdf".to_owned()
     }
@@ -108,12 +108,12 @@ impl schemars::JsonSchema for StatefulUdf {
     }
 
     fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-        StatefulUdfSerde::json_schema(generator)
+        PluginV2Serde::json_schema(generator)
     }
 }
 
 #[cfg(feature = "dsl-schema")]
-impl schemars::JsonSchema for UdfV2Flags {
+impl schemars::JsonSchema for PluginV2Flags {
     fn schema_name() -> String {
         "UdfV2Flags".to_owned()
     }

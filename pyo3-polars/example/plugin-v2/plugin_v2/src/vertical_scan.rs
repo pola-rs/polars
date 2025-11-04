@@ -1,10 +1,11 @@
-use polars::error::{PolarsResult, polars_ensure, polars_err};
+use polars::error::{polars_ensure, polars_err, PolarsResult};
 use polars::prelude::{
     ChunkedBuilder, DataType, Field, Int64Type, PrimitiveChunkedBuilder, Schema, SchemaExt,
 };
 use polars::series::{IntoSeries, Series};
-use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
-use pyo3_polars::export::polars_plan::prelude::v2::{PolarsPluginExprInfo, StatefulUdfTrait};
+use pyo3_polars::export::polars_ffi::version_1::PolarsPlugin;
+use pyo3_polars::polars_plugin_expr_info;
+use pyo3_polars::v1::PolarsPluginExprInfo;
 use serde::{Deserialize, Serialize};
 
 // Implementation of https://github.com/pola-rs/polars/issues/12165#issuecomment-2766352413
@@ -19,7 +20,7 @@ struct VerticalScanState {
     n: i64,
 }
 
-impl StatefulUdfTrait for VerticalScan {
+impl PolarsPlugin for VerticalScan {
     type State = VerticalScanState;
 
     fn serialize(&self) -> PolarsResult<Box<[u8]>> {

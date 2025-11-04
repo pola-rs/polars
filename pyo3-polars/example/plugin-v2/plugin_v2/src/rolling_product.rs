@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 
-use polars::error::{PolarsResult, polars_ensure, polars_err};
+use polars::error::{polars_ensure, polars_err, PolarsResult};
 use polars::prelude::{
     ChunkedBuilder, DataType, Field, Int64Type, PrimitiveChunkedBuilder, Schema, SchemaExt,
 };
 use polars::series::{IntoSeries, Series};
-use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
-use pyo3_polars::export::polars_plan::prelude::v2::{PolarsPluginExprInfo, StatefulUdfTrait};
+use pyo3_polars::export::polars_ffi::version_1::PolarsPlugin;
+use pyo3_polars::polars_plugin_expr_info;
+use pyo3_polars::v1::PolarsPluginExprInfo;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -19,7 +20,7 @@ struct RollingProductState {
     values: VecDeque<i64>,
 }
 
-impl StatefulUdfTrait for RollingProduct {
+impl PolarsPlugin for RollingProduct {
     type State = RollingProductState;
 
     fn serialize(&self) -> PolarsResult<Box<[u8]>> {

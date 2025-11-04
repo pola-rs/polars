@@ -11,7 +11,7 @@ use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_ops::frame::{JoinArgs, JoinType};
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
-use polars_plan::dsl::v2::UdfV2Flags;
+use polars_plan::dsl::v2::PluginV2Flags;
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
@@ -1905,7 +1905,7 @@ fn lower_exprs_with_ctx(
                 input: input_exprs,
                 function: IRFunctionExpr::PluginV2(udf),
                 options: _,
-            } if udf.flags().contains(UdfV2Flags::ZIPPABLE_INPUTS) => {
+            } if udf.flags().contains(PluginV2Flags::ZIPPABLE_INPUTS) => {
                 let out_name = unique_column_name();
                 let stream = build_select_stream_with_ctx(input, &input_exprs, ctx)?;
 

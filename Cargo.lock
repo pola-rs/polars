@@ -3279,6 +3279,8 @@ version = "0.52.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
+ "polars-error",
+ "polars-utils",
 ]
 
 [[package]]

@@ -15,12 +15,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from typing import Callable
 
-    from polars import DataType, Expr, Series
+    from polars import Expr
     from polars._typing import IntoExpr
 
-__all__ = ["register_plugin_function", "new_v2_plugin"]
+__all__ = ["register_plugin_function", "register_plugin_v2_function"]
 
 
 def register_plugin_function(

@@ -68,7 +68,7 @@ pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::TrigonometricFunction;
 #[cfg(feature = "ffi_plugin")]
-use super::v2::StatefulUdf;
+use super::v2::PluginV2;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -301,7 +301,7 @@ pub enum FunctionExpr {
     },
 
     #[cfg(feature = "ffi_plugin")]
-    PluginV2(SpecialEq<Arc<StatefulUdf>>),
+    PluginV2(SpecialEq<Arc<PluginV2>>),
 
     FoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,

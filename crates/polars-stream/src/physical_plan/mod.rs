@@ -9,7 +9,7 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::v2::StatefulUdf;
+use polars_plan::dsl::v2::PluginV2;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
     PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
@@ -254,7 +254,7 @@ pub enum PhysNodeKind {
 
     StatefulUdf {
         input: PhysStream,
-        udf: SpecialEq<Arc<StatefulUdf>>,
+        udf: SpecialEq<Arc<PluginV2>>,
         output_name: PlSmallStr,
     },
 

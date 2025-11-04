@@ -82,7 +82,7 @@ pub use self::struct_::IRStructFunction;
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
 #[cfg(feature = "ffi_plugin")]
-use crate::dsl::v2::{StatefulUdf, UdfV2Flags};
+use crate::dsl::v2::{PluginV2, PluginV2Flags};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -312,7 +312,7 @@ pub enum IRFunctionExpr {
         kwargs: Arc<[u8]>,
     },
     #[cfg(feature = "ffi_plugin")]
-    PluginV2(SpecialEq<Arc<StatefulUdf>>),
+    PluginV2(SpecialEq<Arc<PluginV2>>),
 
     FoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
@@ -1165,19 +1165,19 @@ impl IRFunctionExpr {
                 FunctionOptions::groupwise().with_flags(|mut f: FunctionFlags| {
                     f.set(
                         FunctionFlags::LENGTH_PRESERVING,
-                        flags.contains(UdfV2Flags::LENGTH_PRESERVING),
+                        flags.contains(PluginV2Flags::LENGTH_PRESERVING),
                     );
                     f.set(
                         FunctionFlags::ROW_SEPARABLE,
-                        flags.contains(UdfV2Flags::ROW_SEPARABLE),
+                        flags.contains(PluginV2Flags::ROW_SEPARABLE),
                     );
                     f.set(
                         FunctionFlags::RETURNS_SCALAR,
-                        flags.contains(UdfV2Flags::RETURNS_SCALAR),
+                        flags.contains(PluginV2Flags::RETURNS_SCALAR),
                     );
                     f.set(
                         FunctionFlags::INPUT_WILDCARD_EXPANSION,
-                        flags.contains(UdfV2Flags::SELECTOR_EXPANSION),
+                        flags.contains(PluginV2Flags::SELECTOR_EXPANSION),
                     );
                     f
                 })

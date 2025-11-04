@@ -3,12 +3,13 @@ use polars::prelude::{
     ChunkedBuilder, DataType, Field, Int64Type, PrimitiveChunkedBuilder, Schema, SchemaExt,
 };
 use polars::series::{IntoSeries, Series};
-use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
-use pyo3_polars::export::polars_plan::prelude::v2::{PolarsPluginExprInfo, StatefulUdfTrait};
+use pyo3_polars::export::polars_ffi::version_1::PolarsPlugin;
+use pyo3_polars::polars_plugin_expr_info;
+use pyo3_polars::v1::PolarsPluginExprInfo;
 
 struct ByteRev;
 
-impl StatefulUdfTrait for ByteRev {
+impl PolarsPlugin for ByteRev {
     type State = ();
 
     fn serialize(&self) -> PolarsResult<Box<[u8]>> {

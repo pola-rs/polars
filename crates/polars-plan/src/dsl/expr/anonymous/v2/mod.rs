@@ -13,141 +13,35 @@ use polars_core::prelude::{CompatLevel, Field};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::Series;
 use polars_error::{PolarsResult, polars_bail};
+use polars_ffi::version_1 as ffi;
 use polars_utils::pl_str::PlSmallStr;
 
-pub mod ffi;
 #[cfg(feature = "serde")]
 mod serde;
 
-#[macro_export]
-macro_rules! polars_plugin_expr_info {
-    (
-        $name:literal, $data:expr, $data_ty:ty
-    ) => {{
-        #[unsafe(export_name = concat!("_PL_PLUGIN_V2::", $name))]
-        pub static VTABLE: $crate::prelude::v2::PresentedUdf = $crate::prelude::v2::PresentedUdf {
-            version: $crate::prelude::v2::STUDF_VERSION,
-            vtable: $crate::prelude::v2::ffi::VTable::new::<$data_ty>(),
-        };
-
-        let data = ::std::boxed::Box::new($data);
-        let data = ::std::boxed::Box::into_raw(data);
-        $crate::prelude::v2::PolarsPluginExprInfo::_new($name, data as *const u8)
-    }};
+pub struct PluginV2 {
+    flags: PluginV2Flags,
+    function_name: PlSmallStr,
+    data: ffi::DataPtr,
+    library: Option<Box<LibrarySymbol>>,
+    vtable: ffi::VTable,
 }
 
-#[repr(transparent)]
-pub struct DataPtr(NonNull<u8>);
-#[repr(transparent)]
-pub struct StatePtr(NonNull<u8>);
-
-impl DataPtr {
-    #[doc(hidden)]
-    pub fn _new(ptr: NonNull<u8>) -> Self {
-        Self(ptr)
-    }
-
-    pub unsafe fn as_ref<T>(&self) -> &T {
-        unsafe { self.0.as_ptr().cast::<T>().as_ref() }.unwrap()
-    }
-
-    pub unsafe fn as_mut<T>(&self) -> &mut T {
-        unsafe { self.0.as_ptr().cast::<T>().as_mut() }.unwrap()
-    }
-
-    pub unsafe fn as_ptr<T>(&self) -> *mut T {
-        unsafe { self.0.as_ptr().cast::<T>() }
-    }
-
-    unsafe fn ptr_clone(&self) -> Self {
-        Self(self.0)
-    }
-}
-impl StatePtr {
-    pub unsafe fn as_ref<T>(&self) -> &T {
-        unsafe { self.0.as_ptr().cast::<T>().as_ref() }.unwrap()
-    }
-
-    pub unsafe fn as_mut<T>(&self) -> &mut T {
-        unsafe { self.0.as_ptr().cast::<T>().as_mut() }.unwrap()
-    }
-
-    pub unsafe fn as_ptr<T>(&self) -> *mut T {
-        unsafe { self.0.as_ptr().cast::<T>() }
-    }
-
-    unsafe fn ptr_clone(&self) -> Self {
-        Self(self.0)
-    }
+struct LibrarySymbol {
+    lib: PlSmallStr,
+    symbol: PlSmallStr,
+    library: libloading::Library,
 }
 
-pub trait StatefulUdfTrait: Send + Sync + Sized {
-    type State: Send + Sync + Sized;
-
-    // (De)serialization methods.
-    fn serialize(&self) -> PolarsResult<Box<[u8]>>;
-    fn deserialize(data: &[u8]) -> PolarsResult<Self>;
-    fn serialize_state(&self, state: &Self::State) -> PolarsResult<Box<[u8]>>;
-    fn deserialize_state(&self, data: &[u8]) -> PolarsResult<Self::State>;
-
-    // Planning methods.
-    fn to_field(&self, fields: &Schema) -> PolarsResult<Field>;
-
-    // State management methods.
-    fn initialize(&self, fields: &Schema) -> PolarsResult<Self::State>;
-    fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State>;
-    fn reset(&self, state: &mut Self::State) -> PolarsResult<()>;
-    fn combine(&self, state: &mut Self::State, other: &Self::State) -> PolarsResult<()> {
-        _ = (state, other);
-        Ok(())
-    }
-
-    // Execution methods.
-    fn insert(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>>;
-    fn finalize(&self, state: &mut Self::State) -> PolarsResult<Option<Series>>;
-}
-
-pub const fn new_udf_vtable<Data: StatefulUdfTrait>() -> UdfVTable<Data> {
-    UdfVTable {
-        _pd: ::std::marker::PhantomData,
-        vtable: ffi::VTable::new::<Data>(),
-    }
-}
-
-pub struct PolarsPluginExprInfo {
-    symbol: &'static str,
-    data_ptr: *const u8,
-}
-
-impl PolarsPluginExprInfo {
-    #[doc(hidden)]
-    pub fn _new(symbol: &'static str, data_ptr: *const u8) -> Self {
-        Self { symbol, data_ptr }
-    }
-}
-
-#[cfg(feature = "python")]
-impl<'py> pyo3::IntoPyObject<'py> for PolarsPluginExprInfo {
-    type Target = pyo3::types::PyTuple;
-    type Output = pyo3::Bound<'py, Self::Target>;
-    type Error = pyo3::PyErr;
-
-    fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
-        use pyo3::{IntoPyObject, IntoPyObjectExt};
-        pyo3::types::PyTuple::new(
-            py,
-            [
-                self.symbol.into_py_any(py)?,
-                (self.data_ptr as usize).into_py_any(py)?,
-            ],
-        )
-    }
+pub struct PluginV2State {
+    ptr: ffi::StatePtr,
+    plugin: Arc<PluginV2>,
 }
 
 bitflags::bitflags! {
     #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
     #[derive(Debug, Clone, Copy)]
-    pub struct UdfV2Flags: u64 {
+    pub struct PluginV2Flags: u64 {
         // Function flags.
         /// Preserves length of first non-scalar input.
         ///
@@ -185,7 +79,7 @@ bitflags::bitflags! {
     }
 }
 
-impl UdfV2Flags {
+impl PluginV2Flags {
     pub fn is_elementwise(&self) -> bool {
         self.contains(Self::LENGTH_PRESERVING | Self::ROW_SEPARABLE)
     }
@@ -207,82 +101,36 @@ impl UdfV2Flags {
     }
 }
 
-struct LibrarySymbol {
-    lib: PlSmallStr,
-    symbol: PlSmallStr,
-    library: libloading::Library,
-}
+unsafe impl Sync for PluginV2 {}
+unsafe impl Send for PluginV2 {}
 
-pub struct StatefulUdf {
-    flags: UdfV2Flags,
-    function_name: PlSmallStr,
-    data: DataPtr,
-    library: Option<Box<LibrarySymbol>>,
-    vtable: ffi::VTable,
-}
-
-pub struct UdfVTable<Data: StatefulUdfTrait> {
-    _pd: PhantomData<Data>,
-    vtable: ffi::VTable,
-}
-
-#[doc(hidden)]
-pub const STUDF_VERSION: u32 = 0x00_00_01;
-
-#[doc(hidden)]
-#[repr(C)]
-pub struct PresentedUdf {
-    pub version: u32,
-    pub vtable: ffi::VTable,
-}
-
-impl<Data: StatefulUdfTrait> UdfVTable<Data> {
-    pub unsafe fn new_udf(
-        self,
-        data: DataPtr,
-        flags: UdfV2Flags,
-        function_name: PlSmallStr,
-    ) -> StatefulUdf {
-        StatefulUdf {
-            flags,
-            function_name,
-            data,
-            library: None,
-            vtable: self.vtable,
-        }
-    }
-}
-
-unsafe impl Sync for StatefulUdf {}
-unsafe impl Send for StatefulUdf {}
-
-unsafe impl Send for UdfState {}
-unsafe impl Sync for UdfState {}
+unsafe impl Send for PluginV2State {}
+unsafe impl Sync for PluginV2State {}
 
 fn load_vtable(lib: &str, symbol: &str) -> PolarsResult<(libloading::Library, ffi::VTable)> {
     let lib = unsafe { libloading::Library::new(lib) }.unwrap();
     let name = format!("_PL_PLUGIN_V2::{symbol}");
-    let udf: libloading::Symbol<NonNull<PresentedUdf>> =
+    let plugin: libloading::Symbol<NonNull<ffi::PluginSymbol>> =
         unsafe { lib.get(name.as_bytes()) }.unwrap();
-    let vtable = unsafe { udf.as_ref() }.vtable.clone();
-    unsafe { vtable.set_version(STUDF_VERSION) };
+    let vtable = unsafe { plugin.as_ref() }.vtable.clone();
+    unsafe { vtable.set_version(ffi::VERSION) };
     Ok((lib, vtable))
 }
 
-impl StatefulUdf {
+impl PluginV2 {
     pub unsafe fn new_shared_object(
         library: &str,
         symbol: &str,
         data: usize,
-        flags: UdfV2Flags,
+        flags: PluginV2Flags,
         function_name: PlSmallStr,
-    ) -> PolarsResult<StatefulUdf> {
+    ) -> PolarsResult<PluginV2> {
         flags.verify_coherency()?;
 
-        let data = DataPtr(NonNull::new(data as *mut u8).unwrap());
+        let data = ffi::DataPtr::_new(NonNull::new(data as *mut u8).unwrap());
         let (lib, vtable) = load_vtable(&library, &symbol)?;
 
-        Ok(StatefulUdf {
+        Ok(PluginV2 {
             flags,
             function_name,
             data,
@@ -299,12 +147,12 @@ impl StatefulUdf {
         unsafe { self.vtable.to_field(self.data.ptr_clone(), fields) }
     }
 
-    pub fn initialize(self: Arc<Self>, fields: &Schema) -> PolarsResult<UdfState> {
+    pub fn initialize(self: Arc<Self>, fields: &Schema) -> PolarsResult<PluginV2State> {
         let ptr = unsafe { self.vtable.initialize(self.data.ptr_clone(), fields) }?;
-        Ok(UdfState { ptr, udf: self })
+        Ok(PluginV2State { ptr, plugin: self })
     }
 
-    pub fn flags(&self) -> UdfV2Flags {
+    pub fn flags(&self) -> PluginV2Flags {
         self.flags
     }
 
@@ -313,68 +161,82 @@ impl StatefulUdf {
     }
 }
 
-impl Drop for StatefulUdf {
+impl Drop for PluginV2 {
     fn drop(&mut self) {
         unsafe { self.vtable.drop_data(self.data.ptr_clone()) }
     }
 }
 
-impl Drop for UdfState {
+impl Drop for PluginV2State {
     fn drop(&mut self) {
-        unsafe { self.udf.vtable.drop_state(self.ptr.ptr_clone()) }
+        unsafe { self.plugin.vtable.drop_state(self.ptr.ptr_clone()) }
     }
 }
 
-pub struct UdfState {
-    ptr: StatePtr,
-    udf: Arc<StatefulUdf>,
-}
-
-impl UdfState {
+impl PluginV2State {
     pub fn insert(&mut self, inputs: &[Series]) -> PolarsResult<Option<Series>> {
         unsafe {
-            self.udf
+            self.plugin
                 .vtable
-                .insert(self.udf.data.ptr_clone(), self.ptr.ptr_clone(), inputs)
+                .insert(self.plugin.data.ptr_clone(), self.ptr.ptr_clone(), inputs)
         }
     }
 
     pub fn finalize(&mut self) -> PolarsResult<Option<Series>> {
-        assert!(self.udf.flags.contains(UdfV2Flags::NEEDS_FINALIZE));
+        assert!(self.plugin.flags.contains(PluginV2Flags::NEEDS_FINALIZE));
         unsafe {
-            self.udf
+            self.plugin
                 .vtable
-                .finalize(self.udf.data.ptr_clone(), self.ptr.ptr_clone())
+                .finalize(self.plugin.data.ptr_clone(), self.ptr.ptr_clone())
         }
     }
 
     pub fn combine(&mut self, other: &Self) -> PolarsResult<()> {
-        assert_eq!(Arc::as_ptr(&self.udf), Arc::as_ptr(&other.udf));
-        assert!(self.udf.flags.contains(UdfV2Flags::STATES_COMBINABLE));
+        assert_eq!(Arc::as_ptr(&self.plugin), Arc::as_ptr(&other.plugin));
+        assert!(self.plugin.flags.contains(PluginV2Flags::STATES_COMBINABLE));
         unsafe {
-            self.udf.vtable.combine(
-                self.udf.data.ptr_clone(),
+            self.plugin.vtable.combine(
+                self.plugin.data.ptr_clone(),
                 self.ptr.ptr_clone(),
                 other.ptr.ptr_clone(),
             )
         }
     }
 
-    pub fn new_empty(&self) -> PolarsResult<UdfState> {
-        let udf = self.udf.clone();
+    pub fn new_empty(&self) -> PolarsResult<PluginV2State> {
+        let plugin = self.plugin.clone();
         let ptr = unsafe {
-            self.udf
+            self.plugin
                 .vtable
-                .new_empty(udf.data.ptr_clone(), self.ptr.ptr_clone())
+                .new_empty(plugin.data.ptr_clone(), self.ptr.ptr_clone())
         }?;
-        Ok(UdfState { ptr, udf })
+        Ok(PluginV2State { ptr, plugin })
     }
 
     pub fn reset(&mut self) -> PolarsResult<()> {
         unsafe {
-            self.udf
+            self.plugin
                 .vtable
-                .reset(self.udf.data.ptr_clone(), self.ptr.ptr_clone())
+                .reset(self.plugin.data.ptr_clone(), self.ptr.ptr_clone())
         }
+    }
+
+    pub fn serialize(&self, out: &mut Vec<u8>) -> PolarsResult<()> {
+        unsafe {
+            self.plugin.vtable.serialize_state(
+                self.plugin.data.ptr_clone(),
+                self.ptr.ptr_clone(),
+                out,
+            )
+        }
+    }
+
+    pub fn deserialize(plugin: Arc<PluginV2>, buffer: &[u8]) -> PolarsResult<Self> {
+        let ptr = unsafe {
+            plugin
+                .vtable
+                .deserialize_state(plugin.data.ptr_clone(), buffer)
+        }?;
+        Ok(PluginV2State { ptr, plugin })
     }
 }

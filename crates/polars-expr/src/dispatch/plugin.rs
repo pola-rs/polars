@@ -4,9 +4,9 @@ use polars_core::error::PolarsResult;
 use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
-use polars_plan::dsl::v2::{StatefulUdf, UdfV2Flags};
+use polars_plan::dsl::v2::{PluginV2, PluginV2Flags};
 
-pub fn call(s: &mut [Column], udf: Arc<StatefulUdf>) -> PolarsResult<Column> {
+pub fn call(s: &mut [Column], udf: Arc<PluginV2>) -> PolarsResult<Column> {
     let fields = Schema::from_iter(s.iter().map(|c| c.field().into_owned()));
     let series = s
         .iter_mut()
@@ -18,9 +18,9 @@ pub fn call(s: &mut [Column], udf: Arc<StatefulUdf>) -> PolarsResult<Column> {
     let flags = udf.flags();
     let insert = state.insert(&series)?;
 
-    assert!(insert.is_none() || flags.contains(UdfV2Flags::INSERT_HAS_OUTPUT));
+    assert!(insert.is_none() || flags.contains(PluginV2Flags::INSERT_HAS_OUTPUT));
 
-    if !flags.contains(UdfV2Flags::NEEDS_FINALIZE) || flags.is_elementwise() {
+    if !flags.contains(PluginV2Flags::NEEDS_FINALIZE) || flags.is_elementwise() {
         let field = udf.to_field(&fields)?;
         let out = insert.unwrap_or_else(|| Series::new_empty(field.name, &field.dtype));
         return Ok(out.into_column());

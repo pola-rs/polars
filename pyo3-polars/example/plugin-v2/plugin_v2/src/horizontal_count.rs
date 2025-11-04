@@ -1,12 +1,13 @@
 use polars::error::{polars_bail, PolarsResult};
 use polars::prelude::{ArithmeticChunked, ChunkCast, DataType, Field, IdxCa, Schema};
 use polars::series::{IntoSeries, Series};
-use pyo3_polars::export::polars_plan::polars_plugin_expr_info;
-use pyo3_polars::export::polars_plan::prelude::v2::{PolarsPluginExprInfo, StatefulUdfTrait};
+use pyo3_polars::export::polars_ffi::version_1::PolarsPlugin;
+use pyo3_polars::polars_plugin_expr_info;
+use pyo3_polars::v1::PolarsPluginExprInfo;
 
 struct HorizontalCount;
 
-impl StatefulUdfTrait for HorizontalCount {
+impl PolarsPlugin for HorizontalCount {
     type State = ();
 
     fn serialize(&self) -> PolarsResult<Box<[u8]>> {

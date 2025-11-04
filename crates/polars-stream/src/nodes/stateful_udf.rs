@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::schema::Schema;
 use polars_core::series::Series;
-use polars_plan::dsl::v2::{StatefulUdf, UdfState, UdfV2Flags};
+use polars_plan::dsl::v2::{PluginV2, PluginV2State, PluginV2Flags};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
@@ -19,15 +19,15 @@ enum Action {
 pub struct StatefulUdfNode {
     name: PlSmallStr,
     action: Action,
-    buffer: Vec<(Series, UdfState, MorselSeq)>,
+    buffer: Vec<(Series, PluginV2State, MorselSeq)>,
     input_schema: Arc<Schema>,
-    udf: Arc<StatefulUdf>,
+    udf: Arc<PluginV2>,
     output_name: PlSmallStr,
 }
 
 impl StatefulUdfNode {
     pub fn new(
-        udf: Arc<StatefulUdf>,
+        udf: Arc<PluginV2>,
         input_schema: Arc<Schema>,
         output_name: PlSmallStr,
     ) -> PolarsResult<Self> {
@@ -44,7 +44,7 @@ impl StatefulUdfNode {
 
     pub async fn task(
         output_name: PlSmallStr,
-        (buffer, state, state_seq): &mut (Series, UdfState, MorselSeq),
+        (buffer, state, state_seq): &mut (Series, PluginV2State, MorselSeq),
         rx: Option<PortReceiver>,
         mut tx: Option<PortSender>,
     ) -> PolarsResult<()> {
@@ -159,7 +159,7 @@ impl ComputeNode for StatefulUdfNode {
 
         match self.action {
             Action::Insert => {
-                if !flags.contains(UdfV2Flags::INSERT_HAS_OUTPUT) {
+                if !flags.contains(PluginV2Flags::INSERT_HAS_OUTPUT) {
                     send[0] = P::Blocked
                 }
             },
@@ -220,8 +220,8 @@ impl ComputeNode for StatefulUdfNode {
             },
             Action::Finalize => {
                 assert!(!self.buffer.is_empty());
-                assert!(flags.contains(UdfV2Flags::NEEDS_FINALIZE));
-                assert!(self.buffer.len() == 1 || flags.contains(UdfV2Flags::STATES_COMBINABLE));
+                assert!(flags.contains(PluginV2Flags::NEEDS_FINALIZE));
+                assert!(self.buffer.len() == 1 || flags.contains(PluginV2Flags::STATES_COMBINABLE));
 
                 let mut send = send_ports[0].take().unwrap().serial();
 

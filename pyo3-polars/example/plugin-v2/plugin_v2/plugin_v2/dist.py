@@ -8,7 +8,7 @@ from polars.plugins import register_plugin_v2_function
 from plugin_v2._utils import LIB
 
 if TYPE_CHECKING:
-    from expression_lib._typing import IntoExprColumn
+    from plugin_v2._typing import IntoExprColumn
 
 
 def min_by(expr: IntoExprColumn, *, by: IntoExprColumn) -> pl.Expr:

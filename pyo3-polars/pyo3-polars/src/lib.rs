@@ -47,6 +47,8 @@ pub mod derive;
 pub mod error;
 #[cfg(feature = "derive")]
 pub mod export;
+#[cfg(feature = "v1")]
+pub mod v1;
 
 pub mod types;
 
