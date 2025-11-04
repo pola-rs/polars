@@ -3,18 +3,22 @@ use crate::float16::pf16;
 /// # Safety
 /// unsafe code downstream relies on the correct is_float call
 pub unsafe trait IsFloat: private::Sealed + Sized {
+    #[inline]
     fn is_float() -> bool {
         false
     }
 
+    #[inline]
     fn is_f16() -> bool {
         false
     }
 
+    #[inline]
     fn is_f32() -> bool {
         false
     }
 
+    #[inline]
     fn is_f64() -> bool {
         false
     }
@@ -32,6 +36,7 @@ pub unsafe trait IsFloat: private::Sealed + Sized {
     }
 
     #[allow(clippy::wrong_self_convention)]
+    #[inline]
     fn is_nan(&self) -> bool
     where
         Self: Sized,
@@ -39,6 +44,7 @@ pub unsafe trait IsFloat: private::Sealed + Sized {
         false
     }
     #[allow(clippy::wrong_self_convention)]
+    #[inline]
     fn is_finite(&self) -> bool
     where
         Self: Sized,
@@ -95,26 +101,32 @@ macro_rules! impl_is_float {
                 true
             }
 
+            #[inline]
             fn is_f16() -> bool {
                 $is_f16
             }
 
+            #[inline]
             fn is_f32() -> bool {
                 $is_f32
             }
 
+            #[inline]
             fn is_f64() -> bool {
                 $is_f64
             }
 
+            #[inline]
             fn nan_value() -> Self {
                 Self::NAN
             }
 
+            #[inline]
             fn pos_inf_value() -> Self {
                 Self::INFINITY
             }
 
+            #[inline]
             fn neg_inf_value() -> Self {
                 Self::NEG_INFINITY
             }

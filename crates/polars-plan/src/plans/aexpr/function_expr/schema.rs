@@ -249,7 +249,9 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "pct_change")]
             PctChange => mapper.map_dtype(|dt| match dt {
-                DataType::Float64 | DataType::Float32 => dt.clone(),
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => dt.clone(),
+                DataType::Float32 => dt.clone(),
                 _ => DataType::Float64,
             }),
             #[cfg(feature = "interpolate")]
@@ -395,7 +397,7 @@ impl IRFunctionExpr {
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
                 match f.dtype {
-                    dt @ DataType::Float32 => {
+                    dt @ (DataType::Float16 | DataType::Float32) => {
                         f.dtype = dt;
                     },
                     _ => {
@@ -515,6 +517,8 @@ impl<'a> FieldsMapper<'a> {
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
         let map_inner = |dt: &DataType| match dt {
             DataType::Boolean => DataType::Float64,
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => DataType::Float16,
             DataType::Float32 => DataType::Float32,
             DataType::Float64 => DataType::Float64,
             dt if dt.is_primitive_numeric() => DataType::Float64,
@@ -542,6 +546,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map to a float supertype.
     pub fn map_to_float_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| match dtype {
+            #[cfg(feature = "dtype-f16")]
             DataType::Float16 => DataType::Float16,
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
@@ -552,7 +557,9 @@ impl<'a> FieldsMapper<'a> {
     pub fn map_numeric_to_float_dtype(&self, coerce_decimal: bool) -> PolarsResult<Field> {
         self.map_dtype(|dt| {
             let should_coerce = match dt {
-                DataType::Float16 | DataType::Float32 => false,
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => false,
+                DataType::Float32 => false,
                 #[cfg(feature = "dtype-decimal")]
                 DataType::Decimal(..) => coerce_decimal,
                 DataType::Boolean => true,

@@ -196,7 +196,7 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-i16")]
             (Int16, UInt64) => Some(Float64), // Follow numpy
             #[cfg(all(feature = "dtype-i16", feature = "dtype-f16"))]
-            (Int16, Float16) => Some(Float16),
+            (Int16, Float16) => Some(Float32),
             #[cfg(feature = "dtype-i16")]
             (Int16, Float32) => Some(Float32),
             #[cfg(feature = "dtype-i16")]
@@ -219,7 +219,7 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "bigidx")]
             (Int32, UInt64) => Some(Int64), // Needed for bigidx
             #[cfg(feature = "dtype-f16")]
-            (Int32, Float16) => Some(Float64), // Follow (Int32, Float32) case
+            (Int32, Float16) => Some(Float64),
             (Int32, Float32) => Some(Float64), // Follow numpy
             (Int32, Float64) => Some(Float64),
 
@@ -280,9 +280,9 @@ pub fn get_supertype_with_options(
             #[cfg(all(feature = "dtype-f16", feature = "dtype-u8"))]
             (Float16, UInt8) => Some(Float16),
             #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
-            (Float16, UInt16) => Some(Float16),
+            (Float16, UInt16) => Some(Float32),
             #[cfg(feature = "dtype-f16")]
-            (Float16, UInt32) => Some(Float32),
+            (Float16, UInt32) => Some(Float64),
             #[cfg(feature = "dtype-f16")]
             (Float16, UInt64) => Some(Float64),
 
@@ -293,14 +293,13 @@ pub fn get_supertype_with_options(
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
 
-            
             #[cfg(feature = "dtype-u8")]
             (Float64, UInt8) => Some(Float64),
             #[cfg(feature = "dtype-u16")]
             (Float64, UInt16) => Some(Float64),
             (Float64, UInt32) => Some(Float64),
             (Float64, UInt64) => Some(Float64),
-            
+
             #[cfg(feature = "dtype-f16")]
             (Float16, Float32) => Some(Float32),
             #[cfg(feature = "dtype-f16")]
