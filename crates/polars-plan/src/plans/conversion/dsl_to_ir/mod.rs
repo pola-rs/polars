@@ -727,7 +727,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .enumerate()
                         .map(|(idx, expr)| {
                             let temp_name =
-                                PlSmallStr::from_string(format!("__POLARS_UNIQUE_SUBSET_{}", idx));
+                                format_pl_smallstr!("__POLARS_UNIQUE_SUBSET_{}", idx);
                             (expr.alias(temp_name.clone()), temp_name)
                         })
                         .unzip();
