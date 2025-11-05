@@ -223,27 +223,35 @@ def test_union(
 
 
 def test_union_nonmatching_colnames() -> None:
-    df1 = pl.DataFrame(
-        data={"Value": [100, 200], "Tag": ["hello", "foo"]},
-        schema_overrides={"Value": pl.Int16},
-    )
-    df2 = pl.DataFrame(
-        data={"Number": [300, 400], "String": ["world", "bar"]},
-        schema_overrides={"Number": pl.Int32},
-    )
-
-    # SQL allows "UNION" (aka: polars `concat`) on column names
-    # that don't match; in this case it behaves positionally,
-    # with the output name coming from the first table
-    res = pl.sql(
-        query="""
-        SELECT u.* FROM (
-            SELECT * FROM df1
-            UNION
-            SELECT * FROM df2
-        ) u ORDER BY Value
-        """,
+    # SQL allows "UNION" (aka: polars `concat`) on column names that don't match;
+    # this behaves positionally, with column names coming from the first table
+    with pl.SQLContext(
+        df1=pl.DataFrame(
+            data={"Value": [100, 200], "Tag": ["hello", "foo"]},
+            schema_overrides={"Value": pl.Int16},
+        ),
+        df2=pl.DataFrame(
+            data={"Number": [300, 400], "String": ["world", "bar"]},
+            schema_overrides={"Number": pl.Int32},
+        ),
         eager=True,
-    )
-    assert res.schema == {"Value": pl.Int32, "Tag": pl.String}
-    assert res.rows() == [(100, "hello"), (200, "foo"), (300, "world"), (400, "bar")]
+    ) as ctx:
+        res = ctx.execute(
+            query="""
+            SELECT u.* FROM (
+                SELECT * FROM df1
+                UNION
+                SELECT * FROM df2
+            ) u ORDER BY Value
+            """
+        )
+        assert res.schema == {
+            "Value": pl.Int32,
+            "Tag": pl.String,
+        }
+        assert res.rows() == [
+            (100, "hello"),
+            (200, "foo"),
+            (300, "world"),
+            (400, "bar"),
+        ]
