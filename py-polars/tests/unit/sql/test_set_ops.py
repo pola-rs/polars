@@ -138,7 +138,7 @@ def test_update_statement_error() -> None:
 
 
 @pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "UNION"])
-def test_except_intersect_errors(op: str) -> None:
+def test_except_intersect_union_errors(op: str) -> None:
     df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})
     df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})
 
@@ -185,6 +185,12 @@ def test_except_intersect_errors(op: str) -> None:
         ),
         (
             ["c1", "c2"],
+            ["c1 AS x1", "c2 AS x2"],
+            "",
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["c1", "c2"],
             ["c2", "c1"],
             "BY NAME",
             [(1, "zz"), (2, "yy"), (3, "xx")],
@@ -214,3 +220,30 @@ def test_union(
             SELECT {", ".join(cols2)} FROM frame2
         """
         assert sorted(ctx.execute(query).rows()) == expected
+
+
+def test_union_nonmatching_colnames() -> None:
+    df1 = pl.DataFrame(
+        data={"Value": [100, 200], "Tag": ["hello", "foo"]},
+        schema_overrides={"Value": pl.Int16},
+    )
+    df2 = pl.DataFrame(
+        data={"Number": [300, 400], "String": ["world", "bar"]},
+        schema_overrides={"Number": pl.Int32},
+    )
+
+    # SQL allows "UNION" (aka: polars `concat`) on column names
+    # that don't match; in this case it behaves positionally,
+    # with the output name coming from the first table
+    res = pl.sql(
+        query="""
+        SELECT u.* FROM (
+            SELECT * FROM df1
+            UNION
+            SELECT * FROM df2
+        ) u ORDER BY Value
+        """,
+        eager=True,
+    )
+    assert res.schema == {"Value": pl.Int32, "Tag": pl.String}
+    assert res.rows() == [(100, "hello"), (200, "foo"), (300, "world"), (400, "bar")]
