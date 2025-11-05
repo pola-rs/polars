@@ -170,8 +170,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/labeler@v6
-
       - name: Check DSL freeze
         run: |
           git fetch origin --depth 1 main:main
