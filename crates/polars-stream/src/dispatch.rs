@@ -49,9 +49,6 @@ struct StreamingQueryExecutor {
 
 impl Executor for StreamingQueryExecutor {
     fn execute(&mut self, _cache: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        // Must not block rayon thread on pending new-streaming future.
-        assert!(POOL.current_thread_index().is_none());
-
         let mut df = { self.executor.try_lock().unwrap().take() }
             .expect("unhandled: execute() more than once")
             .execute()

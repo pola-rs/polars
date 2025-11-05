@@ -53,7 +53,7 @@ pub struct POOL;
 // Thread locals to allow disabling threading for specific threads.
 #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
 thread_local! {
-    static ALLOW_THREADS: Cell<bool> = const { Cell::new(true) };
+    pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
     static NOOP_POOL: RefCell<ThreadPool> = RefCell::new(
         ThreadPoolBuilder::new()
             .use_current_thread()
@@ -180,7 +180,7 @@ impl POOL {
         OP: FnOnce(&ThreadPool) -> R + Send,
         R: Send,
     {
-        if ALLOW_THREADS.get() || THREAD_POOL.current_thread_index().is_some() {
+        if ALLOW_RAYON_THREADS.get() || THREAD_POOL.current_thread_index().is_some() {
             op(&THREAD_POOL)
         } else {
             NOOP_POOL.with(|v| op(&v.borrow()))
@@ -199,10 +199,10 @@ impl POOL {
             if THREAD_POOL.current_thread_index().is_some() {
                 op()
             } else {
-                let prev = ALLOW_THREADS.replace(false);
+                let prev = ALLOW_RAYON_THREADS.replace(false);
                 // @Q? Should this catch_unwind?
                 let result = std::panic::catch_unwind(AssertUnwindSafe(op));
-                ALLOW_THREADS.set(prev);
+                ALLOW_RAYON_THREADS.set(prev);
                 match result {
                     Ok(v) => v,
                     Err(p) => std::panic::resume_unwind(p),
