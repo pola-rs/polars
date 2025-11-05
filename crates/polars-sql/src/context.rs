@@ -455,7 +455,7 @@ impl SQLContext {
                 if lf_schema.iter_names().ne(rf_schema.iter_names()) {
                     rf = rf.rename(rf_schema.iter_names(), lf_schema.iter_names(), true);
                 }
-                let concatenated = polars_lazy::dsl::concat(vec![lf, rf], opts);
+                let concatenated = concat(vec![lf, rf], opts);
                 match quantifier {
                     SetQuantifier::Distinct | SetQuantifier::None => {
                         concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
