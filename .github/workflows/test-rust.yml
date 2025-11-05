@@ -164,3 +164,17 @@ jobs:
 
       - name: Run DSL schema check
         run: ./target/debug/dsl-schema check-hashes
+
+  check-dsl-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check DSL freeze
+        run: |
+          if [ "$(git diff origin/main..HEAD crates/polars-plan/dsl-schema-hashes.json | head -c 1)" ]; then
+            match='"state"\s*:\s*"closed"'; if [ "$(curl -s https://api.github.com/repos/pola-rs/polars/issues/24575 | grep -E ${match})" ]; then
+              echo "DSL freeze"
+              exit 1
+            fi
+          fi
