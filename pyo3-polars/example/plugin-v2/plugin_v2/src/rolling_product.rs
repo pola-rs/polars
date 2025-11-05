@@ -65,7 +65,7 @@ impl PolarsPlugin for RollingProduct {
         Ok(field)
     }
 
-    fn initialize(&self, fields: &Schema) -> PolarsResult<Self::State> {
+    fn new_state(&self, fields: &Schema) -> PolarsResult<Self::State> {
         assert_eq!(fields.len(), 1);
         Ok(RollingProductState {
             product: 1,
@@ -73,7 +73,7 @@ impl PolarsPlugin for RollingProduct {
         })
     }
 
-    fn insert(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
+    fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
         assert_eq!(inputs.len(), 1);
         let s = inputs[0].i64()?;
         let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(s.name().clone(), s.len());

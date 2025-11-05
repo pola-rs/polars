@@ -9,15 +9,19 @@ use polars_error::PolarsResult;
 
 use crate::version_0::SeriesExport;
 
+/// Symbol exposed in shared library to Polars.
 #[repr(C, align(8))]
 pub struct PluginSymbol {
     pub version: u64,
     pub vtable: VTable,
 }
+/// Version of Plugin V1.
 pub const VERSION: u32 = 0x00_00_01;
 
+/// Pointer to a `Box<T>` where `T: PolarsPlugin`.
 #[repr(transparent)]
 pub struct DataPtr(NonNull<u8>);
+/// Pointer to a `Box<T::State>` where `T: PolarsPlugin`.
 #[repr(transparent)]
 pub struct StatePtr(NonNull<u8>);
 
@@ -25,75 +29,270 @@ pub trait PolarsPlugin: Send + Sync + Sized {
     type State: Send + Sync + Sized;
 
     // (De)serialization methods.
+    /// Serialize `Self` into a buffer.
     fn serialize(&self) -> PolarsResult<Box<[u8]>>;
-    fn deserialize(data: &[u8]) -> PolarsResult<Self>;
+
+    /// Deserialize `Self` from a buffer.
+    fn deserialize(buffer: &[u8]) -> PolarsResult<Self>;
+
+    /// Serialize `Self::State` into a buffer.
     fn serialize_state(&self, state: &Self::State) -> PolarsResult<Box<[u8]>>;
-    fn deserialize_state(&self, data: &[u8]) -> PolarsResult<Self::State>;
+
+    /// Deserialize `Self::State` from a buffer.
+    fn deserialize_state(&self, buffer: &[u8]) -> PolarsResult<Self::State>;
 
     // Planning methods.
+    /// Get the output field for some given input `fields`.
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field>;
 
     // State management methods.
-    fn initialize(&self, fields: &Schema) -> PolarsResult<Self::State>;
+    /// Create a new state for specific input `fields`.
+    fn new_state(&self, fields: &Schema) -> PolarsResult<Self::State>;
+    /// Clone and reset a state.
     fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State>;
+    /// Reset a state and prepare for receiving a new `step` calls.
     fn reset(&self, state: &mut Self::State) -> PolarsResult<()>;
-    fn combine(&self, state: &mut Self::State, other: &Self::State) -> PolarsResult<()> {
-        _ = (state, other);
-        Ok(())
-    }
+    /// Fold the `other` state into `state`.
+    ///
+    /// This is never called if the states are not combinable.
+    fn combine(&self, state: &mut Self::State, other: &Self::State) -> PolarsResult<()>;
 
     // Execution methods.
-    fn insert(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>>;
+    /// Evaluate the function for a part of the input data, updating the state and possibly
+    /// returning some output data.
+    ///
+    /// Invariants:
+    /// * This may be called any number of times and should yield an equally valid result given the
+    /// same `self`, `state` and `inputs`.
+    /// * If the inputs are zippable, this is always called with equal length data for `non-scalar`
+    /// inputs.
+    /// * Subsequent calls to `step` with the same `state` never provide the data of the input
+    /// expressions out-of-order unless the expression is explicitly set to not observe the input
+    /// order.
+    /// * If states are **not** combinable, the combination of all `step` calls will receive all
+    /// input data.
+    /// * If step is said to have no output, the result is always to be either `Err` or `Ok(None)`.
+    fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>>;
+
+    /// Finalize a state and optionally return the final output.
+    ///
+    /// This indicates that this state will not `step` anymore.
     fn finalize(&self, state: &mut Self::State) -> PolarsResult<Option<Series>>;
 }
 
 #[derive(Clone)]
 #[repr(C)]
 pub struct VTable {
-    pub(super) _serialize_data:
-        unsafe extern "C" fn(DataPtr, NonNull<*mut u8>, NonNull<usize>) -> u32,
-    pub(super) _deserialize_data:
-        unsafe extern "C" fn(*const u8, usize, NonNull<MaybeUninit<DataPtr>>) -> u32,
-    pub(super) _serialize_state:
-        unsafe extern "C" fn(DataPtr, StatePtr, NonNull<*mut u8>, NonNull<usize>) -> u32,
-    pub(super) _deserialize_state:
-        unsafe extern "C" fn(DataPtr, *const u8, usize, NonNull<MaybeUninit<StatePtr>>) -> u32,
-    pub(super) _drop_box_byte_slice: unsafe extern "C" fn(*mut u8, usize) -> u32,
-
-    pub(super) _initialize:
-        unsafe extern "C" fn(DataPtr, NonNull<ArrowSchema>, NonNull<MaybeUninit<StatePtr>>) -> u32,
-    pub(super) _new_empty:
-        unsafe extern "C" fn(DataPtr, StatePtr, NonNull<MaybeUninit<StatePtr>>) -> u32,
-    pub(super) _reset: unsafe extern "C" fn(DataPtr, StatePtr) -> u32,
-    pub(super) _combine: unsafe extern "C" fn(DataPtr, StatePtr, StatePtr) -> u32,
-
-    pub(super) _insert: unsafe extern "C" fn(
-        DataPtr,
-        StatePtr,
-        *mut SeriesExport,
-        usize,
-        NonNull<u32>,
-        NonNull<MaybeUninit<SeriesExport>>,
+    /// Serialize `Data` into a byte buffer.
+    ///
+    /// The callee allocates a `Box<[u8]>` and writes the pointer and length into `buffer` and
+    /// `length`. This `Box<[u8]>` is then later dropped using `_drop_box_byte_slice`.
+    ///
+    /// The `buffer` pointer may be NULL i.f.f. `length` is 0.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// # Safety
+    ///
+    /// - Memory backing `data` should be valid for the entire duration.
+    /// - `buffer` should point to a valid and exclusive referenceable memory location.
+    /// - `length` should point to a valid and exclusive referenceable memory location.
+    _serialize_data: unsafe extern "C" fn(
+        data: DataPtr,            // Read-only reference to the data.
+        buffer: NonNull<*mut u8>, // Pointer to a byte buffer pointer.
+        length: NonNull<usize>,   // Pointer to a length buffer.
     ) -> u32,
-    pub(super) _finalize: unsafe extern "C" fn(
-        DataPtr,
-        StatePtr,
-        NonNull<u32>,
-        NonNull<MaybeUninit<SeriesExport>>,
+    /// Deserialize `Data` from a byte buffer.
+    ///
+    /// The callee allocates a `Box<Data>` and writes the pointer to `data`. This data is then
+    /// later dropped using `_drop_data`.
+    ///
+    /// The `buffer` pointer may be NULL i.f.f. `length` is 0.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// # Safety
+    ///
+    /// - `buffer` and `length` should be valid raw parts of a `&[u8]`.
+    /// - `data` should point to a valid and exclusive referenceable memory location.
+    _deserialize_data: unsafe extern "C" fn(
+        buffer: *const u8,
+        length: usize,
+        data: NonNull<MaybeUninit<DataPtr>>,
+    ) -> u32,
+    /// Serialize `state` into a byte buffer.
+    ///
+    /// The callee allocates a `Box<[u8]>` and writes the pointer and length into `buffer` and
+    /// `length`. This `Box<[u8]>` is then later dropped using `_drop_box_byte_slice`.
+    ///
+    /// The `buffer` pointer may be NULL i.f.f. `length` is 0.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// # Safety
+    ///
+    /// - Memory backing `data` and `state` should be valid for the entire duration.
+    /// - `buffer` should point to a valid and exclusive referenceable memory location.
+    /// - `length` should point to a valid and exclusive referenceable memory location.
+    _serialize_state: unsafe extern "C" fn(
+        data: DataPtr,
+        state: StatePtr,
+        buffer: NonNull<*mut u8>,
+        length: NonNull<usize>,
+    ) -> u32,
+    /// Deserialize `State` from a byte buffer.
+    ///
+    /// The callee allocates a `Box<State>` and writes the pointer to `state`. This state is then
+    /// later dropped using `_drop_state`.
+    ///
+    /// The `buffer` pointer may be NULL i.f.f. `length` is 0.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// # Safety
+    ///
+    /// - Memory backing `data` should be valid for the entire duration.
+    /// - `buffer` and `length` should be valid raw parts of a `&[u8]`.
+    /// - `state` should point to a valid and exclusive referenceable memory location.
+    _deserialize_state: unsafe extern "C" fn(
+        data: DataPtr,
+        buffer: *const u8,
+        length: usize,
+        state: NonNull<MaybeUninit<StatePtr>>,
+    ) -> u32,
+    /// Drop `Box<[u8]>`.
+    ///
+    /// Returns a `ReturnValue` to handle panics.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` and `length` should be the components belonging to a `Box<[u8]>` on the callee's
+    /// allocator.
+    _drop_box_byte_slice: unsafe extern "C" fn(ptr: *mut u8, length: usize) -> u32,
+
+    /// Allocate and initialize a new `Box<State>` and put its pointer in `state`.
+    ///
+    /// This state is then later dropped using `_drop_state`.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// # Safety
+    ///
+    /// - Memory backing `data` and `fields` should be valid for the entire duration.
+    /// - `state` should point to a valid and exclusive referenceable memory location.
+    _new_state: unsafe extern "C" fn(
+        data: DataPtr,
+        fields: NonNull<ArrowSchema>,
+        state: NonNull<MaybeUninit<StatePtr>>,
+    ) -> u32,
+    /// Clone `state`, reset and put a newly allocated `Box<State>`'s pointer into `new`.
+    ///
+    /// This state is then later dropped using `_drop_state`.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// # Safety
+    ///
+    /// - Memory backing `data` and `state` should be valid for the entire duration.
+    /// - `new` should point to a valid and exclusive referenceable memory location.
+    _new_empty: unsafe extern "C" fn(
+        data: DataPtr,
+        state: StatePtr,
+        new: NonNull<MaybeUninit<StatePtr>>,
+    ) -> u32,
+    /// Reset `state`.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// # Safety
+    ///
+    /// - Memory backing `data` and `state` should be valid for the entire duration.
+    _reset: unsafe extern "C" fn(data: DataPtr, state: StatePtr) -> u32,
+    /// Fold `other` into `state`.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// # Safety
+    ///
+    /// - Memory backing `data`, `state` and `other` should be valid for the entire duration.
+    /// - `state` should be exclusively referenceable
+    _combine: unsafe extern "C" fn(data: DataPtr, state: StatePtr, other: StatePtr) -> u32,
+
+    /// Evaluate one execution step.
+    ///
+    /// The caller passes the ownership of all elements in `inputs` to the caller, but not the
+    /// slice itself.
+    ///
+    /// - `out_kind` should be `Value`.
+    /// - `out_series` will be initialized i.f.f. `out_kind` is `Value::Series`.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// - Memory backing `data` and `state` should be valid for the entire duration.
+    /// - `inputs_ptr` and `inputs_len` should represent owned contiguous `SeriesExport`.
+    /// - `out_kind` and `out_series should be exclusively referenceable
+    _step: unsafe extern "C" fn(
+        data: DataPtr,
+        state: StatePtr,
+        inputs_ptr: *mut SeriesExport,
+        inputs_len: usize,
+        out_kind: NonNull<u32>,
+        out_series: NonNull<MaybeUninit<SeriesExport>>,
+    ) -> u32,
+    /// Finalize a state.
+    ///
+    /// - `out_kind` should be `Value`.
+    /// - `out_series` will be initialized i.f.f. `out_kind` is `Value::Series`.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// - Memory backing `data` and `state` should be valid for the entire duration.
+    /// - `out_kind` and `out_series should be exclusively referenceable
+    _finalize: unsafe extern "C" fn(
+        data: DataPtr,
+        state: StatePtr,
+        out_kind: NonNull<u32>,
+        out_series: NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32,
 
-    pub(super) _to_field: unsafe extern "C" fn(
-        DataPtr,
-        NonNull<ArrowSchema>,
-        NonNull<MaybeUninit<ArrowSchema>>,
+    /// Get the output field.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    ///
+    /// - Memory backing `data` and `fields` should be valid for the entire duration.
+    /// - `out_field` should be exclusively referenceable
+    _to_field: unsafe extern "C" fn(
+        data: DataPtr,
+        fields: NonNull<ArrowSchema>,
+        out_field: NonNull<MaybeUninit<ArrowSchema>>,
     ) -> u32,
-    pub(super) _drop_state: unsafe extern "C" fn(StatePtr) -> u32,
-    pub(super) _drop_data: unsafe extern "C" fn(DataPtr) -> u32,
 
-    pub(super) _set_version: unsafe extern "C" fn(u32),
-    pub(super) _get_error: unsafe extern "C" fn(NonNull<*const u8>, NonNull<isize>),
+    /// Drop `Box<Data>`.
+    ///
+    /// Returns a `ReturnValue` to handle panics.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` and `length` should be the components belonging to a `Box<Data>` on the callee's
+    /// allocator.
+    _drop_state: unsafe extern "C" fn(StatePtr) -> u32,
+    /// Drop `Box<State>`.
+    ///
+    /// Returns a `ReturnValue` to handle panics.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` and `length` should be the components belonging to a `Box<State>` on the callee's
+    /// allocator.
+    _drop_data: unsafe extern "C" fn(DataPtr) -> u32,
+
+    /// Set the `caller` plugin v1 version in the callee.
+    _set_version: unsafe extern "C" fn(u32),
+    /// Get a error message of the last error that occurred.
+    _get_error: unsafe extern "C" fn(NonNull<*const u8>, NonNull<isize>),
 }
 
+/// Value that is returned from a VTable function call.
 #[repr(u32)]
 enum ReturnValue {
     Ok = 0,
@@ -108,6 +307,7 @@ enum ReturnValue {
     OtherError = 6,
 }
 
+/// Kind of value that was returned from `step` or `finalize`.
 #[repr(u32)]
 enum Value {
     None = 0,
@@ -167,11 +367,11 @@ impl VTable {
             _deserialize_state: _callee::deserialize_state::<Data>,
             _drop_box_byte_slice: _callee::drop_box_byte_slice,
 
-            _initialize: _callee::initialize::<Data>,
+            _new_state: _callee::new_state::<Data>,
             _new_empty: _callee::new_empty::<Data>,
             _reset: _callee::reset::<Data>,
 
-            _insert: _callee::insert::<Data>,
+            _step: _callee::step::<Data>,
             _finalize: _callee::finalize::<Data>,
             _combine: _callee::combine::<Data>,
 
@@ -209,6 +409,7 @@ impl From<u32> for ReturnValue {
     }
 }
 
+/// FFI Wrappers for all [`PolarsPlugin`] functions from the *callee* or Plugin's side.
 mod _callee {
     use std::cell::RefCell;
     use std::mem::MaybeUninit;
@@ -399,7 +600,7 @@ mod _callee {
         })
     }
 
-    pub unsafe extern "C" fn initialize<Data: PolarsPlugin>(
+    pub unsafe extern "C" fn new_state<Data: PolarsPlugin>(
         data: DataPtr,
         fields: NonNull<ArrowSchema>,
         state: NonNull<MaybeUninit<StatePtr>>,
@@ -407,7 +608,7 @@ mod _callee {
         wrap_callee_function(|| {
             let data = unsafe { data.as_ref::<Data>() };
             let fields = unsafe { import_pl_schema(fields) }?;
-            let out = data.initialize(&fields)?;
+            let out = data.new_state(&fields)?;
             let out = ::std::boxed::Box::new(out);
             let out = ::std::boxed::Box::into_raw(out);
             let out = ::std::ptr::NonNull::new(out as *mut u8).unwrap();
@@ -441,14 +642,14 @@ mod _callee {
         })
     }
 
-    pub unsafe extern "C" fn insert<Data: PolarsPlugin>(
+    pub unsafe extern "C" fn step<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
 
         inputs_series: *mut SeriesExport,
         inputs_len: usize,
 
-        out_series_kind: NonNull<u32>,
+        out_kind: NonNull<u32>,
         out_series: NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32 {
         wrap_callee_function(|| {
@@ -456,12 +657,12 @@ mod _callee {
             let state = unsafe { state.as_mut::<Data::State>() };
             let inputs = unsafe { import_series_buffer(inputs_series, inputs_len) }?;
 
-            let out = data.insert(state, &inputs)?;
+            let out = data.step(state, &inputs)?;
             let kind = match out {
                 None => Value::None as u32,
                 Some(_) => Value::Series as u32,
             };
-            unsafe { out_series_kind.write(kind) };
+            unsafe { out_kind.write(kind) };
             if let Some(series) = out {
                 let exported = export_series(&series);
                 unsafe { out_series.write(MaybeUninit::new(exported)) };
@@ -473,7 +674,7 @@ mod _callee {
     pub unsafe extern "C" fn finalize<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
-        out_series_kind: NonNull<u32>,
+        out_kind: NonNull<u32>,
         out_series: NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32 {
         wrap_callee_function(|| {
@@ -484,7 +685,7 @@ mod _callee {
                 None => Value::None as u32,
                 Some(_) => Value::Series as u32,
             };
-            unsafe { out_series_kind.write(kind) };
+            unsafe { out_kind.write(kind) };
             if let Some(series) = out {
                 let exported = export_series(&series);
                 unsafe { out_series.write(MaybeUninit::new(exported)) };
@@ -541,6 +742,7 @@ mod _callee {
     }
 }
 
+/// FFI Wrappers for all [`PolarsPlugin`] functions from the *caller* or Polars' side.
 mod _caller {
     use std::mem::MaybeUninit;
     use std::ptr::NonNull;
@@ -693,7 +895,7 @@ mod _caller {
             Ok(unsafe { state.assume_init() })
         }
 
-        pub unsafe fn initialize(&self, data: DataPtr, fields: &Schema) -> PolarsResult<StatePtr> {
+        pub unsafe fn new_state(&self, data: DataPtr, fields: &Schema) -> PolarsResult<StatePtr> {
             let mut out_state: MaybeUninit<StatePtr> = MaybeUninit::uninit();
             let fields = arrow::ffi::export_field_to_c(&ArrowField::new(
                 PlSmallStr::EMPTY,
@@ -706,7 +908,7 @@ mod _caller {
                 false,
             ));
             let rv = unsafe {
-                (self._initialize)(
+                (self._new_state)(
                     data,
                     NonNull::from_ref(&fields),
                     NonNull::from_mut(&mut out_state),
@@ -729,7 +931,7 @@ mod _caller {
             Ok(())
         }
 
-        pub unsafe fn insert(
+        pub unsafe fn step(
             &self,
             data: DataPtr,
             state: StatePtr,
@@ -742,27 +944,27 @@ mod _caller {
             let inputs_ptr = inputs_export.as_mut_ptr();
             let inputs_len = inputs_export.len();
 
-            let mut out_series_kind = 0u32;
+            let mut out_kind = 0u32;
             let mut out_series = MaybeUninit::uninit();
 
             let rv = unsafe {
-                (self._insert)(
+                (self._step)(
                     data,
                     state,
                     inputs_ptr,
                     inputs_len,
-                    NonNull::from_mut(&mut out_series_kind),
+                    NonNull::from_mut(&mut out_kind),
                     NonNull::from_mut(&mut out_series),
                 )
             };
             unsafe { self.handle_return_value(rv) }?;
-            // Already deallocated in insert function
+            // Already deallocated in step function
             unsafe { inputs_export.set_len(0) };
 
-            let Ok(out_series_kind) = Value::try_from(out_series_kind) else {
+            let Ok(out_kind) = Value::try_from(out_kind) else {
                 panic!("invalid series kind value");
             };
-            match out_series_kind {
+            match out_kind {
                 Value::None => Ok(None),
                 Value::Series => {
                     let out_series = unsafe { import_series(out_series.assume_init()) }?;
@@ -776,23 +978,23 @@ mod _caller {
             data: DataPtr,
             state: StatePtr,
         ) -> PolarsResult<Option<Series>> {
-            let mut out_series_kind = 0u32;
+            let mut out_kind = 0u32;
             let mut out_series = MaybeUninit::uninit();
 
             let rv = unsafe {
                 (self._finalize)(
                     data,
                     state,
-                    NonNull::from_mut(&mut out_series_kind),
+                    NonNull::from_mut(&mut out_kind),
                     NonNull::from_mut(&mut out_series),
                 )
             };
             unsafe { self.handle_return_value(rv) }?;
 
-            let Ok(out_series_kind) = Value::try_from(out_series_kind) else {
+            let Ok(out_kind) = Value::try_from(out_kind) else {
                 panic!("invalid series kind value");
             };
-            match out_series_kind {
+            match out_kind {
                 Value::None => Ok(None),
                 Value::Series => {
                     let out_series = unsafe { import_series(out_series.assume_init()) }?;

@@ -65,12 +65,12 @@ impl PolarsPlugin for VerticalScan {
         Ok(field)
     }
 
-    fn initialize(&self, fields: &Schema) -> PolarsResult<Self::State> {
+    fn new_state(&self, fields: &Schema) -> PolarsResult<Self::State> {
         assert_eq!(fields.len(), 1);
         Ok(VerticalScanState { n: self.init })
     }
 
-    fn insert(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
+    fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
         assert_eq!(inputs.len(), 1);
 
         let x = inputs[0].cast(&DataType::Int64)?;

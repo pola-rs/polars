@@ -74,7 +74,7 @@ pub fn register_plugin_v2_function(
     row_separable: bool,
     returns_scalar: bool,
     zippable_inputs: bool,
-    insert_has_output: bool,
+    step_has_output: bool,
     needs_finalize: bool,
     states_combinable: bool,
     selector_expansion: bool,
@@ -90,7 +90,7 @@ pub fn register_plugin_v2_function(
     flags.set(F::ROW_SEPARABLE, row_separable);
     flags.set(F::RETURNS_SCALAR, returns_scalar);
     flags.set(F::ZIPPABLE_INPUTS, zippable_inputs);
-    flags.set(F::INSERT_HAS_OUTPUT, insert_has_output);
+    flags.set(F::STEP_HAS_OUTPUT, step_has_output);
     flags.set(F::NEEDS_FINALIZE, needs_finalize);
     flags.set(F::STATES_COMBINABLE, states_combinable);
     flags.set(F::SELECTOR_EXPANSION, selector_expansion);

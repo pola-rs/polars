@@ -72,7 +72,7 @@ impl PluginNode {
                         .into_iter()
                         .map(|c| c.take_materialized_series())
                         .collect::<Vec<Series>>();
-                    match (state.insert(&inputs)?, tx.as_mut()) {
+                    match (state.step(&inputs)?, tx.as_mut()) {
                         (None, _) => continue,
                         (Some(out), None) => {
                             _ = buffer.append_owned(out.with_name(output_name.clone()))?
@@ -159,7 +159,7 @@ impl ComputeNode for PluginNode {
 
         match self.action {
             Action::Insert => {
-                if !flags.contains(PluginV1Flags::INSERT_HAS_OUTPUT) {
+                if !flags.contains(PluginV1Flags::STEP_HAS_OUTPUT) {
                     send[0] = P::Blocked
                 }
             },

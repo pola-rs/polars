@@ -60,13 +60,13 @@ bitflags::bitflags! {
         const ZIPPABLE_INPUTS     = 0x008;
 
         // Evaluation related flags.
-        /// Inserting can yield data.
-        const INSERT_HAS_OUTPUT   = 0x010;
+        /// Each step may yield data.
+        const STEP_HAS_OUTPUT   = 0x010;
         /// Finalize needs to be called and may yield data.
         ///
         /// Expressions that are both LENGTH_PRESERVING and ROW_SEPARABLE are never finalized.
         const NEEDS_FINALIZE      = 0x020;
-        /// States can be inserted separately and combined later.
+        /// States can be created separately and combined later.
         ///
         /// If a finalization is needed, it is only called one state that has combined all states.
         ///
@@ -148,7 +148,7 @@ impl PluginV1 {
     }
 
     pub fn initialize(self: Arc<Self>, fields: &Schema) -> PolarsResult<PluginV1State> {
-        let ptr = unsafe { self.vtable.initialize(self.data.ptr_clone(), fields) }?;
+        let ptr = unsafe { self.vtable.new_state(self.data.ptr_clone(), fields) }?;
         Ok(PluginV1State { ptr, plugin: self })
     }
 
@@ -174,11 +174,11 @@ impl Drop for PluginV1State {
 }
 
 impl PluginV1State {
-    pub fn insert(&mut self, inputs: &[Series]) -> PolarsResult<Option<Series>> {
+    pub fn step(&mut self, inputs: &[Series]) -> PolarsResult<Option<Series>> {
         unsafe {
             self.plugin
                 .vtable
-                .insert(self.plugin.data.ptr_clone(), self.ptr.ptr_clone(), inputs)
+                .step(self.plugin.data.ptr_clone(), self.ptr.ptr_clone(), inputs)
         }
     }
 

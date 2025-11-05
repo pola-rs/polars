@@ -30,11 +30,11 @@ impl PolarsPlugin for HorizontalCount {
         Ok(Field::new("horizontal_count".into(), DataType::IDX_DTYPE))
     }
 
-    fn initialize(&self, _fields: &Schema) -> PolarsResult<Self::State> {
+    fn new_state(&self, _fields: &Schema) -> PolarsResult<Self::State> {
         Ok(())
     }
 
-    fn insert(&self, _state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
+    fn step(&self, _state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
         let mut length = 1;
         for i in inputs {
             if i.len() == 1 {

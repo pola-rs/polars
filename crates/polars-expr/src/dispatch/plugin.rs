@@ -16,9 +16,9 @@ pub fn call(s: &mut [Column], plugin: Arc<PluginV1>) -> PolarsResult<Column> {
     let mut state = plugin.clone().initialize(&fields)?;
 
     let flags = plugin.flags();
-    let insert = state.insert(&series)?;
+    let insert = state.step(&series)?;
 
-    assert!(insert.is_none() || flags.contains(PluginV1Flags::INSERT_HAS_OUTPUT));
+    assert!(insert.is_none() || flags.contains(PluginV1Flags::STEP_HAS_OUTPUT));
 
     if !flags.contains(PluginV1Flags::NEEDS_FINALIZE) || flags.is_elementwise() {
         let field = plugin.to_field(&fields)?;

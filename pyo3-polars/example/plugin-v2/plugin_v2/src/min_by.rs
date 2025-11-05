@@ -46,7 +46,7 @@ impl PolarsPlugin for MinBy {
         Ok(fields.iter_fields().next().unwrap())
     }
 
-    fn initialize(&self, fields: &Schema) -> PolarsResult<Self::State> {
+    fn new_state(&self, fields: &Schema) -> PolarsResult<Self::State> {
         assert_eq!(fields.len(), 2);
         let (name, dtype) = fields.get_at_index(0).unwrap();
         let name = name.clone();
@@ -55,7 +55,7 @@ impl PolarsPlugin for MinBy {
         Ok(MinByState { name, value, by })
     }
 
-    fn insert(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
+    fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
         assert_eq!(inputs.len(), 2);
 
         let mut inputs = inputs.to_vec();
