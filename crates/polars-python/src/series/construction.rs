@@ -68,7 +68,6 @@ impl PySeries {
         py.enter_polars_series(|| Series::new(name.into(), vals).cast(&DataType::Boolean))
     }
 
-    // TODO: [amber] This can probably be impl'd by generic or macro
     #[staticmethod]
     fn new_f16(
         py: Python<'_>,

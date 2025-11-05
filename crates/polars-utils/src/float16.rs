@@ -11,6 +11,7 @@ use half;
 use num_derive::*;
 use num_traits::real::Real;
 use num_traits::{AsPrimitive, Bounded, FromBytes, One, Pow, ToBytes, Zero};
+use numpy::Element;
 #[cfg(feature = "python")]
 use pyo3::types::{PyAnyMethods, PyFloat};
 #[cfg(feature = "python")]
@@ -412,5 +413,16 @@ impl<'py> FromPyObject<'py> for pf16 {
     fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         let v: f32 = ob.extract()?;
         Ok(v.as_())
+    }
+}
+
+unsafe impl Element for pf16 {
+    const IS_COPY: bool = half::f16::IS_COPY;
+
+    fn get_dtype(py: Python<'_>) -> pyo3::Bound<'_, numpy::PyArrayDescr> {
+        half::f16::get_dtype(py)
+    }
+    fn clone_ref(&self, py: Python<'_>) -> Self {
+        pf16(half::f16::clone_ref(&self.0, py))
     }
 }
