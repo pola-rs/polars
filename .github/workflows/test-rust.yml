@@ -172,8 +172,8 @@ jobs:
 
       - name: Check DSL freeze
         run: |
-          git log --graph --decorate --oneline --all | grep 62c75
-          if [ "$(git diff origin/master..HEAD crates/polars-plan/dsl-schema-hashes.json | head -c 1)" ]; then
+          git fetch origin --depth 1 main:main
+          if [ "$(git diff origin/main..HEAD crates/polars-plan/dsl-schema-hashes.json | head -c 1)" ]; then
             match='"state"\s*:\s*"closed"'; if [ "$(curl -s https://api.github.com/repos/pola-rs/polars/issues/24575 | grep -E ${match})" ]; then
               echo "DSL changes have been temporarily blocked"
               exit 1
