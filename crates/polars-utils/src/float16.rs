@@ -25,8 +25,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::nulls::IsNull;
 
-/// Type representation of the Float16 physical type
-/// TODO: [amber] comment
+/// A portable float16 type.
+///
+/// This type is a newtype wrapper around `half::f16`.
+/// We intend to replace it by Rust's builtin `f16` type once it is stabilized.
 #[derive(
     Debug,
     Copy,
