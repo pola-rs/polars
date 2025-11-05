@@ -104,17 +104,16 @@ impl Series {
             self.clone()
         };
 
+        let validity = s.rechunk_validity().unwrap();
         let indices = match groups {
             GroupsType::Idx(groups) => {
-                let null_s = s.is_null();
-                let null_values = null_s.downcast_as_array();
                 groups
                     .iter()
                     .map(|(_, idx)| {
                         let mut this_idx = None;
                         for &ii in idx.iter() {
                             // SAFETY: null_values has no null values
-                            if !null_values.value_unchecked(ii as usize) {
+                            if validity.get_bit_unchecked(ii as usize) {
                                 this_idx = Some(ii);
                                 break;
                             }
@@ -124,15 +123,15 @@ impl Series {
                     .collect_ca(PlSmallStr::EMPTY)
             },
             GroupsType::Slice { groups, .. } => {
-                let null_s = s.is_null();
-                let null_values = null_s.downcast_as_array();
+                let null_s = s.is_not_null();
+                let values = null_s.downcast_as_array();
                 groups
                     .iter()
                     .map(|&[first, len]| {
                         let mut this_idx = None;
                         for ii in first..first + len {
                             // SAFETY: null_values has no null values
-                            if !null_values.value_unchecked(ii as usize) {
+                            if values.value_unchecked(ii as usize) {
                                 this_idx = Some(ii);
                                 break;
                             }
@@ -404,15 +403,14 @@ impl Series {
 
         let indices = match groups {
             GroupsType::Idx(groups) => {
-                let null_s = s.is_null();
-                let null_values = null_s.downcast_as_array();
+                let validity = s.rechunk_validity().unwrap();
                 groups
                     .iter()
                     .map(|(_, idx)| {
                         let mut this_idx = None;
                         for &ii in idx.iter().rev() {
                             // SAFETY: null_values has no null values
-                            if !null_values.value_unchecked(ii as usize) {
+                            if validity.get_bit_unchecked(ii as usize) {
                                 this_idx = Some(ii);
                                 break;
                             }
@@ -422,15 +420,15 @@ impl Series {
                     .collect_ca(PlSmallStr::EMPTY)
             },
             GroupsType::Slice { groups, .. } => {
-                let null_s = s.is_null();
-                let null_values = null_s.downcast_as_array();
+                let validity = s.is_not_null();
+                let validity = validity.downcast_as_array();
                 groups
                     .iter()
                     .map(|&[first, len]| {
                         let mut this_idx = None;
                         for ii in (first..first + len).rev() {
                             // SAFETY: null_values has no null values
-                            if !null_values.value_unchecked(ii as usize) {
+                            if validity.value_unchecked(ii as usize) {
                                 this_idx = Some(ii);
                                 break;
                             }
