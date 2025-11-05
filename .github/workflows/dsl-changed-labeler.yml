@@ -11,9 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/labeler@v5
-        with:
-          configuration-path: .github/labeler-dsl-changed-reset.yml
-          sync-labels: true
+      - name: Delete tag
+        run: gh release delete changes-dsl --cleanup-tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/labeler@v5
         with:
           configuration-path: .github/labeler-dsl-changed.yml
