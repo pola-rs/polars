@@ -17,7 +17,7 @@ jobs:
           -X DELETE \
           -H 'Accept: application/vnd.github.v3+json' \
           -H 'Authorization: token ${{ github.token }}' \
-          'https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels/YOUR-LABEL' \
+          'https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels/changes-dsl' \
           || true
 
       - uses: actions/labeler@v5
