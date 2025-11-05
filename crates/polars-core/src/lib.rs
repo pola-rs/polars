@@ -186,30 +186,6 @@ impl POOL {
             NOOP_POOL.with(|v| op(&v.borrow()))
         }
     }
-
-    pub fn without_threading<R>(&self, op: impl FnOnce() -> R) -> R {
-        #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
-        {
-            op()
-        }
-
-        #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
-        {
-            // This can only be done from threads that are not in the main threadpool.
-            if THREAD_POOL.current_thread_index().is_some() {
-                op()
-            } else {
-                let prev = ALLOW_RAYON_THREADS.replace(false);
-                // @Q? Should this catch_unwind?
-                let result = std::panic::catch_unwind(AssertUnwindSafe(op));
-                ALLOW_RAYON_THREADS.set(prev);
-                match result {
-                    Ok(v) => v,
-                    Err(p) => std::panic::resume_unwind(p),
-                }
-            }
-        }
-    }
 }
 
 // this is re-exported in utils for polars child crates

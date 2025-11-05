@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use polars_core::POOL;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_expr::state::ExecutionState;
