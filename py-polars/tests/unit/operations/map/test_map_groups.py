@@ -239,7 +239,7 @@ def test_map_groups_multiple_all_literal_elementwise_raises() -> None:
 
 
 def test_nested_query_with_streaming_dispatch_25172() -> None:
-    def simple(_: pl.Series) -> pl.Series:
+    def simple(_: Any) -> pl.Series:
         import io
 
         pl.LazyFrame({}).sink_parquet(
