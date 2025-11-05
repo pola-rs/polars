@@ -418,6 +418,7 @@ impl<'py> FromPyObject<'py> for pf16 {
     }
 }
 
+#[cfg(feature = "python")]
 unsafe impl Element for pf16 {
     const IS_COPY: bool = half::f16::IS_COPY;
 

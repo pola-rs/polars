@@ -23,7 +23,7 @@ libc = { workspace = true }
 memmap = { workspace = true, optional = true }
 num-derive = { workspace = true }
 num-traits = { workspace = true }
-numpy = { workspace = true, features = ["half"] }
+numpy = { workspace = true, optional = true, features = ["half"] }
 polars-error = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
@@ -63,7 +63,7 @@ serde = [
   "uuid/serde",
 ]
 dsl-schema = ["dep:schemars", "schemars/uuid1"]
-python = ["pyo3", "polars-error/python"]
+python = ["dep:pyo3", "dep:numpy", "polars-error/python"]
 
 [lints]
 workspace = true
