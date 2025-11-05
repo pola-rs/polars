@@ -3,7 +3,7 @@ on:
   - pull_request_target
 
 jobs:
-  labeler:
+  dsl-changed-labeler:
     permissions:
       contents: read
       pull-requests: write
@@ -11,3 +11,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/labeler@v6
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
