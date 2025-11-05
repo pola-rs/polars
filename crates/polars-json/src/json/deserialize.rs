@@ -431,7 +431,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             dtype,
             allow_extra_fields_in_struct,
         )?)),
-        _ => todo!(),
+        adt => unimplemented!("Deserialization from JSON not implemented for {adt:?}"),
     }
 }
 
