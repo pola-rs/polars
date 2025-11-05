@@ -172,9 +172,10 @@ jobs:
 
       - name: Check DSL freeze
         run: |
+          git branch -avv
           if [ "$(git diff origin/master..HEAD crates/polars-plan/dsl-schema-hashes.json | head -c 1)" ]; then
             match='"state"\s*:\s*"closed"'; if [ "$(curl -s https://api.github.com/repos/pola-rs/polars/issues/24575 | grep -E ${match})" ]; then
-              echo "This PR changes the DSL hash, but the DSL is frozen"
+              echo "DSL changes have been temporarily blocked"
               exit 1
             fi
           fi
